@@ -21,6 +21,8 @@ import {
   Wrench,
   UserPlus2,
   BarChart3,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import SlideOver from "@/components/slide-over";
@@ -108,6 +110,20 @@ function today(): string {
   return new Date().toISOString().split("T")[0];
 }
 
+function shiftDate(d: string, n: number): string {
+  const dt = new Date(d + "T00:00:00");
+  dt.setDate(dt.getDate() + n);
+  return dt.toISOString().split("T")[0];
+}
+
+function fmtShortDate(d: string): string {
+  const t = today();
+  if (d === t) return "Today";
+  if (d === shiftDate(t, 1)) return "Tomorrow";
+  if (d === shiftDate(t, -1)) return "Yesterday";
+  return new Date(d + "T00:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+}
+
 /* ---- Component ---- */
 
 export default function DashboardPage() {
@@ -118,6 +134,7 @@ export default function DashboardPage() {
   const [unassignedJobs, setUnassignedJobs] = useState<TodayJob[]>([]);
   const [loading, setLoading] = useState(true);
   const [jobPanelOpen, setJobPanelOpen] = useState(false);
+  const [scheduleDate, setScheduleDate] = useState(today);
 
   // "B" keyboard shortcut to open booking
   useEffect(() => {
@@ -136,23 +153,33 @@ export default function DashboardPage() {
   const [searchOpen, setSearchOpen] = useState(false);
   const searchTimeout = useRef<ReturnType<typeof setTimeout>>(null);
 
+  // Load dashboard data
   useEffect(() => {
-    async function load() {
+    async function loadDashboard() {
       try {
-        const [d, u, tj] = await Promise.all([
+        const [d, u] = await Promise.all([
           api.get<DashboardData>("/analytics/dashboard"),
           api.get<UserProfile>("/auth/profile"),
-          api.get<JobsResponse>(`/jobs?scheduledDate=${today()}&limit=50`),
         ]);
         setDashboard(d);
         setUser(u);
-        setTodayJobs(tj.data.filter((j) => j.status !== "cancelled"));
-        setUnassignedJobs(tj.data.filter((j) => !j.assigned_driver && j.status !== "cancelled" && j.status !== "completed"));
       } catch { /* handled */ }
       finally { setLoading(false); }
     }
-    load();
+    loadDashboard();
   }, []);
+
+  // Load jobs for selected schedule date
+  useEffect(() => {
+    async function loadJobs() {
+      try {
+        const tj = await api.get<JobsResponse>(`/jobs?scheduledDate=${scheduleDate}&limit=50`);
+        setTodayJobs(tj.data.filter((j) => j.status !== "cancelled"));
+        setUnassignedJobs(tj.data.filter((j) => !j.assigned_driver && j.status !== "cancelled" && j.status !== "completed"));
+      } catch { /* */ }
+    }
+    loadJobs();
+  }, [scheduleDate]);
 
   // Global search
   useEffect(() => {
@@ -267,20 +294,28 @@ export default function DashboardPage() {
         {/* Left: Today's Schedule */}
         <div className="lg:col-span-3 space-y-5">
           <div className="rounded-2xl border border-[#1E2D45] bg-dark-card overflow-hidden">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-[#1E2D45]">
+            <div className="flex items-center justify-between px-5 py-3 border-b border-[#1E2D45]">
               <div className="flex items-center gap-2">
-                <Clock className="h-4 w-4 text-brand" />
-                <h2 className="font-display text-base font-semibold text-white">Today&apos;s Schedule</h2>
-                <span className="rounded-full bg-brand/10 px-2 py-0.5 text-xs font-medium text-brand">{todayJobs.length} jobs</span>
+                <button onClick={() => setScheduleDate(d => shiftDate(d, -1))} className="rounded p-1 text-muted hover:text-white transition-colors active:scale-90">
+                  <ChevronLeft className="h-4 w-4" />
+                </button>
+                <button onClick={() => setScheduleDate(today())} className="flex items-center gap-1.5">
+                  <Clock className="h-4 w-4 text-brand" />
+                  <h2 className="font-display text-sm font-semibold text-white">{fmtShortDate(scheduleDate)}</h2>
+                </button>
+                <button onClick={() => setScheduleDate(d => shiftDate(d, 1))} className="rounded p-1 text-muted hover:text-white transition-colors active:scale-90">
+                  <ChevronRight className="h-4 w-4" />
+                </button>
+                <span className="rounded-full bg-brand/10 px-2 py-0.5 text-xs font-medium text-brand">{todayJobs.length}</span>
               </div>
               <Link href="/dispatch" className="text-xs text-brand hover:text-brand-light transition-colors">
-                Dispatch board <ArrowRight className="inline h-3 w-3" />
+                Dispatch <ArrowRight className="inline h-3 w-3" />
               </Link>
             </div>
             {todayJobs.length === 0 ? (
               <div className="flex flex-col items-center py-12">
                 <Briefcase className="h-10 w-10 text-muted/20 mb-2" />
-                <p className="text-sm text-muted">No jobs scheduled today</p>
+                <p className="text-sm text-muted">No jobs scheduled for {fmtShortDate(scheduleDate).toLowerCase()}</p>
                 <button onClick={() => setJobPanelOpen(true)} className="mt-3 text-xs text-brand hover:text-brand-light">+ Create a job</button>
               </div>
             ) : (

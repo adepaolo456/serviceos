@@ -7,10 +7,11 @@ import { BillingService } from './billing.service';
 import { InvoicesController, PaymentsController } from './billing.controller';
 import { BookingsController } from './bookings.controller';
 import { Customer } from '../customers/entities/customer.entity';
+import { Asset } from '../assets/entities/asset.entity';
 import { Tenant } from '../tenants/entities/tenant.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Invoice, Payment, Job, Customer, Tenant])],
+  imports: [TypeOrmModule.forFeature([Invoice, Payment, Job, Customer, Asset, Tenant])],
   controllers: [InvoicesController, PaymentsController, BookingsController],
   providers: [BillingService],
   exports: [BillingService],

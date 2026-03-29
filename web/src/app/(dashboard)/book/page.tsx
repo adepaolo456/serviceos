@@ -162,14 +162,20 @@ export default function BookingPage() {
     setPickupDate(addDays(deliveryDate, rentalDays));
   }, [deliveryDate, rentalDays]);
 
-  // Customer phone search
+  // Customer phone search + auto-fill name
   useEffect(() => {
     if (searchTimeout.current) clearTimeout(searchTimeout.current);
-    if (!phoneSearch || phoneSearch.length < 3) { setCustomerResults([]); return; }
+    if (!phoneSearch || phoneSearch.length < 2) { setCustomerResults([]); return; }
     searchTimeout.current = setTimeout(async () => {
       try {
         const res = await api.get<{ data: CustomerMatch[] }>(`/customers?search=${encodeURIComponent(phoneSearch)}&limit=5`);
         setCustomerResults(res.data);
+        // Auto-fill name fields if no match and input looks like a name (not a phone number)
+        if (res.data.length === 0 && !/^\d/.test(phoneSearch)) {
+          const parts = phoneSearch.trim().split(/\s+/);
+          if (parts.length >= 1) setFirstName(parts[0]);
+          if (parts.length >= 2) setLastName(parts.slice(1).join(" "));
+        }
       } catch { /* */ }
     }, 250);
   }, [phoneSearch]);
