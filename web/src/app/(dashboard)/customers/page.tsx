@@ -6,6 +6,7 @@ import { Plus, Search, Users, MoreHorizontal, Trash2 } from "lucide-react";
 import { useToast } from "@/components/toast";
 import { api } from "@/lib/api";
 import SlideOver from "@/components/slide-over";
+import AddressAutocomplete, { type AddressValue } from "@/components/address-autocomplete";
 
 interface Customer {
   id: string;
@@ -303,10 +304,7 @@ function NewCustomerForm({ onSuccess }: { onSuccess: () => void }) {
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [companyName, setCompanyName] = useState("");
-  const [street, setStreet] = useState("");
-  const [city, setCity] = useState("");
-  const [state, setState] = useState("");
-  const [zip, setZip] = useState("");
+  const [address, setAddress] = useState<AddressValue>({ street: "", city: "", state: "", zip: "", lat: null, lng: null });
   const [notes, setNotes] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -316,9 +314,8 @@ function NewCustomerForm({ onSuccess }: { onSuccess: () => void }) {
     setError("");
     setSaving(true);
     try {
-      const billingAddress =
-        street || city || state || zip
-          ? { street, city, state, zip }
+      const billingAddress = address.street
+          ? { street: address.street, city: address.city, state: address.state, zip: address.zip, lat: address.lat, lng: address.lng }
           : undefined;
       await api.post("/customers", {
         type,
@@ -426,39 +423,10 @@ function NewCustomerForm({ onSuccess }: { onSuccess: () => void }) {
         />
       </div>
 
-      <fieldset>
-        <legend className="text-sm font-medium text-foreground mb-3">
-          Billing Address
-        </legend>
-        <div className="space-y-3">
-          <input
-            value={street}
-            onChange={(e) => setStreet(e.target.value)}
-            className={inputClass}
-            placeholder="Street address"
-          />
-          <div className="grid grid-cols-3 gap-3">
-            <input
-              value={city}
-              onChange={(e) => setCity(e.target.value)}
-              className={inputClass}
-              placeholder="City"
-            />
-            <input
-              value={state}
-              onChange={(e) => setState(e.target.value)}
-              className={inputClass}
-              placeholder="State"
-            />
-            <input
-              value={zip}
-              onChange={(e) => setZip(e.target.value)}
-              className={inputClass}
-              placeholder="ZIP"
-            />
-          </div>
-        </div>
-      </fieldset>
+      <div>
+        <label className={labelClass}>Billing Address</label>
+        <AddressAutocomplete value={address} onChange={setAddress} placeholder="Search address..." />
+      </div>
 
       <div>
         <label className={labelClass}>Notes</label>

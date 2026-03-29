@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { api } from "@/lib/api";
 import SlideOver from "@/components/slide-over";
+import AddressAutocomplete, { type AddressValue } from "@/components/address-autocomplete";
 
 interface Profile {
   id: string;
@@ -121,10 +122,7 @@ export default function SettingsPage() {
 function CompanyTab({ profile }: { profile: Profile | null }) {
   const [name, setName] = useState(profile?.tenant.name ?? "");
   const [businessType, setBusinessType] = useState("");
-  const [street, setStreet] = useState("");
-  const [city, setCity] = useState("");
-  const [state, setState] = useState("");
-  const [zip, setZip] = useState("");
+  const [address, setAddress] = useState<AddressValue>({ street: "", city: "", state: "", zip: "", lat: null, lng: null });
   const [radius, setRadius] = useState("50");
   const [saving, setSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"idle" | "success" | "error">("idle");
@@ -136,7 +134,7 @@ function CompanyTab({ profile }: { profile: Profile | null }) {
       await api.patch("/auth/profile", {
         companyName: name,
         businessType,
-        address: { street, city, state, zip },
+        address: { street: address.street, city: address.city, state: address.state, zip: address.zip },
         serviceRadius: Number(radius),
       });
       setSaveStatus("success");
@@ -208,38 +206,15 @@ function CompanyTab({ profile }: { profile: Profile | null }) {
       </div>
 
       {/* Address */}
-      <div className="rounded-2xl bg-dark-card border border-[#1E2D45] shadow-lg shadow-black/10 p-6 card-hover">
-        <h2 className="font-display text-base font-semibold text-white mb-4">
-          Yard / Office Address
-        </h2>
-        <div className="space-y-3">
-          <input
-            value={street}
-            onChange={(e) => setStreet(e.target.value)}
-            className={inputClass}
-            placeholder="Street address"
-          />
-          <div className="grid grid-cols-3 gap-3">
-            <input
-              value={city}
-              onChange={(e) => setCity(e.target.value)}
-              className={inputClass}
-              placeholder="City"
-            />
-            <input
-              value={state}
-              onChange={(e) => setState(e.target.value)}
-              className={inputClass}
-              placeholder="State"
-            />
-            <input
-              value={zip}
-              onChange={(e) => setZip(e.target.value)}
-              className={inputClass}
-              placeholder="ZIP"
-            />
+      <div className="rounded-2xl bg-dark-card border border-[#1E2D45] shadow-lg shadow-black/10 p-6">
+        <h2 className="font-display text-base font-semibold text-white mb-4">Yard / Office Address</h2>
+        <AddressAutocomplete value={address} onChange={setAddress} placeholder="Search for your business address..." />
+        {address.street && (
+          <div className="mt-3 rounded-lg bg-dark-elevated p-3 text-xs text-muted">
+            <p className="text-white font-medium">{address.street}</p>
+            <p>{address.city}, {address.state} {address.zip}</p>
           </div>
-        </div>
+        )}
       </div>
 
       {/* Service radius */}

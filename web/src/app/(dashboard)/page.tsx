@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { api } from "@/lib/api";
 import SlideOver from "@/components/slide-over";
+import AddressAutocomplete, { type AddressValue } from "@/components/address-autocomplete";
 
 /* ---- Types ---- */
 
@@ -423,10 +424,7 @@ function QuickJobForm({ onSuccess }: { onSuccess: () => void }) {
   });
   const [timeWindow, setTimeWindow] = useState("morning");
   // Address
-  const [street, setStreet] = useState("");
-  const [city, setCity] = useState("");
-  const [addrState, setAddrState] = useState("");
-  const [zip, setZip] = useState("");
+  const [address, setAddress] = useState<AddressValue>({ street: "", city: "", state: "", zip: "", lat: null, lng: null });
   // Price
   const [priceQuote, setPriceQuote] = useState<PriceQuote | null>(null);
   const [priceOverride, setPriceOverride] = useState("");
@@ -449,12 +447,12 @@ function QuickJobForm({ onSuccess }: { onSuccess: () => void }) {
   // Price calc
   useEffect(() => {
     if (step < 4) return;
-    const windows: Record<string, [string, string]> = { morning: ["08:00", "12:00"], afternoon: ["12:00", "17:00"], fullday: ["08:00", "17:00"] };
     api.post<PriceQuote>("/pricing/calculate", {
       serviceType: "dumpster_rental", assetSubtype, jobType,
-      customerLat: 30.27, customerLng: -97.74, yardLat: 30.35, yardLng: -97.7,
+      customerLat: address.lat || 30.27, customerLng: address.lng || -97.74,
+      yardLat: 30.35, yardLng: -97.7,
     }).then(setPriceQuote).catch(() => {});
-  }, [step, assetSubtype, jobType]);
+  }, [step, assetSubtype, jobType, address.lat, address.lng]);
 
   const handleSubmit = async () => {
     setError(""); setSaving(true);
@@ -470,7 +468,7 @@ function QuickJobForm({ onSuccess }: { onSuccess: () => void }) {
       await api.post("/jobs", {
         customerId: cId, jobType, serviceType: "dumpster_rental", scheduledDate,
         scheduledWindowStart: wStart, scheduledWindowEnd: wEnd,
-        serviceAddress: street ? { street, city, state: addrState, zip } : undefined,
+        serviceAddress: address.street ? { street: address.street, city: address.city, state: address.state, zip: address.zip, lat: address.lat, lng: address.lng } : undefined,
         basePrice: price, totalPrice: price,
       });
       onSuccess();
@@ -582,12 +580,19 @@ function QuickJobForm({ onSuccess }: { onSuccess: () => void }) {
       {step === 3 && (
         <div className="space-y-4">
           <h3 className="font-display text-base font-semibold text-white">Service Address</h3>
-          <input value={street} onChange={(e) => setStreet(e.target.value)} className={inputClass} placeholder="Street address" />
-          <div className="grid grid-cols-3 gap-2">
-            <input value={city} onChange={(e) => setCity(e.target.value)} className={inputClass} placeholder="City" />
-            <input value={addrState} onChange={(e) => setAddrState(e.target.value)} className={inputClass} placeholder="State" />
-            <input value={zip} onChange={(e) => setZip(e.target.value)} className={inputClass} placeholder="ZIP" />
-          </div>
+          <AddressAutocomplete
+            value={address}
+            onChange={setAddress}
+            label="Address"
+            placeholder="Start typing an address..."
+          />
+          {address.street && (
+            <div className="rounded-lg bg-dark-elevated p-3 text-xs text-muted space-y-1">
+              <p className="text-white font-medium">{address.street}</p>
+              <p>{address.city}, {address.state} {address.zip}</p>
+              {address.lat && <p className="text-[10px]">GPS: {address.lat.toFixed(4)}, {address.lng?.toFixed(4)}</p>}
+            </div>
+          )}
           <div className="flex gap-2">
             <button onClick={() => setStep(2)} className="flex-1 rounded-lg bg-dark-elevated py-3 text-sm text-muted hover:text-white">Back</button>
             <button onClick={() => setStep(4)} className="flex-[2] rounded-lg bg-[#2ECC71] py-3 text-sm font-semibold text-white hover:bg-[#1FA855] active:scale-[0.98] transition-all">Next: Review</button>
@@ -605,7 +610,7 @@ function QuickJobForm({ onSuccess }: { onSuccess: () => void }) {
             <div className="flex justify-between"><span className="text-muted">Size</span><span className="text-white">{assetSubtype}</span></div>
             <div className="flex justify-between"><span className="text-muted">Date</span><span className="text-white">{scheduledDate}</span></div>
             <div className="flex justify-between"><span className="text-muted">Window</span><span className="text-white capitalize">{timeWindow === "fullday" ? "All Day" : timeWindow === "morning" ? "AM (8-12)" : "PM (12-5)"}</span></div>
-            {street && <div className="flex justify-between"><span className="text-muted">Address</span><span className="text-white truncate ml-4">{street}, {city}</span></div>}
+            {address.street && <div className="flex justify-between"><span className="text-muted">Address</span><span className="text-white truncate ml-4">{address.street}, {address.city}</span></div>}
           </div>
           {priceQuote && (
             <div className="rounded-lg border border-brand/20 bg-brand/5 p-4">
