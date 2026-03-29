@@ -137,7 +137,7 @@ export default function BookingPage() {
     api.post<PriceQuote>("/pricing/calculate", {
       serviceType, assetSubtype, jobType,
       customerLat: address.lat, customerLng: address.lng,
-      yardLat: 42.03, yardLng: -71.02,
+      // yardLat/yardLng omitted — API auto-fetches from primary yard
       rentalDays,
     }).then((q) => {
       setQuote(q);
@@ -152,7 +152,7 @@ export default function BookingPage() {
     api.post<PriceQuote>("/pricing/calculate", {
       serviceType, assetSubtype, jobType,
       customerLat: address.lat, customerLng: address.lng,
-      yardLat: 42.03, yardLng: -71.02,
+      // yardLat/yardLng omitted — API auto-fetches from primary yard
       rentalDays,
     }).then(setQuote).catch(() => {});
   }, [rentalDays]);

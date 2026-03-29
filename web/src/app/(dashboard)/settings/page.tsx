@@ -16,6 +16,10 @@ import {
   Globe,
   Key,
   Webhook,
+  MapPin,
+  Plus,
+  Trash2,
+  Star,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import SlideOver from "@/components/slide-over";
@@ -48,6 +52,7 @@ interface TeamMember {
 
 const TABS = [
   { key: "company", label: "Company Profile", icon: Building },
+  { key: "locations", label: "Locations", icon: MapPin },
   { key: "team", label: "Team Members", icon: Users },
   { key: "billing", label: "Billing", icon: CreditCard },
   { key: "integrations", label: "Integrations", icon: Plug },
@@ -108,6 +113,7 @@ export default function SettingsPage() {
       </div>
 
       {tab === "company" && <CompanyTab profile={profile} />}
+      {tab === "locations" && <LocationsTab />}
       {tab === "team" && <TeamTab />}
       {tab === "billing" && <BillingTab profile={profile} />}
       {tab === "integrations" && <IntegrationsTab profile={profile} />}
@@ -802,5 +808,163 @@ function IntegrationsTab({ profile }: { profile: Profile | null }) {
         </div>
       </div>
     </div>
+  );
+}
+
+/* ============================================================
+   Locations (Yards)
+   ============================================================ */
+
+interface YardData {
+  id: string;
+  name: string;
+  address: Record<string, string> | null;
+  lat: number | null;
+  lng: number | null;
+  is_primary: boolean;
+  is_active: boolean;
+}
+
+function LocationsTab() {
+  const [yards, setYards] = useState<YardData[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [addOpen, setAddOpen] = useState(false);
+
+  const fetchYards = useCallback(async () => {
+    try {
+      const data = await api.get<YardData[]>("/yards");
+      setYards(data);
+    } catch { /* */ }
+    finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { fetchYards(); }, [fetchYards]);
+
+  const handleDelete = async (id: string) => {
+    if (!confirm("Remove this yard?")) return;
+    try {
+      await api.delete(`/yards/${id}`);
+      fetchYards();
+    } catch { /* */ }
+  };
+
+  const handleSetPrimary = async (id: string) => {
+    try {
+      await api.patch(`/yards/${id}/primary`, {});
+      fetchYards();
+    } catch { /* */ }
+  };
+
+  return (
+    <div className="max-w-2xl space-y-6">
+      <div className="rounded-2xl bg-dark-card border border-[#1E2D45] shadow-lg shadow-black/10 p-6">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h2 className="font-display text-base font-semibold text-white">Yard Locations</h2>
+            <p className="text-xs text-muted mt-1">Your primary yard is used for distance-based pricing calculations.</p>
+          </div>
+          <button onClick={() => setAddOpen(true)} className="flex items-center gap-2 rounded-lg bg-[#2ECC71] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1FA855] transition-colors btn-press">
+            <Plus className="h-4 w-4" /> Add Yard
+          </button>
+        </div>
+
+        {loading ? (
+          <div className="space-y-3">{[1,2].map(i => <div key={i} className="h-16 skeleton rounded-lg" />)}</div>
+        ) : yards.length === 0 ? (
+          <div className="py-8 text-center">
+            <MapPin className="mx-auto h-10 w-10 text-muted/20 mb-2" />
+            <p className="text-sm text-muted">No yards configured</p>
+            <p className="text-xs text-muted/70 mt-1">Add your yard location for accurate pricing</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {yards.map(yard => (
+              <div key={yard.id} className="flex items-center gap-4 rounded-lg bg-dark-elevated border border-[#1E2D45] px-4 py-3">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-medium text-white">{yard.name}</p>
+                    {yard.is_primary && (
+                      <span className="rounded-full bg-brand/10 px-2 py-0.5 text-[10px] font-bold text-brand">Primary</span>
+                    )}
+                  </div>
+                  {yard.address && (
+                    <p className="text-xs text-muted mt-0.5 truncate">
+                      {[yard.address.street, yard.address.city, yard.address.state, yard.address.zip].filter(Boolean).join(", ")}
+                    </p>
+                  )}
+                  {yard.lat && <p className="text-[10px] text-muted/50">GPS: {Number(yard.lat).toFixed(4)}, {Number(yard.lng).toFixed(4)}</p>}
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  {!yard.is_primary && (
+                    <button onClick={() => handleSetPrimary(yard.id)} title="Set as primary" className="rounded p-1.5 text-muted hover:text-brand hover:bg-brand/10 transition-colors">
+                      <Star className="h-4 w-4" />
+                    </button>
+                  )}
+                  <button onClick={() => handleDelete(yard.id)} className="rounded p-1.5 text-muted hover:text-red-400 hover:bg-red-500/10 transition-colors">
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <SlideOver open={addOpen} onClose={() => setAddOpen(false)} title="Add Yard">
+        <AddYardForm onSuccess={() => { setAddOpen(false); fetchYards(); }} />
+      </SlideOver>
+    </div>
+  );
+}
+
+function AddYardForm({ onSuccess }: { onSuccess: () => void }) {
+  const [name, setName] = useState("");
+  const [address, setAddress] = useState<AddressValue>({ street: "", city: "", state: "", zip: "", lat: null, lng: null });
+  const [isPrimary, setIsPrimary] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!name) return;
+    setError(""); setSaving(true);
+    try {
+      await api.post("/yards", {
+        name,
+        address: address.street ? { street: address.street, city: address.city, state: address.state, zip: address.zip } : undefined,
+        lat: address.lat, lng: address.lng,
+        isPrimary,
+      });
+      onSuccess();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to create");
+    } finally { setSaving(false); }
+  };
+
+  const inputClass = "w-full bg-[#111C2E] border border-[#1E2D45] rounded-lg px-4 py-3 text-sm text-white placeholder-muted outline-none focus:border-[#2ECC71] focus:ring-1 focus:ring-[#2ECC71] transition";
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-5">
+      {error && <div className="rounded-lg bg-red-500/10 px-4 py-3 text-sm text-red-400">{error}</div>}
+      <div>
+        <label className="block text-sm font-medium text-[#7A8BA3] mb-1.5">Yard Name</label>
+        <input value={name} onChange={e => setName(e.target.value)} required className={inputClass} placeholder="Main Yard" />
+      </div>
+      <AddressAutocomplete value={address} onChange={setAddress} label="Address" placeholder="Search for yard address..." />
+      {address.street && (
+        <div className="rounded-lg bg-dark-elevated p-3 text-xs text-muted">
+          <p className="text-white font-medium">{address.street}</p>
+          <p>{address.city}, {address.state} {address.zip}</p>
+          {address.lat && <p className="text-[10px] text-muted/50 mt-1">GPS: {address.lat.toFixed(4)}, {address.lng?.toFixed(4)}</p>}
+        </div>
+      )}
+      <div className="flex items-center gap-2">
+        <input type="checkbox" checked={isPrimary} onChange={e => setIsPrimary(e.target.checked)} className="h-4 w-4 rounded accent-brand" />
+        <span className="text-sm text-muted">Set as primary yard (used for pricing)</span>
+      </div>
+      <button type="submit" disabled={saving} className="w-full rounded-lg bg-[#2ECC71] py-3 text-sm font-semibold text-white hover:bg-[#1FA855] disabled:opacity-50 transition-colors">
+        {saving ? "Adding..." : "Add Yard"}
+      </button>
+    </form>
   );
 }
