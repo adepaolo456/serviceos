@@ -8,13 +8,8 @@ import { Moon, Sun, Monitor } from "lucide-react";
 function ThemeToggle() {
   const { theme, cycleTheme } = useTheme();
   return (
-    <button
-      type="button"
-      onClick={() => cycleTheme()}
-      title={theme === "dark" ? "Dark mode" : theme === "light" ? "Light mode" : "System"}
-      className="fixed top-4 right-4 z-[9999] flex h-8 w-8 items-center justify-center rounded-lg bg-dark-secondary border border-[#1E2D45] text-muted hover:text-foreground transition-colors shadow-lg"
-    >
-      {theme === "dark" ? <Moon className="h-3.5 w-3.5" /> : theme === "light" ? <Sun className="h-3.5 w-3.5" /> : <Monitor className="h-3.5 w-3.5" />}
+    <button type="button" onClick={() => cycleTheme()} className="fixed top-4 right-4 z-[9999] p-2 rounded-lg bg-dark-card border border-dark-elevated shadow-lg">
+      {theme === "dark" ? <Moon className="h-4 w-4" /> : theme === "light" ? <Sun className="h-4 w-4" /> : <Monitor className="h-4 w-4" />}
     </button>
   );
 }
