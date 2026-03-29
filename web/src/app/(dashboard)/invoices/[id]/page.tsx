@@ -241,7 +241,7 @@ export default function InvoiceDetailPage({
           {canPay && (
             <button
               onClick={() => setPaymentPanel(true)}
-              className="flex items-center gap-2 rounded-lg bg-brand px-4 py-2 text-sm font-medium text-dark-primary transition-colors hover:bg-brand-light"
+              className="flex items-center gap-2 rounded-lg bg-[#2ECC71] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#1FA855]"
             >
               <CreditCard className="h-4 w-4" />
               Record Payment
@@ -426,7 +426,7 @@ export default function InvoiceDetailPage({
                 Summary
               </h3>
             </div>
-            <div className="space-y-2.5 text-sm">
+            <div className="space-y-2.5 text-sm tabular-nums">
               <div className="flex justify-between text-foreground">
                 <span className="text-muted">Subtotal</span>
                 <span>{fmt(invoice.subtotal)}</span>
@@ -530,7 +530,7 @@ function RecordPaymentForm({
   };
 
   const inputClass =
-    "w-full rounded-lg border border-white/10 bg-dark-card px-4 py-2.5 text-sm text-white placeholder-muted outline-none transition-colors focus:border-brand";
+    "w-full rounded-lg border border-[#1E2D45] bg-[#111C2E] px-4 py-2.5 text-sm text-white placeholder-muted outline-none transition-colors focus:border-brand";
   const labelClass = "block text-sm font-medium text-foreground mb-1.5";
 
   return (
@@ -543,7 +543,7 @@ function RecordPaymentForm({
 
       <div className="rounded-lg bg-dark-elevated p-4 text-center">
         <p className="text-xs text-muted mb-1">Balance Due</p>
-        <p className="text-2xl font-display font-bold text-white">
+        <p className="text-2xl font-display font-bold text-white tabular-nums">
           {fmt(balanceDue)}
         </p>
       </div>
@@ -562,7 +562,7 @@ function RecordPaymentForm({
 
       <div>
         <label className={labelClass}>Payment Method</label>
-        <div className="grid grid-cols-4 gap-1 rounded-lg bg-dark-card p-1">
+        <div className="grid grid-cols-4 gap-1 rounded-lg bg-[#111C2E] border border-[#1E2D45] p-1">
           {(["card", "ach", "cash", "check"] as const).map((m) => (
             <button
               key={m}
@@ -570,7 +570,7 @@ function RecordPaymentForm({
               onClick={() => setMethod(m)}
               className={`rounded-md py-2 text-sm font-medium capitalize transition-colors ${
                 method === m
-                  ? "bg-brand text-dark-primary"
+                  ? "bg-[#2ECC71] text-white"
                   : "text-muted hover:text-foreground"
               }`}
             >
@@ -593,7 +593,7 @@ function RecordPaymentForm({
       <button
         type="submit"
         disabled={saving}
-        className="w-full rounded-lg bg-brand px-4 py-2.5 text-sm font-semibold text-dark-primary transition-colors hover:bg-brand-light disabled:opacity-50"
+        className="w-full rounded-lg bg-[#2ECC71] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1FA855] disabled:opacity-50"
       >
         {saving ? "Recording..." : `Record ${fmt(Number(amount))}`}
       </button>
