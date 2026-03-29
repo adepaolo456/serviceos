@@ -198,12 +198,27 @@ export class PricingService {
       Math.round(excessMiles * Number(rule.per_mile_charge) * 100) / 100;
 
     let jobFee = 0;
-    if (dto.jobType === 'delivery') jobFee = Number(rule.delivery_fee);
-    else if (dto.jobType === 'pickup') jobFee = Number(rule.pickup_fee);
-    else if (dto.jobType === 'exchange') jobFee = Number(rule.exchange_fee);
+    let exchangeDiscount = 0;
+    if (dto.jobType === 'delivery') {
+      jobFee = Number(rule.delivery_fee);
+    } else if (dto.jobType === 'pickup') {
+      jobFee = Number(rule.pickup_fee);
+    } else if (dto.jobType === 'exchange') {
+      // Exchange = pickup + new delivery, priced same as delivery
+      jobFee = Number(rule.delivery_fee);
+      // exchange_fee repurposed as discount %. Old flat fees (>50) are ignored.
+      const discountPct = Number(rule.exchange_fee) || 0;
+      if (discountPct > 0 && discountPct <= 50) {
+        exchangeDiscount = discountPct;
+      }
+    }
 
     const basePrice = Number(rule.base_price);
-    const subtotal = basePrice + extraDayCharges + distanceSurcharge + jobFee;
+    let subtotal = basePrice + extraDayCharges + distanceSurcharge + jobFee;
+    // Apply exchange discount if applicable
+    if (exchangeDiscount > 0) {
+      subtotal = Math.round(subtotal * (1 - exchangeDiscount / 100) * 100) / 100;
+    }
     const taxRate = Number(rule.tax_rate);
     const tax = Math.round(subtotal * taxRate * 100) / 100;
     const total = Math.round((subtotal + tax) * 100) / 100;
@@ -236,6 +251,8 @@ export class PricingService {
         total,
         requireDeposit,
         depositAmount,
+        exchangeDiscount,
+        isExchange: dto.jobType === 'exchange',
         includedTons: Number(rule.included_tons),
         overagePerTon: Number(rule.overage_per_ton),
       },

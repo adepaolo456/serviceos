@@ -108,7 +108,7 @@ export class CreatePricingRuleDto {
   @Min(0)
   pickupFee?: number;
 
-  @ApiPropertyOptional({ example: 100 })
+  @ApiPropertyOptional({ example: 0, description: 'Exchange discount percentage (0-100). Exchange priced same as delivery minus this discount.' })
   @IsOptional()
   @IsNumber()
   @Min(0)
