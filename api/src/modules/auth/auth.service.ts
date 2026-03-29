@@ -223,6 +223,59 @@ export class AuthService {
     };
   }
 
+  async googleLogin(googleUser: {
+    googleId: string;
+    email: string;
+    firstName: string;
+    lastName: string;
+  }) {
+    // Check if user already exists
+    let user = await this.usersRepository.findOne({
+      where: { email: googleUser.email },
+    });
+
+    let isNew = false;
+
+    if (user) {
+      // Existing user — just generate tokens
+      const tokens = await this.generateTokens(user, user.tenant_id);
+      await this.updateRefreshTokenHash(user.id, tokens.refreshToken);
+      return { ...tokens, isNew: false };
+    }
+
+    // New user — create tenant + user
+    isNew = true;
+    const companyName = `${googleUser.firstName}'s Company`;
+    const slug = companyName
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '') + '-' + Date.now().toString(36);
+
+    const tenant = this.tenantsRepository.create({
+      name: companyName,
+      slug,
+      trial_ends_at: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
+    });
+    const savedTenant = await this.tenantsRepository.save(tenant);
+
+    // Create user with a random password (they'll use Google to login)
+    const randomPass = await bcrypt.hash(Math.random().toString(36), 12);
+    user = this.usersRepository.create({
+      tenant_id: savedTenant.id,
+      email: googleUser.email,
+      password_hash: randomPass,
+      first_name: googleUser.firstName,
+      last_name: googleUser.lastName,
+      role: 'owner',
+    });
+    const savedUser = await this.usersRepository.save(user);
+
+    const tokens = await this.generateTokens(savedUser, savedTenant.id);
+    await this.updateRefreshTokenHash(savedUser.id, tokens.refreshToken);
+
+    return { ...tokens, isNew };
+  }
+
   private async generateTokens(user: User, tenantId: string) {
     const payload = {
       sub: user.id,
