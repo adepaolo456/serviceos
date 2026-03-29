@@ -97,6 +97,7 @@ export default function BookingPage() {
 
   // Step 1: Quote
   const [serviceType, setServiceType] = useState("dumpster_rental");
+  const [jobType, setJobType] = useState<"delivery" | "exchange">("delivery");
   const [assetSubtype, setAssetSubtype] = useState("20yd");
   const [address, setAddress] = useState<AddressValue>({ street: "", city: "", state: "", zip: "", lat: null, lng: null });
   const [rentalDays, setRentalDays] = useState(14);
@@ -134,7 +135,7 @@ export default function BookingPage() {
     if (!address.lat || !address.lng) return;
     setQuoting(true);
     api.post<PriceQuote>("/pricing/calculate", {
-      serviceType, assetSubtype, jobType: "delivery",
+      serviceType, assetSubtype, jobType,
       customerLat: address.lat, customerLng: address.lng,
       yardLat: 42.03, yardLng: -71.02,
       rentalDays,
@@ -143,13 +144,13 @@ export default function BookingPage() {
       if (q.breakdown.includedDays) setRentalDays(q.breakdown.includedDays);
     }).catch(() => setQuote(null))
     .finally(() => setQuoting(false));
-  }, [address.lat, address.lng, serviceType, assetSubtype]);
+  }, [address.lat, address.lng, serviceType, assetSubtype, jobType]);
 
   // Recalc when rental days change
   useEffect(() => {
     if (!address.lat || !quote) return;
     api.post<PriceQuote>("/pricing/calculate", {
-      serviceType, assetSubtype, jobType: "delivery",
+      serviceType, assetSubtype, jobType,
       customerLat: address.lat, customerLng: address.lng,
       yardLat: 42.03, yardLng: -71.02,
       rentalDays,
@@ -275,6 +276,26 @@ export default function BookingPage() {
       {/* ==================== STEP 1: Quote ==================== */}
       {step === 1 && (
         <div className="space-y-5">
+          {/* Job type toggle */}
+          <div>
+            <label className={labelCls}>Type</label>
+            <div className="grid grid-cols-2 gap-2">
+              <button onClick={() => setJobType("delivery")}
+                className={`rounded-lg py-3 text-sm font-medium transition-all active:scale-95 ${jobType === "delivery" ? "bg-blue-500/15 text-blue-400 border border-blue-500/20" : "bg-dark-elevated text-muted hover:text-white border border-transparent"}`}>
+                New Delivery
+              </button>
+              <button onClick={() => setJobType("exchange")}
+                className={`rounded-lg py-3 text-sm font-medium transition-all active:scale-95 ${jobType === "exchange" ? "bg-purple-500/15 text-purple-400 border border-purple-500/20" : "bg-dark-elevated text-muted hover:text-white border border-transparent"}`}>
+                Exchange
+              </button>
+            </div>
+            {jobType === "exchange" && (
+              <p className="mt-2 text-xs text-purple-400 bg-purple-500/5 rounded-lg px-3 py-2 border border-purple-500/10">
+                Exchange = Pickup existing dumpster + Deliver new one. Priced same as delivery.
+              </p>
+            )}
+          </div>
+
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className={labelCls}>Service</label>

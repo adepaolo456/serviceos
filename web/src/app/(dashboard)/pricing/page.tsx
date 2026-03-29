@@ -282,7 +282,7 @@ function RuleCard({ rule, onEdit }: { rule: PricingRule; onEdit: () => void }) {
         <div className="flex items-center gap-2 text-foreground">
           <Truck className="h-3 w-3 text-muted" />
           <span>
-            Delivery {fmt(rule.delivery_fee)} · Pickup {fmt(rule.pickup_fee)}
+            Delivery {fmt(rule.delivery_fee)} · Pickup {fmt(rule.pickup_fee)}{Number(rule.exchange_fee) > 0 ? ` · Exchange −${Number(rule.exchange_fee)}%` : ""}
           </span>
         </div>
       </div>
@@ -825,14 +825,16 @@ function CreateRuleForm({ onSuccess }: { onSuccess: () => void }) {
           />
         </div>
         <div>
-          <label className={labelClass}>Exchange ($)</label>
+          <label className={labelClass}>Exchange Discount (%)</label>
           <input
             type="number"
-            step="0.01"
+            step="1"
+            min="0"
+            max="100"
             value={exchangeFee}
             onChange={(e) => setExchangeFee(e.target.value)}
             className={inputClass}
-            placeholder="100"
+            placeholder="0"
           />
         </div>
       </div>
@@ -1157,14 +1159,16 @@ function EditRuleForm({
           />
         </div>
         <div>
-          <label className={labelClass}>Exchange ($)</label>
+          <label className={labelClass}>Exchange Discount (%)</label>
           <input
             type="number"
-            step="0.01"
+            step="1"
+            min="0"
+            max="100"
             value={exchangeFee}
             onChange={(e) => setExchangeFee(e.target.value)}
             className={inputClass}
-            placeholder="100"
+            placeholder="0"
           />
         </div>
       </div>
