@@ -11,6 +11,7 @@ import {
   Shield,
   ArrowLeftRight,
   ChevronRight,
+  MessageSquare,
 } from "lucide-react";
 import { api } from "@/lib/api";
 
@@ -26,6 +27,7 @@ const nav = [
   { name: "Overview", href: "/admin", icon: LayoutDashboard },
   { name: "Tenants", href: "/admin/tenants", icon: Building2 },
   { name: "Subscriptions", href: "/admin/subscriptions", icon: CreditCard },
+  { name: "Demos", href: "/admin/demos", icon: MessageSquare },
 ];
 
 export default function AdminLayout({

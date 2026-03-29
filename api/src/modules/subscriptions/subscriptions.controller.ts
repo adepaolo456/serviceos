@@ -25,6 +25,16 @@ export class SubscriptionsController {
     return this.subscriptionsService.getSubscription(user.tenantId);
   }
 
+  @Post('select-plan')
+  @ApiBearerAuth()
+  async selectPlan(
+    @Req() req: Request,
+    @Body() body: { plan: string },
+  ) {
+    const user = req.user as { tenantId: string };
+    return this.subscriptionsService.selectTrialPlan(user.tenantId, body.plan);
+  }
+
   @Post('create-checkout-session')
   @ApiBearerAuth()
   async createCheckout(

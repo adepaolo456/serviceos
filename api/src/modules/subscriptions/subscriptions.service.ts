@@ -25,6 +25,21 @@ export class SubscriptionsService {
     );
   }
 
+  async selectTrialPlan(tenantId: string, plan: string) {
+    if (!PLANS[plan]) throw new BadRequestException('Invalid plan');
+    const trialEnds = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
+    await this.tenantsRepository.update(tenantId, {
+      subscription_tier: plan,
+      subscription_status: 'trialing',
+      trial_ends_at: trialEnds,
+    });
+    return {
+      tier: plan,
+      status: 'trialing',
+      trialEndsAt: trialEnds.toISOString(),
+    };
+  }
+
   async getSubscription(tenantId: string) {
     const tenant = await this.tenantsRepository.findOne({
       where: { id: tenantId },
