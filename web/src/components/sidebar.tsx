@@ -68,7 +68,7 @@ export default function Sidebar() {
 
   const sidebarContent = (
     <>
-      {/* Logo + theme toggle */}
+      {/* Logo */}
       <div className="flex h-16 items-center gap-3 px-6 border-b border-[#1E2D45] shrink-0">
         <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand shadow-md shadow-brand/20 shrink-0">
           <span className="font-display text-sm font-bold text-dark-primary">S</span>
@@ -76,14 +76,6 @@ export default function Sidebar() {
         <span className="font-display text-lg font-bold tracking-tight text-white">
           ServiceOS
         </span>
-        <button
-          type="button"
-          onClick={(e) => { e.stopPropagation(); e.preventDefault(); cycleTheme(); }}
-          title={theme === "dark" ? "Dark mode" : theme === "light" ? "Light mode" : "System"}
-          className="ml-auto p-1 rounded text-muted hover:text-foreground transition-colors"
-        >
-          {theme === "dark" ? <Moon className="h-4 w-4" /> : theme === "light" ? <Sun className="h-4 w-4" /> : <Monitor className="h-4 w-4" />}
-        </button>
       </div>
 
       {/* Nav */}
@@ -182,6 +174,27 @@ export default function Sidebar() {
       <aside className="fixed inset-y-0 left-0 z-30 hidden md:flex w-64 flex-col bg-dark-secondary border-r border-[#1E2D45]">
         {sidebarContent}
       </aside>
+
+      {/* Theme toggle — fixed position, completely outside sidebar DOM */}
+      <div
+        className="fixed top-3 right-3 z-[60]"
+        onClick={(e) => e.stopPropagation()}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            e.nativeEvent.stopImmediatePropagation();
+            cycleTheme();
+          }}
+          title={theme === "dark" ? "Dark mode" : theme === "light" ? "Light mode" : "System"}
+          className="flex h-8 w-8 items-center justify-center rounded-lg bg-dark-secondary border border-[#1E2D45] text-muted hover:text-foreground transition-colors shadow-lg"
+        >
+          {theme === "dark" ? <Moon className="h-3.5 w-3.5" /> : theme === "light" ? <Sun className="h-3.5 w-3.5" /> : <Monitor className="h-3.5 w-3.5" />}
+        </button>
+      </div>
     </>
   );
 }

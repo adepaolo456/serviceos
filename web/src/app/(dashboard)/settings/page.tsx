@@ -35,6 +35,9 @@ interface Profile {
     id: string;
     name: string;
     slug: string;
+    businessType: string;
+    address: Record<string, string> | null;
+    serviceRadius: number | null;
     subscriptionTier: string;
     subscriptionStatus: string;
   };
@@ -126,10 +129,14 @@ export default function SettingsPage() {
    ============================================================ */
 
 function CompanyTab({ profile }: { profile: Profile | null }) {
+  const addr = profile?.tenant.address;
   const [name, setName] = useState(profile?.tenant.name ?? "");
-  const [businessType, setBusinessType] = useState("");
-  const [address, setAddress] = useState<AddressValue>({ street: "", city: "", state: "", zip: "", lat: null, lng: null });
-  const [radius, setRadius] = useState("50");
+  const [businessType, setBusinessType] = useState(profile?.tenant.businessType ?? "");
+  const [address, setAddress] = useState<AddressValue>({
+    street: addr?.street || "", city: addr?.city || "", state: addr?.state || "",
+    zip: addr?.zip || "", lat: null, lng: null,
+  });
+  const [radius, setRadius] = useState(String(profile?.tenant.serviceRadius || 50));
   const [saving, setSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"idle" | "success" | "error">("idle");
 
