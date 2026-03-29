@@ -17,8 +17,12 @@ import {
   X,
   BarChart3,
   ShieldCheck,
+  Sun,
+  Moon,
+  Monitor,
 } from "lucide-react";
 import { api } from "@/lib/api";
+import { useTheme } from "@/components/theme-provider";
 
 interface UserProfile {
   firstName: string;
@@ -43,6 +47,7 @@ export default function Sidebar() {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [user, setUser] = useState<UserProfile | null>(null);
+  const { theme, cycleTheme } = useTheme();
 
   useEffect(() => {
     api
@@ -122,6 +127,14 @@ export default function Sidebar() {
             Switch to Admin
           </Link>
         )}
+        <button
+          onClick={cycleTheme}
+          className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-muted transition-all hover:bg-dark-elevated btn-press"
+          title={`Theme: ${theme}`}
+        >
+          {theme === "dark" ? <Moon className="h-[18px] w-[18px]" /> : theme === "light" ? <Sun className="h-[18px] w-[18px]" /> : <Monitor className="h-[18px] w-[18px]" />}
+          {theme === "dark" ? "Dark" : theme === "light" ? "Light" : "System"}
+        </button>
         <button
           onClick={handleLogout}
           className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-muted transition-all hover:bg-red-500/10 hover:text-red-400 btn-press"

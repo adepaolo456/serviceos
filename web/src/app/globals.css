@@ -5,28 +5,64 @@
   --color-brand-light: #5DECA0;
   --color-brand-dark: #1FA855;
 
-  --color-dark-primary: #0B1220;
-  --color-dark-secondary: #111C2E;
-  --color-dark-card: #162033;
-  --color-dark-card-hover: #1A2740;
-  --color-dark-elevated: #1E2D45;
+  --color-dark-primary: var(--t-bg-primary);
+  --color-dark-secondary: var(--t-bg-secondary);
+  --color-dark-card: var(--t-bg-card);
+  --color-dark-card-hover: var(--t-bg-card-hover);
+  --color-dark-elevated: var(--t-bg-elevated);
 
-  --color-background: var(--dark-primary);
-  --color-foreground: #E8ECF1;
-  --color-muted: #7A8BA3;
+  --color-background: var(--t-bg-primary);
+  --color-foreground: var(--t-text-primary);
+  --color-muted: var(--t-text-muted);
 
   --font-display: var(--font-space-grotesk);
   --font-body: var(--font-dm-sans);
 }
+
+/* ===== Theme Variables ===== */
+
+:root, .dark {
+  --t-bg-primary: #0B1220;
+  --t-bg-secondary: #111C2E;
+  --t-bg-card: #162033;
+  --t-bg-card-hover: #1A2740;
+  --t-bg-elevated: #1E2D45;
+  --t-bg-input: #111C2E;
+  --t-border: #1E2D45;
+  --t-text-primary: #E8ECF1;
+  --t-text-muted: #7A8BA3;
+  --t-shadow: rgba(0, 0, 0, 0.3);
+  color-scheme: dark;
+}
+
+.light {
+  --t-bg-primary: #F8FAFC;
+  --t-bg-secondary: #FFFFFF;
+  --t-bg-card: #FFFFFF;
+  --t-bg-card-hover: #F1F5F9;
+  --t-bg-elevated: #F1F5F9;
+  --t-bg-input: #F1F5F9;
+  --t-border: #E2E8F0;
+  --t-text-primary: #0F172A;
+  --t-text-muted: #64748B;
+  --t-shadow: rgba(0, 0, 0, 0.08);
+  color-scheme: light;
+}
+
+/* ===== Base Styles ===== */
 
 * {
   scrollbar-width: thin;
   scrollbar-color: rgba(46, 204, 113, 0.2) transparent;
 }
 
+html {
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
 body {
-  background: #0B1220;
-  color: #E8ECF1;
+  background: var(--t-bg-primary);
+  color: var(--t-text-primary);
   font-family: var(--font-body), system-ui, sans-serif;
 }
 
@@ -42,7 +78,49 @@ h1, h2, h3, h4, h5, h6 {
   font-variant-numeric: tabular-nums;
 }
 
-/* Skeleton shimmer */
+/* ===== Light mode overrides for hardcoded dark colors ===== */
+
+.light [class*="bg-[#0B1220]"] { background-color: #F8FAFC !important; }
+.light [class*="bg-[#111C2E]"] { background-color: #F1F5F9 !important; }
+.light [class*="bg-[#162033]"] { background-color: #FFFFFF !important; }
+.light [class*="bg-[#1A2740]"] { background-color: #F1F5F9 !important; }
+.light [class*="bg-[#1E2D45]"] { background-color: #E2E8F0 !important; }
+.light [class*="border-[#1E2D45]"] { border-color: #E2E8F0 !important; }
+.light [class*="text-[#7A8BA3]"] { color: #64748B !important; }
+.light [class*="text-[#E8ECF1]"] { color: #0F172A !important; }
+.light [class*="divide-[#1E2D45]"] > * + * { border-color: #E2E8F0 !important; }
+
+/* Light mode: fix white text on white bg */
+.light .text-white { color: #0F172A; }
+.light .text-foreground { color: #334155; }
+.light .text-muted { color: #64748B; }
+.light .bg-dark-primary { background-color: #F8FAFC; }
+.light .bg-dark-secondary { background-color: #FFFFFF; }
+.light .bg-dark-card { background-color: #FFFFFF; }
+.light .bg-dark-card-hover { background-color: #F1F5F9; }
+.light .bg-dark-elevated { background-color: #F1F5F9; }
+.light .border-white\/5, .light .border-white\/10 { border-color: #E2E8F0; }
+.light .hover\:bg-dark-card-hover:hover { background-color: #F1F5F9 !important; }
+.light .hover\:bg-\[\#1A2740\]\/50:hover { background-color: #F1F5F9 !important; }
+.light .hover\:text-white:hover { color: #0F172A !important; }
+
+/* Light mode shadows */
+.light .shadow-lg { box-shadow: 0 4px 15px rgba(0, 0, 0, 0.06) !important; }
+.light .shadow-black\/10 { --tw-shadow-color: rgba(0, 0, 0, 0.04) !important; }
+.light .shadow-brand\/20 { --tw-shadow-color: rgba(46, 204, 113, 0.1) !important; }
+
+/* Light mode skeleton */
+.light .skeleton {
+  background: linear-gradient(90deg, #E2E8F0 25%, #F1F5F9 50%, #E2E8F0 75%) !important;
+  background-size: 200% 100%;
+}
+
+/* Light mode: cards get subtle border */
+.light .rounded-2xl, .light .rounded-xl {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+/* ===== Skeleton shimmer ===== */
 @keyframes shimmer {
   0% { background-position: -200% 0; }
   100% { background-position: 200% 0; }
@@ -55,7 +133,7 @@ h1, h2, h3, h4, h5, h6 {
   border-radius: 0.5rem;
 }
 
-/* Slide-over animation */
+/* ===== Animations ===== */
 @keyframes slide-in-right {
   from { transform: translateX(100%); }
   to { transform: translateX(0); }
@@ -74,7 +152,7 @@ h1, h2, h3, h4, h5, h6 {
   animation: fade-in 0.2s ease-out;
 }
 
-/* Micro-interactions */
+/* ===== Micro-interactions ===== */
 .btn-press {
   transition: transform 0.1s ease, box-shadow 0.15s ease;
 }
@@ -89,16 +167,16 @@ h1, h2, h3, h4, h5, h6 {
 
 .card-hover:hover {
   transform: translateY(-1px);
-  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 8px 25px var(--t-shadow);
 }
 
-/* Mobile table scroll */
+/* ===== Mobile table scroll ===== */
 .table-scroll {
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
 }
 
-/* Hide Google Maps error dialog */
+/* ===== Google Maps ===== */
 .gm-err-container,
 .gm-err-title,
 .gm-err-message,
@@ -109,54 +187,40 @@ div[style*="background-color: white"][style*="position: absolute"][style*="z-ind
   display: none !important;
 }
 
-/* Google Places Autocomplete dark theme */
+/* Google Places Autocomplete — theme-aware */
 .pac-container {
-  background-color: #111C2E !important;
-  border: 1px solid #1E2D45 !important;
+  background-color: var(--t-bg-secondary) !important;
+  border: 1px solid var(--t-border) !important;
   border-radius: 0.75rem !important;
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4) !important;
+  box-shadow: 0 20px 40px var(--t-shadow) !important;
   margin-top: 4px !important;
   font-family: var(--font-body), system-ui, sans-serif !important;
   z-index: 9999 !important;
 }
 
-.pac-container::after {
-  display: none !important;
-}
+.pac-container::after { display: none !important; }
 
 .pac-item {
-  background-color: #111C2E !important;
-  border-top: 1px solid #1E2D45 !important;
+  background-color: var(--t-bg-secondary) !important;
+  border-top: 1px solid var(--t-border) !important;
   padding: 10px 14px !important;
   cursor: pointer !important;
   line-height: 1.4 !important;
 }
 
-.pac-item:first-child {
-  border-top: none !important;
-}
-
-.pac-item:hover,
-.pac-item-selected {
-  background-color: #1A2740 !important;
-}
+.pac-item:first-child { border-top: none !important; }
+.pac-item:hover, .pac-item-selected { background-color: var(--t-bg-card-hover) !important; }
 
 .pac-item-query {
-  color: #E8ECF1 !important;
+  color: var(--t-text-primary) !important;
   font-size: 14px !important;
   font-weight: 500 !important;
 }
 
 .pac-item span:not(.pac-item-query) {
-  color: #7A8BA3 !important;
+  color: var(--t-text-muted) !important;
   font-size: 12px !important;
 }
 
-.pac-icon, .pac-icon-marker {
-  display: none !important;
-}
-
-.pac-matched {
-  color: #2ECC71 !important;
-  font-weight: 600 !important;
-}
+.pac-icon, .pac-icon-marker { display: none !important; }
+.pac-matched { color: #2ECC71 !important; font-weight: 600 !important; }
