@@ -39,6 +39,7 @@ const navigation = [
   { name: "Dispatch", href: "/dispatch", icon: Truck },
   { name: "Invoices", href: "/invoices", icon: FileText },
   { name: "Pricing", href: "/pricing", icon: DollarSign },
+  { name: "Team", href: "/team", icon: Users },
   { name: "Analytics", href: "/analytics", icon: BarChart3 },
   { name: "Settings", href: "/settings", icon: Settings },
 ];

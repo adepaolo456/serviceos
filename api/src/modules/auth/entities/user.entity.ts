@@ -42,6 +42,27 @@ export class User {
   @Column({ name: 'is_active', default: true })
   is_active!: boolean;
 
+  @Column({ name: 'hire_date', type: 'date', nullable: true })
+  hire_date!: string;
+
+  @Column({ name: 'pay_rate', type: 'decimal', precision: 8, scale: 2, nullable: true })
+  pay_rate!: number;
+
+  @Column({ name: 'pay_type', nullable: true, default: 'hourly' })
+  pay_type!: string;
+
+  @Column({ name: 'overtime_rate', type: 'decimal', precision: 8, scale: 2, nullable: true })
+  overtime_rate!: number;
+
+  @Column({ name: 'vehicle_info', type: 'jsonb', nullable: true })
+  vehicle_info!: Record<string, string> | null;
+
+  @Column({ name: 'emergency_contact', type: 'jsonb', nullable: true })
+  emergency_contact!: Record<string, string> | null;
+
+  @Column({ name: 'employee_status', nullable: true, default: 'active' })
+  employee_status!: string;
+
   @Column({ name: 'last_login_at', type: 'timestamptz', nullable: true })
   last_login_at!: Date;
 
