@@ -12,3 +12,5 @@ dist/
 
 # OS files
 .DS_Store
+.vercel
+.env*.local
