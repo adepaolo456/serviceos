@@ -6,7 +6,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { JwtStrategy } from './jwt.strategy';
-import { GoogleStrategy } from './google.strategy';
+// GoogleStrategy removed — using manual OAuth flow for serverless compatibility
 import { User } from './entities/user.entity';
 import { Tenant } from '../tenants/entities/tenant.entity';
 
@@ -24,7 +24,7 @@ import { Tenant } from '../tenants/entities/tenant.entity';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, GoogleStrategy],
+  providers: [AuthService, JwtStrategy],
   exports: [AuthService],
 })
 export class AuthModule {}
