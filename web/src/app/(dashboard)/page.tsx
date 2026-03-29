@@ -129,12 +129,14 @@ export default function DashboardPage() {
   const [jobPanelOpen, setJobPanelOpen] = useState(false);
   const [scheduleDate, setScheduleDate] = useState(today);
 
-  // "B" keyboard shortcut to open booking
+  // Keyboard shortcuts: B=booking, arrows=date nav, T=today
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
-      if (e.key === "b" && !e.metaKey && !e.ctrlKey && e.target === document.body) {
-        router.push("/book");
-      }
+      if (e.target !== document.body || e.metaKey || e.ctrlKey) return;
+      if (e.key === "b") router.push("/book");
+      else if (e.key === "ArrowLeft") setScheduleDate(d => shiftDate(d, -1));
+      else if (e.key === "ArrowRight") setScheduleDate(d => shiftDate(d, 1));
+      else if (e.key === "t") setScheduleDate(today());
     };
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
@@ -286,29 +288,35 @@ export default function DashboardPage() {
         {/* Left: Today's Schedule */}
         <div className="lg:col-span-3 space-y-5">
           <div className="rounded-2xl border border-[#1E2D45] bg-dark-card overflow-hidden">
-            <div className="flex items-center justify-between px-5 py-3 border-b border-[#1E2D45]">
-              <div className="flex items-center gap-2">
-                <button onClick={() => setScheduleDate(d => shiftDate(d, -1))} className="rounded p-1 text-muted hover:text-white transition-colors active:scale-90">
-                  <ChevronLeft className="h-4 w-4" />
+            <div className="flex items-center justify-between px-4 py-2.5 border-b border-[#1E2D45]">
+              <div className="flex items-center gap-0">
+                <button onClick={() => setScheduleDate(d => shiftDate(d, -1))} className="flex items-center justify-center w-9 h-9 rounded-lg text-muted hover:text-white hover:bg-dark-elevated transition-colors active:scale-90">
+                  <ChevronLeft className="h-5 w-5" />
                 </button>
-                <button onClick={() => setScheduleDate(today())} className="flex items-center gap-1.5">
-                  <Clock className="h-4 w-4 text-brand" />
-                  <h2 className="font-display text-sm font-semibold text-white">{fmtShortDate(scheduleDate)}</h2>
+                {scheduleDate !== today() && (
+                  <button onClick={() => setScheduleDate(today())} className="rounded-md px-2 py-1 text-[10px] font-semibold text-brand bg-brand/10 hover:bg-brand/20 transition-colors mx-1">
+                    Today
+                  </button>
+                )}
+                <div className="min-w-[140px] text-center flex items-center justify-center gap-1.5">
+                  <Clock className="h-3.5 w-3.5 text-brand shrink-0" />
+                  <h2 className="font-display text-sm font-semibold text-white whitespace-nowrap">{fmtShortDate(scheduleDate)}</h2>
+                  <span className="rounded-full bg-brand/10 px-1.5 py-0.5 text-[10px] font-bold text-brand tabular-nums ml-0.5">{todayJobs.length}</span>
+                </div>
+                <button onClick={() => setScheduleDate(d => shiftDate(d, 1))} className="flex items-center justify-center w-9 h-9 rounded-lg text-muted hover:text-white hover:bg-dark-elevated transition-colors active:scale-90">
+                  <ChevronRight className="h-5 w-5" />
                 </button>
-                <button onClick={() => setScheduleDate(d => shiftDate(d, 1))} className="rounded p-1 text-muted hover:text-white transition-colors active:scale-90">
-                  <ChevronRight className="h-4 w-4" />
-                </button>
-                <span className="rounded-full bg-brand/10 px-2 py-0.5 text-xs font-medium text-brand">{todayJobs.length}</span>
               </div>
               <Link href="/dispatch" className="text-xs text-brand hover:text-brand-light transition-colors">
                 Dispatch <ArrowRight className="inline h-3 w-3" />
               </Link>
             </div>
+            <div key={scheduleDate} className="animate-fade-in">
             {todayJobs.length === 0 ? (
               <div className="flex flex-col items-center py-12">
                 <Briefcase className="h-10 w-10 text-muted/20 mb-2" />
                 <p className="text-sm text-muted">No jobs scheduled for {fmtShortDate(scheduleDate).toLowerCase()}</p>
-                <button onClick={() => setJobPanelOpen(true)} className="mt-3 text-xs text-brand hover:text-brand-light">+ Create a job</button>
+                <Link href="/book" className="mt-3 text-xs text-brand hover:text-brand-light">+ Create a job</Link>
               </div>
             ) : (
               <div className="divide-y divide-[#1E2D45]">
@@ -341,6 +349,7 @@ export default function DashboardPage() {
                 })}
               </div>
             )}
+            </div>
           </div>
         </div>
 
