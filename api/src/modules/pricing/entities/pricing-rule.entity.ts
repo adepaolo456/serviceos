@@ -1,0 +1,158 @@
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  UpdateDateColumn,
+  ManyToOne,
+  JoinColumn,
+} from 'typeorm';
+import { Tenant } from '../../tenants/entities/tenant.entity';
+
+@Entity('pricing_rules')
+export class PricingRule {
+  @PrimaryGeneratedColumn('uuid')
+  id!: string;
+
+  @Column({ name: 'tenant_id' })
+  tenant_id!: string;
+
+  @ManyToOne(() => Tenant)
+  @JoinColumn({ name: 'tenant_id' })
+  tenant!: Tenant;
+
+  @Column()
+  name!: string;
+
+  @Column({ name: 'service_type' })
+  service_type!: string;
+
+  @Column({ name: 'asset_subtype', nullable: true })
+  asset_subtype!: string;
+
+  @Column({ name: 'customer_type', nullable: true })
+  customer_type!: string;
+
+  @Column({
+    name: 'base_price',
+    type: 'decimal',
+    precision: 10,
+    scale: 2,
+    default: 0,
+  })
+  base_price!: number;
+
+  @Column({ name: 'rental_period_days', type: 'int', default: 7 })
+  rental_period_days!: number;
+
+  @Column({
+    name: 'extra_day_rate',
+    type: 'decimal',
+    precision: 10,
+    scale: 2,
+    default: 0,
+  })
+  extra_day_rate!: number;
+
+  @Column({
+    name: 'included_miles',
+    type: 'decimal',
+    precision: 6,
+    scale: 2,
+    default: 0,
+  })
+  included_miles!: number;
+
+  @Column({
+    name: 'per_mile_charge',
+    type: 'decimal',
+    precision: 10,
+    scale: 2,
+    default: 0,
+  })
+  per_mile_charge!: number;
+
+  @Column({
+    name: 'max_service_miles',
+    type: 'decimal',
+    precision: 6,
+    scale: 2,
+    nullable: true,
+  })
+  max_service_miles!: number;
+
+  @Column({
+    name: 'included_tons',
+    type: 'decimal',
+    precision: 6,
+    scale: 2,
+    default: 0,
+  })
+  included_tons!: number;
+
+  @Column({
+    name: 'overage_per_ton',
+    type: 'decimal',
+    precision: 10,
+    scale: 2,
+    default: 0,
+  })
+  overage_per_ton!: number;
+
+  @Column({
+    name: 'delivery_fee',
+    type: 'decimal',
+    precision: 10,
+    scale: 2,
+    default: 0,
+  })
+  delivery_fee!: number;
+
+  @Column({
+    name: 'pickup_fee',
+    type: 'decimal',
+    precision: 10,
+    scale: 2,
+    default: 0,
+  })
+  pickup_fee!: number;
+
+  @Column({
+    name: 'exchange_fee',
+    type: 'decimal',
+    precision: 10,
+    scale: 2,
+    default: 0,
+  })
+  exchange_fee!: number;
+
+  @Column({ name: 'require_deposit', default: false })
+  require_deposit!: boolean;
+
+  @Column({
+    name: 'deposit_amount',
+    type: 'decimal',
+    precision: 10,
+    scale: 2,
+    default: 0,
+  })
+  deposit_amount!: number;
+
+  @Column({
+    name: 'tax_rate',
+    type: 'decimal',
+    precision: 5,
+    scale: 4,
+    default: 0,
+  })
+  tax_rate!: number;
+
+  @Column({ name: 'is_active', default: true })
+  is_active!: boolean;
+
+  @CreateDateColumn({ name: 'created_at' })
+  created_at!: Date;
+
+  @UpdateDateColumn({ name: 'updated_at' })
+  updated_at!: Date;
+}
