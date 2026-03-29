@@ -10,9 +10,11 @@ import {
   Wrench,
   Truck,
   CheckCircle2,
+  Pencil,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import SlideOver from "@/components/slide-over";
+import { useToast } from "@/components/toast";
 
 interface Asset {
   id: string;
@@ -73,7 +75,8 @@ export default function AssetsPage() {
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [panelOpen, setPanelOpen] = useState(false);
-  const [detailAsset, setDetailAsset] = useState<Asset | null>(null);
+  const [editAsset, setEditAsset] = useState<Asset | null>(null);
+  const { toast } = useToast();
 
   const fetchAssets = useCallback(async () => {
     setLoading(true);
@@ -99,6 +102,14 @@ export default function AssetsPage() {
   useEffect(() => {
     setPage(1);
   }, [statusFilter]);
+
+  const quickStatus = async (id: string, status: string) => {
+    try {
+      await api.patch(`/assets/${id}`, { status });
+      toast("success", `Asset marked as ${status}`);
+      fetchAssets();
+    } catch { toast("error", "Failed to update status"); }
+  };
 
   return (
     <div>
@@ -166,9 +177,10 @@ export default function AssetsPage() {
             return (
               <button
                 key={asset.id}
-                onClick={() => setDetailAsset(asset)}
-                className="group rounded-2xl bg-dark-card p-5 text-left transition-all hover:bg-dark-card-hover hover:ring-1 hover:ring-white/5 border border-[#1E2D45] shadow-lg shadow-black/10 card-hover btn-press"
+                onClick={() => setEditAsset(asset)}
+                className="group relative rounded-2xl bg-dark-card p-5 text-left transition-all hover:bg-dark-card-hover hover:ring-1 hover:ring-white/5 border border-[#1E2D45] shadow-lg shadow-black/10 card-hover btn-press"
               >
+                <Pencil className="absolute top-3 right-3 h-3.5 w-3.5 text-muted opacity-0 group-hover:opacity-100 transition-opacity" />
                 <div className="flex items-start justify-between mb-3">
                   <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-dark-elevated">
                     <Box className="h-5 w-5 text-muted" />
@@ -207,6 +219,15 @@ export default function AssetsPage() {
                         {Number(asset.daily_rate).toFixed(0)}/day
                       </span>
                     </div>
+                  )}
+                </div>
+
+                <div className="mt-3 flex gap-1" onClick={(e) => e.stopPropagation()}>
+                  {asset.status !== "available" && (
+                    <button onClick={() => quickStatus(asset.id, "available")} className="rounded px-2 py-1 text-[10px] font-medium bg-brand/10 text-brand hover:bg-brand/20 transition-colors">Available</button>
+                  )}
+                  {asset.status !== "maintenance" && (
+                    <button onClick={() => quickStatus(asset.id, "maintenance")} className="rounded px-2 py-1 text-[10px] font-medium bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors">Maintenance</button>
                   )}
                 </div>
               </button>
@@ -254,92 +275,178 @@ export default function AssetsPage() {
         />
       </SlideOver>
 
-      {/* Detail slide-over */}
+      {/* Edit slide-over */}
       <SlideOver
-        open={!!detailAsset}
-        onClose={() => setDetailAsset(null)}
-        title="Asset Details"
+        open={!!editAsset}
+        onClose={() => setEditAsset(null)}
+        title="Edit Asset"
       >
-        {detailAsset && <AssetDetail asset={detailAsset} />}
+        {editAsset && <EditAssetForm asset={editAsset} onSuccess={() => { setEditAsset(null); fetchAssets(); toast("success", "Asset updated"); }} />}
       </SlideOver>
     </div>
   );
 }
 
-/* ---------- Detail panel ---------- */
+/* ---------- Edit form ---------- */
 
-function AssetDetail({ asset }: { asset: Asset }) {
-  const badge = STATUS_BADGE[asset.status] || STATUS_BADGE.available;
-  const Icon = badge.icon;
+function EditAssetForm({ asset, onSuccess }: { asset: Asset; onSuccess: () => void }) {
+  const [identifier, setIdentifier] = useState(asset.identifier);
+  const [assetType, setAssetType] = useState(asset.asset_type);
+  const [subtype, setSubtype] = useState(asset.subtype);
+  const [status, setStatus] = useState(asset.status);
+  const [condition, setCondition] = useState(asset.condition);
+  const [dailyRate, setDailyRate] = useState(String(asset.daily_rate || ""));
+  const [weightCapacity, setWeightCapacity] = useState(String(asset.weight_capacity || ""));
+  const [notes, setNotes] = useState(asset.notes || "");
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setSaving(true);
+    try {
+      await api.patch(`/assets/${asset.id}`, {
+        identifier,
+        assetType,
+        subtype: subtype || undefined,
+        status,
+        condition,
+        dailyRate: dailyRate ? Number(dailyRate) : undefined,
+        weightCapacity: weightCapacity ? Number(weightCapacity) : undefined,
+        notes: notes || undefined,
+      });
+      onSuccess();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const inputClass =
+    "w-full rounded-lg bg-[#111C2E] border border-[#1E2D45] px-4 py-2.5 text-sm text-white placeholder-muted outline-none transition-colors focus:border-brand";
+  const labelClass = "block text-sm font-medium text-[#7A8BA3] mb-1.5";
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-4">
-        <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-dark-elevated">
-          <Box className="h-7 w-7 text-muted" />
-        </div>
-        <div>
-          <h3 className="font-display text-xl font-bold text-white">
-            {asset.identifier}
-          </h3>
-          <p className="text-sm text-muted capitalize">
-            {asset.asset_type}
-            {asset.subtype && ` · ${asset.subtype}`}
-          </p>
-        </div>
-      </div>
-
-      <div className="flex items-center gap-2">
-        <span
-          className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ${badge.className}`}
-        >
-          <Icon className="h-3.5 w-3.5" />
-          {asset.status.replace(/_/g, " ")}
-        </span>
-        {asset.condition && (
-          <span className="rounded-full bg-dark-elevated px-3 py-1 text-xs font-medium text-muted capitalize">
-            {asset.condition}
-          </span>
-        )}
-      </div>
-
-      <div className="space-y-3 rounded-xl bg-dark-card p-4">
-        <DetailRow label="Daily Rate" value={asset.daily_rate > 0 ? `$${Number(asset.daily_rate).toFixed(2)}` : "—"} />
-        <DetailRow label="Weight Capacity" value={asset.weight_capacity > 0 ? `${Number(asset.weight_capacity).toLocaleString()} lbs` : "—"} />
-        <DetailRow label="Location Type" value={asset.current_location_type || "—"} capitalize />
-        <DetailRow label="Created" value={new Date(asset.created_at).toLocaleDateString()} />
-      </div>
-
-      {asset.notes && (
-        <div>
-          <p className="text-xs font-medium uppercase tracking-wider text-muted mb-2">
-            Notes
-          </p>
-          <p className="text-sm text-foreground whitespace-pre-wrap">
-            {asset.notes}
-          </p>
+    <form onSubmit={handleSubmit} className="space-y-5">
+      {error && (
+        <div className="rounded-lg bg-red-500/10 px-4 py-3 text-sm text-red-400">
+          {error}
         </div>
       )}
-    </div>
-  );
-}
 
-function DetailRow({
-  label,
-  value,
-  capitalize: cap,
-}: {
-  label: string;
-  value: string;
-  capitalize?: boolean;
-}) {
-  return (
-    <div className="flex items-center justify-between text-sm">
-      <span className="text-muted">{label}</span>
-      <span className={`text-foreground ${cap ? "capitalize" : ""}`}>
-        {value}
-      </span>
-    </div>
+      <div>
+        <label className={labelClass}>Identifier</label>
+        <input
+          value={identifier}
+          onChange={(e) => setIdentifier(e.target.value)}
+          required
+          className={inputClass}
+          placeholder="D-015"
+        />
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className={labelClass}>Type</label>
+          <select
+            value={assetType}
+            onChange={(e) => setAssetType(e.target.value)}
+            className={`${inputClass} appearance-none`}
+          >
+            <option value="dumpster">Dumpster</option>
+            <option value="pod">Pod</option>
+            <option value="restroom">Restroom</option>
+          </select>
+        </div>
+        <div>
+          <label className={labelClass}>Size</label>
+          <select
+            value={subtype}
+            onChange={(e) => setSubtype(e.target.value)}
+            className={`${inputClass} appearance-none`}
+          >
+            <option value="10yd">10 yd</option>
+            <option value="20yd">20 yd</option>
+            <option value="30yd">30 yd</option>
+            <option value="40yd">40 yd</option>
+          </select>
+        </div>
+      </div>
+
+      <div>
+        <label className={labelClass}>Status</label>
+        <select
+          value={status}
+          onChange={(e) => setStatus(e.target.value)}
+          className={`${inputClass} appearance-none`}
+        >
+          <option value="available">Available</option>
+          <option value="on_site">On Site</option>
+          <option value="in_transit">In Transit</option>
+          <option value="maintenance">Maintenance</option>
+          <option value="retired">Retired</option>
+        </select>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className={labelClass}>Daily Rate ($)</label>
+          <input
+            type="number"
+            step="0.01"
+            value={dailyRate}
+            onChange={(e) => setDailyRate(e.target.value)}
+            className={inputClass}
+            placeholder="25.00"
+          />
+        </div>
+        <div>
+          <label className={labelClass}>Weight Capacity (lbs)</label>
+          <input
+            type="number"
+            value={weightCapacity}
+            onChange={(e) => setWeightCapacity(e.target.value)}
+            className={inputClass}
+            placeholder="4000"
+          />
+        </div>
+      </div>
+
+      <div>
+        <label className={labelClass}>Condition</label>
+        <select
+          value={condition}
+          onChange={(e) => setCondition(e.target.value)}
+          className={`${inputClass} appearance-none`}
+        >
+          <option value="new">New</option>
+          <option value="good">Good</option>
+          <option value="fair">Fair</option>
+          <option value="poor">Poor</option>
+        </select>
+      </div>
+
+      <div>
+        <label className={labelClass}>Notes</label>
+        <textarea
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          rows={3}
+          className={`${inputClass} resize-none`}
+          placeholder="Any notes about this asset..."
+        />
+      </div>
+
+      <button
+        type="submit"
+        disabled={saving}
+        className="w-full rounded-lg bg-[#2ECC71] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1FA855] disabled:opacity-50 btn-press"
+      >
+        {saving ? "Saving..." : "Save Changes"}
+      </button>
+    </form>
   );
 }
 

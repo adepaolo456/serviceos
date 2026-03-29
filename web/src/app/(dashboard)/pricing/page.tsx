@@ -11,9 +11,11 @@ import {
   Clock,
   ChevronDown,
   ChevronUp,
+  Pencil,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import SlideOver from "@/components/slide-over";
+import { useToast } from "@/components/toast";
 
 interface PricingRule {
   id: string;
@@ -87,6 +89,7 @@ export default function PricingPage() {
   const [loading, setLoading] = useState(true);
   const [panelOpen, setPanelOpen] = useState(false);
   const [calcOpen, setCalcOpen] = useState(true);
+  const [editRule, setEditRule] = useState<PricingRule | null>(null);
 
   const fetchRules = useCallback(async () => {
     setLoading(true);
@@ -190,7 +193,7 @@ export default function PricingPage() {
             </h2>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {serviceRules.map((rule) => (
-                <RuleCard key={rule.id} rule={rule} />
+                <RuleCard key={rule.id} rule={rule} onEdit={() => setEditRule(rule)} />
               ))}
             </div>
           </div>
@@ -209,19 +212,25 @@ export default function PricingPage() {
           }}
         />
       </SlideOver>
+
+      <SlideOver open={!!editRule} onClose={() => setEditRule(null)} title="Edit Pricing Rule">
+        {editRule && <EditRuleForm rule={editRule} onSuccess={() => { setEditRule(null); fetchRules(); }} onDelete={() => { setEditRule(null); fetchRules(); }} />}
+      </SlideOver>
     </div>
   );
 }
 
 /* ---------- Rule Card ---------- */
 
-function RuleCard({ rule }: { rule: PricingRule }) {
+function RuleCard({ rule, onEdit }: { rule: PricingRule; onEdit: () => void }) {
   return (
     <div
-      className={`rounded-2xl bg-dark-card border border-[#1E2D45] shadow-lg shadow-black/10 p-5 transition-colors hover:bg-dark-card-hover card-hover ${
+      onClick={onEdit}
+      className={`relative group cursor-pointer rounded-2xl bg-dark-card border border-[#1E2D45] shadow-lg shadow-black/10 p-5 transition-colors hover:bg-dark-card-hover card-hover ${
         !rule.is_active ? "opacity-50" : ""
       }`}
     >
+      <Pencil className="absolute top-4 right-4 h-4 w-4 text-muted opacity-0 group-hover:opacity-100 transition-opacity" />
       <div className="flex items-start justify-between mb-4">
         <div>
           <p className="font-display text-base font-semibold text-white">
@@ -872,6 +881,347 @@ function CreateRuleForm({ onSuccess }: { onSuccess: () => void }) {
         className="w-full rounded-lg bg-[#2ECC71] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1FA855] disabled:opacity-50 mt-6 btn-press"
       >
         {saving ? "Creating..." : "Create Rule"}
+      </button>
+    </form>
+  );
+}
+
+/* ---------- Edit Rule Form ---------- */
+
+function EditRuleForm({
+  rule,
+  onSuccess,
+  onDelete,
+}: {
+  rule: PricingRule;
+  onSuccess: () => void;
+  onDelete: () => void;
+}) {
+  const { toast } = useToast();
+  const [name, setName] = useState(rule.name);
+  const [serviceType, setServiceType] = useState(rule.service_type);
+  const [assetSubtype, setAssetSubtype] = useState(rule.asset_subtype);
+  const [customerType, setCustomerType] = useState(rule.customer_type || "");
+  const [basePrice, setBasePrice] = useState(String(rule.base_price));
+  const [rentalPeriodDays, setRentalPeriodDays] = useState(String(rule.rental_period_days));
+  const [extraDayRate, setExtraDayRate] = useState(String(rule.extra_day_rate));
+  const [includedMiles, setIncludedMiles] = useState(String(rule.included_miles));
+  const [perMileCharge, setPerMileCharge] = useState(String(rule.per_mile_charge));
+  const [maxServiceMiles, setMaxServiceMiles] = useState(String(rule.max_service_miles));
+  const [includedTons, setIncludedTons] = useState(String(rule.included_tons));
+  const [overagePerTon, setOveragePerTon] = useState(String(rule.overage_per_ton));
+  const [deliveryFee, setDeliveryFee] = useState(String(rule.delivery_fee));
+  const [pickupFee, setPickupFee] = useState(String(rule.pickup_fee));
+  const [exchangeFee, setExchangeFee] = useState(String(rule.exchange_fee));
+  const [requireDeposit, setRequireDeposit] = useState(rule.require_deposit);
+  const [depositAmount, setDepositAmount] = useState(String(rule.deposit_amount));
+  const [taxRate, setTaxRate] = useState(String(rule.tax_rate));
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setSaving(true);
+    try {
+      await api.patch("/pricing/" + rule.id, {
+        name,
+        serviceType,
+        assetSubtype,
+        customerType: customerType || undefined,
+        basePrice: Number(basePrice),
+        rentalPeriodDays: Number(rentalPeriodDays) || 7,
+        extraDayRate: Number(extraDayRate) || 0,
+        includedMiles: Number(includedMiles) || 0,
+        perMileCharge: Number(perMileCharge) || 0,
+        maxServiceMiles: Number(maxServiceMiles) || undefined,
+        includedTons: Number(includedTons) || 0,
+        overagePerTon: Number(overagePerTon) || 0,
+        deliveryFee: Number(deliveryFee) || 0,
+        pickupFee: Number(pickupFee) || 0,
+        exchangeFee: Number(exchangeFee) || 0,
+        requireDeposit,
+        depositAmount: Number(depositAmount) || 0,
+        taxRate: Number(taxRate) || 0,
+      });
+      toast("success", "Pricing rule updated");
+      onSuccess();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to update";
+      setError(msg);
+      toast("error", msg);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!confirm("Are you sure you want to delete this pricing rule? This cannot be undone.")) return;
+    setDeleting(true);
+    try {
+      await api.delete("/pricing/" + rule.id);
+      toast("success", "Pricing rule deleted");
+      onDelete();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to delete";
+      setError(msg);
+      toast("error", msg);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const inputClass =
+    "w-full rounded-lg bg-[#111C2E] border border-[#1E2D45] px-4 py-2.5 text-sm text-white placeholder-muted outline-none transition-colors focus:border-brand";
+  const labelClass = "block text-sm font-medium text-foreground mb-1.5";
+  const sectionClass = "text-xs font-medium uppercase tracking-wider text-muted mb-3 mt-6";
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      {error && (
+        <div className="rounded-lg bg-red-500/10 px-4 py-3 text-sm text-red-400">
+          {error}
+        </div>
+      )}
+
+      <div>
+        <label className={labelClass}>Rule Name</label>
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          required
+          className={inputClass}
+          placeholder="Standard 20yd Dumpster"
+        />
+      </div>
+
+      <div className="grid grid-cols-3 gap-3">
+        <div>
+          <label className={labelClass}>Service</label>
+          <select
+            value={serviceType}
+            onChange={(e) => setServiceType(e.target.value)}
+            className={`${inputClass} appearance-none`}
+          >
+            <option value="dumpster_rental">Dumpster</option>
+            <option value="pod_storage">Pod</option>
+            <option value="restroom_service">Restroom</option>
+            <option value="landscaping">Landscaping</option>
+          </select>
+        </div>
+        <div>
+          <label className={labelClass}>Size</label>
+          <select
+            value={assetSubtype}
+            onChange={(e) => setAssetSubtype(e.target.value)}
+            className={`${inputClass} appearance-none`}
+          >
+            <option value="10yd">10 yd</option>
+            <option value="20yd">20 yd</option>
+            <option value="30yd">30 yd</option>
+            <option value="40yd">40 yd</option>
+          </select>
+        </div>
+        <div>
+          <label className={labelClass}>Customer</label>
+          <select
+            value={customerType}
+            onChange={(e) => setCustomerType(e.target.value)}
+            className={`${inputClass} appearance-none`}
+          >
+            <option value="">All</option>
+            <option value="residential">Residential</option>
+            <option value="commercial">Commercial</option>
+          </select>
+        </div>
+      </div>
+
+      <p className={sectionClass}>Base Pricing</p>
+      <div className="grid grid-cols-3 gap-3">
+        <div>
+          <label className={labelClass}>Base Price ($)</label>
+          <input
+            type="number"
+            step="0.01"
+            value={basePrice}
+            onChange={(e) => setBasePrice(e.target.value)}
+            required
+            className={inputClass}
+            placeholder="350"
+          />
+        </div>
+        <div>
+          <label className={labelClass}>Rental Days</label>
+          <input
+            type="number"
+            value={rentalPeriodDays}
+            onChange={(e) => setRentalPeriodDays(e.target.value)}
+            className={inputClass}
+          />
+        </div>
+        <div>
+          <label className={labelClass}>Extra Day ($)</label>
+          <input
+            type="number"
+            step="0.01"
+            value={extraDayRate}
+            onChange={(e) => setExtraDayRate(e.target.value)}
+            className={inputClass}
+            placeholder="25"
+          />
+        </div>
+      </div>
+
+      <p className={sectionClass}>Distance</p>
+      <div className="grid grid-cols-3 gap-3">
+        <div>
+          <label className={labelClass}>Free Miles</label>
+          <input
+            type="number"
+            value={includedMiles}
+            onChange={(e) => setIncludedMiles(e.target.value)}
+            className={inputClass}
+          />
+        </div>
+        <div>
+          <label className={labelClass}>Per Mile ($)</label>
+          <input
+            type="number"
+            step="0.01"
+            value={perMileCharge}
+            onChange={(e) => setPerMileCharge(e.target.value)}
+            className={inputClass}
+            placeholder="3.50"
+          />
+        </div>
+        <div>
+          <label className={labelClass}>Max Miles</label>
+          <input
+            type="number"
+            value={maxServiceMiles}
+            onChange={(e) => setMaxServiceMiles(e.target.value)}
+            className={inputClass}
+            placeholder="50"
+          />
+        </div>
+      </div>
+
+      <p className={sectionClass}>Weight</p>
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className={labelClass}>Included Tons</label>
+          <input
+            type="number"
+            step="0.01"
+            value={includedTons}
+            onChange={(e) => setIncludedTons(e.target.value)}
+            className={inputClass}
+          />
+        </div>
+        <div>
+          <label className={labelClass}>Overage/Ton ($)</label>
+          <input
+            type="number"
+            step="0.01"
+            value={overagePerTon}
+            onChange={(e) => setOveragePerTon(e.target.value)}
+            className={inputClass}
+            placeholder="75"
+          />
+        </div>
+      </div>
+
+      <p className={sectionClass}>Service Fees</p>
+      <div className="grid grid-cols-3 gap-3">
+        <div>
+          <label className={labelClass}>Delivery ($)</label>
+          <input
+            type="number"
+            step="0.01"
+            value={deliveryFee}
+            onChange={(e) => setDeliveryFee(e.target.value)}
+            className={inputClass}
+            placeholder="75"
+          />
+        </div>
+        <div>
+          <label className={labelClass}>Pickup ($)</label>
+          <input
+            type="number"
+            step="0.01"
+            value={pickupFee}
+            onChange={(e) => setPickupFee(e.target.value)}
+            className={inputClass}
+            placeholder="75"
+          />
+        </div>
+        <div>
+          <label className={labelClass}>Exchange ($)</label>
+          <input
+            type="number"
+            step="0.01"
+            value={exchangeFee}
+            onChange={(e) => setExchangeFee(e.target.value)}
+            className={inputClass}
+            placeholder="100"
+          />
+        </div>
+      </div>
+
+      <p className={sectionClass}>Deposit & Tax</p>
+      <div className="grid grid-cols-3 gap-3 items-end">
+        <div className="flex items-center gap-2 py-2.5">
+          <input
+            type="checkbox"
+            id="edit-deposit"
+            checked={requireDeposit}
+            onChange={(e) => setRequireDeposit(e.target.checked)}
+            className="h-4 w-4 rounded border-white/20 bg-dark-card accent-brand"
+          />
+          <label htmlFor="edit-deposit" className="text-sm text-foreground">
+            Require deposit
+          </label>
+        </div>
+        <div>
+          <label className={labelClass}>Deposit ($)</label>
+          <input
+            type="number"
+            step="0.01"
+            value={depositAmount}
+            onChange={(e) => setDepositAmount(e.target.value)}
+            className={inputClass}
+            placeholder="150"
+          />
+        </div>
+        <div>
+          <label className={labelClass}>Tax Rate</label>
+          <input
+            type="number"
+            step="0.0001"
+            value={taxRate}
+            onChange={(e) => setTaxRate(e.target.value)}
+            className={inputClass}
+            placeholder="0.0825"
+          />
+        </div>
+      </div>
+
+      <button
+        type="submit"
+        disabled={saving}
+        className="w-full rounded-lg bg-[#2ECC71] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1FA855] disabled:opacity-50 mt-6 btn-press"
+      >
+        {saving ? "Saving..." : "Save Changes"}
+      </button>
+
+      <button
+        type="button"
+        onClick={handleDelete}
+        disabled={deleting}
+        className="w-full rounded-lg bg-red-500/10 border border-red-500/20 px-4 py-2.5 text-sm font-semibold text-red-400 transition-colors hover:bg-red-500/20 disabled:opacity-50 btn-press"
+      >
+        {deleting ? "Deleting..." : "Delete Rule"}
       </button>
     </form>
   );
