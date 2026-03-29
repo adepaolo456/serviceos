@@ -176,7 +176,7 @@ export default function PricingPage() {
           <p className="text-sm text-muted mb-6">Create your first pricing rule to start quoting jobs</p>
           <button
             onClick={() => setPanelOpen(true)}
-            className="flex items-center gap-2 rounded-lg bg-[#2ECC71] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1FA855]"
+            className="flex items-center gap-2 rounded-lg bg-[#2ECC71] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1FA855] btn-press"
           >
             <Plus className="h-4 w-4" />
             New Rule
@@ -218,7 +218,7 @@ export default function PricingPage() {
 function RuleCard({ rule }: { rule: PricingRule }) {
   return (
     <div
-      className={`rounded-2xl bg-dark-card border border-[#1E2D45] shadow-lg shadow-black/10 p-5 transition-colors hover:bg-dark-card-hover ${
+      className={`rounded-2xl bg-dark-card border border-[#1E2D45] shadow-lg shadow-black/10 p-5 transition-colors hover:bg-dark-card-hover card-hover ${
         !rule.is_active ? "opacity-50" : ""
       }`}
     >
@@ -420,7 +420,7 @@ function PriceCalculator() {
         <button
           type="submit"
           disabled={calculating}
-          className="w-full rounded-lg bg-[#2ECC71] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1FA855] disabled:opacity-50"
+          className="w-full rounded-lg bg-[#2ECC71] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1FA855] disabled:opacity-50 btn-press"
         >
           {calculating ? "Calculating..." : "Calculate Price"}
         </button>
@@ -869,7 +869,7 @@ function CreateRuleForm({ onSuccess }: { onSuccess: () => void }) {
       <button
         type="submit"
         disabled={saving}
-        className="w-full rounded-lg bg-[#2ECC71] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1FA855] disabled:opacity-50 mt-6"
+        className="w-full rounded-lg bg-[#2ECC71] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1FA855] disabled:opacity-50 mt-6 btn-press"
       >
         {saving ? "Creating..." : "Create Rule"}
       </button>

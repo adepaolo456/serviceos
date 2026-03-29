@@ -90,7 +90,7 @@ export default function SettingsPage() {
             <button
               key={t.key}
               onClick={() => setTab(t.key)}
-              className={`relative flex items-center gap-2 px-5 py-3 text-sm font-medium transition-colors ${
+              className={`relative flex items-center gap-2 px-5 py-3 text-sm font-medium transition-colors btn-press ${
                 tab === t.key
                   ? "text-brand"
                   : "text-muted hover:text-foreground"
@@ -156,7 +156,7 @@ function CompanyTab({ profile }: { profile: Profile | null }) {
   return (
     <div className="max-w-2xl space-y-8">
       {/* Logo */}
-      <div className="rounded-2xl bg-dark-card border border-[#1E2D45] shadow-lg shadow-black/10 p-6">
+      <div className="rounded-2xl bg-dark-card border border-[#1E2D45] shadow-lg shadow-black/10 p-6 card-hover">
         <h2 className="font-display text-base font-semibold text-white mb-4">
           Company Logo
         </h2>
@@ -176,7 +176,7 @@ function CompanyTab({ profile }: { profile: Profile | null }) {
       </div>
 
       {/* Company details */}
-      <div className="rounded-2xl bg-dark-card border border-[#1E2D45] shadow-lg shadow-black/10 p-6">
+      <div className="rounded-2xl bg-dark-card border border-[#1E2D45] shadow-lg shadow-black/10 p-6 card-hover">
         <h2 className="font-display text-base font-semibold text-white mb-4">
           Company Details
         </h2>
@@ -208,7 +208,7 @@ function CompanyTab({ profile }: { profile: Profile | null }) {
       </div>
 
       {/* Address */}
-      <div className="rounded-2xl bg-dark-card border border-[#1E2D45] shadow-lg shadow-black/10 p-6">
+      <div className="rounded-2xl bg-dark-card border border-[#1E2D45] shadow-lg shadow-black/10 p-6 card-hover">
         <h2 className="font-display text-base font-semibold text-white mb-4">
           Yard / Office Address
         </h2>
@@ -243,7 +243,7 @@ function CompanyTab({ profile }: { profile: Profile | null }) {
       </div>
 
       {/* Service radius */}
-      <div className="rounded-2xl bg-dark-card border border-[#1E2D45] shadow-lg shadow-black/10 p-6">
+      <div className="rounded-2xl bg-dark-card border border-[#1E2D45] shadow-lg shadow-black/10 p-6 card-hover">
         <h2 className="font-display text-base font-semibold text-white mb-4">
           Service Radius
         </h2>
@@ -278,7 +278,7 @@ function CompanyTab({ profile }: { profile: Profile | null }) {
       <button
         onClick={handleSave}
         disabled={saving}
-        className="rounded-lg bg-[#2ECC71] hover:bg-[#1FA855] text-white font-semibold px-6 py-2.5 text-sm transition-colors disabled:opacity-50"
+        className="rounded-lg bg-[#2ECC71] hover:bg-[#1FA855] text-white font-semibold px-6 py-2.5 text-sm transition-colors disabled:opacity-50 btn-press"
       >
         {saving ? "Saving..." : "Save Changes"}
       </button>
@@ -323,7 +323,7 @@ function TeamTab() {
         <p className="text-sm text-muted">{members.length} team members</p>
         <button
           onClick={() => setInviteOpen(true)}
-          className="flex items-center gap-2 rounded-lg bg-[#2ECC71] hover:bg-[#1FA855] text-white font-semibold px-4 py-2.5 text-sm transition-colors"
+          className="flex items-center gap-2 rounded-lg bg-[#2ECC71] hover:bg-[#1FA855] text-white font-semibold px-4 py-2.5 text-sm transition-colors btn-press"
         >
           <Users className="h-4 w-4" />
           Invite Member
@@ -331,6 +331,7 @@ function TeamTab() {
       </div>
 
       <div className="rounded-2xl bg-dark-card border border-[#1E2D45] shadow-lg shadow-black/10 overflow-hidden">
+        <div className="table-scroll">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-[#1E2D45]">
@@ -394,6 +395,7 @@ function TeamTab() {
             )}
           </tbody>
         </table>
+        </div>
       </div>
 
       <SlideOver
@@ -514,7 +516,7 @@ function InviteForm({ onSuccess }: { onSuccess: () => void }) {
               key={r}
               type="button"
               onClick={() => setRole(r)}
-              className={`rounded-md py-2 text-xs font-medium capitalize transition-colors ${
+              className={`rounded-md py-2 text-xs font-medium capitalize transition-colors btn-press ${
                 role === r
                   ? "bg-brand text-dark-primary"
                   : "text-muted hover:text-foreground"
@@ -529,7 +531,7 @@ function InviteForm({ onSuccess }: { onSuccess: () => void }) {
       <button
         type="submit"
         disabled={saving}
-        className="w-full rounded-lg bg-[#2ECC71] hover:bg-[#1FA855] text-white font-semibold px-4 py-2.5 text-sm transition-colors disabled:opacity-50"
+        className="w-full rounded-lg bg-[#2ECC71] hover:bg-[#1FA855] text-white font-semibold px-4 py-2.5 text-sm transition-colors disabled:opacity-50 btn-press"
       >
         {saving ? "Inviting..." : "Send Invite"}
       </button>
@@ -595,7 +597,7 @@ function BillingTab({ profile }: { profile: Profile | null }) {
   return (
     <div className="max-w-4xl space-y-8">
       {/* Current plan */}
-      <div className="rounded-2xl bg-dark-card border border-[#1E2D45] shadow-lg shadow-black/10 p-6">
+      <div className="rounded-2xl bg-dark-card border border-[#1E2D45] shadow-lg shadow-black/10 p-6 card-hover">
         <div className="flex items-center justify-between">
           <div>
             <p className="text-xs font-medium uppercase tracking-wider text-muted mb-1">
@@ -611,7 +613,7 @@ function BillingTab({ profile }: { profile: Profile | null }) {
           <button
             onClick={handleManage}
             disabled={portalLoading}
-            className="flex items-center gap-2 rounded-lg border border-white/10 bg-dark-elevated px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-dark-card-hover disabled:opacity-50"
+            className="flex items-center gap-2 rounded-lg border border-white/10 bg-dark-elevated px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-dark-card-hover disabled:opacity-50 btn-press"
           >
             <ExternalLink className="h-4 w-4" />
             {portalLoading ? "Loading..." : "Manage Subscription"}
@@ -626,7 +628,7 @@ function BillingTab({ profile }: { profile: Profile | null }) {
           return (
             <div
               key={tier.key}
-              className={`relative rounded-2xl border p-6 transition-colors ${
+              className={`relative rounded-2xl border p-6 transition-colors card-hover ${
                 isCurrent
                   ? "bg-brand/5 border-brand/30"
                   : "bg-dark-card border-[#1E2D45] hover:bg-dark-card-hover"
@@ -693,7 +695,7 @@ function IntegrationsTab({ profile }: { profile: Profile | null }) {
   return (
     <div className="max-w-2xl space-y-6">
       {/* Marketplace */}
-      <div className="rounded-2xl bg-dark-card border border-[#1E2D45] shadow-lg shadow-black/10 p-6">
+      <div className="rounded-2xl bg-dark-card border border-[#1E2D45] shadow-lg shadow-black/10 p-6 card-hover">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand/10">
@@ -736,7 +738,7 @@ function IntegrationsTab({ profile }: { profile: Profile | null }) {
       </div>
 
       {/* API Key */}
-      <div className="rounded-2xl bg-dark-card border border-[#1E2D45] shadow-lg shadow-black/10 p-6">
+      <div className="rounded-2xl bg-dark-card border border-[#1E2D45] shadow-lg shadow-black/10 p-6 card-hover">
         <div className="flex items-center gap-3 mb-4">
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-500/10">
             <Key className="h-5 w-5 text-purple-400" />
@@ -754,7 +756,7 @@ function IntegrationsTab({ profile }: { profile: Profile | null }) {
           </code>
           <button
             onClick={() => setShowKey(!showKey)}
-            className="rounded-lg bg-dark-elevated p-2.5 text-muted transition-colors hover:bg-dark-card-hover hover:text-white"
+            className="rounded-lg bg-dark-elevated p-2.5 text-muted transition-colors hover:bg-dark-card-hover hover:text-white btn-press"
           >
             {showKey ? (
               <EyeOff className="h-4 w-4" />
@@ -776,7 +778,7 @@ function IntegrationsTab({ profile }: { profile: Profile | null }) {
       </div>
 
       {/* Webhook */}
-      <div className="rounded-2xl bg-dark-card border border-[#1E2D45] shadow-lg shadow-black/10 p-6">
+      <div className="rounded-2xl bg-dark-card border border-[#1E2D45] shadow-lg shadow-black/10 p-6 card-hover">
         <div className="flex items-center gap-3 mb-4">
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-500/10">
             <Webhook className="h-5 w-5 text-blue-400" />
@@ -806,7 +808,7 @@ function IntegrationsTab({ profile }: { profile: Profile | null }) {
       </div>
 
       {/* Zapier / future */}
-      <div className="rounded-2xl bg-dark-card border border-[#1E2D45] shadow-lg shadow-black/10 p-6 opacity-60">
+      <div className="rounded-2xl bg-dark-card border border-[#1E2D45] shadow-lg shadow-black/10 p-6 opacity-60 card-hover">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-orange-500/10">

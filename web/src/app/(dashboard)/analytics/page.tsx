@@ -179,7 +179,7 @@ export default function AnalyticsPage() {
       {/* Charts */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         {/* Revenue chart */}
-        <div className="rounded-2xl bg-dark-card border border-[#1E2D45] shadow-lg shadow-black/10 p-6 lg:col-span-2">
+        <div className="rounded-2xl bg-dark-card border border-[#1E2D45] shadow-lg shadow-black/10 p-6 lg:col-span-2 card-hover">
           <div className="flex items-center gap-2 mb-6">
             <TrendingUp className="h-4 w-4 text-brand" />
             <h2 className="font-display text-base font-semibold text-white">
@@ -248,7 +248,7 @@ export default function AnalyticsPage() {
         </div>
 
         {/* Jobs by status donut */}
-        <div className="rounded-2xl bg-dark-card border border-[#1E2D45] shadow-lg shadow-black/10 p-6">
+        <div className="rounded-2xl bg-dark-card border border-[#1E2D45] shadow-lg shadow-black/10 p-6 card-hover">
           <h2 className="font-display text-base font-semibold text-white mb-4">
             Jobs by Status
           </h2>
@@ -326,7 +326,7 @@ export default function AnalyticsPage() {
         </div>
 
         {/* Asset utilization bar chart */}
-        <div className="rounded-2xl bg-dark-card border border-[#1E2D45] shadow-lg shadow-black/10 p-6">
+        <div className="rounded-2xl bg-dark-card border border-[#1E2D45] shadow-lg shadow-black/10 p-6 card-hover">
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-display text-base font-semibold text-white">
               Asset Utilization
@@ -402,7 +402,7 @@ function KpiCard({
   sub: string;
 }) {
   return (
-    <div className="rounded-2xl bg-dark-card border border-[#1E2D45] shadow-lg shadow-black/10 p-6">
+    <div className="rounded-2xl bg-dark-card border border-[#1E2D45] shadow-lg shadow-black/10 p-6 card-hover">
       <div className="flex items-center gap-3 mb-3">
         <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand/10">
           <Icon className="h-4 w-4 text-brand" />
