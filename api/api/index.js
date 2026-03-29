@@ -1,5 +1,4 @@
 require('reflect-metadata');
-const serverlessExpress = require('@vendia/serverless-express');
 
 const ALLOWED_ORIGIN = 'https://serviceos-web-zeta.vercel.app';
 const CORS_HEADERS = {
@@ -15,7 +14,7 @@ function setCorsHeaders(res) {
   }
 }
 
-let cachedHandler;
+let app;
 
 module.exports = async function handler(req, res) {
   setCorsHeaders(res);
@@ -27,14 +26,14 @@ module.exports = async function handler(req, res) {
   }
 
   try {
-    if (!cachedHandler) {
+    if (!app) {
       const { createApp } = require('../dist/main');
-      const app = await createApp();
+      app = await createApp();
       await app.init();
-      const expressApp = app.getHttpAdapter().getInstance();
-      cachedHandler = serverlessExpress({ app: expressApp });
     }
-    return cachedHandler(req, res);
+
+    const expressApp = app.getHttpAdapter().getInstance();
+    expressApp(req, res);
   } catch (error) {
     console.error('HANDLER_ERROR:', error.message);
     console.error('HANDLER_STACK:', error.stack);
