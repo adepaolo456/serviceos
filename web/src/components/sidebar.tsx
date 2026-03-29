@@ -68,14 +68,22 @@ export default function Sidebar() {
 
   const sidebarContent = (
     <>
-      {/* Logo */}
+      {/* Logo + theme toggle */}
       <div className="flex h-16 items-center gap-3 px-6 border-b border-[#1E2D45] shrink-0">
-        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand shadow-md shadow-brand/20">
+        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand shadow-md shadow-brand/20 shrink-0">
           <span className="font-display text-sm font-bold text-dark-primary">S</span>
         </div>
         <span className="font-display text-lg font-bold tracking-tight text-white">
           ServiceOS
         </span>
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); e.preventDefault(); cycleTheme(); }}
+          title={theme === "dark" ? "Dark mode" : theme === "light" ? "Light mode" : "System"}
+          className="ml-auto p-1 rounded text-muted hover:text-foreground transition-colors"
+        >
+          {theme === "dark" ? <Moon className="h-4 w-4" /> : theme === "light" ? <Sun className="h-4 w-4" /> : <Monitor className="h-4 w-4" />}
+        </button>
       </div>
 
       {/* Nav */}
@@ -117,14 +125,6 @@ export default function Sidebar() {
               </p>
               <p className="text-[11px] text-muted capitalize truncate">{user.role}</p>
             </div>
-            <button
-              onClick={(e) => { e.preventDefault(); e.stopPropagation(); cycleTheme(); }}
-              type="button"
-              title={theme === "dark" ? "Dark mode" : theme === "light" ? "Light mode" : "System"}
-              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-muted hover:text-foreground hover:bg-dark-elevated transition-all active:scale-90"
-            >
-              {theme === "dark" ? <Moon className="h-4 w-4" /> : theme === "light" ? <Sun className="h-4 w-4" /> : <Monitor className="h-4 w-4" />}
-            </button>
           </div>
         )}
         {user?.email === "adepaolo456@gmail.com" && (
