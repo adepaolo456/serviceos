@@ -38,6 +38,16 @@ export class AssetsController {
     return this.assetsService.findAll(tenantId, query);
   }
 
+  @Get('availability')
+  @ApiOperation({ summary: 'Get projected asset availability for a date' })
+  getAvailability(
+    @TenantId() tenantId: string,
+    @Query('subtype') subtype: string,
+    @Query('date') date?: string,
+  ) {
+    return this.assetsService.getAvailability(tenantId, subtype || '20yd', date);
+  }
+
   @Get('available/:type')
   @ApiOperation({ summary: 'Get available assets by type' })
   findAvailable(@TenantId() tenantId: string, @Param('type') type: string) {

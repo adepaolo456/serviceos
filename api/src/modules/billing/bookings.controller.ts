@@ -85,14 +85,52 @@ export class BookingsController {
     const deliveryNumber = `JOB-${dateStr}-${rand}`;
     const pickupNumber = `JOB-${body.pickupDate.replace(/-/g, '')}-${rand}P`;
 
-    // 3. Create delivery job
+    // 3. Check availability and auto-approve
+    let autoApproved = false;
+    let assignedAsset: { id: string; identifier: string } | null = null;
+    let assetWarning: string | null = null;
+    let jobStatus = 'pending';
+
+    try {
+      // Check if an asset is available NOW
+      const availableAsset = await this.assetsRepo.findOne({
+        where: { tenant_id: tenantId, subtype: body.assetSubtype, status: 'available' },
+      });
+
+      if (availableAsset) {
+        // Asset available now — auto-approve + assign + reserve
+        autoApproved = true;
+        jobStatus = 'confirmed';
+        assignedAsset = { id: availableAsset.id, identifier: availableAsset.identifier };
+        await this.assetsRepo.update(availableAsset.id, { status: 'reserved' });
+      } else {
+        // Check if a pickup is scheduled before delivery date that would free one up
+        const pickupCount = await this.jobsRepo
+          .createQueryBuilder('j')
+          .where('j.tenant_id = :tenantId', { tenantId })
+          .andWhere('j.job_type = :type', { type: 'pickup' })
+          .andWhere('j.status NOT IN (:...ex)', { ex: ['completed', 'cancelled'] })
+          .andWhere('j.scheduled_date <= :date', { date: body.deliveryDate })
+          .getCount();
+
+        if (pickupCount > 0) {
+          autoApproved = true;
+          jobStatus = 'confirmed';
+          assetWarning = `Auto-confirmed — ${body.assetSubtype} will be available via scheduled pickup before ${body.deliveryDate}.`;
+        } else {
+          assetWarning = `No ${body.assetSubtype} dumpsters projected available for ${body.deliveryDate}. Job needs manual approval.`;
+        }
+      }
+    } catch { /* non-fatal — default to pending */ }
+
+    // 3b. Create delivery job with auto-approved status
     const deliveryJob = this.jobsRepo.create({
       tenant_id: tenantId,
       customer_id: customerId,
       job_number: deliveryNumber,
       job_type: 'delivery',
       service_type: body.serviceType,
-      status: 'pending',
+      status: jobStatus,
       priority: 'normal',
       source: 'phone',
       scheduled_date: body.deliveryDate,
@@ -102,33 +140,9 @@ export class BookingsController {
       placement_notes: body.placementNotes,
       base_price: body.basePrice,
       total_price: body.totalPrice,
+      ...(assignedAsset ? { asset_id: assignedAsset.id } : {}),
     } as Partial<Job> as Job);
     const savedDelivery = await this.jobsRepo.save(deliveryJob);
-
-    // 3b. Auto-assign available asset
-    let assignedAsset: { id: string; identifier: string } | null = null;
-    let assetWarning: string | null = null;
-    try {
-      const availableAsset = await this.assetsRepo.findOne({
-        where: {
-          tenant_id: tenantId,
-          subtype: body.assetSubtype,
-          status: 'available',
-        },
-      });
-      if (availableAsset) {
-        await this.assetsRepo.update(availableAsset.id, {
-          status: 'on_site',
-          current_location_type: 'customer',
-        });
-        await this.jobsRepo.update(savedDelivery.id, {
-          asset_id: availableAsset.id,
-        });
-        assignedAsset = { id: availableAsset.id, identifier: availableAsset.identifier };
-      } else {
-        assetWarning = `No ${body.assetSubtype} dumpsters currently available. Job created without asset assignment.`;
-      }
-    } catch { /* non-fatal */ }
 
     // 4. Create pickup job
     const pickupJob = this.jobsRepo.create({
@@ -195,6 +209,7 @@ export class BookingsController {
         invoiceNumber: savedInvoice.invoice_number,
       },
       customerId,
+      autoApproved,
       asset: assignedAsset,
       assetWarning,
     };

@@ -13,6 +13,7 @@ import {
   Phone,
   Truck,
   Package,
+  AlertTriangle,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import AddressAutocomplete, { type AddressValue } from "@/components/address-autocomplete";
@@ -55,6 +56,9 @@ interface BookingResult {
   pickupJob: { id: string; jobNumber: string };
   invoice: { id: string; invoiceNumber: string };
   customerId: string;
+  autoApproved?: boolean;
+  asset?: { id: string; identifier: string } | null;
+  assetWarning?: string | null;
 }
 
 /* ---- Helpers ---- */
@@ -103,6 +107,7 @@ export default function BookingPage() {
   const [rentalDays, setRentalDays] = useState(14);
   const [quote, setQuote] = useState<PriceQuote | null>(null);
   const [quoting, setQuoting] = useState(false);
+  const [availability, setAvailability] = useState<{ availableOnDate: number; availableNow: number; pickupsBeforeDate: number; total: number } | null>(null);
 
   // Step 2: Customer
   const [phoneSearch, setPhoneSearch] = useState("");
@@ -130,21 +135,26 @@ export default function BookingPage() {
   const [result, setResult] = useState<BookingResult | null>(null);
   const [error, setError] = useState("");
 
-  // Auto-quote when address changes
+  // Auto-quote when address changes + check availability
   useEffect(() => {
     if (!address.lat || !address.lng) return;
     setQuoting(true);
-    api.post<PriceQuote>("/pricing/calculate", {
-      serviceType, assetSubtype, jobType,
-      customerLat: address.lat, customerLng: address.lng,
-      // yardLat/yardLng omitted — API auto-fetches from primary yard
-      rentalDays,
-    }).then((q) => {
+    Promise.all([
+      api.post<PriceQuote>("/pricing/calculate", {
+        serviceType, assetSubtype, jobType,
+        customerLat: address.lat, customerLng: address.lng,
+        rentalDays,
+      }),
+      api.get<{ availableOnDate: number; availableNow: number; pickupsBeforeDate: number; total: number }>(
+        `/assets/availability?subtype=${assetSubtype}&date=${deliveryDate}`
+      ),
+    ]).then(([q, avail]) => {
       setQuote(q);
+      setAvailability(avail);
       if (q.breakdown.includedDays) setRentalDays(q.breakdown.includedDays);
-    }).catch(() => setQuote(null))
+    }).catch(() => { setQuote(null); setAvailability(null); })
     .finally(() => setQuoting(false));
-  }, [address.lat, address.lng, serviceType, assetSubtype, jobType]);
+  }, [address.lat, address.lng, serviceType, assetSubtype, jobType, deliveryDate]);
 
   // Recalc when rental days change
   useEffect(() => {
@@ -371,6 +381,25 @@ export default function BookingPage() {
             </div>
           )}
 
+          {/* Availability indicator */}
+          {availability && (
+            <div className={`rounded-lg px-4 py-3 text-sm flex items-center gap-2 ${
+              availability.availableOnDate > 0
+                ? "bg-brand/5 border border-brand/20 text-brand"
+                : availability.pickupsBeforeDate > 0
+                  ? "bg-yellow-500/5 border border-yellow-500/20 text-yellow-400"
+                  : "bg-red-500/5 border border-red-500/20 text-red-400"
+            }`}>
+              {availability.availableOnDate > 0 ? (
+                <><CheckCircle2 className="h-4 w-4 shrink-0" /> {availability.availableOnDate} available for {deliveryDate}</>
+              ) : availability.pickupsBeforeDate > 0 ? (
+                <><AlertTriangle className="h-4 w-4 shrink-0" /> 0 available now — {availability.pickupsBeforeDate} pickup{availability.pickupsBeforeDate > 1 ? "s" : ""} scheduled before then</>
+              ) : (
+                <><AlertTriangle className="h-4 w-4 shrink-0" /> None available and no pickups scheduled</>
+              )}
+            </div>
+          )}
+
           <button onClick={() => setStep(2)} disabled={!quote}
             className="w-full rounded-xl bg-brand py-3.5 text-sm font-bold text-dark-primary transition-all hover:bg-brand-light active:scale-[0.98] disabled:opacity-40">
             Customer wants to book →
@@ -569,6 +598,8 @@ export default function BookingPage() {
             <div className="flex justify-between"><span className="text-muted">Delivery Job</span><span className="text-white font-medium">{result.deliveryJob.jobNumber}</span></div>
             <div className="flex justify-between"><span className="text-muted">Pickup Job</span><span className="text-white font-medium">{result.pickupJob.jobNumber}</span></div>
             <div className="flex justify-between"><span className="text-muted">Invoice</span><span className="text-white font-medium">{result.invoice.invoiceNumber}</span></div>
+            <div className="flex justify-between"><span className="text-muted">Status</span><span className={`font-medium ${result.autoApproved ? "text-brand" : "text-yellow-400"}`}>{result.autoApproved ? "Auto-Confirmed" : "Pending Approval"}</span></div>
+            {result.asset && <div className="flex justify-between"><span className="text-muted">Asset</span><span className="text-white font-medium">{result.asset.identifier}</span></div>}
             <div className="flex justify-between"><span className="text-muted">Payment</span><span className="text-white font-medium capitalize">{paymentMethod === "card" ? "Paid" : "Invoice sent"}</span></div>
           </div>
 

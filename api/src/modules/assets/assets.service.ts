@@ -1,7 +1,8 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import { Asset } from './entities/asset.entity';
+import { Job } from '../jobs/entities/job.entity';
 import {
   CreateAssetDto,
   UpdateAssetDto,
@@ -13,6 +14,8 @@ export class AssetsService {
   constructor(
     @InjectRepository(Asset)
     private assetsRepository: Repository<Asset>,
+    @InjectRepository(Job)
+    private jobsRepository: Repository<Job>,
   ) {}
 
   async create(tenantId: string, dto: CreateAssetDto): Promise<Asset> {
@@ -130,5 +133,70 @@ export class AssetsService {
       .where('a.tenant_id = :tenantId', { tenantId })
       .groupBy('a.status')
       .getRawMany();
+  }
+
+  async getAvailability(
+    tenantId: string,
+    subtype: string,
+    date?: string,
+  ) {
+    const targetDate = date || new Date().toISOString().split('T')[0];
+    const todayStr = new Date().toISOString().split('T')[0];
+
+    // Count assets by status
+    const assets = await this.assetsRepository.find({
+      where: { tenant_id: tenantId, subtype },
+    });
+
+    const total = assets.length;
+    const deployed = assets.filter((a) => a.status === 'on_site' || a.status === 'deployed').length;
+    const reserved = assets.filter((a) => a.status === 'reserved').length;
+    const inTransit = assets.filter((a) => a.status === 'in_transit').length;
+    const maintenance = assets.filter((a) => a.status === 'maintenance').length;
+    const availableNow = assets.filter((a) => a.status === 'available').length;
+
+    // Count pickup jobs scheduled between now and target date
+    let pickupsBeforeDate = 0;
+    if (targetDate > todayStr) {
+      const pickups = await this.jobsRepository
+        .createQueryBuilder('j')
+        .where('j.tenant_id = :tenantId', { tenantId })
+        .andWhere('j.job_type = :type', { type: 'pickup' })
+        .andWhere('j.status NOT IN (:...excluded)', { excluded: ['completed', 'cancelled'] })
+        .andWhere('j.scheduled_date >= :today', { today: todayStr })
+        .andWhere('j.scheduled_date <= :target', { target: targetDate })
+        .getCount();
+      pickupsBeforeDate = pickups;
+    }
+
+    // Count delivery/exchange jobs booked for dates between now and target
+    let reservedForDate = 0;
+    if (targetDate > todayStr) {
+      const futureBookings = await this.jobsRepository
+        .createQueryBuilder('j')
+        .where('j.tenant_id = :tenantId', { tenantId })
+        .andWhere('j.job_type IN (:...types)', { types: ['delivery', 'exchange'] })
+        .andWhere('j.status NOT IN (:...excluded)', { excluded: ['completed', 'cancelled'] })
+        .andWhere('j.scheduled_date > :today', { today: todayStr })
+        .andWhere('j.scheduled_date <= :target', { target: targetDate })
+        .getCount();
+      reservedForDate = futureBookings;
+    }
+
+    const availableOnDate = Math.max(0, availableNow + pickupsBeforeDate - reservedForDate);
+
+    return {
+      subtype,
+      date: targetDate,
+      total,
+      deployed,
+      reserved,
+      inTransit,
+      maintenance,
+      availableNow,
+      pickupsBeforeDate,
+      reservedForDate,
+      availableOnDate,
+    };
   }
 }
