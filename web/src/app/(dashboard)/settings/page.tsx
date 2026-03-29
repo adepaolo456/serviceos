@@ -76,14 +76,14 @@ export default function SettingsPage() {
   return (
     <div>
       <div className="mb-6">
-        <h1 className="font-display text-3xl font-bold tracking-tight text-white">
+        <h1 className="font-display text-2xl font-bold tracking-tight text-white">
           Settings
         </h1>
         <p className="mt-1 text-muted">Manage your account and preferences</p>
       </div>
 
       {/* Tabs */}
-      <div className="mb-8 flex gap-0 border-b border-white/5">
+      <div className="mb-8 flex gap-0 border-b border-[#1E2D45]">
         {TABS.map((t) => {
           const Icon = t.icon;
           return (
@@ -150,13 +150,13 @@ function CompanyTab({ profile }: { profile: Profile | null }) {
   };
 
   const inputClass =
-    "w-full rounded-lg border border-white/10 bg-dark-card px-4 py-2.5 text-sm text-white placeholder-muted outline-none transition-colors focus:border-brand";
-  const labelClass = "block text-sm font-medium text-foreground mb-1.5";
+    "w-full bg-[#111C2E] border border-[#1E2D45] rounded-lg px-4 py-3 text-white focus:border-[#2ECC71] focus:ring-1 focus:ring-[#2ECC71] transition";
+  const labelClass = "text-sm font-medium text-[#7A8BA3] mb-1.5";
 
   return (
     <div className="max-w-2xl space-y-8">
       {/* Logo */}
-      <div className="rounded-2xl bg-dark-card p-6">
+      <div className="rounded-2xl bg-dark-card border border-[#1E2D45] shadow-lg shadow-black/10 p-6">
         <h2 className="font-display text-base font-semibold text-white mb-4">
           Company Logo
         </h2>
@@ -176,7 +176,7 @@ function CompanyTab({ profile }: { profile: Profile | null }) {
       </div>
 
       {/* Company details */}
-      <div className="rounded-2xl bg-dark-card p-6">
+      <div className="rounded-2xl bg-dark-card border border-[#1E2D45] shadow-lg shadow-black/10 p-6">
         <h2 className="font-display text-base font-semibold text-white mb-4">
           Company Details
         </h2>
@@ -208,7 +208,7 @@ function CompanyTab({ profile }: { profile: Profile | null }) {
       </div>
 
       {/* Address */}
-      <div className="rounded-2xl bg-dark-card p-6">
+      <div className="rounded-2xl bg-dark-card border border-[#1E2D45] shadow-lg shadow-black/10 p-6">
         <h2 className="font-display text-base font-semibold text-white mb-4">
           Yard / Office Address
         </h2>
@@ -243,7 +243,7 @@ function CompanyTab({ profile }: { profile: Profile | null }) {
       </div>
 
       {/* Service radius */}
-      <div className="rounded-2xl bg-dark-card p-6">
+      <div className="rounded-2xl bg-dark-card border border-[#1E2D45] shadow-lg shadow-black/10 p-6">
         <h2 className="font-display text-base font-semibold text-white mb-4">
           Service Radius
         </h2>
@@ -278,7 +278,7 @@ function CompanyTab({ profile }: { profile: Profile | null }) {
       <button
         onClick={handleSave}
         disabled={saving}
-        className="rounded-lg bg-brand px-6 py-2.5 text-sm font-semibold text-dark-primary transition-colors hover:bg-brand-light disabled:opacity-50"
+        className="rounded-lg bg-[#2ECC71] hover:bg-[#1FA855] text-white font-semibold px-6 py-2.5 text-sm transition-colors disabled:opacity-50"
       >
         {saving ? "Saving..." : "Save Changes"}
       </button>
@@ -323,17 +323,17 @@ function TeamTab() {
         <p className="text-sm text-muted">{members.length} team members</p>
         <button
           onClick={() => setInviteOpen(true)}
-          className="flex items-center gap-2 rounded-lg bg-brand px-4 py-2.5 text-sm font-semibold text-dark-primary transition-colors hover:bg-brand-light"
+          className="flex items-center gap-2 rounded-lg bg-[#2ECC71] hover:bg-[#1FA855] text-white font-semibold px-4 py-2.5 text-sm transition-colors"
         >
           <Users className="h-4 w-4" />
           Invite Member
         </button>
       </div>
 
-      <div className="rounded-2xl bg-dark-card overflow-hidden">
+      <div className="rounded-2xl bg-dark-card border border-[#1E2D45] shadow-lg shadow-black/10 overflow-hidden">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-white/5">
+            <tr className="border-b border-[#1E2D45]">
               <th className="px-6 py-3.5 text-left text-xs font-medium uppercase tracking-wider text-muted">
                 Name
               </th>
@@ -350,16 +350,20 @@ function TeamTab() {
           </thead>
           <tbody>
             {loading ? (
-              <tr>
-                <td colSpan={4} className="px-6 py-16 text-center text-muted">
-                  Loading...
-                </td>
-              </tr>
+              <>
+                {[1, 2, 3].map((i) => (
+                  <tr key={i}>
+                    <td colSpan={4} className="px-6 py-2">
+                      <div className="h-12 w-full skeleton rounded" />
+                    </td>
+                  </tr>
+                ))}
+              </>
             ) : (
               members.map((m) => (
                 <tr
                   key={m.id}
-                  className="border-b border-white/5 last:border-0"
+                  className="border-b border-[#1E2D45] last:border-0"
                 >
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-3">
@@ -441,8 +445,8 @@ function InviteForm({ onSuccess }: { onSuccess: () => void }) {
   };
 
   const inputClass =
-    "w-full rounded-lg border border-white/10 bg-dark-card px-4 py-2.5 text-sm text-white placeholder-muted outline-none transition-colors focus:border-brand";
-  const labelClass = "block text-sm font-medium text-foreground mb-1.5";
+    "w-full bg-[#111C2E] border border-[#1E2D45] rounded-lg px-4 py-3 text-white focus:border-[#2ECC71] focus:ring-1 focus:ring-[#2ECC71] transition";
+  const labelClass = "text-sm font-medium text-[#7A8BA3] mb-1.5";
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
@@ -525,7 +529,7 @@ function InviteForm({ onSuccess }: { onSuccess: () => void }) {
       <button
         type="submit"
         disabled={saving}
-        className="w-full rounded-lg bg-brand px-4 py-2.5 text-sm font-semibold text-dark-primary transition-colors hover:bg-brand-light disabled:opacity-50"
+        className="w-full rounded-lg bg-[#2ECC71] hover:bg-[#1FA855] text-white font-semibold px-4 py-2.5 text-sm transition-colors disabled:opacity-50"
       >
         {saving ? "Inviting..." : "Send Invite"}
       </button>
@@ -563,7 +567,7 @@ function BillingTab({ profile }: { profile: Profile | null }) {
   return (
     <div className="max-w-4xl space-y-8">
       {/* Current plan */}
-      <div className="rounded-2xl bg-dark-card p-6">
+      <div className="rounded-2xl bg-dark-card border border-[#1E2D45] shadow-lg shadow-black/10 p-6">
         <div className="flex items-center justify-between">
           <div>
             <p className="text-xs font-medium uppercase tracking-wider text-muted mb-1">
@@ -606,7 +610,7 @@ function BillingTab({ profile }: { profile: Profile | null }) {
                 {tier.name}
               </p>
               <p className="mt-1">
-                <span className="font-display text-3xl font-bold text-white">
+                <span className="font-display text-3xl font-bold text-white tabular-nums">
                   {tier.price}
                 </span>
                 <span className="text-sm text-muted">/mo</span>
@@ -623,7 +627,7 @@ function BillingTab({ profile }: { profile: Profile | null }) {
                 className={`mt-6 w-full rounded-lg py-2.5 text-sm font-semibold transition-colors ${
                   isCurrent
                     ? "bg-dark-elevated text-muted cursor-default"
-                    : "bg-brand text-dark-primary hover:bg-brand-light"
+                    : "bg-[#2ECC71] hover:bg-[#1FA855] text-white font-semibold"
                 }`}
                 disabled={isCurrent}
               >
@@ -657,7 +661,7 @@ function IntegrationsTab({ profile }: { profile: Profile | null }) {
   return (
     <div className="max-w-2xl space-y-6">
       {/* Marketplace */}
-      <div className="rounded-2xl bg-dark-card p-6">
+      <div className="rounded-2xl bg-dark-card border border-[#1E2D45] shadow-lg shadow-black/10 p-6">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand/10">
@@ -700,7 +704,7 @@ function IntegrationsTab({ profile }: { profile: Profile | null }) {
       </div>
 
       {/* API Key */}
-      <div className="rounded-2xl bg-dark-card p-6">
+      <div className="rounded-2xl bg-dark-card border border-[#1E2D45] shadow-lg shadow-black/10 p-6">
         <div className="flex items-center gap-3 mb-4">
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-500/10">
             <Key className="h-5 w-5 text-purple-400" />
@@ -740,7 +744,7 @@ function IntegrationsTab({ profile }: { profile: Profile | null }) {
       </div>
 
       {/* Webhook */}
-      <div className="rounded-2xl bg-dark-card p-6">
+      <div className="rounded-2xl bg-dark-card border border-[#1E2D45] shadow-lg shadow-black/10 p-6">
         <div className="flex items-center gap-3 mb-4">
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-500/10">
             <Webhook className="h-5 w-5 text-blue-400" />
@@ -770,7 +774,7 @@ function IntegrationsTab({ profile }: { profile: Profile | null }) {
       </div>
 
       {/* Zapier / future */}
-      <div className="rounded-2xl bg-dark-card p-6 opacity-60">
+      <div className="rounded-2xl bg-dark-card border border-[#1E2D45] shadow-lg shadow-black/10 p-6 opacity-60">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-orange-500/10">

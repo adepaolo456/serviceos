@@ -75,8 +75,8 @@ const TRANSITION_STYLES: Record<string, { label: string; className: string; icon
   dispatched: { label: "Dispatch", className: "bg-purple-500 hover:bg-purple-600 text-white", icon: Truck },
   en_route: { label: "Mark En Route", className: "bg-orange-500 hover:bg-orange-600 text-white", icon: Truck },
   arrived: { label: "Mark Arrived", className: "bg-teal-500 hover:bg-teal-600 text-white", icon: MapPin },
-  in_progress: { label: "Start Work", className: "bg-brand hover:bg-brand-light text-dark-primary", icon: AlertCircle },
-  completed: { label: "Complete", className: "bg-emerald-500 hover:bg-emerald-600 text-white", icon: CheckCircle2 },
+  in_progress: { label: "Start Work", className: "bg-[#2ECC71] hover:bg-[#1FA855] text-white", icon: AlertCircle },
+  completed: { label: "Complete", className: "bg-[#2ECC71] hover:bg-[#1FA855] text-white", icon: CheckCircle2 },
   cancelled: { label: "Cancel", className: "bg-red-500/20 hover:bg-red-500/30 text-red-400", icon: XCircle },
 };
 
@@ -143,7 +143,50 @@ export default function JobDetailPage({
   };
 
   if (loading) {
-    return <div className="flex items-center justify-center py-32 text-muted">Loading...</div>;
+    return (
+      <div className="py-10">
+        <div className="mb-6 h-4 w-28 animate-pulse rounded bg-white/5" />
+        <div className="mb-8 flex items-start justify-between">
+          <div className="space-y-2">
+            <div className="h-7 w-40 animate-pulse rounded bg-white/5" />
+            <div className="h-4 w-56 animate-pulse rounded bg-white/5" />
+          </div>
+        </div>
+        <div className="mb-8 rounded-2xl bg-dark-card border border-[#1E2D45] p-6">
+          <div className="h-5 w-32 animate-pulse rounded bg-white/5 mb-5" />
+          <div className="flex items-center justify-between gap-4">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="flex flex-col items-center flex-1">
+                <div className="h-8 w-8 animate-pulse rounded-full bg-white/5" />
+                <div className="mt-2 h-3 w-14 animate-pulse rounded bg-white/5" />
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+          <div className="lg:col-span-2 space-y-6">
+            <div className="grid grid-cols-2 gap-4">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="rounded-2xl bg-dark-card border border-[#1E2D45] p-5">
+                  <div className="h-3 w-16 animate-pulse rounded bg-white/5 mb-3" />
+                  <div className="h-4 w-28 animate-pulse rounded bg-white/5" />
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="space-y-6">
+            <div className="rounded-2xl bg-dark-card border border-[#1E2D45] p-5">
+              <div className="h-4 w-20 animate-pulse rounded bg-white/5 mb-4" />
+              <div className="space-y-3">
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <div key={i} className="h-4 w-full animate-pulse rounded bg-white/5" />
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   if (!job) {
@@ -206,7 +249,7 @@ export default function JobDetailPage({
       </div>
 
       {/* Timeline */}
-      <div className="mb-8 rounded-2xl bg-dark-card p-6">
+      <div className="mb-8 rounded-2xl bg-dark-card border border-[#1E2D45] shadow-lg shadow-black/10 p-6">
         <h2 className="font-display text-base font-semibold text-white mb-5">
           Status Timeline
         </h2>
@@ -306,7 +349,7 @@ export default function JobDetailPage({
 
           {/* Service address */}
           {addr && (addr.street || addr.city) && (
-            <div className="rounded-2xl bg-dark-card p-5">
+            <div className="rounded-2xl bg-dark-card border border-[#1E2D45] shadow-lg shadow-black/10 p-5">
               <div className="flex items-center gap-2 mb-3">
                 <MapPin className="h-4 w-4 text-muted" />
                 <span className="text-sm font-medium text-white">Service Address</span>
@@ -322,7 +365,7 @@ export default function JobDetailPage({
 
           {/* Driver notes */}
           {job.driver_notes && (
-            <div className="rounded-2xl bg-dark-card p-5">
+            <div className="rounded-2xl bg-dark-card border border-[#1E2D45] shadow-lg shadow-black/10 p-5">
               <h3 className="text-sm font-medium text-white mb-2">Driver Notes</h3>
               <p className="text-sm text-foreground whitespace-pre-wrap">{job.driver_notes}</p>
             </div>
@@ -330,7 +373,7 @@ export default function JobDetailPage({
 
           {/* Photos */}
           {job.photos && job.photos.length > 0 && (
-            <div className="rounded-2xl bg-dark-card p-5">
+            <div className="rounded-2xl bg-dark-card border border-[#1E2D45] shadow-lg shadow-black/10 p-5">
               <h3 className="text-sm font-medium text-white mb-3">Photos ({job.photos.length})</h3>
               <div className="grid grid-cols-3 gap-3">
                 {job.photos.map((p, i) => (
@@ -346,7 +389,7 @@ export default function JobDetailPage({
 
         {/* Right: Pricing */}
         <div className="space-y-6">
-          <div className="rounded-2xl bg-dark-card p-5">
+          <div className="rounded-2xl bg-dark-card border border-[#1E2D45] shadow-lg shadow-black/10 p-5">
             <div className="flex items-center gap-2 mb-4">
               <DollarSign className="h-4 w-4 text-brand" />
               <h3 className="text-sm font-semibold text-white">Pricing</h3>
@@ -357,14 +400,14 @@ export default function JobDetailPage({
               {job.rental_start_date && <Row label="Rental Start" value={job.rental_start_date} />}
               {job.rental_end_date && <Row label="Rental End" value={job.rental_end_date} />}
               {job.deposit_amount > 0 && <Row label="Deposit" value={fmt(job.deposit_amount)} />}
-              <div className="flex justify-between border-t border-white/5 pt-2 font-semibold text-white">
+              <div className="flex justify-between border-t border-[#1E2D45] pt-2 font-semibold text-white">
                 <span>Total</span>
-                <span>{fmt(job.total_price)}</span>
+                <span className="tabular-nums">{fmt(job.total_price)}</span>
               </div>
             </div>
           </div>
 
-          <div className="rounded-2xl bg-dark-card p-5">
+          <div className="rounded-2xl bg-dark-card border border-[#1E2D45] shadow-lg shadow-black/10 p-5">
             <h3 className="text-sm font-semibold text-white mb-3">Details</h3>
             <div className="space-y-2 text-sm">
               <Row label="Job Type" value={job.job_type} capitalize />
@@ -393,7 +436,7 @@ function InfoCard({
   href?: string;
 }) {
   const content = (
-    <div className="rounded-2xl bg-dark-card p-5 transition-colors hover:bg-dark-card-hover">
+    <div className="rounded-2xl bg-dark-card border border-[#1E2D45] shadow-lg shadow-black/10 p-5 transition-colors hover:bg-dark-card-hover hover:border-[#2A3D5A]">
       <div className="flex items-center gap-2 mb-2">
         <Icon className="h-4 w-4 text-muted" />
         <span className="text-xs font-medium uppercase tracking-wider text-muted">
@@ -425,7 +468,7 @@ function Row({
   return (
     <div className="flex justify-between">
       <span className="text-muted">{label}</span>
-      <span className={`text-foreground ${cap ? "capitalize" : ""}`}>
+      <span className={`text-foreground ${cap ? "capitalize" : ""} ${value.startsWith("$") ? "tabular-nums" : ""}`}>
         {value}
       </span>
     </div>

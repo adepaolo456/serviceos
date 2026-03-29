@@ -33,7 +33,7 @@ export default function SlideOver({
     <div className="fixed inset-0 z-50 flex justify-end">
       <div className="fixed inset-0 bg-black/60" onClick={onClose} />
       <div className="relative w-full max-w-lg bg-dark-secondary shadow-2xl">
-        <div className="flex h-16 items-center justify-between border-b border-white/5 px-6">
+        <div className="flex h-16 items-center justify-between border-b border-[#1E2D45] px-6">
           <h2 className="font-display text-lg font-semibold text-white">
             {title}
           </h2>

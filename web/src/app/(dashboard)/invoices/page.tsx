@@ -78,7 +78,7 @@ export default function InvoicesPage() {
     <div>
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="font-display text-3xl font-bold tracking-tight text-white">
+          <h1 className="font-display text-2xl font-bold tracking-tight text-white">
             Invoices
           </h1>
           <p className="mt-1 text-muted">{total} invoices</p>
@@ -99,7 +99,7 @@ export default function InvoicesPage() {
               setPanelMode("create");
               setPanelOpen(true);
             }}
-            className="flex items-center gap-2 rounded-lg bg-brand px-4 py-2.5 text-sm font-semibold text-dark-primary transition-colors hover:bg-brand-light"
+            className="flex items-center gap-2 rounded-lg bg-[#2ECC71] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1FA855]"
           >
             <Plus className="h-4 w-4" />
             New Invoice
@@ -108,7 +108,7 @@ export default function InvoicesPage() {
       </div>
 
       {/* Tabs */}
-      <div className="mb-6 flex gap-0 border-b border-white/5">
+      <div className="mb-6 flex gap-0 border-b border-[#1E2D45]">
         {TABS.map((t) => (
           <button
             key={t}
@@ -126,10 +126,10 @@ export default function InvoicesPage() {
       </div>
 
       {/* Table */}
-      <div className="rounded-2xl bg-dark-card overflow-hidden">
+      <div className="rounded-2xl bg-dark-card overflow-hidden border border-[#1E2D45] shadow-lg shadow-black/10">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-white/5">
+            <tr className="border-b border-[#1E2D45]">
               {[
                 "Invoice #",
                 "Customer",
@@ -151,15 +151,32 @@ export default function InvoicesPage() {
           </thead>
           <tbody>
             {loading ? (
-              <tr>
-                <td colSpan={8} className="px-5 py-16 text-center text-muted">
-                  Loading...
-                </td>
-              </tr>
+              Array.from({ length: 5 }).map((_, i) => (
+                <tr key={i} className="border-b border-[#1E2D45] last:border-0">
+                  {Array.from({ length: 8 }).map((_, j) => (
+                    <td key={j} className="px-5 py-4">
+                      <div className="h-4 rounded bg-white/5 animate-pulse" />
+                    </td>
+                  ))}
+                </tr>
+              ))
             ) : invoices.length === 0 ? (
               <tr>
-                <td colSpan={8} className="px-5 py-16 text-center text-muted">
-                  No invoices found
+                <td colSpan={8} className="px-5 py-16">
+                  <div className="flex flex-col items-center justify-center text-center">
+                    <FileText size={48} className="text-[#7A8BA3]/30 mb-4" />
+                    <p className="text-sm font-medium text-white mb-1">No invoices yet</p>
+                    <p className="text-sm text-muted mb-4">Create an invoice or generate one from a completed job</p>
+                    <button
+                      onClick={() => {
+                        setPanelMode("create");
+                        setPanelOpen(true);
+                      }}
+                      className="rounded-lg bg-[#2ECC71] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1FA855]"
+                    >
+                      New Invoice
+                    </button>
+                  </div>
                 </td>
               </tr>
             ) : (
@@ -167,7 +184,7 @@ export default function InvoicesPage() {
                 <tr
                   key={inv.id}
                   onClick={() => router.push(`/invoices/${inv.id}`)}
-                  className="border-b border-white/5 last:border-0 cursor-pointer transition-colors hover:bg-dark-card-hover"
+                  className="border-b border-[#1E2D45] last:border-0 cursor-pointer transition-colors hover:bg-[#1A2740]/50"
                 >
                   <td className="px-5 py-4 font-medium text-white">
                     {inv.invoice_number}
@@ -183,13 +200,13 @@ export default function InvoicesPage() {
                   <td className="px-5 py-4 text-foreground">
                     {inv.due_date || "—"}
                   </td>
-                  <td className="px-5 py-4 text-right text-foreground">
+                  <td className="px-5 py-4 text-right text-foreground tabular-nums">
                     {fmt(inv.total)}
                   </td>
-                  <td className="px-5 py-4 text-right text-foreground">
+                  <td className="px-5 py-4 text-right text-foreground tabular-nums">
                     {fmt(inv.amount_paid)}
                   </td>
-                  <td className="px-5 py-4 text-right font-medium text-white">
+                  <td className="px-5 py-4 text-right font-medium text-white tabular-nums">
                     {fmt(inv.balance_due)}
                   </td>
                   <td className="px-5 py-4 text-right">
@@ -315,7 +332,7 @@ function FromJobForm({ onSuccess }: { onSuccess: () => void }) {
   };
 
   const inputClass =
-    "w-full rounded-lg border border-white/10 bg-dark-card px-4 py-2.5 text-sm text-white placeholder-muted outline-none transition-colors focus:border-brand";
+    "w-full rounded-lg border border-[#1E2D45] bg-[#111C2E] px-4 py-2.5 text-sm text-white placeholder-muted outline-none transition-colors focus:border-brand";
 
   return (
     <div className="space-y-5">
@@ -388,7 +405,7 @@ function FromJobForm({ onSuccess }: { onSuccess: () => void }) {
       <button
         onClick={handleGenerate}
         disabled={!selectedJob || saving}
-        className="w-full rounded-lg bg-brand px-4 py-2.5 text-sm font-semibold text-dark-primary transition-colors hover:bg-brand-light disabled:opacity-50"
+        className="w-full rounded-lg bg-[#2ECC71] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1FA855] disabled:opacity-50"
       >
         {saving ? "Generating..." : "Generate Invoice"}
       </button>
@@ -507,7 +524,7 @@ function CreateInvoiceForm({ onSuccess }: { onSuccess: () => void }) {
   };
 
   const inputClass =
-    "w-full rounded-lg border border-white/10 bg-dark-card px-4 py-2.5 text-sm text-white placeholder-muted outline-none transition-colors focus:border-brand";
+    "w-full rounded-lg border border-[#1E2D45] bg-[#111C2E] px-4 py-2.5 text-sm text-white placeholder-muted outline-none transition-colors focus:border-brand";
   const labelClass = "block text-sm font-medium text-foreground mb-1.5";
 
   return (
@@ -679,7 +696,7 @@ function CreateInvoiceForm({ onSuccess }: { onSuccess: () => void }) {
       <button
         type="submit"
         disabled={saving}
-        className="w-full rounded-lg bg-brand px-4 py-2.5 text-sm font-semibold text-dark-primary transition-colors hover:bg-brand-light disabled:opacity-50"
+        className="w-full rounded-lg bg-[#2ECC71] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1FA855] disabled:opacity-50"
       >
         {saving ? "Creating..." : "Create Invoice"}
       </button>

@@ -55,7 +55,7 @@ const STATUS_CARD: Record<string, { bg: string; border: string; dot: string }> =
   {
     pending: {
       bg: "bg-dark-card",
-      border: "border-white/5",
+      border: "border-[#1E2D45]",
       dot: "bg-zinc-500",
     },
     confirmed: {
@@ -162,7 +162,7 @@ export default function DispatchPage() {
       {/* Header */}
       <div className="mb-6 flex items-center justify-between shrink-0">
         <div>
-          <h1 className="font-display text-3xl font-bold tracking-tight text-white">
+          <h1 className="font-display text-2xl font-bold tracking-tight text-white">
             Dispatch Board
           </h1>
           <p className="mt-1 text-muted">{formatDateDisplay(date)}</p>
@@ -190,7 +190,7 @@ export default function DispatchPage() {
               type="date"
               value={date}
               onChange={(e) => setDate(e.target.value)}
-              className="rounded-lg border border-white/10 bg-dark-card py-2 pl-10 pr-3 text-sm text-white outline-none transition-colors focus:border-brand"
+              className="rounded-lg border border-[#1E2D45] bg-[#111C2E] py-2 pl-10 pr-3 text-sm text-white outline-none transition-colors focus:border-[#2ECC71]"
             />
           </div>
           <button
@@ -203,8 +203,13 @@ export default function DispatchPage() {
       </div>
 
       {loading ? (
-        <div className="flex flex-1 items-center justify-center text-muted">
-          Loading dispatch board...
+        <div className="flex flex-1 items-center justify-center">
+          <div className="flex gap-4">
+            <div className="w-72 h-96 skeleton rounded-2xl" />
+            <div className="w-72 h-96 skeleton rounded-2xl" />
+            <div className="w-72 h-96 skeleton rounded-2xl" />
+            <div className="w-72 h-96 skeleton rounded-2xl" />
+          </div>
         </div>
       ) : !board ? (
         <div className="flex flex-1 items-center justify-center text-muted">
@@ -213,8 +218,8 @@ export default function DispatchPage() {
       ) : (
         <div className="flex flex-1 gap-4 overflow-x-auto pb-4">
           {/* Unassigned column */}
-          <div className="flex w-72 shrink-0 flex-col rounded-2xl bg-dark-secondary">
-            <div className="flex items-center justify-between border-b border-white/5 px-4 py-3">
+          <div className="flex w-72 shrink-0 flex-col rounded-2xl bg-dark-secondary border border-[#1E2D45] shadow-lg shadow-black/10">
+            <div className="flex items-center justify-between border-b border-[#1E2D45] px-4 py-3">
               <div className="flex items-center gap-2">
                 <div className="flex h-6 w-6 items-center justify-center rounded-md bg-red-500/10">
                   <UserPlus className="h-3.5 w-3.5 text-red-400" />
@@ -255,8 +260,12 @@ export default function DispatchPage() {
 
           {/* Empty state */}
           {board.drivers.length === 0 && (
-            <div className="flex flex-1 items-center justify-center text-muted">
-              <p className="text-sm">No drivers available</p>
+            <div className="flex flex-1 items-center justify-center">
+              <div className="flex flex-col items-center gap-3">
+                <Truck size={48} className="text-[#7A8BA3]/30" />
+                <p className="text-sm font-semibold text-white">No drivers available</p>
+                <p className="text-xs text-muted">Invite team members to start dispatching jobs</p>
+              </div>
             </div>
           )}
         </div>
@@ -272,8 +281,8 @@ function DriverColumnView({ column }: { column: DriverColumn }) {
   const completedCount = jobs.filter((j) => j.status === "completed").length;
 
   return (
-    <div className="flex w-72 shrink-0 flex-col rounded-2xl bg-dark-secondary">
-      <div className="border-b border-white/5 px-4 py-3">
+    <div className="flex w-72 shrink-0 flex-col rounded-2xl bg-dark-secondary border border-[#1E2D45] shadow-lg shadow-black/10">
+      <div className="border-b border-[#1E2D45] px-4 py-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="flex h-8 w-8 items-center justify-center rounded-full bg-brand/10 text-xs font-bold text-brand">

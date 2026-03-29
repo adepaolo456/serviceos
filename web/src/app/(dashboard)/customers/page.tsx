@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Search } from "lucide-react";
+import { Plus, Search, Users } from "lucide-react";
 import { api } from "@/lib/api";
 import SlideOver from "@/components/slide-over";
 
@@ -66,14 +66,14 @@ export default function CustomersPage() {
     <div>
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="font-display text-3xl font-bold tracking-tight text-white">
+          <h1 className="font-display text-2xl font-bold tracking-tight text-white">
             Customers
           </h1>
           <p className="mt-1 text-muted">{total} total customers</p>
         </div>
         <button
           onClick={() => setPanelOpen(true)}
-          className="flex items-center gap-2 rounded-lg bg-brand px-4 py-2.5 text-sm font-semibold text-dark-primary transition-colors hover:bg-brand-light"
+          className="flex items-center gap-2 rounded-lg bg-[#2ECC71] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1FA855]"
         >
           <Plus className="h-4 w-4" />
           New Customer
@@ -88,7 +88,7 @@ export default function CustomersPage() {
             placeholder="Search by name, email, or phone..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full rounded-lg border border-white/10 bg-dark-card py-2.5 pl-10 pr-4 text-sm text-white placeholder-muted outline-none transition-colors focus:border-brand"
+            className="w-full rounded-lg border border-[#1E2D45] bg-[#111C2E] py-2.5 pl-10 pr-4 text-sm text-white placeholder-muted outline-none transition-colors focus:border-[#2ECC71] focus:ring-1 focus:ring-[#2ECC71]"
           />
         </div>
         <div className="flex gap-1">
@@ -108,10 +108,10 @@ export default function CustomersPage() {
         </div>
       </div>
 
-      <div className="rounded-2xl bg-dark-card overflow-hidden">
+      <div className="rounded-2xl bg-dark-card overflow-hidden border border-[#1E2D45] shadow-lg shadow-black/10">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-white/5">
+            <tr className="border-b border-[#1E2D45]">
               <th className="px-6 py-3.5 text-left text-xs font-medium uppercase tracking-wider text-muted">
                 Name
               </th>
@@ -137,15 +137,27 @@ export default function CustomersPage() {
           </thead>
           <tbody>
             {loading ? (
-              <tr>
-                <td colSpan={7} className="px-6 py-16 text-center text-muted">
-                  Loading...
-                </td>
-              </tr>
+              Array.from({ length: 5 }).map((_, i) => (
+                <tr key={i}>
+                  <td colSpan={7} className="px-6 py-1">
+                    <div className="h-12 w-full skeleton rounded" />
+                  </td>
+                </tr>
+              ))
             ) : customers.length === 0 ? (
               <tr>
-                <td colSpan={7} className="px-6 py-16 text-center text-muted">
-                  No customers found
+                <td colSpan={7} className="px-6 py-16">
+                  <div className="flex flex-col items-center justify-center text-center">
+                    <Users className="h-12 w-12 text-[#7A8BA3]/30 mb-4" />
+                    <h3 className="text-lg font-semibold text-white mb-1">No customers yet</h3>
+                    <p className="text-sm text-muted mb-4">Add your first customer to get started</p>
+                    <button
+                      onClick={() => setPanelOpen(true)}
+                      className="rounded-lg bg-[#2ECC71] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1FA855]"
+                    >
+                      New Customer
+                    </button>
+                  </div>
                 </td>
               </tr>
             ) : (
@@ -153,7 +165,7 @@ export default function CustomersPage() {
                 <tr
                   key={c.id}
                   onClick={() => router.push(`/customers/${c.id}`)}
-                  className="border-b border-white/5 last:border-0 cursor-pointer transition-colors hover:bg-dark-card-hover"
+                  className="border-b border-[#1E2D45] last:border-0 cursor-pointer transition-colors hover:bg-[#1A2740]/50"
                 >
                   <td className="px-6 py-4 font-medium text-white">
                     {c.first_name} {c.last_name}
@@ -183,7 +195,7 @@ export default function CustomersPage() {
                   <td className="px-6 py-4 text-right text-foreground">
                     {c.total_jobs}
                   </td>
-                  <td className="px-6 py-4 text-right text-foreground">
+                  <td className="px-6 py-4 text-right text-foreground tabular-nums">
                     ${Number(c.lifetime_revenue).toLocaleString()}
                   </td>
                   <td className="px-6 py-4 text-center">
@@ -284,8 +296,8 @@ function NewCustomerForm({ onSuccess }: { onSuccess: () => void }) {
   };
 
   const inputClass =
-    "w-full rounded-lg border border-white/10 bg-dark-card px-4 py-2.5 text-sm text-white placeholder-muted outline-none transition-colors focus:border-brand";
-  const labelClass = "block text-sm font-medium text-foreground mb-1.5";
+    "w-full rounded-lg border border-[#1E2D45] bg-[#111C2E] px-4 py-2.5 text-sm text-white placeholder-muted outline-none transition-colors focus:border-brand";
+  const labelClass = "block text-sm font-medium text-[#7A8BA3] mb-1.5";
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
@@ -419,7 +431,7 @@ function NewCustomerForm({ onSuccess }: { onSuccess: () => void }) {
       <button
         type="submit"
         disabled={saving}
-        className="w-full rounded-lg bg-brand px-4 py-2.5 text-sm font-semibold text-dark-primary transition-colors hover:bg-brand-light disabled:opacity-50"
+        className="w-full rounded-lg bg-[#2ECC71] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1FA855] disabled:opacity-50"
       >
         {saving ? "Creating..." : "Create Customer"}
       </button>

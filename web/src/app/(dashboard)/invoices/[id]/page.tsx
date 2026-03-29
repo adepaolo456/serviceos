@@ -139,8 +139,47 @@ export default function InvoiceDetailPage({
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-32 text-muted">
-        Loading...
+      <div className="py-10">
+        <div className="mb-6 h-4 w-32 animate-pulse rounded bg-white/5" />
+        <div className="mb-8 flex items-start justify-between">
+          <div className="space-y-2">
+            <div className="h-7 w-36 animate-pulse rounded bg-white/5" />
+            <div className="h-4 w-52 animate-pulse rounded bg-white/5" />
+          </div>
+          <div className="flex gap-2">
+            <div className="h-9 w-24 animate-pulse rounded-lg bg-white/5" />
+          </div>
+        </div>
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+          <div className="lg:col-span-2 space-y-6">
+            <div className="grid grid-cols-2 gap-4">
+              {Array.from({ length: 2 }).map((_, i) => (
+                <div key={i} className="rounded-2xl bg-dark-card border border-[#1E2D45] p-5">
+                  <div className="h-3 w-16 animate-pulse rounded bg-white/5 mb-3" />
+                  <div className="h-4 w-28 animate-pulse rounded bg-white/5" />
+                </div>
+              ))}
+            </div>
+            <div className="rounded-2xl bg-dark-card border border-[#1E2D45] p-6">
+              <div className="h-5 w-24 animate-pulse rounded bg-white/5 mb-4" />
+              <div className="space-y-3">
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <div key={i} className="h-4 w-full animate-pulse rounded bg-white/5" />
+                ))}
+              </div>
+            </div>
+          </div>
+          <div>
+            <div className="rounded-2xl bg-dark-card border border-[#1E2D45] p-6">
+              <div className="h-5 w-20 animate-pulse rounded bg-white/5 mb-5" />
+              <div className="space-y-3">
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <div key={i} className="h-4 w-full animate-pulse rounded bg-white/5" />
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     );
   }
@@ -226,7 +265,7 @@ export default function InvoiceDetailPage({
         <div className="space-y-6 lg:col-span-2">
           {/* Info cards */}
           <div className="grid grid-cols-2 gap-4">
-            <div className="rounded-2xl bg-dark-card p-5">
+            <div className="rounded-2xl bg-dark-card border border-[#1E2D45] shadow-lg shadow-black/10 p-5">
               <div className="flex items-center gap-2 mb-2">
                 <User className="h-4 w-4 text-muted" />
                 <span className="text-xs font-medium uppercase tracking-wider text-muted">
@@ -249,7 +288,7 @@ export default function InvoiceDetailPage({
                 </p>
               )}
             </div>
-            <div className="rounded-2xl bg-dark-card p-5">
+            <div className="rounded-2xl bg-dark-card border border-[#1E2D45] shadow-lg shadow-black/10 p-5">
               <div className="flex items-center gap-2 mb-2">
                 <Calendar className="h-4 w-4 text-muted" />
                 <span className="text-xs font-medium uppercase tracking-wider text-muted">
@@ -272,15 +311,15 @@ export default function InvoiceDetailPage({
           </div>
 
           {/* Line items */}
-          <div className="rounded-2xl bg-dark-card overflow-hidden">
-            <div className="px-6 py-4 border-b border-white/5">
+          <div className="rounded-2xl bg-dark-card border border-[#1E2D45] shadow-lg shadow-black/10 overflow-hidden">
+            <div className="px-6 py-4 border-b border-[#1E2D45]">
               <h2 className="font-display text-base font-semibold text-white">
                 Line Items
               </h2>
             </div>
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-white/5">
+                <tr className="border-b border-[#1E2D45]">
                   <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted">
                     Description
                   </th>
@@ -299,7 +338,7 @@ export default function InvoiceDetailPage({
                 {invoice.line_items.map((item, i) => (
                   <tr
                     key={i}
-                    className="border-b border-white/5 last:border-0"
+                    className="border-b border-[#1E2D45] last:border-0"
                   >
                     <td className="px-6 py-3.5 text-foreground">
                       {item.description}
@@ -307,10 +346,10 @@ export default function InvoiceDetailPage({
                     <td className="px-6 py-3.5 text-right text-foreground">
                       {item.quantity}
                     </td>
-                    <td className="px-6 py-3.5 text-right text-foreground">
+                    <td className="px-6 py-3.5 text-right text-foreground tabular-nums">
                       {fmt(item.unitPrice)}
                     </td>
-                    <td className="px-6 py-3.5 text-right font-medium text-white">
+                    <td className="px-6 py-3.5 text-right font-medium text-white tabular-nums">
                       {fmt(item.amount)}
                     </td>
                   </tr>
@@ -320,8 +359,8 @@ export default function InvoiceDetailPage({
           </div>
 
           {/* Payment history */}
-          <div className="rounded-2xl bg-dark-card overflow-hidden">
-            <div className="px-6 py-4 border-b border-white/5">
+          <div className="rounded-2xl bg-dark-card border border-[#1E2D45] shadow-lg shadow-black/10 overflow-hidden">
+            <div className="px-6 py-4 border-b border-[#1E2D45]">
               <h2 className="font-display text-base font-semibold text-white">
                 Payment History ({payments.length})
               </h2>
@@ -333,7 +372,7 @@ export default function InvoiceDetailPage({
             ) : (
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-white/5">
+                  <tr className="border-b border-[#1E2D45]">
                     <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted">
                       Date
                     </th>
@@ -352,7 +391,7 @@ export default function InvoiceDetailPage({
                   {payments.map((p) => (
                     <tr
                       key={p.id}
-                      className="border-b border-white/5 last:border-0"
+                      className="border-b border-[#1E2D45] last:border-0"
                     >
                       <td className="px-6 py-3.5 text-foreground">
                         {new Date(p.created_at).toLocaleDateString()}
@@ -367,7 +406,7 @@ export default function InvoiceDetailPage({
                           {p.status}
                         </span>
                       </td>
-                      <td className="px-6 py-3.5 text-right font-medium text-white">
+                      <td className="px-6 py-3.5 text-right font-medium text-white tabular-nums">
                         {fmt(p.amount)}
                       </td>
                     </tr>
@@ -380,7 +419,7 @@ export default function InvoiceDetailPage({
 
         {/* Sidebar totals */}
         <div className="space-y-6">
-          <div className="rounded-2xl bg-dark-card p-6">
+          <div className="rounded-2xl bg-dark-card border border-[#1E2D45] shadow-lg shadow-black/10 p-6">
             <div className="flex items-center gap-2 mb-5">
               <DollarSign className="h-4 w-4 text-brand" />
               <h3 className="font-display text-base font-semibold text-white">
@@ -408,7 +447,7 @@ export default function InvoiceDetailPage({
                   <span>{fmt(invoice.tax_amount)}</span>
                 </div>
               )}
-              <div className="flex justify-between border-t border-white/5 pt-2.5 font-semibold text-white">
+              <div className="flex justify-between border-t border-[#1E2D45] pt-2.5 font-semibold text-white">
                 <span>Total</span>
                 <span>{fmt(invoice.total)}</span>
               </div>
@@ -416,7 +455,7 @@ export default function InvoiceDetailPage({
                 <span className="text-muted">Paid</span>
                 <span className="text-brand">{fmt(invoice.amount_paid)}</span>
               </div>
-              <div className="flex justify-between border-t border-white/5 pt-2.5 font-bold text-white text-base">
+              <div className="flex justify-between border-t border-[#1E2D45] pt-2.5 font-bold text-white text-base">
                 <span>Balance Due</span>
                 <span>{fmt(invoice.balance_due)}</span>
               </div>
@@ -424,7 +463,7 @@ export default function InvoiceDetailPage({
           </div>
 
           {invoice.notes && (
-            <div className="rounded-2xl bg-dark-card p-6">
+            <div className="rounded-2xl bg-dark-card border border-[#1E2D45] shadow-lg shadow-black/10 p-6">
               <h3 className="text-sm font-semibold text-white mb-2">Notes</h3>
               <p className="text-sm text-foreground whitespace-pre-wrap">
                 {invoice.notes}

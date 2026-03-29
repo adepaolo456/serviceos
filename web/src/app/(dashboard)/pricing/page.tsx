@@ -116,14 +116,14 @@ export default function PricingPage() {
     <div>
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="font-display text-3xl font-bold tracking-tight text-white">
+          <h1 className="font-display text-2xl font-bold tracking-tight text-white">
             Pricing
           </h1>
           <p className="mt-1 text-muted">{rules.length} pricing rules</p>
         </div>
         <button
           onClick={() => setPanelOpen(true)}
-          className="flex items-center gap-2 rounded-lg bg-brand px-4 py-2.5 text-sm font-semibold text-dark-primary transition-colors hover:bg-brand-light"
+          className="flex items-center gap-2 rounded-lg bg-[#2ECC71] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1FA855]"
         >
           <Plus className="h-4 w-4" />
           New Rule
@@ -131,7 +131,7 @@ export default function PricingPage() {
       </div>
 
       {/* Price Calculator */}
-      <div className="mb-8 rounded-2xl bg-dark-card overflow-hidden">
+      <div className="mb-8 rounded-2xl bg-dark-card border border-[#1E2D45] shadow-lg shadow-black/10 overflow-hidden">
         <button
           onClick={() => setCalcOpen(!calcOpen)}
           className="flex w-full items-center justify-between px-6 py-4 text-left transition-colors hover:bg-dark-card-hover"
@@ -156,7 +156,7 @@ export default function PricingPage() {
           )}
         </button>
         {calcOpen && (
-          <div className="border-t border-white/5 p-6">
+          <div className="border-t border-[#1E2D45] p-6">
             <PriceCalculator />
           </div>
         )}
@@ -164,10 +164,23 @@ export default function PricingPage() {
 
       {/* Rules grid grouped by service type */}
       {loading ? (
-        <div className="py-20 text-center text-muted">Loading...</div>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="h-48 skeleton rounded-xl" />
+          ))}
+        </div>
       ) : rules.length === 0 ? (
-        <div className="py-20 text-center text-muted">
-          No pricing rules yet. Create your first rule to get started.
+        <div className="py-20 flex flex-col items-center justify-center text-center">
+          <DollarSign size={48} className="text-[#7A8BA3]/30 mb-4" />
+          <p className="font-display text-lg font-semibold text-white mb-1">No pricing rules</p>
+          <p className="text-sm text-muted mb-6">Create your first pricing rule to start quoting jobs</p>
+          <button
+            onClick={() => setPanelOpen(true)}
+            className="flex items-center gap-2 rounded-lg bg-[#2ECC71] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1FA855]"
+          >
+            <Plus className="h-4 w-4" />
+            New Rule
+          </button>
         </div>
       ) : (
         Object.entries(grouped).map(([serviceType, serviceRules]) => (
@@ -205,7 +218,7 @@ export default function PricingPage() {
 function RuleCard({ rule }: { rule: PricingRule }) {
   return (
     <div
-      className={`rounded-2xl bg-dark-card p-5 transition-colors hover:bg-dark-card-hover ${
+      className={`rounded-2xl bg-dark-card border border-[#1E2D45] shadow-lg shadow-black/10 p-5 transition-colors hover:bg-dark-card-hover ${
         !rule.is_active ? "opacity-50" : ""
       }`}
     >
@@ -230,12 +243,12 @@ function RuleCard({ rule }: { rule: PricingRule }) {
             )}
           </div>
         </div>
-        <p className="font-display text-2xl font-bold text-white">
+        <p className="font-display text-2xl font-bold text-white tabular-nums">
           {fmt(rule.base_price)}
         </p>
       </div>
 
-      <div className="space-y-2 text-xs">
+      <div className="space-y-2 text-xs tabular-nums">
         <div className="flex items-center gap-2 text-foreground">
           <Clock className="h-3 w-3 text-muted" />
           <span>
@@ -265,7 +278,7 @@ function RuleCard({ rule }: { rule: PricingRule }) {
         </div>
       </div>
 
-      <div className="mt-4 flex items-center justify-between border-t border-white/5 pt-3">
+      <div className="mt-4 flex items-center justify-between border-t border-[#1E2D45] pt-3">
         {rule.require_deposit ? (
           <span className="text-xs text-muted">
             Deposit: {fmt(rule.deposit_amount)}
@@ -321,7 +334,7 @@ function PriceCalculator() {
   };
 
   const inputClass =
-    "w-full rounded-lg border border-white/10 bg-dark-elevated px-4 py-2.5 text-sm text-white placeholder-muted outline-none transition-colors focus:border-brand";
+    "w-full rounded-lg bg-[#111C2E] border border-[#1E2D45] px-4 py-2.5 text-sm text-white placeholder-muted outline-none transition-colors focus:border-brand";
   const labelClass = "block text-xs font-medium text-muted mb-1";
 
   return (
@@ -407,7 +420,7 @@ function PriceCalculator() {
         <button
           type="submit"
           disabled={calculating}
-          className="w-full rounded-lg bg-brand px-4 py-2.5 text-sm font-semibold text-dark-primary transition-colors hover:bg-brand-light disabled:opacity-50"
+          className="w-full rounded-lg bg-[#2ECC71] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1FA855] disabled:opacity-50"
         >
           {calculating ? "Calculating..." : "Calculate Price"}
         </button>
@@ -420,7 +433,7 @@ function PriceCalculator() {
       </form>
 
       {/* Receipt */}
-      <div className="rounded-xl border border-white/5 bg-dark-elevated p-5">
+      <div className="rounded-xl border border-[#1E2D45] bg-dark-elevated p-5">
         {!result ? (
           <div className="flex h-full items-center justify-center text-sm text-muted py-12">
             <div className="text-center">
@@ -439,7 +452,7 @@ function PriceCalculator() {
                   {result.rule.name}
                 </p>
               </div>
-              <p className="font-display text-3xl font-bold text-brand">
+              <p className="font-display text-3xl font-bold text-brand tabular-nums">
                 {fmt(result.breakdown.total)}
               </p>
             </div>
@@ -556,7 +569,7 @@ function ReceiptLine({
       }`}
     >
       <span className={indent ? "text-xs" : "text-sm"}>{label}</span>
-      <span className={indent ? "text-xs" : "text-sm"}>{value}</span>
+      <span className={`tabular-nums ${indent ? "text-xs" : "text-sm"}`}>{value}</span>
     </div>
   );
 }
@@ -619,7 +632,7 @@ function CreateRuleForm({ onSuccess }: { onSuccess: () => void }) {
   };
 
   const inputClass =
-    "w-full rounded-lg border border-white/10 bg-dark-card px-4 py-2.5 text-sm text-white placeholder-muted outline-none transition-colors focus:border-brand";
+    "w-full rounded-lg bg-[#111C2E] border border-[#1E2D45] px-4 py-2.5 text-sm text-white placeholder-muted outline-none transition-colors focus:border-brand";
   const labelClass = "block text-sm font-medium text-foreground mb-1.5";
   const sectionClass = "text-xs font-medium uppercase tracking-wider text-muted mb-3 mt-6";
 
@@ -856,7 +869,7 @@ function CreateRuleForm({ onSuccess }: { onSuccess: () => void }) {
       <button
         type="submit"
         disabled={saving}
-        className="w-full rounded-lg bg-brand px-4 py-2.5 text-sm font-semibold text-dark-primary transition-colors hover:bg-brand-light disabled:opacity-50 mt-6"
+        className="w-full rounded-lg bg-[#2ECC71] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1FA855] disabled:opacity-50 mt-6"
       >
         {saving ? "Creating..." : "Create Rule"}
       </button>

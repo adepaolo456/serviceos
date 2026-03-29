@@ -104,14 +104,14 @@ export default function AssetsPage() {
     <div>
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="font-display text-3xl font-bold tracking-tight text-white">
+          <h1 className="font-display text-2xl font-bold tracking-tight text-white">
             Inventory
           </h1>
           <p className="mt-1 text-muted">{total} assets</p>
         </div>
         <button
           onClick={() => setPanelOpen(true)}
-          className="flex items-center gap-2 rounded-lg bg-brand px-4 py-2.5 text-sm font-semibold text-dark-primary transition-colors hover:bg-brand-light"
+          className="flex items-center gap-2 rounded-lg bg-[#2ECC71] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1FA855]"
         >
           <Plus className="h-4 w-4" />
           Add Asset
@@ -119,7 +119,7 @@ export default function AssetsPage() {
       </div>
 
       {/* Status tabs */}
-      <div className="mb-6 flex gap-0 border-b border-white/5">
+      <div className="mb-6 flex gap-0 border-b border-[#1E2D45]">
         {STATUS_TABS.map((s) => (
           <button
             key={s}
@@ -140,9 +140,24 @@ export default function AssetsPage() {
 
       {/* Asset grid */}
       {loading ? (
-        <div className="py-32 text-center text-muted">Loading...</div>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {Array.from({ length: 8 }).map((_, i) => (
+            <div key={i} className="h-40 w-full skeleton rounded-2xl" />
+          ))}
+        </div>
       ) : assets.length === 0 ? (
-        <div className="py-32 text-center text-muted">No assets found</div>
+        <div className="py-32 flex flex-col items-center justify-center text-center">
+          <Box size={48} className="text-[#7A8BA3]/30 mb-4" />
+          <h2 className="text-lg font-semibold text-white mb-1">No assets yet</h2>
+          <p className="text-sm text-muted mb-6">Add your first asset to start tracking inventory</p>
+          <button
+            onClick={() => setPanelOpen(true)}
+            className="flex items-center gap-2 rounded-lg bg-[#2ECC71] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1FA855]"
+          >
+            <Plus className="h-4 w-4" />
+            Add Asset
+          </button>
+        </div>
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {assets.map((asset) => {
@@ -152,7 +167,7 @@ export default function AssetsPage() {
               <button
                 key={asset.id}
                 onClick={() => setDetailAsset(asset)}
-                className="group rounded-2xl bg-dark-card p-5 text-left transition-all hover:bg-dark-card-hover hover:ring-1 hover:ring-white/5"
+                className="group rounded-2xl bg-dark-card p-5 text-left transition-all hover:bg-dark-card-hover hover:ring-1 hover:ring-white/5 border border-[#1E2D45] shadow-lg shadow-black/10"
               >
                 <div className="flex items-start justify-between mb-3">
                   <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-dark-elevated">
@@ -364,8 +379,8 @@ function CreateAssetForm({ onSuccess }: { onSuccess: () => void }) {
   };
 
   const inputClass =
-    "w-full rounded-lg border border-white/10 bg-dark-card px-4 py-2.5 text-sm text-white placeholder-muted outline-none transition-colors focus:border-brand";
-  const labelClass = "block text-sm font-medium text-foreground mb-1.5";
+    "w-full rounded-lg bg-[#111C2E] border border-[#1E2D45] px-4 py-2.5 text-sm text-white placeholder-muted outline-none transition-colors focus:border-brand";
+  const labelClass = "block text-sm font-medium text-[#7A8BA3] mb-1.5";
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
@@ -466,7 +481,7 @@ function CreateAssetForm({ onSuccess }: { onSuccess: () => void }) {
       <button
         type="submit"
         disabled={saving}
-        className="w-full rounded-lg bg-brand px-4 py-2.5 text-sm font-semibold text-dark-primary transition-colors hover:bg-brand-light disabled:opacity-50"
+        className="w-full rounded-lg bg-[#2ECC71] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1FA855] disabled:opacity-50"
       >
         {saving ? "Adding..." : "Add Asset"}
       </button>
