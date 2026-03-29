@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect, use } from "react";
+import { useState, useEffect, use, type FormEvent } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
   Mail,
@@ -9,8 +10,12 @@ import {
   MapPin,
   Building,
   Calendar,
+  Pencil,
+  Trash2,
 } from "lucide-react";
 import { api } from "@/lib/api";
+import { useToast } from "@/components/toast";
+import SlideOver from "@/components/slide-over";
 
 interface Customer {
   id: string;
@@ -80,10 +85,14 @@ export default function CustomerDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
+  const router = useRouter();
+  const { toast } = useToast();
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
+  const [editOpen, setEditOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -149,17 +158,50 @@ export default function CustomerDetailPage({
     );
   }
 
+  const handleDelete = async () => {
+    if (!confirm("Are you sure you want to delete this customer?")) return;
+    setDeleting(true);
+    try {
+      await api.delete(`/customers/${id}`);
+      toast("success", "Customer deleted");
+      router.push("/customers");
+    } catch (err) {
+      toast("error", err instanceof Error ? err.message : "Failed to delete customer");
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   const addr = customer.billing_address;
 
   return (
     <div>
-      <Link
-        href="/customers"
-        className="mb-6 inline-flex items-center gap-2 text-sm text-muted transition-colors hover:text-foreground"
-      >
-        <ArrowLeft className="h-4 w-4" />
-        Back to Customers
-      </Link>
+      <div className="flex items-center justify-between mb-6">
+        <Link
+          href="/customers"
+          className="inline-flex items-center gap-2 text-sm text-muted transition-colors hover:text-foreground"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back to Customers
+        </Link>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setEditOpen(true)}
+            className="flex items-center gap-2 rounded-lg bg-[#1E2D45] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#1A2740]"
+          >
+            <Pencil className="h-3.5 w-3.5" />
+            Edit
+          </button>
+          <button
+            onClick={handleDelete}
+            disabled={deleting}
+            className="flex items-center gap-2 rounded-lg bg-red-500/10 px-4 py-2 text-sm font-medium text-red-400 transition-colors hover:bg-red-500/20 disabled:opacity-50"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            {deleting ? "Deleting..." : "Delete"}
+          </button>
+        </div>
+      </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* Customer info card */}
@@ -400,6 +442,87 @@ export default function CustomerDetailPage({
           </div>
         </div>
       </div>
+
+      <SlideOver open={editOpen} onClose={() => setEditOpen(false)} title="Edit Customer">
+        <EditCustomerForm
+          customer={customer}
+          onSuccess={(updated) => {
+            setCustomer(updated);
+            setEditOpen(false);
+            toast("success", "Customer updated");
+          }}
+        />
+      </SlideOver>
     </div>
+  );
+}
+
+function EditCustomerForm({ customer, onSuccess }: { customer: Customer; onSuccess: (c: Customer) => void }) {
+  const [firstName, setFirstName] = useState(customer.first_name);
+  const [lastName, setLastName] = useState(customer.last_name);
+  const [email, setEmail] = useState(customer.email || "");
+  const [phone, setPhone] = useState(customer.phone || "");
+  const [companyName, setCompanyName] = useState(customer.company_name || "");
+  const [notes, setNotes] = useState(customer.notes || "");
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setSaving(true);
+    try {
+      const updated = await api.patch<Customer>(`/customers/${customer.id}`, {
+        firstName,
+        lastName,
+        email: email || undefined,
+        phone: phone || undefined,
+        companyName: companyName || undefined,
+        notes: notes || undefined,
+      });
+      onSuccess(updated);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const inputClass = "w-full bg-[#111C2E] border border-[#1E2D45] rounded-lg px-4 py-3 text-sm text-white placeholder-muted outline-none transition-colors focus:border-[#2ECC71] focus:ring-1 focus:ring-[#2ECC71]";
+  const labelClass = "block text-sm font-medium text-[#7A8BA3] mb-1.5";
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-5">
+      {error && <div className="rounded-lg bg-red-500/10 px-4 py-3 text-sm text-red-400">{error}</div>}
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className={labelClass}>First Name</label>
+          <input value={firstName} onChange={(e) => setFirstName(e.target.value)} required className={inputClass} />
+        </div>
+        <div>
+          <label className={labelClass}>Last Name</label>
+          <input value={lastName} onChange={(e) => setLastName(e.target.value)} required className={inputClass} />
+        </div>
+      </div>
+      <div>
+        <label className={labelClass}>Email</label>
+        <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className={inputClass} />
+      </div>
+      <div>
+        <label className={labelClass}>Phone</label>
+        <input value={phone} onChange={(e) => setPhone(e.target.value)} className={inputClass} />
+      </div>
+      <div>
+        <label className={labelClass}>Company Name</label>
+        <input value={companyName} onChange={(e) => setCompanyName(e.target.value)} className={inputClass} />
+      </div>
+      <div>
+        <label className={labelClass}>Notes</label>
+        <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} className={`${inputClass} resize-none`} />
+      </div>
+      <button type="submit" disabled={saving} className="w-full rounded-lg bg-[#2ECC71] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1FA855] disabled:opacity-50">
+        {saving ? "Saving..." : "Save Changes"}
+      </button>
+    </form>
   );
 }
