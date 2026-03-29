@@ -543,26 +543,54 @@ function InviteForm({ onSuccess }: { onSuccess: () => void }) {
 
 const TIERS = [
   {
+    key: "starter",
     name: "Starter",
-    price: "$49",
+    price: "$99",
     features: ["Up to 3 users", "50 jobs/month", "Basic analytics", "Email support"],
-    current: true,
   },
   {
-    name: "Pro",
-    price: "$149",
+    key: "professional",
+    name: "Professional",
+    price: "$249",
     features: ["Up to 15 users", "Unlimited jobs", "Advanced analytics", "Dispatch board", "Marketplace", "Priority support"],
     popular: true,
   },
   {
+    key: "business",
     name: "Business",
-    price: "$349",
+    price: "$499",
     features: ["Unlimited users", "Unlimited jobs", "Custom analytics", "API access", "White-label", "Dedicated CSM"],
   },
 ];
 
 function BillingTab({ profile }: { profile: Profile | null }) {
-  const currentTier = profile?.tenant.subscriptionTier || "starter";
+  const currentTier = profile?.tenant.subscriptionTier || "trial";
+  const [upgrading, setUpgrading] = useState<string | null>(null);
+  const [portalLoading, setPortalLoading] = useState(false);
+
+  const handleUpgrade = async (plan: string) => {
+    setUpgrading(plan);
+    try {
+      const res = await api.post<{ url: string }>("/billing/create-checkout-session", { plan });
+      if (res.url) window.location.href = res.url;
+    } catch {
+      alert("Failed to create checkout session");
+    } finally {
+      setUpgrading(null);
+    }
+  };
+
+  const handleManage = async () => {
+    setPortalLoading(true);
+    try {
+      const res = await api.get<{ url: string }>("/billing/portal");
+      if (res.url) window.location.href = res.url;
+    } catch {
+      alert("Subscribe to a plan first to manage billing.");
+    } finally {
+      setPortalLoading(false);
+    }
+  };
 
   return (
     <div className="max-w-4xl space-y-8">
@@ -580,9 +608,13 @@ function BillingTab({ profile }: { profile: Profile | null }) {
               Status: {profile?.tenant.subscriptionStatus || "trialing"}
             </p>
           </div>
-          <button className="flex items-center gap-2 rounded-lg border border-white/10 bg-dark-elevated px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-dark-card-hover">
+          <button
+            onClick={handleManage}
+            disabled={portalLoading}
+            className="flex items-center gap-2 rounded-lg border border-white/10 bg-dark-elevated px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-dark-card-hover disabled:opacity-50"
+          >
             <ExternalLink className="h-4 w-4" />
-            Manage in Stripe
+            {portalLoading ? "Loading..." : "Manage Subscription"}
           </button>
         </div>
       </div>
@@ -590,15 +622,14 @@ function BillingTab({ profile }: { profile: Profile | null }) {
       {/* Tier cards */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         {TIERS.map((tier) => {
-          const isCurrent =
-            tier.name.toLowerCase() === currentTier.toLowerCase();
+          const isCurrent = tier.key === currentTier;
           return (
             <div
-              key={tier.name}
-              className={`relative rounded-2xl p-6 transition-colors ${
+              key={tier.key}
+              className={`relative rounded-2xl border p-6 transition-colors ${
                 isCurrent
-                  ? "bg-brand/5 ring-1 ring-brand/30"
-                  : "bg-dark-card hover:bg-dark-card-hover"
+                  ? "bg-brand/5 border-brand/30"
+                  : "bg-dark-card border-[#1E2D45] hover:bg-dark-card-hover"
               }`}
             >
               {"popular" in tier && tier.popular && (
@@ -624,14 +655,15 @@ function BillingTab({ profile }: { profile: Profile | null }) {
                 ))}
               </ul>
               <button
+                onClick={() => !isCurrent && handleUpgrade(tier.key)}
+                disabled={isCurrent || upgrading === tier.key}
                 className={`mt-6 w-full rounded-lg py-2.5 text-sm font-semibold transition-colors ${
                   isCurrent
                     ? "bg-dark-elevated text-muted cursor-default"
-                    : "bg-[#2ECC71] hover:bg-[#1FA855] text-white font-semibold"
+                    : "bg-[#2ECC71] hover:bg-[#1FA855] text-white"
                 }`}
-                disabled={isCurrent}
               >
-                {isCurrent ? "Current Plan" : "Upgrade"}
+                {isCurrent ? "Current Plan" : upgrading === tier.key ? "Redirecting..." : "Upgrade"}
               </button>
             </div>
           );
