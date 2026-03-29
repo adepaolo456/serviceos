@@ -9,7 +9,7 @@ import {
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
-import { AuthGuard } from '@nestjs/passport';
+// Manual OAuth flow — no passport AuthGuard needed for Google
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request, Response } from 'express';
 import { ConfigService } from '@nestjs/config';
@@ -72,31 +72,108 @@ export class AuthController {
 
   @Public()
   @Get('google')
-  @UseGuards(AuthGuard('google'))
   @ApiOperation({ summary: 'Initiate Google OAuth login' })
-  googleLogin() {
-    // Guard redirects to Google
+  googleLogin(@Res() res: Response) {
+    const clientId = this.configService.get<string>('GOOGLE_CLIENT_ID');
+    if (!clientId || clientId === 'not-configured') {
+      const frontendUrl =
+        this.configService.get<string>('APP_URL') ||
+        'https://serviceos-web-zeta.vercel.app';
+      res.redirect(
+        `${frontendUrl}/login?error=google_not_configured`,
+      );
+      return;
+    }
+
+    const callbackUrl =
+      this.configService.get<string>('GOOGLE_CALLBACK_URL') ||
+      'https://serviceos-api.vercel.app/auth/google/callback';
+    const scope = encodeURIComponent('email profile');
+    const url = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${encodeURIComponent(callbackUrl)}&response_type=code&scope=${scope}&access_type=offline&prompt=consent`;
+    res.redirect(url);
   }
 
   @Public()
   @Get('google/callback')
-  @UseGuards(AuthGuard('google'))
   @ApiOperation({ summary: 'Google OAuth callback' })
   async googleCallback(@Req() req: Request, @Res() res: Response) {
-    const googleUser = req.user as {
-      googleId: string;
-      email: string;
-      firstName: string;
-      lastName: string;
-    };
-
-    const result = await this.authService.googleLogin(googleUser);
     const frontendUrl =
       this.configService.get<string>('APP_URL') ||
       'https://serviceos-web-zeta.vercel.app';
 
-    res.redirect(
-      `${frontendUrl}/auth/callback?token=${result.accessToken}&refresh=${result.refreshToken}&new=${result.isNew ? '1' : '0'}`,
-    );
+    try {
+      const code = (req.query as Record<string, string>).code;
+      if (!code) {
+        res.redirect(`${frontendUrl}/login?error=no_code`);
+        return;
+      }
+
+      const clientId = this.configService.get<string>('GOOGLE_CLIENT_ID', '');
+      const clientSecret = this.configService.get<string>(
+        'GOOGLE_CLIENT_SECRET',
+        '',
+      );
+      const callbackUrl =
+        this.configService.get<string>('GOOGLE_CALLBACK_URL') ||
+        'https://serviceos-api.vercel.app/auth/google/callback';
+
+      // Exchange code for tokens
+      const tokenRes = await fetch(
+        'https://oauth2.googleapis.com/token',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            code,
+            client_id: clientId,
+            client_secret: clientSecret,
+            redirect_uri: callbackUrl,
+            grant_type: 'authorization_code',
+          }),
+        },
+      );
+      const tokens = (await tokenRes.json()) as {
+        access_token?: string;
+        error?: string;
+      };
+      if (!tokens.access_token) {
+        res.redirect(
+          `${frontendUrl}/login?error=token_exchange_failed`,
+        );
+        return;
+      }
+
+      // Get user info
+      const userRes = await fetch(
+        'https://www.googleapis.com/oauth2/v2/userinfo',
+        { headers: { Authorization: `Bearer ${tokens.access_token}` } },
+      );
+      const profile = (await userRes.json()) as {
+        id: string;
+        email: string;
+        given_name?: string;
+        family_name?: string;
+        name?: string;
+      };
+
+      if (!profile.email) {
+        res.redirect(`${frontendUrl}/login?error=no_email`);
+        return;
+      }
+
+      const result = await this.authService.googleLogin({
+        googleId: profile.id,
+        email: profile.email,
+        firstName: profile.given_name || profile.name || '',
+        lastName: profile.family_name || '',
+      });
+
+      res.redirect(
+        `${frontendUrl}/auth/callback?token=${result.accessToken}&refresh=${result.refreshToken}&new=${result.isNew ? '1' : '0'}`,
+      );
+    } catch (err) {
+      console.error('Google OAuth error:', err);
+      res.redirect(`${frontendUrl}/login?error=oauth_failed`);
+    }
   }
 }
