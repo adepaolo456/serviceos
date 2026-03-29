@@ -119,6 +119,17 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [jobPanelOpen, setJobPanelOpen] = useState(false);
 
+  // "B" keyboard shortcut to open booking
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === "b" && !e.metaKey && !e.ctrlKey && e.target === document.body) {
+        router.push("/book");
+      }
+    };
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [router]);
+
   // Search
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
@@ -195,13 +206,13 @@ export default function DashboardPage() {
 
       {/* ============ SECTION 1: Quick Actions ============ */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center mb-8">
-        <button
-          onClick={() => setJobPanelOpen(true)}
+        <Link
+          href="/book"
           className="flex items-center gap-2 rounded-xl bg-[#2ECC71] px-5 py-3 text-sm font-bold text-white shadow-lg shadow-brand/20 transition-all hover:bg-[#1FA855] active:scale-95"
         >
           <Plus className="h-5 w-5" strokeWidth={2.5} />
-          New Job
-        </button>
+          New Booking
+        </Link>
         <Link
           href="/customers"
           className="flex items-center gap-2 rounded-xl bg-[#1E2D45] px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-[#1A2740] active:scale-95"
