@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import {
   Building2,
   Users,
@@ -10,6 +11,7 @@ import {
   CreditCard,
   UserPlus,
   Box,
+  ArrowUpRight,
 } from "lucide-react";
 import { api } from "@/lib/api";
 
@@ -51,14 +53,14 @@ export default function AdminDashboardPage() {
   }
 
   const stats = [
-    { label: "Monthly Revenue", value: `$${(data?.mrr ?? 0).toLocaleString()}`, icon: DollarSign, color: "bg-emerald-50 text-emerald-600" },
-    { label: "Total Tenants", value: String(data?.totalTenants ?? 0), icon: Building2, color: "bg-blue-50 text-blue-600" },
-    { label: "Active Subscriptions", value: String(data?.activeSubs ?? 0), icon: CreditCard, color: "bg-purple-50 text-purple-600" },
-    { label: "New This Week", value: String(data?.newSignupsThisWeek ?? 0), icon: UserPlus, color: "bg-amber-50 text-amber-600" },
-    { label: "Total Users", value: String(data?.totalUsers ?? 0), icon: Users, color: "bg-indigo-50 text-indigo-600" },
-    { label: "Total Jobs", value: String(data?.totalJobs ?? 0), icon: Briefcase, color: "bg-cyan-50 text-cyan-600" },
-    { label: "Total Customers", value: String(data?.totalCustomers ?? 0), icon: TrendingUp, color: "bg-pink-50 text-pink-600" },
-    { label: "Total Assets", value: String(data?.totalAssets ?? 0), icon: Box, color: "bg-orange-50 text-orange-600" },
+    { label: "Monthly Revenue", value: `$${(data?.mrr ?? 0).toLocaleString()}`, icon: DollarSign, color: "bg-emerald-50 text-emerald-600", href: "/admin/subscriptions" },
+    { label: "Total Tenants", value: String(data?.totalTenants ?? 0), icon: Building2, color: "bg-blue-50 text-blue-600", href: "/admin/tenants" },
+    { label: "Active Subscriptions", value: String(data?.activeSubs ?? 0), icon: CreditCard, color: "bg-purple-50 text-purple-600", href: "/admin/subscriptions" },
+    { label: "New This Week", value: String(data?.newSignupsThisWeek ?? 0), icon: UserPlus, color: "bg-amber-50 text-amber-600", href: "/admin/tenants" },
+    { label: "Total Users", value: String(data?.totalUsers ?? 0), icon: Users, color: "bg-indigo-50 text-indigo-600", href: "/admin/tenants" },
+    { label: "Total Jobs", value: String(data?.totalJobs ?? 0), icon: Briefcase, color: "bg-cyan-50 text-cyan-600", href: "/admin/tenants" },
+    { label: "Total Customers", value: String(data?.totalCustomers ?? 0), icon: TrendingUp, color: "bg-pink-50 text-pink-600", href: "/admin/tenants" },
+    { label: "Total Assets", value: String(data?.totalAssets ?? 0), icon: Box, color: "bg-orange-50 text-orange-600", href: "/admin/tenants" },
   ];
 
   const tierColors: Record<string, string> = {
@@ -77,7 +79,12 @@ export default function AdminDashboardPage() {
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {stats.map((s) => (
-          <div key={s.label} className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm hover:shadow-md transition-shadow">
+          <Link
+            key={s.label}
+            href={s.href}
+            className="group relative rounded-xl border border-gray-200 bg-white p-5 shadow-sm cursor-pointer transition-all hover:shadow-lg hover:border-[#2ECC71]/30"
+          >
+            <ArrowUpRight className="absolute top-4 right-4 h-4 w-4 text-gray-300 opacity-0 transition-opacity group-hover:opacity-100 group-hover:text-[#2ECC71]" />
             <div className="flex items-center gap-3 mb-3">
               <div className={`flex h-9 w-9 items-center justify-center rounded-lg ${s.color}`}>
                 <s.icon className="h-4.5 w-4.5" />
@@ -85,7 +92,7 @@ export default function AdminDashboardPage() {
               <span className="text-xs font-medium text-gray-500 uppercase tracking-wider">{s.label}</span>
             </div>
             <p className="text-3xl font-bold text-gray-900 tabular-nums">{s.value}</p>
-          </div>
+          </Link>
         ))}
       </div>
 
@@ -94,13 +101,17 @@ export default function AdminDashboardPage() {
         <h2 className="text-base font-semibold text-gray-900 mb-4">Subscription Breakdown</h2>
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
           {(data?.tierBreakdown ?? []).map((t) => (
-            <div key={t.tier} className="rounded-lg bg-gray-50 p-4 text-center">
+            <Link
+              key={t.tier}
+              href={`/admin/tenants?tier=${t.tier}`}
+              className="group rounded-lg bg-gray-50 p-4 text-center cursor-pointer transition-all hover:bg-gray-100 hover:ring-1 hover:ring-[#2ECC71]/30"
+            >
               <span className={`inline-block rounded-full px-3 py-1 text-xs font-medium capitalize ${tierColors[t.tier] || tierColors.trial}`}>
                 {t.tier}
               </span>
               <p className="mt-2 text-2xl font-bold text-gray-900 tabular-nums">{t.count}</p>
               <p className="text-xs text-gray-500">tenants</p>
-            </div>
+            </Link>
           ))}
         </div>
       </div>
