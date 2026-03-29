@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import {
   DollarSign,
   Briefcase,
@@ -9,6 +10,7 @@ import {
   TrendingUp,
   TrendingDown,
   ArrowRight,
+  ArrowUpRight,
   Activity,
 } from "lucide-react";
 import { api } from "@/lib/api";
@@ -114,6 +116,7 @@ export default function DashboardPage() {
         : "No revenue yet",
       trend: "up" as const,
       icon: DollarSign,
+      href: "/invoices",
     },
     {
       label: "Active Jobs",
@@ -121,6 +124,7 @@ export default function DashboardPage() {
       sub: `${dashboard?.jobs.total ?? 0} total`,
       trend: "up" as const,
       icon: Briefcase,
+      href: "/jobs",
     },
     {
       label: "Customers",
@@ -128,6 +132,7 @@ export default function DashboardPage() {
       sub: `+${dashboard?.customers.newThisMonth ?? 0} this month`,
       trend: (dashboard?.customers.newThisMonth ?? 0) > 0 ? ("up" as const) : ("down" as const),
       icon: Users,
+      href: "/customers",
     },
     {
       label: "Utilization",
@@ -135,6 +140,7 @@ export default function DashboardPage() {
       sub: `${dashboard?.assets.total ?? 0} assets`,
       trend: (dashboard?.assets.utilizationRate ?? 0) >= 50 ? ("up" as const) : ("down" as const),
       icon: Box,
+      href: "/assets",
     },
   ];
 
@@ -153,10 +159,12 @@ export default function DashboardPage() {
       {/* Stat cards — Robinhood style */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {stats.map((s) => (
-          <div
+          <Link
             key={s.label}
-            className="group rounded-2xl border border-[#1E2D45] bg-dark-card p-5 card-hover cursor-default"
+            href={s.href}
+            className="group relative rounded-2xl border border-[#1E2D45] bg-dark-card p-5 card-hover cursor-pointer"
           >
+            <ArrowUpRight className="absolute top-4 right-4 h-4 w-4 text-muted opacity-0 group-hover:opacity-100 group-hover:text-brand transition-opacity" />
             <div className="flex items-center gap-2 mb-3">
               <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand/10">
                 <s.icon className="h-4 w-4 text-brand" />
@@ -176,7 +184,7 @@ export default function DashboardPage() {
                 {s.sub}
               </span>
             </div>
-          </div>
+          </Link>
         ))}
       </div>
 
@@ -191,9 +199,9 @@ export default function DashboardPage() {
                 Job Performance
               </h2>
             </div>
-            <a href="/jobs" className="flex items-center gap-1 text-xs text-brand hover:text-brand-light transition-colors btn-press">
+            <Link href="/jobs" className="flex items-center gap-1 text-xs text-brand hover:text-brand-light transition-colors btn-press">
               View all <ArrowRight className="h-3.5 w-3.5" />
-            </a>
+            </Link>
           </div>
           <div className="space-y-0">
             {[
@@ -233,9 +241,9 @@ export default function DashboardPage() {
               {jobsByStatus.map((item) => {
                 const pct = totalJobs > 0 ? Math.round((Number(item.count) / totalJobs) * 100) : 0;
                 return (
-                  <div key={item.status}>
+                  <Link key={item.status} href={`/jobs?status=${item.status}`} className="block group">
                     <div className="flex items-center justify-between text-sm mb-1.5">
-                      <span className="text-foreground capitalize">{item.status.replace(/_/g, " ")}</span>
+                      <span className="text-foreground capitalize group-hover:text-brand transition-colors">{item.status.replace(/_/g, " ")}</span>
                       <div className="flex items-center gap-2">
                         <span className="text-xs text-muted tabular-nums">{pct}%</span>
                         <span className="text-sm font-medium text-white tabular-nums w-6 text-right">{item.count}</span>
@@ -247,7 +255,7 @@ export default function DashboardPage() {
                         style={{ width: `${pct}%` }}
                       />
                     </div>
-                  </div>
+                  </Link>
                 );
               })}
             </div>
