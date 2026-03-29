@@ -93,9 +93,10 @@ export class AuthController {
       const url = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${encodeURIComponent(callbackUrl)}&response_type=code&scope=${scope}&access_type=offline&prompt=consent`;
       return res.redirect(url);
     } catch (err) {
-      console.error('Google OAuth init error:', err);
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('Google OAuth init error:', msg);
       return res.redirect(
-        'https://serviceos-web-zeta.vercel.app/login?error=oauth_init_failed',
+        `https://serviceos-web-zeta.vercel.app/login?error=${encodeURIComponent(msg)}`,
       );
     }
   }
