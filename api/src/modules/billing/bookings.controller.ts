@@ -5,6 +5,7 @@ import { Repository } from 'typeorm';
 import type { Request } from 'express';
 import { Customer } from '../customers/entities/customer.entity';
 import { Job } from '../jobs/entities/job.entity';
+import { Asset } from '../assets/entities/asset.entity';
 import { Invoice } from './entities/invoice.entity';
 import { Tenant } from '../tenants/entities/tenant.entity';
 
@@ -15,6 +16,7 @@ export class BookingsController {
   constructor(
     @InjectRepository(Customer) private customersRepo: Repository<Customer>,
     @InjectRepository(Job) private jobsRepo: Repository<Job>,
+    @InjectRepository(Asset) private assetsRepo: Repository<Asset>,
     @InjectRepository(Invoice) private invoicesRepo: Repository<Invoice>,
     @InjectRepository(Tenant) private tenantsRepo: Repository<Tenant>,
   ) {}
@@ -103,6 +105,31 @@ export class BookingsController {
     } as Partial<Job> as Job);
     const savedDelivery = await this.jobsRepo.save(deliveryJob);
 
+    // 3b. Auto-assign available asset
+    let assignedAsset: { id: string; identifier: string } | null = null;
+    let assetWarning: string | null = null;
+    try {
+      const availableAsset = await this.assetsRepo.findOne({
+        where: {
+          tenant_id: tenantId,
+          subtype: body.assetSubtype,
+          status: 'available',
+        },
+      });
+      if (availableAsset) {
+        await this.assetsRepo.update(availableAsset.id, {
+          status: 'on_site',
+          current_location_type: 'customer',
+        });
+        await this.jobsRepo.update(savedDelivery.id, {
+          asset_id: availableAsset.id,
+        });
+        assignedAsset = { id: availableAsset.id, identifier: availableAsset.identifier };
+      } else {
+        assetWarning = `No ${body.assetSubtype} dumpsters currently available. Job created without asset assignment.`;
+      }
+    } catch { /* non-fatal */ }
+
     // 4. Create pickup job
     const pickupJob = this.jobsRepo.create({
       tenant_id: tenantId,
@@ -117,6 +144,7 @@ export class BookingsController {
       service_address: body.serviceAddress as Record<string, string>,
       base_price: 0,
       total_price: 0,
+      ...(assignedAsset ? { asset_id: assignedAsset.id } : {}),
     } as Partial<Job> as Job);
     const savedPickup = await this.jobsRepo.save(pickupJob);
 
@@ -167,6 +195,8 @@ export class BookingsController {
         invoiceNumber: savedInvoice.invoice_number,
       },
       customerId,
+      asset: assignedAsset,
+      assetWarning,
     };
   }
 }
