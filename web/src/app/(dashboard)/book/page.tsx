@@ -136,7 +136,7 @@ export default function BookingPage() {
     api.post<PriceQuote>("/pricing/calculate", {
       serviceType, assetSubtype, jobType: "delivery",
       customerLat: address.lat, customerLng: address.lng,
-      yardLat: 30.35, yardLng: -97.7,
+      yardLat: 42.03, yardLng: -71.02,
       rentalDays,
     }).then((q) => {
       setQuote(q);
@@ -151,7 +151,7 @@ export default function BookingPage() {
     api.post<PriceQuote>("/pricing/calculate", {
       serviceType, assetSubtype, jobType: "delivery",
       customerLat: address.lat, customerLng: address.lng,
-      yardLat: 30.35, yardLng: -97.7,
+      yardLat: 42.03, yardLng: -71.02,
       rentalDays,
     }).then(setQuote).catch(() => {});
   }, [rentalDays]);
