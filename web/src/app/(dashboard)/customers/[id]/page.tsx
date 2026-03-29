@@ -4,86 +4,60 @@ import { useState, useEffect, use, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-  ArrowLeft,
-  Mail,
-  Phone,
-  MapPin,
-  Building,
-  Calendar,
-  Pencil,
-  Trash2,
+  ArrowLeft, Mail, Phone, MapPin, Building, Calendar, Pencil, Trash2,
+  Briefcase, FileText, DollarSign, Clock, Plus,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useToast } from "@/components/toast";
 import SlideOver from "@/components/slide-over";
+import AddressAutocomplete, { type AddressValue } from "@/components/address-autocomplete";
+
+/* ---- Types ---- */
 
 interface Customer {
-  id: string;
-  type: string;
-  first_name: string;
-  last_name: string;
-  email: string;
-  phone: string;
-  company_name: string;
+  id: string; type: string; first_name: string; last_name: string;
+  email: string; phone: string; company_name: string;
   billing_address: Record<string, string> | null;
-  notes: string;
-  tags: string[];
-  lead_source: string;
-  total_jobs: number;
-  lifetime_revenue: number;
-  is_active: boolean;
+  notes: string; tags: string[]; lead_source: string;
+  total_jobs: number; lifetime_revenue: number; is_active: boolean;
   created_at: string;
 }
 
 interface Job {
-  id: string;
-  job_number: string;
-  job_type: string;
-  service_type: string;
-  status: string;
-  scheduled_date: string;
-  total_price: number;
-}
-
-interface JobsResponse {
-  data: Job[];
-  meta: { total: number };
+  id: string; job_number: string; job_type: string; service_type: string;
+  status: string; scheduled_date: string; total_price: number;
 }
 
 interface Invoice {
-  id: string;
-  invoice_number: string;
-  status: string;
-  total: number;
-  balance_due: number;
-  created_at: string;
+  id: string; invoice_number: string; status: string; total: number;
+  balance_due: number; created_at: string;
 }
 
-interface InvoicesResponse {
-  data: Invoice[];
-  meta: { total: number };
+/* ---- Helpers ---- */
+
+function fmtPhone(p: string | null): string {
+  if (!p) return "";
+  const d = p.replace(/\D/g, "");
+  if (d.length === 10) return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`;
+  if (d.length === 11 && d[0] === "1") return `(${d.slice(1, 4)}) ${d.slice(4, 7)}-${d.slice(7)}`;
+  return p;
 }
 
-const statusColor: Record<string, string> = {
-  pending: "bg-yellow-500/10 text-yellow-400",
-  confirmed: "bg-blue-500/10 text-blue-400",
-  dispatched: "bg-purple-500/10 text-purple-400",
-  en_route: "bg-orange-500/10 text-orange-400",
-  in_progress: "bg-brand/10 text-brand",
-  completed: "bg-emerald-500/10 text-emerald-400",
-  cancelled: "bg-red-500/10 text-red-400",
-  draft: "bg-zinc-500/10 text-zinc-400",
-  sent: "bg-blue-500/10 text-blue-400",
-  paid: "bg-brand/10 text-brand",
-  overdue: "bg-red-500/10 text-red-400",
-  void: "bg-zinc-500/10 text-zinc-400",
+const STATUS_CLS: Record<string, string> = {
+  pending: "bg-yellow-500/10 text-yellow-400", confirmed: "bg-blue-500/10 text-blue-400",
+  dispatched: "bg-purple-500/10 text-purple-400", en_route: "bg-orange-500/10 text-orange-400",
+  in_progress: "bg-brand/10 text-brand", completed: "bg-emerald-500/10 text-emerald-400",
+  cancelled: "bg-red-500/10 text-red-400", draft: "bg-zinc-500/10 text-zinc-400",
+  sent: "bg-blue-500/10 text-blue-400", paid: "bg-brand/10 text-brand",
+  overdue: "bg-red-500/10 text-red-400", void: "bg-zinc-500/10 text-zinc-400",
 };
 
-export default function CustomerDetailPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
+const TABS = ["overview", "jobs", "invoices"] as const;
+type Tab = typeof TABS[number];
+
+/* ---- Page ---- */
+
+export default function CustomerDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
   const { toast } = useToast();
@@ -91,6 +65,7 @@ export default function CustomerDetailPage({
   const [jobs, setJobs] = useState<Job[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
+  const [tab, setTab] = useState<Tab>("overview");
   const [editOpen, setEditOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
@@ -99,363 +74,286 @@ export default function CustomerDetailPage({
       try {
         const [c, j, i] = await Promise.all([
           api.get<Customer>(`/customers/${id}`),
-          api.get<JobsResponse>(`/jobs?customerId=${id}&limit=50`),
-          api.get<InvoicesResponse>(`/invoices?customerId=${id}&limit=50`),
+          api.get<{ data: Job[] }>(`/jobs?customerId=${id}&limit=50`),
+          api.get<{ data: Invoice[] }>(`/invoices?customerId=${id}&limit=50`),
         ]);
         setCustomer(c);
         setJobs(j.data);
         setInvoices(i.data);
-      } catch {
-        /* handled by api client */
-      } finally {
-        setLoading(false);
-      }
+      } catch { /* */ }
+      finally { setLoading(false); }
     }
     load();
   }, [id]);
 
+  const handleDelete = async () => {
+    if (!confirm("Delete this customer?")) return;
+    setDeleting(true);
+    try { await api.delete(`/customers/${id}`); toast("success", "Deleted"); router.push("/customers"); }
+    catch { toast("error", "Failed to delete"); }
+    finally { setDeleting(false); }
+  };
+
   if (loading) {
     return (
-      <div className="py-10">
-        <div className="mb-6 h-4 w-36 animate-pulse rounded bg-white/5" />
+      <div className="space-y-6">
+        <div className="h-6 w-40 skeleton rounded" />
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-          <div className="rounded-2xl bg-dark-card border border-[#1E2D45] p-6">
-            <div className="flex items-center gap-4 mb-6">
-              <div className="h-14 w-14 animate-pulse rounded-2xl bg-white/5" />
-              <div className="space-y-2">
-                <div className="h-5 w-32 animate-pulse rounded bg-white/5" />
-                <div className="h-3 w-20 animate-pulse rounded bg-white/5" />
-              </div>
-            </div>
-            <div className="space-y-3">
-              {Array.from({ length: 4 }).map((_, i) => (
-                <div key={i} className="h-4 w-full animate-pulse rounded bg-white/5" />
-              ))}
-            </div>
-          </div>
-          <div className="lg:col-span-2 space-y-6">
-            {Array.from({ length: 2 }).map((_, i) => (
-              <div key={i} className="rounded-2xl bg-dark-card border border-[#1E2D45] p-6">
-                <div className="h-5 w-24 animate-pulse rounded bg-white/5 mb-4" />
-                <div className="space-y-3">
-                  {Array.from({ length: 3 }).map((_, j) => (
-                    <div key={j} className="h-4 w-full animate-pulse rounded bg-white/5" />
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
+          <div className="h-64 skeleton rounded-2xl" />
+          <div className="lg:col-span-2 h-64 skeleton rounded-2xl" />
         </div>
       </div>
     );
   }
 
-  if (!customer) {
-    return (
-      <div className="flex items-center justify-center py-32 text-muted">
-        Customer not found
-      </div>
-    );
-  }
-
-  const handleDelete = async () => {
-    if (!confirm("Are you sure you want to delete this customer?")) return;
-    setDeleting(true);
-    try {
-      await api.delete(`/customers/${id}`);
-      toast("success", "Customer deleted");
-      router.push("/customers");
-    } catch (err) {
-      toast("error", err instanceof Error ? err.message : "Failed to delete customer");
-    } finally {
-      setDeleting(false);
-    }
-  };
+  if (!customer) return <div className="py-20 text-center text-muted">Customer not found</div>;
 
   const addr = customer.billing_address;
+  const avgJobValue = customer.total_jobs > 0 ? Math.round(Number(customer.lifetime_revenue) / customer.total_jobs) : 0;
+  const lastJob = jobs[0];
+  const activeJobs = jobs.filter(j => !["completed", "cancelled"].includes(j.status));
 
   return (
     <div>
+      {/* Back + Actions */}
       <div className="flex items-center justify-between mb-6">
-        <Link
-          href="/customers"
-          className="inline-flex items-center gap-2 text-sm text-muted transition-colors hover:text-foreground"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Back to Customers
+        <Link href="/customers" className="inline-flex items-center gap-2 text-sm text-muted hover:text-foreground transition-colors">
+          <ArrowLeft className="h-4 w-4" /> Customers
         </Link>
         <div className="flex gap-2">
-          <button
-            onClick={() => setEditOpen(true)}
-            className="flex items-center gap-2 rounded-lg bg-[#1E2D45] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#1A2740]"
-          >
-            <Pencil className="h-3.5 w-3.5" />
-            Edit
+          <button onClick={() => setEditOpen(true)} className="flex items-center gap-1.5 rounded-lg bg-dark-elevated px-3 py-2 text-xs font-medium text-foreground hover:bg-dark-card-hover transition-colors btn-press">
+            <Pencil className="h-3.5 w-3.5" /> Edit
           </button>
-          <button
-            onClick={handleDelete}
-            disabled={deleting}
-            className="flex items-center gap-2 rounded-lg bg-red-500/10 px-4 py-2 text-sm font-medium text-red-400 transition-colors hover:bg-red-500/20 disabled:opacity-50"
-          >
+          <Link href="/book" className="flex items-center gap-1.5 rounded-lg bg-brand px-3 py-2 text-xs font-semibold text-white hover:bg-brand-light transition-colors btn-press">
+            <Plus className="h-3.5 w-3.5" /> New Job
+          </Link>
+          <button onClick={handleDelete} disabled={deleting} className="flex items-center gap-1.5 rounded-lg bg-red-500/10 px-3 py-2 text-xs font-medium text-red-400 hover:bg-red-500/20 transition-colors btn-press disabled:opacity-50">
             <Trash2 className="h-3.5 w-3.5" />
-            {deleting ? "Deleting..." : "Delete"}
           </button>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        {/* Customer info card */}
-        <div className="rounded-2xl bg-dark-card border border-[#1E2D45] shadow-lg shadow-black/10 p-6 lg:col-span-1">
-          <div className="flex items-center gap-4 mb-6">
-            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-brand/10 text-brand font-display text-xl font-bold">
-              {customer.first_name[0]}
-              {customer.last_name[0]}
+      {/* Customer Header */}
+      <div className="rounded-2xl bg-dark-card border border-[#1E2D45] p-5 mb-6">
+        <div className="flex items-start gap-4">
+          <div className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl text-lg font-bold ${
+            customer.type === "commercial" ? "bg-purple-500/15 text-purple-400" : "bg-blue-500/15 text-blue-400"
+          }`}>
+            {customer.first_name[0]}{customer.last_name[0]}
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h1 className="font-display text-xl font-bold text-white">{customer.first_name} {customer.last_name}</h1>
+              <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium capitalize ${customer.type === "commercial" ? "bg-purple-500/10 text-purple-400" : "bg-blue-500/10 text-blue-400"}`}>{customer.type}</span>
+              {activeJobs.length > 0 && <span className="rounded-full bg-yellow-500/10 px-2 py-0.5 text-[10px] font-medium text-yellow-400">Active Rental</span>}
+              <span className={`inline-flex items-center gap-1 text-[10px] ${customer.is_active ? "text-brand" : "text-red-400"}`}>
+                <span className={`h-1.5 w-1.5 rounded-full ${customer.is_active ? "bg-brand" : "bg-red-500"}`} />{customer.is_active ? "Active" : "Inactive"}
+              </span>
             </div>
-            <div>
-              <h1 className="font-display text-xl font-bold text-white">
-                {customer.first_name} {customer.last_name}
-              </h1>
-              {customer.company_name && (
-                <p className="text-sm text-muted">{customer.company_name}</p>
+            {customer.company_name && <p className="text-sm text-muted mt-0.5">{customer.company_name}</p>}
+            <div className="flex items-center gap-4 mt-2 flex-wrap">
+              {customer.phone && (
+                <a href={`tel:${customer.phone}`} className="flex items-center gap-1.5 text-sm text-foreground hover:text-brand transition-colors">
+                  <Phone className="h-3.5 w-3.5 text-muted" />{fmtPhone(customer.phone)}
+                </a>
+              )}
+              {customer.email && (
+                <a href={`mailto:${customer.email}`} className="flex items-center gap-1.5 text-sm text-foreground hover:text-brand transition-colors">
+                  <Mail className="h-3.5 w-3.5 text-muted" />{customer.email}
+                </a>
+              )}
+              <span className="flex items-center gap-1.5 text-xs text-muted">
+                <Calendar className="h-3 w-3" />Since {new Date(customer.created_at).toLocaleDateString()}
+              </span>
+            </div>
+          </div>
+          <div className="text-right shrink-0">
+            <p className="font-display text-2xl font-bold text-white tabular-nums">${Number(customer.lifetime_revenue).toLocaleString()}</p>
+            <p className="text-[10px] text-muted">Lifetime Revenue</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex gap-0 border-b border-[#1E2D45] mb-6">
+        {TABS.map(t => (
+          <button key={t} onClick={() => setTab(t)}
+            className={`relative px-5 py-3 text-sm font-medium capitalize transition-colors btn-press ${tab === t ? "text-brand" : "text-muted hover:text-foreground"}`}>
+            {t}
+            {t === "jobs" && <span className="ml-1 text-[10px] text-muted">{jobs.length}</span>}
+            {t === "invoices" && <span className="ml-1 text-[10px] text-muted">{invoices.length}</span>}
+            {tab === t && <span className="absolute inset-x-0 bottom-0 h-0.5 bg-brand rounded-full" />}
+          </button>
+        ))}
+      </div>
+
+      {/* Tab Content */}
+      {tab === "overview" && (
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+          {/* Left: stats + info */}
+          <div className="space-y-5">
+            {/* Quick Stats */}
+            <div className="grid grid-cols-2 gap-3">
+              {[
+                { label: "Total Jobs", value: customer.total_jobs, icon: Briefcase },
+                { label: "Avg Value", value: `$${avgJobValue}`, icon: DollarSign },
+              ].map(s => (
+                <div key={s.label} className="rounded-xl bg-dark-card border border-[#1E2D45] p-4 text-center">
+                  <s.icon className="mx-auto h-4 w-4 text-muted mb-1" />
+                  <p className="text-lg font-bold text-white tabular-nums">{s.value}</p>
+                  <p className="text-[10px] text-muted">{s.label}</p>
+                </div>
+              ))}
+            </div>
+
+            {/* Address */}
+            {addr && addr.street && (
+              <div className="rounded-xl bg-dark-card border border-[#1E2D45] p-4">
+                <p className="text-xs text-muted uppercase tracking-wider mb-2">Billing Address</p>
+                <p className="text-sm text-white">{addr.street}</p>
+                <p className="text-xs text-muted">{[addr.city, addr.state, addr.zip].filter(Boolean).join(", ")}</p>
+              </div>
+            )}
+
+            {/* Tags */}
+            {customer.tags?.length > 0 && (
+              <div className="rounded-xl bg-dark-card border border-[#1E2D45] p-4">
+                <p className="text-xs text-muted uppercase tracking-wider mb-2">Tags</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {customer.tags.map(t => (
+                    <span key={t} className="rounded-full bg-dark-elevated px-2.5 py-0.5 text-[10px] font-medium text-foreground">{t}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Notes */}
+            {customer.notes && (
+              <div className="rounded-xl bg-dark-card border border-[#1E2D45] p-4">
+                <p className="text-xs text-muted uppercase tracking-wider mb-2">Notes</p>
+                <p className="text-sm text-foreground whitespace-pre-wrap">{customer.notes}</p>
+              </div>
+            )}
+          </div>
+
+          {/* Right: active rentals + recent */}
+          <div className="lg:col-span-2 space-y-5">
+            {activeJobs.length > 0 && (
+              <div className="rounded-xl bg-yellow-500/5 border border-yellow-500/15 p-4">
+                <p className="text-xs text-yellow-400 uppercase tracking-wider font-semibold mb-3">Active Rentals ({activeJobs.length})</p>
+                <div className="space-y-2">
+                  {activeJobs.map(j => (
+                    <Link key={j.id} href={`/jobs/${j.id}`} className="flex items-center justify-between rounded-lg bg-dark-card border border-[#1E2D45] px-4 py-2.5 hover:bg-dark-card-hover transition-colors">
+                      <div>
+                        <p className="text-sm font-medium text-white">{j.job_number}</p>
+                        <p className="text-[10px] text-muted capitalize">{j.job_type} · {j.scheduled_date}</p>
+                      </div>
+                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium capitalize ${STATUS_CLS[j.status] || "bg-zinc-500/10 text-zinc-400"}`}>{j.status.replace(/_/g, " ")}</span>
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Recent Jobs Preview */}
+            <div className="rounded-xl bg-dark-card border border-[#1E2D45] overflow-hidden">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-[#1E2D45]">
+                <p className="text-xs text-muted uppercase tracking-wider font-semibold">Recent Jobs</p>
+                <button onClick={() => setTab("jobs")} className="text-[10px] text-brand hover:text-brand-light">View all</button>
+              </div>
+              {jobs.length === 0 ? (
+                <div className="py-8 text-center text-xs text-muted">No jobs yet</div>
+              ) : (
+                <div className="divide-y divide-[#1E2D45]">
+                  {jobs.slice(0, 5).map(j => (
+                    <Link key={j.id} href={`/jobs/${j.id}`} className="flex items-center justify-between px-4 py-2.5 hover:bg-dark-card-hover transition-colors">
+                      <div className="flex items-center gap-3">
+                        <span className="text-xs font-medium text-white">{j.job_number}</span>
+                        <span className="text-[10px] text-muted capitalize">{j.job_type}</span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="text-xs text-muted">{j.scheduled_date || "—"}</span>
+                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium capitalize ${STATUS_CLS[j.status] || ""}`}>{j.status.replace(/_/g, " ")}</span>
+                        {j.total_price > 0 && <span className="text-xs text-white tabular-nums">${Number(j.total_price).toLocaleString()}</span>}
+                      </div>
+                    </Link>
+                  ))}
+                </div>
               )}
             </div>
           </div>
-
-          <div className="space-y-3.5">
-            <div className="flex items-center gap-3">
-              <span
-                className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                  customer.type === "commercial"
-                    ? "bg-blue-500/10 text-blue-400"
-                    : "bg-brand/10 text-brand"
-                }`}
-              >
-                {customer.type}
-              </span>
-              <span
-                className={`inline-flex items-center gap-1.5 text-xs ${
-                  customer.is_active ? "text-brand" : "text-red-400"
-                }`}
-              >
-                <span
-                  className={`h-1.5 w-1.5 rounded-full ${customer.is_active ? "bg-brand" : "bg-red-500"}`}
-                />
-                {customer.is_active ? "Active" : "Inactive"}
-              </span>
-            </div>
-
-            {customer.email && (
-              <div className="flex items-center gap-3 text-sm">
-                <Mail className="h-4 w-4 text-muted" />
-                <span className="text-foreground">{customer.email}</span>
-              </div>
-            )}
-            {customer.phone && (
-              <div className="flex items-center gap-3 text-sm">
-                <Phone className="h-4 w-4 text-muted" />
-                <span className="text-foreground">{customer.phone}</span>
-              </div>
-            )}
-            {addr && (addr.street || addr.city) && (
-              <div className="flex items-center gap-3 text-sm">
-                <MapPin className="h-4 w-4 text-muted" />
-                <span className="text-foreground">
-                  {[addr.street, addr.city, addr.state, addr.zip]
-                    .filter(Boolean)
-                    .join(", ")}
-                </span>
-              </div>
-            )}
-            {customer.lead_source && (
-              <div className="flex items-center gap-3 text-sm">
-                <Building className="h-4 w-4 text-muted" />
-                <span className="text-foreground capitalize">
-                  {customer.lead_source}
-                </span>
-              </div>
-            )}
-            <div className="flex items-center gap-3 text-sm">
-              <Calendar className="h-4 w-4 text-muted" />
-              <span className="text-foreground">
-                Since {new Date(customer.created_at).toLocaleDateString()}
-              </span>
-            </div>
-          </div>
-
-          <div className="mt-6 grid grid-cols-2 gap-4 border-t border-[#1E2D45] pt-6">
-            <div>
-              <p className="text-2xl font-display font-bold text-white">
-                {customer.total_jobs}
-              </p>
-              <p className="text-xs text-muted mt-1">Total Jobs</p>
-            </div>
-            <div>
-              <p className="text-2xl font-display font-bold text-white tabular-nums">
-                ${Number(customer.lifetime_revenue).toLocaleString()}
-              </p>
-              <p className="text-xs text-muted mt-1">Lifetime Revenue</p>
-            </div>
-          </div>
-
-          {customer.notes && (
-            <div className="mt-6 border-t border-[#1E2D45] pt-6">
-              <p className="text-xs font-medium uppercase tracking-wider text-muted mb-2">
-                Notes
-              </p>
-              <p className="text-sm text-foreground whitespace-pre-wrap">
-                {customer.notes}
-              </p>
-            </div>
-          )}
         </div>
+      )}
 
-        {/* Jobs & invoices */}
-        <div className="space-y-6 lg:col-span-2">
-          {/* Jobs */}
-          <div className="rounded-2xl bg-dark-card border border-[#1E2D45] shadow-lg shadow-black/10 overflow-hidden">
-            <div className="px-6 py-4 border-b border-[#1E2D45]">
-              <h2 className="font-display text-base font-semibold text-white">
-                Jobs ({jobs.length})
-              </h2>
-            </div>
-            {jobs.length === 0 ? (
-              <div className="px-6 py-12 text-center text-sm text-muted">
-                No jobs yet
-              </div>
-            ) : (
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-[#1E2D45]">
-                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted">
-                      Job #
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted">
-                      Type
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted">
-                      Date
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted">
-                      Status
-                    </th>
-                    <th className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-muted">
-                      Price
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {jobs.map((job) => (
-                    <tr
-                      key={job.id}
-                      className="border-b border-[#1E2D45] last:border-0 transition-colors hover:bg-dark-card-hover"
-                    >
-                      <td className="px-6 py-3.5 font-medium text-white">
-                        {job.job_number}
-                      </td>
-                      <td className="px-6 py-3.5 text-foreground capitalize">
-                        {job.service_type || job.job_type}
-                      </td>
-                      <td className="px-6 py-3.5 text-foreground">
-                        {job.scheduled_date || "—"}
-                      </td>
-                      <td className="px-6 py-3.5">
-                        <span
-                          className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${statusColor[job.status] || "bg-zinc-500/10 text-zinc-400"}`}
-                        >
-                          {job.status.replace(/_/g, " ")}
-                        </span>
-                      </td>
-                      <td className="px-6 py-3.5 text-right text-foreground tabular-nums">
-                        {job.total_price
-                          ? `$${Number(job.total_price).toLocaleString()}`
-                          : "—"}
-                      </td>
-                    </tr>
+      {/* Jobs Tab */}
+      {tab === "jobs" && (
+        <div className="rounded-2xl bg-dark-card border border-[#1E2D45] overflow-hidden">
+          <div className="table-scroll">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-[#1E2D45]">
+                  {["Job #", "Type", "Date", "Status", "Price"].map(h => (
+                    <th key={h} className="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted">{h}</th>
                   ))}
-                </tbody>
-              </table>
-            )}
-          </div>
-
-          {/* Invoices */}
-          <div className="rounded-2xl bg-dark-card border border-[#1E2D45] shadow-lg shadow-black/10 overflow-hidden">
-            <div className="px-6 py-4 border-b border-[#1E2D45]">
-              <h2 className="font-display text-base font-semibold text-white">
-                Invoices ({invoices.length})
-              </h2>
-            </div>
-            {invoices.length === 0 ? (
-              <div className="px-6 py-12 text-center text-sm text-muted">
-                No invoices yet
-              </div>
-            ) : (
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-[#1E2D45]">
-                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted">
-                      Invoice #
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted">
-                      Date
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted">
-                      Status
-                    </th>
-                    <th className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-muted">
-                      Total
-                    </th>
-                    <th className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-muted">
-                      Balance
-                    </th>
+                </tr>
+              </thead>
+              <tbody>
+                {jobs.length === 0 ? (
+                  <tr><td colSpan={5} className="py-12 text-center text-sm text-muted">No jobs</td></tr>
+                ) : jobs.map(j => (
+                  <tr key={j.id} onClick={() => router.push(`/jobs/${j.id}`)} className="border-b border-[#1E2D45] last:border-0 cursor-pointer hover:bg-dark-card-hover transition-colors">
+                    <td className="px-5 py-3 font-medium text-white">{j.job_number}</td>
+                    <td className="px-5 py-3 text-foreground capitalize">{j.job_type}</td>
+                    <td className="px-5 py-3 text-foreground">{j.scheduled_date || "—"}</td>
+                    <td className="px-5 py-3"><span className={`rounded-full px-2 py-0.5 text-[10px] font-medium capitalize ${STATUS_CLS[j.status] || ""}`}>{j.status.replace(/_/g, " ")}</span></td>
+                    <td className="px-5 py-3 text-white tabular-nums">{j.total_price ? `$${Number(j.total_price).toLocaleString()}` : "—"}</td>
                   </tr>
-                </thead>
-                <tbody>
-                  {invoices.map((inv) => (
-                    <tr
-                      key={inv.id}
-                      className="border-b border-[#1E2D45] last:border-0 transition-colors hover:bg-dark-card-hover"
-                    >
-                      <td className="px-6 py-3.5 font-medium text-white">
-                        {inv.invoice_number}
-                      </td>
-                      <td className="px-6 py-3.5 text-foreground">
-                        {new Date(inv.created_at).toLocaleDateString()}
-                      </td>
-                      <td className="px-6 py-3.5">
-                        <span
-                          className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${statusColor[inv.status] || "bg-zinc-500/10 text-zinc-400"}`}
-                        >
-                          {inv.status}
-                        </span>
-                      </td>
-                      <td className="px-6 py-3.5 text-right text-foreground tabular-nums">
-                        ${Number(inv.total).toLocaleString()}
-                      </td>
-                      <td className="px-6 py-3.5 text-right text-foreground tabular-nums">
-                        ${Number(inv.balance_due).toLocaleString()}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
-      </div>
+      )}
 
+      {/* Invoices Tab */}
+      {tab === "invoices" && (
+        <div className="rounded-2xl bg-dark-card border border-[#1E2D45] overflow-hidden">
+          <div className="table-scroll">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-[#1E2D45]">
+                  {["Invoice #", "Date", "Status", "Total", "Balance"].map(h => (
+                    <th key={h} className="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {invoices.length === 0 ? (
+                  <tr><td colSpan={5} className="py-12 text-center text-sm text-muted">No invoices</td></tr>
+                ) : invoices.map(inv => (
+                  <tr key={inv.id} onClick={() => router.push(`/invoices/${inv.id}`)} className="border-b border-[#1E2D45] last:border-0 cursor-pointer hover:bg-dark-card-hover transition-colors">
+                    <td className="px-5 py-3 font-medium text-white">{inv.invoice_number}</td>
+                    <td className="px-5 py-3 text-foreground">{new Date(inv.created_at).toLocaleDateString()}</td>
+                    <td className="px-5 py-3"><span className={`rounded-full px-2 py-0.5 text-[10px] font-medium capitalize ${STATUS_CLS[inv.status] || ""}`}>{inv.status}</span></td>
+                    <td className="px-5 py-3 text-white tabular-nums">${Number(inv.total).toLocaleString()}</td>
+                    <td className="px-5 py-3 text-white tabular-nums">${Number(inv.balance_due).toLocaleString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Slide-over */}
       <SlideOver open={editOpen} onClose={() => setEditOpen(false)} title="Edit Customer">
-        <EditCustomerForm
-          customer={customer}
-          onSuccess={(updated) => {
-            setCustomer(updated);
-            setEditOpen(false);
-            toast("success", "Customer updated");
-          }}
-        />
+        <EditCustomerForm customer={customer} onSuccess={(c) => { setCustomer(c); setEditOpen(false); toast("success", "Updated"); }} />
       </SlideOver>
     </div>
   );
 }
+
+/* ---- Edit Form ---- */
 
 function EditCustomerForm({ customer, onSuccess }: { customer: Customer; onSuccess: (c: Customer) => void }) {
   const [firstName, setFirstName] = useState(customer.first_name);
@@ -467,60 +365,33 @@ function EditCustomerForm({ customer, onSuccess }: { customer: Customer; onSucce
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
 
+  const inputCls = "w-full bg-[#111C2E] border border-[#1E2D45] rounded-lg px-4 py-3 text-sm text-white placeholder-muted outline-none focus:border-brand focus:ring-1 focus:ring-brand";
+  const labelCls = "block text-xs font-medium text-muted uppercase tracking-wider mb-1.5";
+
   const handleSubmit = async (e: FormEvent) => {
-    e.preventDefault();
-    setError("");
-    setSaving(true);
+    e.preventDefault(); setError(""); setSaving(true);
     try {
       const updated = await api.patch<Customer>(`/customers/${customer.id}`, {
-        firstName,
-        lastName,
-        email: email || undefined,
-        phone: phone || undefined,
-        companyName: companyName || undefined,
-        notes: notes || undefined,
+        firstName, lastName, email: email || undefined, phone: phone || undefined,
+        companyName: companyName || undefined, notes: notes || undefined,
       });
       onSuccess(updated);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to update");
-    } finally {
-      setSaving(false);
-    }
+    } catch (err) { setError(err instanceof Error ? err.message : "Failed"); }
+    finally { setSaving(false); }
   };
 
-  const inputClass = "w-full bg-[#111C2E] border border-[#1E2D45] rounded-lg px-4 py-3 text-sm text-white placeholder-muted outline-none transition-colors focus:border-[#2ECC71] focus:ring-1 focus:ring-[#2ECC71]";
-  const labelClass = "block text-sm font-medium text-[#7A8BA3] mb-1.5";
-
   return (
-    <form onSubmit={handleSubmit} className="space-y-5">
+    <form onSubmit={handleSubmit} className="space-y-4">
       {error && <div className="rounded-lg bg-red-500/10 px-4 py-3 text-sm text-red-400">{error}</div>}
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label className={labelClass}>First Name</label>
-          <input value={firstName} onChange={(e) => setFirstName(e.target.value)} required className={inputClass} />
-        </div>
-        <div>
-          <label className={labelClass}>Last Name</label>
-          <input value={lastName} onChange={(e) => setLastName(e.target.value)} required className={inputClass} />
-        </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div><label className={labelCls}>First Name</label><input value={firstName} onChange={e => setFirstName(e.target.value)} required className={inputCls} /></div>
+        <div><label className={labelCls}>Last Name</label><input value={lastName} onChange={e => setLastName(e.target.value)} required className={inputCls} /></div>
       </div>
-      <div>
-        <label className={labelClass}>Email</label>
-        <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className={inputClass} />
-      </div>
-      <div>
-        <label className={labelClass}>Phone</label>
-        <input value={phone} onChange={(e) => setPhone(e.target.value)} className={inputClass} />
-      </div>
-      <div>
-        <label className={labelClass}>Company Name</label>
-        <input value={companyName} onChange={(e) => setCompanyName(e.target.value)} className={inputClass} />
-      </div>
-      <div>
-        <label className={labelClass}>Notes</label>
-        <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} className={`${inputClass} resize-none`} />
-      </div>
-      <button type="submit" disabled={saving} className="w-full rounded-lg bg-[#2ECC71] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1FA855] disabled:opacity-50">
+      <div><label className={labelCls}>Phone</label><input type="tel" value={phone} onChange={e => setPhone(e.target.value)} className={inputCls} /></div>
+      <div><label className={labelCls}>Email</label><input type="email" value={email} onChange={e => setEmail(e.target.value)} className={inputCls} /></div>
+      <div><label className={labelCls}>Company</label><input value={companyName} onChange={e => setCompanyName(e.target.value)} className={inputCls} /></div>
+      <div><label className={labelCls}>Notes</label><textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3} className={`${inputCls} resize-none`} /></div>
+      <button type="submit" disabled={saving} className="w-full rounded-lg bg-brand py-3 text-sm font-bold text-white hover:bg-brand-light disabled:opacity-50 btn-press">
         {saving ? "Saving..." : "Save Changes"}
       </button>
     </form>
