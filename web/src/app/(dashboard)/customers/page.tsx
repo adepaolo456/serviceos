@@ -73,7 +73,7 @@ export default function CustomersPage() {
         </div>
         <button
           onClick={() => setPanelOpen(true)}
-          className="flex items-center gap-2 rounded-lg bg-[#2ECC71] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1FA855]"
+          className="flex items-center gap-2 rounded-lg bg-[#2ECC71] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1FA855] btn-press"
         >
           <Plus className="h-4 w-4" />
           New Customer
@@ -96,7 +96,7 @@ export default function CustomersPage() {
             <button
               key={t}
               onClick={() => setTypeFilter(t)}
-              className={`rounded-full px-4 py-1.5 text-xs font-medium capitalize transition-colors ${
+              className={`rounded-full px-4 py-1.5 text-xs font-medium capitalize transition-colors btn-press ${
                 typeFilter === t
                   ? "bg-brand/15 text-brand"
                   : "bg-dark-card text-muted hover:text-foreground"
@@ -109,6 +109,7 @@ export default function CustomersPage() {
       </div>
 
       <div className="rounded-2xl bg-dark-card overflow-hidden border border-[#1E2D45] shadow-lg shadow-black/10">
+        <div className="table-scroll">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-[#1E2D45]">
@@ -153,7 +154,7 @@ export default function CustomersPage() {
                     <p className="text-sm text-muted mb-4">Add your first customer to get started</p>
                     <button
                       onClick={() => setPanelOpen(true)}
-                      className="rounded-lg bg-[#2ECC71] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1FA855]"
+                      className="rounded-lg bg-[#2ECC71] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1FA855] btn-press"
                     >
                       New Customer
                     </button>
@@ -210,6 +211,7 @@ export default function CustomersPage() {
             )}
           </tbody>
         </table>
+        </div>
       </div>
 
       {total > 20 && (
@@ -315,7 +317,7 @@ function NewCustomerForm({ onSuccess }: { onSuccess: () => void }) {
               key={t}
               type="button"
               onClick={() => setType(t)}
-              className={`flex-1 rounded-md py-2 text-sm font-medium capitalize transition-colors ${
+              className={`flex-1 rounded-md py-2 text-sm font-medium capitalize transition-colors btn-press ${
                 type === t
                   ? "bg-brand text-dark-primary"
                   : "text-muted hover:text-foreground"
@@ -431,7 +433,7 @@ function NewCustomerForm({ onSuccess }: { onSuccess: () => void }) {
       <button
         type="submit"
         disabled={saving}
-        className="w-full rounded-lg bg-[#2ECC71] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1FA855] disabled:opacity-50"
+        className="w-full rounded-lg bg-[#2ECC71] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1FA855] disabled:opacity-50 btn-press"
       >
         {saving ? "Creating..." : "Create Customer"}
       </button>

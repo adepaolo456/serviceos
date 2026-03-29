@@ -111,7 +111,7 @@ export default function AssetsPage() {
         </div>
         <button
           onClick={() => setPanelOpen(true)}
-          className="flex items-center gap-2 rounded-lg bg-[#2ECC71] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1FA855]"
+          className="flex items-center gap-2 rounded-lg bg-[#2ECC71] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1FA855] btn-press"
         >
           <Plus className="h-4 w-4" />
           Add Asset
@@ -124,7 +124,7 @@ export default function AssetsPage() {
           <button
             key={s}
             onClick={() => setStatusFilter(s)}
-            className={`relative px-5 py-3 text-sm font-medium transition-colors ${
+            className={`relative px-5 py-3 text-sm font-medium transition-colors btn-press ${
               statusFilter === s
                 ? "text-brand"
                 : "text-muted hover:text-foreground"
@@ -152,7 +152,7 @@ export default function AssetsPage() {
           <p className="text-sm text-muted mb-6">Add your first asset to start tracking inventory</p>
           <button
             onClick={() => setPanelOpen(true)}
-            className="flex items-center gap-2 rounded-lg bg-[#2ECC71] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1FA855]"
+            className="flex items-center gap-2 rounded-lg bg-[#2ECC71] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1FA855] btn-press"
           >
             <Plus className="h-4 w-4" />
             Add Asset
@@ -167,7 +167,7 @@ export default function AssetsPage() {
               <button
                 key={asset.id}
                 onClick={() => setDetailAsset(asset)}
-                className="group rounded-2xl bg-dark-card p-5 text-left transition-all hover:bg-dark-card-hover hover:ring-1 hover:ring-white/5 border border-[#1E2D45] shadow-lg shadow-black/10"
+                className="group rounded-2xl bg-dark-card p-5 text-left transition-all hover:bg-dark-card-hover hover:ring-1 hover:ring-white/5 border border-[#1E2D45] shadow-lg shadow-black/10 card-hover btn-press"
               >
                 <div className="flex items-start justify-between mb-3">
                   <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-dark-elevated">
@@ -481,7 +481,7 @@ function CreateAssetForm({ onSuccess }: { onSuccess: () => void }) {
       <button
         type="submit"
         disabled={saving}
-        className="w-full rounded-lg bg-[#2ECC71] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1FA855] disabled:opacity-50"
+        className="w-full rounded-lg bg-[#2ECC71] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1FA855] disabled:opacity-50 btn-press"
       >
         {saving ? "Adding..." : "Add Asset"}
       </button>

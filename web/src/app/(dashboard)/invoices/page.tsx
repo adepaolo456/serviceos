@@ -89,7 +89,7 @@ export default function InvoicesPage() {
               setPanelMode("from-job");
               setPanelOpen(true);
             }}
-            className="flex items-center gap-2 rounded-lg border border-white/10 bg-dark-card px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-dark-card-hover"
+            className="flex items-center gap-2 rounded-lg border border-white/10 bg-dark-card px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-dark-card-hover btn-press"
           >
             <FileText className="h-4 w-4" />
             Generate from Job
@@ -99,7 +99,7 @@ export default function InvoicesPage() {
               setPanelMode("create");
               setPanelOpen(true);
             }}
-            className="flex items-center gap-2 rounded-lg bg-[#2ECC71] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1FA855]"
+            className="flex items-center gap-2 rounded-lg bg-[#2ECC71] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1FA855] btn-press"
           >
             <Plus className="h-4 w-4" />
             New Invoice
@@ -113,7 +113,7 @@ export default function InvoicesPage() {
           <button
             key={t}
             onClick={() => setTab(t)}
-            className={`relative px-5 py-3 text-sm font-medium capitalize transition-colors ${
+            className={`relative px-5 py-3 text-sm font-medium capitalize transition-colors btn-press ${
               tab === t ? "text-brand" : "text-muted hover:text-foreground"
             }`}
           >
@@ -127,6 +127,7 @@ export default function InvoicesPage() {
 
       {/* Table */}
       <div className="rounded-2xl bg-dark-card overflow-hidden border border-[#1E2D45] shadow-lg shadow-black/10">
+        <div className="table-scroll">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-[#1E2D45]">
@@ -172,7 +173,7 @@ export default function InvoicesPage() {
                         setPanelMode("create");
                         setPanelOpen(true);
                       }}
-                      className="rounded-lg bg-[#2ECC71] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1FA855]"
+                      className="rounded-lg bg-[#2ECC71] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1FA855] btn-press"
                     >
                       New Invoice
                     </button>
@@ -221,6 +222,7 @@ export default function InvoicesPage() {
             )}
           </tbody>
         </table>
+        </div>
       </div>
 
       {total > 20 && (
@@ -405,7 +407,7 @@ function FromJobForm({ onSuccess }: { onSuccess: () => void }) {
       <button
         onClick={handleGenerate}
         disabled={!selectedJob || saving}
-        className="w-full rounded-lg bg-[#2ECC71] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1FA855] disabled:opacity-50"
+        className="w-full rounded-lg bg-[#2ECC71] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1FA855] disabled:opacity-50 btn-press"
       >
         {saving ? "Generating..." : "Generate Invoice"}
       </button>
@@ -658,7 +660,7 @@ function CreateInvoiceForm({ onSuccess }: { onSuccess: () => void }) {
         <button
           type="button"
           onClick={addLine}
-          className="mt-2 text-sm text-brand hover:text-brand-light"
+          className="mt-2 text-sm text-brand hover:text-brand-light btn-press"
         >
           + Add line item
         </button>
@@ -696,7 +698,7 @@ function CreateInvoiceForm({ onSuccess }: { onSuccess: () => void }) {
       <button
         type="submit"
         disabled={saving}
-        className="w-full rounded-lg bg-[#2ECC71] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1FA855] disabled:opacity-50"
+        className="w-full rounded-lg bg-[#2ECC71] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1FA855] disabled:opacity-50 btn-press"
       >
         {saving ? "Creating..." : "Create Invoice"}
       </button>

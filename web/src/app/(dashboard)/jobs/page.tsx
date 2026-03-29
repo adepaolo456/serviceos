@@ -119,7 +119,7 @@ export default function JobsPage() {
         </div>
         <button
           onClick={() => setPanelOpen(true)}
-          className="flex items-center gap-2 rounded-lg bg-[#2ECC71] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1FA855]"
+          className="flex items-center gap-2 rounded-lg bg-[#2ECC71] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1FA855] btn-press"
         >
           <Plus className="h-4 w-4" />
           New Job
@@ -132,7 +132,7 @@ export default function JobsPage() {
           <button
             key={s}
             onClick={() => setStatusFilter(s)}
-            className={`relative shrink-0 px-4 py-3 text-sm font-medium capitalize transition-colors ${
+            className={`relative shrink-0 px-4 py-3 text-sm font-medium capitalize transition-colors btn-press ${
               statusFilter === s
                 ? "text-brand"
                 : "text-muted hover:text-foreground"
@@ -153,6 +153,7 @@ export default function JobsPage() {
 
       {/* Job table */}
       <div className="rounded-2xl bg-dark-card overflow-hidden border border-[#1E2D45] shadow-lg shadow-black/10">
+        <div className="table-scroll">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-[#1E2D45]">
@@ -191,7 +192,7 @@ export default function JobsPage() {
                     <button
                       type="button"
                       onClick={() => setPanelOpen(true)}
-                      className="mt-2 flex items-center gap-2 rounded-lg bg-[#2ECC71] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1FA855]"
+                      className="mt-2 flex items-center gap-2 rounded-lg bg-[#2ECC71] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1FA855] btn-press"
                     >
                       <Plus className="h-4 w-4" />
                       New Job
@@ -253,6 +254,7 @@ export default function JobsPage() {
             )}
           </tbody>
         </table>
+        </div>
       </div>
 
       {total > 20 && (
@@ -545,7 +547,7 @@ function NewJobForm({ onSuccess }: { onSuccess: () => void }) {
               key={s}
               type="button"
               onClick={() => setAssetSubtype(s)}
-              className={`flex-1 rounded-md py-2 text-sm font-medium transition-colors ${
+              className={`flex-1 rounded-md py-2 text-sm font-medium transition-colors btn-press ${
                 assetSubtype === s
                   ? "bg-brand text-dark-primary"
                   : "text-muted hover:text-foreground"
@@ -709,7 +711,7 @@ function NewJobForm({ onSuccess }: { onSuccess: () => void }) {
       <button
         type="submit"
         disabled={saving}
-        className="w-full rounded-lg bg-[#2ECC71] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1FA855] disabled:opacity-50"
+        className="w-full rounded-lg bg-[#2ECC71] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1FA855] disabled:opacity-50 btn-press"
       >
         {saving ? "Creating..." : "Create Job"}
       </button>

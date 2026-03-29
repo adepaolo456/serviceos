@@ -123,7 +123,7 @@ export default function PricingPage() {
         </div>
         <button
           onClick={() => setPanelOpen(true)}
-          className="flex items-center gap-2 rounded-lg bg-[#2ECC71] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1FA855]"
+          className="flex items-center gap-2 rounded-lg bg-[#2ECC71] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1FA855] btn-press"
         >
           <Plus className="h-4 w-4" />
           New Rule
@@ -134,7 +134,7 @@ export default function PricingPage() {
       <div className="mb-8 rounded-2xl bg-dark-card border border-[#1E2D45] shadow-lg shadow-black/10 overflow-hidden">
         <button
           onClick={() => setCalcOpen(!calcOpen)}
-          className="flex w-full items-center justify-between px-6 py-4 text-left transition-colors hover:bg-dark-card-hover"
+          className="flex w-full items-center justify-between px-6 py-4 text-left transition-colors hover:bg-dark-card-hover btn-press"
         >
           <div className="flex items-center gap-3">
             <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand/10">
