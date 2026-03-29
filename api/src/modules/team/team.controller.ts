@@ -80,6 +80,9 @@ export class TeamController {
       hireDate: user.hire_date, payRate: user.pay_rate, payType: user.pay_type,
       overtimeRate: user.overtime_rate, vehicleInfo: user.vehicle_info,
       emergencyContact: user.emergency_contact, createdAt: user.created_at,
+      driverRates: user.driver_rates, permissions: user.permissions,
+      additionalPhones: user.additional_phones, additionalEmails: user.additional_emails,
+      smsOptIn: user.sms_opt_in, address: user.address,
     };
   }
 
@@ -102,6 +105,12 @@ export class TeamController {
     if (body.emergencyContact !== undefined) update.emergency_contact = body.emergencyContact;
     if (body.isActive !== undefined) update.is_active = body.isActive;
     if (body.employeeStatus !== undefined) update.employee_status = body.employeeStatus;
+    if (body.driverRates !== undefined) update.driver_rates = body.driverRates;
+    if (body.permissions !== undefined) update.permissions = body.permissions;
+    if (body.additionalPhones !== undefined) update.additional_phones = body.additionalPhones;
+    if (body.additionalEmails !== undefined) update.additional_emails = body.additionalEmails;
+    if (body.smsOptIn !== undefined) update.sms_opt_in = body.smsOptIn;
+    if (body.address !== undefined) update.address = body.address;
 
     await this.usersRepo.update({ id, tenant_id: tenantId }, update);
     return this.getEmployee(req, id);
