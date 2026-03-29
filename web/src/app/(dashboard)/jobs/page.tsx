@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, DollarSign } from "lucide-react";
+import { Plus, DollarSign, Briefcase } from "lucide-react";
 import { api } from "@/lib/api";
 import SlideOver from "@/components/slide-over";
 
@@ -112,14 +112,14 @@ export default function JobsPage() {
     <div>
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="font-display text-3xl font-bold tracking-tight text-white">
+          <h1 className="font-display text-2xl font-bold tracking-tight text-white">
             Jobs
           </h1>
           <p className="mt-1 text-muted">{total} jobs</p>
         </div>
         <button
           onClick={() => setPanelOpen(true)}
-          className="flex items-center gap-2 rounded-lg bg-brand px-4 py-2.5 text-sm font-semibold text-dark-primary transition-colors hover:bg-brand-light"
+          className="flex items-center gap-2 rounded-lg bg-[#2ECC71] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1FA855]"
         >
           <Plus className="h-4 w-4" />
           New Job
@@ -127,7 +127,7 @@ export default function JobsPage() {
       </div>
 
       {/* Tab filters */}
-      <div className="mb-6 flex gap-0 overflow-x-auto border-b border-white/5">
+      <div className="mb-6 flex gap-0 overflow-x-auto border-b border-[#1E2D45]">
         {STATUSES.map((s) => (
           <button
             key={s}
@@ -152,10 +152,10 @@ export default function JobsPage() {
       </div>
 
       {/* Job table */}
-      <div className="rounded-2xl bg-dark-card overflow-hidden">
+      <div className="rounded-2xl bg-dark-card overflow-hidden border border-[#1E2D45] shadow-lg shadow-black/10">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-white/5">
+            <tr className="border-b border-[#1E2D45]">
               {["Job #", "Customer", "Type", "Date", "Driver", "Asset", "Status", "Price"].map(
                 (h, i) => (
                   <th
@@ -172,15 +172,31 @@ export default function JobsPage() {
           </thead>
           <tbody>
             {loading ? (
-              <tr>
-                <td colSpan={8} className="px-5 py-16 text-center text-muted">
-                  Loading...
-                </td>
-              </tr>
+              <>
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <tr key={i}>
+                    <td colSpan={8} className="px-5 py-1">
+                      <div className="h-12 w-full skeleton rounded" />
+                    </td>
+                  </tr>
+                ))}
+              </>
             ) : jobs.length === 0 ? (
               <tr>
-                <td colSpan={8} className="px-5 py-16 text-center text-muted">
-                  No jobs found
+                <td colSpan={8} className="px-5 py-16 text-center">
+                  <div className="flex flex-col items-center gap-3">
+                    <Briefcase size={48} className="text-[#7A8BA3]/30" />
+                    <h3 className="text-lg font-semibold text-white">No jobs yet</h3>
+                    <p className="text-sm text-muted">Create your first job to get started</p>
+                    <button
+                      type="button"
+                      onClick={() => setPanelOpen(true)}
+                      className="mt-2 flex items-center gap-2 rounded-lg bg-[#2ECC71] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1FA855]"
+                    >
+                      <Plus className="h-4 w-4" />
+                      New Job
+                    </button>
+                  </div>
                 </td>
               </tr>
             ) : (
@@ -188,7 +204,7 @@ export default function JobsPage() {
                 <tr
                   key={j.id}
                   onClick={() => router.push(`/jobs/${j.id}`)}
-                  className="border-b border-white/5 last:border-0 cursor-pointer transition-colors hover:bg-dark-card-hover"
+                  className="border-b border-[#1E2D45] last:border-0 cursor-pointer transition-colors hover:bg-[#1A2740]/50"
                 >
                   <td className="px-5 py-4 font-medium text-white">
                     {j.job_number}
@@ -227,7 +243,7 @@ export default function JobsPage() {
                       {j.status.replace(/_/g, " ")}
                     </span>
                   </td>
-                  <td className="px-5 py-4 text-right text-foreground">
+                  <td className="px-5 py-4 text-right text-foreground tabular-nums">
                     {j.total_price
                       ? `$${Number(j.total_price).toLocaleString()}`
                       : "—"}
@@ -429,8 +445,8 @@ function NewJobForm({ onSuccess }: { onSuccess: () => void }) {
   };
 
   const inputClass =
-    "w-full rounded-lg border border-white/10 bg-dark-card px-4 py-2.5 text-sm text-white placeholder-muted outline-none transition-colors focus:border-brand";
-  const labelClass = "block text-sm font-medium text-foreground mb-1.5";
+    "w-full rounded-lg bg-[#111C2E] border border-[#1E2D45] px-4 py-2.5 text-sm text-white placeholder-muted outline-none transition-colors focus:border-brand";
+  const labelClass = "block text-sm font-medium text-[#7A8BA3] mb-1.5";
   const selectClass = `${inputClass} appearance-none`;
 
   return (
@@ -693,7 +709,7 @@ function NewJobForm({ onSuccess }: { onSuccess: () => void }) {
       <button
         type="submit"
         disabled={saving}
-        className="w-full rounded-lg bg-brand px-4 py-2.5 text-sm font-semibold text-dark-primary transition-colors hover:bg-brand-light disabled:opacity-50"
+        className="w-full rounded-lg bg-[#2ECC71] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1FA855] disabled:opacity-50"
       >
         {saving ? "Creating..." : "Create Job"}
       </button>

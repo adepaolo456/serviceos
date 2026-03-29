@@ -20,7 +20,7 @@ interface StatCardProps {
 
 function StatCard({ title, value, change, trend, icon: Icon }: StatCardProps) {
   return (
-    <div className="group rounded-2xl bg-dark-card p-6 transition-colors hover:bg-dark-card-hover">
+    <div className="group rounded-2xl border border-[#1E2D45] shadow-lg shadow-black/10 bg-dark-card p-6 transition-colors hover:bg-dark-card-hover">
       <div className="flex items-start justify-between">
         <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand/10">
           <Icon className="h-5 w-5 text-brand" />
@@ -41,7 +41,7 @@ function StatCard({ title, value, change, trend, icon: Icon }: StatCardProps) {
         </div>
       </div>
       <div className="mt-4">
-        <p className="font-display text-3xl font-bold tracking-tight text-white">
+        <p className="font-display text-3xl font-bold tracking-tight tabular-nums text-white">
           {value}
         </p>
         <p className="mt-1 text-sm text-muted">{title}</p>
@@ -68,7 +68,7 @@ export default function DashboardPage() {
   return (
     <div>
       <div className="mb-8">
-        <h1 className="font-display text-3xl font-bold tracking-tight text-white">
+        <h1 className="font-display text-2xl font-bold tracking-tight text-white">
           Dashboard
         </h1>
         <p className="mt-1 text-muted">
@@ -108,7 +108,7 @@ export default function DashboardPage() {
       </div>
 
       <div className="mt-8 grid grid-cols-1 gap-5 lg:grid-cols-2">
-        <div className="rounded-2xl bg-dark-card p-6">
+        <div className="rounded-2xl border border-[#1E2D45] shadow-lg shadow-black/10 bg-dark-card p-6">
           <div className="flex items-center justify-between">
             <h2 className="font-display text-lg font-semibold text-white">
               Recent Activity
@@ -121,7 +121,7 @@ export default function DashboardPage() {
             {recentActivity.map((item) => (
               <div
                 key={item.id}
-                className="flex items-center justify-between border-b border-white/5 py-3.5 last:border-0"
+                className="flex items-center justify-between border-b border-[#1E2D45] py-3.5 last:border-0"
               >
                 <p className="text-sm text-foreground">{item.text}</p>
                 <span className="ml-4 shrink-0 text-xs text-muted">
@@ -132,7 +132,7 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        <div className="rounded-2xl bg-dark-card p-6">
+        <div className="rounded-2xl border border-[#1E2D45] shadow-lg shadow-black/10 bg-dark-card p-6">
           <h2 className="font-display text-lg font-semibold text-white">
             Jobs by Status
           </h2>

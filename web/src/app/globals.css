@@ -37,3 +37,19 @@ h1, h2, h3, h4, h5, h6 {
 ::selection {
   background: rgba(46, 204, 113, 0.3);
 }
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.skeleton {
+  background: linear-gradient(90deg, #1E2D45 25%, #243350 50%, #1E2D45 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+  border-radius: 0.5rem;
+}

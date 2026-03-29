@@ -57,10 +57,10 @@ export default function Sidebar() {
               <li key={item.name}>
                 <Link
                   href={item.href}
-                  className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
+                  className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all ${
                     isActive
-                      ? "bg-brand/10 text-brand"
-                      : "text-muted hover:bg-dark-card hover:text-foreground"
+                      ? "bg-brand/10 text-brand border-l-2 border-brand pl-[10px]"
+                      : "text-muted hover:bg-dark-card-hover/50 hover:text-white border-l-2 border-transparent pl-[10px]"
                   }`}
                 >
                   <item.icon className="h-[18px] w-[18px]" />

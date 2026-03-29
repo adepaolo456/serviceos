@@ -107,8 +107,36 @@ export default function CustomerDetailPage({
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-32 text-muted">
-        Loading...
+      <div className="py-10">
+        <div className="mb-6 h-4 w-36 animate-pulse rounded bg-white/5" />
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+          <div className="rounded-2xl bg-dark-card border border-[#1E2D45] p-6">
+            <div className="flex items-center gap-4 mb-6">
+              <div className="h-14 w-14 animate-pulse rounded-2xl bg-white/5" />
+              <div className="space-y-2">
+                <div className="h-5 w-32 animate-pulse rounded bg-white/5" />
+                <div className="h-3 w-20 animate-pulse rounded bg-white/5" />
+              </div>
+            </div>
+            <div className="space-y-3">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="h-4 w-full animate-pulse rounded bg-white/5" />
+              ))}
+            </div>
+          </div>
+          <div className="lg:col-span-2 space-y-6">
+            {Array.from({ length: 2 }).map((_, i) => (
+              <div key={i} className="rounded-2xl bg-dark-card border border-[#1E2D45] p-6">
+                <div className="h-5 w-24 animate-pulse rounded bg-white/5 mb-4" />
+                <div className="space-y-3">
+                  {Array.from({ length: 3 }).map((_, j) => (
+                    <div key={j} className="h-4 w-full animate-pulse rounded bg-white/5" />
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     );
   }
@@ -135,7 +163,7 @@ export default function CustomerDetailPage({
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* Customer info card */}
-        <div className="rounded-2xl bg-dark-card p-6 lg:col-span-1">
+        <div className="rounded-2xl bg-dark-card border border-[#1E2D45] shadow-lg shadow-black/10 p-6 lg:col-span-1">
           <div className="flex items-center gap-4 mb-6">
             <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-brand/10 text-brand font-display text-xl font-bold">
               {customer.first_name[0]}
@@ -212,7 +240,7 @@ export default function CustomerDetailPage({
             </div>
           </div>
 
-          <div className="mt-6 grid grid-cols-2 gap-4 border-t border-white/5 pt-6">
+          <div className="mt-6 grid grid-cols-2 gap-4 border-t border-[#1E2D45] pt-6">
             <div>
               <p className="text-2xl font-display font-bold text-white">
                 {customer.total_jobs}
@@ -220,7 +248,7 @@ export default function CustomerDetailPage({
               <p className="text-xs text-muted mt-1">Total Jobs</p>
             </div>
             <div>
-              <p className="text-2xl font-display font-bold text-white">
+              <p className="text-2xl font-display font-bold text-white tabular-nums">
                 ${Number(customer.lifetime_revenue).toLocaleString()}
               </p>
               <p className="text-xs text-muted mt-1">Lifetime Revenue</p>
@@ -228,7 +256,7 @@ export default function CustomerDetailPage({
           </div>
 
           {customer.notes && (
-            <div className="mt-6 border-t border-white/5 pt-6">
+            <div className="mt-6 border-t border-[#1E2D45] pt-6">
               <p className="text-xs font-medium uppercase tracking-wider text-muted mb-2">
                 Notes
               </p>
@@ -242,8 +270,8 @@ export default function CustomerDetailPage({
         {/* Jobs & invoices */}
         <div className="space-y-6 lg:col-span-2">
           {/* Jobs */}
-          <div className="rounded-2xl bg-dark-card overflow-hidden">
-            <div className="px-6 py-4 border-b border-white/5">
+          <div className="rounded-2xl bg-dark-card border border-[#1E2D45] shadow-lg shadow-black/10 overflow-hidden">
+            <div className="px-6 py-4 border-b border-[#1E2D45]">
               <h2 className="font-display text-base font-semibold text-white">
                 Jobs ({jobs.length})
               </h2>
@@ -255,7 +283,7 @@ export default function CustomerDetailPage({
             ) : (
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-white/5">
+                  <tr className="border-b border-[#1E2D45]">
                     <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted">
                       Job #
                     </th>
@@ -277,7 +305,7 @@ export default function CustomerDetailPage({
                   {jobs.map((job) => (
                     <tr
                       key={job.id}
-                      className="border-b border-white/5 last:border-0 transition-colors hover:bg-dark-card-hover"
+                      className="border-b border-[#1E2D45] last:border-0 transition-colors hover:bg-dark-card-hover"
                     >
                       <td className="px-6 py-3.5 font-medium text-white">
                         {job.job_number}
@@ -295,7 +323,7 @@ export default function CustomerDetailPage({
                           {job.status.replace(/_/g, " ")}
                         </span>
                       </td>
-                      <td className="px-6 py-3.5 text-right text-foreground">
+                      <td className="px-6 py-3.5 text-right text-foreground tabular-nums">
                         {job.total_price
                           ? `$${Number(job.total_price).toLocaleString()}`
                           : "—"}
@@ -308,8 +336,8 @@ export default function CustomerDetailPage({
           </div>
 
           {/* Invoices */}
-          <div className="rounded-2xl bg-dark-card overflow-hidden">
-            <div className="px-6 py-4 border-b border-white/5">
+          <div className="rounded-2xl bg-dark-card border border-[#1E2D45] shadow-lg shadow-black/10 overflow-hidden">
+            <div className="px-6 py-4 border-b border-[#1E2D45]">
               <h2 className="font-display text-base font-semibold text-white">
                 Invoices ({invoices.length})
               </h2>
@@ -321,7 +349,7 @@ export default function CustomerDetailPage({
             ) : (
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-white/5">
+                  <tr className="border-b border-[#1E2D45]">
                     <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted">
                       Invoice #
                     </th>
@@ -343,7 +371,7 @@ export default function CustomerDetailPage({
                   {invoices.map((inv) => (
                     <tr
                       key={inv.id}
-                      className="border-b border-white/5 last:border-0 transition-colors hover:bg-dark-card-hover"
+                      className="border-b border-[#1E2D45] last:border-0 transition-colors hover:bg-dark-card-hover"
                     >
                       <td className="px-6 py-3.5 font-medium text-white">
                         {inv.invoice_number}
@@ -358,10 +386,10 @@ export default function CustomerDetailPage({
                           {inv.status}
                         </span>
                       </td>
-                      <td className="px-6 py-3.5 text-right text-foreground">
+                      <td className="px-6 py-3.5 text-right text-foreground tabular-nums">
                         ${Number(inv.total).toLocaleString()}
                       </td>
-                      <td className="px-6 py-3.5 text-right text-foreground">
+                      <td className="px-6 py-3.5 text-right text-foreground tabular-nums">
                         ${Number(inv.balance_due).toLocaleString()}
                       </td>
                     </tr>
