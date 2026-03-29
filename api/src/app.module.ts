@@ -22,6 +22,8 @@ import { YardsModule } from './modules/yards/yards.module';
 import { Yard } from './modules/yards/yard.entity';
 import { NotesModule } from './modules/notes/notes.module';
 import { CustomerNote } from './modules/notes/note.entity';
+import { TeamModule } from './modules/team/team.module';
+import { TimeEntry } from './modules/team/time-entry.entity';
 import { JwtAuthGuard } from './common/guards';
 import { Tenant } from './modules/tenants/entities/tenant.entity';
 import { User } from './modules/auth/entities/user.entity';
@@ -64,6 +66,7 @@ import { MarketplaceBooking } from './modules/marketplace/entities/marketplace-b
             DemoRequest,
             Yard,
             CustomerNote,
+            TimeEntry,
           ],
           synchronize: true,
           ssl: {
@@ -87,6 +90,7 @@ import { MarketplaceBooking } from './modules/marketplace/entities/marketplace-b
     DemosModule,
     YardsModule,
     NotesModule,
+    TeamModule,
   ],
   controllers: [AppController],
   providers: [
