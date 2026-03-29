@@ -11,6 +11,8 @@ import {
   Truck,
   CheckCircle2,
   Pencil,
+  LayoutGrid,
+  List,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import SlideOver from "@/components/slide-over";
@@ -76,6 +78,7 @@ export default function AssetsPage() {
   const [loading, setLoading] = useState(true);
   const [panelOpen, setPanelOpen] = useState(false);
   const [editAsset, setEditAsset] = useState<Asset | null>(null);
+  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const { toast } = useToast();
 
   const fetchAssets = useCallback(async () => {
@@ -120,13 +123,29 @@ export default function AssetsPage() {
           </h1>
           <p className="mt-1 text-muted">{total} assets</p>
         </div>
-        <button
-          onClick={() => setPanelOpen(true)}
-          className="flex items-center gap-2 rounded-lg bg-[#2ECC71] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1FA855] btn-press"
-        >
-          <Plus className="h-4 w-4" />
-          Add Asset
-        </button>
+        <div className="flex items-center gap-2">
+          <div className="flex rounded-lg border border-[#1E2D45] overflow-hidden">
+            <button
+              onClick={() => setViewMode("grid")}
+              className={`p-2 transition-colors ${viewMode === "grid" ? "bg-brand/10 text-brand" : "text-muted hover:text-white"}`}
+            >
+              <LayoutGrid className="h-4 w-4" />
+            </button>
+            <button
+              onClick={() => setViewMode("list")}
+              className={`p-2 transition-colors ${viewMode === "list" ? "bg-brand/10 text-brand" : "text-muted hover:text-white"}`}
+            >
+              <List className="h-4 w-4" />
+            </button>
+          </div>
+          <button
+            onClick={() => setPanelOpen(true)}
+            className="flex items-center gap-2 rounded-lg bg-[#2ECC71] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1FA855] btn-press"
+          >
+            <Plus className="h-4 w-4" />
+            Add Asset
+          </button>
+        </div>
       </div>
 
       {/* Status tabs */}
@@ -149,7 +168,7 @@ export default function AssetsPage() {
         ))}
       </div>
 
-      {/* Asset grid */}
+      {/* Assets */}
       {loading ? (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {Array.from({ length: 8 }).map((_, i) => (
@@ -169,7 +188,51 @@ export default function AssetsPage() {
             Add Asset
           </button>
         </div>
+      ) : viewMode === "list" ? (
+        /* List View */
+        <div className="rounded-2xl border border-[#1E2D45] bg-dark-card overflow-hidden">
+          <div className="table-scroll">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-[#1E2D45]">
+                  {["ID", "Type", "Size", "Status", "Condition", "Location", "Rate", ""].map((h) => (
+                    <th key={h} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {assets.map((asset) => {
+                  const badge = STATUS_BADGE[asset.status] || STATUS_BADGE.available;
+                  return (
+                    <tr key={asset.id} onClick={() => setEditAsset(asset)} className="border-b border-[#1E2D45] last:border-0 cursor-pointer transition-colors hover:bg-[#1A2740]/50">
+                      <td className="px-4 py-3 font-medium text-white">{asset.identifier}</td>
+                      <td className="px-4 py-3 text-foreground capitalize">{asset.asset_type}</td>
+                      <td className="px-4 py-3 text-foreground">{asset.subtype || "—"}</td>
+                      <td className="px-4 py-3">
+                        <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium capitalize ${badge.className}`}>{asset.status.replace(/_/g, " ")}</span>
+                      </td>
+                      <td className="px-4 py-3 text-foreground capitalize">{asset.condition || "—"}</td>
+                      <td className="px-4 py-3 text-foreground capitalize">{asset.current_location_type || "—"}</td>
+                      <td className="px-4 py-3 text-foreground tabular-nums">{asset.daily_rate > 0 ? `$${Number(asset.daily_rate).toFixed(0)}/d` : "—"}</td>
+                      <td className="px-2 py-3" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex gap-1">
+                          {asset.status !== "available" && (
+                            <button onClick={() => quickStatus(asset.id, "available")} className="rounded px-2 py-1 text-[10px] font-medium bg-brand/10 text-brand hover:bg-brand/20">Avail</button>
+                          )}
+                          {asset.status !== "maintenance" && (
+                            <button onClick={() => quickStatus(asset.id, "maintenance")} className="rounded px-2 py-1 text-[10px] font-medium bg-red-500/10 text-red-400 hover:bg-red-500/20">Maint</button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
       ) : (
+        /* Grid View */
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {assets.map((asset) => {
             const badge = STATUS_BADGE[asset.status] || STATUS_BADGE.available;
@@ -185,50 +248,23 @@ export default function AssetsPage() {
                   <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-dark-elevated">
                     <Box className="h-5 w-5 text-muted" />
                   </div>
-                  <span
-                    className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-medium ${badge.className}`}
-                  >
-                    <Icon className="h-3 w-3" />
-                    {asset.status.replace(/_/g, " ")}
+                  <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-medium ${badge.className}`}>
+                    <Icon className="h-3 w-3" />{asset.status.replace(/_/g, " ")}
                   </span>
                 </div>
-
-                <p className="font-display text-lg font-bold text-white truncate">
-                  {asset.identifier}
-                </p>
-                <p className="text-xs text-muted capitalize">
-                  {asset.asset_type}
-                  {asset.subtype && ` · ${asset.subtype}`}
-                </p>
-
+                <p className="font-display text-lg font-bold text-white truncate">{asset.identifier}</p>
+                <p className="text-xs text-muted capitalize">{asset.asset_type}{asset.subtype && ` · ${asset.subtype}`}</p>
                 <div className="mt-4 flex items-center justify-between">
                   {asset.current_location_type ? (
-                    <div className="flex items-center gap-1 text-xs text-muted">
-                      <MapPin className="h-3 w-3" />
-                      <span className="capitalize truncate max-w-[120px]">
-                        {asset.current_location_type}
-                      </span>
-                    </div>
-                  ) : (
-                    <span />
-                  )}
+                    <div className="flex items-center gap-1 text-xs text-muted"><MapPin className="h-3 w-3" /><span className="capitalize truncate max-w-[120px]">{asset.current_location_type}</span></div>
+                  ) : <span />}
                   {asset.daily_rate > 0 && (
-                    <div className="flex items-center gap-1 text-xs text-foreground">
-                      <DollarSign className="h-3 w-3 text-brand" />
-                      <span className="font-medium">
-                        {Number(asset.daily_rate).toFixed(0)}/day
-                      </span>
-                    </div>
+                    <div className="flex items-center gap-1 text-xs text-foreground"><DollarSign className="h-3 w-3 text-brand" /><span className="font-medium">{Number(asset.daily_rate).toFixed(0)}/day</span></div>
                   )}
                 </div>
-
                 <div className="mt-3 flex gap-1" onClick={(e) => e.stopPropagation()}>
-                  {asset.status !== "available" && (
-                    <button onClick={() => quickStatus(asset.id, "available")} className="rounded px-2 py-1 text-[10px] font-medium bg-brand/10 text-brand hover:bg-brand/20 transition-colors">Available</button>
-                  )}
-                  {asset.status !== "maintenance" && (
-                    <button onClick={() => quickStatus(asset.id, "maintenance")} className="rounded px-2 py-1 text-[10px] font-medium bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors">Maintenance</button>
-                  )}
+                  {asset.status !== "available" && <button onClick={() => quickStatus(asset.id, "available")} className="rounded px-2 py-1 text-[10px] font-medium bg-brand/10 text-brand hover:bg-brand/20 transition-colors">Available</button>}
+                  {asset.status !== "maintenance" && <button onClick={() => quickStatus(asset.id, "maintenance")} className="rounded px-2 py-1 text-[10px] font-medium bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors">Maintenance</button>}
                 </div>
               </button>
             );

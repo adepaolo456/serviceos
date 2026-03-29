@@ -1,46 +1,95 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
+  Plus,
+  UserPlus,
+  Calculator,
+  Search,
+  Clock,
+  MapPin,
+  Phone,
+  AlertTriangle,
+  Truck,
+  ArrowRight,
   DollarSign,
   Briefcase,
-  Users,
   Box,
-  TrendingUp,
-  TrendingDown,
-  ArrowRight,
-  ArrowUpRight,
-  Activity,
+  CheckCircle2,
+  Wrench,
+  UserPlus2,
+  BarChart3,
 } from "lucide-react";
 import { api } from "@/lib/api";
+import SlideOver from "@/components/slide-over";
+
+/* ---- Types ---- */
 
 interface DashboardData {
   revenue: { total: number; thisMonth: number };
-  jobs: {
-    total: number;
-    thisMonth: number;
-    completed: number;
-    cancelled: number;
-    averageValue: number;
-  };
+  jobs: { total: number; thisMonth: number; completed: number; cancelled: number; averageValue: number };
   customers: { total: number; newThisMonth: number };
-  assets: {
-    total: number;
-    byStatus: Array<{ status: string; count: number }>;
-    utilizationRate: number;
-  };
+  assets: { total: number; byStatus: Array<{ status: string; count: number }>; utilizationRate: number };
 }
 
-interface StatusCount {
+interface TodayJob {
+  id: string;
+  job_number: string;
+  job_type: string;
   status: string;
-  count: number;
+  scheduled_window_start: string;
+  scheduled_window_end: string;
+  service_address: Record<string, string> | null;
+  total_price: number;
+  customer: { id: string; first_name: string; last_name: string } | null;
+  asset: { id: string; identifier: string } | null;
+  assigned_driver: { id: string; first_name: string; last_name: string } | null;
+}
+
+interface JobsResponse {
+  data: TodayJob[];
+  meta: { total: number };
+}
+
+interface SearchResult {
+  type: "customer" | "job" | "asset";
+  id: string;
+  title: string;
+  subtitle: string;
+  href: string;
 }
 
 interface UserProfile {
   firstName: string;
   lastName: string;
 }
+
+/* ---- Helpers ---- */
+
+const JOB_TYPE_BADGE: Record<string, string> = {
+  delivery: "bg-blue-500/10 text-blue-400",
+  pickup: "bg-orange-500/10 text-orange-400",
+  exchange: "bg-purple-500/10 text-purple-400",
+};
+
+const STATUS_BADGE: Record<string, string> = {
+  pending: "bg-yellow-500/10 text-yellow-400",
+  confirmed: "bg-blue-500/10 text-blue-400",
+  dispatched: "bg-purple-500/10 text-purple-400",
+  en_route: "bg-orange-500/10 text-orange-400",
+  in_progress: "bg-brand/10 text-brand",
+  completed: "bg-emerald-500/10 text-emerald-400",
+  cancelled: "bg-red-500/10 text-red-400",
+};
+
+const FLEET_ICONS: Record<string, { icon: typeof Box; color: string; bg: string }> = {
+  available: { icon: CheckCircle2, color: "text-brand", bg: "bg-brand/10" },
+  on_site: { icon: Truck, color: "text-yellow-400", bg: "bg-yellow-500/10" },
+  in_transit: { icon: Truck, color: "text-blue-400", bg: "bg-blue-500/10" },
+  maintenance: { icon: Wrench, color: "text-red-400", bg: "bg-red-500/10" },
+};
 
 function getGreeting(): string {
   const h = new Date().getHours();
@@ -49,219 +98,534 @@ function getGreeting(): string {
   return "Good evening";
 }
 
-const STATUS_COLORS: Record<string, string> = {
-  pending: "bg-yellow-500",
-  confirmed: "bg-blue-500",
-  dispatched: "bg-purple-500",
-  en_route: "bg-orange-500",
-  in_progress: "bg-brand",
-  completed: "bg-emerald-600",
-  cancelled: "bg-red-500",
-};
+function formatTime(t: string | null): string {
+  if (!t) return "";
+  return t.slice(0, 5);
+}
+
+function today(): string {
+  return new Date().toISOString().split("T")[0];
+}
+
+/* ---- Component ---- */
 
 export default function DashboardPage() {
-  const [dashboard, setDashboard] = useState<DashboardData | null>(null);
-  const [jobsByStatus, setJobsByStatus] = useState<StatusCount[]>([]);
+  const router = useRouter();
   const [user, setUser] = useState<UserProfile | null>(null);
+  const [dashboard, setDashboard] = useState<DashboardData | null>(null);
+  const [todayJobs, setTodayJobs] = useState<TodayJob[]>([]);
+  const [unassignedJobs, setUnassignedJobs] = useState<TodayJob[]>([]);
   const [loading, setLoading] = useState(true);
+  const [jobPanelOpen, setJobPanelOpen] = useState(false);
+
+  // Search
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const searchTimeout = useRef<ReturnType<typeof setTimeout>>(null);
 
   useEffect(() => {
     async function load() {
       try {
-        const [d, j, u] = await Promise.all([
+        const [d, u, tj] = await Promise.all([
           api.get<DashboardData>("/analytics/dashboard"),
-          api.get<StatusCount[]>("/analytics/jobs-by-status"),
           api.get<UserProfile>("/auth/profile"),
+          api.get<JobsResponse>(`/jobs?scheduledDate=${today()}&limit=50`),
         ]);
         setDashboard(d);
-        setJobsByStatus(j);
         setUser(u);
-      } catch {
-        /* handled */
-      } finally {
-        setLoading(false);
-      }
+        setTodayJobs(tj.data.filter((j) => j.status !== "cancelled"));
+        setUnassignedJobs(tj.data.filter((j) => !j.assigned_driver && j.status !== "cancelled" && j.status !== "completed"));
+      } catch { /* handled */ }
+      finally { setLoading(false); }
     }
     load();
   }, []);
 
+  // Global search
+  useEffect(() => {
+    if (searchTimeout.current) clearTimeout(searchTimeout.current);
+    if (!searchQuery || searchQuery.length < 2) { setSearchResults([]); return; }
+    searchTimeout.current = setTimeout(async () => {
+      try {
+        const [customers, jobs] = await Promise.all([
+          api.get<{ data: Array<{ id: string; first_name: string; last_name: string; phone: string; company_name: string }> }>(`/customers?search=${encodeURIComponent(searchQuery)}&limit=5`),
+          api.get<{ data: Array<{ id: string; job_number: string; status: string; customer: { first_name: string; last_name: string } | null }> }>(`/jobs?limit=5`),
+        ]);
+        const results: SearchResult[] = [];
+        for (const c of customers.data) {
+          results.push({ type: "customer", id: c.id, title: `${c.first_name} ${c.last_name}`, subtitle: c.phone || c.company_name || "Customer", href: `/customers/${c.id}` });
+        }
+        for (const j of jobs.data) {
+          if (j.job_number.toLowerCase().includes(searchQuery.toLowerCase()) || j.customer?.first_name.toLowerCase().includes(searchQuery.toLowerCase())) {
+            results.push({ type: "job", id: j.id, title: j.job_number, subtitle: j.customer ? `${j.customer.first_name} ${j.customer.last_name}` : j.status, href: `/jobs/${j.id}` });
+          }
+        }
+        setSearchResults(results.slice(0, 8));
+        setSearchOpen(results.length > 0);
+      } catch { /* */ }
+    }, 300);
+  }, [searchQuery]);
+
   if (loading) {
     return (
-      <div>
-        <div className="mb-8">
-          <div className="h-8 w-64 skeleton rounded" />
-          <div className="mt-2 h-4 w-48 skeleton rounded" />
+      <div className="space-y-6">
+        <div className="h-14 skeleton rounded-xl" />
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
+          <div className="lg:col-span-3 h-96 skeleton rounded-2xl" />
+          <div className="lg:col-span-2 h-96 skeleton rounded-2xl" />
         </div>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {[1, 2, 3, 4].map((i) => (
-            <div key={i} className="h-36 skeleton rounded-2xl" />
-          ))}
-        </div>
-        <div className="mt-8 grid grid-cols-1 gap-5 lg:grid-cols-2">
-          <div className="h-80 skeleton rounded-2xl" />
-          <div className="h-80 skeleton rounded-2xl" />
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+          {[1, 2, 3, 4].map((i) => <div key={i} className="h-24 skeleton rounded-xl" />)}
         </div>
       </div>
     );
   }
 
-  const totalJobs = jobsByStatus.reduce((s, c) => s + Number(c.count), 0);
-
-  const stats = [
-    {
-      label: "Total Revenue",
-      value: `$${(dashboard?.revenue.total ?? 0).toLocaleString()}`,
-      sub: dashboard?.revenue.thisMonth
-        ? `+$${dashboard.revenue.thisMonth.toLocaleString()} this month`
-        : "No revenue yet",
-      trend: "up" as const,
-      icon: DollarSign,
-      href: "/invoices",
-    },
-    {
-      label: "Active Jobs",
-      value: String(dashboard?.jobs.thisMonth ?? 0),
-      sub: `${dashboard?.jobs.total ?? 0} total`,
-      trend: "up" as const,
-      icon: Briefcase,
-      href: "/jobs",
-    },
-    {
-      label: "Customers",
-      value: String(dashboard?.customers.total ?? 0),
-      sub: `+${dashboard?.customers.newThisMonth ?? 0} this month`,
-      trend: (dashboard?.customers.newThisMonth ?? 0) > 0 ? ("up" as const) : ("down" as const),
-      icon: Users,
-      href: "/customers",
-    },
-    {
-      label: "Utilization",
-      value: `${dashboard?.assets.utilizationRate ?? 0}%`,
-      sub: `${dashboard?.assets.total ?? 0} assets`,
-      trend: (dashboard?.assets.utilizationRate ?? 0) >= 50 ? ("up" as const) : ("down" as const),
-      icon: Box,
-      href: "/assets",
-    },
-  ];
+  const fleetStatus = dashboard?.assets.byStatus ?? [];
+  const activeRentals = fleetStatus.find((s) => s.status === "on_site")?.count ?? 0;
 
   return (
     <div>
       {/* Greeting */}
-      <div className="mb-8">
-        <h1 className="font-display text-2xl font-bold tracking-tight text-white">
-          {getGreeting()}, {user?.firstName || "there"}
-        </h1>
-        <p className="mt-1 text-sm text-muted">
-          Here&apos;s how your business is doing today.
-        </p>
+      <p className="text-sm text-muted mb-4">
+        {getGreeting()}, {user?.firstName || "there"}
+      </p>
+
+      {/* ============ SECTION 1: Quick Actions ============ */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center mb-8">
+        <button
+          onClick={() => setJobPanelOpen(true)}
+          className="flex items-center gap-2 rounded-xl bg-[#2ECC71] px-5 py-3 text-sm font-bold text-white shadow-lg shadow-brand/20 transition-all hover:bg-[#1FA855] active:scale-95"
+        >
+          <Plus className="h-5 w-5" strokeWidth={2.5} />
+          New Job
+        </button>
+        <Link
+          href="/customers"
+          className="flex items-center gap-2 rounded-xl bg-[#1E2D45] px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-[#1A2740] active:scale-95"
+        >
+          <UserPlus className="h-4 w-4" />
+          New Customer
+        </Link>
+        <Link
+          href="/pricing"
+          className="flex items-center gap-2 rounded-xl bg-[#1E2D45] px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-[#1A2740] active:scale-95"
+        >
+          <Calculator className="h-4 w-4" />
+          New Quote
+        </Link>
+
+        {/* Global search */}
+        <div className="relative flex-1 max-w-sm sm:ml-auto">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
+          <input
+            type="text"
+            placeholder="Search customers, jobs, assets..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            onFocus={() => searchResults.length > 0 && setSearchOpen(true)}
+            onBlur={() => setTimeout(() => setSearchOpen(false), 200)}
+            className="w-full rounded-xl bg-[#111C2E] border border-[#1E2D45] py-2.5 pl-10 pr-4 text-sm text-white placeholder-muted outline-none focus:border-brand focus:ring-1 focus:ring-brand"
+          />
+          {searchOpen && searchResults.length > 0 && (
+            <div className="absolute z-30 mt-1 w-full rounded-xl border border-[#1E2D45] bg-dark-secondary shadow-xl overflow-hidden">
+              {searchResults.map((r) => (
+                <button
+                  key={`${r.type}-${r.id}`}
+                  onMouseDown={() => router.push(r.href)}
+                  className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-dark-card-hover"
+                >
+                  <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold uppercase ${r.type === "customer" ? "bg-brand/10 text-brand" : r.type === "job" ? "bg-blue-500/10 text-blue-400" : "bg-orange-500/10 text-orange-400"}`}>
+                    {r.type}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-white truncate">{r.title}</p>
+                    <p className="text-xs text-muted truncate">{r.subtitle}</p>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Stat cards — Robinhood style */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {stats.map((s) => (
-          <Link
-            key={s.label}
-            href={s.href}
-            className="group relative rounded-2xl border border-[#1E2D45] bg-dark-card p-5 card-hover cursor-pointer"
-          >
-            <ArrowUpRight className="absolute top-4 right-4 h-4 w-4 text-muted opacity-0 group-hover:opacity-100 group-hover:text-brand transition-opacity" />
-            <div className="flex items-center gap-2 mb-3">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand/10">
-                <s.icon className="h-4 w-4 text-brand" />
+      {/* ============ SECTION 2: Today's Overview ============ */}
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-5 mb-8">
+        {/* Left: Today's Schedule */}
+        <div className="lg:col-span-3 space-y-5">
+          <div className="rounded-2xl border border-[#1E2D45] bg-dark-card overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-[#1E2D45]">
+              <div className="flex items-center gap-2">
+                <Clock className="h-4 w-4 text-brand" />
+                <h2 className="font-display text-base font-semibold text-white">Today&apos;s Schedule</h2>
+                <span className="rounded-full bg-brand/10 px-2 py-0.5 text-xs font-medium text-brand">{todayJobs.length} jobs</span>
               </div>
-              <span className="text-xs font-medium text-muted uppercase tracking-wider">{s.label}</span>
+              <Link href="/dispatch" className="text-xs text-brand hover:text-brand-light transition-colors">
+                Dispatch board <ArrowRight className="inline h-3 w-3" />
+              </Link>
             </div>
-            <p className="font-display text-3xl font-bold tracking-tight tabular-nums text-white">
-              {s.value}
-            </p>
-            <div className="mt-2 flex items-center gap-1.5">
-              {s.trend === "up" ? (
-                <TrendingUp className="h-3 w-3 text-brand" />
-              ) : (
-                <TrendingDown className="h-3 w-3 text-red-400" />
-              )}
-              <span className={`text-xs font-medium ${s.trend === "up" ? "text-brand" : "text-red-400"}`}>
-                {s.sub}
-              </span>
-            </div>
-          </Link>
-        ))}
-      </div>
-
-      {/* Bottom grid */}
-      <div className="mt-8 grid grid-cols-1 gap-5 lg:grid-cols-2">
-        {/* Job Performance */}
-        <div className="rounded-2xl border border-[#1E2D45] bg-dark-card p-6 card-hover">
-          <div className="flex items-center justify-between mb-5">
-            <div className="flex items-center gap-2">
-              <Activity className="h-4 w-4 text-brand" />
-              <h2 className="font-display text-base font-semibold text-white">
-                Job Performance
-              </h2>
-            </div>
-            <Link href="/jobs" className="flex items-center gap-1 text-xs text-brand hover:text-brand-light transition-colors btn-press">
-              View all <ArrowRight className="h-3.5 w-3.5" />
-            </Link>
-          </div>
-          <div className="space-y-0">
-            {[
-              { label: "Total Jobs", value: dashboard?.jobs.total ?? 0, color: "text-white" },
-              { label: "Completed", value: dashboard?.jobs.completed ?? 0, color: "text-brand" },
-              { label: "Cancelled", value: dashboard?.jobs.cancelled ?? 0, color: "text-red-400" },
-              { label: "Avg Value", value: `$${(dashboard?.jobs.averageValue ?? 0).toFixed(0)}`, color: "text-white" },
-              { label: "New Customers", value: dashboard?.customers.newThisMonth ?? 0, color: "text-white" },
-            ].map((row, i, arr) => (
-              <div
-                key={row.label}
-                className={`flex items-center justify-between py-3.5 ${i < arr.length - 1 ? "border-b border-[#1E2D45]" : ""}`}
-              >
-                <span className="text-sm text-muted">{row.label}</span>
-                <span className={`text-sm font-semibold tabular-nums ${row.color}`}>{row.value}</span>
+            {todayJobs.length === 0 ? (
+              <div className="flex flex-col items-center py-12">
+                <Briefcase className="h-10 w-10 text-muted/20 mb-2" />
+                <p className="text-sm text-muted">No jobs scheduled today</p>
+                <button onClick={() => setJobPanelOpen(true)} className="mt-3 text-xs text-brand hover:text-brand-light">+ Create a job</button>
               </div>
-            ))}
+            ) : (
+              <div className="divide-y divide-[#1E2D45]">
+                {todayJobs.slice(0, 8).map((job) => {
+                  const addr = job.service_address;
+                  const addrStr = addr ? [addr.street, addr.city].filter(Boolean).join(", ") : "";
+                  return (
+                    <Link key={job.id} href={`/jobs/${job.id}`} className="flex items-center gap-4 px-5 py-3 transition-colors hover:bg-dark-card-hover">
+                      <div className="w-16 shrink-0 text-center">
+                        <p className="text-sm font-medium text-white tabular-nums">{formatTime(job.scheduled_window_start)}</p>
+                        {job.scheduled_window_end && <p className="text-[10px] text-muted tabular-nums">{formatTime(job.scheduled_window_end)}</p>}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium text-white truncate">
+                          {job.customer ? `${job.customer.first_name} ${job.customer.last_name}` : job.job_number}
+                        </p>
+                        {addrStr && <p className="text-xs text-muted truncate flex items-center gap-1"><MapPin className="h-3 w-3 shrink-0" />{addrStr}</p>}
+                      </div>
+                      <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium capitalize ${JOB_TYPE_BADGE[job.job_type] || "bg-zinc-500/10 text-zinc-400"}`}>{job.job_type}</span>
+                      <div className="w-20 shrink-0 text-right">
+                        {job.assigned_driver ? (
+                          <p className="text-xs text-foreground truncate">{job.assigned_driver.first_name}</p>
+                        ) : (
+                          <span className="text-[10px] text-red-400">Unassigned</span>
+                        )}
+                      </div>
+                      <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium capitalize ${STATUS_BADGE[job.status] || "bg-zinc-500/10 text-zinc-400"}`}>{job.status.replace(/_/g, " ")}</span>
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Jobs by Status */}
-        <div className="rounded-2xl border border-[#1E2D45] bg-dark-card p-6 card-hover">
-          <div className="flex items-center gap-2 mb-5">
-            <Briefcase className="h-4 w-4 text-brand" />
-            <h2 className="font-display text-base font-semibold text-white">
-              Jobs by Status
-            </h2>
-          </div>
-          {jobsByStatus.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-12">
-              <Briefcase className="h-12 w-12 text-[#7A8BA3]/20 mb-3" />
-              <p className="text-sm font-medium text-muted">No jobs yet</p>
-              <p className="text-xs text-muted/70 mt-1">Create your first job to see status breakdown</p>
+        {/* Right: Fleet Status + Unassigned */}
+        <div className="lg:col-span-2 space-y-5">
+          {/* Fleet Status */}
+          <div className="rounded-2xl border border-[#1E2D45] bg-dark-card p-5">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <Box className="h-4 w-4 text-brand" />
+                <h2 className="font-display text-base font-semibold text-white">Fleet Status</h2>
+              </div>
+              <Link href="/assets" className="text-xs text-brand hover:text-brand-light">View all</Link>
             </div>
-          ) : (
-            <div className="space-y-3">
-              {jobsByStatus.map((item) => {
-                const pct = totalJobs > 0 ? Math.round((Number(item.count) / totalJobs) * 100) : 0;
+            <div className="grid grid-cols-2 gap-3">
+              {fleetStatus.map((s) => {
+                const cfg = FLEET_ICONS[s.status] || FLEET_ICONS.available;
+                const Icon = cfg.icon;
                 return (
-                  <Link key={item.status} href={`/jobs?status=${item.status}`} className="block group">
-                    <div className="flex items-center justify-between text-sm mb-1.5">
-                      <span className="text-foreground capitalize group-hover:text-brand transition-colors">{item.status.replace(/_/g, " ")}</span>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-muted tabular-nums">{pct}%</span>
-                        <span className="text-sm font-medium text-white tabular-nums w-6 text-right">{item.count}</span>
-                      </div>
-                    </div>
-                    <div className="h-1.5 w-full rounded-full bg-dark-elevated overflow-hidden">
-                      <div
-                        className={`h-full rounded-full transition-all duration-500 ${STATUS_COLORS[item.status] || "bg-zinc-500"}`}
-                        style={{ width: `${pct}%` }}
-                      />
+                  <Link
+                    key={s.status}
+                    href={`/assets?status=${s.status}`}
+                    className={`flex items-center gap-3 rounded-xl ${cfg.bg} p-3 transition-all hover:ring-1 hover:ring-white/10`}
+                  >
+                    <Icon className={`h-5 w-5 ${cfg.color}`} />
+                    <div>
+                      <p className="text-lg font-bold text-white tabular-nums">{s.count}</p>
+                      <p className="text-[10px] text-muted capitalize">{s.status.replace(/_/g, " ")}</p>
                     </div>
                   </Link>
                 );
               })}
             </div>
-          )}
+          </div>
+
+          {/* Unassigned Jobs */}
+          <div className="rounded-2xl border border-[#1E2D45] bg-dark-card overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-[#1E2D45]">
+              <div className="flex items-center gap-2">
+                <UserPlus2 className="h-4 w-4 text-red-400" />
+                <h2 className="font-display text-sm font-semibold text-white">Unassigned</h2>
+                {unassignedJobs.length > 0 && (
+                  <span className="rounded-full bg-red-500/10 px-2 py-0.5 text-[10px] font-medium text-red-400">{unassignedJobs.length}</span>
+                )}
+              </div>
+            </div>
+            {unassignedJobs.length === 0 ? (
+              <div className="px-5 py-8 text-center text-xs text-muted">All jobs assigned</div>
+            ) : (
+              <div className="divide-y divide-[#1E2D45]">
+                {unassignedJobs.slice(0, 5).map((job) => (
+                  <Link key={job.id} href={`/jobs/${job.id}`} className="flex items-center justify-between px-5 py-2.5 transition-colors hover:bg-dark-card-hover">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-white truncate">
+                        {job.customer ? `${job.customer.first_name} ${job.customer.last_name}` : job.job_number}
+                      </p>
+                      <p className="text-[10px] text-muted capitalize">{job.job_type} · {job.asset?.identifier || "No asset"}</p>
+                    </div>
+                    <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium capitalize ${JOB_TYPE_BADGE[job.job_type] || "bg-zinc-500/10 text-zinc-400"}`}>{job.job_type}</span>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
+
+      {/* ============ SECTION 3: Business Snapshot ============ */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {[
+          { label: "Revenue This Month", value: `$${(dashboard?.revenue.thisMonth ?? 0).toLocaleString()}`, icon: DollarSign },
+          { label: "Jobs This Month", value: String(dashboard?.jobs.thisMonth ?? 0), icon: Briefcase },
+          { label: "Completed", value: String(dashboard?.jobs.completed ?? 0), icon: CheckCircle2 },
+          { label: "Active Rentals", value: String(activeRentals), icon: Truck },
+        ].map((s) => (
+          <Link key={s.label} href="/analytics" className="group flex items-center gap-3 rounded-xl border border-[#1E2D45] bg-dark-card p-4 transition-all hover:bg-dark-card-hover hover:border-brand/20">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand/10 shrink-0">
+              <s.icon className="h-4 w-4 text-brand" />
+            </div>
+            <div>
+              <p className="text-lg font-bold text-white tabular-nums">{s.value}</p>
+              <p className="text-[10px] text-muted">{s.label}</p>
+            </div>
+          </Link>
+        ))}
+      </div>
+
+      {/* Quick Job Create SlideOver */}
+      <SlideOver open={jobPanelOpen} onClose={() => setJobPanelOpen(false)} title="Quick Create Job">
+        <QuickJobForm onSuccess={() => { setJobPanelOpen(false); window.location.reload(); }} />
+      </SlideOver>
+    </div>
+  );
+}
+
+/* ============ Quick Job Create Form ============ */
+
+interface CustomerOption { id: string; first_name: string; last_name: string; phone: string; }
+interface AssetOption { id: string; identifier: string; asset_type: string; subtype: string; }
+interface PriceQuote { breakdown: { total: number; basePrice: number } }
+
+function QuickJobForm({ onSuccess }: { onSuccess: () => void }) {
+  const [step, setStep] = useState(1);
+  // Customer
+  const [customerSearch, setCustomerSearch] = useState("");
+  const [customerResults, setCustomerResults] = useState<CustomerOption[]>([]);
+  const [customerId, setCustomerId] = useState("");
+  const [customerName, setCustomerName] = useState("");
+  const [isNewCustomer, setIsNewCustomer] = useState(false);
+  const [newFirstName, setNewFirstName] = useState("");
+  const [newLastName, setNewLastName] = useState("");
+  const [newPhone, setNewPhone] = useState("");
+  // Job
+  const [jobType, setJobType] = useState("delivery");
+  const [assetSubtype, setAssetSubtype] = useState("20yd");
+  const [scheduledDate, setScheduledDate] = useState(() => {
+    const d = new Date(); d.setDate(d.getDate() + 1);
+    return d.toISOString().split("T")[0];
+  });
+  const [timeWindow, setTimeWindow] = useState("morning");
+  // Address
+  const [street, setStreet] = useState("");
+  const [city, setCity] = useState("");
+  const [addrState, setAddrState] = useState("");
+  const [zip, setZip] = useState("");
+  // Price
+  const [priceQuote, setPriceQuote] = useState<PriceQuote | null>(null);
+  const [priceOverride, setPriceOverride] = useState("");
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const searchTimeout = useRef<ReturnType<typeof setTimeout>>(null);
+
+  // Customer search
+  useEffect(() => {
+    if (searchTimeout.current) clearTimeout(searchTimeout.current);
+    if (!customerSearch || customerSearch.length < 2) { setCustomerResults([]); return; }
+    searchTimeout.current = setTimeout(async () => {
+      try {
+        const res = await api.get<{ data: CustomerOption[] }>(`/customers?search=${encodeURIComponent(customerSearch)}&limit=6`);
+        setCustomerResults(res.data);
+      } catch { /* */ }
+    }, 250);
+  }, [customerSearch]);
+
+  // Price calc
+  useEffect(() => {
+    if (step < 4) return;
+    const windows: Record<string, [string, string]> = { morning: ["08:00", "12:00"], afternoon: ["12:00", "17:00"], fullday: ["08:00", "17:00"] };
+    api.post<PriceQuote>("/pricing/calculate", {
+      serviceType: "dumpster_rental", assetSubtype, jobType,
+      customerLat: 30.27, customerLng: -97.74, yardLat: 30.35, yardLng: -97.7,
+    }).then(setPriceQuote).catch(() => {});
+  }, [step, assetSubtype, jobType]);
+
+  const handleSubmit = async () => {
+    setError(""); setSaving(true);
+    try {
+      let cId = customerId;
+      if (isNewCustomer) {
+        const nc = await api.post<{ id: string }>("/customers", { firstName: newFirstName, lastName: newLastName, phone: newPhone || undefined, type: "residential" });
+        cId = nc.id;
+      }
+      const windows: Record<string, [string, string]> = { morning: ["08:00", "12:00"], afternoon: ["12:00", "17:00"], fullday: ["08:00", "17:00"] };
+      const [wStart, wEnd] = windows[timeWindow] || windows.morning;
+      const price = priceOverride ? Number(priceOverride) : priceQuote?.breakdown.total;
+      await api.post("/jobs", {
+        customerId: cId, jobType, serviceType: "dumpster_rental", scheduledDate,
+        scheduledWindowStart: wStart, scheduledWindowEnd: wEnd,
+        serviceAddress: street ? { street, city, state: addrState, zip } : undefined,
+        basePrice: price, totalPrice: price,
+      });
+      onSuccess();
+    } catch (err) { setError(err instanceof Error ? err.message : "Failed to create job"); }
+    finally { setSaving(false); }
+  };
+
+  const inputClass = "w-full bg-[#111C2E] border border-[#1E2D45] rounded-lg px-4 py-3 text-sm text-white placeholder-muted outline-none focus:border-brand focus:ring-1 focus:ring-brand";
+  const labelClass = "block text-xs font-medium text-muted uppercase tracking-wider mb-1.5";
+
+  return (
+    <div className="space-y-5">
+      {error && <div className="rounded-lg bg-red-500/10 px-4 py-3 text-sm text-red-400">{error}</div>}
+
+      {/* Progress */}
+      <div className="flex items-center gap-2">
+        {[1, 2, 3, 4].map((s) => (
+          <div key={s} className={`h-1 flex-1 rounded-full transition-colors ${step >= s ? "bg-brand" : "bg-dark-elevated"}`} />
+        ))}
+      </div>
+
+      {/* Step 1: Customer */}
+      {step === 1 && (
+        <div className="space-y-4">
+          <h3 className="font-display text-base font-semibold text-white">Who is this for?</h3>
+          {customerId ? (
+            <div className="flex items-center justify-between rounded-lg border border-brand/20 bg-brand/5 px-4 py-3">
+              <span className="text-sm text-white font-medium">{customerName}</span>
+              <button onClick={() => { setCustomerId(""); setCustomerName(""); setIsNewCustomer(false); }} className="text-xs text-muted hover:text-red-400">Change</button>
+            </div>
+          ) : isNewCustomer ? (
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <input value={newFirstName} onChange={(e) => setNewFirstName(e.target.value)} className={inputClass} placeholder="First name" />
+                <input value={newLastName} onChange={(e) => setNewLastName(e.target.value)} className={inputClass} placeholder="Last name" />
+              </div>
+              <input value={newPhone} onChange={(e) => setNewPhone(e.target.value)} className={inputClass} placeholder="Phone (optional)" />
+              <button onClick={() => setIsNewCustomer(false)} className="text-xs text-muted hover:text-white">← Search existing</button>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <input value={customerSearch} onChange={(e) => setCustomerSearch(e.target.value)} className={inputClass} placeholder="Type name or phone number..." autoFocus />
+              {customerResults.length > 0 && (
+                <div className="rounded-lg border border-[#1E2D45] bg-dark-secondary overflow-hidden">
+                  {customerResults.map((c) => (
+                    <button key={c.id} onClick={() => { setCustomerId(c.id); setCustomerName(`${c.first_name} ${c.last_name}`); setCustomerSearch(""); }}
+                      className="flex w-full items-center justify-between px-4 py-2.5 text-sm text-foreground hover:bg-dark-card-hover">
+                      <span className="font-medium text-white">{c.first_name} {c.last_name}</span>
+                      {c.phone && <span className="text-xs text-muted">{c.phone}</span>}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <button onClick={() => setIsNewCustomer(true)} className="flex items-center gap-1.5 text-xs text-brand hover:text-brand-light">
+                <UserPlus className="h-3 w-3" /> Create new customer
+              </button>
+            </div>
+          )}
+          <button
+            onClick={() => step === 1 && (customerId || (isNewCustomer && newFirstName)) && setStep(2)}
+            disabled={!customerId && !(isNewCustomer && newFirstName)}
+            className="w-full rounded-lg bg-[#2ECC71] py-3 text-sm font-semibold text-white disabled:opacity-40 hover:bg-[#1FA855] active:scale-[0.98] transition-all"
+          >
+            Next: Job Details
+          </button>
+        </div>
+      )}
+
+      {/* Step 2: Job Details */}
+      {step === 2 && (
+        <div className="space-y-4">
+          <h3 className="font-display text-base font-semibold text-white">Job Details</h3>
+          <div>
+            <label className={labelClass}>Job Type</label>
+            <div className="grid grid-cols-3 gap-2">
+              {(["delivery", "pickup", "exchange"] as const).map((t) => (
+                <button key={t} onClick={() => setJobType(t)} className={`rounded-lg py-2.5 text-sm font-medium capitalize transition-colors ${jobType === t ? "bg-brand text-dark-primary" : "bg-dark-elevated text-muted hover:text-white"}`}>{t}</button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className={labelClass}>Dumpster Size</label>
+            <div className="grid grid-cols-4 gap-2">
+              {["10yd", "20yd", "30yd", "40yd"].map((s) => (
+                <button key={s} onClick={() => setAssetSubtype(s)} className={`rounded-lg py-2.5 text-sm font-medium transition-colors ${assetSubtype === s ? "bg-brand text-dark-primary" : "bg-dark-elevated text-muted hover:text-white"}`}>{s}</button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className={labelClass}>Date</label>
+            <input type="date" value={scheduledDate} onChange={(e) => setScheduledDate(e.target.value)} className={inputClass} />
+          </div>
+          <div>
+            <label className={labelClass}>Time Window</label>
+            <div className="grid grid-cols-3 gap-2">
+              {([["morning", "AM (8-12)"], ["afternoon", "PM (12-5)"], ["fullday", "All Day"]] as const).map(([k, label]) => (
+                <button key={k} onClick={() => setTimeWindow(k)} className={`rounded-lg py-2.5 text-xs font-medium transition-colors ${timeWindow === k ? "bg-brand text-dark-primary" : "bg-dark-elevated text-muted hover:text-white"}`}>{label}</button>
+              ))}
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={() => setStep(1)} className="flex-1 rounded-lg bg-dark-elevated py-3 text-sm text-muted hover:text-white">Back</button>
+            <button onClick={() => setStep(3)} className="flex-[2] rounded-lg bg-[#2ECC71] py-3 text-sm font-semibold text-white hover:bg-[#1FA855] active:scale-[0.98] transition-all">Next: Address</button>
+          </div>
+        </div>
+      )}
+
+      {/* Step 3: Address */}
+      {step === 3 && (
+        <div className="space-y-4">
+          <h3 className="font-display text-base font-semibold text-white">Service Address</h3>
+          <input value={street} onChange={(e) => setStreet(e.target.value)} className={inputClass} placeholder="Street address" />
+          <div className="grid grid-cols-3 gap-2">
+            <input value={city} onChange={(e) => setCity(e.target.value)} className={inputClass} placeholder="City" />
+            <input value={addrState} onChange={(e) => setAddrState(e.target.value)} className={inputClass} placeholder="State" />
+            <input value={zip} onChange={(e) => setZip(e.target.value)} className={inputClass} placeholder="ZIP" />
+          </div>
+          <div className="flex gap-2">
+            <button onClick={() => setStep(2)} className="flex-1 rounded-lg bg-dark-elevated py-3 text-sm text-muted hover:text-white">Back</button>
+            <button onClick={() => setStep(4)} className="flex-[2] rounded-lg bg-[#2ECC71] py-3 text-sm font-semibold text-white hover:bg-[#1FA855] active:scale-[0.98] transition-all">Next: Review</button>
+          </div>
+        </div>
+      )}
+
+      {/* Step 4: Review & Confirm */}
+      {step === 4 && (
+        <div className="space-y-4">
+          <h3 className="font-display text-base font-semibold text-white">Review & Create</h3>
+          <div className="rounded-lg bg-dark-elevated p-4 space-y-2 text-sm">
+            <div className="flex justify-between"><span className="text-muted">Customer</span><span className="text-white font-medium">{isNewCustomer ? `${newFirstName} ${newLastName}` : customerName}</span></div>
+            <div className="flex justify-between"><span className="text-muted">Type</span><span className="text-white capitalize">{jobType}</span></div>
+            <div className="flex justify-between"><span className="text-muted">Size</span><span className="text-white">{assetSubtype}</span></div>
+            <div className="flex justify-between"><span className="text-muted">Date</span><span className="text-white">{scheduledDate}</span></div>
+            <div className="flex justify-between"><span className="text-muted">Window</span><span className="text-white capitalize">{timeWindow === "fullday" ? "All Day" : timeWindow === "morning" ? "AM (8-12)" : "PM (12-5)"}</span></div>
+            {street && <div className="flex justify-between"><span className="text-muted">Address</span><span className="text-white truncate ml-4">{street}, {city}</span></div>}
+          </div>
+          {priceQuote && (
+            <div className="rounded-lg border border-brand/20 bg-brand/5 p-4">
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-brand font-medium">Estimated Price</span>
+                <span className="font-display text-xl font-bold text-brand tabular-nums">${priceQuote.breakdown.total}</span>
+              </div>
+              <div className="mt-2">
+                <input value={priceOverride} onChange={(e) => setPriceOverride(e.target.value)} className={`${inputClass} mt-1`} placeholder={`Override price (default: $${priceQuote.breakdown.total})`} />
+              </div>
+            </div>
+          )}
+          <div className="flex gap-2">
+            <button onClick={() => setStep(3)} className="flex-1 rounded-lg bg-dark-elevated py-3 text-sm text-muted hover:text-white">Back</button>
+            <button onClick={handleSubmit} disabled={saving} className="flex-[2] rounded-lg bg-[#2ECC71] py-3 text-sm font-bold text-white hover:bg-[#1FA855] active:scale-[0.98] transition-all disabled:opacity-50">
+              {saving ? "Creating..." : "Create Job"}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
