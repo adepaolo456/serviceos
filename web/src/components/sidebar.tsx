@@ -17,12 +17,8 @@ import {
   X,
   BarChart3,
   ShieldCheck,
-  Sun,
-  Moon,
-  Monitor,
 } from "lucide-react";
 import { api } from "@/lib/api";
-import { useTheme } from "@/components/theme-provider";
 
 interface UserProfile {
   firstName: string;
@@ -48,7 +44,6 @@ export default function Sidebar() {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [user, setUser] = useState<UserProfile | null>(null);
-  const { theme, cycleTheme } = useTheme();
 
   useEffect(() => {
     api
@@ -175,26 +170,7 @@ export default function Sidebar() {
         {sidebarContent}
       </aside>
 
-      {/* Theme toggle — fixed position, completely outside sidebar DOM */}
-      <div
-        className="fixed top-3 right-3 z-[60]"
-        onClick={(e) => e.stopPropagation()}
-        onMouseDown={(e) => e.stopPropagation()}
-      >
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            e.preventDefault();
-            e.nativeEvent.stopImmediatePropagation();
-            cycleTheme();
-          }}
-          title={theme === "dark" ? "Dark mode" : theme === "light" ? "Light mode" : "System"}
-          className="flex h-8 w-8 items-center justify-center rounded-lg bg-dark-secondary border border-[#1E2D45] text-muted hover:text-foreground transition-colors shadow-lg"
-        >
-          {theme === "dark" ? <Moon className="h-3.5 w-3.5" /> : theme === "light" ? <Sun className="h-3.5 w-3.5" /> : <Monitor className="h-3.5 w-3.5" />}
-        </button>
-      </div>
+      {/* Theme toggle removed from sidebar — now in dashboard layout */}
     </>
   );
 }
