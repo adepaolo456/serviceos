@@ -203,13 +203,15 @@ export class CalculatePriceDto {
   @IsNumber()
   customerLng: number;
 
-  @ApiProperty({ example: 30.35, description: 'Yard latitude' })
+  @ApiPropertyOptional({ example: 30.35, description: 'Yard latitude (auto-fetched from primary yard if omitted)' })
+  @IsOptional()
   @IsNumber()
-  yardLat: number;
+  yardLat?: number;
 
-  @ApiProperty({ example: -97.7, description: 'Yard longitude' })
+  @ApiPropertyOptional({ example: -97.7, description: 'Yard longitude (auto-fetched from primary yard if omitted)' })
+  @IsOptional()
   @IsNumber()
-  yardLng: number;
+  yardLng?: number;
 
   @ApiPropertyOptional({ example: 14, default: 7 })
   @IsOptional()

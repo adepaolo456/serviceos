@@ -6,6 +6,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { PricingRule } from './entities/pricing-rule.entity';
+import { Yard } from '../yards/yard.entity';
 import {
   CreatePricingRuleDto,
   UpdatePricingRuleDto,
@@ -18,6 +19,8 @@ export class PricingService {
   constructor(
     @InjectRepository(PricingRule)
     private pricingRulesRepository: Repository<PricingRule>,
+    @InjectRepository(Yard)
+    private yardsRepository: Repository<Yard>,
   ) {}
 
   async create(
@@ -171,11 +174,24 @@ export class PricingService {
       );
     }
 
+    // Auto-fetch primary yard if no yard coords provided
+    let yardLat = dto.yardLat;
+    let yardLng = dto.yardLng;
+    if (!yardLat || !yardLng) {
+      const primaryYard = await this.yardsRepository.findOne({
+        where: { tenant_id: tenantId, is_primary: true, is_active: true },
+      });
+      if (primaryYard?.lat && primaryYard?.lng) {
+        yardLat = Number(primaryYard.lat);
+        yardLng = Number(primaryYard.lng);
+      }
+    }
+
     const distanceMiles = this.haversine(
       dto.customerLat,
       dto.customerLng,
-      dto.yardLat,
-      dto.yardLng,
+      yardLat,
+      yardLng,
     );
 
     if (

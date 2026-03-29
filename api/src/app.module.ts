@@ -18,6 +18,8 @@ import { SubscriptionsModule } from './modules/subscriptions/subscriptions.modul
 import { AdminModule } from './modules/admin/admin.module';
 import { DemosModule } from './modules/demos/demos.module';
 import { DemoRequest } from './modules/demos/demo-request.entity';
+import { YardsModule } from './modules/yards/yards.module';
+import { Yard } from './modules/yards/yard.entity';
 import { JwtAuthGuard } from './common/guards';
 import { Tenant } from './modules/tenants/entities/tenant.entity';
 import { User } from './modules/auth/entities/user.entity';
@@ -58,6 +60,7 @@ import { MarketplaceBooking } from './modules/marketplace/entities/marketplace-b
             Notification,
             MarketplaceBooking,
             DemoRequest,
+            Yard,
           ],
           synchronize: true,
           ssl: {
@@ -79,6 +82,7 @@ import { MarketplaceBooking } from './modules/marketplace/entities/marketplace-b
     SubscriptionsModule,
     AdminModule,
     DemosModule,
+    YardsModule,
   ],
   controllers: [AppController],
   providers: [
