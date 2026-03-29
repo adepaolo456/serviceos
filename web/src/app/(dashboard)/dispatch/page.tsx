@@ -39,6 +39,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { api } from "@/lib/api";
 import { useToast } from "@/components/toast";
+import QuickView from "@/components/quick-view";
 
 /* ---- Types ---- */
 
@@ -160,6 +161,7 @@ export default function DispatchPage() {
   const [search, setSearch] = useState("");
   const [activeJob, setActiveJob] = useState<DispatchJob | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [quickViewJob, setQuickViewJob] = useState<DispatchJob | null>(null);
   const { toast } = useToast();
 
   const sensors = useSensors(
@@ -342,6 +344,7 @@ export default function DispatchPage() {
                       await fetchBoard(true);
                     } catch { toast("error", "Failed to assign"); }
                   }}
+                  onQuickView={setQuickViewJob}
                 />
                 {/* Driver columns */}
                 {board.drivers.map(col => {
@@ -360,6 +363,7 @@ export default function DispatchPage() {
                       progress={col.jobs.length > 0 ? { completed, total: col.jobs.length } : undefined}
                       phone={col.driver.phone}
                       jobs={filterJobs(col.jobs, filter, search)}
+                      onQuickView={setQuickViewJob}
                     />
                   );
                 })}
@@ -386,13 +390,109 @@ export default function DispatchPage() {
           </div>
         </div>
       </div>
+
+      {/* Job QuickView */}
+      <QuickView
+        isOpen={!!quickViewJob}
+        onClose={() => setQuickViewJob(null)}
+        title={quickViewJob ? jobTitle(quickViewJob) : ""}
+        subtitle={quickViewJob?.job_number}
+        actions={
+          quickViewJob ? (
+            <Link href={`/jobs/${quickViewJob.id}`} className="rounded-lg bg-dark-elevated px-3 py-1.5 text-xs font-medium text-foreground hover:bg-dark-card-hover transition-colors">
+              Full Detail
+            </Link>
+          ) : undefined
+        }
+        footer={
+          quickViewJob ? (
+            <div className="flex gap-2">
+              <button onClick={() => { setQuickViewJob(null); }} className="flex-1 rounded-lg bg-dark-elevated py-2 text-xs font-medium text-muted hover:text-white transition-colors">Close</button>
+              <Link href={`/jobs/${quickViewJob.id}`} className="flex-1 rounded-lg bg-brand py-2 text-xs font-semibold text-dark-primary text-center hover:bg-brand-light transition-colors">View Job</Link>
+            </div>
+          ) : undefined
+        }
+      >
+        {quickViewJob && <JobQuickViewContent job={quickViewJob} />}
+      </QuickView>
+    </div>
+  );
+}
+
+/* ---- Job QuickView Content ---- */
+
+function JobQuickViewContent({ job }: { job: DispatchJob }) {
+  const tc = TYPE_CONFIG[job.job_type] || { label: job.job_type, letter: "?", cls: "bg-zinc-500/10 text-zinc-400", border: "" };
+  const addr = job.service_address;
+  const isCompleted = job.status === "completed";
+
+  return (
+    <div className="space-y-5">
+      {/* Status + type */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className={`rounded-full px-3 py-1 text-xs font-medium ${tc.cls}`}>{tc.label}</span>
+        <span className={`rounded-full px-3 py-1 text-xs font-medium capitalize ${isCompleted ? "bg-emerald-500/10 text-emerald-400" : "bg-yellow-500/10 text-yellow-400"}`}>
+          {job.status.replace(/_/g, " ")}
+        </span>
+        {job.priority === "high" && <span className="rounded-full bg-red-500/10 px-2.5 py-1 text-xs font-bold text-red-400">High Priority</span>}
+      </div>
+
+      {/* Customer */}
+      <div className="rounded-lg bg-dark-card border border-[#1E2D45] p-4">
+        <p className="text-xs text-muted uppercase tracking-wider mb-2">Customer</p>
+        <p className="text-sm font-semibold text-white">
+          {job.customer ? `${job.customer.first_name} ${job.customer.last_name}` : "No customer"}
+        </p>
+      </div>
+
+      {/* Address */}
+      {addr && (
+        <div className="rounded-lg bg-dark-card border border-[#1E2D45] p-4">
+          <p className="text-xs text-muted uppercase tracking-wider mb-2">Service Address</p>
+          <p className="text-sm text-white">{addr.street}</p>
+          <p className="text-xs text-muted">{[addr.city, addr.state, addr.zip].filter(Boolean).join(", ")}</p>
+        </div>
+      )}
+
+      {/* Time */}
+      {(job.scheduled_window_start || job.scheduled_window_end) && (
+        <div className="rounded-lg bg-dark-card border border-[#1E2D45] p-4">
+          <p className="text-xs text-muted uppercase tracking-wider mb-2">Time Window</p>
+          <p className="text-sm text-white flex items-center gap-2">
+            <Clock className="h-4 w-4 text-muted" />
+            {fmtTime(job.scheduled_window_start)}{job.scheduled_window_end && ` – ${fmtTime(job.scheduled_window_end)}`}
+          </p>
+        </div>
+      )}
+
+      {/* Asset + Driver */}
+      <div className="grid grid-cols-2 gap-3">
+        <div className="rounded-lg bg-dark-card border border-[#1E2D45] p-4">
+          <p className="text-xs text-muted uppercase tracking-wider mb-2">Asset</p>
+          <p className="text-sm font-medium text-white">{job.asset?.identifier || "Not assigned"}</p>
+        </div>
+        <div className="rounded-lg bg-dark-card border border-[#1E2D45] p-4">
+          <p className="text-xs text-muted uppercase tracking-wider mb-2">Driver</p>
+          <p className="text-sm font-medium text-white">
+            {job.assigned_driver ? `${job.assigned_driver.first_name} ${job.assigned_driver.last_name}` : "Unassigned"}
+          </p>
+        </div>
+      </div>
+
+      {/* Price */}
+      {job.total_price > 0 && (
+        <div className="rounded-lg bg-brand/5 border border-brand/20 p-4">
+          <p className="text-xs text-brand uppercase tracking-wider mb-1">Price</p>
+          <p className="text-xl font-bold text-brand tabular-nums">${Number(job.total_price).toLocaleString()}</p>
+        </div>
+      )}
     </div>
   );
 }
 
 /* ---- Column ---- */
 
-function Column({ id, title, icon, count, accentCls, progress, phone, jobs, drivers, onAssign }: {
+function Column({ id, title, icon, count, accentCls, progress, phone, jobs, drivers, onAssign, onQuickView }: {
   id: string;
   title: string;
   icon: React.ReactNode;
@@ -402,6 +502,7 @@ function Column({ id, title, icon, count, accentCls, progress, phone, jobs, driv
   phone?: string;
   jobs: DispatchJob[];
   drivers?: Driver[];
+  onQuickView?: (job: DispatchJob) => void;
   onAssign?: (jobId: string, driverId: string) => void;
 }) {
   const { setNodeRef, isOver } = useSortable({ id: `col-${id}`, disabled: true });
@@ -442,7 +543,7 @@ function Column({ id, title, icon, count, accentCls, progress, phone, jobs, driv
             </div>
           ) : (
             jobs.map((job, i) => (
-              <SortableJobCard key={job.id} job={job} order={i + 1} drivers={drivers} onAssign={onAssign} />
+              <SortableJobCard key={job.id} job={job} order={i + 1} drivers={drivers} onAssign={onAssign} onQuickView={onQuickView} />
             ))
           )}
         </div>
@@ -453,9 +554,10 @@ function Column({ id, title, icon, count, accentCls, progress, phone, jobs, driv
 
 /* ---- Sortable Job Card ---- */
 
-function SortableJobCard({ job, order, drivers, onAssign }: {
+function SortableJobCard({ job, order, drivers, onAssign, onQuickView }: {
   job: DispatchJob; order: number; drivers?: Driver[];
   onAssign?: (jobId: string, driverId: string) => void;
+  onQuickView?: (job: DispatchJob) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: job.id });
   const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.3 : 1 };
@@ -467,9 +569,9 @@ function SortableJobCard({ job, order, drivers, onAssign }: {
         <div {...listeners} className="absolute left-1 top-1/2 -translate-y-1/2 cursor-grab p-1 text-muted/30 hover:text-muted active:cursor-grabbing z-10">
           <GripVertical className="h-3 w-3" />
         </div>
-        <Link href={`/jobs/${job.id}`} className="block">
+        <button onClick={() => onQuickView?.(job)} className="block w-full text-left">
           <JobCardContent job={job} order={order} />
-        </Link>
+        </button>
         {drivers && onAssign && !job.assigned_driver && (
           <div className="px-2.5 pb-2.5">
             <button onClick={(e) => { e.preventDefault(); setShowDrivers(!showDrivers); }}
