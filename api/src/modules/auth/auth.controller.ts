@@ -112,82 +112,69 @@ export class AuthController {
   @ApiOperation({ summary: 'Google OAuth callback' })
   async googleCallback(@Req() req: Request, @Res() res: Response) {
     const frontendUrl =
-      this.configService.get<string>('APP_URL') ||
-      'https://serviceos-web-zeta.vercel.app';
+      (this.configService.get<string>('APP_URL') ||
+      'https://serviceos-web-zeta.vercel.app').trim();
 
     try {
       const code = (req.query as Record<string, string>).code;
       if (!code) {
-        res.redirect(`${frontendUrl}/login?error=no_code`);
-        return;
+        return res.redirect(`${frontendUrl}/login?error=no_code`);
       }
 
-      const clientId = this.configService.get<string>('GOOGLE_CLIENT_ID', '');
-      const clientSecret = this.configService.get<string>(
-        'GOOGLE_CLIENT_SECRET',
-        '',
-      );
-      const callbackUrl =
+      const clientId = (this.configService.get<string>('GOOGLE_CLIENT_ID') || '').trim();
+      const clientSecret = (this.configService.get<string>('GOOGLE_CLIENT_SECRET') || '').trim();
+      const callbackUrl = (
         this.configService.get<string>('GOOGLE_CALLBACK_URL') ||
-        'https://serviceos-api.vercel.app/auth/google/callback';
+        'https://serviceos-api.vercel.app/auth/google/callback'
+      ).trim();
+
+      if (!clientSecret) {
+        return res.redirect(`${frontendUrl}/login?error=google_secret_missing`);
+      }
 
       // Exchange code for tokens
-      const tokenRes = await fetch(
-        'https://oauth2.googleapis.com/token',
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: new URLSearchParams({
-            code,
-            client_id: clientId,
-            client_secret: clientSecret,
-            redirect_uri: callbackUrl,
-            grant_type: 'authorization_code',
-          }),
-        },
-      );
-      const tokens = (await tokenRes.json()) as {
-        access_token?: string;
-        error?: string;
-      };
+      const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          code,
+          client_id: clientId,
+          client_secret: clientSecret,
+          redirect_uri: callbackUrl,
+          grant_type: 'authorization_code',
+        }),
+      });
+      const tokens = (await tokenRes.json()) as Record<string, unknown>;
+
       if (!tokens.access_token) {
-        res.redirect(
-          `${frontendUrl}/login?error=token_exchange_failed`,
-        );
-        return;
+        console.error('Google token exchange failed:', JSON.stringify(tokens));
+        return res.redirect(`${frontendUrl}/login?error=token_exchange_failed`);
       }
 
       // Get user info
-      const userRes = await fetch(
-        'https://www.googleapis.com/oauth2/v2/userinfo',
-        { headers: { Authorization: `Bearer ${tokens.access_token}` } },
-      );
-      const profile = (await userRes.json()) as {
-        id: string;
-        email: string;
-        given_name?: string;
-        family_name?: string;
-        name?: string;
-      };
+      const userRes = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+        headers: { Authorization: `Bearer ${tokens.access_token}` },
+      });
+      const profile = (await userRes.json()) as Record<string, string>;
 
       if (!profile.email) {
-        res.redirect(`${frontendUrl}/login?error=no_email`);
-        return;
+        return res.redirect(`${frontendUrl}/login?error=no_email`);
       }
 
       const result = await this.authService.googleLogin({
-        googleId: profile.id,
+        googleId: profile.id || '',
         email: profile.email,
         firstName: profile.given_name || profile.name || '',
         lastName: profile.family_name || '',
       });
 
-      res.redirect(
+      return res.redirect(
         `${frontendUrl}/auth/callback?token=${result.accessToken}&refresh=${result.refreshToken}&new=${result.isNew ? '1' : '0'}`,
       );
     } catch (err) {
-      console.error('Google OAuth error:', err);
-      res.redirect(`${frontendUrl}/login?error=oauth_failed`);
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('Google OAuth callback error:', msg, err);
+      return res.redirect(`${frontendUrl}/login?error=${encodeURIComponent(msg.slice(0, 100))}`);
     }
   }
 }
