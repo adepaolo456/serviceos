@@ -166,7 +166,7 @@ export default function DashboardPage() {
   useEffect(() => {
     async function loadJobs() {
       try {
-        const tj = await api.get<JobsResponse>(`/jobs?scheduledDate=${scheduleDate}&limit=50`);
+        const tj = await api.get<JobsResponse>(`/jobs?dateFrom=${scheduleDate}&dateTo=${scheduleDate}&limit=50`);
         setTodayJobs(tj.data.filter((j) => j.status !== "cancelled"));
         setUnassignedJobs(tj.data.filter((j) => !j.assigned_driver && j.status !== "cancelled" && j.status !== "completed"));
       } catch { /* */ }
