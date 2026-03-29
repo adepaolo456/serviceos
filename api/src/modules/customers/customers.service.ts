@@ -15,9 +15,16 @@ export class CustomersService {
     private customersRepository: Repository<Customer>,
   ) {}
 
+  private generateAccountId(): string {
+    const r = () => Math.floor(Math.random() * 10000).toString().padStart(4, '0');
+    const p = Math.floor(Math.random() * 100).toString().padStart(2, '0');
+    return `${p}-${r()}-${r()}`;
+  }
+
   async create(tenantId: string, dto: CreateCustomerDto): Promise<Customer> {
     const customer = this.customersRepository.create({
       tenant_id: tenantId,
+      account_id: this.generateAccountId(),
       type: dto.type ?? 'residential',
       company_name: dto.companyName,
       first_name: dto.firstName,

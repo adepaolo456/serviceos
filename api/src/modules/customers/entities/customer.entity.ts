@@ -21,8 +21,14 @@ export class Customer {
   @JoinColumn({ name: 'tenant_id' })
   tenant!: Tenant;
 
+  @Column({ name: 'account_id', nullable: true, unique: true })
+  account_id!: string;
+
   @Column({ default: 'residential' })
   type!: string;
+
+  @Column({ name: 'customer_preferences', type: 'jsonb', nullable: true, default: '{}' })
+  customer_preferences!: Record<string, unknown>;
 
   @Column({ name: 'company_name', nullable: true })
   company_name!: string;

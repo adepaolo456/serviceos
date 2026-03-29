@@ -20,6 +20,8 @@ import { DemosModule } from './modules/demos/demos.module';
 import { DemoRequest } from './modules/demos/demo-request.entity';
 import { YardsModule } from './modules/yards/yards.module';
 import { Yard } from './modules/yards/yard.entity';
+import { NotesModule } from './modules/notes/notes.module';
+import { CustomerNote } from './modules/notes/note.entity';
 import { JwtAuthGuard } from './common/guards';
 import { Tenant } from './modules/tenants/entities/tenant.entity';
 import { User } from './modules/auth/entities/user.entity';
@@ -61,6 +63,7 @@ import { MarketplaceBooking } from './modules/marketplace/entities/marketplace-b
             MarketplaceBooking,
             DemoRequest,
             Yard,
+            CustomerNote,
           ],
           synchronize: true,
           ssl: {
@@ -83,6 +86,7 @@ import { MarketplaceBooking } from './modules/marketplace/entities/marketplace-b
     AdminModule,
     DemosModule,
     YardsModule,
+    NotesModule,
   ],
   controllers: [AppController],
   providers: [
