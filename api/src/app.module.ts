@@ -33,27 +33,33 @@ import { MarketplaceBooking } from './modules/marketplace/entities/marketplace-b
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
-      useFactory: (configService: ConfigService) => ({
-        type: 'postgres',
-        url: configService.get<string>('DATABASE_URL'),
-        entities: [
-          Tenant,
-          User,
-          Customer,
-          Asset,
-          Job,
-          PricingRule,
-          Invoice,
-          Payment,
-          Route,
-          Notification,
-          MarketplaceBooking,
-        ],
-        synchronize: true,
-        ssl: {
-          rejectUnauthorized: false,
-        },
-      }),
+      useFactory: (configService: ConfigService) => {
+        const url = configService.get<string>('DATABASE_URL') || process.env.DATABASE_URL;
+        if (!url) {
+          console.error('DATABASE_URL is not set. Available env keys:', Object.keys(process.env).filter(k => k.includes('DATABASE') || k.includes('JWT') || k.includes('VERCEL')).join(', '));
+        }
+        return {
+          type: 'postgres',
+          url,
+          entities: [
+            Tenant,
+            User,
+            Customer,
+            Asset,
+            Job,
+            PricingRule,
+            Invoice,
+            Payment,
+            Route,
+            Notification,
+            MarketplaceBooking,
+          ],
+          synchronize: true,
+          ssl: {
+            rejectUnauthorized: false,
+          },
+        };
+      },
     }),
     AuthModule,
     CustomersModule,
