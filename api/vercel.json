@@ -1,9 +1,13 @@
 {
   "version": 2,
+  "buildCommand": "npm run build",
   "builds": [
     {
-      "src": "api/index.ts",
-      "use": "@vercel/node"
+      "src": "api/index.js",
+      "use": "@vercel/node",
+      "config": {
+        "includeFiles": ["dist/**"]
+      }
     }
   ],
   "routes": [
@@ -21,7 +25,7 @@
     },
     {
       "src": "/(.*)",
-      "dest": "api/index.ts",
+      "dest": "api/index.js",
       "headers": {
         "Access-Control-Allow-Origin": "https://serviceos-web-zeta.vercel.app",
         "Access-Control-Allow-Credentials": "true"
