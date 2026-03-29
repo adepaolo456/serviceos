@@ -3,13 +3,13 @@
 import Sidebar from "@/components/sidebar";
 import { ToastProvider } from "@/components/toast";
 import { useTheme } from "@/components/theme-provider";
-import { Moon, Sun, Monitor } from "lucide-react";
+import { Moon, Sun } from "lucide-react";
 
 function ThemeToggle() {
   const { theme, cycleTheme } = useTheme();
   return (
     <button type="button" onClick={() => cycleTheme()} className="fixed top-4 right-4 z-[9999] p-2 rounded-lg bg-dark-card border border-dark-elevated shadow-lg">
-      {theme === "dark" ? <Moon className="h-4 w-4" /> : theme === "light" ? <Sun className="h-4 w-4" /> : <Monitor className="h-4 w-4" />}
+      {theme === "dark" ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
     </button>
   );
 }
