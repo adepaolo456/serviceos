@@ -9,6 +9,7 @@ import {
   CreditCard,
   LogOut,
   Shield,
+  ArrowLeftRight,
 } from "lucide-react";
 import { api } from "@/lib/api";
 
@@ -98,19 +99,19 @@ export default function AdminLayout({
               })}
             </nav>
           </div>
-          <div className="flex items-center gap-3">
-            <a
+          <div className="flex items-center gap-2">
+            <Link
               href="/"
-              className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
+              className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3.5 py-2 text-sm font-medium text-gray-700 transition-all hover:bg-gray-100 hover:border-gray-300 active:scale-95"
             >
-              Tenant Dashboard
-            </a>
+              <ArrowLeftRight className="h-3.5 w-3.5" />
+              Switch to Dashboard
+            </Link>
             <button
               onClick={() => { api.clearToken(); window.location.href = "/login"; }}
-              className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm text-gray-500 hover:bg-gray-100 hover:text-gray-900 transition-colors"
+              className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm text-gray-500 hover:bg-gray-100 hover:text-gray-900 transition-colors"
             >
               <LogOut className="h-3.5 w-3.5" />
-              Logout
             </button>
           </div>
         </div>

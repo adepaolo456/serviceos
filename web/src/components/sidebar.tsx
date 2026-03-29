@@ -11,12 +11,12 @@ import {
   Truck,
   FileText,
   DollarSign,
-  Store,
   Settings,
   LogOut,
   Menu,
   X,
   BarChart3,
+  ShieldCheck,
 } from "lucide-react";
 import { api } from "@/lib/api";
 
@@ -98,7 +98,7 @@ export default function Sidebar() {
         </ul>
       </nav>
 
-      {/* User profile + logout */}
+      {/* User profile + admin switch + logout */}
       <div className="border-t border-[#1E2D45] p-3 space-y-1 shrink-0">
         {user && (
           <div className="flex items-center gap-3 rounded-lg px-3 py-2.5">
@@ -112,6 +112,15 @@ export default function Sidebar() {
               <p className="text-[11px] text-muted capitalize truncate">{user.role}</p>
             </div>
           </div>
+        )}
+        {user?.email === "adepaolo456@gmail.com" && (
+          <Link
+            href="/admin"
+            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-muted transition-all hover:bg-brand/10 hover:text-brand btn-press"
+          >
+            <ShieldCheck className="h-[18px] w-[18px]" />
+            Switch to Admin
+          </Link>
         )}
         <button
           onClick={handleLogout}
