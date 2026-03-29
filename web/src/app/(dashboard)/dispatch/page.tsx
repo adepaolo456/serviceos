@@ -40,6 +40,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { api } from "@/lib/api";
 import { useToast } from "@/components/toast";
 import QuickView from "@/components/quick-view";
+import Dropdown from "@/components/dropdown";
 
 /* ---- Types ---- */
 
@@ -561,7 +562,6 @@ function SortableJobCard({ job, order, drivers, onAssign, onQuickView }: {
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: job.id });
   const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.3 : 1 };
-  const [showDrivers, setShowDrivers] = useState(false);
 
   return (
     <div ref={setNodeRef} style={style} {...attributes}>
@@ -574,21 +574,21 @@ function SortableJobCard({ job, order, drivers, onAssign, onQuickView }: {
         </button>
         {drivers && onAssign && !job.assigned_driver && (
           <div className="px-2.5 pb-2.5">
-            <button onClick={(e) => { e.preventDefault(); setShowDrivers(!showDrivers); }}
-              className="flex w-full items-center justify-center gap-1 rounded bg-brand/10 border border-brand/20 py-1.5 text-[10px] font-semibold text-brand hover:bg-brand/20 transition-all active:scale-[0.98]">
-              <UserPlus className="h-3 w-3" /> Assign
-            </button>
-            {showDrivers && (
-              <div className="absolute left-2 right-2 z-30 mt-1 rounded-lg border border-[#1E2D45] bg-dark-secondary shadow-xl overflow-hidden">
-                {drivers.map(d => (
-                  <button key={d.id} onClick={(e) => { e.preventDefault(); onAssign(job.id, d.id); setShowDrivers(false); }}
-                    className="flex w-full items-center gap-2 px-3 py-2 text-xs text-foreground hover:bg-dark-card-hover">
-                    <div className="flex h-5 w-5 items-center justify-center rounded-full bg-brand/10 text-[8px] font-bold text-brand">{d.firstName[0]}{d.lastName[0]}</div>
-                    {d.firstName} {d.lastName}
-                  </button>
-                ))}
-              </div>
-            )}
+            <Dropdown
+              trigger={
+                <button className="flex w-full items-center justify-center gap-1 rounded bg-brand/10 border border-brand/20 py-1.5 text-[10px] font-semibold text-brand hover:bg-brand/20 transition-all active:scale-[0.98]">
+                  <UserPlus className="h-3 w-3" /> Assign
+                </button>
+              }
+            >
+              {drivers.map(d => (
+                <button key={d.id} onClick={() => onAssign(job.id, d.id)}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-xs text-foreground hover:bg-dark-card-hover">
+                  <div className="flex h-5 w-5 items-center justify-center rounded-full bg-brand/10 text-[8px] font-bold text-brand">{d.firstName[0]}{d.lastName[0]}</div>
+                  {d.firstName} {d.lastName}
+                </button>
+              ))}
+            </Dropdown>
           </div>
         )}
       </div>

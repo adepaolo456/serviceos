@@ -6,6 +6,7 @@ import { Plus, Search, Users, MoreHorizontal, Trash2 } from "lucide-react";
 import { useToast } from "@/components/toast";
 import { api } from "@/lib/api";
 import SlideOver from "@/components/slide-over";
+import Dropdown from "@/components/dropdown";
 import AddressAutocomplete, { type AddressValue } from "@/components/address-autocomplete";
 
 interface Customer {
@@ -37,7 +38,6 @@ export default function CustomersPage() {
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [panelOpen, setPanelOpen] = useState(false);
-  const [menuOpen, setMenuOpen] = useState<string | null>(null);
   const { toast } = useToast();
 
   const handleDelete = async (id: string, name: string) => {
@@ -47,7 +47,6 @@ export default function CustomersPage() {
       toast("success", "Customer deleted");
       fetchCustomers();
     } catch { toast("error", "Failed to delete customer"); }
-    setMenuOpen(null);
   };
 
   const fetchCustomers = useCallback(async () => {
@@ -222,31 +221,28 @@ export default function CustomersPage() {
                     />
                   </td>
                   <td className="px-2 py-4" onClick={(e) => e.stopPropagation()}>
-                    <div className="relative">
+                    <Dropdown
+                      align="right"
+                      trigger={
+                        <button className="rounded p-1 text-muted hover:text-white hover:bg-dark-elevated transition-colors">
+                          <MoreHorizontal className="h-4 w-4" />
+                        </button>
+                      }
+                    >
                       <button
-                        onClick={() => setMenuOpen(menuOpen === c.id ? null : c.id)}
-                        className="rounded p-1 text-muted hover:text-white hover:bg-dark-elevated transition-colors"
+                        onClick={() => router.push(`/customers/${c.id}`)}
+                        className="flex w-full items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-dark-card-hover"
                       >
-                        <MoreHorizontal className="h-4 w-4" />
+                        View Details
                       </button>
-                      {menuOpen === c.id && (
-                        <div className="absolute right-0 z-20 mt-1 w-36 rounded-lg border border-[#1E2D45] bg-dark-secondary shadow-xl overflow-hidden">
-                          <button
-                            onClick={() => { router.push(`/customers/${c.id}`); setMenuOpen(null); }}
-                            className="flex w-full items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-dark-card-hover"
-                          >
-                            View Details
-                          </button>
-                          <button
-                            onClick={() => handleDelete(c.id, `${c.first_name} ${c.last_name}`)}
-                            className="flex w-full items-center gap-2 px-3 py-2 text-sm text-red-400 hover:bg-red-500/10"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                            Delete
-                          </button>
-                        </div>
-                      )}
-                    </div>
+                      <button
+                        onClick={() => handleDelete(c.id, `${c.first_name} ${c.last_name}`)}
+                        className="flex w-full items-center gap-2 px-3 py-2 text-sm text-red-400 hover:bg-red-500/10"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                        Delete
+                      </button>
+                    </Dropdown>
                   </td>
                 </tr>
               ))
