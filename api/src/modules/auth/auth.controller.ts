@@ -3,11 +3,16 @@ import {
   Post,
   Get,
   Body,
+  Req,
+  Res,
   UseGuards,
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
+import { AuthGuard } from '@nestjs/passport';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import type { Request, Response } from 'express';
+import { ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service';
 import {
   RegisterDto,
@@ -21,7 +26,10 @@ import { RolesGuard } from '../../common/guards';
 @ApiTags('Auth')
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly configService: ConfigService,
+  ) {}
 
   @Public()
   @Post('register')
@@ -60,5 +68,35 @@ export class AuthController {
   @ApiOperation({ summary: 'Invite a user to your tenant (admin+)' })
   inviteUser(@Body() dto: InviteUserDto, @TenantId() tenantId: string) {
     return this.authService.inviteUser(dto, tenantId);
+  }
+
+  @Public()
+  @Get('google')
+  @UseGuards(AuthGuard('google'))
+  @ApiOperation({ summary: 'Initiate Google OAuth login' })
+  googleLogin() {
+    // Guard redirects to Google
+  }
+
+  @Public()
+  @Get('google/callback')
+  @UseGuards(AuthGuard('google'))
+  @ApiOperation({ summary: 'Google OAuth callback' })
+  async googleCallback(@Req() req: Request, @Res() res: Response) {
+    const googleUser = req.user as {
+      googleId: string;
+      email: string;
+      firstName: string;
+      lastName: string;
+    };
+
+    const result = await this.authService.googleLogin(googleUser);
+    const frontendUrl =
+      this.configService.get<string>('APP_URL') ||
+      'https://serviceos-web-zeta.vercel.app';
+
+    res.redirect(
+      `${frontendUrl}/auth/callback?token=${result.accessToken}&refresh=${result.refreshToken}&new=${result.isNew ? '1' : '0'}`,
+    );
   }
 }
