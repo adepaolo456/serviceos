@@ -6,26 +6,26 @@
       "use": "@vercel/node"
     }
   ],
-  "headers": [
-    {
-      "source": "/(.*)",
-      "headers": [
-        { "key": "Access-Control-Allow-Origin", "value": "https://serviceos-web-zeta.vercel.app" },
-        { "key": "Access-Control-Allow-Methods", "value": "GET,POST,PUT,PATCH,DELETE,OPTIONS" },
-        { "key": "Access-Control-Allow-Headers", "value": "Content-Type,Authorization" },
-        { "key": "Access-Control-Allow-Credentials", "value": "true" }
-      ]
-    }
-  ],
   "routes": [
     {
       "src": "/(.*)",
       "methods": ["OPTIONS"],
-      "dest": "api/index.ts"
+      "status": 204,
+      "headers": {
+        "Access-Control-Allow-Origin": "https://serviceos-web-zeta.vercel.app",
+        "Access-Control-Allow-Methods": "GET,POST,PUT,PATCH,DELETE,OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type,Authorization",
+        "Access-Control-Allow-Credentials": "true",
+        "Access-Control-Max-Age": "86400"
+      }
     },
     {
       "src": "/(.*)",
-      "dest": "api/index.ts"
+      "dest": "api/index.ts",
+      "headers": {
+        "Access-Control-Allow-Origin": "https://serviceos-web-zeta.vercel.app",
+        "Access-Control-Allow-Credentials": "true"
+      }
     }
   ]
 }
