@@ -16,9 +16,7 @@ import {
   ArrowRight,
   DollarSign,
   Briefcase,
-  Box,
   CheckCircle2,
-  Wrench,
   UserPlus2,
   BarChart3,
   ChevronLeft,
@@ -42,6 +40,7 @@ interface TodayJob {
   job_number: string;
   job_type: string;
   status: string;
+  scheduled_date: string;
   scheduled_window_start: string;
   scheduled_window_end: string;
   service_address: Record<string, string> | null;
@@ -87,12 +86,6 @@ const STATUS_BADGE: Record<string, string> = {
   cancelled: "bg-red-500/10 text-red-400",
 };
 
-const FLEET_ICONS: Record<string, { icon: typeof Box; color: string; bg: string }> = {
-  available: { icon: CheckCircle2, color: "text-brand", bg: "bg-brand/10" },
-  on_site: { icon: Truck, color: "text-yellow-400", bg: "bg-yellow-500/10" },
-  in_transit: { icon: Truck, color: "text-blue-400", bg: "bg-blue-500/10" },
-  maintenance: { icon: Wrench, color: "text-red-400", bg: "bg-red-500/10" },
-};
 
 function getGreeting(): string {
   const h = new Date().getHours();
@@ -221,8 +214,7 @@ export default function DashboardPage() {
     );
   }
 
-  const fleetStatus = dashboard?.assets.byStatus ?? [];
-  const activeRentals = fleetStatus.find((s) => s.status === "on_site")?.count ?? 0;
+  const activeRentals = (dashboard?.jobs.total ?? 0) - (dashboard?.jobs.completed ?? 0) - (dashboard?.jobs.cancelled ?? 0);
 
   return (
     <div>
@@ -352,52 +344,29 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Right: Fleet Status + Unassigned */}
+        {/* Right: This Week + Unassigned (if any) */}
         <div className="lg:col-span-2 space-y-5">
-          {/* Fleet Status */}
-          <div className="rounded-2xl border border-[#1E2D45] bg-dark-card p-5">
-            <div className="flex items-center justify-between mb-4">
+          {/* This Week */}
+          <div className="rounded-2xl border border-[#1E2D45] bg-dark-card overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-3 border-b border-[#1E2D45]">
               <div className="flex items-center gap-2">
-                <Box className="h-4 w-4 text-brand" />
-                <h2 className="font-display text-base font-semibold text-white">Fleet Status</h2>
+                <BarChart3 className="h-4 w-4 text-brand" />
+                <h2 className="font-display text-sm font-semibold text-white">This Week</h2>
               </div>
-              <Link href="/assets" className="text-xs text-brand hover:text-brand-light">View all</Link>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              {fleetStatus.map((s) => {
-                const cfg = FLEET_ICONS[s.status] || FLEET_ICONS.available;
-                const Icon = cfg.icon;
-                return (
-                  <Link
-                    key={s.status}
-                    href={`/assets?status=${s.status}`}
-                    className={`flex items-center gap-3 rounded-xl ${cfg.bg} p-3 transition-all hover:ring-1 hover:ring-white/10`}
-                  >
-                    <Icon className={`h-5 w-5 ${cfg.color}`} />
-                    <div>
-                      <p className="text-lg font-bold text-white tabular-nums">{s.count}</p>
-                      <p className="text-[10px] text-muted capitalize">{s.status.replace(/_/g, " ")}</p>
-                    </div>
-                  </Link>
-                );
-              })}
+            <div className="divide-y divide-[#1E2D45]">
+              <WeekView scheduleDate={scheduleDate} onSelectDay={setScheduleDate} />
             </div>
           </div>
 
-          {/* Unassigned Jobs */}
-          <div className="rounded-2xl border border-[#1E2D45] bg-dark-card overflow-hidden">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-[#1E2D45]">
-              <div className="flex items-center gap-2">
+          {/* Unassigned Jobs — only show if there are any */}
+          {unassignedJobs.length > 0 && (
+            <div className="rounded-2xl border border-red-500/10 bg-dark-card overflow-hidden">
+              <div className="flex items-center gap-2 px-5 py-3 border-b border-[#1E2D45]">
                 <UserPlus2 className="h-4 w-4 text-red-400" />
                 <h2 className="font-display text-sm font-semibold text-white">Unassigned</h2>
-                {unassignedJobs.length > 0 && (
-                  <span className="rounded-full bg-red-500/10 px-2 py-0.5 text-[10px] font-medium text-red-400">{unassignedJobs.length}</span>
-                )}
+                <span className="rounded-full bg-red-500/10 px-2 py-0.5 text-[10px] font-medium text-red-400">{unassignedJobs.length}</span>
               </div>
-            </div>
-            {unassignedJobs.length === 0 ? (
-              <div className="px-5 py-8 text-center text-xs text-muted">All jobs assigned</div>
-            ) : (
               <div className="divide-y divide-[#1E2D45]">
                 {unassignedJobs.slice(0, 5).map((job) => (
                   <Link key={job.id} href={`/jobs/${job.id}`} className="flex items-center justify-between px-5 py-2.5 transition-colors hover:bg-dark-card-hover">
@@ -411,8 +380,8 @@ export default function DashboardPage() {
                   </Link>
                 ))}
               </div>
-            )}
-          </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -678,5 +647,85 @@ function QuickJobForm({ onSuccess }: { onSuccess: () => void }) {
         </div>
       )}
     </div>
+  );
+}
+
+/* ---- Week View Component ---- */
+
+function WeekView({ scheduleDate, onSelectDay }: { scheduleDate: string; onSelectDay: (d: string) => void }) {
+  const [weekJobs, setWeekJobs] = useState<Record<string, { total: number; deliveries: number; pickups: number; exchanges: number }>>({});
+
+  useEffect(() => {
+    async function loadWeek() {
+      const days: string[] = [];
+      for (let i = 0; i < 7; i++) days.push(shiftDate(today(), i));
+      try {
+        const res = await api.get<JobsResponse>(`/jobs?dateFrom=${days[0]}&dateTo=${days[6]}&limit=200`);
+        const byDay: Record<string, { total: number; deliveries: number; pickups: number; exchanges: number }> = {};
+        for (const d of days) byDay[d] = { total: 0, deliveries: 0, pickups: 0, exchanges: 0 };
+        for (const j of res.data) {
+          const d = j.scheduled_date?.split("T")[0];
+          if (d && byDay[d]) {
+            byDay[d].total++;
+            if (j.job_type === "delivery") byDay[d].deliveries++;
+            else if (j.job_type === "pickup") byDay[d].pickups++;
+            else if (j.job_type === "exchange") byDay[d].exchanges++;
+          }
+        }
+        setWeekJobs(byDay);
+      } catch { /* */ }
+    }
+    loadWeek();
+  }, []);
+
+  const days: string[] = [];
+  for (let i = 0; i < 7; i++) days.push(shiftDate(today(), i));
+
+  return (
+    <>
+      {days.map((d) => {
+        const isToday = d === today();
+        const isSelected = d === scheduleDate;
+        const data = weekJobs[d] || { total: 0, deliveries: 0, pickups: 0, exchanges: 0 };
+        const dayName = new Date(d + "T00:00:00").toLocaleDateString("en-US", { weekday: "short" });
+        const dayNum = new Date(d + "T00:00:00").getDate();
+
+        const parts: string[] = [];
+        if (data.deliveries) parts.push(`${data.deliveries}D`);
+        if (data.pickups) parts.push(`${data.pickups}P`);
+        if (data.exchanges) parts.push(`${data.exchanges}E`);
+
+        return (
+          <button
+            key={d}
+            onClick={() => onSelectDay(d)}
+            className={`flex w-full items-center justify-between px-5 py-2.5 text-left transition-colors hover:bg-dark-card-hover ${isSelected ? "border-l-2 border-l-brand bg-brand/5" : "border-l-2 border-l-transparent"}`}
+          >
+            <div className="flex items-center gap-3">
+              <div className={`w-10 text-center ${isToday ? "text-brand font-bold" : "text-muted"}`}>
+                <p className="text-[10px] uppercase">{dayName}</p>
+                <p className="text-sm font-semibold">{dayNum}</p>
+              </div>
+              {data.total > 0 ? (
+                <div>
+                  <p className="text-sm font-medium text-white">{data.total} {data.total === 1 ? "job" : "jobs"}</p>
+                  <p className="text-[10px] text-muted">{parts.join(", ")}</p>
+                </div>
+              ) : (
+                <p className="text-xs text-muted/50">No jobs</p>
+              )}
+            </div>
+            {data.total > 0 && (
+              <div className="flex gap-0.5">
+                {Array.from({ length: Math.min(data.total, 5) }).map((_, i) => (
+                  <div key={i} className="h-1.5 w-1.5 rounded-full bg-brand/40" />
+                ))}
+                {data.total > 5 && <span className="text-[8px] text-muted">+{data.total - 5}</span>}
+              </div>
+            )}
+          </button>
+        );
+      })}
+    </>
   );
 }
