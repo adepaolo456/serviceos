@@ -127,14 +127,16 @@ export default function Sidebar() {
             Switch to Admin
           </Link>
         )}
-        <button
-          onClick={cycleTheme}
-          className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-muted transition-all hover:bg-dark-elevated btn-press"
-          title={`Theme: ${theme}`}
-        >
-          {theme === "dark" ? <Moon className="h-[18px] w-[18px]" /> : theme === "light" ? <Sun className="h-[18px] w-[18px]" /> : <Monitor className="h-[18px] w-[18px]" />}
-          {theme === "dark" ? "Dark" : theme === "light" ? "Light" : "System"}
-        </button>
+        <div className="px-3 py-1.5">
+          <button
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); cycleTheme(); }}
+            className="flex w-full items-center justify-center gap-2 rounded-full border border-[#1E2D45] bg-dark-elevated/50 px-3 py-1.5 text-xs font-medium text-muted transition-all hover:bg-dark-elevated hover:text-foreground active:scale-95"
+            type="button"
+          >
+            {theme === "dark" ? <Moon className="h-3.5 w-3.5" /> : theme === "light" ? <Sun className="h-3.5 w-3.5" /> : <Monitor className="h-3.5 w-3.5" />}
+            {theme === "dark" ? "Dark" : theme === "light" ? "Light" : "System"}
+          </button>
+        </div>
         <button
           onClick={handleLogout}
           className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-muted transition-all hover:bg-red-500/10 hover:text-red-400 btn-press"
