@@ -129,16 +129,24 @@ export default function SettingsPage() {
    ============================================================ */
 
 function CompanyTab({ profile }: { profile: Profile | null }) {
-  const addr = profile?.tenant.address;
-  const [name, setName] = useState(profile?.tenant.name ?? "");
-  const [businessType, setBusinessType] = useState(profile?.tenant.businessType ?? "");
-  const [address, setAddress] = useState<AddressValue>({
-    street: addr?.street || "", city: addr?.city || "", state: addr?.state || "",
-    zip: addr?.zip || "", lat: null, lng: null,
-  });
-  const [radius, setRadius] = useState(String(profile?.tenant.serviceRadius || 50));
+  const [name, setName] = useState("");
+  const [businessType, setBusinessType] = useState("");
+  const [address, setAddress] = useState<AddressValue>({ street: "", city: "", state: "", zip: "", lat: null, lng: null });
+  const [radius, setRadius] = useState("50");
   const [saving, setSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"idle" | "success" | "error">("idle");
+
+  // Populate fields when profile loads (profile is null on first render)
+  useEffect(() => {
+    if (!profile) return;
+    setName(profile.tenant.name || "");
+    setBusinessType(profile.tenant.businessType || "");
+    setRadius(String(profile.tenant.serviceRadius || 50));
+    const addr = profile.tenant.address;
+    if (addr) {
+      setAddress({ street: addr.street || "", city: addr.city || "", state: addr.state || "", zip: addr.zip || "", lat: null, lng: null });
+    }
+  }, [profile]);
 
   const handleSave = async () => {
     setSaving(true);
