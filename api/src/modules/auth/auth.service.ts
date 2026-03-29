@@ -191,6 +191,32 @@ export class AuthService {
     };
   }
 
+  async updateTenantProfile(
+    tenantId: string,
+    data: {
+      companyName?: string;
+      businessType?: string;
+      address?: Record<string, string>;
+      serviceRadius?: number;
+    },
+  ) {
+    const update: Record<string, unknown> = {};
+    if (data.companyName !== undefined) update.name = data.companyName;
+    if (data.businessType !== undefined) update.business_type = data.businessType;
+    if (data.address !== undefined) update.address = data.address;
+    if (data.serviceRadius !== undefined) update.service_radius_miles = data.serviceRadius;
+
+    await this.tenantsRepository.update(tenantId, update);
+
+    const tenant = await this.tenantsRepository.findOne({ where: { id: tenantId } });
+    return {
+      name: tenant?.name,
+      businessType: tenant?.business_type,
+      address: tenant?.address,
+      serviceRadius: tenant?.service_radius_miles,
+    };
+  }
+
   async inviteUser(dto: InviteUserDto, tenantId: string) {
     const existingUser = await this.usersRepository.findOne({
       where: { email: dto.email },

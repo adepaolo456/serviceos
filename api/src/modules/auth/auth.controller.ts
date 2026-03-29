@@ -2,6 +2,7 @@ import {
   Controller,
   Post,
   Get,
+  Patch,
   Body,
   Req,
   Res,
@@ -59,6 +60,23 @@ export class AuthController {
   @ApiOperation({ summary: 'Get current user profile' })
   getProfile(@CurrentUser('id') userId: string) {
     return this.authService.getProfile(userId);
+  }
+
+  @Patch('profile')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Update tenant settings' })
+  updateProfile(
+    @CurrentUser('id') userId: string,
+    @TenantId() tenantId: string,
+    @Body()
+    body: {
+      companyName?: string;
+      businessType?: string;
+      address?: Record<string, string>;
+      serviceRadius?: number;
+    },
+  ) {
+    return this.authService.updateTenantProfile(tenantId, body);
   }
 
   @Post('invite')
