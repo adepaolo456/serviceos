@@ -35,10 +35,17 @@ export class AuthService {
       throw new ConflictException('Email already registered');
     }
 
-    const slug = dto.companyName
+    let slug = dto.companyName
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/^-|-$/g, '');
+
+    const existingTenant = await this.tenantsRepository.findOne({
+      where: { slug },
+    });
+    if (existingTenant) {
+      slug = `${slug}-${Date.now().toString(36)}`;
+    }
 
     const tenant = this.tenantsRepository.create({
       name: dto.companyName,
