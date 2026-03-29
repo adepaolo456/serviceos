@@ -204,8 +204,8 @@ export default function TenantDetailPage({
                 { label: "Customers", value: tenant.customerCount, icon: Users },
                 { label: "Assets", value: tenant.assetCount, icon: Package },
               ].map((s) => (
-                <div key={s.label}>
-                  <s.icon className="mx-auto h-5 w-5 text-gray-400 mb-1" />
+                <div key={s.label} className="group relative rounded-lg p-2 cursor-default transition-colors hover:bg-gray-50" title="Coming soon: drill into tenant data">
+                  <s.icon className="mx-auto h-5 w-5 text-gray-400 mb-1 group-hover:text-[#2ECC71] transition-colors" />
                   <p className="text-xl font-bold text-gray-900 tabular-nums">{s.value}</p>
                   <p className="text-[11px] text-gray-500">{s.label}</p>
                 </div>

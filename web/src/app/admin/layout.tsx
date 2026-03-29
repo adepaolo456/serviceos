@@ -10,6 +10,7 @@ import {
   LogOut,
   Shield,
   ArrowLeftRight,
+  ChevronRight,
 } from "lucide-react";
 import { api } from "@/lib/api";
 
@@ -118,8 +119,44 @@ export default function AdminLayout({
       </header>
 
       <main className="mx-auto max-w-7xl px-6 py-8">
+        <Breadcrumbs pathname={pathname} />
         {children}
       </main>
     </div>
+  );
+}
+
+function Breadcrumbs({ pathname }: { pathname: string }) {
+  if (pathname === "/admin") return null;
+
+  const segments = pathname.replace("/admin", "").split("/").filter(Boolean);
+  const crumbs = [{ label: "Admin", href: "/admin" }];
+
+  let path = "/admin";
+  for (const seg of segments) {
+    path += `/${seg}`;
+    // Check if it looks like a UUID
+    const isId = seg.length > 8 && seg.includes("-");
+    crumbs.push({
+      label: isId ? "Detail" : seg.charAt(0).toUpperCase() + seg.slice(1),
+      href: path,
+    });
+  }
+
+  return (
+    <nav className="mb-6 flex items-center gap-1 text-sm">
+      {crumbs.map((c, i) => (
+        <span key={c.href} className="flex items-center gap-1">
+          {i > 0 && <ChevronRight className="h-3.5 w-3.5 text-gray-400" />}
+          {i < crumbs.length - 1 ? (
+            <Link href={c.href} className="text-gray-500 hover:text-[#2ECC71] transition-colors">
+              {c.label}
+            </Link>
+          ) : (
+            <span className="text-gray-900 font-medium">{c.label}</span>
+          )}
+        </span>
+      ))}
+    </nav>
   );
 }

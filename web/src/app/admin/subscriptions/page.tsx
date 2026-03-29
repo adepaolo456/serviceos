@@ -1,6 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   DollarSign,
   TrendingUp,
@@ -39,6 +41,8 @@ const tierBarColor: Record<string, string> = {
 };
 
 export default function SubscriptionsPage() {
+  const router = useRouter();
+  const subscribersRef = useRef<HTMLDivElement>(null);
   const [data, setData] = useState<SubsData | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -81,7 +85,10 @@ export default function SubscriptionsPage() {
           </div>
           <p className="text-3xl font-bold text-gray-900 tabular-nums">${(data?.totalMrr ?? 0).toLocaleString()}</p>
         </div>
-        <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+        <button
+          onClick={() => subscribersRef.current?.scrollIntoView({ behavior: "smooth" })}
+          className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm text-left cursor-pointer transition-all hover:shadow-lg hover:border-[#2ECC71]/30"
+        >
           <div className="flex items-center gap-3 mb-3">
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-purple-50 text-purple-600">
               <CreditCard className="h-4.5 w-4.5" />
@@ -89,7 +96,7 @@ export default function SubscriptionsPage() {
             <span className="text-xs font-medium text-gray-500 uppercase tracking-wider">Active Subscribers</span>
           </div>
           <p className="text-3xl font-bold text-gray-900 tabular-nums">{data?.totalActive ?? 0}</p>
-        </div>
+        </button>
         <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
           <div className="flex items-center gap-3 mb-3">
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
@@ -108,7 +115,7 @@ export default function SubscriptionsPage() {
         <h2 className="text-base font-semibold text-gray-900 mb-5">MRR by Tier</h2>
         <div className="space-y-4">
           {(data?.tierBreakdown ?? []).map((t) => (
-            <div key={t.tier}>
+            <Link key={t.tier} href={`/admin/tenants?tier=${t.tier}`} className="block rounded-lg p-2 -mx-2 transition-colors hover:bg-gray-50 cursor-pointer">
               <div className="flex items-center justify-between text-sm mb-1.5">
                 <span className="font-medium text-gray-700 capitalize">{t.tier}</span>
                 <div className="flex items-center gap-3">
@@ -122,13 +129,13 @@ export default function SubscriptionsPage() {
                   style={{ width: `${(t.mrr / maxTierMrr) * 100}%` }}
                 />
               </div>
-            </div>
+            </Link>
           ))}
         </div>
       </div>
 
       {/* Subscriber list */}
-      <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+      <div ref={subscribersRef} className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
         <div className="px-5 py-4 border-b border-gray-100">
           <h2 className="text-base font-semibold text-gray-900">Active Subscribers</h2>
         </div>
@@ -151,7 +158,7 @@ export default function SubscriptionsPage() {
                 </tr>
               ) : (
                 (data?.subscribers ?? []).map((s) => (
-                  <tr key={s.id} className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
+                  <tr key={s.id} onClick={() => router.push(`/admin/tenants/${s.id}`)} className="border-b border-gray-50 hover:bg-gray-50 transition-colors cursor-pointer">
                     <td className="px-5 py-3.5 font-medium text-gray-900">{s.name}</td>
                     <td className="px-5 py-3.5 text-gray-600">{s.ownerEmail}</td>
                     <td className="px-5 py-3.5">
