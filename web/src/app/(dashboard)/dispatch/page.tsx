@@ -170,13 +170,13 @@ export default function DispatchPage() {
         <div className="flex items-center gap-2">
           <button
             onClick={() => setDate((d) => shiftDate(d, -1))}
-            className="rounded-lg bg-dark-card p-2 text-muted transition-colors hover:bg-dark-card-hover hover:text-white"
+            className="rounded-lg bg-dark-card p-2 text-muted transition-colors hover:bg-dark-card-hover hover:text-white btn-press"
           >
             <ChevronLeft className="h-4 w-4" />
           </button>
           <button
             onClick={() => setDate(formatToday)}
-            className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+            className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors btn-press ${
               isToday
                 ? "bg-brand/10 text-brand"
                 : "bg-dark-card text-muted hover:bg-dark-card-hover hover:text-white"
@@ -195,7 +195,7 @@ export default function DispatchPage() {
           </div>
           <button
             onClick={() => setDate((d) => shiftDate(d, 1))}
-            className="rounded-lg bg-dark-card p-2 text-muted transition-colors hover:bg-dark-card-hover hover:text-white"
+            className="rounded-lg bg-dark-card p-2 text-muted transition-colors hover:bg-dark-card-hover hover:text-white btn-press"
           >
             <ChevronRight className="h-4 w-4" />
           </button>
@@ -352,7 +352,7 @@ function JobCard({ job, order }: { job: DispatchJob; order: number }) {
 
   return (
     <div
-      className={`rounded-xl border p-3 transition-colors ${style.bg} ${style.border}`}
+      className={`rounded-xl border p-3 transition-colors card-hover ${style.bg} ${style.border}`}
     >
       <div className="flex items-start justify-between mb-2">
         <div className="flex items-center gap-2">
@@ -434,7 +434,7 @@ function UnassignedCard({
     : "";
 
   return (
-    <div className="rounded-xl border border-red-500/10 bg-dark-card p-3">
+    <div className="rounded-xl border border-red-500/10 bg-dark-card p-3 card-hover">
       <div className="flex items-start justify-between mb-2">
         <span className="text-xs font-medium text-white">
           {job.job_number}
@@ -477,7 +477,7 @@ function UnassignedCard({
       <div className="relative mt-3">
         <button
           onClick={() => setShowDropdown(!showDropdown)}
-          className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-brand/10 py-1.5 text-xs font-medium text-brand transition-colors hover:bg-brand/20"
+          className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-brand/10 py-1.5 text-xs font-medium text-brand transition-colors hover:bg-brand/20 btn-press"
         >
           <UserPlus className="h-3 w-3" />
           Assign Driver
