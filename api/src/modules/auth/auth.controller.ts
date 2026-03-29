@@ -73,24 +73,31 @@ export class AuthController {
   @Public()
   @Get('google')
   @ApiOperation({ summary: 'Initiate Google OAuth login' })
-  googleLogin(@Res() res: Response) {
-    const clientId = this.configService.get<string>('GOOGLE_CLIENT_ID');
-    if (!clientId || clientId === 'not-configured') {
+  googleLogin(@Req() req: Request, @Res() res: Response) {
+    try {
+      const clientId = this.configService.get<string>('GOOGLE_CLIENT_ID') || '';
       const frontendUrl =
         this.configService.get<string>('APP_URL') ||
         'https://serviceos-web-zeta.vercel.app';
-      res.redirect(
-        `${frontendUrl}/login?error=google_not_configured`,
-      );
-      return;
-    }
 
-    const callbackUrl =
-      this.configService.get<string>('GOOGLE_CALLBACK_URL') ||
-      'https://serviceos-api.vercel.app/auth/google/callback';
-    const scope = encodeURIComponent('email profile');
-    const url = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${encodeURIComponent(callbackUrl)}&response_type=code&scope=${scope}&access_type=offline&prompt=consent`;
-    res.redirect(url);
+      if (!clientId || clientId === 'not-configured') {
+        return res.redirect(
+          `${frontendUrl}/login?error=google_not_configured`,
+        );
+      }
+
+      const callbackUrl =
+        this.configService.get<string>('GOOGLE_CALLBACK_URL') ||
+        'https://serviceos-api.vercel.app/auth/google/callback';
+      const scope = encodeURIComponent('email profile');
+      const url = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${encodeURIComponent(callbackUrl)}&response_type=code&scope=${scope}&access_type=offline&prompt=consent`;
+      return res.redirect(url);
+    } catch (err) {
+      console.error('Google OAuth init error:', err);
+      return res.redirect(
+        'https://serviceos-web-zeta.vercel.app/login?error=oauth_init_failed',
+      );
+    }
   }
 
   @Public()
