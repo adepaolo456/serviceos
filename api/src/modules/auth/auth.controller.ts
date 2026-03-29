@@ -89,9 +89,15 @@ export class AuthController {
       const callbackUrl =
         this.configService.get<string>('GOOGLE_CALLBACK_URL') ||
         'https://serviceos-api.vercel.app/auth/google/callback';
-      const scope = encodeURIComponent('email profile');
-      const url = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${encodeURIComponent(callbackUrl)}&response_type=code&scope=${scope}&access_type=offline&prompt=consent`;
-      return res.redirect(url);
+      const params = new URLSearchParams({
+        client_id: clientId.trim(),
+        redirect_uri: callbackUrl.trim(),
+        response_type: 'code',
+        scope: 'email profile',
+        access_type: 'offline',
+        prompt: 'consent',
+      });
+      return res.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error('Google OAuth init error:', msg);
