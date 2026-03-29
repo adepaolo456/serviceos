@@ -15,6 +15,7 @@ import { DispatchModule } from './modules/dispatch/dispatch.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { MarketplaceModule } from './modules/marketplace/marketplace.module';
 import { SubscriptionsModule } from './modules/subscriptions/subscriptions.module';
+import { AdminModule } from './modules/admin/admin.module';
 import { JwtAuthGuard } from './common/guards';
 import { Tenant } from './modules/tenants/entities/tenant.entity';
 import { User } from './modules/auth/entities/user.entity';
@@ -73,6 +74,7 @@ import { MarketplaceBooking } from './modules/marketplace/entities/marketplace-b
     NotificationsModule,
     MarketplaceModule,
     SubscriptionsModule,
+    AdminModule,
   ],
   controllers: [AppController],
   providers: [
