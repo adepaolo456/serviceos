@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Search, Building2 } from "lucide-react";
 import { api } from "@/lib/api";
 
@@ -42,10 +42,11 @@ const statusBadge: Record<string, string> = {
 
 export default function TenantsPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [total, setTotal] = useState(0);
   const [search, setSearch] = useState("");
-  const [tierFilter, setTierFilter] = useState("all");
+  const [tierFilter, setTierFilter] = useState(searchParams.get("tier") || "all");
   const [loading, setLoading] = useState(true);
 
   const fetch = useCallback(async () => {
