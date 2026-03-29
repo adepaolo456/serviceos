@@ -63,6 +63,24 @@ export class User {
   @Column({ name: 'employee_status', nullable: true, default: 'active' })
   employee_status!: string;
 
+  @Column({ name: 'driver_rates', type: 'jsonb', nullable: true, default: '{}' })
+  driver_rates!: Record<string, unknown>;
+
+  @Column({ name: 'permissions', type: 'jsonb', nullable: true, default: '{}' })
+  permissions!: Record<string, unknown>;
+
+  @Column({ name: 'additional_phones', type: 'jsonb', nullable: true, default: '[]' })
+  additional_phones!: Array<{ label: string; number: string }>;
+
+  @Column({ name: 'additional_emails', type: 'jsonb', nullable: true, default: '[]' })
+  additional_emails!: Array<{ label: string; email: string }>;
+
+  @Column({ name: 'sms_opt_in', default: false })
+  sms_opt_in!: boolean;
+
+  @Column({ name: 'address', type: 'jsonb', nullable: true })
+  address!: Record<string, unknown> | null;
+
   @Column({ name: 'last_login_at', type: 'timestamptz', nullable: true })
   last_login_at!: Date;
 
