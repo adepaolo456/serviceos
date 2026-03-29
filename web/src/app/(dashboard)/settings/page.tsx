@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, type FormEvent } from "react";
+import { useState, useEffect, useCallback, type FormEvent } from "react";
 import {
   Building,
   Users,
@@ -126,6 +126,28 @@ function CompanyTab({ profile }: { profile: Profile | null }) {
   const [state, setState] = useState("");
   const [zip, setZip] = useState("");
   const [radius, setRadius] = useState("50");
+  const [saving, setSaving] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<"idle" | "success" | "error">("idle");
+
+  const handleSave = async () => {
+    setSaving(true);
+    setSaveStatus("idle");
+    try {
+      await api.patch("/auth/profile", {
+        companyName: name,
+        businessType,
+        address: { street, city, state, zip },
+        serviceRadius: Number(radius),
+      });
+      setSaveStatus("success");
+      setTimeout(() => setSaveStatus("idle"), 3000);
+    } catch {
+      setSaveStatus("error");
+      setTimeout(() => setSaveStatus("idle"), 3000);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const inputClass =
     "w-full rounded-lg border border-white/10 bg-dark-card px-4 py-2.5 text-sm text-white placeholder-muted outline-none transition-colors focus:border-brand";
@@ -243,8 +265,22 @@ function CompanyTab({ profile }: { profile: Profile | null }) {
         </div>
       </div>
 
-      <button className="rounded-lg bg-brand px-6 py-2.5 text-sm font-semibold text-dark-primary transition-colors hover:bg-brand-light">
-        Save Changes
+      {saveStatus === "success" && (
+        <div className="rounded-lg bg-brand/10 px-4 py-3 text-sm text-brand">
+          Settings saved successfully.
+        </div>
+      )}
+      {saveStatus === "error" && (
+        <div className="rounded-lg bg-red-500/10 px-4 py-3 text-sm text-red-400">
+          Failed to save settings. Please try again.
+        </div>
+      )}
+      <button
+        onClick={handleSave}
+        disabled={saving}
+        className="rounded-lg bg-brand px-6 py-2.5 text-sm font-semibold text-dark-primary transition-colors hover:bg-brand-light disabled:opacity-50"
+      >
+        {saving ? "Saving..." : "Save Changes"}
       </button>
     </div>
   );
