@@ -4,6 +4,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { CurrentUser, TenantId } from '../../common/decorators';
 import { Job } from '../jobs/entities/job.entity';
+import { Asset } from '../assets/entities/asset.entity';
 
 @ApiTags('Driver')
 @ApiBearerAuth()
@@ -11,6 +12,7 @@ import { Job } from '../jobs/entities/job.entity';
 export class DriverController {
   constructor(
     @InjectRepository(Job) private jobRepo: Repository<Job>,
+    @InjectRepository(Asset) private assetRepo: Repository<Asset>,
   ) {}
 
   @Get('today')
@@ -143,5 +145,38 @@ export class DriverController {
 
     await this.jobRepo.update({ id, tenant_id: tenantId }, { photos });
     return { message: 'Photo added', count: photos.length };
+  }
+
+  @Patch('jobs/:id/stage-at-yard')
+  @ApiOperation({ summary: 'Stage a picked-up container at the yard' })
+  async stageAtYard(
+    @CurrentUser('id') userId: string,
+    @TenantId() tenantId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: { wasteType?: string; notes?: string },
+  ) {
+    const job = await this.jobRepo.findOne({
+      where: { id, tenant_id: tenantId, assigned_driver_id: userId },
+      relations: ['asset'],
+    });
+    if (!job) throw new NotFoundException('Job not found or not assigned to you');
+
+    // Update job
+    await this.jobRepo.update(id, { dump_disposition: 'staged' });
+
+    // Update asset if exists
+    if (job.asset_id) {
+      await this.assetRepo.update(job.asset_id, {
+        status: 'full_staged',
+        staged_at: new Date(),
+        staged_from_job_id: id,
+        staged_waste_type: body.wasteType || null,
+        staged_notes: body.notes || null,
+        needs_dump: true,
+        current_location_type: 'yard',
+      } as any);
+    }
+
+    return this.jobRepo.findOne({ where: { id }, relations: ['asset', 'customer'] });
   }
 }

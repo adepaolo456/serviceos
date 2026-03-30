@@ -114,4 +114,23 @@ export class JobsController {
   ) {
     return this.jobsService.rescheduleJob(tenantId, id, body);
   }
+
+  @Patch(':id/stage-at-yard')
+  @ApiOperation({ summary: 'Stage container at yard (dispatcher)' })
+  stageAtYard(
+    @TenantId() tenantId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: { wasteType?: string; notes?: string },
+  ) {
+    return this.jobsService.stageAtYard(tenantId, id, body);
+  }
+
+  @Post('dump-run')
+  @ApiOperation({ summary: 'Create a dump run job for staged containers' })
+  createDumpRun(
+    @TenantId() tenantId: string,
+    @Body() body: { assetIds: string[]; dumpLocationId?: string; scheduledDate: string; timeWindow?: string; assignedDriverId?: string; notes?: string },
+  ) {
+    return this.jobsService.createDumpRun(tenantId, body);
+  }
 }
