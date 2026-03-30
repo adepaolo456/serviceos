@@ -70,7 +70,14 @@ export class DumpLocationsService {
 
   async addRate(tenantId: string, locationId: string, body: Record<string, unknown>) {
     await this.findOne(tenantId, locationId);
-    const rate = this.rateRepo.create({ ...body, dump_location_id: locationId } as Partial<DumpLocationRate>);
+    const rate = this.rateRepo.create({
+      dump_location_id: locationId,
+      waste_type: (body.wasteType || body.waste_type) as string,
+      waste_type_label: (body.wasteTypeLabel || body.waste_type_label) as string,
+      rate_per_ton: Number(body.ratePerTon ?? body.rate_per_ton ?? 0),
+      minimum_charge: body.minimumCharge != null ? Number(body.minimumCharge) : body.minimum_charge != null ? Number(body.minimum_charge) : null,
+      rate_type: ((body.rateType || body.rate_type) as string) || 'per_ton',
+    } as Partial<DumpLocationRate>);
     return this.rateRepo.save(rate);
   }
 
@@ -100,7 +107,15 @@ export class DumpLocationsService {
 
   async addSurcharge(tenantId: string, locationId: string, body: Record<string, unknown>) {
     await this.findOne(tenantId, locationId);
-    const sur = this.surRepo.create({ ...body, dump_location_id: locationId } as Partial<DumpLocationSurcharge>);
+    const sur = this.surRepo.create({
+      dump_location_id: locationId,
+      item_type: (body.itemType || body.item_type) as string,
+      label: body.label as string,
+      dump_charge: Number(body.dumpCharge ?? body.dump_charge ?? 0),
+      customer_charge: Number(body.customerCharge ?? body.customer_charge ?? 0),
+      charge_type: ((body.chargeType || body.charge_type) as string) || 'flat',
+      sort_order: Number(body.sortOrder ?? body.sort_order ?? 0),
+    } as Partial<DumpLocationSurcharge>);
     return this.surRepo.save(sur);
   }
 
