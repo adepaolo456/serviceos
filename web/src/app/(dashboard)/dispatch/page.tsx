@@ -150,6 +150,7 @@ export default function DispatchPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [quickViewJob, setQuickViewJob] = useState<DispatchJob | null>(null);
   const [dragOverCol, setDragOverCol] = useState<string | null>(null);
+  const [insertIdx, setInsertIdx] = useState<number | null>(null);
   const { toast } = useToast();
 
   const fetchBoard = useCallback(async (silent = false) => {
@@ -185,12 +186,12 @@ export default function DispatchPage() {
 
   /* ---- Native HTML5 Drag & Drop ---- */
 
-  const handleDragStart = (e: DragEvent, jobId: string) => {
-    e.dataTransfer.setData("text/plain", jobId);
+  const handleDragStart = (e: DragEvent, jobId: string, sourceColId: string) => {
+    e.dataTransfer.setData("application/x-job-id", jobId);
+    e.dataTransfer.setData("application/x-source-col", sourceColId);
     e.dataTransfer.effectAllowed = "move";
-    // Make the drag image slightly transparent
     if (e.currentTarget instanceof HTMLElement) {
-      e.currentTarget.style.opacity = "0.4";
+      e.currentTarget.style.opacity = "0.35";
     }
   };
 
@@ -199,37 +200,91 @@ export default function DispatchPage() {
       e.currentTarget.style.opacity = "1";
     }
     setDragOverCol(null);
+    setInsertIdx(null);
   };
 
   const handleColumnDragOver = (e: DragEvent, columnId: string) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
-    setDragOverCol(columnId);
-  };
+    if (dragOverCol !== columnId) setDragOverCol(columnId);
 
-  const handleColumnDragLeave = (e: DragEvent, columnId: string) => {
-    // Only clear if we're truly leaving the column (not entering a child)
-    const related = e.relatedTarget as HTMLElement | null;
-    const current = e.currentTarget as HTMLElement;
-    if (!related || !current.contains(related)) {
-      if (dragOverCol === columnId) setDragOverCol(null);
+    // Calculate insertion index based on cursor Y position within the card list
+    const colEl = (e.currentTarget as HTMLElement).querySelector("[data-card-list]");
+    if (colEl) {
+      const cards = Array.from(colEl.querySelectorAll("[data-job-card]"));
+      const y = e.clientY;
+      let idx = cards.length; // default: end
+      for (let i = 0; i < cards.length; i++) {
+        const rect = cards[i].getBoundingClientRect();
+        const mid = rect.top + rect.height / 2;
+        if (y < mid) { idx = i; break; }
+      }
+      setInsertIdx(idx);
+    } else {
+      setInsertIdx(0);
     }
   };
 
-  const handleColumnDrop = async (e: DragEvent, targetDriverId: string | null) => {
-    e.preventDefault();
-    setDragOverCol(null);
+  const handleColumnDragLeave = (e: DragEvent, columnId: string) => {
+    const related = e.relatedTarget as HTMLElement | null;
+    const current = e.currentTarget as HTMLElement;
+    if (!related || !current.contains(related)) {
+      if (dragOverCol === columnId) {
+        setDragOverCol(null);
+        setInsertIdx(null);
+      }
+    }
+  };
 
-    const jobId = e.dataTransfer.getData("text/plain");
+  const handleColumnDrop = async (e: DragEvent, targetDriverId: string | null, targetColId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const currentInsertIdx = insertIdx;
+    setDragOverCol(null);
+    setInsertIdx(null);
+
+    const jobId = e.dataTransfer.getData("application/x-job-id");
+    const sourceColId = e.dataTransfer.getData("application/x-source-col");
     if (!jobId || !board) return;
 
-    // Find the job and its current driver
+    // Find the job
     const allJobs = [...board.unassigned, ...board.drivers.flatMap(d => d.jobs)];
     const job = allJobs.find(j => j.id === jobId);
     if (!job) return;
 
     const currentDriverId = job.assigned_driver?.id || null;
-    if (currentDriverId === targetDriverId) return; // No change
+    const isSameColumn = sourceColId === targetColId;
+
+    if (isSameColumn && currentInsertIdx !== null) {
+      // Reorder within same column — update route_order
+      const colJobs = targetColId === "unassigned"
+        ? [...board.unassigned]
+        : [...(board.drivers.find(d => d.driver.id === targetDriverId)?.jobs || [])];
+      const oldIdx = colJobs.findIndex(j => j.id === jobId);
+      if (oldIdx === -1 || oldIdx === currentInsertIdx) return;
+
+      // Reorder locally
+      const [moved] = colJobs.splice(oldIdx, 1);
+      const newIdx = currentInsertIdx > oldIdx ? currentInsertIdx - 1 : currentInsertIdx;
+      colJobs.splice(newIdx, 0, moved);
+
+      // Update route_order via API (best-effort, no dedicated batch endpoint)
+      try {
+        for (let i = 0; i < colJobs.length; i++) {
+          if (colJobs[i].route_order !== i + 1) {
+            api.patch(`/jobs/${colJobs[i].id}`, { routeOrder: i + 1 }).catch(() => {});
+          }
+        }
+        toast("success", "Route order updated");
+        await fetchBoard(true);
+      } catch {
+        toast("error", "Failed to reorder");
+      }
+      return;
+    }
+
+    // Cross-column move — assign/unassign
+    if (currentDriverId === targetDriverId) return;
 
     try {
       await api.patch(`/jobs/${jobId}/assign`, { assignedDriverId: targetDriverId || null });
@@ -237,7 +292,7 @@ export default function DispatchPage() {
         const driver = board.drivers.find(d => d.driver.id === targetDriverId)?.driver;
         toast("success", `Assigned to ${driver?.firstName} ${driver?.lastName}`);
       } else {
-        toast("success", "Unassigned from driver");
+        toast("success", "Moved to Unassigned");
       }
       await fetchBoard(true);
     } catch {
@@ -363,12 +418,13 @@ export default function DispatchPage() {
                 drivers={board.drivers.map(d => d.driver)}
                 onAssign={handleAssign}
                 onQuickView={setQuickViewJob}
-                onDragStart={handleDragStart}
+                onDragStart={(e, jid) => handleDragStart(e, jid, "unassigned")}
                 onDragEnd={handleDragEndCleanup}
                 onDragOver={(e) => handleColumnDragOver(e, "unassigned")}
                 onDragLeave={(e) => handleColumnDragLeave(e, "unassigned")}
-                onDrop={(e) => handleColumnDrop(e, null)}
+                onDrop={(e) => handleColumnDrop(e, null, "unassigned")}
                 isDropTarget={dragOverCol === "unassigned"}
+                insertIdx={dragOverCol === "unassigned" ? insertIdx : null}
               />
               {/* Driver columns */}
               {board.drivers.map(col => {
@@ -388,12 +444,13 @@ export default function DispatchPage() {
                     phone={col.driver.phone}
                     jobs={filterJobs(col.jobs, filter, search)}
                     onQuickView={setQuickViewJob}
-                    onDragStart={handleDragStart}
+                    onDragStart={(e, jid) => handleDragStart(e, jid, col.driver.id)}
                     onDragEnd={handleDragEndCleanup}
                     onDragOver={(e) => handleColumnDragOver(e, col.driver.id)}
                     onDragLeave={(e) => handleColumnDragLeave(e, col.driver.id)}
-                    onDrop={(e) => handleColumnDrop(e, col.driver.id)}
+                    onDrop={(e) => handleColumnDrop(e, col.driver.id, col.driver.id)}
                     isDropTarget={dragOverCol === col.driver.id}
+                    insertIdx={dragOverCol === col.driver.id ? insertIdx : null}
                   />
                 );
               })}
@@ -528,7 +585,7 @@ function JobQuickViewContent({ job }: { job: DispatchJob }) {
 
 /* ---- Column ---- */
 
-function Column({ id, title, icon, count, accentCls, progress, phone, jobs, drivers, onAssign, onQuickView, onDragStart, onDragEnd, onDragOver, onDragLeave, onDrop, isDropTarget }: {
+function Column({ id, title, icon, count, accentCls, progress, phone, jobs, drivers, onAssign, onQuickView, onDragStart, onDragEnd, onDragOver, onDragLeave, onDrop, isDropTarget, insertIdx }: {
   id: string;
   title: string;
   icon: React.ReactNode;
@@ -546,6 +603,7 @@ function Column({ id, title, icon, count, accentCls, progress, phone, jobs, driv
   onDragLeave: (e: DragEvent) => void;
   onDrop: (e: DragEvent) => void;
   isDropTarget: boolean;
+  insertIdx: number | null;
 }) {
   // Collapse state persisted in localStorage
   const storageKey = `dispatch-col-${id}`;
@@ -614,7 +672,7 @@ function Column({ id, title, icon, count, accentCls, progress, phone, jobs, driv
       </div>
 
       {/* Job cards — scrollable */}
-      <div className="flex-1 overflow-y-auto p-2 space-y-1.5 max-h-[calc(100vh-280px)]">
+      <div className="flex-1 overflow-y-auto p-2 max-h-[calc(100vh-280px)]" data-card-list>
         {jobs.length === 0 ? (
           <div className="py-8 text-center">
             {id === "unassigned" ? (
@@ -631,18 +689,31 @@ function Column({ id, title, icon, count, accentCls, progress, phone, jobs, driv
             )}
           </div>
         ) : (
-          jobs.map((job, i) => (
-            <JobCard
-              key={job.id}
-              job={job}
-              order={i + 1}
-              drivers={drivers}
-              onAssign={onAssign}
-              onQuickView={onQuickView}
-              onDragStart={onDragStart}
-              onDragEnd={onDragEnd}
-            />
-          ))
+          <div className="space-y-1.5">
+            {jobs.map((job, i) => (
+              <div key={job.id}>
+                {/* Insertion line before this card */}
+                {isDropTarget && insertIdx === i && (
+                  <div className="h-0.5 bg-[#2ECC71] rounded-full mx-1 mb-1.5 shadow-[0_0_6px_rgba(46,204,113,0.5)]" />
+                )}
+                <div data-job-card>
+                  <JobCard
+                    job={job}
+                    order={i + 1}
+                    drivers={drivers}
+                    onAssign={onAssign}
+                    onQuickView={onQuickView}
+                    onDragStart={onDragStart}
+                    onDragEnd={onDragEnd}
+                  />
+                </div>
+              </div>
+            ))}
+            {/* Insertion line at the end */}
+            {isDropTarget && insertIdx !== null && insertIdx >= jobs.length && (
+              <div className="h-0.5 bg-[#2ECC71] rounded-full mx-1 mt-0.5 shadow-[0_0_6px_rgba(46,204,113,0.5)]" />
+            )}
+          </div>
         )}
       </div>
     </div>
