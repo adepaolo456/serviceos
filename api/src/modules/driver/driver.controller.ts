@@ -62,7 +62,7 @@ export class DriverController {
     @CurrentUser('id') userId: string,
     @TenantId() tenantId: string,
     @Param('id', ParseUUIDPipe) id: string,
-    @Body() body: { status: string },
+    @Body() body: { status: string; signatureUrl?: string },
   ) {
     const job = await this.jobRepo.findOne({
       where: { id, tenant_id: tenantId, assigned_driver_id: userId },
@@ -89,6 +89,48 @@ export class DriverController {
     }
 
     await this.jobRepo.update({ id, tenant_id: tenantId }, updates);
+
+    // Log on-my-way notification when status changes to en_route
+    if (body.status === 'en_route') {
+      const jobWithCustomer = await this.jobRepo.findOne({
+        where: { id },
+        relations: ['customer'],
+      });
+      if (jobWithCustomer?.customer) {
+        // In the future, send actual SMS/email here
+        console.log(`[driver] On-my-way notification: ${jobWithCustomer.customer.first_name} ${jobWithCustomer.customer.last_name} — driver ${userId} en route to job ${id}`);
+      }
+    }
+
+    // Handle signature on completion
+    if (body.signatureUrl) {
+      await this.jobRepo.update({ id, tenant_id: tenantId }, { signature_url: body.signatureUrl });
+    }
+
     return this.jobRepo.findOne({ where: { id }, relations: ['customer', 'asset'] });
+  }
+
+  @Patch('jobs/:id/photos')
+  @ApiOperation({ summary: 'Add a photo to a job' })
+  async addPhoto(
+    @CurrentUser('id') userId: string,
+    @TenantId() tenantId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: { photo: string; type: string },
+  ) {
+    const job = await this.jobRepo.findOne({
+      where: { id, tenant_id: tenantId, assigned_driver_id: userId },
+    });
+    if (!job) throw new Error('Job not found or not assigned to you');
+
+    const photos = Array.isArray(job.photos) ? [...job.photos] : [];
+    photos.push({
+      uri: body.photo.startsWith('data:') ? body.photo : `data:image/jpeg;base64,${body.photo}`,
+      type: body.type || 'other',
+      takenAt: new Date().toISOString(),
+    });
+
+    await this.jobRepo.update({ id, tenant_id: tenantId }, { photos });
+    return { message: 'Photo added', count: photos.length };
   }
 }

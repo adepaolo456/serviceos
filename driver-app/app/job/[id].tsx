@@ -9,10 +9,19 @@ import {
   Alert,
   Linking,
   Platform,
+  Image,
+  Modal,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { getJobDetail, updateJobStatus } from '../../src/api';
+import * as ImagePicker from 'expo-image-picker';
+import { getJobDetail, updateJobStatus, uploadJobPhoto } from '../../src/api';
+
+interface PhotoEntry {
+  uri: string;
+  takenAt: string;
+  type: string;
+}
 
 interface Job {
   id: string;
@@ -39,6 +48,8 @@ interface Job {
   asset: { identifier?: string; subtype?: string; size?: string } | null;
   notes?: string;
   route_order: number | null;
+  photos?: PhotoEntry[];
+  signature_url?: string;
 }
 
 const TYPE_COLORS: Record<string, string> = {
@@ -56,6 +67,8 @@ const STATUS_FLOW: Record<string, { next: string; label: string; icon: string }>
   in_progress: { next: 'completed', label: 'Complete Job', icon: 'checkmark-done' },
 };
 
+const PHOTO_TYPES = ['Before', 'After', 'Damage', 'Dump Slip'];
+
 function fmtTime(t: string | null) {
   if (!t) return '';
   const [h, m] = t.split(':');
@@ -69,12 +82,20 @@ export default function JobDetailScreen() {
   const [job, setJob] = useState<Job | null>(null);
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
+  const [photos, setPhotos] = useState<PhotoEntry[]>([]);
+  const [signed, setSigned] = useState(false);
 
   useEffect(() => {
     (async () => {
       try {
         const data = await getJobDetail(id);
         setJob(data);
+        if (data.photos && Array.isArray(data.photos)) {
+          setPhotos(data.photos);
+        }
+        if (data.signature_url) {
+          setSigned(true);
+        }
       } catch {
         /* ignore */
       } finally {
@@ -99,7 +120,11 @@ export default function JobDetailScreen() {
             setUpdating(true);
             try {
               const updated = await updateJobStatus(job.id, transition.next);
-              setJob((prev) => (prev ? { ...prev, status: updated.status || transition.next } : prev));
+              const newStatus = updated.status || transition.next;
+              setJob((prev) => (prev ? { ...prev, status: newStatus } : prev));
+              if (newStatus === 'en_route') {
+                Alert.alert('On My Way!', 'Customer notified — on your way!');
+              }
             } catch {
               Alert.alert('Error', 'Failed to update status');
             } finally {
@@ -119,9 +144,95 @@ export default function JobDetailScreen() {
       .join(', ');
     const url =
       Platform.OS === 'ios'
-        ? `maps:?q=${encodeURIComponent(query)}`
-        : `geo:0,0?q=${encodeURIComponent(query)}`;
+        ? `maps://?daddr=${encodeURIComponent(query)}`
+        : `google.navigation:q=${encodeURIComponent(query)}`;
     Linking.openURL(url);
+  };
+
+  const pickPhotoType = (callback: (type: string) => void) => {
+    Alert.alert('Photo Type', 'Select the type of photo', [
+      ...PHOTO_TYPES.map((t) => ({
+        text: t,
+        onPress: () => callback(t),
+      })),
+      { text: 'Cancel', style: 'cancel' as const },
+    ]);
+  };
+
+  const captureFromCamera = () => {
+    pickPhotoType(async (photoType) => {
+      const perm = await ImagePicker.requestCameraPermissionsAsync();
+      if (!perm.granted) {
+        Alert.alert('Permission required', 'Camera access is needed to take photos.');
+        return;
+      }
+      const result = await ImagePicker.launchCameraAsync({
+        base64: true,
+        quality: 0.7,
+      });
+      if (!result.canceled && result.assets?.[0]) {
+        const asset = result.assets[0];
+        const base64 = asset.base64 || '';
+        const newPhoto: PhotoEntry = {
+          uri: asset.uri,
+          takenAt: new Date().toISOString(),
+          type: photoType,
+        };
+        setPhotos((prev) => [...prev, newPhoto]);
+        if (job) {
+          try {
+            await uploadJobPhoto(job.id, base64, photoType);
+          } catch {
+            /* photo saved locally */
+          }
+        }
+      }
+    });
+  };
+
+  const pickFromGallery = () => {
+    pickPhotoType(async (photoType) => {
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) {
+        Alert.alert('Permission required', 'Gallery access is needed to pick photos.');
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        base64: true,
+        quality: 0.7,
+      });
+      if (!result.canceled && result.assets?.[0]) {
+        const asset = result.assets[0];
+        const base64 = asset.base64 || '';
+        const newPhoto: PhotoEntry = {
+          uri: asset.uri,
+          takenAt: new Date().toISOString(),
+          type: photoType,
+        };
+        setPhotos((prev) => [...prev, newPhoto]);
+        if (job) {
+          try {
+            await uploadJobPhoto(job.id, base64, photoType);
+          } catch {
+            /* photo saved locally */
+          }
+        }
+      }
+    });
+  };
+
+  const handleMarkSigned = () => {
+    Alert.alert(
+      'Capture Signature',
+      'Mark this job as signed by the customer?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Confirm Signature',
+          onPress: () => setSigned(true),
+        },
+      ]
+    );
   };
 
   if (loading) {
@@ -145,6 +256,7 @@ export default function JobDetailScreen() {
 
   const addr = job.service_address;
   const transition = STATUS_FLOW[job.status];
+  const showSignature = ['arrived', 'in_progress', 'completed'].includes(job.status);
 
   return (
     <View style={styles.container}>
@@ -275,6 +387,51 @@ export default function JobDetailScreen() {
             <Text style={styles.notesText}>{job.notes}</Text>
           </View>
         )}
+
+        {/* Photos Section */}
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Photos ({photos.length})</Text>
+          {photos.length > 0 && (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.photoScroll}>
+              {photos.map((p, i) => (
+                <View key={i} style={styles.photoThumbWrap}>
+                  <Image source={{ uri: p.uri }} style={styles.photoThumb} />
+                  <Text style={styles.photoTypeLabel}>{p.type}</Text>
+                </View>
+              ))}
+            </ScrollView>
+          )}
+          <View style={styles.photoActions}>
+            <TouchableOpacity style={styles.photoCameraBtn} onPress={captureFromCamera}>
+              <Ionicons name="camera" size={16} color="#fff" />
+              <Text style={styles.photoBtnText}>Camera</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.photoGalleryBtn} onPress={pickFromGallery}>
+              <Ionicons name="images" size={16} color="#2ECC71" />
+              <Text style={styles.photoGalleryBtnText}>Gallery</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Signature Section */}
+        {showSignature && (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Signature</Text>
+            {job.signature_url ? (
+              <Image source={{ uri: job.signature_url }} style={styles.signatureImage} resizeMode="contain" />
+            ) : signed ? (
+              <View style={styles.signedBanner}>
+                <Ionicons name="checkmark-circle" size={18} color="#22C55E" />
+                <Text style={styles.signedText}>Signed</Text>
+              </View>
+            ) : (
+              <TouchableOpacity style={styles.signatureBtn} onPress={handleMarkSigned}>
+                <Ionicons name="pencil" size={16} color="#fff" />
+                <Text style={styles.signatureBtnText}>Capture Signature</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
       </ScrollView>
 
       {/* Action Button */}
@@ -396,6 +553,59 @@ const styles = StyleSheet.create({
   },
   navigateBtnText: { fontSize: 14, fontWeight: '600', color: '#fff' },
   notesText: { fontSize: 14, color: '#fff', lineHeight: 20 },
+  // Photos
+  photoScroll: { marginBottom: 10 },
+  photoThumbWrap: { marginRight: 8, alignItems: 'center' },
+  photoThumb: { width: 80, height: 80, borderRadius: 8, backgroundColor: '#1E2D45' },
+  photoTypeLabel: { fontSize: 9, color: '#7A8BA3', marginTop: 3, textTransform: 'uppercase' },
+  photoActions: { flexDirection: 'row', gap: 8 },
+  photoCameraBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#2ECC71',
+    borderRadius: 10,
+    paddingVertical: 10,
+  },
+  photoBtnText: { fontSize: 13, fontWeight: '600', color: '#fff' },
+  photoGalleryBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#111C2E',
+    borderRadius: 10,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: '#1E2D45',
+  },
+  photoGalleryBtnText: { fontSize: 13, fontWeight: '600', color: '#2ECC71' },
+  // Signature
+  signatureImage: { width: '100%', height: 120, borderRadius: 8, backgroundColor: '#fff' },
+  signatureBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#2ECC71',
+    borderRadius: 10,
+    paddingVertical: 10,
+  },
+  signatureBtnText: { fontSize: 13, fontWeight: '600', color: '#fff' },
+  signedBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(34,197,94,0.1)',
+    borderRadius: 10,
+    paddingVertical: 10,
+  },
+  signedText: { fontSize: 14, fontWeight: '600', color: '#22C55E' },
+  // Action bar
   actionBar: {
     paddingHorizontal: 20,
     paddingBottom: 36,
