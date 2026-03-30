@@ -455,9 +455,9 @@ export default function InvoiceDetailPage({
                 <span className="text-muted">Paid</span>
                 <span className="text-brand">{fmt(invoice.amount_paid)}</span>
               </div>
-              <div className="flex justify-between border-t border-[#1E2D45] pt-2.5 font-bold text-white text-base">
+              <div className={`flex justify-between border-t border-[#1E2D45] pt-2.5 font-bold text-base ${Number(invoice.balance_due) <= 0 ? "text-emerald-400" : invoice.status === "overdue" ? "text-red-400" : "text-white"}`}>
                 <span>Balance Due</span>
-                <span>{fmt(invoice.balance_due)}</span>
+                <span>{Number(invoice.balance_due) <= 0 ? "PAID" : fmt(invoice.balance_due)}</span>
               </div>
             </div>
           </div>
