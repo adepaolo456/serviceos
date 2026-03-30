@@ -5,6 +5,7 @@ import { Repository } from 'typeorm';
 import { CurrentUser, TenantId } from '../../common/decorators';
 import { Job } from '../jobs/entities/job.entity';
 import { Asset } from '../assets/entities/asset.entity';
+import { JobsService } from '../jobs/jobs.service';
 
 @ApiTags('Driver')
 @ApiBearerAuth()
@@ -13,6 +14,7 @@ export class DriverController {
   constructor(
     @InjectRepository(Job) private jobRepo: Repository<Job>,
     @InjectRepository(Asset) private assetRepo: Repository<Asset>,
+    private jobsService: JobsService,
   ) {}
 
   @Get('today')
@@ -95,10 +97,12 @@ export class DriverController {
     if (body.dropOffAssetId) updates.drop_off_asset_id = body.dropOffAssetId;
     if (body.pickUpAssetId) updates.pick_up_asset_id = body.pickUpAssetId;
 
-    // Handle failed trip
+    // For failed status, delegate to the main jobs service (creates replacement job + invoice)
     if (body.status === 'failed') {
-      updates.is_failed_trip = true;
-      updates.failed_reason = body.reason || 'No reason provided';
+      return this.jobsService.changeStatus(tenantId, id, {
+        status: 'failed',
+        cancellationReason: body.reason || 'No reason provided',
+      } as any);
     }
 
     await this.jobRepo.update({ id, tenant_id: tenantId }, updates);

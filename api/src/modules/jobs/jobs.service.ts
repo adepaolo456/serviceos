@@ -240,6 +240,8 @@ export class JobsService {
     if (dto.status === 'failed') {
       job.is_failed_trip = true;
       job.failed_reason = (dto as any).reason || (dto as any).cancellationReason || '';
+      job.failed_reason_code = (dto as any).reasonCode || null;
+      job.failed_at = now;
       job.cancelled_at = now;
 
       // Auto-create replacement job
