@@ -414,7 +414,7 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
                   <span className="text-xs font-medium uppercase tracking-wider text-muted">Customer</span>
                 </div>
                 <p className="text-sm font-semibold text-white">{job.customer.first_name} {job.customer.last_name}</p>
-                {job.customer.phone && <p className="text-xs text-muted mt-0.5">{job.customer.phone}</p>}
+                {job.customer.phone && <a href={`tel:${job.customer.phone}`} className="block text-xs text-muted mt-0.5 hover:text-brand">{job.customer.phone}</a>}
                 {job.customer.email && <p className="text-xs text-muted">{job.customer.email}</p>}
               </div>
             </Link>
@@ -429,7 +429,7 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
             {job.assigned_driver ? (
               <>
                 <p className="text-sm font-semibold text-white">{job.assigned_driver.first_name} {job.assigned_driver.last_name}</p>
-                {job.assigned_driver.phone && <p className="text-xs text-muted mt-0.5">{job.assigned_driver.phone}</p>}
+                {job.assigned_driver.phone && <a href={`tel:${job.assigned_driver.phone}`} className="block text-xs text-muted mt-0.5 hover:text-brand">{job.assigned_driver.phone}</a>}
               </>
             ) : (
               <p className="text-sm font-medium text-red-400">Unassigned</p>

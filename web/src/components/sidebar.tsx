@@ -18,6 +18,7 @@ import {
   BarChart3,
   ShieldCheck,
   Store,
+  CarFront,
 } from "lucide-react";
 import { api } from "@/lib/api";
 
@@ -37,6 +38,7 @@ const navigation = [
   { name: "Invoices", href: "/invoices", icon: FileText },
   { name: "Pricing", href: "/pricing", icon: DollarSign },
   { name: "Team", href: "/team", icon: Users },
+  { name: "Vehicles", href: "/vehicles", icon: CarFront },
   { name: "Analytics", href: "/analytics", icon: BarChart3 },
   { name: "Marketplace", href: "/marketplace", icon: Store },
   { name: "Settings", href: "/settings", icon: Settings },

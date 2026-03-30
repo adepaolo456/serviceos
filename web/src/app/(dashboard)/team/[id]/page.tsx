@@ -154,7 +154,7 @@ export default function EmployeeDetailPage({ params }: { params: Promise<{ id: s
           <Card title="Emergency Contact">
             {emp.emergencyContact ? (<>
               <Row label="Name" value={emp.emergencyContact.name || "—"} />
-              <Row label="Phone" value={emp.emergencyContact.phone ? fmtPhone(emp.emergencyContact.phone) : "—"} />
+              <Row label="Phone" value={emp.emergencyContact.phone ? <a href={`tel:${emp.emergencyContact.phone}`} className="hover:text-brand">{fmtPhone(emp.emergencyContact.phone)}</a> : "—"} />
               <Row label="Relation" value={emp.emergencyContact.relationship || "—"} />
             </>) : <p className="text-xs text-muted py-2">Not set</p>}
           </Card>

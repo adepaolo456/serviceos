@@ -7,6 +7,7 @@ import { ToastProvider } from "@/components/toast";
 import { useTheme } from "@/components/theme-provider";
 import KeyboardShortcuts from "@/components/keyboard-shortcuts";
 import { Moon, Sun } from "lucide-react";
+import NotificationBell from "@/components/notification-bell";
 
 function ThemeToggle() {
   const { theme, cycleTheme } = useTheme();
@@ -42,6 +43,7 @@ export default function DashboardLayout({
         <main className="md:pl-64">
           <div className="mx-auto max-w-7xl px-4 py-6 md:px-8 pt-16 md:pt-6">{children}</div>
         </main>
+        <NotificationBell />
         <ThemeToggle />
         <KeyboardShortcuts open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
       </div>

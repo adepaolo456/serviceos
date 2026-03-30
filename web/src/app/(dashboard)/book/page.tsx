@@ -443,7 +443,7 @@ export default function BookingPage() {
                   <button key={c.id} onClick={() => selectCustomer(c)}
                     className="flex w-full items-center justify-between px-4 py-2.5 text-sm hover:bg-dark-card-hover transition-colors">
                     <span className="font-medium text-white">{c.first_name} {c.last_name}</span>
-                    <span className="text-xs text-muted">{c.phone || c.email}</span>
+                    <span className="text-xs text-muted">{c.phone ? <a href={`tel:${c.phone}`} className="hover:text-brand" onClick={(e) => e.stopPropagation()}>{c.phone}</a> : c.email}</span>
                   </button>
                 ))}
               </div>

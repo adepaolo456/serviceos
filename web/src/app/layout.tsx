@@ -18,6 +18,15 @@ const dmSans = DM_Sans({
 export const metadata: Metadata = {
   title: "ServiceOS",
   description: "Service business management platform",
+  icons: {
+    icon: "/favicon.svg",
+    apple: "/apple-touch-icon.svg",
+  },
+  openGraph: {
+    title: "ServiceOS",
+    description: "Service business management platform",
+    images: [{ url: "/og-image.svg", width: 1200, height: 630 }],
+  },
 };
 
 export default function RootLayout({

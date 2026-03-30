@@ -541,7 +541,7 @@ function QuickJobForm({ onSuccess }: { onSuccess: () => void }) {
                     <button key={c.id} onClick={() => { setCustomerId(c.id); setCustomerName(`${c.first_name} ${c.last_name}`); setCustomerSearch(""); }}
                       className="flex w-full items-center justify-between px-4 py-2.5 text-sm text-foreground hover:bg-dark-card-hover">
                       <span className="font-medium text-white">{c.first_name} {c.last_name}</span>
-                      {c.phone && <span className="text-xs text-muted">{c.phone}</span>}
+                      {c.phone && <a href={`tel:${c.phone}`} className="text-xs text-muted hover:text-brand" onClick={(e) => e.stopPropagation()}>{c.phone}</a>}
                     </button>
                   ))}
                 </div>
