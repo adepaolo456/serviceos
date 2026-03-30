@@ -111,6 +111,11 @@ export class CustomersService {
     if (dto.notes !== undefined) customer.notes = dto.notes;
     if (dto.tags !== undefined) customer.tags = dto.tags;
     if (dto.leadSource !== undefined) customer.lead_source = dto.leadSource;
+    if (dto.pricingTier !== undefined) customer.pricing_tier = dto.pricingTier;
+    if (dto.discountPercentage !== undefined) customer.discount_percentage = dto.discountPercentage;
+    if (dto.exemptExtraDayCharges !== undefined) customer.exempt_extra_day_charges = dto.exemptExtraDayCharges;
+    if (dto.customPricing !== undefined) customer.custom_pricing = dto.customPricing;
+    if (dto.pricingNotes !== undefined) customer.pricing_notes = dto.pricingNotes;
 
     return this.customersRepository.save(customer);
   }

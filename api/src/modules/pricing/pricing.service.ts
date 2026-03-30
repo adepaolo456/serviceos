@@ -6,6 +6,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { PricingRule } from './entities/pricing-rule.entity';
+import { PricingTemplate } from './entities/pricing-template.entity';
 import { Yard } from '../yards/yard.entity';
 import {
   CreatePricingRuleDto,
@@ -21,6 +22,8 @@ export class PricingService {
     private pricingRulesRepository: Repository<PricingRule>,
     @InjectRepository(Yard)
     private yardsRepository: Repository<Yard>,
+    @InjectRepository(PricingTemplate)
+    private templateRepo: Repository<PricingTemplate>,
   ) {}
 
   async create(
@@ -273,6 +276,36 @@ export class PricingService {
         overagePerTon: Number(rule.overage_per_ton),
       },
     };
+  }
+
+  async listTemplates(tenantId: string) {
+    return this.templateRepo.find({ where: { tenant_id: tenantId, is_active: true }, order: { name: 'ASC' } });
+  }
+
+  async createTemplate(tenantId: string, body: Record<string, unknown>) {
+    const template = this.templateRepo.create({
+      tenant_id: tenantId,
+      name: body.name as string,
+      discount_percentage: body.discountPercentage != null ? Number(body.discountPercentage) : null,
+      exempt_extra_day_charges: !!body.exemptExtraDayCharges,
+      custom_pricing: (body.customPricing || body.custom_pricing) as Record<string, unknown> || null,
+    } as Partial<PricingTemplate>);
+    return this.templateRepo.save(template);
+  }
+
+  async updateTemplate(id: string, body: Record<string, unknown>) {
+    const template = await this.templateRepo.findOneBy({ id });
+    if (!template) throw new NotFoundException('Template not found');
+    if (body.name !== undefined) template.name = body.name as string;
+    if (body.discountPercentage !== undefined) template.discount_percentage = Number(body.discountPercentage);
+    if (body.exemptExtraDayCharges !== undefined) template.exempt_extra_day_charges = !!body.exemptExtraDayCharges;
+    if (body.customPricing !== undefined) template.custom_pricing = body.customPricing as Record<string, unknown>;
+    return this.templateRepo.save(template);
+  }
+
+  async deleteTemplate(id: string) {
+    await this.templateRepo.update(id, { is_active: false });
+    return { message: 'Deleted' };
   }
 
   private haversine(

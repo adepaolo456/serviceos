@@ -147,6 +147,12 @@ export class Job {
   @Column({ name: 'overdue_notification_count', type: 'int', default: 0 })
   overdue_notification_count!: number;
 
+  @Column({ name: 'discount_percentage', type: 'decimal', precision: 5, scale: 2, nullable: true })
+  discount_percentage!: number;
+
+  @Column({ name: 'discount_amount', type: 'decimal', precision: 10, scale: 2, nullable: true })
+  discount_amount!: number;
+
   @Column({ name: 'dump_disposition', default: 'pending' })
   dump_disposition!: string;
 

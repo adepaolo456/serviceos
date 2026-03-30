@@ -74,4 +74,28 @@ export class PricingController {
   remove(@TenantId() tenantId: string, @Param('id', ParseUUIDPipe) id: string) {
     return this.pricingService.remove(tenantId, id);
   }
+
+  @Get('pricing-templates')
+  @ApiOperation({ summary: 'List pricing templates' })
+  listTemplates(@TenantId() tenantId: string) {
+    return this.pricingService.listTemplates(tenantId);
+  }
+
+  @Post('pricing-templates')
+  @ApiOperation({ summary: 'Create pricing template' })
+  createTemplate(@TenantId() tenantId: string, @Body() body: Record<string, unknown>) {
+    return this.pricingService.createTemplate(tenantId, body);
+  }
+
+  @Patch('pricing-templates/:id')
+  @ApiOperation({ summary: 'Update pricing template' })
+  updateTemplate(@TenantId() tenantId: string, @Param('id') id: string, @Body() body: Record<string, unknown>) {
+    return this.pricingService.updateTemplate(id, body);
+  }
+
+  @Delete('pricing-templates/:id')
+  @ApiOperation({ summary: 'Delete pricing template' })
+  deleteTemplate(@TenantId() tenantId: string, @Param('id') id: string) {
+    return this.pricingService.deleteTemplate(id);
+  }
 }

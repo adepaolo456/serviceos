@@ -43,13 +43,17 @@ export class AutomationService {
       const rate = Number(job.extra_day_rate) || 0;
       const charges = extraDays * rate;
 
+      // Check if customer is exempt from extra day charges
+      const isExempt = job.customer?.exempt_extra_day_charges;
+      const finalCharges = isExempt ? 0 : charges;
+
       await this.jobRepo.update(job.id, {
         extra_days: extraDays,
-        extra_day_charges: charges,
+        extra_day_charges: finalCharges,
         is_overdue: true,
       });
 
-      totalExtraCharges += charges;
+      totalExtraCharges += finalCharges;
 
       // Send notification if not notified or last notification was 3+ days ago
       const shouldNotify = !job.overdue_notified_at ||
