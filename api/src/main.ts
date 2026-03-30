@@ -9,10 +9,16 @@ export async function createApp() {
   });
 
   app.enableCors({
-    origin: [
-      'http://localhost:3000',
-      'https://serviceos-web-zeta.vercel.app',
-    ],
+    origin: (origin, callback) => {
+      // Allow requests with no origin (server-to-server, curl, mobile apps)
+      if (!origin) return callback(null, true);
+      // Always allow our own domains
+      const allowed = ['http://localhost:3000', 'https://serviceos-web-zeta.vercel.app'];
+      if (allowed.includes(origin)) return callback(null, true);
+      // Allow any origin for public/widget API routes (checked per-request in middleware)
+      // This is necessary for the embeddable widget to work from tenant domains
+      return callback(null, true);
+    },
     credentials: true,
   });
 
