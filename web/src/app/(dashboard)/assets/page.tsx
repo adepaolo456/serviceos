@@ -14,17 +14,13 @@ import {
   List,
   Search,
   MoreHorizontal,
-  ArrowUpDown,
   AlertTriangle,
-  Clock,
-  Calendar,
-  ChevronRight,
   Eye,
-  Shuffle,
-  CalendarClock,
   ClipboardList,
   Shield,
   Timer,
+  Download,
+  ChevronDown,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import SlideOver from "@/components/slide-over";
@@ -56,21 +52,6 @@ interface AssetsResponse {
   meta: { total: number; page: number; limit: number; totalPages: number };
 }
 
-interface StatusCounts {
-  total: number;
-  available: number;
-  on_site: number;
-  reserved: number;
-  maintenance: number;
-}
-
-interface AvailabilityDay {
-  date: string;
-  subtype: string;
-  total: number;
-  availableOnDate: number;
-}
-
 interface MaintenanceRecord {
   id: string;
   date: string;
@@ -80,7 +61,20 @@ interface MaintenanceRecord {
   next_due?: string;
 }
 
+interface SizeGroup {
+  size: string;
+  assets: Asset[];
+  total: number;
+  available: number;
+  deployed: number;
+  maintenance: number;
+  reserved: number;
+  dailyRate: number;
+}
+
 /* ─── Constants ─── */
+
+const SIZES = ["10yd", "15yd", "20yd", "30yd", "40yd"] as const;
 
 const STATUS_FILTERS = ["all", "available", "on_site", "reserved", "maintenance"] as const;
 const STATUS_LABELS: Record<string, string> = {
@@ -90,12 +84,14 @@ const STATUS_LABELS: Record<string, string> = {
   reserved: "Reserved",
   maintenance: "Maintenance",
   in_transit: "In Transit",
+  deployed: "Deployed",
   retired: "Retired",
 };
 
 const STATUS_BADGE: Record<string, { className: string; dot: string }> = {
   available: { className: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20", dot: "bg-emerald-400" },
   on_site: { className: "bg-yellow-500/10 text-yellow-400 border-yellow-500/20", dot: "bg-yellow-400" },
+  deployed: { className: "bg-yellow-500/10 text-yellow-400 border-yellow-500/20", dot: "bg-yellow-400" },
   reserved: { className: "bg-blue-500/10 text-blue-400 border-blue-500/20", dot: "bg-blue-400" },
   in_transit: { className: "bg-purple-500/10 text-purple-400 border-purple-500/20", dot: "bg-purple-400" },
   maintenance: { className: "bg-red-500/10 text-red-400 border-red-500/20", dot: "bg-red-400" },
@@ -109,20 +105,13 @@ const CONDITION_BADGE: Record<string, string> = {
   poor: "bg-red-500/10 text-red-400",
 };
 
-const SIZE_COLORS: Record<string, string> = {
-  "10yd": "bg-sky-500/10 text-sky-400 border-sky-500/20",
-  "15yd": "bg-indigo-500/10 text-indigo-400 border-indigo-500/20",
-  "20yd": "bg-violet-500/10 text-violet-400 border-violet-500/20",
-  "30yd": "bg-amber-500/10 text-amber-400 border-amber-500/20",
-  "40yd": "bg-rose-500/10 text-rose-400 border-rose-500/20",
+const SIZE_ACCENT: Record<string, { border: string; glow: string; bg: string; text: string }> = {
+  "10yd": { border: "border-sky-500/50", glow: "shadow-sky-500/20", bg: "bg-sky-500", text: "text-sky-400" },
+  "15yd": { border: "border-indigo-500/50", glow: "shadow-indigo-500/20", bg: "bg-indigo-500", text: "text-indigo-400" },
+  "20yd": { border: "border-violet-500/50", glow: "shadow-violet-500/20", bg: "bg-violet-500", text: "text-violet-400" },
+  "30yd": { border: "border-amber-500/50", glow: "shadow-amber-500/20", bg: "bg-amber-500", text: "text-amber-400" },
+  "40yd": { border: "border-rose-500/50", glow: "shadow-rose-500/20", bg: "bg-rose-500", text: "text-rose-400" },
 };
-
-const SORT_OPTIONS = [
-  { value: "identifier", label: "Identifier" },
-  { value: "status", label: "Status" },
-  { value: "subtype", label: "Size" },
-  { value: "created_at", label: "Date Added" },
-] as const;
 
 const SUBTYPES_BY_TYPE: Record<string, { value: string; label: string }[]> = {
   dumpster: [
@@ -183,81 +172,79 @@ function getDeployedInfo(asset: Asset): { customerName: string; address: string;
   };
 }
 
+function exportCSV(assets: Asset[]) {
+  const headers = ["Identifier", "Type", "Size", "Status", "Condition", "Daily Rate", "Weight Capacity", "Location", "Notes"];
+  const rows = assets.map((a) => [
+    a.identifier,
+    a.asset_type,
+    a.subtype,
+    a.status,
+    a.condition,
+    a.daily_rate,
+    a.weight_capacity,
+    a.current_location?.address || a.current_location_type || "Yard",
+    (a.notes || "").replace(/,/g, ";"),
+  ]);
+  const csv = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
+  const blob = new Blob([csv], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `inventory-${new Date().toISOString().split("T")[0]}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 /* ─── Main Page ─── */
 
 export default function AssetsPage() {
   const [assets, setAssets] = useState<Asset[]>([]);
-  const [total, setTotal] = useState(0);
-  const [statusCounts, setStatusCounts] = useState<StatusCounts>({ total: 0, available: 0, on_site: 0, reserved: 0, maintenance: 0 });
+  const [loading, setLoading] = useState(true);
+  const [selectedSize, setSelectedSize] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
-  const [sortBy, setSortBy] = useState("identifier");
-  const [page, setPage] = useState(1);
-  const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState<"grid" | "list">("list");
   const [createOpen, setCreateOpen] = useState(false);
+  const [createPrefilledSize, setCreatePrefilledSize] = useState<string | null>(null);
   const [detailAsset, setDetailAsset] = useState<Asset | null>(null);
-  const [forecast, setForecast] = useState<AvailabilityDay[]>([]);
   const { toast } = useToast();
 
-  // Fetch utilization counts
-  const fetchCounts = useCallback(async () => {
-    try {
-      const stats: { status: string; count: number }[] = await api.get("/assets/utilization");
-      const counts: StatusCounts = { total: 0, available: 0, on_site: 0, reserved: 0, maintenance: 0 };
-      stats.forEach((s) => {
-        counts.total += s.count;
-        if (s.status in counts) (counts as any)[s.status] = s.count;
-        // deployed maps to on_site
-        if (s.status === "deployed") counts.on_site += s.count;
-      });
-      setStatusCounts(counts);
-    } catch { /* silent */ }
-  }, []);
-
-  // Fetch assets
   const fetchAssets = useCallback(async () => {
     setLoading(true);
     try {
-      const params = new URLSearchParams({ page: String(page), limit: "50" });
-      if (statusFilter !== "all") params.set("status", statusFilter);
-      const res = await api.get<AssetsResponse>(`/assets?${params.toString()}`);
+      const res = await api.get<AssetsResponse>("/assets?limit=200");
       setAssets(res.data);
-      setTotal(res.meta.total);
     } catch { /* silent */ } finally {
       setLoading(false);
     }
-  }, [page, statusFilter]);
-
-  // Fetch 7-day forecast
-  const fetchForecast = useCallback(async () => {
-    try {
-      const sizes = ["10yd", "20yd", "30yd", "40yd"];
-      const days: AvailabilityDay[] = [];
-      const today = new Date();
-      for (let d = 0; d < 7; d++) {
-        const date = new Date(today);
-        date.setDate(today.getDate() + d);
-        const dateStr = date.toISOString().split("T")[0];
-        for (const size of sizes) {
-          try {
-            const result = await api.get<AvailabilityDay>(`/assets/availability?subtype=${size}&date=${dateStr}`);
-            days.push({ date: dateStr, subtype: size, total: result.total, availableOnDate: result.availableOnDate });
-          } catch { /* skip */ }
-        }
-      }
-      setForecast(days);
-    } catch { /* silent */ }
   }, []);
 
   useEffect(() => { fetchAssets(); }, [fetchAssets]);
-  useEffect(() => { fetchCounts(); }, [fetchCounts]);
-  useEffect(() => { fetchForecast(); }, [fetchForecast]);
-  useEffect(() => { setPage(1); }, [statusFilter]);
 
-  // Client-side search + sort
+  // Group assets by size
+  const sizeGroups: SizeGroup[] = useMemo(() => {
+    return SIZES.map((size) => {
+      const sizeAssets = assets.filter((a) => a.subtype === size);
+      const available = sizeAssets.filter((a) => a.status === "available").length;
+      const deployed = sizeAssets.filter((a) => a.status === "on_site" || a.status === "deployed").length;
+      const maintenance = sizeAssets.filter((a) => a.status === "maintenance").length;
+      const reserved = sizeAssets.filter((a) => a.status === "reserved").length;
+      const rates = sizeAssets.filter((a) => a.daily_rate > 0).map((a) => Number(a.daily_rate));
+      const dailyRate = rates.length > 0 ? rates[0] : 0;
+      return { size, assets: sizeAssets, total: sizeAssets.length, available, deployed, maintenance, reserved, dailyRate };
+    }).filter((g) => g.total > 0);
+  }, [assets]);
+
+  // Filtered assets for the list below tiles
   const filteredAssets = useMemo(() => {
     let result = [...assets];
+    if (selectedSize) result = result.filter((a) => a.subtype === selectedSize);
+    if (statusFilter !== "all") {
+      result = result.filter((a) => {
+        if (statusFilter === "on_site") return a.status === "on_site" || a.status === "deployed";
+        return a.status === statusFilter;
+      });
+    }
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       result = result.filter((a) => {
@@ -269,50 +256,59 @@ export default function AssetsPage() {
         );
       });
     }
-    result.sort((a, b) => {
-      if (sortBy === "identifier") return a.identifier.localeCompare(b.identifier);
-      if (sortBy === "status") return a.status.localeCompare(b.status);
-      if (sortBy === "subtype") return (a.subtype || "").localeCompare(b.subtype || "");
-      if (sortBy === "created_at") return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-      return 0;
-    });
+    result.sort((a, b) => a.identifier.localeCompare(b.identifier));
     return result;
-  }, [assets, searchQuery, sortBy]);
+  }, [assets, selectedSize, statusFilter, searchQuery]);
 
-  // Overdue assets
+  // Overdue count
   const overdueAssets = useMemo(() => {
     const today = new Date().toISOString().split("T")[0];
     return assets.filter((a) => {
       if (a.status !== "on_site" && a.status !== "deployed") return false;
       const meta = (a.metadata || {}) as Record<string, any>;
-      const rentalEnd = meta.rental_end_date;
-      return rentalEnd && today > rentalEnd;
+      return meta.rental_end_date && today > meta.rental_end_date;
     });
   }, [assets]);
+
+  // Quick stats
+  const quickStats = useMemo(() => {
+    const deployed = assets.filter((a) => a.status === "on_site" || a.status === "deployed");
+    const totalFleetDailyValue = deployed.reduce((sum, a) => sum + Number(a.daily_rate || 0), 0);
+    const utilizationRate = assets.length > 0 ? Math.round((deployed.length / assets.length) * 100) : 0;
+    const maintenanceCount = assets.filter((a) => a.status === "maintenance").length;
+    return { totalFleetDailyValue, utilizationRate, overdueCount: overdueAssets.length, maintenanceCount };
+  }, [assets, overdueAssets]);
 
   const quickStatus = async (id: string, status: string) => {
     try {
       await api.patch(`/assets/${id}`, { status });
-      toast("success", `Asset marked as ${status.replace(/_/g, " ")}`);
+      toast("success", `Asset marked as ${STATUS_LABELS[status] || status}`);
       fetchAssets();
-      fetchCounts();
     } catch {
       toast("error", "Failed to update status");
     }
   };
 
-  const handleAssetCreated = () => {
-    setCreateOpen(false);
-    fetchAssets();
-    fetchCounts();
-    fetchForecast();
+  const bulkMaintenance = async (size: string) => {
+    const sizeAssets = assets.filter((a) => a.subtype === size && a.status !== "maintenance");
+    if (sizeAssets.length === 0) return;
+    try {
+      await Promise.all(sizeAssets.map((a) => api.patch(`/assets/${a.id}`, { status: "maintenance" })));
+      toast("success", `${sizeAssets.length} ${size} dumpsters marked as maintenance`);
+      fetchAssets();
+    } catch {
+      toast("error", "Failed to update some assets");
+    }
   };
 
-  const handleAssetUpdated = () => {
-    setDetailAsset(null);
-    fetchAssets();
-    fetchCounts();
-    fetchForecast();
+  const handleTileClick = (size: string) => {
+    if (selectedSize === size) {
+      setSelectedSize(null);
+      setStatusFilter("all");
+    } else {
+      setSelectedSize(size);
+      setStatusFilter("all");
+    }
   };
 
   return (
@@ -327,7 +323,7 @@ export default function AssetsPage() {
             </span>
           </div>
           <button
-            onClick={() => setStatusFilter("on_site")}
+            onClick={() => { setSelectedSize(null); setStatusFilter("on_site"); }}
             className="text-sm font-medium text-red-400 hover:text-red-300 transition-colors"
           >
             View Details
@@ -339,68 +335,166 @@ export default function AssetsPage() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="font-display text-2xl font-bold tracking-tight text-white">Inventory</h1>
-          <p className="mt-1 text-sm text-muted">
-            {statusCounts.total} total &middot;{" "}
-            <span className="text-emerald-400">{statusCounts.available} available</span> &middot;{" "}
-            <span className="text-yellow-400">{statusCounts.on_site} deployed</span> &middot;{" "}
-            <span className="text-red-400">{statusCounts.maintenance} maintenance</span>
-          </p>
+          <p className="mt-1 text-sm text-muted">{assets.length} dumpsters across {sizeGroups.length} sizes</p>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="flex rounded-lg border border-[#1E2D45] overflow-hidden">
-            <button
-              onClick={() => setViewMode("grid")}
-              className={`p-2 transition-colors ${viewMode === "grid" ? "bg-brand/10 text-brand" : "text-muted hover:text-white"}`}
-            >
-              <LayoutGrid className="h-4 w-4" />
-            </button>
-            <button
-              onClick={() => setViewMode("list")}
-              className={`p-2 transition-colors ${viewMode === "list" ? "bg-brand/10 text-brand" : "text-muted hover:text-white"}`}
-            >
-              <List className="h-4 w-4" />
-            </button>
-          </div>
-          <button
-            onClick={() => setCreateOpen(true)}
-            className="flex items-center gap-2 rounded-lg bg-[#2ECC71] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1FA855] btn-press"
-          >
-            <Plus className="h-4 w-4" />
-            Add Asset
-          </button>
-        </div>
+        <button
+          onClick={() => { setCreatePrefilledSize(null); setCreateOpen(true); }}
+          className="flex items-center gap-2 rounded-lg bg-[#2ECC71] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1FA855] btn-press"
+        >
+          <Plus className="h-4 w-4" />
+          Add Asset
+        </button>
       </div>
 
-      {/* Filter Bar */}
-      <div className="mb-6 space-y-4">
-        {/* Status pills */}
-        <div className="flex flex-wrap gap-2">
-          {STATUS_FILTERS.map((s) => {
-            const count = s === "all" ? statusCounts.total : (statusCounts as any)[s] || 0;
-            const isActive = statusFilter === s;
-            const badge = STATUS_BADGE[s];
+      {/* ─── Size Summary Tiles ─── */}
+      {loading ? (
+        <div className="flex gap-3 mb-6 overflow-x-auto pb-2">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <div key={i} className="h-36 min-w-[200px] flex-1 skeleton rounded-2xl" />
+          ))}
+        </div>
+      ) : (
+        <div className="flex gap-3 mb-6 overflow-x-auto pb-2 scrollbar-thin">
+          {sizeGroups.map((group) => {
+            const accent = SIZE_ACCENT[group.size] || SIZE_ACCENT["20yd"];
+            const isSelected = selectedSize === group.size;
             return (
               <button
-                key={s}
-                onClick={() => setStatusFilter(s)}
-                className={`flex items-center gap-2 rounded-full px-4 py-1.5 text-sm font-medium transition-all btn-press border ${
-                  isActive
-                    ? s === "all"
-                      ? "bg-white/10 text-white border-white/20"
-                      : (badge?.className || "bg-white/10 text-white border-white/20")
-                    : "bg-transparent text-muted border-[#1E2D45] hover:border-white/20 hover:text-white"
+                key={group.size}
+                onClick={() => handleTileClick(group.size)}
+                className={`relative min-w-[190px] flex-1 rounded-2xl border p-4 text-left transition-all btn-press ${
+                  isSelected
+                    ? `${accent.border} shadow-lg ${accent.glow} bg-dark-card-hover ring-1 ring-brand/30`
+                    : "border-[#1E2D45] bg-dark-card hover:bg-dark-card-hover hover:border-white/10"
                 }`}
               >
-                {s !== "all" && badge && <span className={`h-1.5 w-1.5 rounded-full ${badge.dot}`} />}
-                {STATUS_LABELS[s]}
-                <span className={`text-xs ${isActive ? "opacity-80" : "opacity-50"}`}>{count}</span>
+                {/* Size label */}
+                <div className="flex items-center justify-between mb-2">
+                  <span className={`font-display text-2xl font-black tracking-tight ${isSelected ? accent.text : "text-white"}`}>
+                    {group.size.replace("yd", "")} <span className="text-sm font-semibold opacity-60">YD</span>
+                  </span>
+                  <span className="text-xs text-muted">{group.total} unit{group.total !== 1 ? "s" : ""}</span>
+                </div>
+
+                {/* Status breakdown */}
+                <div className="flex items-center gap-3 text-[11px] mb-3 flex-wrap">
+                  {group.available > 0 && (
+                    <span className="flex items-center gap-1 text-emerald-400">
+                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />{group.available}
+                    </span>
+                  )}
+                  {group.deployed > 0 && (
+                    <span className="flex items-center gap-1 text-yellow-400">
+                      <span className="h-1.5 w-1.5 rounded-full bg-yellow-400" />{group.deployed}
+                    </span>
+                  )}
+                  {group.maintenance > 0 && (
+                    <span className="flex items-center gap-1 text-red-400">
+                      <span className="h-1.5 w-1.5 rounded-full bg-red-400" />{group.maintenance}
+                    </span>
+                  )}
+                  {group.reserved > 0 && (
+                    <span className="flex items-center gap-1 text-blue-400">
+                      <span className="h-1.5 w-1.5 rounded-full bg-blue-400" />{group.reserved}
+                    </span>
+                  )}
+                </div>
+
+                {/* Daily rate */}
+                {group.dailyRate > 0 && (
+                  <p className="text-xs text-muted mb-3">{fmtMoney(group.dailyRate)}/day</p>
+                )}
+
+                {/* Utilization bar */}
+                <div className="h-1.5 w-full rounded-full bg-dark-elevated overflow-hidden flex">
+                  {group.available > 0 && (
+                    <div className="h-full bg-emerald-500 transition-all" style={{ width: `${(group.available / group.total) * 100}%` }} />
+                  )}
+                  {group.deployed > 0 && (
+                    <div className="h-full bg-yellow-500 transition-all" style={{ width: `${(group.deployed / group.total) * 100}%` }} />
+                  )}
+                  {group.maintenance > 0 && (
+                    <div className="h-full bg-red-500 transition-all" style={{ width: `${(group.maintenance / group.total) * 100}%` }} />
+                  )}
+                  {group.reserved > 0 && (
+                    <div className="h-full bg-blue-500 transition-all" style={{ width: `${(group.reserved / group.total) * 100}%` }} />
+                  )}
+                </div>
+
+                {/* Selected indicator */}
+                {isSelected && (
+                  <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2">
+                    <ChevronDown className={`h-4 w-4 ${accent.text}`} />
+                  </div>
+                )}
               </button>
             );
           })}
         </div>
+      )}
 
-        {/* Search + Sort */}
-        <div className="flex gap-3">
+      {/* ─── Expanded Tile Section ─── */}
+      {selectedSize && !loading && (
+        <div className="mb-6 space-y-4">
+          {/* Bulk Actions + Filter Pills */}
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <div className="flex flex-wrap gap-2">
+              {STATUS_FILTERS.map((s) => {
+                const group = sizeGroups.find((g) => g.size === selectedSize);
+                const count = s === "all"
+                  ? (group?.total || 0)
+                  : s === "on_site"
+                    ? (group?.deployed || 0)
+                    : ((group as any)?.[s] || 0);
+                const isActive = statusFilter === s;
+                const badge = STATUS_BADGE[s];
+                return (
+                  <button
+                    key={s}
+                    onClick={() => setStatusFilter(s)}
+                    className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-all btn-press border ${
+                      isActive
+                        ? s === "all"
+                          ? "bg-white/10 text-white border-white/20"
+                          : (badge?.className || "bg-white/10 text-white border-white/20")
+                        : "bg-transparent text-muted border-[#1E2D45] hover:border-white/20 hover:text-white"
+                    }`}
+                  >
+                    {s !== "all" && badge && <span className={`h-1.5 w-1.5 rounded-full ${badge.dot}`} />}
+                    {STATUS_LABELS[s]}
+                    <span className={`text-[10px] ${isActive ? "opacity-80" : "opacity-50"}`}>{count}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                onClick={() => bulkMaintenance(selectedSize)}
+                className="flex items-center gap-1.5 rounded-lg border border-[#1E2D45] px-3 py-1.5 text-xs font-medium text-muted hover:text-red-400 hover:border-red-500/30 transition-colors"
+              >
+                <Wrench className="h-3 w-3" /> Mark All Maintenance
+              </button>
+              <button
+                onClick={() => { setCreatePrefilledSize(selectedSize); setCreateOpen(true); }}
+                className="flex items-center gap-1.5 rounded-lg border border-[#1E2D45] px-3 py-1.5 text-xs font-medium text-muted hover:text-brand hover:border-brand/30 transition-colors"
+              >
+                <Plus className="h-3 w-3" /> Add More {selectedSize}
+              </button>
+              <button
+                onClick={() => exportCSV(filteredAssets)}
+                className="flex items-center gap-1.5 rounded-lg border border-[#1E2D45] px-3 py-1.5 text-xs font-medium text-muted hover:text-white hover:border-white/20 transition-colors"
+              >
+                <Download className="h-3 w-3" /> Export CSV
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Search + View Toggle ─── */}
+      {!loading && assets.length > 0 && (
+        <div className="flex items-center gap-3 mb-4">
           <div className="relative flex-1 max-w-md">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted" />
             <input
@@ -410,47 +504,48 @@ export default function AssetsPage() {
               className="w-full rounded-lg bg-[#111C2E] border border-[#1E2D45] pl-10 pr-4 py-2 text-sm text-white placeholder-muted outline-none transition-colors focus:border-brand"
             />
           </div>
-          <Dropdown
-            trigger={
-              <button className="flex items-center gap-2 rounded-lg border border-[#1E2D45] bg-[#111C2E] px-3 py-2 text-sm text-muted hover:text-white transition-colors">
-                <ArrowUpDown className="h-3.5 w-3.5" />
-                Sort: {SORT_OPTIONS.find((o) => o.value === sortBy)?.label}
-              </button>
-            }
-            align="right"
-          >
-            {SORT_OPTIONS.map((opt) => (
-              <button
-                key={opt.value}
-                onClick={() => setSortBy(opt.value)}
-                className={`block w-full px-4 py-2 text-left text-sm transition-colors ${
-                  sortBy === opt.value ? "text-brand bg-brand/5" : "text-foreground hover:bg-dark-card"
-                }`}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </Dropdown>
+          <div className="flex rounded-lg border border-[#1E2D45] overflow-hidden">
+            <button
+              onClick={() => setViewMode("list")}
+              className={`p-2 transition-colors ${viewMode === "list" ? "bg-brand/10 text-brand" : "text-muted hover:text-white"}`}
+            >
+              <List className="h-4 w-4" />
+            </button>
+            <button
+              onClick={() => setViewMode("grid")}
+              className={`p-2 transition-colors ${viewMode === "grid" ? "bg-brand/10 text-brand" : "text-muted hover:text-white"}`}
+            >
+              <LayoutGrid className="h-4 w-4" />
+            </button>
+          </div>
+          {!selectedSize && (
+            <button
+              onClick={() => exportCSV(filteredAssets)}
+              className="flex items-center gap-1.5 rounded-lg border border-[#1E2D45] px-3 py-2 text-xs font-medium text-muted hover:text-white hover:border-white/20 transition-colors"
+            >
+              <Download className="h-3.5 w-3.5" /> Export
+            </button>
+          )}
         </div>
-      </div>
+      )}
 
-      {/* Content */}
+      {/* ─── Asset List / Grid ─── */}
       {loading ? (
         <div className="space-y-2">
-          {Array.from({ length: 8 }).map((_, i) => (
+          {Array.from({ length: 6 }).map((_, i) => (
             <div key={i} className="h-14 w-full skeleton rounded-xl" />
           ))}
         </div>
       ) : filteredAssets.length === 0 ? (
-        <div className="py-32 flex flex-col items-center justify-center text-center">
+        <div className="py-20 flex flex-col items-center justify-center text-center">
           <Box size={48} className="text-[#7A8BA3]/30 mb-4" />
           <h2 className="text-lg font-semibold text-white mb-1">
-            {searchQuery ? "No matching assets" : "No assets yet"}
+            {searchQuery ? "No matching assets" : selectedSize ? `No ${selectedSize} dumpsters with this filter` : "No assets yet"}
           </h2>
           <p className="text-sm text-muted mb-6">
-            {searchQuery ? "Try a different search term" : "Add your first asset to start tracking inventory"}
+            {searchQuery ? "Try a different search term" : "Add your first dumpster to get started"}
           </p>
-          {!searchQuery && (
+          {!searchQuery && !selectedSize && (
             <button
               onClick={() => setCreateOpen(true)}
               className="flex items-center gap-2 rounded-lg bg-[#2ECC71] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1FA855] btn-press"
@@ -466,23 +561,31 @@ export default function AssetsPage() {
         <GridView assets={filteredAssets} onSelect={setDetailAsset} onQuickStatus={quickStatus} />
       )}
 
-      {/* Pagination */}
-      {total > 50 && (
-        <div className="mt-6 flex items-center justify-between text-sm text-muted">
-          <span>Showing {(page - 1) * 50 + 1}–{Math.min(page * 50, total)} of {total}</span>
-          <div className="flex gap-2">
-            <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1} className="rounded-lg bg-dark-card px-3 py-1.5 transition-colors hover:bg-dark-card-hover disabled:opacity-40">Previous</button>
-            <button onClick={() => setPage((p) => p + 1)} disabled={page * 50 >= total} className="rounded-lg bg-dark-card px-3 py-1.5 transition-colors hover:bg-dark-card-hover disabled:opacity-40">Next</button>
+      {/* ─── Quick Stats Bar ─── */}
+      {!loading && assets.length > 0 && (
+        <div className="mt-8 grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="rounded-2xl border border-[#1E2D45] bg-dark-card p-4">
+            <p className="text-xs text-muted mb-1">Fleet Daily Value</p>
+            <p className="text-xl font-bold text-brand tabular-nums">${quickStats.totalFleetDailyValue.toLocaleString()}<span className="text-xs font-normal text-muted">/day</span></p>
+          </div>
+          <div className="rounded-2xl border border-[#1E2D45] bg-dark-card p-4">
+            <p className="text-xs text-muted mb-1">Utilization Rate</p>
+            <p className="text-xl font-bold text-white tabular-nums">{quickStats.utilizationRate}%</p>
+          </div>
+          <div className={`rounded-2xl border p-4 ${quickStats.overdueCount > 0 ? "border-red-500/30 bg-red-500/5" : "border-[#1E2D45] bg-dark-card"}`}>
+            <p className="text-xs text-muted mb-1">Overdue Rentals</p>
+            <p className={`text-xl font-bold tabular-nums ${quickStats.overdueCount > 0 ? "text-red-400" : "text-white"}`}>{quickStats.overdueCount}</p>
+          </div>
+          <div className={`rounded-2xl border p-4 ${quickStats.maintenanceCount > 0 ? "border-yellow-500/20 bg-yellow-500/5" : "border-[#1E2D45] bg-dark-card"}`}>
+            <p className="text-xs text-muted mb-1">In Maintenance</p>
+            <p className="text-xl font-bold text-white tabular-nums">{quickStats.maintenanceCount}</p>
           </div>
         </div>
       )}
 
-      {/* 7-Day Availability Forecast */}
-      <ForecastTable forecast={forecast} />
-
       {/* Create Slide-Over */}
       <SlideOver open={createOpen} onClose={() => setCreateOpen(false)} title="Add Asset">
-        <CreateAssetForm onSuccess={handleAssetCreated} />
+        <CreateAssetForm prefilledSize={createPrefilledSize} onSuccess={() => { setCreateOpen(false); fetchAssets(); }} />
       </SlideOver>
 
       {/* Detail Slide-Over */}
@@ -491,7 +594,7 @@ export default function AssetsPage() {
           <AssetDetail
             asset={detailAsset}
             onStatusChange={(status) => { quickStatus(detailAsset.id, status); setDetailAsset({ ...detailAsset, status }); }}
-            onUpdated={handleAssetUpdated}
+            onUpdated={() => { setDetailAsset(null); fetchAssets(); }}
           />
         )}
       </SlideOver>
@@ -509,11 +612,10 @@ function ListView({ assets, onSelect, onQuickStatus }: { assets: Asset[]; onSele
           <thead>
             <tr className="border-b border-[#1E2D45]">
               <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted">Identifier</th>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted">Type / Size</th>
+              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted">Size</th>
               <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted">Status</th>
               <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted">Location</th>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted">Days Deployed</th>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted">Rental End</th>
+              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted">Days Out</th>
               <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted">Rate</th>
               <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted">Condition</th>
               <th className="px-2 py-3"></th>
@@ -522,7 +624,6 @@ function ListView({ assets, onSelect, onQuickStatus }: { assets: Asset[]; onSele
           <tbody>
             {assets.map((asset) => {
               const badge = STATUS_BADGE[asset.status] || STATUS_BADGE.available;
-              const sizeBadge = SIZE_COLORS[asset.subtype] || "bg-zinc-500/10 text-zinc-400 border-zinc-500/20";
               const condBadge = CONDITION_BADGE[asset.condition] || CONDITION_BADGE.good;
               const deployed = getDeployedInfo(asset);
 
@@ -534,9 +635,7 @@ function ListView({ assets, onSelect, onQuickStatus }: { assets: Asset[]; onSele
                 >
                   <td className="px-4 py-3 font-semibold text-white">{asset.identifier}</td>
                   <td className="px-4 py-3">
-                    <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-medium ${sizeBadge}`}>
-                      {asset.asset_type === "dumpster" ? "Dumpster" : asset.asset_type === "storage_container" ? "Container" : "Restroom"} &middot; {asset.subtype || "—"}
-                    </span>
+                    <span className="text-xs text-foreground">{asset.subtype}</span>
                   </td>
                   <td className="px-4 py-3">
                     <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-medium ${badge.className}`}>
@@ -557,11 +656,8 @@ function ListView({ assets, onSelect, onQuickStatus }: { assets: Asset[]; onSele
                         {deployed.daysDeployed}d {deployed.isOverdue && <span className="text-red-400 text-[10px]">OVERDUE</span>}
                       </span>
                     ) : (
-                      <span className="text-muted">—</span>
+                      <span className="text-muted text-xs">—</span>
                     )}
-                  </td>
-                  <td className="px-4 py-3 text-xs text-foreground tabular-nums">
-                    {deployed?.rentalEnd ? fmtDate(deployed.rentalEnd) : "—"}
                   </td>
                   <td className="px-4 py-3 text-foreground tabular-nums text-xs">
                     {asset.daily_rate > 0 ? `${fmtMoney(asset.daily_rate)}/day` : "—"}
@@ -612,65 +708,49 @@ function ListView({ assets, onSelect, onQuickStatus }: { assets: Asset[]; onSele
 
 function GridView({ assets, onSelect, onQuickStatus }: { assets: Asset[]; onSelect: (a: Asset) => void; onQuickStatus: (id: string, status: string) => void }) {
   return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
       {assets.map((asset) => {
         const badge = STATUS_BADGE[asset.status] || STATUS_BADGE.available;
-        const sizeBadge = SIZE_COLORS[asset.subtype] || "bg-zinc-500/10 text-zinc-400 border-zinc-500/20";
         const deployed = getDeployedInfo(asset);
 
         return (
           <button
             key={asset.id}
             onClick={() => onSelect(asset)}
-            className="group relative rounded-2xl bg-dark-card p-5 text-left transition-all hover:bg-dark-card-hover hover:ring-1 hover:ring-white/5 border border-[#1E2D45] shadow-lg shadow-black/10 card-hover btn-press"
+            className="group relative rounded-xl bg-dark-card p-4 text-left transition-all hover:bg-dark-card-hover hover:ring-1 hover:ring-white/5 border border-[#1E2D45] card-hover btn-press"
           >
-            <div className="flex items-start justify-between mb-3">
-              <p className="font-display text-xl font-bold text-white">{asset.identifier}</p>
-              <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[10px] font-medium ${badge.className}`}>
-                <span className={`h-1.5 w-1.5 rounded-full ${badge.dot}`} />
-                {STATUS_LABELS[asset.status] || asset.status.replace(/_/g, " ")}
-              </span>
+            <div className="flex items-center justify-between mb-2">
+              <p className="font-display text-base font-bold text-white">{asset.identifier}</p>
+              <span className={`h-2.5 w-2.5 rounded-full ${badge.dot}`} />
             </div>
 
-            <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-medium mb-3 ${sizeBadge}`}>
-              {asset.subtype || "—"}
+            <span className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] font-medium mb-2 ${badge.className}`}>
+              {STATUS_LABELS[asset.status] || asset.status.replace(/_/g, " ")}
             </span>
 
-            {deployed ? (
-              <div className="space-y-1 mb-3">
-                <div className="flex items-center gap-1 text-xs text-foreground">
-                  <MapPin className="h-3 w-3 text-muted" />
-                  <span className="truncate max-w-[180px]">{deployed.customerName || deployed.address || "Customer site"}</span>
-                </div>
-                <div className="flex items-center gap-1 text-xs">
-                  <Timer className="h-3 w-3 text-muted" />
-                  <span className={deployed.isOverdue ? "text-red-400 font-medium" : "text-foreground"}>
-                    {deployed.daysDeployed}d deployed {deployed.isOverdue && " — OVERDUE"}
-                  </span>
-                </div>
-              </div>
-            ) : (
-              <div className="flex items-center gap-1 text-xs text-muted mb-3">
-                <MapPin className="h-3 w-3" /> Yard
-              </div>
-            )}
-
-            {asset.daily_rate > 0 && (
-              <div className="flex items-center gap-1 text-xs text-foreground">
-                <DollarSign className="h-3 w-3 text-brand" />
-                <span className="font-medium">{fmtMoney(asset.daily_rate)}/day</span>
-              </div>
-            )}
-
-            <div className="mt-3 flex gap-1" onClick={(e) => e.stopPropagation()}>
-              {asset.status !== "available" && (
-                <button onClick={() => onQuickStatus(asset.id, "available")} className="rounded px-2 py-1 text-[10px] font-medium bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition-colors">Available</button>
+            <div className="text-xs text-muted truncate">
+              {deployed ? (
+                <span className="flex items-center gap-1">
+                  <MapPin className="h-3 w-3 shrink-0" />
+                  {deployed.customerName || deployed.address || "Customer site"}
+                </span>
+              ) : (
+                <span className="flex items-center gap-1"><MapPin className="h-3 w-3" /> Yard</span>
               )}
-              {asset.status !== "on_site" && (
-                <button onClick={() => onQuickStatus(asset.id, "on_site")} className="rounded px-2 py-1 text-[10px] font-medium bg-yellow-500/10 text-yellow-400 hover:bg-yellow-500/20 transition-colors">Deployed</button>
+            </div>
+
+            {deployed && (
+              <p className={`text-[10px] mt-1 font-medium ${deployed.isOverdue ? "text-red-400" : "text-muted"}`}>
+                {deployed.daysDeployed}d out {deployed.isOverdue && "· OVERDUE"}
+              </p>
+            )}
+
+            <div className="mt-2 flex gap-1" onClick={(e) => e.stopPropagation()}>
+              {asset.status !== "available" && (
+                <button onClick={() => onQuickStatus(asset.id, "available")} className="rounded px-1.5 py-0.5 text-[9px] font-medium bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition-colors">Avail</button>
               )}
               {asset.status !== "maintenance" && (
-                <button onClick={() => onQuickStatus(asset.id, "maintenance")} className="rounded px-2 py-1 text-[10px] font-medium bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors">Maint</button>
+                <button onClick={() => onQuickStatus(asset.id, "maintenance")} className="rounded px-1.5 py-0.5 text-[9px] font-medium bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors">Maint</button>
               )}
             </div>
           </button>
@@ -686,7 +766,6 @@ function AssetDetail({ asset, onStatusChange, onUpdated }: { asset: Asset; onSta
   const [activeTab, setActiveTab] = useState<"overview" | "history" | "maintenance">("overview");
   const badge = STATUS_BADGE[asset.status] || STATUS_BADGE.available;
   const condBadge = CONDITION_BADGE[asset.condition] || CONDITION_BADGE.good;
-  const sizeBadge = SIZE_COLORS[asset.subtype] || "bg-zinc-500/10 text-zinc-400 border-zinc-500/20";
   const deployed = getDeployedInfo(asset);
 
   return (
@@ -694,9 +773,7 @@ function AssetDetail({ asset, onStatusChange, onUpdated }: { asset: Asset; onSta
       {/* Header */}
       <div className="space-y-3">
         <div className="flex items-center gap-3 flex-wrap">
-          <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-medium ${sizeBadge}`}>
-            {asset.asset_type === "dumpster" ? "Dumpster" : asset.asset_type === "storage_container" ? "Container" : "Restroom"} &middot; {asset.subtype || "—"}
-          </span>
+          <span className="text-xs text-muted capitalize">{asset.asset_type} &middot; {asset.subtype}</span>
           <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-medium ${badge.className}`}>
             <span className={`h-1.5 w-1.5 rounded-full ${badge.dot}`} />
             {STATUS_LABELS[asset.status] || asset.status.replace(/_/g, " ")}
@@ -708,9 +785,8 @@ function AssetDetail({ asset, onStatusChange, onUpdated }: { asset: Asset; onSta
           )}
         </div>
 
-        {/* Quick status buttons */}
         <div className="flex gap-2 flex-wrap">
-          {["available", "on_site", "maintenance"].map((s) =>
+          {(["available", "on_site", "maintenance"] as const).map((s) =>
             asset.status !== s ? (
               <button
                 key={s}
@@ -744,16 +820,9 @@ function AssetDetail({ asset, onStatusChange, onUpdated }: { asset: Asset; onSta
         ))}
       </div>
 
-      {/* Tab Content */}
-      {activeTab === "overview" && (
-        <OverviewTab asset={asset} deployed={deployed} />
-      )}
-      {activeTab === "history" && (
-        <HistoryTab asset={asset} />
-      )}
-      {activeTab === "maintenance" && (
-        <MaintenanceTab asset={asset} onUpdated={onUpdated} />
-      )}
+      {activeTab === "overview" && <OverviewTab asset={asset} deployed={deployed} />}
+      {activeTab === "history" && <HistoryTab asset={asset} />}
+      {activeTab === "maintenance" && <MaintenanceTab asset={asset} onUpdated={onUpdated} />}
     </div>
   );
 }
@@ -761,66 +830,33 @@ function AssetDetail({ asset, onStatusChange, onUpdated }: { asset: Asset; onSta
 /* ─── Overview Tab ─── */
 
 function OverviewTab({ asset, deployed }: { asset: Asset; deployed: ReturnType<typeof getDeployedInfo> }) {
-  const labelClass = "text-xs text-muted";
-  const valueClass = "text-sm text-white font-medium";
+  const lbl = "text-xs text-muted";
+  const val = "text-sm text-white font-medium";
 
   return (
     <div className="space-y-6">
-      {/* Deployed Info */}
       {deployed && (
         <div className="rounded-xl border border-[#1E2D45] bg-[#111C2E] p-4 space-y-3">
           <h4 className="text-xs font-medium uppercase tracking-wider text-muted">Current Deployment</h4>
           <div className="grid grid-cols-2 gap-3">
-            {deployed.customerName && (
-              <div>
-                <p className={labelClass}>Customer</p>
-                <p className={`${valueClass} text-brand`}>{deployed.customerName}</p>
-              </div>
-            )}
-            <div>
-              <p className={labelClass}>Delivery Date</p>
-              <p className={valueClass}>{fmtDate(deployed.deliveryDate)}</p>
-            </div>
-            {deployed.rentalEnd && (
-              <div>
-                <p className={labelClass}>Rental End</p>
-                <p className={`${valueClass} ${deployed.isOverdue ? "text-red-400" : ""}`}>{fmtDate(deployed.rentalEnd)}</p>
-              </div>
-            )}
-            <div>
-              <p className={labelClass}>Days Deployed</p>
-              <p className={`${valueClass} ${deployed.isOverdue ? "text-red-400" : ""}`}>
-                {deployed.daysDeployed} days {deployed.isOverdue && "(OVERDUE)"}
-              </p>
-            </div>
+            {deployed.customerName && <div><p className={lbl}>Customer</p><p className={`${val} text-brand`}>{deployed.customerName}</p></div>}
+            <div><p className={lbl}>Delivery Date</p><p className={val}>{fmtDate(deployed.deliveryDate)}</p></div>
+            {deployed.rentalEnd && <div><p className={lbl}>Rental End</p><p className={`${val} ${deployed.isOverdue ? "text-red-400" : ""}`}>{fmtDate(deployed.rentalEnd)}</p></div>}
+            <div><p className={lbl}>Days Deployed</p><p className={`${val} ${deployed.isOverdue ? "text-red-400" : ""}`}>{deployed.daysDeployed} days {deployed.isOverdue && "(OVERDUE)"}</p></div>
           </div>
         </div>
       )}
 
-      {/* Specs */}
       <div className="space-y-3">
         <h4 className="text-xs font-medium uppercase tracking-wider text-muted">Specifications</h4>
         <div className="grid grid-cols-2 gap-3">
-          <div>
-            <p className={labelClass}>Daily Rate</p>
-            <p className={valueClass}>{asset.daily_rate > 0 ? `${fmtMoney(asset.daily_rate)}/day` : "Not set"}</p>
-          </div>
-          <div>
-            <p className={labelClass}>Weight Capacity</p>
-            <p className={valueClass}>{asset.weight_capacity ? `${Number(asset.weight_capacity).toLocaleString()} lbs` : "Not set"}</p>
-          </div>
-          <div>
-            <p className={labelClass}>Condition</p>
-            <p className={`${valueClass} capitalize`}>{asset.condition || "—"}</p>
-          </div>
-          <div>
-            <p className={labelClass}>Location</p>
-            <p className={valueClass}>{asset.current_location?.address || (asset.current_location_type === "yard" || !asset.current_location_type ? "Yard" : asset.current_location_type.replace(/_/g, " "))}</p>
-          </div>
+          <div><p className={lbl}>Daily Rate</p><p className={val}>{asset.daily_rate > 0 ? `${fmtMoney(asset.daily_rate)}/day` : "Not set"}</p></div>
+          <div><p className={lbl}>Weight Capacity</p><p className={val}>{asset.weight_capacity ? `${Number(asset.weight_capacity).toLocaleString()} tons` : "Not set"}</p></div>
+          <div><p className={lbl}>Condition</p><p className={`${val} capitalize`}>{asset.condition || "—"}</p></div>
+          <div><p className={lbl}>Location</p><p className={val}>{asset.current_location?.address || (asset.current_location_type === "yard" || !asset.current_location_type ? "Yard" : asset.current_location_type.replace(/_/g, " "))}</p></div>
         </div>
       </div>
 
-      {/* Photos placeholder */}
       <div className="space-y-3">
         <h4 className="text-xs font-medium uppercase tracking-wider text-muted">Photos</h4>
         <div className="rounded-xl border border-dashed border-[#1E2D45] p-8 flex flex-col items-center justify-center text-center">
@@ -829,7 +865,6 @@ function OverviewTab({ asset, deployed }: { asset: Asset; deployed: ReturnType<t
         </div>
       </div>
 
-      {/* Notes */}
       {asset.notes && (
         <div className="space-y-2">
           <h4 className="text-xs font-medium uppercase tracking-wider text-muted">Notes</h4>
@@ -843,26 +878,16 @@ function OverviewTab({ asset, deployed }: { asset: Asset; deployed: ReturnType<t
 /* ─── History Tab ─── */
 
 function HistoryTab({ asset }: { asset: Asset }) {
-  const [history, setHistory] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
   const meta = (asset.metadata || {}) as Record<string, any>;
+  const history = (meta.job_history || []) as any[];
   const lifetimeRevenue = meta.lifetime_revenue || 0;
   const totalDaysDeployed = meta.total_days_deployed || 0;
   const totalDaysAvailable = meta.total_days_available || 0;
   const utilization = totalDaysDeployed + totalDaysAvailable > 0
-    ? Math.round((totalDaysDeployed / (totalDaysDeployed + totalDaysAvailable)) * 100)
-    : 0;
-
-  useEffect(() => {
-    // History would come from a dedicated endpoint; for now use metadata
-    const jobs = (meta.job_history || []) as any[];
-    setHistory(jobs);
-    setLoading(false);
-  }, [asset.id]);
+    ? Math.round((totalDaysDeployed / (totalDaysDeployed + totalDaysAvailable)) * 100) : 0;
 
   return (
     <div className="space-y-6">
-      {/* Stats */}
       <div className="grid grid-cols-3 gap-3">
         <div className="rounded-xl border border-[#1E2D45] bg-[#111C2E] p-3 text-center">
           <p className="text-xs text-muted">Lifetime Revenue</p>
@@ -878,7 +903,6 @@ function HistoryTab({ asset }: { asset: Asset }) {
         </div>
       </div>
 
-      {/* Timeline */}
       <div className="space-y-2">
         <h4 className="text-xs font-medium uppercase tracking-wider text-muted">Job History</h4>
         {history.length === 0 ? (
@@ -895,11 +919,9 @@ function HistoryTab({ asset }: { asset: Asset }) {
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm text-white font-medium truncate">{job.customer_name || "Customer"}</p>
-                  <p className="text-xs text-muted">{fmtDate(job.date)} &middot; {job.duration || 0} days &middot; {job.job_type || "rental"}</p>
+                  <p className="text-xs text-muted">{fmtDate(job.date)} &middot; {job.duration || 0} days</p>
                 </div>
-                {job.revenue > 0 && (
-                  <span className="text-sm font-medium text-brand">${Number(job.revenue).toLocaleString()}</span>
-                )}
+                {job.revenue > 0 && <span className="text-sm font-medium text-brand">${Number(job.revenue).toLocaleString()}</span>}
               </div>
             ))}
           </div>
@@ -921,8 +943,7 @@ function MaintenanceTab({ asset, onUpdated }: { asset: Asset; onUpdated: () => v
   const totalMaintenanceCost = meta.total_maintenance_cost || 0;
 
   useEffect(() => {
-    const logs = (meta.maintenance_log || []) as MaintenanceRecord[];
-    setRecords(logs);
+    setRecords((meta.maintenance_log || []) as MaintenanceRecord[]);
   }, [asset.id]);
 
   const handleAdd = async (e: FormEvent) => {
@@ -931,13 +952,7 @@ function MaintenanceTab({ asset, onUpdated }: { asset: Asset; onUpdated: () => v
     try {
       const updatedLog = [
         ...records,
-        {
-          id: crypto.randomUUID(),
-          date: new Date().toISOString(),
-          type: newRecord.type,
-          description: newRecord.description,
-          cost: Number(newRecord.cost) || 0,
-        },
+        { id: crypto.randomUUID(), date: new Date().toISOString(), type: newRecord.type, description: newRecord.description, cost: Number(newRecord.cost) || 0 },
       ];
       const newTotalCost = updatedLog.reduce((sum, r) => sum + (r.cost || 0), 0);
       await api.patch(`/assets/${asset.id}`, {
@@ -954,32 +969,26 @@ function MaintenanceTab({ asset, onUpdated }: { asset: Asset; onUpdated: () => v
     }
   };
 
-  const inputClass = "w-full rounded-lg bg-[#111C2E] border border-[#1E2D45] px-4 py-2.5 text-sm text-white placeholder-muted outline-none transition-colors focus:border-brand";
-  const labelClass = "block text-sm font-medium text-[#7A8BA3] mb-1.5";
+  const inp = "w-full rounded-lg bg-[#111C2E] border border-[#1E2D45] px-4 py-2.5 text-sm text-white placeholder-muted outline-none transition-colors focus:border-brand";
+  const lbl = "block text-sm font-medium text-[#7A8BA3] mb-1.5";
 
   return (
     <div className="space-y-6">
-      {/* Total Cost */}
       <div className="rounded-xl border border-[#1E2D45] bg-[#111C2E] p-4 flex items-center justify-between">
         <div>
           <p className="text-xs text-muted">Total Maintenance Cost</p>
           <p className="text-lg font-bold text-white">{totalMaintenanceCost > 0 ? `$${Number(totalMaintenanceCost).toLocaleString()}` : "$0"}</p>
         </div>
-        <button
-          onClick={() => setAddOpen(!addOpen)}
-          className="flex items-center gap-1.5 rounded-lg bg-brand/10 text-brand px-3 py-1.5 text-xs font-medium hover:bg-brand/20 transition-colors"
-        >
-          <Plus className="h-3.5 w-3.5" />
-          Add Record
+        <button onClick={() => setAddOpen(!addOpen)} className="flex items-center gap-1.5 rounded-lg bg-brand/10 text-brand px-3 py-1.5 text-xs font-medium hover:bg-brand/20 transition-colors">
+          <Plus className="h-3.5 w-3.5" /> Add Record
         </button>
       </div>
 
-      {/* Add form */}
       {addOpen && (
         <form onSubmit={handleAdd} className="rounded-xl border border-brand/20 bg-brand/5 p-4 space-y-3">
           <div>
-            <label className={labelClass}>Type</label>
-            <select value={newRecord.type} onChange={(e) => setNewRecord({ ...newRecord, type: e.target.value })} className={`${inputClass} appearance-none`}>
+            <label className={lbl}>Type</label>
+            <select value={newRecord.type} onChange={(e) => setNewRecord({ ...newRecord, type: e.target.value })} className={`${inp} appearance-none`}>
               <option value="inspection">Inspection</option>
               <option value="repair">Repair</option>
               <option value="cleaning">Cleaning</option>
@@ -988,12 +997,12 @@ function MaintenanceTab({ asset, onUpdated }: { asset: Asset; onUpdated: () => v
             </select>
           </div>
           <div>
-            <label className={labelClass}>Description</label>
-            <input value={newRecord.description} onChange={(e) => setNewRecord({ ...newRecord, description: e.target.value })} className={inputClass} placeholder="What was done..." required />
+            <label className={lbl}>Description</label>
+            <input value={newRecord.description} onChange={(e) => setNewRecord({ ...newRecord, description: e.target.value })} className={inp} placeholder="What was done..." required />
           </div>
           <div>
-            <label className={labelClass}>Cost ($)</label>
-            <input type="number" step="0.01" value={newRecord.cost} onChange={(e) => setNewRecord({ ...newRecord, cost: e.target.value })} className={inputClass} placeholder="0.00" />
+            <label className={lbl}>Cost ($)</label>
+            <input type="number" step="0.01" value={newRecord.cost} onChange={(e) => setNewRecord({ ...newRecord, cost: e.target.value })} className={inp} placeholder="0.00" />
           </div>
           <div className="flex gap-2">
             <button type="submit" disabled={saving} className="rounded-lg bg-[#2ECC71] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1FA855] disabled:opacity-50 transition-colors">
@@ -1006,7 +1015,6 @@ function MaintenanceTab({ asset, onUpdated }: { asset: Asset; onUpdated: () => v
         </form>
       )}
 
-      {/* Records */}
       {records.length === 0 ? (
         <div className="rounded-xl border border-[#1E2D45] bg-[#111C2E] p-8 text-center">
           <Shield className="h-8 w-8 text-muted/30 mx-auto mb-2" />
@@ -1023,9 +1031,7 @@ function MaintenanceTab({ asset, onUpdated }: { asset: Asset; onUpdated: () => v
                 <p className="text-sm text-white font-medium capitalize">{record.type}</p>
                 <p className="text-xs text-muted truncate">{record.description} &middot; {fmtDate(record.date)}</p>
               </div>
-              {record.cost > 0 && (
-                <span className="text-sm font-medium text-red-400">-${Number(record.cost).toLocaleString()}</span>
-              )}
+              {record.cost > 0 && <span className="text-sm font-medium text-red-400">-${Number(record.cost).toLocaleString()}</span>}
             </div>
           ))}
         </div>
@@ -1034,78 +1040,11 @@ function MaintenanceTab({ asset, onUpdated }: { asset: Asset; onUpdated: () => v
   );
 }
 
-/* ─── 7-Day Forecast ─── */
-
-function ForecastTable({ forecast }: { forecast: AvailabilityDay[] }) {
-  if (forecast.length === 0) return null;
-
-  const sizes = ["10yd", "20yd", "30yd", "40yd"];
-  const dates: string[] = [];
-  const today = new Date();
-  for (let d = 0; d < 7; d++) {
-    const date = new Date(today);
-    date.setDate(today.getDate() + d);
-    dates.push(date.toISOString().split("T")[0]);
-  }
-
-  const getCell = (size: string, date: string): AvailabilityDay | undefined =>
-    forecast.find((f) => f.subtype === size && f.date === date);
-
-  const cellColor = (available: number, total: number): string => {
-    if (total === 0) return "text-zinc-500";
-    if (available === 0) return "bg-red-500/10 text-red-400 font-semibold";
-    if (available <= 2) return "bg-yellow-500/10 text-yellow-400 font-medium";
-    return "bg-emerald-500/10 text-emerald-400";
-  };
-
-  return (
-    <div className="mt-10">
-      <h3 className="font-display text-lg font-semibold text-white mb-1">7-Day Availability Forecast</h3>
-      <p className="text-xs text-muted mb-4">Projected available units per size per day</p>
-      <div className="rounded-2xl border border-[#1E2D45] bg-dark-card overflow-hidden">
-        <div className="table-scroll">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-[#1E2D45]">
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted">Size</th>
-                {dates.map((date) => (
-                  <th key={date} className="px-3 py-3 text-center text-xs font-medium text-muted">
-                    {new Date(date + "T12:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {sizes.map((size) => (
-                <tr key={size} className="border-b border-[#1E2D45] last:border-0">
-                  <td className="px-4 py-2.5 text-sm font-medium text-white">{size}</td>
-                  {dates.map((date) => {
-                    const cell = getCell(size, date);
-                    const available = cell?.availableOnDate ?? 0;
-                    const total = cell?.total ?? 0;
-                    return (
-                      <td key={date} className="px-3 py-2.5 text-center">
-                        <span className={`inline-flex rounded-md px-2 py-0.5 text-xs tabular-nums ${cellColor(available, total)}`}>
-                          {available}
-                        </span>
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 /* ─── Create Asset Form ─── */
 
-function CreateAssetForm({ onSuccess }: { onSuccess: () => void }) {
+function CreateAssetForm({ prefilledSize, onSuccess }: { prefilledSize: string | null; onSuccess: () => void }) {
   const [assetType, setAssetType] = useState("dumpster");
-  const [subtype, setSubtype] = useState("20yd");
+  const [subtype, setSubtype] = useState(prefilledSize || "20yd");
   const [identifier, setIdentifier] = useState("");
   const [dailyRate, setDailyRate] = useState("");
   const [weightCapacity, setWeightCapacity] = useState("");
@@ -1116,58 +1055,48 @@ function CreateAssetForm({ onSuccess }: { onSuccess: () => void }) {
   const [saving, setSaving] = useState(false);
   const { toast } = useToast();
 
-  // Auto-suggest identifier
   useEffect(() => {
     const prefix = TYPE_PREFIX[assetType] || "A";
     const sizeNum = subtype.replace(/\D/g, "") || subtype;
     setIdentifier(`${prefix}-${sizeNum}-001`);
   }, [assetType, subtype]);
 
-  // Update subtype when type changes
   useEffect(() => {
-    const subtypes = SUBTYPES_BY_TYPE[assetType];
-    if (subtypes?.length) setSubtype(subtypes[0].value);
-  }, [assetType]);
+    if (!prefilledSize) {
+      const subtypes = SUBTYPES_BY_TYPE[assetType];
+      if (subtypes?.length) setSubtype(subtypes[0].value);
+    }
+  }, [assetType, prefilledSize]);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError("");
     setSaving(true);
-
     const qty = Math.max(1, Math.min(50, parseInt(quantity) || 1));
 
     try {
       if (qty === 1) {
         await api.post("/assets", {
-          assetType,
-          subtype,
-          identifier,
+          assetType, subtype, identifier,
           dailyRate: dailyRate ? Number(dailyRate) : undefined,
           weightCapacity: weightCapacity ? Number(weightCapacity) : undefined,
-          condition,
-          notes: notes || undefined,
+          condition, notes: notes || undefined,
         });
       } else {
-        // Batch create: increment the trailing number
         const match = identifier.match(/^(.*?)(\d+)$/);
         const prefix = match ? match[1] : identifier + "-";
         const startNum = match ? parseInt(match[2]) : 1;
-
         for (let i = 0; i < qty; i++) {
           const num = startNum + i;
           const id = `${prefix}${String(num).padStart(3, "0")}`;
           await api.post("/assets", {
-            assetType,
-            subtype,
-            identifier: id,
+            assetType, subtype, identifier: id,
             dailyRate: dailyRate ? Number(dailyRate) : undefined,
             weightCapacity: weightCapacity ? Number(weightCapacity) : undefined,
-            condition,
-            notes: notes || undefined,
+            condition, notes: notes || undefined,
           });
         }
       }
-
       toast("success", qty > 1 ? `${qty} assets created` : "Asset created");
       onSuccess();
     } catch (err) {
@@ -1177,20 +1106,17 @@ function CreateAssetForm({ onSuccess }: { onSuccess: () => void }) {
     }
   };
 
-  const inputClass = "w-full rounded-lg bg-[#111C2E] border border-[#1E2D45] px-4 py-2.5 text-sm text-white placeholder-muted outline-none transition-colors focus:border-brand";
-  const labelClass = "block text-sm font-medium text-[#7A8BA3] mb-1.5";
-
+  const inp = "w-full rounded-lg bg-[#111C2E] border border-[#1E2D45] px-4 py-2.5 text-sm text-white placeholder-muted outline-none transition-colors focus:border-brand";
+  const lbl = "block text-sm font-medium text-[#7A8BA3] mb-1.5";
   const qty = parseInt(quantity) || 1;
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
-      {error && (
-        <div className="rounded-lg bg-red-500/10 px-4 py-3 text-sm text-red-400">{error}</div>
-      )}
+      {error && <div className="rounded-lg bg-red-500/10 px-4 py-3 text-sm text-red-400">{error}</div>}
 
       <div>
-        <label className={labelClass}>Asset Type</label>
-        <select value={assetType} onChange={(e) => setAssetType(e.target.value)} className={`${inputClass} appearance-none`}>
+        <label className={lbl}>Asset Type</label>
+        <select value={assetType} onChange={(e) => setAssetType(e.target.value)} className={`${inp} appearance-none`}>
           <option value="dumpster">Dumpster</option>
           <option value="storage_container">Storage Container</option>
           <option value="portable_restroom">Portable Restroom</option>
@@ -1198,8 +1124,8 @@ function CreateAssetForm({ onSuccess }: { onSuccess: () => void }) {
       </div>
 
       <div>
-        <label className={labelClass}>Size / Subtype</label>
-        <select value={subtype} onChange={(e) => setSubtype(e.target.value)} className={`${inputClass} appearance-none`}>
+        <label className={lbl}>Size / Subtype</label>
+        <select value={subtype} onChange={(e) => setSubtype(e.target.value)} className={`${inp} appearance-none`}>
           {(SUBTYPES_BY_TYPE[assetType] || []).map((s) => (
             <option key={s.value} value={s.value}>{s.label}</option>
           ))}
@@ -1207,16 +1133,14 @@ function CreateAssetForm({ onSuccess }: { onSuccess: () => void }) {
       </div>
 
       <div>
-        <label className={labelClass}>Identifier</label>
-        <input value={identifier} onChange={(e) => setIdentifier(e.target.value)} required className={inputClass} placeholder="D-20-001" />
+        <label className={lbl}>Identifier</label>
+        <input value={identifier} onChange={(e) => setIdentifier(e.target.value)} required className={inp} placeholder="D-20-001" />
         {qty > 1 && (
           <p className="mt-1.5 text-xs text-muted">
             Will create: {identifier} through {(() => {
               const match = identifier.match(/^(.*?)(\d+)$/);
               if (!match) return `${identifier}-${String(qty).padStart(3, "0")}`;
-              const prefix = match[1];
-              const startNum = parseInt(match[2]);
-              return `${prefix}${String(startNum + qty - 1).padStart(3, "0")}`;
+              return `${match[1]}${String(parseInt(match[2]) + qty - 1).padStart(3, "0")}`;
             })()}
           </p>
         )}
@@ -1224,19 +1148,19 @@ function CreateAssetForm({ onSuccess }: { onSuccess: () => void }) {
 
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label className={labelClass}>Daily Rate ($)</label>
-          <input type="number" step="0.01" value={dailyRate} onChange={(e) => setDailyRate(e.target.value)} className={inputClass} placeholder="25.00" />
+          <label className={lbl}>Daily Rate ($)</label>
+          <input type="number" step="0.01" value={dailyRate} onChange={(e) => setDailyRate(e.target.value)} className={inp} placeholder="25.00" />
         </div>
         <div>
-          <label className={labelClass}>Weight Capacity (lbs)</label>
-          <input type="number" value={weightCapacity} onChange={(e) => setWeightCapacity(e.target.value)} className={inputClass} placeholder="4000" />
+          <label className={lbl}>Weight Capacity (tons)</label>
+          <input type="number" value={weightCapacity} onChange={(e) => setWeightCapacity(e.target.value)} className={inp} placeholder="4" />
         </div>
       </div>
 
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label className={labelClass}>Condition</label>
-          <select value={condition} onChange={(e) => setCondition(e.target.value)} className={`${inputClass} appearance-none`}>
+          <label className={lbl}>Condition</label>
+          <select value={condition} onChange={(e) => setCondition(e.target.value)} className={`${inp} appearance-none`}>
             <option value="good">Good</option>
             <option value="new">New</option>
             <option value="fair">Fair</option>
@@ -1244,14 +1168,14 @@ function CreateAssetForm({ onSuccess }: { onSuccess: () => void }) {
           </select>
         </div>
         <div>
-          <label className={labelClass}>Quantity</label>
-          <input type="number" min="1" max="50" value={quantity} onChange={(e) => setQuantity(e.target.value)} className={inputClass} placeholder="1" />
+          <label className={lbl}>Quantity</label>
+          <input type="number" min="1" max="50" value={quantity} onChange={(e) => setQuantity(e.target.value)} className={inp} placeholder="1" />
         </div>
       </div>
 
       <div>
-        <label className={labelClass}>Notes</label>
-        <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} className={`${inputClass} resize-none`} placeholder="Any notes about this asset..." />
+        <label className={lbl}>Notes</label>
+        <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} className={`${inp} resize-none`} placeholder="Any notes..." />
       </div>
 
       <button
@@ -1259,7 +1183,7 @@ function CreateAssetForm({ onSuccess }: { onSuccess: () => void }) {
         disabled={saving}
         className="w-full rounded-lg bg-[#2ECC71] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1FA855] disabled:opacity-50 btn-press"
       >
-        {saving ? "Creating..." : qty > 1 ? `Add ${qty} × ${subtype} ${assetType === "dumpster" ? "dumpsters" : assetType === "storage_container" ? "containers" : "restrooms"}` : "Add Asset"}
+        {saving ? "Creating..." : qty > 1 ? `Add ${qty} × ${subtype} ${assetType === "dumpster" ? "dumpsters" : "assets"}` : "Add Asset"}
       </button>
     </form>
   );
