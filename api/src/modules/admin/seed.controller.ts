@@ -178,4 +178,269 @@ export class SeedController {
       log,
     };
   }
+
+  @Public()
+  @Post('jobs')
+  async seedJobs(@Query('secret') secret: string) {
+    if (secret !== 'SEED_2026') return { error: 'Invalid secret' };
+
+    const tenant = await this.tenantRepo.findOne({ where: { slug: 'rent-this-dumpster-mnbxs4jm' } });
+    if (!tenant) return { error: 'Tenant not found' };
+    const tid = tenant.id;
+    const log: string[] = [];
+
+    // Lookup helpers
+    const findCust = async (email: string) => (await this.customerRepo.findOne({ where: { tenant_id: tid, email } }))?.id;
+    const findAsset = async (id: string) => (await this.assetRepo.findOne({ where: { tenant_id: tid, identifier: id } }))?.id;
+    const findDriver = async (email: string) => (await this.userRepo.findOne({ where: { email } }))?.id;
+    const findDump = async (name: string) => (await this.dumpLocRepo.findOne({ where: { tenant_id: tid, name } }))?.id;
+
+    const mike = await findDriver('mike@rentthisdumpster.com');
+    const jake = await findDriver('jake@rentthisdumpster.com');
+
+    const makeJob = (p: any) => this.jobRepo.create({ tenant_id: tid, job_number: `JOB-${Date.now().toString(36).slice(-4)}-${Math.floor(Math.random()*9000)+1000}`, priority: 'normal', source: 'manual', ...p } as any);
+    const makeInv = (p: any) => this.invoiceRepo.create({ tenant_id: tid, ...p } as any);
+
+    // --- JOB A: David Kim 20yd Delivery (completed, deployed) ---
+    const custDavid = await findCust('david.kim@email.com');
+    const assetA = await findAsset('D-2001');
+    const jobA: any = await this.jobRepo.save(makeJob({
+      customer_id: custDavid, job_type: 'delivery', service_type: 'dumpster_rental',
+      service_address: { street: '88 Summer Street', city: 'Stoughton', state: 'MA', zip: '02072' },
+      scheduled_date: '2026-03-20', scheduled_window_start: '08:00', scheduled_window_end: '12:00',
+      status: 'completed', completed_at: new Date('2026-03-20T10:30:00'),
+      assigned_driver_id: mike, asset_id: assetA, drop_off_asset_id: assetA, drop_off_asset_pin: 'D-2001',
+      rental_days: 14, rental_start_date: '2026-03-20', rental_end_date: '2026-04-03',
+      base_price: 800, total_price: 800,
+    }));
+    if (assetA) await this.assetRepo.update(assetA, { status: 'deployed', current_location: { street: '88 Summer Street', city: 'Stoughton', state: 'MA' }, current_job_id: jobA.id } as any);
+    await this.invoiceRepo.save(makeInv({ invoice_number: 'INV-2026-0010', customer_id: custDavid, job_id: jobA.id, status: 'paid', source: 'booking', invoice_type: 'rental', subtotal: 800, total: 800, amount_paid: 800, balance_due: 0, paid_at: new Date('2026-03-20'), payment_method: 'card', line_items: [{ description: '20yd Dumpster Rental — 14-day rental', quantity: 1, unitPrice: 800, amount: 800 }], notes: 'Paid at time of booking' }));
+    log.push('Job A: David Kim 20yd Delivery (completed, deployed)');
+
+    // --- JOB B: Jennifer Walsh 15yd Delivery (completed) ---
+    const custJen = await findCust('jen.walsh@email.com');
+    const assetB = await findAsset('D-1505');
+    const jobB: any = await this.jobRepo.save(makeJob({
+      customer_id: custJen, job_type: 'delivery', service_type: 'dumpster_rental',
+      service_address: { street: '55 North Avenue', city: 'Rockland', state: 'MA', zip: '02370' },
+      scheduled_date: '2026-03-15', status: 'completed', completed_at: new Date('2026-03-15T09:00:00'),
+      assigned_driver_id: mike, asset_id: assetB, drop_off_asset_id: assetB,
+      rental_days: 14, rental_start_date: '2026-03-15', rental_end_date: '2026-03-29',
+      base_price: 700, total_price: 700,
+    }));
+    await this.invoiceRepo.save(makeInv({ invoice_number: 'INV-2026-0011', customer_id: custJen, job_id: jobB.id, status: 'paid', source: 'booking', invoice_type: 'rental', subtotal: 700, total: 700, amount_paid: 700, balance_due: 0, paid_at: new Date('2026-03-15'), payment_method: 'card', line_items: [{ description: '15yd Dumpster Rental — 14-day rental', quantity: 1, unitPrice: 700, amount: 700 }] }));
+
+    // JOB B2: Jennifer Walsh Pickup (clean, no overage)
+    const jobB2: any = await this.jobRepo.save(makeJob({
+      customer_id: custJen, job_type: 'pickup', service_type: 'dumpster_rental',
+      service_address: { street: '55 North Avenue', city: 'Rockland', state: 'MA', zip: '02370' },
+      scheduled_date: '2026-03-25', status: 'completed', completed_at: new Date('2026-03-25T14:00:00'),
+      assigned_driver_id: jake, asset_id: assetB, pick_up_asset_id: assetB,
+      parent_job_id: jobB.id, dump_disposition: 'dumped',
+    }));
+    if (assetB) await this.assetRepo.update(assetB, { status: 'available', current_location: null, current_job_id: null } as any);
+    await this.jobRepo.update(jobB.id, { linked_job_ids: [jobB2.id] });
+    // Dump ticket: clean
+    const dumpRS = await findDump('Recycling Solutions');
+    await this.ticketRepo.save(this.ticketRepo.create({ job_id: jobB2.id, tenant_id: tid, dump_location_id: dumpRS, dump_location_name: 'Recycling Solutions', ticket_number: 'T-12445', waste_type: 'cnd', weight_tons: 1.8, base_cost: 333, overage_items: [], overage_charges: 0, total_cost: 333, customer_charges: 0, submitted_by: jake, submitted_at: new Date('2026-03-25T14:30:00'), status: 'reviewed' } as any));
+    log.push('Job B: Jennifer Walsh 15yd Delivery+Pickup (clean, no overage)');
+
+    // --- JOB C: Robert Patel 20yd (HAS overage) ---
+    const custRobert = await findCust('robert.patel@email.com');
+    const assetC = await findAsset('D-2002');
+    const jobC: any = await this.jobRepo.save(makeJob({
+      customer_id: custRobert, job_type: 'delivery', service_type: 'dumpster_rental',
+      service_address: { street: '340 Bedford Street', city: 'Bridgewater', state: 'MA', zip: '02324' },
+      scheduled_date: '2026-03-10', status: 'completed', completed_at: new Date('2026-03-10T11:00:00'),
+      assigned_driver_id: mike, asset_id: assetC, drop_off_asset_id: assetC,
+      rental_days: 14, rental_start_date: '2026-03-10', rental_end_date: '2026-03-24',
+      base_price: 800, total_price: 800,
+    }));
+    await this.invoiceRepo.save(makeInv({ invoice_number: 'INV-2026-0012', customer_id: custRobert, job_id: jobC.id, status: 'paid', source: 'booking', invoice_type: 'rental', subtotal: 800, total: 800, amount_paid: 800, balance_due: 0, paid_at: new Date('2026-03-10'), payment_method: 'card', line_items: [{ description: '20yd Dumpster Rental — 14-day rental', quantity: 1, unitPrice: 800, amount: 800 }] }));
+
+    // JOB C2: Robert Patel Pickup (overage)
+    const jobC2: any = await this.jobRepo.save(makeJob({
+      customer_id: custRobert, job_type: 'pickup',
+      service_address: { street: '340 Bedford Street', city: 'Bridgewater', state: 'MA', zip: '02324' },
+      scheduled_date: '2026-03-28', status: 'completed', completed_at: new Date('2026-03-28T15:00:00'),
+      assigned_driver_id: jake, asset_id: assetC, pick_up_asset_id: assetC,
+      parent_job_id: jobC.id, dump_disposition: 'dumped', customer_additional_charges: 422, dump_status: 'submitted',
+    }));
+    if (assetC) await this.assetRepo.update(assetC, { status: 'available', current_location: null, current_job_id: null } as any);
+    await this.jobRepo.update(jobC.id, { linked_job_ids: [jobC2.id] });
+    // Overage invoice
+    const invC: any = await this.invoiceRepo.save(makeInv({ invoice_number: 'INV-2026-0030', customer_id: custRobert, job_id: jobC.id, status: 'sent', source: 'dump_slip', invoice_type: 'overage', subtotal: 422, total: 422, amount_paid: 0, balance_due: 422, due_date: '2026-04-27', line_items: [{ description: 'Weight overage: 1.2 tons over 3 ton allowance @ $185/ton', quantity: 1, unitPrice: 222, amount: 222 }, { description: 'Mattress (qty: 2) @ $100/each', quantity: 2, unitPrice: 100, amount: 200 }], notes: 'Additional charges from dump slip #T-89234 at Brockton Transfer Station' }));
+    const dumpBT = await findDump('Brockton Transfer Station');
+    await this.ticketRepo.save(this.ticketRepo.create({ job_id: jobC2.id, tenant_id: tid, dump_location_id: dumpBT, dump_location_name: 'Brockton Transfer Station', ticket_number: 'T-89234', waste_type: 'cnd', weight_tons: 4.2, base_cost: 777, overage_items: [{ type: 'mattress', label: 'Mattress', quantity: 2, chargePerUnit: 100, total: 200 }], overage_charges: 200, total_cost: 977, customer_charges: 422, submitted_by: jake, submitted_at: new Date('2026-03-28T15:30:00'), status: 'reviewed', invoiced: true, invoice_id: invC.id } as any));
+    log.push('Job C: Robert Patel 20yd Delivery+Pickup (4.2t overage, $422 invoice)');
+
+    // --- JOB D: South Shore Renovations 15yd (15% discount, MSW overage) ---
+    const custSSR = await findCust('jobs@southshorereno.com');
+    const assetD = await findAsset('D-1506');
+    const jobD: any = await this.jobRepo.save(makeJob({
+      customer_id: custSSR, job_type: 'delivery', service_type: 'dumpster_rental',
+      service_address: { street: '150 Washington Street', city: 'Hanover', state: 'MA', zip: '02339' },
+      scheduled_date: '2026-03-12', status: 'completed', completed_at: new Date('2026-03-12T08:30:00'),
+      assigned_driver_id: jake, asset_id: assetD, drop_off_asset_id: assetD,
+      rental_days: 14, base_price: 700, total_price: 595, discount_percentage: 15, discount_amount: 105,
+    }));
+    await this.invoiceRepo.save(makeInv({ invoice_number: 'INV-2026-0013', customer_id: custSSR, job_id: jobD.id, status: 'paid', source: 'booking', invoice_type: 'rental', subtotal: 700, total: 595, amount_paid: 595, balance_due: 0, paid_at: new Date('2026-03-12'), payment_method: 'card', line_items: [{ description: '15yd Dumpster Rental — 14-day rental', quantity: 1, unitPrice: 700, amount: 700 }, { description: 'Customer discount (15%)', quantity: 1, unitPrice: -105, amount: -105 }] }));
+
+    const jobD2: any = await this.jobRepo.save(makeJob({
+      customer_id: custSSR, job_type: 'pickup',
+      service_address: { street: '150 Washington Street', city: 'Hanover', state: 'MA', zip: '02339' },
+      scheduled_date: '2026-03-22', status: 'completed', completed_at: new Date('2026-03-22T16:00:00'),
+      assigned_driver_id: mike, asset_id: assetD, pick_up_asset_id: assetD,
+      parent_job_id: jobD.id, dump_disposition: 'dumped', customer_additional_charges: 92.5, dump_status: 'submitted',
+    }));
+    if (assetD) await this.assetRepo.update(assetD, { status: 'available', current_location: null, current_job_id: null } as any);
+    await this.jobRepo.update(jobD.id, { linked_job_ids: [jobD2.id] });
+    const dumpST = await findDump('Stoughton Transfer Station');
+    const invD: any = await this.invoiceRepo.save(makeInv({ invoice_number: 'INV-2026-0031', customer_id: custSSR, job_id: jobD.id, status: 'sent', source: 'dump_slip', invoice_type: 'overage', subtotal: 92.5, total: 92.5, amount_paid: 0, balance_due: 92.5, due_date: '2026-04-21', line_items: [{ description: 'Weight overage: 0.5 tons over 2 ton allowance @ $185/ton', quantity: 1, unitPrice: 92.5, amount: 92.5 }] }));
+    await this.ticketRepo.save(this.ticketRepo.create({ job_id: jobD2.id, tenant_id: tid, dump_location_id: dumpST, dump_location_name: 'Stoughton Transfer Station', ticket_number: 'T-45821', waste_type: 'msw', weight_tons: 2.5, base_cost: 375, overage_items: [], overage_charges: 0, total_cost: 375, customer_charges: 92.5, submitted_by: mike, submitted_at: new Date('2026-03-22T16:30:00'), status: 'reviewed', invoiced: true, invoice_id: invD.id } as any));
+    log.push('Job D: South Shore Renovations 15yd (15% off, 0.5t MSW overage, $92.50 invoice)');
+
+    // --- JOB E: Tom Richards FAILED pickup ---
+    const custTom = await findCust('tom.richards@email.com');
+    const assetE = await findAsset('D-2005');
+    // Original delivery for Tom
+    const jobE0: any = await this.jobRepo.save(makeJob({
+      customer_id: custTom, job_type: 'delivery', service_type: 'dumpster_rental',
+      service_address: { street: '200 Centre Street', city: 'Abington', state: 'MA', zip: '02351' },
+      scheduled_date: '2026-03-15', status: 'completed', completed_at: new Date('2026-03-15T14:00:00'),
+      assigned_driver_id: jake, asset_id: assetE, drop_off_asset_id: assetE,
+      rental_days: 14, rental_start_date: '2026-03-15', rental_end_date: '2026-03-29',
+      base_price: 800, total_price: 800,
+    }));
+    await this.invoiceRepo.save(makeInv({ invoice_number: 'INV-2026-0014', customer_id: custTom, job_id: jobE0.id, status: 'paid', source: 'booking', invoice_type: 'rental', subtotal: 800, total: 800, amount_paid: 800, balance_due: 0, paid_at: new Date('2026-03-15'), payment_method: 'card', line_items: [{ description: '20yd Dumpster Rental — 14-day rental', quantity: 1, unitPrice: 800, amount: 800 }] }));
+    if (assetE) await this.assetRepo.update(assetE, { status: 'deployed', current_location: { street: '200 Centre Street', city: 'Abington', state: 'MA' }, current_job_id: jobE0.id } as any);
+
+    // Failed pickup
+    const jobE: any = await this.jobRepo.save(makeJob({
+      customer_id: custTom, job_type: 'pickup',
+      service_address: { street: '200 Centre Street', city: 'Abington', state: 'MA', zip: '02351' },
+      scheduled_date: '2026-03-27', status: 'failed', assigned_driver_id: mike, asset_id: assetE, pick_up_asset_id: assetE,
+      parent_job_id: jobE0.id, is_failed_trip: true, failed_reason: 'Dumpster blocked — cannot access', failed_reason_code: 'dumpster_blocked', failed_at: new Date('2026-03-27T13:00:00'), cancelled_at: new Date('2026-03-27T13:00:00'),
+    }));
+    await this.invoiceRepo.save(makeInv({ invoice_number: 'INV-2026-0032', customer_id: custTom, job_id: jobE.id, status: 'sent', source: 'failed_trip', invoice_type: 'failure_charge', subtotal: 150, total: 150, amount_paid: 0, balance_due: 150, due_date: '2026-04-26', line_items: [{ description: 'Failed pickup charge — Dumpster blocked', quantity: 1, unitPrice: 150, amount: 150 }], notes: 'Driver arrived but job could not be completed. Reason: Dumpster blocked — cannot access' }));
+
+    // Replacement pickup
+    const jobE2: any = await this.jobRepo.save(makeJob({
+      customer_id: custTom, job_type: 'pickup',
+      service_address: { street: '200 Centre Street', city: 'Abington', state: 'MA', zip: '02351' },
+      scheduled_date: '2026-03-31', status: 'confirmed', assigned_driver_id: mike, asset_id: assetE, pick_up_asset_id: assetE,
+      parent_job_id: jobE.id, source: 'rescheduled_from_failure', placement_notes: 'Auto-created from failed job. Original failure reason: Dumpster blocked',
+    }));
+    await this.jobRepo.update(jobE.id, { linked_job_ids: [jobE2.id] });
+    await this.jobRepo.update(jobE0.id, { linked_job_ids: [jobE.id, jobE2.id] });
+    log.push('Job E: Tom Richards FAILED pickup + $150 charge + replacement scheduled 3/31');
+
+    // --- TODAY'S JOBS (March 30) ---
+    const custJohn = await findCust('john.mccarthy@email.com');
+    const custMaria = await findCust('maria.santos@email.com');
+    const custMDR = await findCust('office@mightydogroofing.com');
+    const custBB = await findCust('dispatch@bestbrothers.com');
+    const custAmanda = await findCust('amanda.cruz@email.com');
+
+    // F: John McCarthy 20yd Delivery today
+    const assetF = await findAsset('D-2006');
+    const jobF: any = await this.jobRepo.save(makeJob({
+      customer_id: custJohn, job_type: 'delivery', service_type: 'dumpster_rental',
+      service_address: { street: '45 Pearl Street', city: 'Brockton', state: 'MA', zip: '02301' },
+      scheduled_date: '2026-03-30', scheduled_window_start: '08:00', scheduled_window_end: '12:00',
+      status: 'confirmed', assigned_driver_id: mike, asset_id: assetF, drop_off_asset_id: assetF,
+      rental_days: 14, base_price: 800, total_price: 800,
+    }));
+    await this.invoiceRepo.save(makeInv({ invoice_number: 'INV-2026-0020', customer_id: custJohn, job_id: jobF.id, status: 'paid', source: 'booking', invoice_type: 'rental', subtotal: 800, total: 800, amount_paid: 800, balance_due: 0, paid_at: new Date('2026-03-30'), payment_method: 'card', line_items: [{ description: '20yd Dumpster Rental', quantity: 1, unitPrice: 800, amount: 800 }] }));
+    log.push('Job F: John McCarthy 20yd Delivery today (confirmed, Mike)');
+
+    // G: Maria Santos 15yd Delivery today
+    const assetG = await findAsset('D-1507');
+    const jobG: any = await this.jobRepo.save(makeJob({
+      customer_id: custMaria, job_type: 'delivery', service_type: 'dumpster_rental',
+      service_address: { street: '120 West Elm Street', city: 'East Bridgewater', state: 'MA', zip: '02333' },
+      scheduled_date: '2026-03-30', scheduled_window_start: '08:00', scheduled_window_end: '12:00',
+      status: 'confirmed', assigned_driver_id: mike, asset_id: assetG,
+      rental_days: 14, base_price: 700, total_price: 700,
+    }));
+    await this.invoiceRepo.save(makeInv({ invoice_number: 'INV-2026-0021', customer_id: custMaria, job_id: jobG.id, status: 'paid', source: 'booking', invoice_type: 'rental', subtotal: 700, total: 700, amount_paid: 700, balance_due: 0, paid_at: new Date('2026-03-30'), payment_method: 'card', line_items: [{ description: '15yd Dumpster Rental', quantity: 1, unitPrice: 700, amount: 700 }] }));
+    log.push('Job G: Maria Santos 15yd Delivery today (confirmed, Mike)');
+
+    // H: Mighty Dog Roofing 20yd Pickup today
+    const assetH = await findAsset('D-2003');
+    if (assetH) await this.assetRepo.update(assetH, { status: 'deployed', current_location: { street: '500 Industrial Drive', city: 'Brockton', state: 'MA' } } as any);
+    await this.jobRepo.save(makeJob({
+      customer_id: custMDR, job_type: 'pickup', service_type: 'dumpster_rental',
+      service_address: { street: '500 Industrial Drive', city: 'Brockton', state: 'MA', zip: '02301' },
+      scheduled_date: '2026-03-30', scheduled_window_start: '08:00', scheduled_window_end: '12:00',
+      status: 'confirmed', assigned_driver_id: jake, asset_id: assetH, pick_up_asset_id: assetH,
+    }));
+    log.push('Job H: Mighty Dog Roofing 20yd Pickup today (confirmed, Jake)');
+
+    // I: Best Brothers 10yd Delivery today (10% discount, unassigned)
+    await this.jobRepo.save(makeJob({
+      customer_id: custBB, job_type: 'delivery', service_type: 'dumpster_rental',
+      service_address: { street: '23 Josephs Road', city: 'Brockton', state: 'MA', zip: '02301' },
+      scheduled_date: '2026-03-30', scheduled_window_start: '12:00', scheduled_window_end: '17:00',
+      status: 'pending', base_price: 600, total_price: 540, discount_percentage: 10, discount_amount: 60,
+    }));
+    await this.invoiceRepo.save(makeInv({ invoice_number: 'INV-2026-0022', customer_id: custBB, status: 'paid', source: 'booking', invoice_type: 'rental', subtotal: 600, total: 540, amount_paid: 540, balance_due: 0, paid_at: new Date('2026-03-30'), payment_method: 'card', line_items: [{ description: '10yd Dumpster Rental', quantity: 1, unitPrice: 600, amount: 600 }, { description: 'Customer discount (10%)', quantity: 1, unitPrice: -60, amount: -60 }] }));
+    log.push('Job I: Best Brothers 10yd Delivery today (pending, unassigned, 10% off)');
+
+    // J: Amanda Cruz 20yd Exchange today
+    const assetJ1 = await findAsset('D-2007');
+    const assetJ2 = await findAsset('D-2004');
+    if (assetJ2) await this.assetRepo.update(assetJ2, { status: 'deployed', current_location: { street: '78 Oak Street', city: 'Easton', state: 'MA' } } as any);
+    await this.jobRepo.save(makeJob({
+      customer_id: custAmanda, job_type: 'exchange', service_type: 'dumpster_rental',
+      service_address: { street: '78 Oak Street', city: 'Easton', state: 'MA', zip: '02356' },
+      scheduled_date: '2026-03-30', scheduled_window_start: '12:00', scheduled_window_end: '17:00',
+      status: 'confirmed', assigned_driver_id: jake, asset_id: assetJ2,
+      drop_off_asset_id: assetJ1, pick_up_asset_id: assetJ2,
+      base_price: 800, total_price: 800,
+    }));
+    await this.invoiceRepo.save(makeInv({ invoice_number: 'INV-2026-0023', customer_id: custAmanda, status: 'paid', source: 'booking', invoice_type: 'rental', subtotal: 800, total: 800, amount_paid: 800, balance_due: 0, paid_at: new Date('2026-03-30'), payment_method: 'card', line_items: [{ description: '20yd Dumpster Exchange', quantity: 1, unitPrice: 800, amount: 800 }] }));
+    log.push('Job J: Amanda Cruz 20yd Exchange today (confirmed, Jake)');
+
+    // --- TOMORROW'S JOBS (March 31) ---
+    const custKaren = await findCust('karen.obrien@email.com');
+    const custCasa = await findCust('info@casadesign.com');
+
+    await this.jobRepo.save(makeJob({
+      customer_id: custKaren, job_type: 'delivery', service_type: 'dumpster_rental',
+      service_address: { street: '15 Maple Drive', city: 'Whitman', state: 'MA', zip: '02382' },
+      scheduled_date: '2026-03-31', scheduled_window_start: '08:00', scheduled_window_end: '12:00',
+      status: 'pending', base_price: 700, total_price: 700,
+    }));
+    await this.invoiceRepo.save(makeInv({ invoice_number: 'INV-2026-0024', customer_id: custKaren, status: 'paid', source: 'booking', invoice_type: 'rental', subtotal: 700, total: 700, amount_paid: 700, balance_due: 0, paid_at: new Date('2026-03-31'), payment_method: 'card', line_items: [{ description: '15yd Dumpster Rental', quantity: 1, unitPrice: 700, amount: 700 }] }));
+    log.push('Job K: Karen O\'Brien 15yd Delivery tomorrow (pending, unassigned)');
+
+    await this.jobRepo.save(makeJob({
+      customer_id: custCasa, job_type: 'delivery', service_type: 'dumpster_rental',
+      service_address: { street: '89 Tosca Drive', city: 'Stoughton', state: 'MA', zip: '02072' },
+      scheduled_date: '2026-03-31', status: 'confirmed', assigned_driver_id: jake,
+      base_price: 800, total_price: 800,
+    }));
+    await this.invoiceRepo.save(makeInv({ invoice_number: 'INV-2026-0025', customer_id: custCasa, status: 'paid', source: 'booking', invoice_type: 'rental', subtotal: 800, total: 800, amount_paid: 800, balance_due: 0, paid_at: new Date('2026-03-31'), payment_method: 'card', line_items: [{ description: '20yd Dumpster Rental', quantity: 1, unitPrice: 800, amount: 800 }] }));
+    log.push('Job L: Casa Design Build 20yd Delivery tomorrow (confirmed, Jake)');
+
+    // --- VERIFICATION ---
+    const jobsByStatus = await this.jobRepo.query(`SELECT status, COUNT(*) as count FROM jobs WHERE tenant_id = $1 GROUP BY status ORDER BY status`, [tid]);
+    const jobsByType = await this.jobRepo.query(`SELECT job_type, COUNT(*) as count FROM jobs WHERE tenant_id = $1 GROUP BY job_type ORDER BY job_type`, [tid]);
+    const invByStatus = await this.invoiceRepo.query(`SELECT status, source, COUNT(*) as count, SUM(total) as total FROM invoices WHERE tenant_id = $1 GROUP BY status, source ORDER BY status, source`, [tid]);
+    const ticketCount = await this.ticketRepo.count({ where: { tenant_id: tid } });
+    const assetsByStatus = await this.assetRepo.query(`SELECT status, COUNT(*) as count FROM assets WHERE tenant_id = $1 GROUP BY status ORDER BY status`, [tid]);
+    const todayJobs = await this.jobRepo.count({ where: { tenant_id: tid, scheduled_date: '2026-03-30' } });
+    const tomorrowJobs = await this.jobRepo.count({ where: { tenant_id: tid, scheduled_date: '2026-03-31' } });
+
+    return {
+      message: 'Jobs seeded',
+      log,
+      verification: {
+        jobsByStatus, jobsByType, invoicesByStatusSource: invByStatus,
+        dumpTickets: ticketCount, assetsByStatus,
+        todayJobs, tomorrowJobs,
+      },
+    };
+  }
 }
