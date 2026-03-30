@@ -11,7 +11,6 @@ import {
   UpdateJobDto,
   ListJobsQueryDto,
   ChangeStatusDto,
-  AssignDto,
 } from './dto/job.dto';
 
 const VALID_TRANSITIONS: Record<string, string[]> = {
@@ -214,19 +213,25 @@ export class JobsService {
     return this.jobsRepository.save(job);
   }
 
-  async assignJob(tenantId: string, id: string, dto: AssignDto): Promise<Job> {
+  async assignJob(
+    tenantId: string,
+    id: string,
+    body: Record<string, unknown>,
+  ): Promise<Job> {
     const job = await this.findOne(tenantId, id);
 
-    if (dto.assetId !== undefined) job.asset_id = dto.assetId as any;
-    if (dto.assignedDriverId !== undefined) {
-      job.assigned_driver_id = dto.assignedDriverId as any;
+    if ('assetId' in body) {
+      job.asset_id = (body.assetId as string) || (null as any);
+    }
 
-      // Auto-confirm when assigning a driver to a pending job
-      if (dto.assignedDriverId && job.status === 'pending') {
+    if ('assignedDriverId' in body) {
+      const newDriverId = (body.assignedDriverId as string) || null;
+      job.assigned_driver_id = newDriverId as any;
+
+      if (newDriverId && job.status === 'pending') {
         job.status = 'confirmed';
       }
-      // Revert to pending when unassigning from a confirmed job
-      if (!dto.assignedDriverId && job.status === 'confirmed') {
+      if (!newDriverId && job.status === 'confirmed') {
         job.status = 'pending';
       }
     }

@@ -15,7 +15,6 @@ import {
   UpdateJobDto,
   ListJobsQueryDto,
   ChangeStatusDto,
-  AssignDto,
   CalendarQueryDto,
 } from './dto/job.dto';
 import { TenantId } from '../../common/decorators';
@@ -87,12 +86,12 @@ export class JobsController {
   }
 
   @Patch(':id/assign')
-  @ApiOperation({ summary: 'Assign driver and/or asset to a job' })
+  @ApiOperation({ summary: 'Assign or unassign driver and/or asset' })
   assign(
     @TenantId() tenantId: string,
     @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: AssignDto,
+    @Body() body: Record<string, unknown>,
   ) {
-    return this.jobsService.assignJob(tenantId, id, dto);
+    return this.jobsService.assignJob(tenantId, id, body);
   }
 }
