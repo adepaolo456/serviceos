@@ -133,6 +133,9 @@ export class Invoice {
   @Column({ name: 'paid_at', type: 'timestamptz', nullable: true })
   paid_at!: Date;
 
+  @Column({ name: 'viewed_at', type: 'timestamptz', nullable: true })
+  viewed_at!: Date;
+
   @CreateDateColumn({ name: 'created_at' })
   created_at!: Date;
 

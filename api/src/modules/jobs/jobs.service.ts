@@ -219,6 +219,84 @@ export class JobsService {
           job.cancellation_reason = dto.cancellationReason;
         }
         break;
+      case 'failed':
+        job.cancelled_at = now;
+        break;
+    }
+
+    // Handle failed trip — create failure invoice + replacement job
+    if (dto.status === 'failed') {
+      job.is_failed_trip = true;
+      job.failed_reason = (dto as any).reason || (dto as any).cancellationReason || '';
+      job.cancelled_at = now;
+
+      // Auto-create replacement job
+      const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
+      const seq = Math.floor(Math.random() * 9000) + 1000;
+      const replacement = this.jobsRepository.create({
+        tenant_id: tenantId,
+        job_number: `JOB-${dateStr}-${seq}`,
+        customer_id: job.customer_id,
+        job_type: job.job_type,
+        service_type: job.service_type,
+        priority: job.priority,
+        service_address: job.service_address,
+        placement_notes: job.placement_notes,
+        scheduled_window_start: job.scheduled_window_start,
+        scheduled_window_end: job.scheduled_window_end,
+        rental_days: job.rental_days,
+        base_price: job.base_price,
+        total_price: job.total_price,
+        status: 'pending',
+        source: 'rescheduled_from_failure',
+        parent_job_id: job.id,
+      } as Partial<Job>);
+      const savedReplacement = await this.jobsRepository.save(replacement);
+
+      // Update failed job's linked_job_ids
+      const linked = Array.isArray(job.linked_job_ids) ? [...job.linked_job_ids] : [];
+      linked.push(savedReplacement.id);
+      job.linked_job_ids = linked;
+    }
+
+    // Combined final invoice at pickup completion
+    if (dto.status === 'completed' && job.job_type === 'pickup' && job.parent_job_id) {
+      // Find root delivery job
+      const rootJob = await this.jobsRepository.findOne({ where: { id: job.parent_job_id, tenant_id: tenantId } });
+      if (rootJob) {
+        const lineItems: Array<{ description: string; quantity: number; unitPrice: number; amount: number }> = [];
+
+        // Extra day charges
+        const extraDays = Number(rootJob.extra_days) || 0;
+        const extraDayRate = Number(rootJob.extra_day_rate) || 0;
+        if (extraDays > 0 && extraDayRate > 0) {
+          lineItems.push({ description: `Extra rental days: ${extraDays} days @ $${extraDayRate}/day`, quantity: extraDays, unitPrice: extraDayRate, amount: extraDays * extraDayRate });
+        }
+
+        // Uninvoiced dump ticket charges — check the root job's dump data
+        const custCharges = Number(rootJob.customer_additional_charges) || 0;
+        if (custCharges > 0) {
+          const existingInvoice = await this.jobsRepository.query(
+            `SELECT id FROM invoices WHERE job_id = $1 AND source = 'dump_slip' LIMIT 1`,
+            [rootJob.id],
+          );
+          if (!existingInvoice || existingInvoice.length === 0) {
+            lineItems.push({ description: `Disposal & overage charges`, quantity: 1, unitPrice: custCharges, amount: custCharges });
+          }
+        }
+
+        if (lineItems.length > 0) {
+          const total = lineItems.reduce((s, li) => s + li.amount, 0);
+          const invNumber = `INV-${now.getFullYear()}-${String(Math.floor(Math.random() * 9999)).padStart(4, '0')}`;
+          await this.jobsRepository.query(
+            `INSERT INTO invoices (id, tenant_id, invoice_number, customer_id, job_id, status, source, invoice_type, subtotal, total, amount_paid, balance_due, line_items, due_date, notes, created_at, updated_at)
+             VALUES (gen_random_uuid(), $1, $2, $3, $4, 'sent', 'pickup_completion', 'final_charges', $5, $5, 0, $5, $6, $7, $8, NOW(), NOW())`,
+            [tenantId, invNumber, rootJob.customer_id, rootJob.id, total, JSON.stringify(lineItems),
+             new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+             `Final charges for rental #${rootJob.job_number}`],
+          );
+        }
+      }
     }
 
     return this.jobsRepository.save(job);
@@ -375,6 +453,20 @@ export class JobsService {
     } else if (body.type === 'exchange') {
       const job = this.jobsRepository.create({ ...baseJob, job_number: `JOB-${dateStr}-${seq}`, job_type: 'exchange', asset_id: parent.asset_id });
       jobs.push(await this.jobsRepository.save(job));
+
+      // Auto-create exchange invoice
+      const exchangeFee = Number((body as any).exchangeFee || 0) || Number(job.base_price || 0);
+      if (exchangeFee > 0) {
+        const invNumber = `INV-${new Date().getFullYear()}-${String(Math.floor(Math.random() * 9999)).padStart(4, '0')}`;
+        await this.jobsRepository.query(
+          `INSERT INTO invoices (id, tenant_id, invoice_number, customer_id, job_id, status, source, invoice_type, subtotal, total, amount_paid, balance_due, line_items, due_date, notes, created_at, updated_at)
+           VALUES (gen_random_uuid(), $1, $2, $3, $4, 'sent', 'exchange', 'exchange', $5, $5, 0, $5, $6, $7, $8, NOW(), NOW())`,
+          [tenantId, invNumber, parent.customer_id, jobs[jobs.length - 1].id, exchangeFee,
+           JSON.stringify([{ description: `Dumpster Exchange`, quantity: 1, unitPrice: exchangeFee, amount: exchangeFee }]),
+           new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+           `Exchange scheduled from job #${parent.job_number}`],
+        );
+      }
     } else if (body.type === 'dump_and_return') {
       const pickupJob = this.jobsRepository.create({ ...baseJob, job_number: `JOB-${dateStr}-${seq}`, job_type: 'pickup', asset_id: parent.asset_id });
       const saved1 = await this.jobsRepository.save(pickupJob);
