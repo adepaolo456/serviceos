@@ -60,8 +60,8 @@ const TYPE_COLORS: Record<string, string> = {
 
 const STATUS_FLOW: Record<string, { next: string; label: string; icon: string }> = {
   pending: { next: 'confirmed', label: 'Confirm Job', icon: 'checkmark-circle' },
-  confirmed: { next: 'en_route', label: 'Start Route', icon: 'navigate' },
-  dispatched: { next: 'en_route', label: 'Start Route', icon: 'navigate' },
+  confirmed: { next: 'dispatched', label: 'Start Route', icon: 'navigate' },
+  dispatched: { next: 'en_route', label: 'On My Way', icon: 'navigate' },
   en_route: { next: 'arrived', label: 'Mark Arrived', icon: 'location' },
   arrived: { next: 'in_progress', label: 'Start Work', icon: 'hammer' },
   in_progress: { next: 'completed', label: 'Complete Job', icon: 'checkmark-done' },
@@ -126,7 +126,7 @@ export default function JobDetailScreen() {
                 Alert.alert('On My Way!', 'Customer notified — on your way!');
               }
             } catch {
-              Alert.alert('Error', 'Failed to update status');
+              Alert.alert('Error', (err as any)?.response?.data?.message || (err as any)?.message || 'Failed to update status');
             } finally {
               setUpdating(false);
             }

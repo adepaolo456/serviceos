@@ -1,4 +1,4 @@
-import { Controller, Get, Patch, Param, Body, Query, ParseUUIDPipe } from '@nestjs/common';
+import { Controller, Get, Patch, Param, Body, Query, ParseUUIDPipe, NotFoundException } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -67,7 +67,7 @@ export class DriverController {
     const job = await this.jobRepo.findOne({
       where: { id, tenant_id: tenantId, assigned_driver_id: userId },
     });
-    if (!job) throw new Error('Job not found or not assigned to you');
+    if (!job) throw new NotFoundException('Job not found or not assigned to you');
 
     const now = new Date();
     const updates: Record<string, unknown> = { status: body.status };
@@ -121,7 +121,7 @@ export class DriverController {
     const job = await this.jobRepo.findOne({
       where: { id, tenant_id: tenantId, assigned_driver_id: userId },
     });
-    if (!job) throw new Error('Job not found or not assigned to you');
+    if (!job) throw new NotFoundException('Job not found or not assigned to you');
 
     const photos = Array.isArray(job.photos) ? [...job.photos] : [];
     photos.push({

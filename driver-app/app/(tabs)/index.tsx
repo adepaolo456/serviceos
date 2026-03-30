@@ -112,37 +112,6 @@ export default function TodayScreen() {
         </View>
       )}
 
-      {/* Next Stop */}
-      {(() => {
-        const nextJob = jobs.find(j => j.status !== 'completed' && j.status !== 'cancelled');
-        if (!nextJob) return null;
-        const addr = nextJob.service_address;
-        return (
-          <View style={styles.nextStop}>
-            <Text style={styles.nextStopLabel}>NEXT STOP</Text>
-            <Text style={styles.nextStopName} numberOfLines={1}>
-              {nextJob.customer ? `${nextJob.customer.first_name} ${nextJob.customer.last_name}` : nextJob.job_number}
-            </Text>
-            {addr && <Text style={styles.nextStopAddr} numberOfLines={1}>{[addr.street, addr.city].filter(Boolean).join(', ')}</Text>}
-            <View style={styles.nextStopActions}>
-              <TouchableOpacity style={styles.nextStopNav} onPress={() => {
-                if (!addr) return;
-                const query = [addr.street, addr.city, addr.state].filter(Boolean).join(', ');
-                const url = Platform.OS === 'ios' ? `maps://?daddr=${encodeURIComponent(query)}` : `google.navigation:q=${encodeURIComponent(query)}`;
-                Linking.openURL(url);
-              }}>
-                <Ionicons name="navigate" size={16} color="#fff" />
-                <Text style={styles.nextStopNavText}>Navigate</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.nextStopDetail} onPress={() => router.push(`/job/${nextJob.id}`)}>
-                <Text style={styles.nextStopDetailText}>Details</Text>
-                <Ionicons name="chevron-forward" size={14} color="#2ECC71" />
-              </TouchableOpacity>
-            </View>
-          </View>
-        );
-      })()}
-
       <FlatList
         data={jobs}
         keyExtractor={(j) => j.id}
@@ -159,13 +128,15 @@ export default function TodayScreen() {
         }
         renderItem={({ item: j, index }) => {
           const isCompleted = j.status === 'completed';
+          const isNextStop = !isCompleted && jobs.findIndex(j => j.status !== 'completed' && j.status !== 'cancelled') === index;
           const addr = j.service_address;
           return (
             <TouchableOpacity
               style={[
                 styles.card,
-                { borderLeftColor: STATUS_COLORS[j.status] || '#71717A' },
+                { borderLeftColor: isNextStop ? '#2ECC71' : (STATUS_COLORS[j.status] || '#71717A'), borderLeftWidth: isNextStop ? 4 : 3 },
                 isCompleted && styles.cardCompleted,
+                isNextStop && styles.cardNextStop,
               ]}
               onPress={() => router.push(`/job/${j.id}`)}
               activeOpacity={0.7}
@@ -216,9 +187,7 @@ export default function TodayScreen() {
                     </Text>
                   )}
                   <View style={styles.cardMeta}>
-                    {j.asset?.identifier && (
-                      <Text style={styles.metaText}>{j.asset.identifier}</Text>
-                    )}
+                    {j.asset?.identifier && <View style={styles.sizeBadge}><Text style={styles.sizeBadgeText}>{j.asset.identifier}</Text></View>}
                     {j.scheduled_window_start && (
                       <Text style={styles.metaText}>
                         {fmtTime(j.scheduled_window_start)}
@@ -244,6 +213,17 @@ export default function TodayScreen() {
                 )}
                 <Ionicons name="chevron-forward" size={16} color="#7A8BA3" />
               </View>
+              {isNextStop && j.service_address && (
+                <TouchableOpacity style={styles.inlineNav} onPress={(e) => {
+                  e.stopPropagation?.();
+                  const a = j.service_address!;
+                  const q = [a.street, a.city, a.state].filter(Boolean).join(', ');
+                  Linking.openURL(Platform.OS === 'ios' ? `maps://?daddr=${encodeURIComponent(q)}` : `google.navigation:q=${encodeURIComponent(q)}`);
+                }}>
+                  <Ionicons name="navigate" size={14} color="#fff" />
+                  <Text style={styles.inlineNavText}>Navigate</Text>
+                </TouchableOpacity>
+              )}
             </TouchableOpacity>
           );
         }}
@@ -285,6 +265,11 @@ const styles = StyleSheet.create({
     borderColor: '#1E2D45',
   },
   cardCompleted: { opacity: 0.5 },
+  cardNextStop: { borderWidth: 1, borderColor: '#2ECC71' },
+  inlineNav: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 10, backgroundColor: '#2ECC71', borderRadius: 8, paddingVertical: 8 },
+  inlineNavText: { fontSize: 13, fontWeight: '600', color: '#fff' },
+  sizeBadge: { backgroundColor: 'rgba(46,204,113,0.15)', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 },
+  sizeBadgeText: { fontSize: 11, fontWeight: '700', color: '#2ECC71' },
   cardRow: { flexDirection: 'row', alignItems: 'center' },
   stopCircle: {
     width: 28,
@@ -327,15 +312,6 @@ const styles = StyleSheet.create({
   },
   textFaded: { color: '#7A8BA3' },
   cardNavBtn: { padding: 8, marginRight: 4 },
-  nextStop: { marginHorizontal: 20, marginBottom: 12, backgroundColor: '#162033', borderRadius: 12, padding: 14, borderWidth: 1, borderColor: '#2ECC71', borderLeftWidth: 3 },
-  nextStopLabel: { fontSize: 10, fontWeight: '700', color: '#2ECC71', letterSpacing: 1, marginBottom: 4 },
-  nextStopName: { fontSize: 16, fontWeight: '700', color: '#fff' },
-  nextStopAddr: { fontSize: 13, color: '#7A8BA3', marginTop: 2 },
-  nextStopActions: { flexDirection: 'row', gap: 8, marginTop: 12 },
-  nextStopNav: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: '#2ECC71', borderRadius: 10, paddingVertical: 10 },
-  nextStopNavText: { fontSize: 14, fontWeight: '600', color: '#fff' },
-  nextStopDetail: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 16, backgroundColor: '#111C2E', borderRadius: 10, borderWidth: 1, borderColor: '#1E2D45' },
-  nextStopDetailText: { fontSize: 13, fontWeight: '600', color: '#2ECC71' },
   emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   empty: { alignItems: 'center' },
   emptyTitle: { fontSize: 18, fontWeight: '600', color: '#fff', marginTop: 16 },
