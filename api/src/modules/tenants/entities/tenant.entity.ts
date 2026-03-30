@@ -17,8 +17,14 @@ export class Tenant {
   @Column({ unique: true })
   slug!: string;
 
-  @Column({ name: 'business_type', nullable: true })
+  @Column({ name: 'business_type', default: 'waste' })
   business_type!: string;
+
+  @Column({ name: 'business_type_label', nullable: true })
+  business_type_label!: string;
+
+  @Column({ name: 'enabled_modules', type: 'jsonb', default: '[]' })
+  enabled_modules!: string[];
 
   @Column({ type: 'jsonb', nullable: true })
   address!: Record<string, any>;

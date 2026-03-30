@@ -29,6 +29,7 @@ interface UserProfile {
   lastName: string;
   email: string;
   role: string;
+  tenant?: { enabledModules?: string[] };
 }
 
 const navigation = [
@@ -37,8 +38,8 @@ const navigation = [
   { name: "Assets", href: "/assets", icon: Box },
   { name: "Jobs", href: "/jobs", icon: Briefcase },
   { name: "Dispatch", href: "/dispatch", icon: Truck },
-  { name: "Dump Sites", href: "/dump-locations", icon: Trash2 },
-  { name: "Dump Slips", href: "/dump-slips", icon: ClipboardList },
+  { name: "Dump Sites", href: "/dump-locations", icon: Trash2, module: "dump_locations" },
+  { name: "Dump Slips", href: "/dump-slips", icon: ClipboardList, module: "dump_slips" },
   { name: "Invoices", href: "/invoices", icon: FileText },
   { name: "Pricing", href: "/pricing", icon: DollarSign },
   { name: "Team", href: "/team", icon: Users },
@@ -46,7 +47,7 @@ const navigation = [
   { name: "Analytics", href: "/analytics", icon: BarChart3 },
   { name: "Marketplace", href: "/marketplace", icon: Store },
   { name: "Settings", href: "/settings", icon: Settings },
-];
+] as const;
 
 export default function Sidebar() {
   const pathname = usePathname();
@@ -84,7 +85,11 @@ export default function Sidebar() {
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto px-3 py-4">
         <ul className="space-y-0.5">
-          {navigation.map((item) => {
+          {navigation.filter((item) => {
+            if (!("module" in item) || !item.module) return true;
+            const mods = user?.tenant?.enabledModules || [];
+            return mods.length === 0 || mods.includes(item.module);
+          }).map((item) => {
             const isActive =
               pathname === item.href ||
               (item.href !== "/" && pathname.startsWith(item.href));
