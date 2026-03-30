@@ -45,6 +45,7 @@ const TYPE_CONFIG: Record<string, { label: string; letter: string; cls: string }
   delivery: { label: "Drop Off", letter: "D", cls: "bg-blue-500/15 text-blue-400" },
   pickup: { label: "Pick Up", letter: "P", cls: "bg-orange-500/15 text-orange-400" },
   exchange: { label: "Exchange", letter: "E", cls: "bg-purple-500/15 text-purple-400" },
+  dump_run: { label: "Dump Run", letter: "DR", cls: "bg-amber-600/15 text-amber-500" },
 };
 
 const STATUS_BORDER: Record<string, string> = {
@@ -56,7 +57,7 @@ const STATUS_BORDER: Record<string, string> = {
 const FILTER_TABS = [
   { key: "all", label: "All" }, { key: "delivery", label: "Deliveries" },
   { key: "pickup", label: "Pickups" }, { key: "exchange", label: "Exchanges" },
-  { key: "completed", label: "Completed" },
+  { key: "dump_run", label: "Dump Runs" }, { key: "completed", label: "Completed" },
 ];
 
 /* ---- Helpers ---- */

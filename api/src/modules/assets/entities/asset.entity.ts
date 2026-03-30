@@ -69,6 +69,21 @@ export class Asset {
   @Column({ type: 'jsonb', nullable: true, default: '{}' })
   metadata!: Record<string, any>;
 
+  @Column({ name: 'staged_at', type: 'timestamptz', nullable: true })
+  staged_at!: Date;
+
+  @Column({ name: 'staged_from_job_id', type: 'uuid', nullable: true })
+  staged_from_job_id!: string;
+
+  @Column({ name: 'staged_waste_type', nullable: true })
+  staged_waste_type!: string;
+
+  @Column({ name: 'staged_notes', type: 'text', nullable: true })
+  staged_notes!: string;
+
+  @Column({ name: 'needs_dump', default: false })
+  needs_dump!: boolean;
+
   @CreateDateColumn({ name: 'created_at' })
   created_at!: Date;
 

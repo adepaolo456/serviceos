@@ -147,6 +147,9 @@ export class Job {
   @Column({ name: 'overdue_notification_count', type: 'int', default: 0 })
   overdue_notification_count!: number;
 
+  @Column({ name: 'dump_disposition', default: 'pending' })
+  dump_disposition!: string;
+
   @Column({ name: 'is_failed_trip', default: false })
   is_failed_trip!: boolean;
 

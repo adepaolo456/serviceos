@@ -6,6 +6,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import { Job } from './entities/job.entity';
+import { Asset } from '../assets/entities/asset.entity';
 import {
   CreateJobDto,
   UpdateJobDto,
@@ -27,6 +28,8 @@ export class JobsService {
   constructor(
     @InjectRepository(Job)
     private jobsRepository: Repository<Job>,
+    @InjectRepository(Asset)
+    private assetRepo: Repository<Asset>,
   ) {}
 
   async create(tenantId: string, dto: CreateJobDto): Promise<Job> {
@@ -482,5 +485,59 @@ export class JobsService {
     await this.jobsRepository.update(parentJobId, { linked_job_ids: linkedIds });
 
     return { jobs, parentJobId };
+  }
+
+  async stageAtYard(tenantId: string, jobId: string, body: { wasteType?: string; notes?: string }) {
+    const job = await this.findOne(tenantId, jobId);
+
+    await this.jobsRepository.update(jobId, { dump_disposition: 'staged' });
+
+    if (job.asset_id) {
+      await this.assetRepo.update(job.asset_id, {
+        status: 'full_staged',
+        staged_at: new Date(),
+        staged_from_job_id: jobId,
+        staged_waste_type: body.wasteType || null,
+        staged_notes: body.notes || null,
+        needs_dump: true,
+        current_location_type: 'yard',
+      } as any);
+    }
+
+    return this.findOne(tenantId, jobId);
+  }
+
+  async createDumpRun(tenantId: string, body: { assetIds: string[]; dumpLocationId?: string; scheduledDate: string; timeWindow?: string; assignedDriverId?: string; notes?: string }) {
+    const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    const seq = Math.floor(Math.random() * 9000) + 1000;
+
+    let windowStart = '08:00', windowEnd = '17:00';
+    if (body.timeWindow === 'morning') { windowStart = '08:00'; windowEnd = '12:00'; }
+    else if (body.timeWindow === 'afternoon') { windowStart = '12:00'; windowEnd = '17:00'; }
+
+    const job = this.jobsRepository.create({
+      tenant_id: tenantId,
+      job_number: `JOB-${dateStr}-${seq}`,
+      job_type: 'dump_run',
+      service_type: 'dump_run',
+      priority: 'normal',
+      status: 'pending',
+      scheduled_date: body.scheduledDate,
+      scheduled_window_start: windowStart,
+      scheduled_window_end: windowEnd,
+      assigned_driver_id: body.assignedDriverId || undefined,
+      placement_notes: body.notes,
+      source: 'dispatch',
+      linked_job_ids: body.assetIds,
+    } as Partial<Job>);
+
+    const saved = await this.jobsRepository.save(job);
+
+    // Update assets to "scheduled_dump"
+    for (const assetId of body.assetIds) {
+      await this.assetRepo.update(assetId, { current_job_id: saved.id } as any);
+    }
+
+    return saved;
   }
 }
