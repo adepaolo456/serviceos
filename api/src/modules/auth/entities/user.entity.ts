@@ -42,6 +42,12 @@ export class User {
   @Column({ name: 'is_active', default: true })
   is_active!: boolean;
 
+  @Column({ name: 'is_billable', default: false })
+  is_billable!: boolean;
+
+  @Column({ name: 'billable_since', type: 'timestamptz', nullable: true })
+  billable_since!: Date;
+
   @Column({ name: 'hire_date', type: 'date', nullable: true })
   hire_date!: string;
 

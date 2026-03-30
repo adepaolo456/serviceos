@@ -8,6 +8,48 @@ import { TenantId, Public } from '../../common/decorators';
 export class StripeController {
   constructor(private readonly stripeService: StripeService) {}
 
+  @Get('subscription')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get current subscription details' })
+  subscription(@TenantId() tid: string) {
+    return this.stripeService.getSubscription(tid);
+  }
+
+  @Post('subscribe')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Subscribe to a plan' })
+  subscribe(@TenantId() tid: string, @Body() body: { tier: string; billingCycle?: string }) {
+    return this.stripeService.subscribe(tid, body.tier, body.billingCycle || 'monthly');
+  }
+
+  @Post('cancel-subscription')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Cancel subscription at end of period' })
+  cancelSubscription(@TenantId() tid: string) {
+    return this.stripeService.cancelSubscription(tid);
+  }
+
+  @Get('billing-portal')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get Stripe billing portal URL' })
+  billingPortal(@TenantId() tid: string) {
+    return this.stripeService.getBillingPortalUrl(tid);
+  }
+
+  @Get('plans')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get available subscription plans' })
+  plans() {
+    return this.stripeService.getPlans();
+  }
+
+  @Public()
+  @Post('seed-plans')
+  @ApiOperation({ summary: 'Seed subscription plans (run once)' })
+  seedPlans() {
+    return this.stripeService.seedPlans();
+  }
+
   @Post('connect/onboard')
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Start Stripe Connect onboarding' })

@@ -6,6 +6,7 @@ import { Tenant } from '../tenants/entities/tenant.entity';
 import { Customer } from '../customers/entities/customer.entity';
 import { Invoice } from '../billing/entities/invoice.entity';
 import { AutomationLog } from '../automation/entities/automation-log.entity';
+import { SubscriptionPlan } from '../subscriptions/entities/subscription-plan.entity';
 
 @Injectable()
 export class StripeService {
@@ -16,6 +17,7 @@ export class StripeService {
     @InjectRepository(Customer) private customerRepo: Repository<Customer>,
     @InjectRepository(Invoice) private invoiceRepo: Repository<Invoice>,
     @InjectRepository(AutomationLog) private logRepo: Repository<AutomationLog>,
+    @InjectRepository(SubscriptionPlan) private planRepo: Repository<SubscriptionPlan>,
   ) {
     this.stripe = new Stripe(process.env.STRIPE_SECRET_KEY || 'sk_test_placeholder', { apiVersion: '2024-12-18.acacia' as any });
   }
@@ -236,5 +238,154 @@ export class StripeService {
     }
 
     return { received: true };
+  }
+
+  // --- Subscription ---
+
+  async getPlans() {
+    return this.planRepo.find({ where: { is_active: true }, order: { price_per_driver_monthly: 'ASC' } });
+  }
+
+  async getSubscription(tenantId: string) {
+    const tenant = await this.tenantRepo.findOne({ where: { id: tenantId } });
+    if (!tenant) throw new NotFoundException('Tenant not found');
+
+    const plan = await this.planRepo.findOne({ where: { tier: tenant.subscription_tier, is_active: true } });
+
+    return {
+      tier: tenant.subscription_tier,
+      status: tenant.subscription_status,
+      peakDriverCount: tenant.peak_driver_count,
+      activeDriverCount: tenant.billable_driver_count,
+      pricePerDriver: plan ? Number(plan.price_per_driver_monthly) : 0,
+      monthlyCost: (tenant.peak_driver_count || 1) * (plan ? Number(plan.price_per_driver_monthly) : 0),
+      stripeSubscriptionId: tenant.stripe_subscription_id,
+      trialEndsAt: tenant.trial_ends_at,
+      subscriptionStartedAt: tenant.subscription_started_at,
+      subscriptionEndsAt: tenant.subscription_ends_at,
+    };
+  }
+
+  async subscribe(tenantId: string, tier: string, billingCycle: string) {
+    const tenant = await this.tenantRepo.findOne({ where: { id: tenantId } });
+    if (!tenant) throw new NotFoundException('Tenant not found');
+
+    const plan = await this.planRepo.findOne({ where: { tier, is_active: true } });
+    if (!plan) throw new BadRequestException('Invalid plan');
+
+    const priceId = billingCycle === 'annual' ? plan.stripe_price_id_annual : plan.stripe_price_id_monthly;
+    const quantity = Math.max(tenant.peak_driver_count, 1);
+
+    // Get or create Stripe Customer for the tenant (for subscription billing)
+    let stripeCustomerId = tenant.stripe_customer_id;
+    if (!stripeCustomerId) {
+      const customer = await this.stripe.customers.create({
+        name: tenant.name,
+        metadata: { tenantId, type: 'tenant' },
+      });
+      stripeCustomerId = customer.id;
+      await this.tenantRepo.update(tenantId, { stripe_customer_id: stripeCustomerId });
+    }
+
+    if (priceId) {
+      // Create Stripe subscription
+      const subscription = await this.stripe.subscriptions.create({
+        customer: stripeCustomerId,
+        items: [{ price: priceId, quantity }],
+        metadata: { tenantId, tier },
+      });
+
+      await this.tenantRepo.update(tenantId, {
+        subscription_tier: tier,
+        subscription_status: 'active',
+        stripe_subscription_id: subscription.id,
+        subscription_started_at: new Date(),
+        enabled_modules: plan.enabled_modules,
+      });
+    } else {
+      // No Stripe price configured yet — just update the tier
+      await this.tenantRepo.update(tenantId, {
+        subscription_tier: tier,
+        subscription_status: 'active',
+        subscription_started_at: new Date(),
+        enabled_modules: plan.enabled_modules,
+      });
+    }
+
+    return { tier, quantity, status: 'active' };
+  }
+
+  async cancelSubscription(tenantId: string) {
+    const tenant = await this.tenantRepo.findOne({ where: { id: tenantId } });
+    if (!tenant?.stripe_subscription_id) throw new BadRequestException('No active subscription');
+
+    await this.stripe.subscriptions.update(tenant.stripe_subscription_id, {
+      cancel_at_period_end: true,
+    });
+
+    await this.tenantRepo.update(tenantId, { subscription_status: 'cancelled' });
+    return { message: 'Subscription will cancel at end of billing period' };
+  }
+
+  async getBillingPortalUrl(tenantId: string) {
+    const tenant = await this.tenantRepo.findOne({ where: { id: tenantId } });
+    if (!tenant?.stripe_customer_id) throw new BadRequestException('No Stripe customer');
+
+    const session = await this.stripe.billingPortal.sessions.create({
+      customer: tenant.stripe_customer_id,
+      return_url: `${process.env.FRONTEND_URL || 'https://serviceos-web-zeta.vercel.app'}/settings?tab=billing`,
+    });
+
+    return { url: session.url };
+  }
+
+  // --- Driver Count Management ---
+
+  async updateDriverCount(tenantId: string, increment: boolean) {
+    const tenant = await this.tenantRepo.findOne({ where: { id: tenantId } });
+    if (!tenant) return;
+
+    const newCount = increment
+      ? (tenant.billable_driver_count || 0) + 1
+      : Math.max(0, (tenant.billable_driver_count || 0) - 1);
+
+    const updates: Record<string, unknown> = { billable_driver_count: newCount };
+
+    // Peak only goes UP
+    if (increment && newCount > (tenant.peak_driver_count || 0)) {
+      updates.peak_driver_count = newCount;
+
+      // Update Stripe subscription quantity if active
+      if (tenant.stripe_subscription_id) {
+        try {
+          const sub = await this.stripe.subscriptions.retrieve(tenant.stripe_subscription_id);
+          if (sub.items.data.length > 0) {
+            await this.stripe.subscriptionItems.update(sub.items.data[0].id, { quantity: newCount });
+          }
+        } catch { /* Stripe may not be configured yet */ }
+      }
+    }
+
+    await this.tenantRepo.update(tenantId, updates);
+  }
+
+  // --- Seed Plans ---
+
+  async seedPlans() {
+    const plans = [
+      { tier: 'starter', price_per_driver_monthly: 149, price_per_driver_annual: 129, features: ['CRM', 'Jobs', 'Dispatch', 'Invoicing', 'Assets'], enabled_modules: ['crm', 'jobs', 'dispatch', 'invoicing', 'assets'] },
+      { tier: 'pro', price_per_driver_monthly: 199, price_per_driver_annual: 179, features: ['All Starter', 'Driver App', 'Customer Portal', 'Website Builder', 'Reporting', 'Dump Slips'], enabled_modules: ['crm', 'jobs', 'dispatch', 'invoicing', 'assets', 'driver_app', 'customer_portal', 'website_builder', 'reporting', 'dump_slips', 'weight_tickets', 'overage_items', 'dump_locations', 'asset_pins', 'notifications'] },
+      { tier: 'enterprise', price_per_driver_monthly: 249, price_per_driver_annual: 219, features: ['All Pro', 'White Label', 'API Access', 'Multi-Yard', 'Advanced Reporting'], enabled_modules: ['crm', 'jobs', 'dispatch', 'invoicing', 'assets', 'driver_app', 'customer_portal', 'website_builder', 'reporting', 'dump_slips', 'weight_tickets', 'overage_items', 'dump_locations', 'asset_pins', 'notifications', 'white_label', 'api_access', 'multi_yard', 'advanced_reporting', 'accounting_integrations'] },
+    ];
+
+    for (const p of plans) {
+      const existing = await this.planRepo.findOne({ where: { tier: p.tier } });
+      if (existing) {
+        await this.planRepo.update(existing.id, p as any);
+      } else {
+        await this.planRepo.save(this.planRepo.create(p as Partial<SubscriptionPlan>));
+      }
+    }
+    return { message: 'Plans seeded', count: plans.length };
   }
 }

@@ -89,6 +89,21 @@ export class Tenant {
   @Column({ name: 'allowed_widget_domains', type: 'text', array: true, nullable: true })
   allowed_widget_domains!: string[];
 
+  @Column({ name: 'stripe_subscription_id', nullable: true })
+  stripe_subscription_id!: string;
+
+  @Column({ name: 'subscription_started_at', type: 'timestamptz', nullable: true })
+  subscription_started_at!: Date;
+
+  @Column({ name: 'subscription_ends_at', type: 'timestamptz', nullable: true })
+  subscription_ends_at!: Date;
+
+  @Column({ name: 'billable_driver_count', type: 'int', default: 0 })
+  billable_driver_count!: number;
+
+  @Column({ name: 'peak_driver_count', type: 'int', default: 0 })
+  peak_driver_count!: number;
+
   @Column({ name: 'is_active', default: true })
   is_active!: boolean;
 
