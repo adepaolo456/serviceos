@@ -58,6 +58,12 @@ export class DumpTicket {
   @Column({ default: 'submitted' })
   status!: string;
 
+  @Column({ default: false })
+  invoiced!: boolean;
+
+  @Column({ name: 'invoice_id', type: 'uuid', nullable: true })
+  invoice_id!: string;
+
   @CreateDateColumn({ name: 'created_at' })
   created_at!: Date;
 }
