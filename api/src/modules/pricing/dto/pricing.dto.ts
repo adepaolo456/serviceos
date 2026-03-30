@@ -18,7 +18,7 @@ const SERVICE_TYPES = [
   'landscaping',
 ];
 
-const ASSET_SUBTYPES = ['10yd', '20yd', '30yd', '40yd'];
+const ASSET_SUBTYPES = ['10yd', '15yd', '20yd', '30yd', '40yd'];
 
 export class CreatePricingRuleDto {
   @ApiProperty({ example: 'Standard 20yd Dumpster' })

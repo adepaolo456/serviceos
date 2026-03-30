@@ -147,6 +147,12 @@ export class PricingRule {
   })
   tax_rate!: number;
 
+  @Column({ name: 'min_rental_days', type: 'int', default: 1 })
+  min_rental_days!: number;
+
+  @Column({ name: 'max_rental_days', type: 'int', nullable: true })
+  max_rental_days!: number;
+
   @Column({ name: 'is_active', default: true })
   is_active!: boolean;
 

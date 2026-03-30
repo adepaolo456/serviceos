@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { DumpLocation, DumpLocationRate, DumpLocationSurcharge } from './entities/dump-location.entity';
 import { Job } from '../jobs/entities/job.entity';
+import { PricingRule } from '../pricing/entities/pricing-rule.entity';
 import { AutomationLog } from '../automation/entities/automation-log.entity';
 
 function haversineDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
@@ -22,6 +23,7 @@ export class DumpLocationsService {
     @InjectRepository(DumpLocationRate) private readonly rateRepo: Repository<DumpLocationRate>,
     @InjectRepository(DumpLocationSurcharge) private readonly surRepo: Repository<DumpLocationSurcharge>,
     @InjectRepository(Job) private readonly jobRepo: Repository<Job>,
+    @InjectRepository(PricingRule) private readonly pricingRepo: Repository<PricingRule>,
     @InjectRepository(AutomationLog) private readonly logRepo: Repository<AutomationLog>,
   ) {}
 
@@ -188,12 +190,26 @@ export class DumpLocationsService {
     const ratePerTon = rate ? Number(rate.rate_per_ton) : 0;
     const minimumCharge = rate ? Number(rate.minimum_charge) || 0 : 0;
 
-    // Calculate base cost
+    // Calculate what the dump charges US (full weight)
     const baseCost = Math.max(weightTons * ratePerTon, minimumCharge);
 
-    // Calculate overage items
+    // Look up pricing rule to determine included tonnage for the customer
+    const pricingRule = job.service_type
+      ? await this.pricingRepo.findOne({
+          where: { tenant_id: tenantId, asset_subtype: job.asset?.subtype || undefined, is_active: true },
+        })
+      : null;
+    const includedTons = pricingRule ? Number(pricingRule.included_tons) || 0 : 0;
+    const overageRatePerTon = pricingRule ? Number(pricingRule.overage_per_ton) || ratePerTon : ratePerTon;
+
+    // Customer tonnage overage: only charge for weight above included tons
+    const customerTonnageOverage = weightTons > includedTons
+      ? (weightTons - includedTons) * overageRatePerTon
+      : 0;
+
+    // Calculate surcharge items
     let totalDumpOverage = 0;
-    let totalCustomerCharges = 0;
+    let totalCustomerCharges = customerTonnageOverage;
     const calculatedOverageItems: Array<{ type: string; label: string; quantity: number; chargePerUnit: number; total: number }> = [];
 
     for (const item of overageItems) {
