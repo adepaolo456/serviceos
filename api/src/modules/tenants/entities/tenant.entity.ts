@@ -41,6 +41,9 @@ export class Tenant {
   @Column({ name: 'stripe_connect_id', nullable: true })
   stripe_connect_id!: string;
 
+  @Column({ name: 'stripe_onboarded', default: false })
+  stripe_onboarded!: boolean;
+
   @Column({ name: 'subscription_tier', nullable: true, default: 'trial' })
   subscription_tier!: string;
 

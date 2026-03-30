@@ -133,6 +133,15 @@ export class Invoice {
   @Column({ name: 'paid_at', type: 'timestamptz', nullable: true })
   paid_at!: Date;
 
+  @Column({ name: 'stripe_payment_intent_id', nullable: true })
+  stripe_payment_intent_id!: string;
+
+  @Column({ name: 'stripe_charge_id', nullable: true })
+  stripe_charge_id!: string;
+
+  @Column({ name: 'stripe_refund_id', nullable: true })
+  stripe_refund_id!: string;
+
   @Column({ name: 'viewed_at', type: 'timestamptz', nullable: true })
   viewed_at!: Date;
 
