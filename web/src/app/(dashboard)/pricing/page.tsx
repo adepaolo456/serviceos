@@ -12,7 +12,10 @@ import {
   ChevronDown,
   ChevronUp,
   Pencil,
+  ExternalLink,
+  History,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import SlideOver from "@/components/slide-over";
 import { useToast } from "@/components/toast";
@@ -107,13 +110,24 @@ export default function PricingPage() {
     fetchRules();
   }, [fetchRules]);
 
-  // Group by service type
+  // Group by service type, then by size
   const grouped = rules.reduce<Record<string, PricingRule[]>>((acc, r) => {
     const key = r.service_type;
     if (!acc[key]) acc[key] = [];
     acc[key].push(r);
     return acc;
   }, {});
+
+  // For dumpster_rental, further group by asset_subtype
+  const sizeGrouped = (rules: PricingRule[]) => {
+    const bySize: Record<string, PricingRule[]> = {};
+    rules.forEach((r) => {
+      const key = r.asset_subtype || "other";
+      if (!bySize[key]) bySize[key] = [];
+      bySize[key].push(r);
+    });
+    return bySize;
+  };
 
   return (
     <div>
@@ -186,18 +200,23 @@ export default function PricingPage() {
           </button>
         </div>
       ) : (
-        Object.entries(grouped).map(([serviceType, serviceRules]) => (
-          <div key={serviceType} className="mb-8">
-            <h2 className="font-display text-lg font-semibold text-white mb-4">
-              {SERVICE_LABELS[serviceType] || serviceType}
-            </h2>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {serviceRules.map((rule) => (
-                <RuleCard key={rule.id} rule={rule} onEdit={() => setEditRule(rule)} />
-              ))}
+        Object.entries(grouped).map(([serviceType, serviceRules]) => {
+          const bySize = sizeGrouped(serviceRules);
+          return (
+            <div key={serviceType} className="mb-8">
+              <h2 className="font-display text-lg font-semibold text-white mb-4">
+                {SERVICE_LABELS[serviceType] || serviceType}
+              </h2>
+              {/* Size tiles */}
+              {Object.entries(bySize).map(([size, sizeRules]) => {
+                const hasMultipleTypes = sizeRules.length > 1 && sizeRules.some((r) => r.customer_type);
+                return (
+                  <SizeTile key={size} size={size} rules={sizeRules} hasCustomerTypes={hasMultipleTypes} onEdit={setEditRule} />
+                );
+              })}
             </div>
-          </div>
-        ))
+          );
+        })
       )}
 
       <SlideOver
@@ -216,6 +235,35 @@ export default function PricingPage() {
       <SlideOver open={!!editRule} onClose={() => setEditRule(null)} title="Edit Pricing Rule">
         {editRule && <EditRuleForm rule={editRule} onSuccess={() => { setEditRule(null); fetchRules(); }} onDelete={() => { setEditRule(null); fetchRules(); }} />}
       </SlideOver>
+    </div>
+  );
+}
+
+/* ---------- Size Tile with Customer Type Tabs ---------- */
+
+function SizeTile({ size, rules, hasCustomerTypes, onEdit }: { size: string; rules: PricingRule[]; hasCustomerTypes: boolean; onEdit: (rule: PricingRule) => void }) {
+  const [activeType, setActiveType] = useState<string | null>(null);
+
+  const filteredRules = activeType ? rules.filter((r) => r.customer_type === activeType) : rules;
+
+  return (
+    <div className="mb-4">
+      {/* Size header with optional customer type tabs */}
+      <div className="flex items-center gap-3 mb-3">
+        <span className="inline-flex items-center rounded-full bg-brand/10 px-3 py-1 text-sm font-semibold text-brand">{size}</span>
+        {hasCustomerTypes && (
+          <div className="flex gap-1 rounded-lg bg-dark-card p-0.5">
+            <button onClick={() => setActiveType(null)} className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${activeType === null ? "bg-brand/10 text-brand" : "text-muted hover:text-white"}`}>All</button>
+            <button onClick={() => setActiveType("residential")} className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${activeType === "residential" ? "bg-blue-500/10 text-blue-400" : "text-muted hover:text-white"}`}>Residential</button>
+            <button onClick={() => setActiveType("commercial")} className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${activeType === "commercial" ? "bg-purple-500/10 text-purple-400" : "text-muted hover:text-white"}`}>Commercial</button>
+          </div>
+        )}
+      </div>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {filteredRules.map((rule) => (
+          <RuleCard key={rule.id} rule={rule} onEdit={() => onEdit(rule)} />
+        ))}
+      </div>
     </div>
   );
 }
@@ -288,18 +336,19 @@ function RuleCard({ rule, onEdit }: { rule: PricingRule; onEdit: () => void }) {
       </div>
 
       <div className="mt-4 flex items-center justify-between border-t border-[#1E2D45] pt-3">
-        {rule.require_deposit ? (
-          <span className="text-xs text-muted">
-            Deposit: {fmt(rule.deposit_amount)}
-          </span>
-        ) : (
-          <span className="text-xs text-muted">No deposit</span>
-        )}
-        {Number(rule.tax_rate) > 0 && (
-          <span className="text-xs text-muted">
-            Tax: {(Number(rule.tax_rate) * 100).toFixed(2)}%
-          </span>
-        )}
+        <div className="flex items-center gap-3">
+          {rule.require_deposit ? (
+            <span className="text-xs text-muted">Deposit: {fmt(rule.deposit_amount)}</span>
+          ) : (
+            <span className="text-xs text-muted">No deposit</span>
+          )}
+          {Number(rule.tax_rate) > 0 && (
+            <span className="text-xs text-muted">Tax: {(Number(rule.tax_rate) * 100).toFixed(2)}%</span>
+          )}
+        </div>
+        <button onClick={(e) => { e.stopPropagation(); }} className="flex items-center gap-1 text-[10px] text-muted hover:text-foreground transition-colors" title="Pricing change history coming soon">
+          <History className="h-3 w-3" /> History
+        </button>
       </div>
     </div>
   );
@@ -308,6 +357,7 @@ function RuleCard({ rule, onEdit }: { rule: PricingRule; onEdit: () => void }) {
 /* ---------- Price Calculator ---------- */
 
 function PriceCalculator() {
+  const router = useRouter();
   const [serviceType, setServiceType] = useState("dumpster_rental");
   const [assetSubtype, setAssetSubtype] = useState("20yd");
   const [jobType, setJobType] = useState("delivery");
@@ -536,6 +586,16 @@ function PriceCalculator() {
                   {fmt(result.breakdown.overagePerTon)}/ton overage.
                 </p>
               )}
+
+              {/* Create Booking button */}
+              <button
+                type="button"
+                onClick={() => router.push(`/book?size=${assetSubtype}&type=${jobType}&days=${rentalDays}`)}
+                className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg bg-[#2ECC71] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1FA855] btn-press"
+              >
+                Create Booking with This Quote
+                <ExternalLink className="h-3.5 w-3.5" />
+              </button>
             </div>
           </div>
         )}
