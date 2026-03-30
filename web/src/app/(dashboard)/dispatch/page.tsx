@@ -187,6 +187,18 @@ export default function DispatchPage() {
     return () => clearInterval(interval);
   }, [fetchBoard]);
 
+  // Keyboard shortcuts: ← → T
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) return;
+      if (e.key === "ArrowLeft") setDate(d => shiftDate(d, -1));
+      else if (e.key === "ArrowRight") setDate(d => shiftDate(d, 1));
+      else if (e.key === "t" || e.key === "T") setDate(today());
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
+
   const handleDragStart = (e: DragStartEvent) => {
     const allJobs = [...(board?.unassigned || []), ...(board?.drivers.flatMap(d => d.jobs) || [])];
     setActiveJob(allJobs.find(j => j.id === e.active.id) || null);
@@ -243,7 +255,10 @@ export default function DispatchPage() {
   };
 
   const totalJobs = board ? board.unassigned.length + board.drivers.reduce((s, d) => s + d.jobs.length, 0) : 0;
-  const outstandingJobs = board ? (board.unassigned.length + board.drivers.reduce((s, d) => s + d.jobs.filter(j => j.status !== "completed" && j.status !== "cancelled").length, 0)) : 0;
+  const driverCount = board?.drivers.length || 0;
+  const unassignedCount = board?.unassigned.length || 0;
+  const completedJobs = board ? board.drivers.reduce((s, d) => s + d.jobs.filter(j => j.status === "completed").length, 0) : 0;
+  const totalStops = totalJobs - completedJobs;
 
   return (
     <div className="flex h-[calc(100vh-5rem)] flex-col">
@@ -268,17 +283,23 @@ export default function DispatchPage() {
             <div className="hidden sm:flex items-center gap-2 text-sm text-muted">
               <span className="font-medium text-white">{fmtDate(date)}</span>
               <span>·</span>
-              <span>{outstandingJobs} outstanding</span>
+              <span>{totalJobs} jobs</span>
               <span>·</span>
-              <span>{totalJobs} total</span>
+              <span>{driverCount} drivers</span>
+              {unassignedCount > 0 && (
+                <>
+                  <span>·</span>
+                  <span className="text-red-400 font-medium">{unassignedCount} unassigned</span>
+                </>
+              )}
             </div>
           </div>
           <div className="flex items-center gap-2">
             <button onClick={() => fetchBoard(true)} disabled={refreshing} className="rounded-lg bg-dark-card border border-[#1E2D45] p-2 text-muted hover:text-white transition-all active:scale-95 disabled:opacity-50">
               <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
             </button>
-            <button className="flex items-center gap-1.5 rounded-lg bg-brand/10 border border-brand/20 px-3 py-2 text-xs font-semibold text-brand hover:bg-brand/20 transition-all active:scale-95">
-              <Zap className="h-3.5 w-3.5" /> Optimize Day
+            <button className="flex items-center gap-1.5 rounded-lg bg-[#2ECC71] px-3.5 py-2 text-xs font-semibold text-white hover:bg-[#1FA855] transition-all active:scale-95">
+              <Zap className="h-3.5 w-3.5" /> Optimize Routes
             </button>
           </div>
         </div>
@@ -303,8 +324,8 @@ export default function DispatchPage() {
 
       {/* Main content: board + map placeholder */}
       <div className="flex flex-1 gap-3 min-h-0">
-        {/* Board (60%) */}
-        <div className="flex-[3] min-w-0 overflow-hidden">
+        {/* Board (full width) */}
+        <div className="flex-1 min-w-0 overflow-hidden">
           {loading ? (
             <div className="flex h-full gap-3 overflow-x-auto pb-2">
               {[1,2,3,4].map(i => (
@@ -382,15 +403,26 @@ export default function DispatchPage() {
           )}
         </div>
 
-        {/* Map placeholder (40%) */}
-        <div className="hidden lg:flex flex-[2] rounded-xl bg-[#111C2E] border border-[#1E2D45] items-center justify-center">
-          <div className="text-center">
-            <MapPin className="mx-auto h-10 w-10 text-muted/15 mb-2" />
-            <p className="text-sm font-medium text-muted">Map View</p>
-            <p className="text-xs text-muted/60 mt-1">Coming soon</p>
+      </div>
+
+      {/* Bottom Bar */}
+      {!loading && board && totalJobs > 0 && (
+        <div className="shrink-0 mt-3 flex items-center justify-between rounded-xl bg-[#111C2E] border border-[#1E2D45] px-5 py-3">
+          <div className="flex items-center gap-5 text-xs text-muted">
+            <span><span className="text-white font-semibold">{totalStops}</span> stops remaining</span>
+            <span><span className="text-white font-semibold">{completedJobs}</span> completed</span>
+            <span><span className="text-white font-semibold">{driverCount}</span> active drivers</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button className="rounded-lg border border-[#1E2D45] px-3 py-1.5 text-xs font-medium text-muted hover:text-white transition-colors">
+              Print Route Sheets
+            </button>
+            <button className="rounded-lg bg-brand/10 border border-brand/20 px-3 py-1.5 text-xs font-semibold text-brand hover:bg-brand/20 transition-colors">
+              Send Routes to Drivers
+            </button>
           </div>
         </div>
-      </div>
+      )}
 
       {/* Job QuickView */}
       <QuickView
@@ -511,7 +543,9 @@ function Column({ id, title, icon, count, accentCls, progress, phone, jobs, driv
   return (
     <div
       ref={setNodeRef}
-      className={`flex w-64 shrink-0 flex-col rounded-xl bg-[#111C2E] transition-all ${isOver ? "ring-2 ring-brand/40" : ""}`}
+      className={`flex shrink-0 flex-col rounded-xl bg-[#111C2E] border border-[#1E2D45] transition-all ${
+        id === "unassigned" ? "min-w-[280px] w-[280px]" : "min-w-[300px] w-[300px]"
+      } ${isOver ? "ring-2 ring-[#2ECC71]/50 border-dashed border-[#2ECC71]/40" : ""}`}
     >
       <div className="px-3 py-2.5 border-b border-[#1E2D45]">
         <div className="flex items-center justify-between">
@@ -536,11 +570,21 @@ function Column({ id, title, icon, count, accentCls, progress, phone, jobs, driv
         )}
       </div>
       <SortableContext items={jobs.map(j => j.id)} strategy={verticalListSortingStrategy}>
-        <div className="flex-1 overflow-y-auto p-2 space-y-1.5" data-column={id}>
+        <div className="flex-1 overflow-y-auto p-2 space-y-1.5 max-h-[calc(100vh-280px)]" data-column={id}>
           {jobs.length === 0 ? (
             <div className="py-8 text-center">
-              <Box className="mx-auto h-6 w-6 text-muted/15 mb-1" />
-              <p className="text-[10px] text-muted">{id === "unassigned" ? "All assigned" : "No jobs"}</p>
+              {id === "unassigned" ? (
+                <>
+                  <CheckCircle2 className="mx-auto h-6 w-6 text-emerald-400/40 mb-1" />
+                  <p className="text-[10px] text-emerald-400">All jobs assigned</p>
+                </>
+              ) : (
+                <>
+                  <Box className="mx-auto h-6 w-6 text-muted/15 mb-1" />
+                  <p className="text-[10px] text-muted">No jobs assigned</p>
+                  <p className="text-[9px] text-muted/50 mt-0.5">Drop jobs here</p>
+                </>
+              )}
             </div>
           ) : (
             jobs.map((job, i) => (
@@ -622,10 +666,15 @@ function JobCardContent({ job, order, isDragging }: { job: DispatchJob; order?: 
         </div>
       </div>
 
-      {/* Customer */}
-      <p className="text-[11px] font-medium text-foreground truncate">
-        {job.customer ? `${job.customer.first_name} ${job.customer.last_name}` : job.job_number}
-      </p>
+      {/* Customer + size */}
+      <div className="flex items-center gap-1.5">
+        <p className="text-[11px] font-medium text-foreground truncate">
+          {job.customer ? `${job.customer.first_name} ${job.customer.last_name}` : job.job_number}
+        </p>
+        {job.asset?.subtype && (
+          <span className="shrink-0 rounded px-1.5 py-0.5 text-[9px] font-medium bg-white/5 text-muted">{job.asset.subtype}</span>
+        )}
+      </div>
 
       {/* Address */}
       {addrStr && (
