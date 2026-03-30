@@ -45,7 +45,20 @@ export class DumpLocationsService {
   }
 
   async create(tenantId: string, body: Record<string, unknown>) {
-    const loc = this.locRepo.create({ ...body, tenant_id: tenantId } as Partial<DumpLocation>);
+    const loc = this.locRepo.create({
+      tenant_id: tenantId,
+      name: body.name as string,
+      address: body.address as string,
+      city: (body.city as string) || undefined,
+      state: (body.state as string) || undefined,
+      zip: (body.zip as string) || undefined,
+      latitude: body.latitude != null ? Number(body.latitude) : undefined,
+      longitude: body.longitude != null ? Number(body.longitude) : undefined,
+      phone: (body.phone as string) || undefined,
+      contact_name: (body.contactName || body.contact_name) as string || undefined,
+      notes: (body.notes as string) || undefined,
+      operating_hours: (body.operatingHours || body.operating_hours) as string || undefined,
+    } as Partial<DumpLocation>);
     return this.locRepo.save(loc);
   }
 
