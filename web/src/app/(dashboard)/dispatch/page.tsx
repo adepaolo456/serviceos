@@ -20,14 +20,17 @@ import {
   GripVertical,
   RefreshCw,
   Zap,
+  ChevronDown as ChevDown,
+  ChevronUp as ChevUp,
 } from "lucide-react";
 import {
   DndContext,
-  closestCenter,
+  closestCorners,
   PointerSensor,
   useSensor,
   useSensors,
   DragOverlay,
+  useDroppable,
   type DragStartEvent,
   type DragEndEvent,
 } from "@dnd-kit/core";
@@ -38,6 +41,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { api } from "@/lib/api";
+import { formatPhone } from "@/lib/utils";
 import { useToast } from "@/components/toast";
 import QuickView from "@/components/quick-view";
 import Dropdown from "@/components/dropdown";
@@ -347,7 +351,7 @@ export default function DispatchPage() {
               </Link>
             </div>
           ) : (
-            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+            <DndContext sensors={sensors} collisionDetection={closestCorners} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
               <div className="flex h-full gap-2.5 overflow-x-auto pb-2">
                 {/* Unassigned */}
                 <Column
@@ -538,7 +542,33 @@ function Column({ id, title, icon, count, accentCls, progress, phone, jobs, driv
   onQuickView?: (job: DispatchJob) => void;
   onAssign?: (jobId: string, driverId: string) => void;
 }) {
-  const { setNodeRef, isOver } = useSortable({ id: `col-${id}`, disabled: true });
+  const { setNodeRef, isOver } = useDroppable({ id: `col-${id}` });
+
+  // Collapse state persisted in localStorage
+  const storageKey = `dispatch-col-${id}`;
+  const [collapsed, setCollapsed] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return localStorage.getItem(storageKey) === "1";
+  });
+  const toggleCollapse = () => {
+    const next = !collapsed;
+    setCollapsed(next);
+    localStorage.setItem(storageKey, next ? "1" : "0");
+  };
+
+  if (collapsed) {
+    return (
+      <div
+        ref={setNodeRef}
+        onClick={toggleCollapse}
+        className="flex w-[60px] shrink-0 cursor-pointer flex-col items-center rounded-xl bg-[#111C2E] border border-[#1E2D45] py-3 hover:bg-[#162033] transition-all"
+      >
+        <ChevDown className="h-3.5 w-3.5 text-muted mb-2" />
+        <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold tabular-nums ${accentCls || "bg-dark-elevated text-foreground"}`}>{count}</span>
+        <p className="mt-2 text-[9px] text-muted font-medium" style={{ writingMode: "vertical-lr" }}>{title}</p>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -547,15 +577,18 @@ function Column({ id, title, icon, count, accentCls, progress, phone, jobs, driv
         id === "unassigned" ? "min-w-[280px] w-[280px]" : "min-w-[300px] w-[300px]"
       } ${isOver ? "ring-2 ring-[#2ECC71]/50 border-dashed border-[#2ECC71]/40" : ""}`}
     >
-      <div className="px-3 py-2.5 border-b border-[#1E2D45]">
+      <div className="px-3 py-2.5 border-b border-[#1E2D45] shrink-0">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
+            <button onClick={toggleCollapse} className="text-muted hover:text-white p-0.5 -ml-0.5 shrink-0">
+              <ChevUp className="h-3.5 w-3.5" />
+            </button>
             {typeof icon === "object" && "type" in (icon as object) ? (
               <div className={`flex h-7 w-7 items-center justify-center rounded-lg ${accentCls || "bg-dark-elevated"}`}>{icon}</div>
             ) : icon}
             <div>
               <p className="text-xs font-semibold text-white truncate max-w-[120px]">{title}</p>
-              {phone && <a href={`tel:${phone}`} className="text-[10px] text-muted hover:text-brand"><Phone className="inline h-2 w-2 mr-0.5" />{phone}</a>}
+              {phone && <a href={`tel:${phone}`} className="text-[10px] text-muted hover:text-brand" onClick={e => e.stopPropagation()}><Phone className="inline h-2 w-2 mr-0.5" />{formatPhone(phone)}</a>}
             </div>
           </div>
           <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold tabular-nums ${accentCls || "bg-dark-elevated text-foreground"}`}>{count}</span>
@@ -570,7 +603,7 @@ function Column({ id, title, icon, count, accentCls, progress, phone, jobs, driv
         )}
       </div>
       <SortableContext items={jobs.map(j => j.id)} strategy={verticalListSortingStrategy}>
-        <div className="flex-1 overflow-y-auto p-2 space-y-1.5 max-h-[calc(100vh-280px)]" data-column={id}>
+        <div className="flex-1 overflow-y-auto p-2 space-y-1.5 max-h-[calc(100vh-280px)] scrollbar-thin" data-column={id}>
           {jobs.length === 0 ? (
             <div className="py-8 text-center">
               {id === "unassigned" ? (
@@ -613,17 +646,15 @@ function SortableJobCard({ job, order, drivers, onAssign, onQuickView }: {
         <div {...listeners} className="absolute left-1 top-1/2 -translate-y-1/2 cursor-grab p-1 text-muted/30 hover:text-muted active:cursor-grabbing z-10">
           <GripVertical className="h-3 w-3" />
         </div>
-        <button onClick={() => onQuickView?.(job)} className="block w-full text-left">
-          <JobCardContent job={job} order={order} />
-        </button>
         {drivers && onAssign && !job.assigned_driver && (
-          <div className="px-2.5 pb-2.5">
+          <div className="absolute right-1.5 top-1.5 z-10" onClick={e => e.stopPropagation()}>
             <Dropdown
               trigger={
-                <button className="flex w-full items-center justify-center gap-1 rounded bg-brand/10 border border-brand/20 py-1.5 text-[10px] font-semibold text-brand hover:bg-brand/20 transition-all active:scale-[0.98]">
-                  <UserPlus className="h-3 w-3" /> Assign
+                <button className="flex items-center gap-0.5 rounded bg-brand/15 border border-brand/20 px-1.5 py-0.5 text-[9px] font-semibold text-brand hover:bg-brand/25 transition-all">
+                  <UserPlus className="h-2.5 w-2.5" /> Assign
                 </button>
               }
+              align="right"
             >
               {drivers.map(d => (
                 <button key={d.id} onClick={() => onAssign(job.id, d.id)}
@@ -635,6 +666,9 @@ function SortableJobCard({ job, order, drivers, onAssign, onQuickView }: {
             </Dropdown>
           </div>
         )}
+        <button onClick={() => onQuickView?.(job)} className="block w-full text-left">
+          <JobCardContent job={job} order={order} />
+        </button>
       </div>
     </div>
   );
@@ -671,7 +705,10 @@ function JobCardContent({ job, order, isDragging }: { job: DispatchJob; order?: 
         <p className="text-[11px] font-medium text-foreground truncate">
           {job.customer ? `${job.customer.first_name} ${job.customer.last_name}` : job.job_number}
         </p>
-        {job.asset?.subtype && (
+        {job.asset?.identifier && (
+          <span className="shrink-0 rounded bg-brand/10 text-brand px-1.5 py-0.5 text-[9px] font-bold">{job.asset.identifier}</span>
+        )}
+        {job.asset?.subtype && !job.asset?.identifier && (
           <span className="shrink-0 rounded px-1.5 py-0.5 text-[9px] font-medium bg-white/5 text-muted">{job.asset.subtype}</span>
         )}
       </div>
