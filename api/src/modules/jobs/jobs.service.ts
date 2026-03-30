@@ -7,6 +7,9 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import { Job } from './entities/job.entity';
 import { Asset } from '../assets/entities/asset.entity';
+import { Invoice } from '../billing/entities/invoice.entity';
+import { PricingRule } from '../pricing/entities/pricing-rule.entity';
+import { AutomationLog } from '../automation/entities/automation-log.entity';
 import {
   CreateJobDto,
   UpdateJobDto,
@@ -30,6 +33,12 @@ export class JobsService {
     private jobsRepository: Repository<Job>,
     @InjectRepository(Asset)
     private assetRepo: Repository<Asset>,
+    @InjectRepository(Invoice)
+    private invoiceRepo: Repository<Invoice>,
+    @InjectRepository(PricingRule)
+    private pricingRepo: Repository<PricingRule>,
+    @InjectRepository(AutomationLog)
+    private logRepo: Repository<AutomationLog>,
   ) {}
 
   async create(tenantId: string, dto: CreateJobDto): Promise<Job> {
@@ -260,6 +269,47 @@ export class JobsService {
       const linked = Array.isArray(job.linked_job_ids) ? [...job.linked_job_ids] : [];
       linked.push(savedReplacement.id);
       job.linked_job_ids = linked;
+
+      // Create failure charge invoice
+      const pricingRule = await this.pricingRepo.findOne({
+        where: { tenant_id: tenantId, asset_subtype: job.asset?.subtype || undefined, is_active: true },
+      });
+      const baseFee = pricingRule ? Number(pricingRule.failed_trip_base_fee) || 150 : 150;
+
+      const invNumber = `INV-${now.getFullYear()}-${String(Math.floor(Math.random() * 9999)).padStart(4, '0')}`;
+      const failureInvoice = this.invoiceRepo.create({
+        tenant_id: tenantId,
+        invoice_number: invNumber,
+        customer_id: job.customer_id,
+        job_id: job.id,
+        status: 'sent',
+        source: 'failed_trip',
+        invoice_type: 'failure_charge',
+        subtotal: baseFee,
+        total: baseFee,
+        amount_paid: 0,
+        balance_due: baseFee,
+        line_items: [{ description: 'Failed pickup/delivery charge', quantity: 1, unitPrice: baseFee, amount: baseFee }],
+        due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        notes: `Driver arrived but job could not be completed. Reason: ${job.failed_reason || 'Not specified'}`,
+      } as Partial<Invoice>);
+      const savedInvoice = await this.invoiceRepo.save(failureInvoice);
+
+      // Log
+      await this.logRepo.save(this.logRepo.create({
+        tenant_id: tenantId,
+        job_id: job.id,
+        type: 'failed_trip_charge',
+        status: 'completed',
+        details: {
+          invoiceId: savedInvoice.id,
+          invoiceNumber: savedInvoice.invoice_number,
+          amount: baseFee,
+          replacementJobId: savedReplacement.id,
+          replacementJobNumber: savedReplacement.job_number,
+          reason: job.failed_reason,
+        },
+      }));
     }
 
     // Combined final invoice at pickup completion
