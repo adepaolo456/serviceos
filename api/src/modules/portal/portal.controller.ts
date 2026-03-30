@@ -73,4 +73,10 @@ export class PortalController {
     const user = req.user as PortalUser;
     return this.portalService.signAgreement(user.customerId, user.tenantId, jobId, dto.signatureUrl);
   }
+
+  @Patch('rentals/:id/reschedule')
+  async rescheduleRental(@Req() req: Request, @Param('id') id: string, @Body() body: { scheduledDate: string; reason?: string }) {
+    const user = req.user as PortalUser;
+    return this.portalService.rescheduleRental(user.customerId, user.tenantId, id, body);
+  }
 }

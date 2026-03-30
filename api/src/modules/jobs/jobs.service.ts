@@ -4,7 +4,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import { Job } from './entities/job.entity';
 import {
   CreateJobDto,
@@ -291,5 +291,63 @@ export class JobsService {
       })
       .orderBy('j.scheduled_date', 'ASC')
       .getMany();
+  }
+
+  async rescheduleJob(
+    tenantId: string,
+    jobId: string,
+    body: { scheduledDate: string; reason?: string; source?: string; timeWindow?: string },
+  ): Promise<Job> {
+    const job = await this.findOne(tenantId, jobId);
+
+    if (['completed', 'cancelled'].includes(job.status)) {
+      throw new BadRequestException('Cannot reschedule a completed or cancelled job');
+    }
+
+    const oldDate = job.scheduled_date;
+    const updates: Record<string, unknown> = {
+      scheduled_date: body.scheduledDate,
+      rescheduled_from_date: oldDate,
+      rescheduled_reason: body.reason || null,
+    };
+
+    if (body.source === 'portal') {
+      updates.rescheduled_by_customer = true;
+      updates.rescheduled_at = new Date();
+    }
+
+    // Recalculate rental_end_date if rental_days is set and rental hasn't started
+    if (job.rental_days && !job.rental_start_date) {
+      const end = new Date(body.scheduledDate);
+      end.setDate(end.getDate() + job.rental_days);
+      updates.rental_end_date = end.toISOString().split('T')[0];
+      updates.rental_start_date = body.scheduledDate;
+    }
+
+    // Update time window if provided
+    if (body.timeWindow) {
+      if (body.timeWindow === 'morning') { updates.scheduled_window_start = '08:00'; updates.scheduled_window_end = '12:00'; }
+      else if (body.timeWindow === 'afternoon') { updates.scheduled_window_start = '12:00'; updates.scheduled_window_end = '17:00'; }
+      else { updates.scheduled_window_start = '08:00'; updates.scheduled_window_end = '17:00'; }
+    }
+
+    await this.jobsRepository.update({ id: jobId, tenant_id: tenantId }, updates);
+
+    // Update linked pickup job if exists
+    if (updates.rental_end_date) {
+      const pickupJob = await this.jobsRepository.findOne({
+        where: {
+          tenant_id: tenantId,
+          customer_id: job.customer_id,
+          job_type: 'pickup',
+          status: In(['pending', 'confirmed', 'dispatched']),
+        },
+      });
+      if (pickupJob) {
+        await this.jobsRepository.update(pickupJob.id, { scheduled_date: updates.rental_end_date as string });
+      }
+    }
+
+    return this.findOne(tenantId, jobId);
   }
 }

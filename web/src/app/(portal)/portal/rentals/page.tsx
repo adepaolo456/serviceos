@@ -44,6 +44,10 @@ export default function PortalRentalsPage() {
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<typeof tabs[number]>("Active");
   const [detail, setDetail] = useState<Rental | null>(null);
+  const [rescheduleOpen, setRescheduleOpen] = useState(false);
+  const [newDate, setNewDate] = useState("");
+  const [rescheduleReason, setRescheduleReason] = useState("");
+  const [rescheduling, setRescheduling] = useState(false);
 
   useEffect(() => {
     portalApi.get<Rental[]>("/portal/rentals").then(setRentals).catch(() => {}).finally(() => setLoading(false));
@@ -103,6 +107,58 @@ export default function PortalRentalsPage() {
             <div><span className="text-[#64748B]">Total Cost</span><p className="font-medium text-[#0F172A] mt-0.5">{formatCurrency(detail.total_price)}</p></div>
             <div><span className="text-[#64748B]">Asset</span><p className="font-medium text-[#0F172A] mt-0.5">{detail.asset?.identifier || "—"}</p></div>
           </div>
+
+          {/* Reschedule */}
+          {['pending', 'confirmed'].includes(detail.status) && (
+            <div className="mt-6">
+              {!rescheduleOpen ? (
+                <button onClick={() => { setRescheduleOpen(true); setNewDate(detail.scheduled_date || ""); }}
+                  className="rounded-lg border border-[#E2E8F0] px-4 py-2 text-sm font-medium text-[#334155] hover:bg-[#F1F5F9]">
+                  Reschedule Delivery
+                </button>
+              ) : (
+                <div className="rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] p-4 space-y-3">
+                  <p className="text-sm font-semibold text-[#0F172A]">Reschedule Delivery</p>
+                  <div>
+                    <label className="block text-xs font-medium text-[#334155] mb-1">New Date</label>
+                    <input type="date" value={newDate} onChange={e => setNewDate(e.target.value)}
+                      min={new Date(Date.now() + 86400000).toISOString().split("T")[0]}
+                      className="w-full rounded-lg border border-[#E2E8F0] bg-white px-3 py-2 text-sm text-[#0F172A] outline-none focus:border-[#2ECC71]" />
+                  </div>
+                  {detail.rental_days && newDate && (
+                    <p className="text-xs text-[#64748B]">
+                      New pickup by: {new Date(new Date(newDate).getTime() + detail.rental_days * 86400000).toLocaleDateString()}
+                    </p>
+                  )}
+                  <div>
+                    <label className="block text-xs font-medium text-[#334155] mb-1">Reason (optional)</label>
+                    <input value={rescheduleReason} onChange={e => setRescheduleReason(e.target.value)}
+                      placeholder="Why are you rescheduling?"
+                      className="w-full rounded-lg border border-[#E2E8F0] bg-white px-3 py-2 text-sm text-[#0F172A] placeholder-[#94A3B8] outline-none focus:border-[#2ECC71]" />
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={async () => {
+                      setRescheduling(true);
+                      try {
+                        const result = await portalApi.patch<any>(`/portal/rentals/${detail.id}/reschedule`, { scheduledDate: newDate, reason: rescheduleReason, source: "customer_portal" });
+                        const updated = { ...detail, ...result, scheduled_date: newDate };
+                        setDetail(updated);
+                        setRentals(prev => prev.map(r => r.id === updated.id ? updated : r));
+                        setRescheduleOpen(false);
+                        setRescheduleReason("");
+                      } catch (err: any) {
+                        alert(err.message || "Failed to reschedule");
+                      } finally { setRescheduling(false); }
+                    }} disabled={!newDate || rescheduling}
+                      className="rounded-lg bg-[#2ECC71] px-4 py-2 text-sm font-semibold text-white hover:bg-[#27AE60] disabled:opacity-50">
+                      {rescheduling ? "Rescheduling..." : "Confirm Reschedule"}
+                    </button>
+                    <button onClick={() => setRescheduleOpen(false)} className="rounded-lg border border-[#E2E8F0] px-4 py-2 text-sm text-[#64748B]">Cancel</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
     );

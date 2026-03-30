@@ -46,6 +46,8 @@ interface Job {
   assigned_driver: { id: string; first_name: string; last_name: string } | null;
   is_overdue?: boolean;
   extra_days?: number;
+  rescheduled_by_customer?: boolean;
+  rescheduled_from_date?: string;
   created_at: string;
 }
 
@@ -432,6 +434,11 @@ function JobCard({ job, onClick }: { job: Job; onClick: () => void }) {
           {job.is_overdue && (
             <span className="inline-flex items-center gap-1 mt-1 rounded-full bg-red-500/10 px-2 py-0.5 text-[10px] font-bold text-red-400">
               OVERDUE {job.extra_days}d
+            </span>
+          )}
+          {job.rescheduled_by_customer && (
+            <span className="rounded-full bg-blue-500/10 text-blue-400 px-2 py-0.5 text-[10px] font-medium mt-1 inline-flex">
+              Rescheduled by customer
             </span>
           )}
         </div>

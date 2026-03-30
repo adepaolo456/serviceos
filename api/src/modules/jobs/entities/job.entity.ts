@@ -147,6 +147,18 @@ export class Job {
   @Column({ name: 'overdue_notification_count', type: 'int', default: 0 })
   overdue_notification_count!: number;
 
+  @Column({ name: 'rescheduled_by_customer', default: false })
+  rescheduled_by_customer!: boolean;
+
+  @Column({ name: 'rescheduled_at', type: 'timestamptz', nullable: true })
+  rescheduled_at!: Date;
+
+  @Column({ name: 'rescheduled_from_date', type: 'date', nullable: true })
+  rescheduled_from_date!: string;
+
+  @Column({ name: 'rescheduled_reason', nullable: true })
+  rescheduled_reason!: string;
+
   @Column({ type: 'jsonb', nullable: true, default: '[]' })
   photos!: Record<string, any>[];
 
