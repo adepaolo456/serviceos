@@ -27,6 +27,9 @@ interface DispatchJob {
   extra_days?: number;
   rescheduled_by_customer?: boolean;
   rescheduled_from_date?: string;
+  is_failed_trip?: boolean;
+  failed_reason?: string;
+  source?: string;
 }
 
 interface Driver { id: string; firstName: string; lastName: string; phone: string; }
@@ -537,6 +540,8 @@ function JobCard({ job, order, isFirst, isLast, isSelected, isBusy, drivers, onA
             <span className="text-xs font-semibold text-white truncate">{jobTitle(job)}</span>
           </div>
           <div className="flex items-center gap-1 shrink-0">
+            {job.is_failed_trip && <span className="rounded bg-red-500/15 px-1.5 py-0.5 text-[8px] font-bold text-red-400">FAILED</span>}
+            {job.source === "rescheduled_from_failure" && <span className="rounded bg-yellow-500/15 px-1.5 py-0.5 text-[8px] font-bold text-yellow-400">FROM FAILED</span>}
             {job.rescheduled_by_customer && <span className="rounded bg-blue-500/15 px-1.5 py-0.5 text-[8px] font-bold text-blue-400">RESCHEDULED</span>}
             {job.is_overdue && <span className="rounded bg-red-500/15 px-1.5 py-0.5 text-[8px] font-bold text-red-400">OVERDUE {job.extra_days}d</span>}
             {job.asset?.identifier && <span className="rounded bg-brand/10 text-brand px-1.5 py-0.5 text-[9px] font-bold">{job.asset.identifier}</span>}
