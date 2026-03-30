@@ -47,6 +47,7 @@ import { ReportingModule } from './modules/reporting/reporting.module';
 import { StripeModule } from './modules/stripe/stripe.module';
 import { DumpLocation, DumpLocationRate, DumpLocationSurcharge } from './modules/dump-locations/entities/dump-location.entity';
 import { DumpTicket } from './modules/dump-locations/entities/dump-ticket.entity';
+import { SubscriptionPlan } from './modules/subscriptions/entities/subscription-plan.entity';
 
 @Module({
   imports: [
@@ -84,6 +85,7 @@ import { DumpTicket } from './modules/dump-locations/entities/dump-ticket.entity
             DumpLocationRate,
             DumpLocationSurcharge,
             DumpTicket,
+            SubscriptionPlan,
           ],
           synchronize: true,
           ssl: {
