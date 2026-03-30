@@ -44,6 +44,8 @@ interface Job {
   customer: { id: string; first_name: string; last_name: string; phone?: string } | null;
   asset: { id: string; identifier: string; asset_type: string; subtype: string } | null;
   assigned_driver: { id: string; first_name: string; last_name: string } | null;
+  is_overdue?: boolean;
+  extra_days?: number;
   created_at: string;
 }
 
@@ -64,9 +66,10 @@ interface PriceQuote { breakdown: { basePrice: number; total: number; tax: numbe
 
 /* ─── Constants ─── */
 
-const STATUSES = ["all", "pending", "confirmed", "dispatched", "en_route", "in_progress", "completed", "cancelled"] as const;
+const STATUSES = ["all", "overdue", "pending", "confirmed", "dispatched", "en_route", "in_progress", "completed", "cancelled"] as const;
 
 const STATUS_COLORS: Record<string, { bg: string; text: string; dot: string }> = {
+  overdue:     { bg: "bg-red-500/10",    text: "text-red-400",    dot: "bg-red-400" },
   pending:     { bg: "bg-yellow-500/10", text: "text-yellow-400", dot: "bg-yellow-400" },
   confirmed:   { bg: "bg-blue-500/10",   text: "text-blue-400",   dot: "bg-blue-400" },
   dispatched:  { bg: "bg-purple-500/10", text: "text-purple-400", dot: "bg-purple-400" },
@@ -78,7 +81,7 @@ const STATUS_COLORS: Record<string, { bg: string; text: string; dot: string }> =
 };
 
 const STATUS_LABELS: Record<string, string> = {
-  all: "All", pending: "Pending", confirmed: "Confirmed", dispatched: "Dispatched",
+  all: "All", overdue: "Overdue", pending: "Pending", confirmed: "Confirmed", dispatched: "Dispatched",
   en_route: "En Route", arrived: "Arrived", in_progress: "In Progress",
   completed: "Completed", cancelled: "Cancelled",
 };
@@ -176,18 +179,25 @@ export default function JobsPage() {
   const [loading, setLoading] = useState(true);
   const [panelOpen, setPanelOpen] = useState(false);
   const [statusCounts, setStatusCounts] = useState<StatusCount[]>([]);
+  const [overdueCount, setOverdueCount] = useState(0);
 
   const fetchJobs = useCallback(async () => {
     setLoading(true);
     try {
-      const params = new URLSearchParams({ page: String(page), limit: "30" });
-      if (statusFilter !== "all") params.set("status", statusFilter);
-      const range = getDateRange(dateRange);
-      if (range.dateFrom) params.set("dateFrom", range.dateFrom);
-      if (range.dateTo) params.set("dateTo", range.dateTo);
-      const res = await api.get<JobsResponse>(`/jobs?${params.toString()}`);
-      setJobs(res.data);
-      setTotal(res.meta.total);
+      if (statusFilter === "overdue") {
+        const overdueJobs = await api.get<any[]>("/automation/overdue");
+        setJobs(overdueJobs as unknown as Job[]);
+        setTotal(overdueJobs.length);
+      } else {
+        const params = new URLSearchParams({ page: String(page), limit: "30" });
+        if (statusFilter !== "all") params.set("status", statusFilter);
+        const range = getDateRange(dateRange);
+        if (range.dateFrom) params.set("dateFrom", range.dateFrom);
+        if (range.dateTo) params.set("dateTo", range.dateTo);
+        const res = await api.get<JobsResponse>(`/jobs?${params.toString()}`);
+        setJobs(res.data);
+        setTotal(res.meta.total);
+      }
     } catch { /* silent */ } finally {
       setLoading(false);
     }
@@ -197,12 +207,14 @@ export default function JobsPage() {
 
   useEffect(() => {
     api.get<StatusCount[]>("/analytics/jobs-by-status").then(setStatusCounts).catch(() => {});
+    api.get<any[]>("/automation/overdue").then((r) => setOverdueCount(r.length)).catch(() => {});
   }, []);
 
   useEffect(() => { setPage(1); }, [statusFilter, dateRange]);
 
   const getCount = (s: string) => {
     if (s === "all") return statusCounts.reduce((sum, c) => sum + Number(c.count), 0);
+    if (s === "overdue") return overdueCount;
     return Number(statusCounts.find((c) => c.status === s)?.count ?? 0);
   };
 
@@ -417,6 +429,11 @@ function JobCard({ job, onClick }: { job: Job; onClick: () => void }) {
             <span className={`h-1.5 w-1.5 rounded-full ${status.dot}`} />
             {STATUS_LABELS[job.status] || job.status.replace(/_/g, " ")}
           </span>
+          {job.is_overdue && (
+            <span className="inline-flex items-center gap-1 mt-1 rounded-full bg-red-500/10 px-2 py-0.5 text-[10px] font-bold text-red-400">
+              OVERDUE {job.extra_days}d
+            </span>
+          )}
         </div>
 
         {/* Center — Customer, Address, Type/Size */}

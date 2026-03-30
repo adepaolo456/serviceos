@@ -125,6 +125,7 @@ export default function DashboardPage() {
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
   const [todayJobs, setTodayJobs] = useState<TodayJob[]>([]);
   const [unassignedJobs, setUnassignedJobs] = useState<TodayJob[]>([]);
+  const [overdueJobs, setOverdueJobs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [jobPanelOpen, setJobPanelOpen] = useState(false);
   const [scheduleDate, setScheduleDate] = useState(today);
@@ -162,6 +163,7 @@ export default function DashboardPage() {
       finally { setLoading(false); }
     }
     loadDashboard();
+    api.get<any[]>("/automation/overdue").then(setOverdueJobs).catch(() => {});
   }, []);
 
   // Load jobs for selected schedule date
@@ -282,6 +284,40 @@ export default function DashboardPage() {
           )}
         </div>
       </div>
+
+      {/* ============ Overdue Rental Alert ============ */}
+      {overdueJobs.length > 0 && (
+        <div className="mb-5 rounded-2xl bg-red-500/10 border border-red-500/20 p-4">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <span className="relative flex h-2.5 w-2.5"><span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-75" /><span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" /></span>
+              <span className="text-sm font-semibold text-red-400">{overdueJobs.length} Overdue Rental{overdueJobs.length > 1 ? "s" : ""}</span>
+              <span className="text-xs text-red-400/70">— ${overdueJobs.reduce((s: number, j: any) => s + Number(j.extra_day_charges || 0), 0).toFixed(2)} in extra charges</span>
+            </div>
+          </div>
+          <div className="space-y-2">
+            {overdueJobs.slice(0, 5).map((j: any) => (
+              <div key={j.id} className="flex items-center justify-between rounded-lg bg-dark-card border border-[#1E2D45] px-3 py-2">
+                <div className="flex items-center gap-3 min-w-0">
+                  <span className="rounded bg-red-500/15 px-2 py-0.5 text-[10px] font-bold text-red-400">{j.extra_days}d</span>
+                  <div className="min-w-0">
+                    <p className="text-xs font-medium text-white truncate">{j.customer ? `${j.customer.first_name} ${j.customer.last_name}` : j.job_number}</p>
+                    <p className="text-[10px] text-muted">{j.asset?.identifier || j.service_type} · ${Number(j.extra_day_charges || 0).toFixed(2)} charges</p>
+                  </div>
+                </div>
+                <div className="flex gap-1.5 shrink-0" onClick={e => e.stopPropagation()}>
+                  <button onClick={() => { api.post(`/automation/overdue/${j.id}/action`, { action: "schedule_pickup" }).then(() => api.get<any[]>("/automation/overdue").then(setOverdueJobs)).catch(() => {}); }}
+                    className="rounded bg-dark-elevated px-2 py-1 text-[10px] font-medium text-foreground hover:bg-dark-card-hover">Pickup</button>
+                  <button onClick={() => { api.post(`/automation/overdue/${j.id}/action`, { action: "extend", days: 7 }).then(() => api.get<any[]>("/automation/overdue").then(setOverdueJobs)).catch(() => {}); }}
+                    className="rounded bg-dark-elevated px-2 py-1 text-[10px] font-medium text-foreground hover:bg-dark-card-hover">+7 Days</button>
+                  <button onClick={() => { api.post(`/automation/overdue/${j.id}/action`, { action: "dismiss" }).then(() => api.get<any[]>("/automation/overdue").then(setOverdueJobs)).catch(() => {}); }}
+                    className="rounded bg-dark-elevated px-2 py-1 text-[10px] font-medium text-muted hover:text-foreground">Dismiss</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ============ SECTION 2: Today's Overview ============ */}
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-5 mb-8">

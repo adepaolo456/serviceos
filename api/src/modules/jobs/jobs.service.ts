@@ -199,6 +199,17 @@ export class JobsService {
       case 'arrived':
         job.arrived_at = now;
         break;
+      case 'in_progress':
+        // Rental starts when delivered — set rental dates if not already set
+        if (!job.rental_start_date) {
+          job.rental_start_date = now.toISOString().split('T')[0];
+        }
+        if (!job.rental_end_date && job.rental_days) {
+          const end = new Date(job.rental_start_date);
+          end.setDate(end.getDate() + (job.rental_days || 7));
+          job.rental_end_date = end.toISOString().split('T')[0];
+        }
+        break;
       case 'completed':
         job.completed_at = now;
         break;
