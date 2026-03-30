@@ -133,16 +133,26 @@ export default function DispatchPage() {
     setBusyJobId(jobId);
     setSelectedJobId(null);
 
+    let success = false;
     try {
-      await api.patch(`/jobs/${jobId}/assign`, { assignedDriverId: targetDriverId });
+      const result = await api.patch<{ id: string; assigned_driver_id: string | null }>(`/jobs/${jobId}/assign`, { assignedDriverId: targetDriverId });
+      console.log("[dispatch] assign response:", result.id, "driver:", result.assigned_driver_id);
       const driverName = targetDriverId ? board.drivers.find(d => d.driver.id === targetDriverId)?.driver : null;
       toast("success", targetDriverId ? `Assigned to ${driverName?.firstName} ${driverName?.lastName}` : "Moved to Unassigned");
-    } catch {
-      toast("error", "Failed to move job");
+      success = true;
+    } catch (err) {
+      console.error("[dispatch] assign failed:", err);
+      toast("error", err instanceof Error ? err.message : "Failed to move job");
     }
 
     // Always re-fetch from server to ensure UI matches DB
-    await fetchBoard(true);
+    try {
+      const data = await api.get<DispatchBoard>(`/dispatch/board?date=${date}`);
+      console.log("[dispatch] refetch: unassigned=", data.unassigned.length, "drivers=", data.drivers.map(d => `${d.driver.firstName}(${d.jobs.length})`).join(", "));
+      setBoard(data);
+    } catch (err) {
+      console.error("[dispatch] refetch failed:", err);
+    }
     setBusyJobId(null);
   };
 

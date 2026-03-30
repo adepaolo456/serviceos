@@ -217,9 +217,19 @@ export class JobsService {
   async assignJob(tenantId: string, id: string, dto: AssignDto): Promise<Job> {
     const job = await this.findOne(tenantId, id);
 
-    if (dto.assetId !== undefined) job.asset_id = dto.assetId;
-    if (dto.assignedDriverId !== undefined)
-      job.assigned_driver_id = dto.assignedDriverId;
+    if (dto.assetId !== undefined) job.asset_id = dto.assetId as any;
+    if (dto.assignedDriverId !== undefined) {
+      job.assigned_driver_id = dto.assignedDriverId as any;
+
+      // Auto-confirm when assigning a driver to a pending job
+      if (dto.assignedDriverId && job.status === 'pending') {
+        job.status = 'confirmed';
+      }
+      // Revert to pending when unassigning from a confirmed job
+      if (!dto.assignedDriverId && job.status === 'confirmed') {
+        job.status = 'pending';
+      }
+    }
 
     return this.jobsRepository.save(job);
   }
