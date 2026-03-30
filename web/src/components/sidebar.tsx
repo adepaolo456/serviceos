@@ -17,6 +17,7 @@ import {
   X,
   BarChart3,
   ShieldCheck,
+  Store,
 } from "lucide-react";
 import { api } from "@/lib/api";
 
@@ -37,6 +38,7 @@ const navigation = [
   { name: "Pricing", href: "/pricing", icon: DollarSign },
   { name: "Team", href: "/team", icon: Users },
   { name: "Analytics", href: "/analytics", icon: BarChart3 },
+  { name: "Marketplace", href: "/marketplace", icon: Store },
   { name: "Settings", href: "/settings", icon: Settings },
 ];
 
