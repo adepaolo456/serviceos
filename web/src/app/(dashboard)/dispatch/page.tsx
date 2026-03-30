@@ -4,13 +4,13 @@ import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import {
   ChevronLeft, ChevronRight, Calendar, Clock, MapPin, UserPlus, Truck,
-  Phone, Plus, Box, Search, CheckCircle2, RefreshCw, Zap, X,
-  ChevronDown as ChevDown, ChevronUp as ChevUp, ArrowUp, ArrowDown,
+  Phone, Plus, Box, Search, CheckCircle2, RefreshCw, Zap, X, ExternalLink,
+  ChevronDown as ChevDown, ChevronUp as ChevUp, ArrowUp, ArrowDown, Navigation, Mail, Copy,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { formatPhone } from "@/lib/utils";
 import { useToast } from "@/components/toast";
-import QuickView from "@/components/quick-view";
+import QuickView, { QuickViewSkeleton } from "@/components/quick-view";
 import Dropdown from "@/components/dropdown";
 
 /* ---- Types ---- */
@@ -20,7 +20,7 @@ interface DispatchJob {
   status: string; priority: string; scheduled_window_start: string;
   scheduled_window_end: string; service_address: Record<string, string> | null;
   route_order: number | null; total_price: number;
-  customer: { id: string; first_name: string; last_name: string } | null;
+  customer: { id: string; first_name: string; last_name: string; phone?: string; email?: string } | null;
   asset: { id: string; identifier: string; subtype?: string } | null;
   assigned_driver: { id: string; first_name: string; last_name: string } | null;
   is_overdue?: boolean;
@@ -93,6 +93,8 @@ export default function DispatchPage() {
   const [quickViewJob, setQuickViewJob] = useState<DispatchJob | null>(null);
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [busyJobId, setBusyJobId] = useState<string | null>(null);
+  const [qvDetail, setQvDetail] = useState<any>(null);
+  const [qvLoading, setQvLoading] = useState(false);
   const { toast } = useToast();
 
   const fetchBoard = useCallback(async (silent = false) => {
@@ -258,7 +260,8 @@ export default function DispatchPage() {
                 count={board.unassigned.length} accentCls="bg-red-500/10 text-red-400"
                 jobs={filterJobs(board.unassigned, filter, search)} drivers={board.drivers.map(d => d.driver)}
                 onAssign={moveJobTo} selectedJobId={selectedJobId} onSelectJob={setSelectedJobId}
-                onQuickView={setQuickViewJob} onReorder={reorderJob} busyJobId={busyJobId} isUnassigned />
+                onQuickView={(j) => { setQuickViewJob(j); setQvLoading(true); setQvDetail(null); api.get(`/jobs/${j.id}`).then(setQvDetail).catch(() => {}).finally(() => setQvLoading(false)); }}
+                onReorder={reorderJob} busyJobId={busyJobId} isUnassigned />
               {/* Driver columns */}
               {board.drivers.map(col => {
                 const completed = col.jobs.filter(j => j.status === "completed").length;
@@ -272,7 +275,8 @@ export default function DispatchPage() {
                     jobs={filterJobs(col.jobs, filter, search)}
                     selectedJobId={selectedJobId} onSelectJob={setSelectedJobId}
                     onUnassign={(jid) => moveJobTo(jid, null)}
-                    onQuickView={setQuickViewJob} onReorder={reorderJob} busyJobId={busyJobId} />
+                    onQuickView={(j) => { setQuickViewJob(j); setQvLoading(true); setQvDetail(null); api.get(`/jobs/${j.id}`).then(setQvDetail).catch(() => {}).finally(() => setQvLoading(false)); }}
+                    onReorder={reorderJob} busyJobId={busyJobId} />
                 );
               })}
               {board.drivers.length === 0 && board.unassigned.length > 0 && (
@@ -329,18 +333,34 @@ export default function DispatchPage() {
         </div>
       )}
 
-      {/* QuickView */}
-      <QuickView isOpen={!!quickViewJob} onClose={() => setQuickViewJob(null)}
+      {/* QuickView Panel */}
+      <QuickView isOpen={!!quickViewJob} onClose={() => { setQuickViewJob(null); setQvDetail(null); }}
         title={quickViewJob ? jobTitle(quickViewJob) : ""} subtitle={quickViewJob?.job_number}
-        actions={quickViewJob ? <Link href={`/jobs/${quickViewJob.id}`} className="rounded-lg bg-dark-elevated px-3 py-1.5 text-xs font-medium text-foreground hover:bg-dark-card-hover transition-colors">View Full Detail &rarr;</Link> : undefined}
+        actions={quickViewJob ? <Link href={`/jobs/${quickViewJob.id}`} className="rounded-lg bg-dark-elevated px-3 py-1.5 text-xs font-medium text-foreground hover:bg-dark-card-hover transition-colors"><ExternalLink className="h-3 w-3 inline mr-1" />Full Detail</Link> : undefined}
         footer={quickViewJob ? (
           <div className="flex gap-2">
-            <button onClick={() => setQuickViewJob(null)} className="flex-1 rounded-lg bg-dark-elevated py-2 text-xs font-medium text-muted hover:text-white transition-colors">Close</button>
-            <Link href={`/jobs/${quickViewJob.id}`} className="flex-1 rounded-lg bg-brand py-2 text-xs font-semibold text-dark-primary text-center hover:bg-brand-light transition-colors">View Job</Link>
+            {quickViewJob.customer?.phone && (
+              <a href={`tel:${quickViewJob.customer.phone}`} className="flex-1 flex items-center justify-center gap-1.5 rounded-lg bg-brand py-2.5 text-xs font-semibold text-dark-primary hover:bg-brand-light transition-colors"><Phone className="h-3.5 w-3.5" /> Call Customer</a>
+            )}
+            {quickViewJob.service_address && (
+              <button onClick={() => { const a = quickViewJob.service_address!; const q = [a.street, a.city, a.state].filter(Boolean).join(", "); window.open(`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(q)}`, "_blank"); }}
+                className="flex-1 flex items-center justify-center gap-1.5 rounded-lg bg-dark-elevated py-2.5 text-xs font-semibold text-foreground hover:bg-dark-card-hover transition-colors"><Navigation className="h-3.5 w-3.5" /> Navigate</button>
+            )}
           </div>
         ) : undefined}
       >
-        {quickViewJob && <JobQuickViewContent job={quickViewJob} />}
+        {quickViewJob && (
+          <JobQuickViewContent
+            job={quickViewJob}
+            detail={qvDetail}
+            loading={qvLoading}
+            board={board}
+            date={date}
+            onAssign={moveJobTo}
+            onRefresh={() => fetchBoard(true)}
+            toast={toast}
+          />
+        )}
       </QuickView>
     </div>
   );
@@ -497,10 +517,17 @@ function JobCard({ job, order, isFirst, isLast, isSelected, isBusy, drivers, onA
             <X className="inline h-2.5 w-2.5" />
           </button>
         )}
+
+        {/* Move button — opens floating bar for driver assignment */}
+        <button onClick={(e) => { e.stopPropagation(); onSelect(); }}
+          className="rounded bg-dark-elevated px-1.5 py-0.5 text-[9px] font-medium text-muted hover:text-white transition-all opacity-0 group-hover:opacity-100"
+          title="Move to another column">
+          ↔
+        </button>
       </div>
 
-      {/* Card body — left-click to select, double-click to QuickView */}
-      <div onClick={onSelect} onDoubleClick={(e) => { e.stopPropagation(); onQuickView(); }} className="cursor-pointer">
+      {/* Card body — click to open QuickView, long-press/right-click to select for move */}
+      <div onClick={onQuickView} className="cursor-pointer">
         {/* Title row */}
         <div className="flex items-start justify-between gap-2 mb-1.5 pr-16">
           <div className="flex items-center gap-1.5 min-w-0">
@@ -533,50 +560,156 @@ function JobCard({ job, order, isFirst, isLast, isSelected, isBusy, drivers, onA
 
 /* ======== QuickView Content ======== */
 
-function JobQuickViewContent({ job }: { job: DispatchJob }) {
+function JobQuickViewContent({ job, detail, loading, board, date, onAssign, onRefresh, toast }: {
+  job: DispatchJob; detail: any; loading: boolean;
+  board: DispatchBoard | null; date: string;
+  onAssign: (jobId: string, driverId: string | null) => Promise<void>;
+  onRefresh: () => Promise<void>;
+  toast: (type: "success" | "error" | "warning", msg: string) => void;
+}) {
+  const [rescheduleOpen, setRescheduleOpen] = useState(false);
+  const [newDate, setNewDate] = useState(detail?.scheduled_date || "");
+  const [reason, setReason] = useState("");
+  const [rescheduling, setRescheduling] = useState(false);
+
   const tc = TYPE_CONFIG[job.job_type] || { label: job.job_type, letter: "?", cls: "bg-zinc-500/10 text-zinc-400" };
-  const addr = job.service_address;
   const isCompleted = job.status === "completed";
+  const d = detail || job; // Use detail if loaded, fallback to board data
+  const addr = d.service_address;
+  const cust = d.customer;
+
+  if (loading) return <QuickViewSkeleton />;
+
+  const handleReschedule = async () => {
+    if (!newDate) return;
+    setRescheduling(true);
+    try {
+      await api.patch(`/jobs/${job.id}/reschedule`, { scheduledDate: newDate, reason, source: "dispatcher" });
+      const rentalDays = d.rental_days || 7;
+      const pickupDate = new Date(newDate); pickupDate.setDate(pickupDate.getDate() + rentalDays);
+      toast("success", `Moved to ${new Date(newDate).toLocaleDateString()}. Pickup updated to ${pickupDate.toLocaleDateString()}.`);
+      setRescheduleOpen(false);
+      await onRefresh();
+    } catch { toast("error", "Failed to reschedule"); }
+    finally { setRescheduling(false); }
+  };
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
+      {/* Badges */}
       <div className="flex items-center gap-2 flex-wrap">
         <span className={`rounded-full px-3 py-1 text-xs font-medium ${tc.cls}`}>{tc.label}</span>
         <span className={`rounded-full px-3 py-1 text-xs font-medium capitalize ${isCompleted ? "bg-emerald-500/10 text-emerald-400" : "bg-yellow-500/10 text-yellow-400"}`}>{job.status.replace(/_/g, " ")}</span>
         {job.priority === "high" && <span className="rounded-full bg-red-500/10 px-2.5 py-1 text-xs font-bold text-red-400">High Priority</span>}
+        {job.rescheduled_by_customer && <span className="rounded-full bg-blue-500/10 px-2.5 py-1 text-xs font-medium text-blue-400">Rescheduled by customer</span>}
+        {d.asset?.identifier && <span className="rounded-full bg-brand/10 px-2.5 py-1 text-xs font-bold text-brand">{d.asset.identifier}</span>}
       </div>
+
+      {/* Customer */}
       <div className="rounded-lg bg-dark-card border border-[#1E2D45] p-4">
         <p className="text-xs text-muted uppercase tracking-wider mb-2">Customer</p>
-        <p className="text-sm font-semibold text-white">{job.customer ? `${job.customer.first_name} ${job.customer.last_name}` : "No customer"}</p>
+        {cust ? (
+          <div>
+            <Link href={`/customers/${cust.id}`} className="text-sm font-semibold text-white hover:text-brand">{cust.first_name} {cust.last_name}</Link>
+            {cust.phone && <a href={`tel:${cust.phone}`} className="flex items-center gap-1.5 mt-2 text-xs text-brand hover:text-brand-light"><Phone className="h-3 w-3" />{formatPhone(cust.phone)}</a>}
+            {cust.email && <a href={`mailto:${cust.email}`} className="flex items-center gap-1.5 mt-1 text-xs text-muted hover:text-brand"><Mail className="h-3 w-3" />{cust.email}</a>}
+          </div>
+        ) : <p className="text-sm text-muted">No customer</p>}
       </div>
+
+      {/* Address */}
       {addr && (
         <div className="rounded-lg bg-dark-card border border-[#1E2D45] p-4">
           <p className="text-xs text-muted uppercase tracking-wider mb-2">Service Address</p>
           <p className="text-sm text-white">{addr.street}</p>
           <p className="text-xs text-muted">{[addr.city, addr.state, addr.zip].filter(Boolean).join(", ")}</p>
+          {d.placement_notes && <p className="text-xs text-muted mt-2 italic">"{d.placement_notes}"</p>}
         </div>
       )}
-      {(job.scheduled_window_start || job.scheduled_window_end) && (
-        <div className="rounded-lg bg-dark-card border border-[#1E2D45] p-4">
-          <p className="text-xs text-muted uppercase tracking-wider mb-2">Time Window</p>
-          <p className="text-sm text-white flex items-center gap-2"><Clock className="h-4 w-4 text-muted" />{fmtTime(job.scheduled_window_start)}{job.scheduled_window_end && ` – ${fmtTime(job.scheduled_window_end)}`}</p>
+
+      {/* Schedule */}
+      <div className="rounded-lg bg-dark-card border border-[#1E2D45] p-4">
+        <p className="text-xs text-muted uppercase tracking-wider mb-2">Schedule</p>
+        <div className="space-y-1.5 text-sm">
+          {d.scheduled_date && <div className="flex justify-between"><span className="text-muted">Date</span><span className="text-white font-medium">{new Date(d.scheduled_date + "T00:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}</span></div>}
+          {d.scheduled_window_start && <div className="flex justify-between"><span className="text-muted">Time</span><span className="text-white">{fmtTime(d.scheduled_window_start)}{d.scheduled_window_end ? ` – ${fmtTime(d.scheduled_window_end)}` : ""}</span></div>}
+          {d.rental_days && <div className="flex justify-between"><span className="text-muted">Rental</span><span className="text-white">{d.rental_days} days</span></div>}
+          {d.rental_end_date && <div className="flex justify-between"><span className="text-muted">Pickup by</span><span className="text-white">{new Date(d.rental_end_date + "T00:00:00").toLocaleDateString()}</span></div>}
         </div>
-      )}
-      <div className="grid grid-cols-2 gap-3">
-        <div className="rounded-lg bg-dark-card border border-[#1E2D45] p-4">
-          <p className="text-xs text-muted uppercase tracking-wider mb-2">Asset</p>
-          <p className="text-sm font-medium text-white">{job.asset?.identifier || "Not assigned"}</p>
-        </div>
-        <div className="rounded-lg bg-dark-card border border-[#1E2D45] p-4">
-          <p className="text-xs text-muted uppercase tracking-wider mb-2">Driver</p>
-          <p className="text-sm font-medium text-white">{job.assigned_driver ? `${job.assigned_driver.first_name} ${job.assigned_driver.last_name}` : "Unassigned"}</p>
-        </div>
+        {job.rescheduled_from_date && <p className="text-xs text-blue-400 mt-2">Originally scheduled: {job.rescheduled_from_date}</p>}
       </div>
-      {job.total_price > 0 && (
-        <div className="rounded-lg bg-brand/5 border border-brand/20 p-4">
-          <p className="text-xs text-brand uppercase tracking-wider mb-1">Price</p>
-          <p className="text-xl font-bold text-brand tabular-nums">${Number(job.total_price).toLocaleString()}</p>
+
+      {/* Assignment */}
+      <div className="rounded-lg bg-dark-card border border-[#1E2D45] p-4">
+        <p className="text-xs text-muted uppercase tracking-wider mb-2">Assignment</p>
+        <div className="space-y-1.5 text-sm">
+          <div className="flex justify-between"><span className="text-muted">Driver</span><span className={job.assigned_driver ? "text-white" : "text-red-400"}>{job.assigned_driver ? `${job.assigned_driver.first_name} ${job.assigned_driver.last_name}` : "Unassigned"}</span></div>
+          <div className="flex justify-between"><span className="text-muted">Asset</span><span className="text-white">{d.asset?.identifier || "Not assigned"}</span></div>
         </div>
+        {board && (
+          <div className="mt-3 pt-3 border-t border-[#1E2D45]" onClick={e => e.stopPropagation()}>
+            <Dropdown trigger={<button className="text-xs text-brand hover:text-brand-light font-medium">{job.assigned_driver ? "Reassign Driver" : "Assign Driver"}</button>}>
+              <button onClick={() => onAssign(job.id, null)} className="flex w-full items-center gap-2 px-3 py-2 text-xs text-red-400 hover:bg-dark-card-hover">Unassign</button>
+              {board.drivers.map(col => (
+                <button key={col.driver.id} onClick={() => onAssign(job.id, col.driver.id)}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-xs text-foreground hover:bg-dark-card-hover whitespace-nowrap">
+                  <div className="flex h-5 w-5 items-center justify-center rounded-full bg-brand/10 text-[8px] font-bold text-brand">{col.driver.firstName[0]}{col.driver.lastName[0]}</div>
+                  {col.driver.firstName} {col.driver.lastName}
+                </button>
+              ))}
+            </Dropdown>
+          </div>
+        )}
+      </div>
+
+      {/* Price */}
+      {d.total_price > 0 && (
+        <div className="rounded-lg bg-brand/5 border border-brand/20 p-4">
+          <div className="flex justify-between items-center">
+            <p className="text-xs text-brand uppercase tracking-wider">Total Price</p>
+            <p className="text-lg font-bold text-brand tabular-nums">${Number(d.total_price).toLocaleString()}</p>
+          </div>
+        </div>
+      )}
+
+      {/* Reschedule Section */}
+      {!isCompleted && job.status !== "cancelled" && (
+        <div>
+          {!rescheduleOpen ? (
+            <button onClick={() => { setRescheduleOpen(true); setNewDate(d.scheduled_date || ""); }}
+              className="w-full rounded-lg border border-blue-500/20 bg-blue-500/5 py-2.5 text-xs font-semibold text-blue-400 hover:bg-blue-500/10 transition-colors">
+              <Calendar className="h-3.5 w-3.5 inline mr-1.5" />Reschedule Job
+            </button>
+          ) : (
+            <div className="rounded-lg border border-blue-500/20 bg-blue-500/5 p-4 space-y-3">
+              <p className="text-xs font-semibold text-blue-400">Reschedule Job</p>
+              <input type="date" value={newDate} onChange={e => setNewDate(e.target.value)}
+                className="w-full rounded-lg bg-[#111C2E] border border-[#1E2D45] px-3 py-2 text-sm text-white outline-none focus:border-brand" />
+              {d.rental_days && newDate && (
+                <p className="text-xs text-muted">
+                  New delivery: {new Date(newDate + "T00:00:00").toLocaleDateString()} · Pickup by: {new Date(new Date(newDate).getTime() + d.rental_days * 86400000).toLocaleDateString()}
+                </p>
+              )}
+              <input value={reason} onChange={e => setReason(e.target.value)} placeholder="Reason (optional)"
+                className="w-full rounded-lg bg-[#111C2E] border border-[#1E2D45] px-3 py-2 text-sm text-white placeholder-muted outline-none focus:border-brand" />
+              <div className="flex gap-2">
+                <button onClick={handleReschedule} disabled={!newDate || rescheduling}
+                  className="flex-1 rounded-lg bg-blue-500 py-2 text-xs font-semibold text-white hover:bg-blue-600 disabled:opacity-50">{rescheduling ? "Moving..." : "Confirm Move"}</button>
+                <button onClick={() => setRescheduleOpen(false)} className="rounded-lg bg-dark-elevated px-4 py-2 text-xs text-muted hover:text-white">Cancel</button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Cancel */}
+      {!isCompleted && job.status !== "cancelled" && (
+        <button onClick={async () => {
+          if (!confirm("Cancel this job? This cannot be undone.")) return;
+          try { await api.patch(`/jobs/${job.id}/status`, { status: "cancelled" }); toast("success", "Job cancelled"); await onRefresh(); } catch { toast("error", "Failed to cancel"); }
+        }} className="w-full rounded-lg border border-red-500/20 py-2 text-xs font-medium text-red-400 hover:bg-red-500/10 transition-colors">
+          Cancel Job
+        </button>
       )}
     </div>
   );
