@@ -350,4 +350,45 @@ export class JobsService {
 
     return this.findOne(tenantId, jobId);
   }
+
+  async scheduleNextTask(tenantId: string, parentJobId: string, body: { type: string; scheduledDate: string; timeWindow?: string; newAssetSubtype?: string }) {
+    const parent = await this.findOne(tenantId, parentJobId);
+    const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    const seq = Math.floor(Math.random() * 9000) + 1000;
+
+    let windowStart = '08:00', windowEnd = '17:00';
+    if (body.timeWindow === 'morning') { windowStart = '08:00'; windowEnd = '12:00'; }
+    else if (body.timeWindow === 'afternoon') { windowStart = '12:00'; windowEnd = '17:00'; }
+
+    const baseJob = {
+      tenant_id: tenantId, customer_id: parent.customer_id, service_address: parent.service_address,
+      service_type: parent.service_type, priority: 'normal' as const, scheduled_date: body.scheduledDate,
+      scheduled_window_start: windowStart, scheduled_window_end: windowEnd,
+      status: 'pending', source: 'schedule_next', parent_job_id: parentJobId,
+    };
+
+    const jobs: Job[] = [];
+
+    if (body.type === 'pickup') {
+      const job = this.jobsRepository.create({ ...baseJob, job_number: `JOB-${dateStr}-${seq}`, job_type: 'pickup', asset_id: parent.asset_id });
+      jobs.push(await this.jobsRepository.save(job));
+    } else if (body.type === 'exchange') {
+      const job = this.jobsRepository.create({ ...baseJob, job_number: `JOB-${dateStr}-${seq}`, job_type: 'exchange', asset_id: parent.asset_id });
+      jobs.push(await this.jobsRepository.save(job));
+    } else if (body.type === 'dump_and_return') {
+      const pickupJob = this.jobsRepository.create({ ...baseJob, job_number: `JOB-${dateStr}-${seq}`, job_type: 'pickup', asset_id: parent.asset_id });
+      const saved1 = await this.jobsRepository.save(pickupJob);
+      jobs.push(saved1);
+      const deliveryJob = this.jobsRepository.create({ ...baseJob, job_number: `JOB-${dateStr}-${seq + 1}`, job_type: 'delivery', asset_id: parent.asset_id });
+      const saved2 = await this.jobsRepository.save(deliveryJob);
+      jobs.push(saved2);
+    }
+
+    // Update parent's linked_job_ids
+    const linkedIds = Array.isArray(parent.linked_job_ids) ? [...parent.linked_job_ids] : [];
+    jobs.forEach(j => linkedIds.push(j.id));
+    await this.jobsRepository.update(parentJobId, { linked_job_ids: linkedIds });
+
+    return { jobs, parentJobId };
+  }
 }

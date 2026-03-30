@@ -147,6 +147,24 @@ export class Job {
   @Column({ name: 'overdue_notification_count', type: 'int', default: 0 })
   overdue_notification_count!: number;
 
+  @Column({ name: 'drop_off_asset_id', type: 'uuid', nullable: true })
+  drop_off_asset_id!: string;
+
+  @Column({ name: 'drop_off_asset_pin', nullable: true })
+  drop_off_asset_pin!: string;
+
+  @Column({ name: 'pick_up_asset_id', type: 'uuid', nullable: true })
+  pick_up_asset_id!: string;
+
+  @Column({ name: 'pick_up_asset_pin', nullable: true })
+  pick_up_asset_pin!: string;
+
+  @Column({ name: 'parent_job_id', type: 'uuid', nullable: true })
+  parent_job_id!: string;
+
+  @Column({ name: 'linked_job_ids', type: 'jsonb', default: '[]' })
+  linked_job_ids!: string[];
+
   @Column({ name: 'dump_location_id', type: 'uuid', nullable: true })
   dump_location_id!: string;
 
