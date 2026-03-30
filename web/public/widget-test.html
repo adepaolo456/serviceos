@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Widget Test - Rent This Dumpster</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 40px; max-width: 800px; margin: 0 auto; background: #f8f9fa; color: #333; }
+    h1 { color: #111; margin-bottom: 8px; }
+    p { color: #666; line-height: 1.6; }
+    .card { background: #fff; border: 1px solid #e0e0e0; border-radius: 12px; padding: 24px; margin: 24px 0; }
+    button.test-btn { background: #2ECC71; color: #fff; border: none; padding: 12px 24px; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
+    button.test-btn:hover { background: #27AE60; }
+    code { background: #f0f0f0; padding: 2px 6px; border-radius: 4px; font-size: 13px; }
+    pre { background: #f0f0f0; padding: 16px; border-radius: 8px; overflow-x: auto; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <h1>Rent This Dumpster</h1>
+  <p>This page simulates a tenant's existing website. The floating <strong>"Book Now"</strong> button in the bottom-right corner is the ServiceOS widget.</p>
+
+  <div class="card">
+    <h3>Test Controls</h3>
+    <p>Open the widget programmatically:</p>
+    <button class="test-btn" onclick="ServiceOS.open()">ServiceOS.open()</button>
+  </div>
+
+  <div class="card">
+    <h3>Embed Code</h3>
+    <p>Add this to any webpage:</p>
+    <pre>&lt;script src="https://serviceos-web-zeta.vercel.app/widget.js" data-slug="rent-this-dumpster-mnbxs4jm"&gt;&lt;/script&gt;</pre>
+  </div>
+
+  <div class="card">
+    <h3>Optional Attributes</h3>
+    <ul>
+      <li><code>data-position="bottom-left"</code> — Move button to bottom-left</li>
+      <li><code>data-button-text="Get a Quote"</code> — Custom button text</li>
+      <li><code>data-auto-open="true"</code> — Open modal immediately</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h3>Booking Callback</h3>
+    <p>Listen for completed bookings:</p>
+    <pre>window.serviceosOnBooking = function(data) {
+  console.log('Booking completed:', data);
+  // Track conversion, redirect, etc.
+};</pre>
+  </div>
+
+  <script>
+    window.serviceosOnBooking = function(data) {
+      alert('Booking completed! Job: ' + (data.jobNumber || JSON.stringify(data)));
+    };
+  </script>
+  <script src="/widget.js" data-slug="rent-this-dumpster-mnbxs4jm"></script>
+</body>
+</html>
