@@ -41,10 +41,8 @@ const ROLE_CLS: Record<string, string> = {
   dispatcher: "bg-purple-500/15 text-purple-400", driver: "bg-brand/15 text-brand",
 };
 
-function fmtPhone(p: string | null): string {
-  if (!p) return ""; const d = p.replace(/\D/g, "");
-  if (d.length === 10) return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`; return p;
-}
+import { formatPhone } from "@/lib/utils";
+const fmtPhone = formatPhone;
 
 function fmtTime(d: string) { return new Date(d).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }); }
 function fmtDate(d: string) { return new Date(d).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }); }

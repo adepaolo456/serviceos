@@ -66,15 +66,15 @@ const TEXT_COLOR = "#7A8BA3";
 
 /* ─── Helpers ─── */
 
+import { formatCurrency } from "@/lib/utils";
+
 function fmt(n: number): string {
-  if (isNaN(n)) return "$0";
-  if (n >= 1000) return `$${(n / 1000).toFixed(1)}k`;
-  return `$${n.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+  if (isNaN(n)) return "$0.00";
+  if (n >= 10000) return `$${(n / 1000).toFixed(1)}k`;
+  return formatCurrency(n);
 }
 
-function fmtFull(n: number): string {
-  return `$${Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
+const fmtFull = (n: number) => formatCurrency(n);
 
 function fmtPct(n: number): string { return `${Math.round(n)}%`; }
 

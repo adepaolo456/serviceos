@@ -35,12 +35,8 @@ const STATUS_DOT: Record<string, string> = {
   active: "bg-brand", inactive: "bg-zinc-500", "on_break": "bg-yellow-500",
 };
 
-function fmtPhone(p: string | null): string {
-  if (!p) return "";
-  const d = p.replace(/\D/g, "");
-  if (d.length === 10) return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`;
-  return p;
-}
+import { formatPhone } from "@/lib/utils";
+const fmtPhone = formatPhone;
 
 function getMonday(d: Date): string {
   const day = d.getDay();

@@ -43,15 +43,11 @@ interface Note {
 
 /* ---- Helpers ---- */
 
-function fmtPhone(p: string | null): string {
-  if (!p) return "";
-  const d = p.replace(/\D/g, "");
-  if (d.length === 10) return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`;
-  return p;
-}
+import { formatPhone, formatCurrency } from "@/lib/utils";
 
-function fmtMoney(n: number): string { return `$${Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`; }
-function fmtMoneyShort(n: number): string { return `$${Number(n).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`; }
+const fmtPhone = formatPhone;
+const fmtMoney = (n: number) => formatCurrency(n);
+const fmtMoneyShort = (n: number) => formatCurrency(n);
 
 function timeAgo(d: string): string {
   const diff = Date.now() - new Date(d).getTime();
