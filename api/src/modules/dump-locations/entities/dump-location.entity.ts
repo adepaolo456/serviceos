@@ -86,6 +86,9 @@ export class DumpLocationRate {
   @Column({ name: 'minimum_charge', type: 'decimal', precision: 10, scale: 2, nullable: true })
   minimum_charge!: number;
 
+  @Column({ name: 'rate_type', default: 'per_ton' })
+  rate_type!: string;
+
   @Column({ name: 'is_active', default: true })
   is_active!: boolean;
 }
@@ -113,6 +116,9 @@ export class DumpLocationSurcharge {
 
   @Column({ name: 'customer_charge', type: 'decimal', precision: 10, scale: 2 })
   customer_charge!: number;
+
+  @Column({ name: 'charge_type', default: 'flat' })
+  charge_type!: string;
 
   @Column({ name: 'is_active', default: true })
   is_active!: boolean;
