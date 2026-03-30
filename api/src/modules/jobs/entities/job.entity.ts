@@ -147,6 +147,48 @@ export class Job {
   @Column({ name: 'overdue_notification_count', type: 'int', default: 0 })
   overdue_notification_count!: number;
 
+  @Column({ name: 'dump_location_id', type: 'uuid', nullable: true })
+  dump_location_id!: string;
+
+  @Column({ name: 'dump_location_name', nullable: true })
+  dump_location_name!: string;
+
+  @Column({ name: 'dump_ticket_number', nullable: true })
+  dump_ticket_number!: string;
+
+  @Column({ name: 'dump_ticket_photo', type: 'text', nullable: true })
+  dump_ticket_photo!: string;
+
+  @Column({ name: 'dump_weight_tons', type: 'decimal', precision: 8, scale: 2, nullable: true })
+  dump_weight_tons!: number;
+
+  @Column({ name: 'dump_waste_type', nullable: true })
+  dump_waste_type!: string;
+
+  @Column({ name: 'dump_base_cost', type: 'decimal', precision: 10, scale: 2, default: 0 })
+  dump_base_cost!: number;
+
+  @Column({ name: 'dump_overage_items', type: 'jsonb', default: '[]' })
+  dump_overage_items!: Array<{ type: string; label: string; quantity: number; chargePerUnit: number; total: number }>;
+
+  @Column({ name: 'dump_overage_charges', type: 'decimal', precision: 10, scale: 2, default: 0 })
+  dump_overage_charges!: number;
+
+  @Column({ name: 'dump_total_cost', type: 'decimal', precision: 10, scale: 2, default: 0 })
+  dump_total_cost!: number;
+
+  @Column({ name: 'customer_additional_charges', type: 'decimal', precision: 10, scale: 2, default: 0 })
+  customer_additional_charges!: number;
+
+  @Column({ name: 'dump_submitted_at', type: 'timestamptz', nullable: true })
+  dump_submitted_at!: Date;
+
+  @Column({ name: 'dump_submitted_by', type: 'uuid', nullable: true })
+  dump_submitted_by!: string;
+
+  @Column({ name: 'dump_status', default: 'none' })
+  dump_status!: string;
+
   @Column({ name: 'rescheduled_by_customer', default: false })
   rescheduled_by_customer!: boolean;
 

@@ -10,6 +10,7 @@ import {
   Briefcase,
   Truck,
   FileText,
+  ClipboardList,
   DollarSign,
   Settings,
   LogOut,
@@ -19,6 +20,7 @@ import {
   ShieldCheck,
   Store,
   CarFront,
+  Trash2,
 } from "lucide-react";
 import { api } from "@/lib/api";
 
@@ -35,6 +37,8 @@ const navigation = [
   { name: "Assets", href: "/assets", icon: Box },
   { name: "Jobs", href: "/jobs", icon: Briefcase },
   { name: "Dispatch", href: "/dispatch", icon: Truck },
+  { name: "Dump Sites", href: "/dump-locations", icon: Trash2 },
+  { name: "Dump Slips", href: "/dump-slips", icon: ClipboardList },
   { name: "Invoices", href: "/invoices", icon: FileText },
   { name: "Pricing", href: "/pricing", icon: DollarSign },
   { name: "Team", href: "/team", icon: Users },

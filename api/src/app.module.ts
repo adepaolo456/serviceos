@@ -41,6 +41,8 @@ import { MarketplaceBooking } from './modules/marketplace/entities/marketplace-b
 import { AutomationModule } from './modules/automation/automation.module';
 import { DriverModule } from './modules/driver/driver.module';
 import { AutomationLog } from './modules/automation/entities/automation-log.entity';
+import { DumpLocationsModule } from './modules/dump-locations/dump-locations.module';
+import { DumpLocation, DumpLocationRate, DumpLocationSurcharge } from './modules/dump-locations/entities/dump-location.entity';
 
 @Module({
   imports: [
@@ -73,6 +75,9 @@ import { AutomationLog } from './modules/automation/entities/automation-log.enti
             CustomerNote,
             TimeEntry,
             AutomationLog,
+            DumpLocation,
+            DumpLocationRate,
+            DumpLocationSurcharge,
           ],
           synchronize: true,
           ssl: {
@@ -101,6 +106,7 @@ import { AutomationLog } from './modules/automation/entities/automation-log.enti
     PublicModule,
     AutomationModule,
     DriverModule,
+    DumpLocationsModule,
   ],
   controllers: [AppController],
   providers: [
