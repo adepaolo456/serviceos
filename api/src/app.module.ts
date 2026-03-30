@@ -38,6 +38,8 @@ import { Payment } from './modules/billing/entities/payment.entity';
 import { Route } from './modules/dispatch/entities/route.entity';
 import { Notification } from './modules/notifications/entities/notification.entity';
 import { MarketplaceBooking } from './modules/marketplace/entities/marketplace-booking.entity';
+import { AutomationModule } from './modules/automation/automation.module';
+import { AutomationLog } from './modules/automation/entities/automation-log.entity';
 
 @Module({
   imports: [
@@ -69,6 +71,7 @@ import { MarketplaceBooking } from './modules/marketplace/entities/marketplace-b
             Yard,
             CustomerNote,
             TimeEntry,
+            AutomationLog,
           ],
           synchronize: true,
           ssl: {
@@ -95,6 +98,7 @@ import { MarketplaceBooking } from './modules/marketplace/entities/marketplace-b
     TeamModule,
     PortalModule,
     PublicModule,
+    AutomationModule,
   ],
   controllers: [AppController],
   providers: [

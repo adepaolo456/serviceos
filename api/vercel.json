@@ -15,7 +15,7 @@
       "methods": ["OPTIONS"],
       "status": 204,
       "headers": {
-        "Access-Control-Allow-Origin": "https://serviceos-web-zeta.vercel.app",
+        "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "GET,POST,PUT,PATCH,DELETE,OPTIONS",
         "Access-Control-Allow-Headers": "Content-Type,Authorization",
         "Access-Control-Allow-Credentials": "true",
@@ -26,9 +26,15 @@
       "src": "/(.*)",
       "dest": "api/index.js",
       "headers": {
-        "Access-Control-Allow-Origin": "https://serviceos-web-zeta.vercel.app",
+        "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Credentials": "true"
       }
+    }
+  ],
+  "crons": [
+    {
+      "path": "/automation/cron/overdue-scan?secret=SERVICEOS_CRON_SECRET_2026",
+      "schedule": "0 12 * * *"
     }
   ]
 }

@@ -129,6 +129,24 @@ export class Job {
   })
   deposit_amount!: number;
 
+  @Column({ name: 'extra_days', type: 'int', default: 0 })
+  extra_days!: number;
+
+  @Column({ name: 'extra_day_rate', type: 'decimal', precision: 10, scale: 2, nullable: true })
+  extra_day_rate!: number;
+
+  @Column({ name: 'extra_day_charges', type: 'decimal', precision: 10, scale: 2, default: 0 })
+  extra_day_charges!: number;
+
+  @Column({ name: 'is_overdue', default: false })
+  is_overdue!: boolean;
+
+  @Column({ name: 'overdue_notified_at', type: 'timestamptz', nullable: true })
+  overdue_notified_at!: Date;
+
+  @Column({ name: 'overdue_notification_count', type: 'int', default: 0 })
+  overdue_notification_count!: number;
+
   @Column({ type: 'jsonb', nullable: true, default: '[]' })
   photos!: Record<string, any>[];
 
