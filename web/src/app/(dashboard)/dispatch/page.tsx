@@ -532,7 +532,7 @@ function JobCard({ job, order, isFirst, isLast, isSelected, isBusy, drivers, onA
         <div className="flex items-start justify-between gap-2 mb-1.5 pr-16">
           <div className="flex items-center gap-1.5 min-w-0">
             <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-dark-elevated text-[9px] font-bold text-muted tabular-nums">{order}</span>
-            <span className={`shrink-0 flex h-5 w-5 items-center justify-center rounded text-[9px] font-bold ${tc.cls}`}>{tc.letter}</span>
+            <span className={`shrink-0 rounded px-1.5 py-0.5 text-[8px] font-bold ${tc.cls}`}>{tc.label}</span>
             <span className="text-xs font-semibold text-white truncate">{jobTitle(job)}</span>
           </div>
           <div className="flex items-center gap-1 shrink-0">
