@@ -33,7 +33,12 @@ export class PortalService {
     const valid = await bcrypt.compare(password, customer.portal_password_hash);
     if (!valid) throw new UnauthorizedException('Invalid credentials');
 
-    await this.customerRepo.update(customer.id, { portal_last_login: new Date() as any });
+    await this.customerRepo
+      .createQueryBuilder()
+      .update(Customer)
+      .set({ portal_last_login: new Date() })
+      .where('id = :id', { id: customer.id })
+      .execute();
 
     const token = this.jwtService.sign({
       sub: customer.id,
@@ -54,12 +59,22 @@ export class PortalService {
   }
 
   async register(email: string, password: string) {
-    const customer = await this.customerRepo.findOne({ where: { email, is_active: true } });
+    const customer = await this.customerRepo
+      .createQueryBuilder('c')
+      .addSelect('c.portal_password_hash')
+      .where('c.email = :email', { email })
+      .andWhere('c.is_active = true')
+      .getOne();
     if (!customer) throw new NotFoundException('No account found for this email. Please contact the office.');
     if (customer.portal_password_hash) throw new BadRequestException('Account already registered. Please log in.');
 
     const hash = await bcrypt.hash(password, 10);
-    await this.customerRepo.update(customer.id, { portal_password_hash: hash } as any);
+    await this.customerRepo
+      .createQueryBuilder()
+      .update(Customer)
+      .set({ portal_password_hash: hash })
+      .where('id = :id', { id: customer.id })
+      .execute();
 
     const token = this.jwtService.sign({
       sub: customer.id,
@@ -228,7 +243,12 @@ export class PortalService {
     if (!valid) throw new UnauthorizedException('Current password is incorrect');
 
     const hash = await bcrypt.hash(newPassword, 10);
-    await this.customerRepo.update(customerId, { portal_password_hash: hash } as any);
+    await this.customerRepo
+      .createQueryBuilder()
+      .update(Customer)
+      .set({ portal_password_hash: hash })
+      .where('id = :id', { id: customerId })
+      .execute();
     return { message: 'Password updated' };
   }
 
