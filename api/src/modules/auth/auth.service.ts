@@ -192,6 +192,7 @@ export class AuthService {
         serviceRadius: user.tenant.service_radius_miles,
         subscriptionTier: user.tenant.subscription_tier,
         subscriptionStatus: user.tenant.subscription_status,
+        customerOverageRates: user.tenant.customer_overage_rates,
         websiteEnabled: user.tenant.website_enabled,
         websiteHeadline: user.tenant.website_headline,
         websitePrimaryColor: user.tenant.website_primary_color,
@@ -229,6 +230,9 @@ export class AuthService {
       allowedWidgetDomains?: string[];
       businessTypeLabel?: string;
       enabledModules?: string[];
+      subscriptionTier?: string;
+      subscriptionStatus?: string;
+      customerOverageRates?: Record<string, unknown>;
     },
   ) {
     const update: Record<string, unknown> = {};
@@ -250,6 +254,9 @@ export class AuthService {
     if (data.allowedWidgetDomains !== undefined) update.allowed_widget_domains = data.allowedWidgetDomains;
     if (data.businessTypeLabel !== undefined) update.business_type_label = data.businessTypeLabel;
     if (data.enabledModules !== undefined) update.enabled_modules = data.enabledModules;
+    if (data.subscriptionTier !== undefined) update.subscription_tier = data.subscriptionTier;
+    if (data.subscriptionStatus !== undefined) update.subscription_status = data.subscriptionStatus;
+    if (data.customerOverageRates !== undefined) update.customer_overage_rates = data.customerOverageRates;
 
     await this.tenantsRepository.update(tenantId, update);
 

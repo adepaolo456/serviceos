@@ -53,6 +53,9 @@ export class Tenant {
   @Column({ name: 'trial_ends_at', type: 'timestamptz', nullable: true })
   trial_ends_at!: Date;
 
+  @Column({ name: 'customer_overage_rates', type: 'jsonb', nullable: true })
+  customer_overage_rates!: Record<string, unknown>;
+
   @Column({ name: 'website_enabled', default: false })
   website_enabled!: boolean;
 

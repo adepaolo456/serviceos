@@ -200,9 +200,17 @@ export class DumpLocationsService {
     });
     const includedTons = pricingRule ? Number(pricingRule.included_tons) || 0 : 0;
     const overageRatePerTon = pricingRule ? Number(pricingRule.overage_per_ton) || ratePerTon : ratePerTon;
-    const customerTonnageOverage = weightTons > includedTons ? (weightTons - includedTons) * overageRatePerTon : 0;
+    // Get tenant's customer overage rates
+    const tenantRates = await this.jobRepo.query(`SELECT customer_overage_rates FROM tenants WHERE id = $1`, [tenantId]);
+    const customerRates = tenantRates?.[0]?.customer_overage_rates || {};
+    const perTonRates = (customerRates as any)?.perTon || {};
+    const customerRateForType = Number(perTonRates[wasteType]) || overageRatePerTon;
+
+    const overageTons = Math.max(0, weightTons - includedTons);
+    const customerTonnageOverage = overageTons * customerRateForType;
 
     // Surcharge items
+    const surchargeItemPrices = (customerRates as any)?.surchargeItems || {};
     let totalDumpOverage = 0;
     let totalCustomerSurcharges = 0;
     const calculatedItems: Array<{ type: string; label: string; quantity: number; chargePerUnit: number; total: number }> = [];
@@ -212,8 +220,9 @@ export class DumpLocationsService {
       if (surcharge) {
         const qty = Number(item.quantity) || 0;
         totalDumpOverage += Number(surcharge.dump_charge) * qty;
-        totalCustomerSurcharges += Number(surcharge.customer_charge) * qty;
-        calculatedItems.push({ type: surcharge.item_type, label: surcharge.label, quantity: qty, chargePerUnit: Number(surcharge.customer_charge), total: Number(surcharge.customer_charge) * qty });
+        const customerPrice = surchargeItemPrices[item.type]?.price || Number(surcharge.customer_charge);
+        totalCustomerSurcharges += customerPrice * qty;
+        calculatedItems.push({ type: surcharge.item_type, label: surcharge.label, quantity: qty, chargePerUnit: customerPrice, total: customerPrice * qty });
       }
     }
 
@@ -227,6 +236,9 @@ export class DumpLocationsService {
       ticket_photo: ticketPhoto, waste_type: wasteType, weight_tons: weightTons,
       base_cost: baseCost, overage_items: calculatedItems, overage_charges: totalDumpOverage,
       total_cost: dumpTotalCost, customer_charges: customerCharges,
+      dump_tonnage_cost: baseCost, dump_surcharge_cost: totalDumpOverage,
+      customer_tonnage_charge: customerTonnageOverage, customer_surcharge_charge: totalCustomerSurcharges,
+      profit_margin: customerCharges - dumpTotalCost,
       submitted_by: userId, submitted_at: new Date(), status: 'submitted',
     });
     const savedTicket = await this.ticketRepo.save(ticket);
