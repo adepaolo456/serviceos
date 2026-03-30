@@ -3,12 +3,14 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { DumpLocationsController } from './dump-locations.controller';
 import { DumpLocationsService } from './dump-locations.service';
 import { DumpLocation, DumpLocationRate, DumpLocationSurcharge } from './entities/dump-location.entity';
+import { DumpTicket } from './entities/dump-ticket.entity';
 import { Job } from '../jobs/entities/job.entity';
 import { PricingRule } from '../pricing/entities/pricing-rule.entity';
 import { AutomationLog } from '../automation/entities/automation-log.entity';
+import { Invoice } from '../billing/entities/invoice.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([DumpLocation, DumpLocationRate, DumpLocationSurcharge, Job, PricingRule, AutomationLog])],
+  imports: [TypeOrmModule.forFeature([DumpLocation, DumpLocationRate, DumpLocationSurcharge, DumpTicket, Job, PricingRule, AutomationLog, Invoice])],
   controllers: [DumpLocationsController],
   providers: [DumpLocationsService],
 })

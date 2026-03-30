@@ -43,6 +43,7 @@ import { DriverModule } from './modules/driver/driver.module';
 import { AutomationLog } from './modules/automation/entities/automation-log.entity';
 import { DumpLocationsModule } from './modules/dump-locations/dump-locations.module';
 import { DumpLocation, DumpLocationRate, DumpLocationSurcharge } from './modules/dump-locations/entities/dump-location.entity';
+import { DumpTicket } from './modules/dump-locations/entities/dump-ticket.entity';
 
 @Module({
   imports: [
@@ -78,6 +79,7 @@ import { DumpLocation, DumpLocationRate, DumpLocationSurcharge } from './modules
             DumpLocation,
             DumpLocationRate,
             DumpLocationSurcharge,
+            DumpTicket,
           ],
           synchronize: true,
           ssl: {

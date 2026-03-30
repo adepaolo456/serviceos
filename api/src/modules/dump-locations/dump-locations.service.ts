@@ -2,9 +2,11 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { DumpLocation, DumpLocationRate, DumpLocationSurcharge } from './entities/dump-location.entity';
+import { DumpTicket } from './entities/dump-ticket.entity';
 import { Job } from '../jobs/entities/job.entity';
 import { PricingRule } from '../pricing/entities/pricing-rule.entity';
 import { AutomationLog } from '../automation/entities/automation-log.entity';
+import { Invoice } from '../billing/entities/invoice.entity';
 
 function haversineDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 3959; // miles
@@ -25,6 +27,8 @@ export class DumpLocationsService {
     @InjectRepository(Job) private readonly jobRepo: Repository<Job>,
     @InjectRepository(PricingRule) private readonly pricingRepo: Repository<PricingRule>,
     @InjectRepository(AutomationLog) private readonly logRepo: Repository<AutomationLog>,
+    @InjectRepository(DumpTicket) private readonly ticketRepo: Repository<DumpTicket>,
+    @InjectRepository(Invoice) private readonly invoiceRepo: Repository<Invoice>,
   ) {}
 
   /* ───── Dump Locations CRUD ───── */
@@ -170,130 +174,111 @@ export class DumpLocationsService {
   /* ───── Dump Slip ───── */
 
   async submitDumpSlip(tenantId: string, jobId: string, body: Record<string, unknown>, userId: string) {
-    const job = await this.jobRepo.findOne({ where: { id: jobId, tenant_id: tenantId } });
+    const job = await this.jobRepo.findOne({ where: { id: jobId, tenant_id: tenantId }, relations: ['asset'] });
     if (!job) throw new NotFoundException('Job not found');
 
-    const dumpLocationId = body.dump_location_id as string;
-    const wasteType = body.dump_waste_type as string;
-    const weightTons = Number(body.dump_weight_tons) || 0;
-    const overageItems = (body.overage_items as Array<{ type: string; quantity: number }>) || [];
+    const dumpLocationId = (body.dumpLocationId || body.dump_location_id) as string;
+    const wasteType = (body.wasteType || body.dump_waste_type) as string;
+    const weightTons = Number(body.weightTons || body.dump_weight_tons || 0);
+    const overageItems = (body.overageItems || body.overage_items || []) as Array<{ type: string; quantity: number }>;
+    const ticketNumber = (body.ticketNumber || body.dump_ticket_number || '') as string;
+    const ticketPhoto = (body.ticketPhoto || body.dump_ticket_photo || '') as string;
 
-    // Find dump location with rates and surcharges
-    const location = await this.locRepo.findOne({
-      where: { id: dumpLocationId },
-      relations: ['rates', 'surcharges'],
-    });
+    const location = await this.locRepo.findOne({ where: { id: dumpLocationId }, relations: ['rates', 'surcharges'] });
     if (!location) throw new NotFoundException('Dump location not found');
 
-    // Find rate for waste type
     const rate = location.rates.find(r => r.waste_type === wasteType && r.is_active);
     const ratePerTon = rate ? Number(rate.rate_per_ton) : 0;
     const minimumCharge = rate ? Number(rate.minimum_charge) || 0 : 0;
 
-    // Calculate what the dump charges US (full weight)
+    // What the dump charges us
     const baseCost = Math.max(weightTons * ratePerTon, minimumCharge);
 
-    // Look up pricing rule to determine included tonnage for the customer
-    const pricingRule = job.service_type
-      ? await this.pricingRepo.findOne({
-          where: { tenant_id: tenantId, asset_subtype: job.asset?.subtype || undefined, is_active: true },
-        })
-      : null;
+    // Included tonnage from pricing rule
+    const pricingRule = await this.pricingRepo.findOne({
+      where: { tenant_id: tenantId, asset_subtype: job.asset?.subtype || undefined, is_active: true },
+    });
     const includedTons = pricingRule ? Number(pricingRule.included_tons) || 0 : 0;
     const overageRatePerTon = pricingRule ? Number(pricingRule.overage_per_ton) || ratePerTon : ratePerTon;
+    const customerTonnageOverage = weightTons > includedTons ? (weightTons - includedTons) * overageRatePerTon : 0;
 
-    // Customer tonnage overage: only charge for weight above included tons
-    const customerTonnageOverage = weightTons > includedTons
-      ? (weightTons - includedTons) * overageRatePerTon
-      : 0;
-
-    // Calculate surcharge items
+    // Surcharge items
     let totalDumpOverage = 0;
-    let totalCustomerCharges = customerTonnageOverage;
-    const calculatedOverageItems: Array<{ type: string; label: string; quantity: number; chargePerUnit: number; total: number }> = [];
+    let totalCustomerSurcharges = 0;
+    const calculatedItems: Array<{ type: string; label: string; quantity: number; chargePerUnit: number; total: number }> = [];
 
     for (const item of overageItems) {
       const surcharge = location.surcharges.find(s => s.item_type === item.type && s.is_active);
       if (surcharge) {
         const qty = Number(item.quantity) || 0;
-        const dumpTotal = Number(surcharge.dump_charge) * qty;
-        const customerTotal = Number(surcharge.customer_charge) * qty;
-        totalDumpOverage += dumpTotal;
-        totalCustomerCharges += customerTotal;
-        calculatedOverageItems.push({
-          type: surcharge.item_type,
-          label: surcharge.label,
-          quantity: qty,
-          chargePerUnit: Number(surcharge.dump_charge),
-          total: dumpTotal,
-        });
+        totalDumpOverage += Number(surcharge.dump_charge) * qty;
+        totalCustomerSurcharges += Number(surcharge.customer_charge) * qty;
+        calculatedItems.push({ type: surcharge.item_type, label: surcharge.label, quantity: qty, chargePerUnit: Number(surcharge.customer_charge), total: Number(surcharge.customer_charge) * qty });
       }
     }
 
     const dumpTotalCost = baseCost + totalDumpOverage;
+    const customerCharges = customerTonnageOverage + totalCustomerSurcharges;
 
-    // Update job
-    job.dump_location_id = dumpLocationId;
-    job.dump_location_name = location.name;
-    job.dump_ticket_number = (body.dump_ticket_number as string) || '';
-    job.dump_ticket_photo = (body.dump_ticket_photo as string) || '';
-    job.dump_weight_tons = weightTons;
-    job.dump_waste_type = wasteType;
-    job.dump_base_cost = baseCost;
-    job.dump_overage_items = calculatedOverageItems;
-    job.dump_overage_charges = totalDumpOverage;
-    job.dump_total_cost = dumpTotalCost;
-    job.customer_additional_charges = totalCustomerCharges;
-    job.dump_submitted_at = new Date();
-    job.dump_submitted_by = userId;
-    job.dump_status = 'submitted';
+    // Create dump ticket
+    const ticket = this.ticketRepo.create({
+      job_id: jobId, tenant_id: tenantId, dump_location_id: dumpLocationId,
+      dump_location_name: location.name, ticket_number: ticketNumber,
+      ticket_photo: ticketPhoto, waste_type: wasteType, weight_tons: weightTons,
+      base_cost: baseCost, overage_items: calculatedItems, overage_charges: totalDumpOverage,
+      total_cost: dumpTotalCost, customer_charges: customerCharges,
+      submitted_by: userId, submitted_at: new Date(), status: 'submitted',
+    });
+    const savedTicket = await this.ticketRepo.save(ticket);
 
-    await this.jobRepo.save(job);
+    // Sum all tickets for this job
+    const allTickets = await this.ticketRepo.find({ where: { job_id: jobId } });
+    const totalDump = allTickets.reduce((s, t) => s + Number(t.total_cost), 0);
+    const totalCust = allTickets.reduce((s, t) => s + Number(t.customer_charges), 0);
 
-    // Log to automation_logs
+    await this.jobRepo.update(jobId, {
+      dump_location_id: dumpLocationId, dump_location_name: location.name,
+      dump_total_cost: totalDump, customer_additional_charges: totalCust,
+      dump_status: 'submitted', dump_submitted_at: new Date(), dump_submitted_by: userId,
+    });
+
+    // Auto-create draft invoice if customer has overage charges
+    let invoiceId: string | null = null;
+    if (customerCharges > 0) {
+      const lineItems: Array<{ description: string; quantity: number; unitPrice: number; amount: number }> = [];
+      if (customerTonnageOverage > 0) {
+        const overTons = weightTons - includedTons;
+        lineItems.push({ description: `Weight overage: ${overTons.toFixed(2)} tons over ${includedTons} ton allowance @ $${overageRatePerTon}/ton`, quantity: 1, unitPrice: customerTonnageOverage, amount: customerTonnageOverage });
+      }
+      for (const item of calculatedItems) {
+        lineItems.push({ description: `${item.label} (qty: ${item.quantity}) @ $${item.chargePerUnit}/each`, quantity: item.quantity, unitPrice: item.chargePerUnit, amount: item.total });
+      }
+
+      const invNumber = `INV-${new Date().toISOString().slice(0,10).replace(/-/g,'')}-${Math.floor(Math.random()*9000)+1000}`;
+      const invoice = this.invoiceRepo.create({
+        tenant_id: tenantId, invoice_number: invNumber, customer_id: job.customer_id,
+        job_id: jobId, status: 'draft',
+        due_date: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0],
+        subtotal: customerCharges, total: customerCharges, balance_due: customerCharges,
+        line_items: lineItems,
+        notes: `Auto-generated from dump ticket #${ticketNumber} at ${location.name}`,
+      });
+      const savedInvoice = await this.invoiceRepo.save(invoice);
+      invoiceId = savedInvoice.id;
+    }
+
     await this.logRepo.save(this.logRepo.create({
-      tenant_id: tenantId,
-      job_id: jobId,
-      type: 'dump_slip_submitted',
-      status: 'success',
-      details: {
-        dump_location_id: dumpLocationId,
-        dump_location_name: location.name,
-        waste_type: wasteType,
-        weight_tons: weightTons,
-        base_cost: baseCost,
-        overage_charges: totalDumpOverage,
-        customer_additional_charges: totalCustomerCharges,
-        total_cost: dumpTotalCost,
-        submitted_by: userId,
-      },
+      tenant_id: tenantId, job_id: jobId, type: 'dump_slip_submitted', status: 'success',
+      details: { ticketId: savedTicket.id, dumpCost: dumpTotalCost, customerCharges, invoiceId, ticketCount: allTickets.length },
     }));
 
-    return job;
+    return { ticket: savedTicket, invoiceId, jobTotals: { dumpTotalCost: totalDump, customerAdditionalCharges: totalCust, ticketCount: allTickets.length } };
   }
 
   async getDumpSlip(tenantId: string, jobId: string) {
+    const tickets = await this.ticketRepo.find({ where: { job_id: jobId, tenant_id: tenantId }, order: { created_at: 'ASC' } });
     const job = await this.jobRepo.findOne({ where: { id: jobId, tenant_id: tenantId } });
-    if (!job) throw new NotFoundException('Job not found');
-
-    return {
-      job_id: job.id,
-      job_number: job.job_number,
-      dump_location_id: job.dump_location_id,
-      dump_location_name: job.dump_location_name,
-      dump_ticket_number: job.dump_ticket_number,
-      dump_ticket_photo: job.dump_ticket_photo,
-      dump_weight_tons: job.dump_weight_tons,
-      dump_waste_type: job.dump_waste_type,
-      dump_base_cost: job.dump_base_cost,
-      dump_overage_items: job.dump_overage_items,
-      dump_overage_charges: job.dump_overage_charges,
-      dump_total_cost: job.dump_total_cost,
-      customer_additional_charges: job.customer_additional_charges,
-      dump_submitted_at: job.dump_submitted_at,
-      dump_submitted_by: job.dump_submitted_by,
-      dump_status: job.dump_status,
-    };
+    return { tickets, jobTotals: { dumpTotalCost: job?.dump_total_cost || 0, customerAdditionalCharges: job?.customer_additional_charges || 0 } };
   }
 
   async reviewDumpSlip(tenantId: string, jobId: string) {

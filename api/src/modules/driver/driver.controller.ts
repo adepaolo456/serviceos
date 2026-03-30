@@ -62,7 +62,7 @@ export class DriverController {
     @CurrentUser('id') userId: string,
     @TenantId() tenantId: string,
     @Param('id', ParseUUIDPipe) id: string,
-    @Body() body: { status: string; signatureUrl?: string },
+    @Body() body: { status: string; signatureUrl?: string; dropOffAssetPin?: string; pickUpAssetPin?: string; dropOffAssetId?: string; pickUpAssetId?: string },
   ) {
     const job = await this.jobRepo.findOne({
       where: { id, tenant_id: tenantId, assigned_driver_id: userId },
@@ -87,6 +87,11 @@ export class DriverController {
         break;
       case 'completed': updates.completed_at = now; break;
     }
+
+    if (body.dropOffAssetPin) updates.drop_off_asset_pin = body.dropOffAssetPin;
+    if (body.pickUpAssetPin) updates.pick_up_asset_pin = body.pickUpAssetPin;
+    if (body.dropOffAssetId) updates.drop_off_asset_id = body.dropOffAssetId;
+    if (body.pickUpAssetId) updates.pick_up_asset_id = body.pickUpAssetId;
 
     await this.jobRepo.update({ id, tenant_id: tenantId }, updates);
 

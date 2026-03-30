@@ -95,6 +95,16 @@ export class JobsController {
     return this.jobsService.assignJob(tenantId, id, body);
   }
 
+  @Post(':id/schedule-next')
+  @ApiOperation({ summary: 'Schedule follow-up task from a completed job' })
+  scheduleNext(
+    @TenantId() tenantId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: { type: string; scheduledDate: string; timeWindow?: string; newAssetSubtype?: string },
+  ) {
+    return this.jobsService.scheduleNextTask(tenantId, id, body);
+  }
+
   @Patch(':id/reschedule')
   @ApiOperation({ summary: 'Reschedule a job' })
   reschedule(
