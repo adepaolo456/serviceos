@@ -51,9 +51,11 @@ const TABS = [
   { key: "profile", label: "Profile", icon: User },
   { key: "rates", label: "Driver Rates", icon: DollarSign },
   { key: "time", label: "Time Tracking", icon: Clock },
+  { key: "schedule", label: "Schedule", icon: Calendar },
   { key: "contact", label: "Contact", icon: Phone },
   { key: "access", label: "Access", icon: Shield },
   { key: "performance", label: "Performance", icon: Briefcase },
+  { key: "notes", label: "Notes", icon: MessageSquare },
   { key: "settings", label: "Settings", icon: Settings },
 ] as const;
 
@@ -121,7 +123,10 @@ export default function EmployeeDetailPage({ params }: { params: Promise<{ id: s
               </div>
             </div>
           </div>
-          <button onClick={() => setEditOpen(true)} className="rounded-lg bg-dark-elevated p-2 text-muted hover:text-foreground btn-press"><Pencil className="h-4 w-4" /></button>
+          <div className="flex gap-2">
+            <button onClick={() => setEditOpen(true)} className="rounded-lg bg-dark-elevated px-3 py-2 text-xs font-medium text-foreground hover:bg-dark-card-hover btn-press flex items-center gap-1.5"><Pencil className="h-3.5 w-3.5" /> Edit</button>
+            <button className="rounded-lg bg-red-500/10 px-3 py-2 text-xs font-medium text-red-400 hover:bg-red-500/20 btn-press">Deactivate</button>
+          </div>
         </div>
       </div>
 
@@ -209,6 +214,31 @@ export default function EmployeeDetailPage({ params }: { params: Promise<{ id: s
       {/* ===== ACCESS & PERMISSIONS ===== */}
       {tab === "access" && <AccessTab emp={emp} onSave={setEmp} />}
 
+      {/* ===== SCHEDULE ===== */}
+      {tab === "schedule" && (
+        <div className="max-w-3xl space-y-4">
+          <p className="text-sm text-muted">This week&apos;s assigned jobs for {emp.firstName}.</p>
+          {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((day, i) => {
+            const jobs = i < 5 ? Math.floor(Math.random() * 4) : 0;
+            return (
+              <div key={day} className="rounded-xl bg-dark-card border border-[#1E2D45] p-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm font-semibold text-white w-10">{day}</span>
+                    {jobs > 0 ? (
+                      <span className="rounded-full bg-brand/10 text-brand px-2 py-0.5 text-[10px] font-medium">{jobs} jobs</span>
+                    ) : (
+                      <span className="text-xs text-muted">No jobs</span>
+                    )}
+                  </div>
+                  {jobs > 0 && <span className="text-xs text-muted">~{jobs * 1.5}h estimated</span>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {/* ===== PERFORMANCE ===== */}
       {tab === "performance" && perf && (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 max-w-2xl">
@@ -224,6 +254,39 @@ export default function EmployeeDetailPage({ params }: { params: Promise<{ id: s
               <p className="text-xs text-muted mt-1">{s.label}</p>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* ===== NOTES ===== */}
+      {tab === "notes" && (
+        <div className="max-w-2xl space-y-4">
+          <div className="rounded-xl bg-dark-card border border-[#1E2D45] p-4">
+            <textarea placeholder="Add a note..." rows={3}
+              className="w-full bg-transparent text-sm text-white placeholder-muted outline-none resize-none" />
+            <div className="flex justify-end mt-2">
+              <button className="rounded-lg bg-brand px-4 py-2 text-xs font-semibold text-white hover:bg-brand-light btn-press">Add Note</button>
+            </div>
+          </div>
+          {/* Sample timeline */}
+          <div className="space-y-3">
+            {[
+              { date: "Mar 28, 2026", text: "Completed 50th job — great reliability record", auto: false },
+              { date: "Mar 15, 2026", text: "Vehicle updated: 2022 Hino L6", auto: true },
+              { date: "Feb 1, 2026", text: "Role changed to Driver", auto: true },
+              { date: "Jan 15, 2026", text: "Hired — Welcome to the team!", auto: true },
+            ].map((note, i) => (
+              <div key={i} className="flex gap-3">
+                <div className="flex flex-col items-center">
+                  <div className={`h-2 w-2 rounded-full mt-1.5 ${note.auto ? "bg-dark-elevated" : "bg-brand"}`} />
+                  {i < 3 && <div className="w-px flex-1 bg-[#1E2D45]" />}
+                </div>
+                <div className="pb-4">
+                  <p className="text-sm text-foreground">{note.text}</p>
+                  <p className="text-[10px] text-muted mt-0.5">{note.date}{note.auto ? " · Auto-logged" : ""}</p>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
