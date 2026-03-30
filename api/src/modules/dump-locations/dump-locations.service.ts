@@ -265,6 +265,9 @@ export class DumpLocationsService {
       });
       const savedInvoice = await this.invoiceRepo.save(invoice);
       invoiceId = savedInvoice.id;
+
+      // Mark this ticket as invoiced
+      await this.ticketRepo.update(savedTicket.id, { invoiced: true, invoice_id: savedInvoice.id });
     }
 
     await this.logRepo.save(this.logRepo.create({

@@ -15,8 +15,8 @@ import {
 
 const VALID_TRANSITIONS: Record<string, string[]> = {
   pending: ['confirmed', 'cancelled'],
-  confirmed: ['dispatched', 'cancelled'],
-  dispatched: ['en_route', 'cancelled'],
+  confirmed: ['dispatched', 'cancelled', 'failed'],
+  dispatched: ['en_route', 'cancelled', 'failed'],
   en_route: ['arrived', 'cancelled', 'failed'],
   arrived: ['in_progress', 'cancelled', 'failed'],
   in_progress: ['completed', 'cancelled', 'failed'],
