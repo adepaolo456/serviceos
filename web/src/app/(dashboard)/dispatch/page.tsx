@@ -3,37 +3,10 @@
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import {
-  ChevronLeft,
-  ChevronRight,
-  Calendar,
-  Clock,
-  MapPin,
-  UserPlus,
-  Truck,
-  Phone,
-  Plus,
-  Box,
-  Search,
-  CheckCircle2,
-  GripVertical,
-  RefreshCw,
-  Zap,
-  ChevronDown as ChevDown,
-  ChevronUp as ChevUp,
-  X,
+  ChevronLeft, ChevronRight, Calendar, Clock, MapPin, UserPlus, Truck,
+  Phone, Plus, Box, Search, CheckCircle2, RefreshCw, Zap, X,
+  ChevronDown as ChevDown, ChevronUp as ChevUp, ArrowUp, ArrowDown,
 } from "lucide-react";
-import {
-  DndContext,
-  DragOverlay,
-  closestCorners,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  useDroppable,
-  useDraggable,
-  type DragStartEvent,
-  type DragEndEvent,
-} from "@dnd-kit/core";
 import { api } from "@/lib/api";
 import { formatPhone } from "@/lib/utils";
 import { useToast } from "@/components/toast";
@@ -43,41 +16,24 @@ import Dropdown from "@/components/dropdown";
 /* ---- Types ---- */
 
 interface DispatchJob {
-  id: string;
-  job_number: string;
-  job_type: string;
-  service_type: string;
-  status: string;
-  priority: string;
-  scheduled_window_start: string;
-  scheduled_window_end: string;
-  service_address: Record<string, string> | null;
-  route_order: number | null;
-  total_price: number;
+  id: string; job_number: string; job_type: string; service_type: string;
+  status: string; priority: string; scheduled_window_start: string;
+  scheduled_window_end: string; service_address: Record<string, string> | null;
+  route_order: number | null; total_price: number;
   customer: { id: string; first_name: string; last_name: string } | null;
   asset: { id: string; identifier: string; subtype?: string } | null;
   assigned_driver: { id: string; first_name: string; last_name: string } | null;
 }
 
-interface Driver {
-  id: string;
-  firstName: string;
-  lastName: string;
-  phone: string;
-}
+interface Driver { id: string; firstName: string; lastName: string; phone: string; }
 
 interface DriverColumn {
   driver: Driver;
   route: { id: string; status: string; total_stops: number } | null;
-  jobs: DispatchJob[];
-  jobCount: number;
+  jobs: DispatchJob[]; jobCount: number;
 }
 
-interface DispatchBoard {
-  date: string;
-  drivers: DriverColumn[];
-  unassigned: DispatchJob[];
-}
+interface DispatchBoard { date: string; drivers: DriverColumn[]; unassigned: DispatchJob[]; }
 
 /* ---- Constants ---- */
 
@@ -116,8 +72,7 @@ function filterJobs(jobs: DispatchJob[], filter: string, search: string) {
     filtered = filtered.filter(j =>
       j.job_number.toLowerCase().includes(q) || j.customer?.first_name.toLowerCase().includes(q) ||
       j.customer?.last_name.toLowerCase().includes(q) || j.service_address?.street?.toLowerCase().includes(q) ||
-      j.service_address?.city?.toLowerCase().includes(q)
-    );
+      j.service_address?.city?.toLowerCase().includes(q));
   }
   return filtered;
 }
@@ -132,10 +87,8 @@ export default function DispatchPage() {
   const [search, setSearch] = useState("");
   const [refreshing, setRefreshing] = useState(false);
   const [quickViewJob, setQuickViewJob] = useState<DispatchJob | null>(null);
-  const [activeJob, setActiveJob] = useState<DispatchJob | null>(null);
+  const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const { toast } = useToast();
-
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
 
   const fetchBoard = useCallback(async (silent = false) => {
     if (!silent) setLoading(true); else setRefreshing(true);
@@ -145,90 +98,102 @@ export default function DispatchPage() {
 
   useEffect(() => { fetchBoard(); }, [fetchBoard]);
   useEffect(() => { const i = setInterval(() => fetchBoard(true), 30000); return () => clearInterval(i); }, [fetchBoard]);
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) return;
-      if (e.key === "ArrowLeft") setDate(d => shiftDate(d, -1));
+      if (e.key === "Escape") { setSelectedJobId(null); setQuickViewJob(null); }
+      else if (e.key === "ArrowLeft") setDate(d => shiftDate(d, -1));
       else if (e.key === "ArrowRight") setDate(d => shiftDate(d, 1));
       else if (e.key === "t" || e.key === "T") setDate(today());
-      else if (e.key === "Escape") setQuickViewJob(null);
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, []);
 
-  /* ---- Helpers to find jobs ---- */
-
+  /* ---- Find selected job ---- */
   const allJobs = board ? [...board.unassigned, ...board.drivers.flatMap(d => d.jobs)] : [];
+  const selectedJob = selectedJobId ? allJobs.find(j => j.id === selectedJobId) || null : null;
 
   const findColumnForJob = (jobId: string): string => {
     if (!board) return "unassigned";
     if (board.unassigned.some(j => j.id === jobId)) return "unassigned";
-    for (const col of board.drivers) {
-      if (col.jobs.some(j => j.id === jobId)) return col.driver.id;
-    }
+    for (const col of board.drivers) { if (col.jobs.some(j => j.id === jobId)) return col.driver.id; }
     return "unassigned";
   };
 
-  /* ---- @dnd-kit handlers ---- */
+  /* ---- Move job to a column (optimistic) ---- */
+  const moveJobTo = async (jobId: string, targetDriverId: string | null) => {
+    if (!board) return;
+    const sourceCol = findColumnForJob(jobId);
+    const targetCol = targetDriverId || "unassigned";
+    if (sourceCol === targetCol) return;
 
-  const handleDragStart = (event: DragStartEvent) => {
-    const job = allJobs.find(j => j.id === event.active.id);
-    setActiveJob(job || null);
-  };
+    // Optimistic update
+    const job = allJobs.find(j => j.id === jobId);
+    if (!job) return;
 
-  const handleDragEnd = async (event: DragEndEvent) => {
-    setActiveJob(null);
-    const { active, over } = event;
-    if (!over || !board) return;
+    const newBoard = { ...board, unassigned: [...board.unassigned], drivers: board.drivers.map(d => ({ ...d, jobs: [...d.jobs] })) };
+    // Remove from source
+    if (sourceCol === "unassigned") { newBoard.unassigned = newBoard.unassigned.filter(j => j.id !== jobId); }
+    else { const dc = newBoard.drivers.find(d => d.driver.id === sourceCol); if (dc) dc.jobs = dc.jobs.filter(j => j.id !== jobId); }
+    // Add to target
+    if (targetCol === "unassigned") { newBoard.unassigned.push(job); }
+    else { const dc = newBoard.drivers.find(d => d.driver.id === targetDriverId); if (dc) dc.jobs.push(job); }
 
-    const jobId = active.id as string;
-    const targetColumnId = over.id as string;
-    const sourceColumnId = findColumnForJob(jobId);
-
-    if (targetColumnId === sourceColumnId) return; // same column, no-op
-
-    const newDriverId = targetColumnId === "unassigned" ? null : targetColumnId;
-    const driverName = newDriverId
-      ? board.drivers.find(d => d.driver.id === newDriverId)?.driver
-      : null;
+    setBoard(newBoard);
+    setSelectedJobId(null);
 
     try {
-      await api.patch(`/jobs/${jobId}/assign`, { assignedDriverId: newDriverId });
-      toast("success", newDriverId ? `Assigned to ${driverName?.firstName} ${driverName?.lastName}` : "Moved to Unassigned");
-      await fetchBoard(true);
+      await api.patch(`/jobs/${jobId}/assign`, { assignedDriverId: targetDriverId });
+      const driverName = targetDriverId ? board.drivers.find(d => d.driver.id === targetDriverId)?.driver : null;
+      toast("success", targetDriverId ? `Assigned to ${driverName?.firstName} ${driverName?.lastName}` : "Moved to Unassigned");
+      await fetchBoard(true); // Sync with server
     } catch {
-      toast("error", "Failed to reassign");
+      toast("error", "Failed — reverting");
+      setBoard(board); // Revert
     }
   };
 
-  /* ---- Button fallbacks ---- */
-
-  const handleAssign = async (jobId: string, driverId: string) => {
+  /* ---- Reorder within column ---- */
+  const reorderJob = async (jobId: string, direction: "up" | "down") => {
     if (!board) return;
-    try {
-      await api.patch(`/jobs/${jobId}/assign`, { assignedDriverId: driverId });
-      const d = board.drivers.find(c => c.driver.id === driverId)?.driver;
-      toast("success", `Assigned to ${d?.firstName} ${d?.lastName}`);
-      await fetchBoard(true);
-    } catch { toast("error", "Failed to assign"); }
-  };
+    const colId = findColumnForJob(jobId);
+    const colJobs = colId === "unassigned" ? [...board.unassigned] : [...(board.drivers.find(d => d.driver.id === colId)?.jobs || [])];
+    const idx = colJobs.findIndex(j => j.id === jobId);
+    if (idx === -1) return;
+    const newIdx = direction === "up" ? idx - 1 : idx + 1;
+    if (newIdx < 0 || newIdx >= colJobs.length) return;
 
-  const handleUnassign = async (jobId: string) => {
+    // Swap
+    [colJobs[idx], colJobs[newIdx]] = [colJobs[newIdx], colJobs[idx]];
+
+    // Optimistic update
+    const newBoard = { ...board, unassigned: [...board.unassigned], drivers: board.drivers.map(d => ({ ...d, jobs: [...d.jobs] })) };
+    if (colId === "unassigned") { newBoard.unassigned = colJobs; }
+    else { const dc = newBoard.drivers.find(d => d.driver.id === colId); if (dc) dc.jobs = colJobs; }
+    setBoard(newBoard);
+
+    // Persist route order
     try {
-      await api.patch(`/jobs/${jobId}/assign`, { assignedDriverId: null });
-      toast("success", "Moved to Unassigned");
-      await fetchBoard(true);
-    } catch { toast("error", "Failed to unassign"); }
+      for (let i = 0; i < colJobs.length; i++) {
+        api.patch(`/jobs/${colJobs[i].id}`, { routeOrder: i + 1 }).catch(() => {});
+      }
+    } catch { /* best-effort */ }
   };
 
   /* ---- Computed ---- */
-
   const totalJobs = board ? board.unassigned.length + board.drivers.reduce((s, d) => s + d.jobs.length, 0) : 0;
   const driverCount = board?.drivers.length || 0;
   const unassignedCount = board?.unassigned.length || 0;
   const completedJobs = board ? board.drivers.reduce((s, d) => s + d.jobs.filter(j => j.status === "completed").length, 0) : 0;
   const totalStops = totalJobs - completedJobs;
+
+  /* ---- All columns for the floating action bar ---- */
+  const columnTargets = board ? [
+    { id: "unassigned", label: "Unassigned", driverId: null },
+    ...board.drivers.map(d => ({ id: d.driver.id, label: `${d.driver.firstName} ${d.driver.lastName}`, driverId: d.driver.id })),
+  ] : [];
 
   return (
     <div className="flex h-[calc(100vh-5rem)] flex-col">
@@ -255,18 +220,14 @@ export default function DispatchPage() {
             <button onClick={() => fetchBoard(true)} disabled={refreshing} className="rounded-lg bg-dark-card border border-[#1E2D45] p-2 text-muted hover:text-white transition-all active:scale-95 disabled:opacity-50">
               <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
             </button>
-            <button className="flex items-center gap-1.5 rounded-lg bg-[#2ECC71] px-3.5 py-2 text-xs font-semibold text-white hover:bg-[#1FA855] transition-all active:scale-95">
-              <Zap className="h-3.5 w-3.5" /> Optimize Routes
-            </button>
+            <button className="flex items-center gap-1.5 rounded-lg bg-[#2ECC71] px-3.5 py-2 text-xs font-semibold text-white hover:bg-[#1FA855] transition-all active:scale-95"><Zap className="h-3.5 w-3.5" /> Optimize Routes</button>
           </div>
         </div>
         <div className="flex items-center gap-3 mt-3">
           <div className="flex gap-1">
             {FILTER_TABS.map(t => (
               <button key={t.key} onClick={() => setFilter(t.key)}
-                className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${filter === t.key ? "bg-brand text-dark-primary" : "bg-dark-card text-muted hover:text-white"}`}>
-                {t.label}
-              </button>
+                className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${filter === t.key ? "bg-brand text-dark-primary" : "bg-dark-card text-muted hover:text-white"}`}>{t.label}</button>
             ))}
           </div>
           <div className="relative flex-1 max-w-xs">
@@ -294,43 +255,70 @@ export default function DispatchPage() {
               <Link href="/" className="mt-3 flex items-center gap-1.5 rounded-lg bg-brand px-4 py-2 text-xs font-semibold text-dark-primary hover:bg-brand-light active:scale-95 transition-all"><Plus className="h-3.5 w-3.5" /> New Job</Link>
             </div>
           ) : (
-            <DndContext sensors={sensors} collisionDetection={closestCorners} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-              <div className="flex h-full gap-2.5 overflow-x-auto pb-2">
-                {/* Unassigned */}
-                <DroppableColumn colId="unassigned" title="Unassigned" icon={<UserPlus className="h-3.5 w-3.5 text-red-400" />}
-                  count={board.unassigned.length} accentCls="bg-red-500/10 text-red-400"
-                  jobs={filterJobs(board.unassigned, filter, search)} drivers={board.drivers.map(d => d.driver)}
-                  onAssign={handleAssign} onQuickView={setQuickViewJob} isUnassigned />
-                {/* Driver columns */}
-                {board.drivers.map(col => {
-                  const completed = col.jobs.filter(j => j.status === "completed").length;
-                  return (
-                    <DroppableColumn key={col.driver.id} colId={col.driver.id}
-                      title={`${col.driver.firstName} ${col.driver.lastName}`}
-                      icon={<div className="flex h-7 w-7 items-center justify-center rounded-full bg-brand/15 text-[10px] font-bold text-brand">{col.driver.firstName[0]}{col.driver.lastName[0]}</div>}
-                      count={col.jobs.length}
-                      progress={col.jobs.length > 0 ? { completed, total: col.jobs.length } : undefined}
-                      phone={col.driver.phone}
-                      jobs={filterJobs(col.jobs, filter, search)}
-                      onQuickView={setQuickViewJob} onUnassign={handleUnassign} />
-                  );
-                })}
-                {board.drivers.length === 0 && board.unassigned.length > 0 && (
-                  <div className="flex w-56 shrink-0 flex-col items-center justify-center rounded-xl bg-[#111C2E] border border-dashed border-[#1E2D45] p-4">
-                    <Truck className="h-8 w-8 text-muted/15 mb-2" /><p className="text-xs text-muted text-center">Add drivers in Settings &gt; Team</p>
-                  </div>
-                )}
-              </div>
-              <DragOverlay dropAnimation={null}>
-                {activeJob && <JobCardVisual job={activeJob} isDragOverlay />}
-              </DragOverlay>
-            </DndContext>
+            <div className="flex h-full gap-2.5 overflow-x-auto pb-2">
+              {/* Unassigned */}
+              <Column id="unassigned" title="Unassigned" icon={<UserPlus className="h-3.5 w-3.5 text-red-400" />}
+                count={board.unassigned.length} accentCls="bg-red-500/10 text-red-400"
+                jobs={filterJobs(board.unassigned, filter, search)} drivers={board.drivers.map(d => d.driver)}
+                onAssign={moveJobTo} selectedJobId={selectedJobId} onSelectJob={setSelectedJobId}
+                onQuickView={setQuickViewJob} onReorder={reorderJob} isUnassigned />
+              {/* Driver columns */}
+              {board.drivers.map(col => {
+                const completed = col.jobs.filter(j => j.status === "completed").length;
+                return (
+                  <Column key={col.driver.id} id={col.driver.id}
+                    title={`${col.driver.firstName} ${col.driver.lastName}`}
+                    icon={<div className="flex h-7 w-7 items-center justify-center rounded-full bg-brand/15 text-[10px] font-bold text-brand">{col.driver.firstName[0]}{col.driver.lastName[0]}</div>}
+                    count={col.jobs.length}
+                    progress={col.jobs.length > 0 ? { completed, total: col.jobs.length } : undefined}
+                    phone={col.driver.phone}
+                    jobs={filterJobs(col.jobs, filter, search)}
+                    selectedJobId={selectedJobId} onSelectJob={setSelectedJobId}
+                    onUnassign={(jid) => moveJobTo(jid, null)}
+                    onQuickView={setQuickViewJob} onReorder={reorderJob} />
+                );
+              })}
+              {board.drivers.length === 0 && board.unassigned.length > 0 && (
+                <div className="flex w-56 shrink-0 flex-col items-center justify-center rounded-xl bg-[#111C2E] border border-dashed border-[#1E2D45] p-4">
+                  <Truck className="h-8 w-8 text-muted/15 mb-2" /><p className="text-xs text-muted text-center">Add drivers in Settings &gt; Team</p>
+                </div>
+              )}
+            </div>
           )}
         </div>
       </div>
 
+      {/* Floating Action Bar — appears when a job is selected */}
+      {selectedJob && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 animate-fade-in">
+          <div className="flex items-center gap-2 rounded-2xl bg-[#111C2E] border border-[#2ECC71]/30 shadow-2xl shadow-black/40 px-4 py-3">
+            <span className="text-xs text-muted mr-1">Move:</span>
+            <span className="text-xs font-semibold text-white truncate max-w-[180px]">
+              {selectedJob.customer ? `${selectedJob.customer.first_name} ${selectedJob.customer.last_name}` : selectedJob.job_number}
+            </span>
+            <span className="text-xs text-muted mx-1">→</span>
+            {columnTargets.map(col => {
+              const isCurrent = findColumnForJob(selectedJob.id) === col.id;
+              return (
+                <button key={col.id} onClick={() => moveJobTo(selectedJob.id, col.driverId)} disabled={isCurrent}
+                  className={`rounded-lg px-3 py-1.5 text-[11px] font-semibold transition-all active:scale-95 ${
+                    isCurrent ? "bg-dark-elevated text-muted/50 cursor-not-allowed"
+                    : col.id === "unassigned" ? "bg-red-500/15 text-red-400 hover:bg-red-500/25"
+                    : "bg-brand/15 text-brand hover:bg-brand/25"
+                  }`}>
+                  {col.label}
+                </button>
+              );
+            })}
+            <button onClick={() => setSelectedJobId(null)} className="ml-1 rounded-lg p-1.5 text-muted hover:text-white hover:bg-dark-elevated transition-all">
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Bottom Bar */}
-      {!loading && board && totalJobs > 0 && (
+      {!loading && board && totalJobs > 0 && !selectedJob && (
         <div className="shrink-0 mt-3 flex items-center justify-between rounded-xl bg-[#111C2E] border border-[#1E2D45] px-5 py-3">
           <div className="flex items-center gap-5 text-xs text-muted">
             <span><span className="text-white font-semibold">{totalStops}</span> stops remaining</span>
@@ -361,28 +349,27 @@ export default function DispatchPage() {
   );
 }
 
-/* ======== Droppable Column ======== */
+/* ======== Column ======== */
 
-function DroppableColumn({ colId, title, icon, count, accentCls, progress, phone, jobs, drivers, onAssign, onUnassign, onQuickView, isUnassigned }: {
-  colId: string; title: string; icon: React.ReactNode; count: number;
+function Column({ id, title, icon, count, accentCls, progress, phone, jobs, drivers, onAssign, onUnassign, selectedJobId, onSelectJob, onQuickView, onReorder, isUnassigned }: {
+  id: string; title: string; icon: React.ReactNode; count: number;
   accentCls?: string; progress?: { completed: number; total: number }; phone?: string;
   jobs: DispatchJob[]; drivers?: Driver[];
-  onAssign?: (jobId: string, driverId: string) => void;
+  onAssign?: (jobId: string, driverId: string | null) => void;
   onUnassign?: (jobId: string) => void;
+  selectedJobId: string | null; onSelectJob: (id: string | null) => void;
   onQuickView?: (job: DispatchJob) => void;
+  onReorder: (jobId: string, dir: "up" | "down") => void;
   isUnassigned?: boolean;
 }) {
-  const { setNodeRef, isOver } = useDroppable({ id: colId });
-
-  // Collapse
-  const storageKey = `dispatch-col-${colId}`;
+  const storageKey = `dispatch-col-${id}`;
   const [collapsed, setCollapsed] = useState(() => typeof window !== "undefined" && localStorage.getItem(storageKey) === "1");
   const toggleCollapse = () => { const n = !collapsed; setCollapsed(n); localStorage.setItem(storageKey, n ? "1" : "0"); };
 
   if (collapsed) {
     return (
-      <div ref={setNodeRef} onClick={toggleCollapse}
-        className={`flex w-[60px] shrink-0 cursor-pointer flex-col items-center rounded-xl bg-[#111C2E] border py-3 hover:bg-[#162033] transition-all ${isOver ? "border-[#2ECC71] border-dashed ring-2 ring-[#2ECC71]/30 bg-[#2ECC71]/5" : "border-[#1E2D45]"}`}>
+      <div onClick={toggleCollapse}
+        className="flex w-[60px] shrink-0 cursor-pointer flex-col items-center rounded-xl bg-[#111C2E] border border-[#1E2D45] py-3 hover:bg-[#162033] transition-all">
         <ChevDown className="h-3.5 w-3.5 text-muted mb-2" />
         <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold tabular-nums ${accentCls || "bg-dark-elevated text-foreground"}`}>{count}</span>
         <p className="mt-2 text-[9px] text-muted font-medium" style={{ writingMode: "vertical-lr" }}>{title}</p>
@@ -391,11 +378,7 @@ function DroppableColumn({ colId, title, icon, count, accentCls, progress, phone
   }
 
   return (
-    <div ref={setNodeRef}
-      className={`flex shrink-0 flex-col rounded-xl bg-[#111C2E] border transition-all ${
-        isUnassigned ? "min-w-[280px] w-[280px]" : "min-w-[300px] w-[300px]"
-      } ${isOver ? "border-[#2ECC71] border-dashed ring-2 ring-[#2ECC71]/30 bg-[#2ECC71]/5" : "border-[#1E2D45]"}`}
-    >
+    <div className={`flex shrink-0 flex-col rounded-xl bg-[#111C2E] border border-[#1E2D45] transition-all ${isUnassigned ? "min-w-[280px] w-[280px]" : "min-w-[300px] w-[300px]"}`}>
       {/* Header */}
       <div className="px-3 py-2.5 border-b border-[#1E2D45] shrink-0">
         <div className="flex items-center justify-between">
@@ -425,89 +408,36 @@ function DroppableColumn({ colId, title, icon, count, accentCls, progress, phone
       <div className="flex-1 overflow-y-auto p-2 space-y-1.5 max-h-[calc(100vh-280px)]" style={{ minHeight: 200 }}>
         {jobs.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-8" style={{ minHeight: 160 }}>
-            {isUnassigned ? (
-              <><CheckCircle2 className="mx-auto h-6 w-6 text-emerald-400/40 mb-1" /><p className="text-[10px] text-emerald-400">All jobs assigned</p></>
-            ) : (
-              <><Box className="mx-auto h-6 w-6 text-muted/15 mb-1" /><p className="text-[10px] text-muted">No jobs assigned</p><p className="text-[9px] text-muted/50 mt-0.5">Drop jobs here</p></>
-            )}
+            {isUnassigned
+              ? <><CheckCircle2 className="mx-auto h-6 w-6 text-emerald-400/40 mb-1" /><p className="text-[10px] text-emerald-400">All jobs assigned</p></>
+              : <><Box className="mx-auto h-6 w-6 text-muted/15 mb-1" /><p className="text-[10px] text-muted">No jobs assigned</p></>}
           </div>
-        ) : (
-          jobs.map((job, i) => (
-            <DraggableJobCard key={job.id} job={job} order={i + 1}
-              drivers={isUnassigned ? drivers : undefined}
-              onAssign={isUnassigned ? onAssign : undefined}
-              onUnassign={!isUnassigned ? onUnassign : undefined}
-              onQuickView={onQuickView} />
-          ))
-        )}
+        ) : jobs.map((job, i) => (
+          <JobCard key={job.id} job={job} order={i + 1} isFirst={i === 0} isLast={i === jobs.length - 1}
+            isSelected={selectedJobId === job.id}
+            drivers={isUnassigned ? drivers : undefined}
+            onAssign={isUnassigned ? onAssign : undefined}
+            onUnassign={!isUnassigned ? onUnassign : undefined}
+            onSelect={() => onSelectJob(selectedJobId === job.id ? null : job.id)}
+            onQuickView={() => onQuickView?.(job)}
+            onReorder={onReorder} />
+        ))}
       </div>
     </div>
   );
 }
 
-/* ======== Draggable Job Card ======== */
+/* ======== Job Card ======== */
 
-function DraggableJobCard({ job, order, drivers, onAssign, onUnassign, onQuickView }: {
-  job: DispatchJob; order: number; drivers?: Driver[];
-  onAssign?: (jobId: string, driverId: string) => void;
+function JobCard({ job, order, isFirst, isLast, isSelected, drivers, onAssign, onUnassign, onSelect, onQuickView, onReorder }: {
+  job: DispatchJob; order: number; isFirst: boolean; isLast: boolean; isSelected: boolean;
+  drivers?: Driver[];
+  onAssign?: (jobId: string, driverId: string | null) => void;
   onUnassign?: (jobId: string) => void;
-  onQuickView?: (job: DispatchJob) => void;
+  onSelect: () => void;
+  onQuickView: () => void;
+  onReorder: (jobId: string, dir: "up" | "down") => void;
 }) {
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: job.id });
-  const style = {
-    transform: transform ? `translate(${transform.x}px, ${transform.y}px)` : undefined,
-    opacity: isDragging ? 0.3 : 1,
-    zIndex: isDragging ? 50 : undefined,
-  };
-
-  return (
-    <div ref={setNodeRef} style={style} className="relative group">
-      {/* Drag handle — spread listeners here so only the grip triggers drag */}
-      <div {...listeners} {...attributes}
-        className="absolute left-1 top-1/2 -translate-y-1/2 cursor-grab p-1 text-muted/20 group-hover:text-muted/50 active:cursor-grabbing z-10">
-        <GripVertical className="h-3 w-3" />
-      </div>
-
-      {/* Assign dropdown for unassigned jobs */}
-      {drivers && onAssign && (
-        <div className="absolute right-1.5 top-1.5 z-10">
-          <Dropdown trigger={
-            <button className="flex items-center gap-0.5 rounded bg-brand/15 border border-brand/20 px-1.5 py-0.5 text-[9px] font-semibold text-brand hover:bg-brand/25 transition-all">
-              <UserPlus className="h-2.5 w-2.5" /> Assign
-            </button>
-          } align="right">
-            {drivers.map(d => (
-              <button key={d.id} onClick={() => onAssign(job.id, d.id)}
-                className="flex w-full items-center gap-2 px-3 py-2 text-xs text-foreground hover:bg-dark-card-hover whitespace-nowrap">
-                <div className="flex h-5 w-5 items-center justify-center rounded-full bg-brand/10 text-[8px] font-bold text-brand">{d.firstName[0]}{d.lastName[0]}</div>
-                {d.firstName} {d.lastName}
-              </button>
-            ))}
-          </Dropdown>
-        </div>
-      )}
-
-      {/* Unassign button for assigned jobs */}
-      {onUnassign && (
-        <div className="absolute right-1.5 top-1.5 z-10">
-          <button onClick={() => onUnassign(job.id)}
-            className="rounded bg-red-500/10 border border-red-500/20 px-1.5 py-0.5 text-[9px] font-semibold text-red-400 hover:bg-red-500/20 transition-all opacity-0 group-hover:opacity-100">
-            <X className="inline h-2.5 w-2.5 mr-0.5" />Unassign
-          </button>
-        </div>
-      )}
-
-      {/* Card body */}
-      <button onClick={() => onQuickView?.(job)} className="block w-full text-left">
-        <JobCardVisual job={job} order={order} />
-      </button>
-    </div>
-  );
-}
-
-/* ======== Job Card Visual (shared between card and drag overlay) ======== */
-
-function JobCardVisual({ job, order, isDragOverlay }: { job: DispatchJob; order?: number; isDragOverlay?: boolean }) {
   const isCompleted = job.status === "completed";
   const tc = TYPE_CONFIG[job.job_type] || { label: job.job_type, letter: "?", cls: "bg-zinc-500/10 text-zinc-400" };
   const statusBorder = STATUS_BORDER[job.status] || "border-l-zinc-500";
@@ -515,31 +445,80 @@ function JobCardVisual({ job, order, isDragOverlay }: { job: DispatchJob; order?
   const addrStr = addr ? [addr.street, addr.city, addr.state].filter(Boolean).join(", ") : "";
 
   return (
-    <div className={`rounded-lg bg-[#162033] border border-[#1E2D45] border-l-[3px] ${statusBorder} p-2.5 pl-7 transition-all ${
-      isDragOverlay ? "shadow-xl shadow-black/30 ring-2 ring-brand/30 scale-105 rotate-1" : "hover:border-[#2ECC71]/20"
-    } ${isCompleted ? "opacity-60" : ""}`} style={isDragOverlay ? { width: 280 } : undefined}>
-      <div className="flex items-start justify-between gap-2 mb-1.5">
-        <div className="flex items-center gap-1.5 min-w-0">
-          {order && <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-dark-elevated text-[9px] font-bold text-muted tabular-nums">{order}</span>}
-          <span className={`shrink-0 flex h-5 w-5 items-center justify-center rounded text-[9px] font-bold ${tc.cls}`}>{tc.letter}</span>
-          <span className="text-xs font-semibold text-white truncate">{jobTitle(job)}</span>
-        </div>
-        <div className="flex items-center gap-1 shrink-0">
-          {job.asset?.identifier && <span className="rounded bg-brand/10 text-brand px-1.5 py-0.5 text-[9px] font-bold">{job.asset.identifier}</span>}
-          {job.priority === "high" && <span className="rounded bg-red-500/15 px-1 py-0.5 text-[8px] font-bold text-red-400">H</span>}
-          {isCompleted && <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />}
-        </div>
+    <div className={`relative group rounded-lg bg-[#162033] border border-l-[3px] ${statusBorder} p-2.5 pl-3 transition-all duration-200 ${
+      isSelected ? "ring-2 ring-[#2ECC71] border-[#2ECC71]/40 shadow-lg shadow-[#2ECC71]/10" : "border-[#1E2D45] hover:border-[#2ECC71]/20"
+    } ${isCompleted ? "opacity-60" : ""}`}>
+
+      {/* Top-right action buttons */}
+      <div className="absolute right-1.5 top-1.5 z-10 flex items-center gap-1">
+        {/* Reorder arrows — shown on hover */}
+        {!isFirst && (
+          <button onClick={(e) => { e.stopPropagation(); onReorder(job.id, "up"); }}
+            className="rounded p-0.5 text-muted/30 hover:text-white hover:bg-dark-elevated transition-all opacity-0 group-hover:opacity-100">
+            <ArrowUp className="h-3 w-3" />
+          </button>
+        )}
+        {!isLast && (
+          <button onClick={(e) => { e.stopPropagation(); onReorder(job.id, "down"); }}
+            className="rounded p-0.5 text-muted/30 hover:text-white hover:bg-dark-elevated transition-all opacity-0 group-hover:opacity-100">
+            <ArrowDown className="h-3 w-3" />
+          </button>
+        )}
+
+        {/* Assign dropdown — unassigned cards */}
+        {drivers && onAssign && (
+          <div onClick={e => e.stopPropagation()}>
+            <Dropdown trigger={
+              <button className="flex items-center gap-0.5 rounded bg-brand/15 border border-brand/20 px-1.5 py-0.5 text-[9px] font-semibold text-brand hover:bg-brand/25 transition-all">
+                <UserPlus className="h-2.5 w-2.5" /> Assign
+              </button>
+            } align="right">
+              {drivers.map(d => (
+                <button key={d.id} onClick={() => onAssign(job.id, d.id)}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-xs text-foreground hover:bg-dark-card-hover whitespace-nowrap">
+                  <div className="flex h-5 w-5 items-center justify-center rounded-full bg-brand/10 text-[8px] font-bold text-brand">{d.firstName[0]}{d.lastName[0]}</div>
+                  {d.firstName} {d.lastName}
+                </button>
+              ))}
+            </Dropdown>
+          </div>
+        )}
+
+        {/* Unassign button — driver cards */}
+        {onUnassign && (
+          <button onClick={(e) => { e.stopPropagation(); onUnassign(job.id); }}
+            className="rounded bg-red-500/10 border border-red-500/20 px-1.5 py-0.5 text-[9px] font-semibold text-red-400 hover:bg-red-500/20 transition-all opacity-0 group-hover:opacity-100">
+            <X className="inline h-2.5 w-2.5" />
+          </button>
+        )}
       </div>
-      <p className="text-[11px] font-medium text-foreground truncate">
-        {job.customer ? `${job.customer.first_name} ${job.customer.last_name}` : job.job_number}
-      </p>
-      {addrStr && <p className="mt-0.5 flex items-center gap-1 text-[10px] text-muted truncate"><MapPin className="h-2.5 w-2.5 shrink-0" />{addrStr}</p>}
-      {(job.scheduled_window_start || job.scheduled_window_end) && (
-        <p className="mt-1 flex items-center gap-1 text-[10px] text-muted">
-          <Clock className="h-2.5 w-2.5" />
-          {fmtTime(job.scheduled_window_start)}{job.scheduled_window_end && ` – ${fmtTime(job.scheduled_window_end)}`}
+
+      {/* Card body — left-click to select, double-click to QuickView */}
+      <div onClick={onSelect} onDoubleClick={(e) => { e.stopPropagation(); onQuickView(); }} className="cursor-pointer">
+        {/* Title row */}
+        <div className="flex items-start justify-between gap-2 mb-1.5 pr-16">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-dark-elevated text-[9px] font-bold text-muted tabular-nums">{order}</span>
+            <span className={`shrink-0 flex h-5 w-5 items-center justify-center rounded text-[9px] font-bold ${tc.cls}`}>{tc.letter}</span>
+            <span className="text-xs font-semibold text-white truncate">{jobTitle(job)}</span>
+          </div>
+          <div className="flex items-center gap-1 shrink-0">
+            {job.asset?.identifier && <span className="rounded bg-brand/10 text-brand px-1.5 py-0.5 text-[9px] font-bold">{job.asset.identifier}</span>}
+            {job.priority === "high" && <span className="rounded bg-red-500/15 px-1 py-0.5 text-[8px] font-bold text-red-400">H</span>}
+            {isCompleted && <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />}
+          </div>
+        </div>
+
+        <p className="text-[11px] font-medium text-foreground truncate">
+          {job.customer ? `${job.customer.first_name} ${job.customer.last_name}` : job.job_number}
         </p>
-      )}
+        {addrStr && <p className="mt-0.5 flex items-center gap-1 text-[10px] text-muted truncate"><MapPin className="h-2.5 w-2.5 shrink-0" />{addrStr}</p>}
+        {(job.scheduled_window_start || job.scheduled_window_end) && (
+          <p className="mt-1 flex items-center gap-1 text-[10px] text-muted">
+            <Clock className="h-2.5 w-2.5" />{fmtTime(job.scheduled_window_start)}{job.scheduled_window_end && ` – ${fmtTime(job.scheduled_window_end)}`}
+          </p>
+        )}
+      </div>
     </div>
   );
 }
