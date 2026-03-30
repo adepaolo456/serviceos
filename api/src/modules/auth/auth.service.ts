@@ -201,6 +201,18 @@ export class AuthService {
       businessType?: string;
       address?: Record<string, string>;
       serviceRadius?: number;
+      websiteEnabled?: boolean;
+      websiteHeadline?: string;
+      websiteDescription?: string;
+      websiteHeroImageUrl?: string;
+      websiteLogoUrl?: string;
+      websitePrimaryColor?: string;
+      websitePhone?: string;
+      websiteEmail?: string;
+      websiteServiceArea?: string;
+      websiteAbout?: string;
+      widgetEnabled?: boolean;
+      allowedWidgetDomains?: string[];
     },
   ) {
     const update: Record<string, unknown> = {};
@@ -208,6 +220,18 @@ export class AuthService {
     if (data.businessType !== undefined) update.business_type = data.businessType;
     if (data.address !== undefined) update.address = data.address;
     if (data.serviceRadius !== undefined) update.service_radius_miles = data.serviceRadius;
+    if (data.websiteEnabled !== undefined) update.website_enabled = data.websiteEnabled;
+    if (data.websiteHeadline !== undefined) update.website_headline = data.websiteHeadline;
+    if (data.websiteDescription !== undefined) update.website_description = data.websiteDescription;
+    if (data.websiteHeroImageUrl !== undefined) update.website_hero_image_url = data.websiteHeroImageUrl;
+    if (data.websiteLogoUrl !== undefined) update.website_logo_url = data.websiteLogoUrl;
+    if (data.websitePrimaryColor !== undefined) update.website_primary_color = data.websitePrimaryColor;
+    if (data.websitePhone !== undefined) update.website_phone = data.websitePhone;
+    if (data.websiteEmail !== undefined) update.website_email = data.websiteEmail;
+    if (data.websiteServiceArea !== undefined) update.website_service_area = data.websiteServiceArea;
+    if (data.websiteAbout !== undefined) update.website_about = data.websiteAbout;
+    if (data.widgetEnabled !== undefined) update.widget_enabled = data.widgetEnabled;
+    if (data.allowedWidgetDomains !== undefined) update.allowed_widget_domains = data.allowedWidgetDomains;
 
     await this.tenantsRepository.update(tenantId, update);
 
