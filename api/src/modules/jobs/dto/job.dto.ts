@@ -9,6 +9,7 @@ import {
   IsInt,
   IsNumber,
   Min,
+  ValidateIf,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -213,13 +214,15 @@ export class ChangeStatusDto {
 export class AssignDto {
   @ApiPropertyOptional({ example: 'b2c3d4e5-f6a7-8901-bcde-f12345678901' })
   @IsOptional()
+  @ValidateIf((o) => o.assetId !== null)
   @IsUUID()
-  assetId?: string;
+  assetId?: string | null;
 
   @ApiPropertyOptional({ example: 'c3d4e5f6-a7b8-9012-cdef-123456789012' })
   @IsOptional()
+  @ValidateIf((o) => o.assignedDriverId !== null)
   @IsUUID()
-  assignedDriverId?: string;
+  assignedDriverId?: string | null;
 }
 
 export class CalendarQueryDto {
