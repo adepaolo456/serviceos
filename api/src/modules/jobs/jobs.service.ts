@@ -218,25 +218,35 @@ export class JobsService {
     id: string,
     body: Record<string, unknown>,
   ): Promise<Job> {
+    // First verify the job exists and belongs to this tenant
     const job = await this.findOne(tenantId, id);
 
+    const updates: Record<string, unknown> = {};
+
     if ('assetId' in body) {
-      job.asset_id = (body.assetId as string) || (null as any);
+      updates.asset_id = body.assetId || null;
     }
 
     if ('assignedDriverId' in body) {
       const newDriverId = (body.assignedDriverId as string) || null;
-      job.assigned_driver_id = newDriverId as any;
+      updates.assigned_driver_id = newDriverId;
 
       if (newDriverId && job.status === 'pending') {
-        job.status = 'confirmed';
+        updates.status = 'confirmed';
       }
       if (!newDriverId && job.status === 'confirmed') {
-        job.status = 'pending';
+        updates.status = 'pending';
       }
     }
 
-    return this.jobsRepository.save(job);
+    // Use .update() instead of .save() to avoid TypeORM re-setting
+    // the FK from the eagerly-loaded relation object
+    await this.jobsRepository.update(
+      { id, tenant_id: tenantId },
+      updates,
+    );
+
+    return this.findOne(tenantId, id);
   }
 
   async findByDateRange(tenantId: string, date: string, days: number) {
