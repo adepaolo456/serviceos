@@ -119,9 +119,10 @@ const TIMELINE_STEPS = [
 
 /* ─── Helpers ─── */
 
+import { formatCurrency } from "@/lib/utils";
 function fmt(n: number | null | undefined): string {
   if (n === null || n === undefined) return "—";
-  return `$${Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return formatCurrency(n);
 }
 
 function fmtDateFull(d: string): string {

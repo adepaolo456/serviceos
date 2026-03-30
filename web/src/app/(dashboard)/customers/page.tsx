@@ -34,17 +34,10 @@ interface CustomersResponse {
 
 /* ---- Helpers ---- */
 
-function fmtPhone(p: string | null): string {
-  if (!p) return "";
-  const digits = p.replace(/\D/g, "");
-  if (digits.length === 10) return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
-  if (digits.length === 11 && digits[0] === "1") return `(${digits.slice(1, 4)}) ${digits.slice(4, 7)}-${digits.slice(7)}`;
-  return p;
-}
+import { formatPhone, formatCurrency } from "@/lib/utils";
 
-function fmtMoney(n: number): string {
-  return `$${Number(n).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
-}
+const fmtPhone = formatPhone;
+const fmtMoney = (n: number) => formatCurrency(n);
 
 /* ---- Filters ---- */
 

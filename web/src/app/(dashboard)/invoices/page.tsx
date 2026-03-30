@@ -92,10 +92,8 @@ const PAYMENT_TERMS = [
 
 /* ─── Helpers ─── */
 
-function fmt(n: number | null | undefined): string {
-  if (n === null || n === undefined) return "$0.00";
-  return `$${Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
+import { formatCurrency } from "@/lib/utils";
+const fmt = (n: number | null | undefined) => formatCurrency(n as number);
 
 function fmtDate(d: string): string {
   if (!d) return "—";

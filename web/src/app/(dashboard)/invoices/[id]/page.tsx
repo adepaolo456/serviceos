@@ -73,10 +73,8 @@ const PAYMENT_STATUS: Record<string, string> = {
   refunded: "bg-purple-500/10 text-purple-400",
 };
 
-function fmt(n: number | null | undefined): string {
-  if (n === null || n === undefined) return "$0.00";
-  return `$${Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
+import { formatCurrency } from "@/lib/utils";
+const fmt = (n: number | null | undefined) => formatCurrency(n as number);
 
 export default function InvoiceDetailPage({
   params,

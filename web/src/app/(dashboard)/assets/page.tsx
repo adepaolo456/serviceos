@@ -159,8 +159,9 @@ function fmtDate(d: string): string {
   return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
+import { formatCurrency } from "@/lib/utils";
 function fmtMoney(n: number): string {
-  return `$${Number(n).toFixed(0)}`;
+  return formatCurrency(n);
 }
 
 function getDeployedInfo(asset: Asset): { customerName: string; address: string; deliveryDate: string; rentalEnd: string; daysDeployed: number; isOverdue: boolean } | null {

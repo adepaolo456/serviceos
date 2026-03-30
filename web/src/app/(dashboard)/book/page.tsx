@@ -80,9 +80,8 @@ function fmtDate(d: string) {
   return new Date(d + "T00:00:00").toLocaleDateString("en-US", { weekday: "short", month: "long", day: "numeric", year: "numeric" });
 }
 
-function fmtMoney(n: number) {
-  return `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
+import { formatCurrency, formatPhone } from "@/lib/utils";
+const fmtMoney = (n: number) => formatCurrency(n);
 
 /* ---- Steps ---- */
 
@@ -99,12 +98,26 @@ export default function BookingPage() {
   const router = useRouter();
   const [step, setStep] = useState(1);
 
+  // Load last booking settings from localStorage
+  const [prefilledFromLast, setPrefilledFromLast] = useState(false);
+
   // Step 1: Quote
-  const [serviceType, setServiceType] = useState("dumpster_rental");
+  const [serviceType, setServiceType] = useState(() => {
+    if (typeof window === "undefined") return "dumpster_rental";
+    try { const s = JSON.parse(localStorage.getItem("serviceos-last-booking") || "{}"); if (s.serviceType) { return s.serviceType; } } catch {} return "dumpster_rental";
+  });
   const [jobType, setJobType] = useState<"delivery" | "exchange">("delivery");
-  const [assetSubtype, setAssetSubtype] = useState("20yd");
+  const [assetSubtype, setAssetSubtype] = useState(() => {
+    if (typeof window === "undefined") return "20yd";
+    try { const s = JSON.parse(localStorage.getItem("serviceos-last-booking") || "{}"); if (s.assetSubtype) { return s.assetSubtype; } } catch {} return "20yd";
+  });
   const [address, setAddress] = useState<AddressValue>({ street: "", city: "", state: "", zip: "", lat: null, lng: null });
   const [rentalDays, setRentalDays] = useState(14);
+
+  // Check if pre-filled
+  useEffect(() => {
+    try { const s = localStorage.getItem("serviceos-last-booking"); if (s) setPrefilledFromLast(true); } catch {}
+  }, []);
   const [quote, setQuote] = useState<PriceQuote | null>(null);
   const [quoting, setQuoting] = useState(false);
   const [availability, setAvailability] = useState<{ availableOnDate: number; availableNow: number; pickupsBeforeDate: number; total: number } | null>(null);
@@ -236,6 +249,8 @@ export default function BookingPage() {
         paymentMethod,
       });
       setResult(res);
+      // Save last booking settings for pre-fill
+      try { localStorage.setItem("serviceos-last-booking", JSON.stringify({ serviceType, assetSubtype, timeWindow })); } catch {}
       setStep(5);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Booking failed");
@@ -292,6 +307,9 @@ export default function BookingPage() {
       {/* ==================== STEP 1: Quote ==================== */}
       {step === 1 && (
         <div className="space-y-5">
+          {prefilledFromLast && (
+            <p className="text-xs text-muted italic">Pre-filled from your last booking</p>
+          )}
           {/* Job type toggle */}
           <div>
             <label className={labelCls}>Type</label>
