@@ -21,7 +21,11 @@ import {
   Timer,
   Download,
   ChevronDown,
+  RefreshCw,
+  ExternalLink,
+  Settings,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import SlideOver from "@/components/slide-over";
 import Dropdown from "@/components/dropdown";
@@ -69,7 +73,12 @@ interface SizeGroup {
   deployed: number;
   maintenance: number;
   reserved: number;
-  dailyRate: number;
+}
+
+interface PricingRule {
+  id: string;
+  base_price: number;
+  container_size: string;
 }
 
 /* ─── Constants ─── */
@@ -207,19 +216,47 @@ export default function AssetsPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [createPrefilledSize, setCreatePrefilledSize] = useState<string | null>(null);
   const [detailAsset, setDetailAsset] = useState<Asset | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
+  const [refreshing, setRefreshing] = useState(false);
+  const [pricingRules, setPricingRules] = useState<PricingRule[]>([]);
+  const [bulkRateOpen, setBulkRateOpen] = useState<string | null>(null);
   const { toast } = useToast();
+  const router = useRouter();
 
-  const fetchAssets = useCallback(async () => {
-    setLoading(true);
+  const fetchAssets = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
+    if (silent) setRefreshing(true);
     try {
       const res = await api.get<AssetsResponse>("/assets?limit=200");
       setAssets(res.data);
+      setLastUpdated(new Date());
     } catch { /* silent */ } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }, []);
 
-  useEffect(() => { fetchAssets(); }, [fetchAssets]);
+  // Fetch pricing rules
+  const fetchPricing = useCallback(async () => {
+    try {
+      const res = await api.get<{ data: PricingRule[] }>("/pricing");
+      setPricingRules(res.data || []);
+    } catch { /* silent — pricing might not exist yet */ }
+  }, []);
+
+  useEffect(() => { fetchAssets(); fetchPricing(); }, [fetchAssets, fetchPricing]);
+
+  // Auto-refresh every 30 seconds
+  useEffect(() => {
+    const interval = setInterval(() => fetchAssets(true), 30000);
+    return () => clearInterval(interval);
+  }, [fetchAssets]);
+
+  // Helper: get base price from pricing rules for a size
+  const getBasePrice = useCallback((size: string): number | null => {
+    const rule = pricingRules.find((r) => r.container_size === size);
+    return rule ? Number(rule.base_price) : null;
+  }, [pricingRules]);
 
   // Group assets by size
   const sizeGroups: SizeGroup[] = useMemo(() => {
@@ -229,9 +266,7 @@ export default function AssetsPage() {
       const deployed = sizeAssets.filter((a) => a.status === "on_site" || a.status === "deployed").length;
       const maintenance = sizeAssets.filter((a) => a.status === "maintenance").length;
       const reserved = sizeAssets.filter((a) => a.status === "reserved").length;
-      const rates = sizeAssets.filter((a) => a.daily_rate > 0).map((a) => Number(a.daily_rate));
-      const dailyRate = rates.length > 0 ? rates[0] : 0;
-      return { size, assets: sizeAssets, total: sizeAssets.length, available, deployed, maintenance, reserved, dailyRate };
+      return { size, assets: sizeAssets, total: sizeAssets.length, available, deployed, maintenance, reserved };
     }).filter((g) => g.total > 0);
   }, [assets]);
 
@@ -354,56 +389,68 @@ export default function AssetsPage() {
           ))}
         </div>
       ) : (
-        <div className="flex gap-3 mb-6 overflow-x-auto pb-2 scrollbar-thin">
+        <div className="flex gap-3 mb-2 overflow-x-auto pb-2 scrollbar-thin">
           {sizeGroups.map((group) => {
             const accent = SIZE_ACCENT[group.size] || SIZE_ACCENT["20yd"];
             const isSelected = selectedSize === group.size;
+            // Smart status border
+            const stockLevel = group.available === 0 ? "empty" : group.available <= 2 ? "low" : "healthy";
+            const stockBorder = isSelected
+              ? `${accent.border} shadow-lg ${accent.glow} ring-1 ring-brand/30`
+              : stockLevel === "empty"
+                ? "border-red-500/40 bg-red-500/5"
+                : stockLevel === "low"
+                  ? "border-yellow-500/40 bg-yellow-500/5"
+                  : "border-emerald-500/20";
             return (
               <button
                 key={group.size}
                 onClick={() => handleTileClick(group.size)}
                 className={`relative min-w-[190px] flex-1 rounded-2xl border p-4 text-left transition-all btn-press ${
                   isSelected
-                    ? `${accent.border} shadow-lg ${accent.glow} bg-dark-card-hover ring-1 ring-brand/30`
-                    : "border-[#1E2D45] bg-dark-card hover:bg-dark-card-hover hover:border-white/10"
+                    ? `${stockBorder} bg-dark-card-hover`
+                    : `${stockBorder} bg-dark-card hover:bg-dark-card-hover`
                 }`}
               >
+                {/* Warning icon for zero available */}
+                {stockLevel === "empty" && !isSelected && (
+                  <AlertTriangle className="absolute top-3 right-3 h-4 w-4 text-red-400" />
+                )}
+
                 {/* Size label */}
-                <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center justify-between mb-1">
                   <span className={`font-display text-2xl font-black tracking-tight ${isSelected ? accent.text : "text-white"}`}>
                     {group.size.replace("yd", "")} <span className="text-sm font-semibold opacity-60">YD</span>
                   </span>
                   <span className="text-xs text-muted">{group.total} unit{group.total !== 1 ? "s" : ""}</span>
                 </div>
 
+                {/* Availability — the hero number */}
+                <p className={`text-sm font-semibold mb-1 ${
+                  stockLevel === "empty" ? "text-red-400" : stockLevel === "low" ? "text-yellow-400" : "text-emerald-400"
+                }`}>
+                  {group.available} available
+                </p>
+
                 {/* Status breakdown */}
-                <div className="flex items-center gap-3 text-[11px] mb-3 flex-wrap">
-                  {group.available > 0 && (
-                    <span className="flex items-center gap-1 text-emerald-400">
-                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />{group.available}
-                    </span>
-                  )}
-                  {group.deployed > 0 && (
-                    <span className="flex items-center gap-1 text-yellow-400">
-                      <span className="h-1.5 w-1.5 rounded-full bg-yellow-400" />{group.deployed}
-                    </span>
-                  )}
+                <div className="space-y-0.5 text-[11px] mb-3">
+                  <div className="flex items-center gap-1.5 text-yellow-400">
+                    <span className="h-1.5 w-1.5 rounded-full bg-yellow-400" />
+                    {group.deployed} deployed
+                  </div>
                   {group.maintenance > 0 && (
-                    <span className="flex items-center gap-1 text-red-400">
-                      <span className="h-1.5 w-1.5 rounded-full bg-red-400" />{group.maintenance}
-                    </span>
+                    <div className="flex items-center gap-1.5 text-red-400">
+                      <span className="h-1.5 w-1.5 rounded-full bg-red-400" />
+                      {group.maintenance} maintenance
+                    </div>
                   )}
-                  {group.reserved > 0 && (
-                    <span className="flex items-center gap-1 text-blue-400">
-                      <span className="h-1.5 w-1.5 rounded-full bg-blue-400" />{group.reserved}
-                    </span>
+                  {group.maintenance === 0 && (
+                    <div className="flex items-center gap-1.5 text-muted">
+                      <span className="h-1.5 w-1.5 rounded-full bg-zinc-600" />
+                      0 maintenance
+                    </div>
                   )}
                 </div>
-
-                {/* Daily rate */}
-                {group.dailyRate > 0 && (
-                  <p className="text-xs text-muted mb-3">{fmtMoney(group.dailyRate)}/day</p>
-                )}
 
                 {/* Utilization bar */}
                 <div className="h-1.5 w-full rounded-full bg-dark-elevated overflow-hidden flex">
@@ -415,9 +462,6 @@ export default function AssetsPage() {
                   )}
                   {group.maintenance > 0 && (
                     <div className="h-full bg-red-500 transition-all" style={{ width: `${(group.maintenance / group.total) * 100}%` }} />
-                  )}
-                  {group.reserved > 0 && (
-                    <div className="h-full bg-blue-500 transition-all" style={{ width: `${(group.reserved / group.total) * 100}%` }} />
                   )}
                 </div>
 
@@ -431,12 +475,27 @@ export default function AssetsPage() {
             );
           })}
         </div>
+
+      )}
+
+      {/* Last updated + refresh */}
+      {!loading && (
+        <div className="flex items-center gap-2 mb-6 text-[11px] text-muted">
+          <span>Last updated: {lastUpdated.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}</span>
+          <button
+            onClick={() => fetchAssets(true)}
+            disabled={refreshing}
+            className="p-1 rounded hover:bg-dark-card transition-colors disabled:opacity-40"
+          >
+            <RefreshCw className={`h-3 w-3 ${refreshing ? "animate-spin" : ""}`} />
+          </button>
+        </div>
       )}
 
       {/* ─── Expanded Tile Section ─── */}
       {selectedSize && !loading && (
         <div className="mb-6 space-y-4">
-          {/* Bulk Actions + Filter Pills */}
+          {/* Quick Edit + Filter Pills + Bulk Actions */}
           <div className="flex items-center justify-between flex-wrap gap-3">
             <div className="flex flex-wrap gap-2">
               {STATUS_FILTERS.map((s) => {
@@ -469,23 +528,45 @@ export default function AssetsPage() {
             </div>
 
             <div className="flex gap-2">
+              {/* Quick Edit dropdown */}
+              <Dropdown
+                trigger={
+                  <button className="flex items-center gap-1.5 rounded-lg border border-[#1E2D45] px-3 py-1.5 text-xs font-medium text-muted hover:text-brand hover:border-brand/30 transition-colors">
+                    <Settings className="h-3 w-3" /> Quick Edit
+                  </button>
+                }
+                align="right"
+              >
+                <button
+                  onClick={() => setBulkRateOpen(selectedSize)}
+                  className="flex w-full items-center gap-2 px-4 py-2 text-sm text-foreground hover:bg-dark-card transition-colors"
+                >
+                  <DollarSign className="h-3.5 w-3.5" /> Edit Daily Rate (all {selectedSize})
+                </button>
+                <button
+                  onClick={() => router.push(`/pricing?size=${selectedSize}`)}
+                  className="flex w-full items-center gap-2 px-4 py-2 text-sm text-foreground hover:bg-dark-card transition-colors"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" /> Edit Pricing Rule
+                </button>
+                <button
+                  onClick={() => { setCreatePrefilledSize(selectedSize); setCreateOpen(true); }}
+                  className="flex w-full items-center gap-2 px-4 py-2 text-sm text-brand hover:bg-dark-card transition-colors"
+                >
+                  <Plus className="h-3.5 w-3.5" /> Add More {selectedSize}
+                </button>
+              </Dropdown>
               <button
                 onClick={() => bulkMaintenance(selectedSize)}
                 className="flex items-center gap-1.5 rounded-lg border border-[#1E2D45] px-3 py-1.5 text-xs font-medium text-muted hover:text-red-400 hover:border-red-500/30 transition-colors"
               >
-                <Wrench className="h-3 w-3" /> Mark All Maintenance
-              </button>
-              <button
-                onClick={() => { setCreatePrefilledSize(selectedSize); setCreateOpen(true); }}
-                className="flex items-center gap-1.5 rounded-lg border border-[#1E2D45] px-3 py-1.5 text-xs font-medium text-muted hover:text-brand hover:border-brand/30 transition-colors"
-              >
-                <Plus className="h-3 w-3" /> Add More {selectedSize}
+                <Wrench className="h-3 w-3" /> All Maintenance
               </button>
               <button
                 onClick={() => exportCSV(filteredAssets)}
                 className="flex items-center gap-1.5 rounded-lg border border-[#1E2D45] px-3 py-1.5 text-xs font-medium text-muted hover:text-white hover:border-white/20 transition-colors"
               >
-                <Download className="h-3 w-3" /> Export CSV
+                <Download className="h-3 w-3" /> CSV
               </button>
             </div>
           </div>
@@ -556,7 +637,7 @@ export default function AssetsPage() {
           )}
         </div>
       ) : viewMode === "list" ? (
-        <ListView assets={filteredAssets} onSelect={setDetailAsset} onQuickStatus={quickStatus} />
+        <ListView assets={filteredAssets} onSelect={setDetailAsset} onQuickStatus={quickStatus} getBasePrice={getBasePrice} />
       ) : (
         <GridView assets={filteredAssets} onSelect={setDetailAsset} onQuickStatus={quickStatus} />
       )}
@@ -583,6 +664,16 @@ export default function AssetsPage() {
         </div>
       )}
 
+      {/* Bulk Rate Edit Modal */}
+      {bulkRateOpen && (
+        <BulkRateEditor
+          size={bulkRateOpen}
+          assets={assets.filter((a) => a.subtype === bulkRateOpen)}
+          onClose={() => setBulkRateOpen(null)}
+          onSaved={() => { setBulkRateOpen(null); fetchAssets(true); toast("success", `Daily rates updated for all ${bulkRateOpen} dumpsters`); }}
+        />
+      )}
+
       {/* Create Slide-Over */}
       <SlideOver open={createOpen} onClose={() => setCreateOpen(false)} title="Add Asset">
         <CreateAssetForm prefilledSize={createPrefilledSize} onSuccess={() => { setCreateOpen(false); fetchAssets(); }} />
@@ -604,7 +695,8 @@ export default function AssetsPage() {
 
 /* ─── List View ─── */
 
-function ListView({ assets, onSelect, onQuickStatus }: { assets: Asset[]; onSelect: (a: Asset) => void; onQuickStatus: (id: string, status: string) => void }) {
+function ListView({ assets, onSelect, onQuickStatus, getBasePrice }: { assets: Asset[]; onSelect: (a: Asset) => void; onQuickStatus: (id: string, status: string) => void; getBasePrice: (size: string) => number | null }) {
+  const router = useRouter();
   return (
     <div className="rounded-2xl border border-[#1E2D45] bg-dark-card overflow-hidden">
       <div className="table-scroll">
@@ -616,7 +708,7 @@ function ListView({ assets, onSelect, onQuickStatus }: { assets: Asset[]; onSele
               <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted">Status</th>
               <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted">Location</th>
               <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted">Days Out</th>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted">Rate</th>
+              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted">Base Price</th>
               <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted">Condition</th>
               <th className="px-2 py-3"></th>
             </tr>
@@ -659,8 +751,21 @@ function ListView({ assets, onSelect, onQuickStatus }: { assets: Asset[]; onSele
                       <span className="text-muted text-xs">—</span>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-foreground tabular-nums text-xs">
-                    {asset.daily_rate > 0 ? `${fmtMoney(asset.daily_rate)}/day` : "—"}
+                  <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                    {(() => {
+                      const basePrice = getBasePrice(asset.subtype);
+                      const display = basePrice !== null ? fmtMoney(basePrice) : (asset.daily_rate > 0 ? fmtMoney(asset.daily_rate) : "—");
+                      return (
+                        <button
+                          onClick={() => router.push(`/pricing?size=${asset.subtype}`)}
+                          className="group/price relative text-xs tabular-nums text-foreground hover:text-brand transition-colors"
+                          title="Base rental price from pricing rules. Edit in Pricing."
+                        >
+                          {display}{basePrice !== null || asset.daily_rate > 0 ? "/day" : ""}
+                          <ExternalLink className="inline ml-1 h-2.5 w-2.5 opacity-0 group-hover/price:opacity-100 transition-opacity" />
+                        </button>
+                      );
+                    })()}
                   </td>
                   <td className="px-4 py-3">
                     {asset.condition && (
@@ -1036,6 +1141,56 @@ function MaintenanceTab({ asset, onUpdated }: { asset: Asset; onUpdated: () => v
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+/* ─── Create Asset Form ─── */
+
+/* ─── Bulk Rate Editor ─── */
+
+function BulkRateEditor({ size, assets, onClose, onSaved }: { size: string; assets: Asset[]; onClose: () => void; onSaved: () => void }) {
+  const [rate, setRate] = useState(assets.length > 0 ? String(assets[0].daily_rate || "") : "");
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = async () => {
+    if (!rate) return;
+    setSaving(true);
+    try {
+      await Promise.all(assets.map((a) => api.patch(`/assets/${a.id}`, { dailyRate: Number(rate) })));
+      onSaved();
+    } catch {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative rounded-2xl border border-[#1E2D45] bg-dark-secondary p-6 shadow-2xl w-full max-w-sm animate-fade-in">
+        <h3 className="font-display text-lg font-semibold text-white mb-1">Edit Daily Rate</h3>
+        <p className="text-sm text-muted mb-4">Update rate for all {assets.length} &times; {size} dumpsters</p>
+        <div className="mb-4">
+          <label className="block text-sm font-medium text-[#7A8BA3] mb-1.5">Daily Rate ($)</label>
+          <input
+            type="number"
+            step="0.01"
+            value={rate}
+            onChange={(e) => setRate(e.target.value)}
+            className="w-full rounded-lg bg-[#111C2E] border border-[#1E2D45] px-4 py-2.5 text-sm text-white placeholder-muted outline-none transition-colors focus:border-brand"
+            placeholder="57.14"
+            autoFocus
+          />
+        </div>
+        <div className="flex gap-2">
+          <button onClick={handleSave} disabled={saving || !rate} className="flex-1 rounded-lg bg-[#2ECC71] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1FA855] disabled:opacity-50 transition-colors">
+            {saving ? "Saving..." : "Update All"}
+          </button>
+          <button onClick={onClose} className="rounded-lg border border-[#1E2D45] px-4 py-2 text-sm text-muted hover:text-white transition-colors">
+            Cancel
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
