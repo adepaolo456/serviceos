@@ -88,6 +88,7 @@ export default function DispatchPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [quickViewJob, setQuickViewJob] = useState<DispatchJob | null>(null);
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
+  const [busyJobId, setBusyJobId] = useState<string | null>(null);
   const { toast } = useToast();
 
   const fetchBoard = useCallback(async (silent = false) => {
@@ -122,37 +123,27 @@ export default function DispatchPage() {
     return "unassigned";
   };
 
-  /* ---- Move job to a column (optimistic) ---- */
+  /* ---- Move job to a column — API call + full refetch ---- */
   const moveJobTo = async (jobId: string, targetDriverId: string | null) => {
     if (!board) return;
     const sourceCol = findColumnForJob(jobId);
     const targetCol = targetDriverId || "unassigned";
     if (sourceCol === targetCol) return;
 
-    // Optimistic update
-    const job = allJobs.find(j => j.id === jobId);
-    if (!job) return;
-
-    const newBoard = { ...board, unassigned: [...board.unassigned], drivers: board.drivers.map(d => ({ ...d, jobs: [...d.jobs] })) };
-    // Remove from source
-    if (sourceCol === "unassigned") { newBoard.unassigned = newBoard.unassigned.filter(j => j.id !== jobId); }
-    else { const dc = newBoard.drivers.find(d => d.driver.id === sourceCol); if (dc) dc.jobs = dc.jobs.filter(j => j.id !== jobId); }
-    // Add to target
-    if (targetCol === "unassigned") { newBoard.unassigned.push(job); }
-    else { const dc = newBoard.drivers.find(d => d.driver.id === targetDriverId); if (dc) dc.jobs.push(job); }
-
-    setBoard(newBoard);
+    setBusyJobId(jobId);
     setSelectedJobId(null);
 
     try {
       await api.patch(`/jobs/${jobId}/assign`, { assignedDriverId: targetDriverId });
       const driverName = targetDriverId ? board.drivers.find(d => d.driver.id === targetDriverId)?.driver : null;
       toast("success", targetDriverId ? `Assigned to ${driverName?.firstName} ${driverName?.lastName}` : "Moved to Unassigned");
-      await fetchBoard(true); // Sync with server
     } catch {
-      toast("error", "Failed — reverting");
-      setBoard(board); // Revert
+      toast("error", "Failed to move job");
     }
+
+    // Always re-fetch from server to ensure UI matches DB
+    await fetchBoard(true);
+    setBusyJobId(null);
   };
 
   /* ---- Reorder within column ---- */
@@ -165,20 +156,12 @@ export default function DispatchPage() {
     const newIdx = direction === "up" ? idx - 1 : idx + 1;
     if (newIdx < 0 || newIdx >= colJobs.length) return;
 
-    // Swap
     [colJobs[idx], colJobs[newIdx]] = [colJobs[newIdx], colJobs[idx]];
 
-    // Optimistic update
-    const newBoard = { ...board, unassigned: [...board.unassigned], drivers: board.drivers.map(d => ({ ...d, jobs: [...d.jobs] })) };
-    if (colId === "unassigned") { newBoard.unassigned = colJobs; }
-    else { const dc = newBoard.drivers.find(d => d.driver.id === colId); if (dc) dc.jobs = colJobs; }
-    setBoard(newBoard);
-
-    // Persist route order
+    // Persist route order then refetch
     try {
-      for (let i = 0; i < colJobs.length; i++) {
-        api.patch(`/jobs/${colJobs[i].id}`, { routeOrder: i + 1 }).catch(() => {});
-      }
+      await Promise.all(colJobs.map((j, i) => api.patch(`/jobs/${j.id}`, { routeOrder: i + 1 }).catch(() => {})));
+      await fetchBoard(true);
     } catch { /* best-effort */ }
   };
 
@@ -261,7 +244,7 @@ export default function DispatchPage() {
                 count={board.unassigned.length} accentCls="bg-red-500/10 text-red-400"
                 jobs={filterJobs(board.unassigned, filter, search)} drivers={board.drivers.map(d => d.driver)}
                 onAssign={moveJobTo} selectedJobId={selectedJobId} onSelectJob={setSelectedJobId}
-                onQuickView={setQuickViewJob} onReorder={reorderJob} isUnassigned />
+                onQuickView={setQuickViewJob} onReorder={reorderJob} busyJobId={busyJobId} isUnassigned />
               {/* Driver columns */}
               {board.drivers.map(col => {
                 const completed = col.jobs.filter(j => j.status === "completed").length;
@@ -275,7 +258,7 @@ export default function DispatchPage() {
                     jobs={filterJobs(col.jobs, filter, search)}
                     selectedJobId={selectedJobId} onSelectJob={setSelectedJobId}
                     onUnassign={(jid) => moveJobTo(jid, null)}
-                    onQuickView={setQuickViewJob} onReorder={reorderJob} />
+                    onQuickView={setQuickViewJob} onReorder={reorderJob} busyJobId={busyJobId} />
                 );
               })}
               {board.drivers.length === 0 && board.unassigned.length > 0 && (
@@ -351,7 +334,7 @@ export default function DispatchPage() {
 
 /* ======== Column ======== */
 
-function Column({ id, title, icon, count, accentCls, progress, phone, jobs, drivers, onAssign, onUnassign, selectedJobId, onSelectJob, onQuickView, onReorder, isUnassigned }: {
+function Column({ id, title, icon, count, accentCls, progress, phone, jobs, drivers, onAssign, onUnassign, selectedJobId, onSelectJob, onQuickView, onReorder, busyJobId, isUnassigned }: {
   id: string; title: string; icon: React.ReactNode; count: number;
   accentCls?: string; progress?: { completed: number; total: number }; phone?: string;
   jobs: DispatchJob[]; drivers?: Driver[];
@@ -360,6 +343,7 @@ function Column({ id, title, icon, count, accentCls, progress, phone, jobs, driv
   selectedJobId: string | null; onSelectJob: (id: string | null) => void;
   onQuickView?: (job: DispatchJob) => void;
   onReorder: (jobId: string, dir: "up" | "down") => void;
+  busyJobId?: string | null;
   isUnassigned?: boolean;
 }) {
   const storageKey = `dispatch-col-${id}`;
@@ -415,6 +399,7 @@ function Column({ id, title, icon, count, accentCls, progress, phone, jobs, driv
         ) : jobs.map((job, i) => (
           <JobCard key={job.id} job={job} order={i + 1} isFirst={i === 0} isLast={i === jobs.length - 1}
             isSelected={selectedJobId === job.id}
+            isBusy={busyJobId === job.id}
             drivers={isUnassigned ? drivers : undefined}
             onAssign={isUnassigned ? onAssign : undefined}
             onUnassign={!isUnassigned ? onUnassign : undefined}
@@ -429,8 +414,8 @@ function Column({ id, title, icon, count, accentCls, progress, phone, jobs, driv
 
 /* ======== Job Card ======== */
 
-function JobCard({ job, order, isFirst, isLast, isSelected, drivers, onAssign, onUnassign, onSelect, onQuickView, onReorder }: {
-  job: DispatchJob; order: number; isFirst: boolean; isLast: boolean; isSelected: boolean;
+function JobCard({ job, order, isFirst, isLast, isSelected, isBusy, drivers, onAssign, onUnassign, onSelect, onQuickView, onReorder }: {
+  job: DispatchJob; order: number; isFirst: boolean; isLast: boolean; isSelected: boolean; isBusy?: boolean;
   drivers?: Driver[];
   onAssign?: (jobId: string, driverId: string | null) => void;
   onUnassign?: (jobId: string) => void;
@@ -447,7 +432,14 @@ function JobCard({ job, order, isFirst, isLast, isSelected, drivers, onAssign, o
   return (
     <div className={`relative group rounded-lg bg-[#162033] border border-l-[3px] ${statusBorder} p-2.5 pl-3 transition-all duration-200 ${
       isSelected ? "ring-2 ring-[#2ECC71] border-[#2ECC71]/40 shadow-lg shadow-[#2ECC71]/10" : "border-[#1E2D45] hover:border-[#2ECC71]/20"
-    } ${isCompleted ? "opacity-60" : ""}`}>
+    } ${isCompleted ? "opacity-60" : ""} ${isBusy ? "opacity-50 pointer-events-none" : ""}`}>
+
+      {/* Loading spinner overlay */}
+      {isBusy && (
+        <div className="absolute inset-0 flex items-center justify-center z-20 rounded-lg bg-[#162033]/60">
+          <RefreshCw className="h-4 w-4 text-brand animate-spin" />
+        </div>
+      )}
 
       {/* Top-right action buttons */}
       <div className="absolute right-1.5 top-1.5 z-10 flex items-center gap-1">
