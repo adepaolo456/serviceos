@@ -80,6 +80,21 @@ export class Customer {
   @Column({ name: 'total_jobs', type: 'int', default: 0 })
   total_jobs!: number;
 
+  @Column({ name: 'pricing_tier', default: 'standard' })
+  pricing_tier!: string;
+
+  @Column({ name: 'discount_percentage', type: 'decimal', precision: 5, scale: 2, nullable: true })
+  discount_percentage!: number;
+
+  @Column({ name: 'exempt_extra_day_charges', default: false })
+  exempt_extra_day_charges!: boolean;
+
+  @Column({ name: 'custom_pricing', type: 'jsonb', nullable: true })
+  custom_pricing!: Record<string, { basePrice?: number; includedTons?: number; overageRate?: number }>;
+
+  @Column({ name: 'pricing_notes', type: 'text', nullable: true })
+  pricing_notes!: string;
+
   @Column({ name: 'is_active', default: true })
   is_active!: boolean;
 

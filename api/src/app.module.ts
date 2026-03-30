@@ -33,6 +33,7 @@ import { Customer } from './modules/customers/entities/customer.entity';
 import { Asset } from './modules/assets/entities/asset.entity';
 import { Job } from './modules/jobs/entities/job.entity';
 import { PricingRule } from './modules/pricing/entities/pricing-rule.entity';
+import { PricingTemplate } from './modules/pricing/entities/pricing-template.entity';
 import { Invoice } from './modules/billing/entities/invoice.entity';
 import { Payment } from './modules/billing/entities/payment.entity';
 import { Route } from './modules/dispatch/entities/route.entity';
@@ -66,6 +67,7 @@ import { DumpTicket } from './modules/dump-locations/entities/dump-ticket.entity
             Asset,
             Job,
             PricingRule,
+            PricingTemplate,
             Invoice,
             Payment,
             Route,

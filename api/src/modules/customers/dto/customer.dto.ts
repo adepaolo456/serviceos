@@ -8,6 +8,8 @@ import {
   IsArray,
   IsObject,
   IsInt,
+  IsNumber,
+  IsBoolean,
   Min,
 } from 'class-validator';
 import { Type } from 'class-transformer';
@@ -85,6 +87,31 @@ export class CreateCustomerDto {
   @IsOptional()
   @IsString()
   leadSource?: string;
+
+  @ApiPropertyOptional({ example: 'standard' })
+  @IsOptional()
+  @IsString()
+  pricingTier?: string;
+
+  @ApiPropertyOptional({ example: 10 })
+  @IsOptional()
+  @IsNumber()
+  discountPercentage?: number;
+
+  @ApiPropertyOptional({ example: false })
+  @IsOptional()
+  @IsBoolean()
+  exemptExtraDayCharges?: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsObject()
+  customPricing?: Record<string, { basePrice?: number; includedTons?: number; overageRate?: number }>;
+
+  @ApiPropertyOptional({ example: 'VIP customer - negotiated rates' })
+  @IsOptional()
+  @IsString()
+  pricingNotes?: string;
 }
 
 export class UpdateCustomerDto extends PartialType(CreateCustomerDto) {}
