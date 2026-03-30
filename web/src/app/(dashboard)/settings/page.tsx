@@ -20,6 +20,11 @@ import {
   Plus,
   Trash2,
   Star,
+  Bell,
+  Shield,
+  Lock,
+  Download,
+  AlertTriangle,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import SlideOver from "@/components/slide-over";
@@ -56,9 +61,11 @@ interface TeamMember {
 const TABS = [
   { key: "company", label: "Company Profile", icon: Building },
   { key: "locations", label: "Locations", icon: MapPin },
-  { key: "team", label: "Team Members", icon: Users },
+  { key: "team", label: "Team", icon: Users },
   { key: "billing", label: "Billing", icon: CreditCard },
+  { key: "notifications", label: "Notifications", icon: Bell },
   { key: "integrations", label: "Integrations", icon: Plug },
+  { key: "account", label: "Account", icon: Shield },
 ] as const;
 
 type TabKey = (typeof TABS)[number]["key"];
@@ -119,7 +126,9 @@ export default function SettingsPage() {
       {tab === "locations" && <LocationsTab />}
       {tab === "team" && <TeamTab />}
       {tab === "billing" && <BillingTab profile={profile} />}
+      {tab === "notifications" && <NotificationsTab />}
       {tab === "integrations" && <IntegrationsTab profile={profile} />}
+      {tab === "account" && <AccountTab profile={profile} />}
     </div>
   );
 }
@@ -981,5 +990,209 @@ function AddYardForm({ onSuccess }: { onSuccess: () => void }) {
         {saving ? "Adding..." : "Add Yard"}
       </button>
     </form>
+  );
+}
+
+/* ============================================================
+   Notifications
+   ============================================================ */
+
+function NotificationsTab() {
+  const [prefs, setPrefs] = useState({
+    bookingEmail: true, bookingSms: false,
+    onTheWayEmail: true, onTheWaySms: true,
+    pickupReminderEmail: true, pickupReminderSms: false, pickupReminderDays: "2",
+    overdueEmail: true, overdueSms: false,
+    invoiceSentEmail: true,
+    paymentReceivedEmail: true,
+    dailySummaryEmail: false, dailySummaryTime: "08:00",
+  });
+
+  const toggle = (key: string) => setPrefs((p) => ({ ...p, [key]: !(p as any)[key] }));
+  const set = (key: string, val: string) => setPrefs((p) => ({ ...p, [key]: val }));
+
+  const inp = "rounded-lg bg-[#111C2E] border border-[#1E2D45] px-3 py-1.5 text-sm text-white outline-none focus:border-brand transition-colors";
+
+  return (
+    <div className="max-w-2xl space-y-4">
+      <NotifCard title="Booking Confirmation" desc="When a new booking is created">
+        <Toggle label="Email" checked={prefs.bookingEmail} onChange={() => toggle("bookingEmail")} />
+        <Toggle label="SMS" checked={prefs.bookingSms} onChange={() => toggle("bookingSms")} />
+      </NotifCard>
+
+      <NotifCard title="On the Way Alert" desc="When driver marks en route">
+        <Toggle label="Email" checked={prefs.onTheWayEmail} onChange={() => toggle("onTheWayEmail")} />
+        <Toggle label="SMS" checked={prefs.onTheWaySms} onChange={() => toggle("onTheWaySms")} />
+      </NotifCard>
+
+      <NotifCard title="Pickup Reminder" desc="Remind customer before scheduled pickup">
+        <Toggle label="Email" checked={prefs.pickupReminderEmail} onChange={() => toggle("pickupReminderEmail")} />
+        <Toggle label="SMS" checked={prefs.pickupReminderSms} onChange={() => toggle("pickupReminderSms")} />
+        <div className="flex items-center gap-2 mt-2">
+          <input type="number" min="1" max="14" value={prefs.pickupReminderDays} onChange={(e) => set("pickupReminderDays", e.target.value)} className={`w-16 ${inp}`} />
+          <span className="text-xs text-muted">days before</span>
+        </div>
+      </NotifCard>
+
+      <NotifCard title="Overdue Rental Alert" desc="When a rental passes its end date">
+        <Toggle label="Email" checked={prefs.overdueEmail} onChange={() => toggle("overdueEmail")} />
+        <Toggle label="SMS" checked={prefs.overdueSms} onChange={() => toggle("overdueSms")} />
+      </NotifCard>
+
+      <NotifCard title="Invoice Sent" desc="Confirmation when invoice is sent">
+        <Toggle label="Email" checked={prefs.invoiceSentEmail} onChange={() => toggle("invoiceSentEmail")} />
+      </NotifCard>
+
+      <NotifCard title="Payment Received" desc="When a payment is recorded">
+        <Toggle label="Email" checked={prefs.paymentReceivedEmail} onChange={() => toggle("paymentReceivedEmail")} />
+      </NotifCard>
+
+      <NotifCard title="Daily Summary Report" desc="End-of-day summary of operations">
+        <Toggle label="Email" checked={prefs.dailySummaryEmail} onChange={() => toggle("dailySummaryEmail")} />
+        {prefs.dailySummaryEmail && (
+          <div className="flex items-center gap-2 mt-2">
+            <input type="time" value={prefs.dailySummaryTime} onChange={(e) => set("dailySummaryTime", e.target.value)} className={`w-32 ${inp}`} />
+            <span className="text-xs text-muted">send time</span>
+          </div>
+        )}
+      </NotifCard>
+
+      <div className="rounded-2xl bg-dark-card border border-[#1E2D45] p-6 mt-6">
+        <h3 className="text-sm font-semibold text-white mb-2">SMS Settings</h3>
+        <p className="text-xs text-muted">SMS requires Twilio integration. Coming soon.</p>
+      </div>
+
+      <div className="rounded-2xl bg-dark-card border border-[#1E2D45] p-6">
+        <h3 className="text-sm font-semibold text-white mb-2">Email Settings</h3>
+        <p className="text-xs text-muted mb-3">Emails sent via Resend. Configure in Integrations tab.</p>
+        <div className="space-y-3">
+          <div><label className="text-xs text-muted">From Name</label><input className={`w-full mt-1 ${inp}`} placeholder="Rent This Dumpster" /></div>
+          <div><label className="text-xs text-muted">Reply-to Email</label><input className={`w-full mt-1 ${inp}`} placeholder="info@rentthisdumpster.com" /></div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function NotifCard({ title, desc, children }: { title: string; desc: string; children: React.ReactNode }) {
+  return (
+    <div className="rounded-2xl bg-dark-card border border-[#1E2D45] p-5">
+      <div className="mb-3"><p className="text-sm font-semibold text-white">{title}</p><p className="text-xs text-muted">{desc}</p></div>
+      <div className="flex items-center gap-4 flex-wrap">{children}</div>
+    </div>
+  );
+}
+
+function Toggle({ label, checked, onChange }: { label: string; checked: boolean; onChange: () => void }) {
+  return (
+    <label className="flex items-center gap-2 cursor-pointer">
+      <button type="button" onClick={onChange} className={`relative h-5 w-9 rounded-full transition-colors ${checked ? "bg-[#2ECC71]" : "bg-dark-elevated"}`}>
+        <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${checked ? "left-[18px]" : "left-0.5"}`} />
+      </button>
+      {label && <span className="text-xs text-muted">{label}</span>}
+    </label>
+  );
+}
+
+/* ============================================================
+   Account
+   ============================================================ */
+
+function AccountTab({ profile }: { profile: Profile | null }) {
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [passwordError, setPasswordError] = useState("");
+  const [passwordSaving, setPasswordSaving] = useState(false);
+  const [showApiKey, setShowApiKey] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
+
+  const handlePasswordChange = async (e: FormEvent) => {
+    e.preventDefault();
+    if (newPassword !== confirmPassword) { setPasswordError("Passwords don't match"); return; }
+    if (newPassword.length < 8) { setPasswordError("Password must be at least 8 characters"); return; }
+    setPasswordError(""); setPasswordSaving(true);
+    setTimeout(() => { setPasswordSaving(false); setCurrentPassword(""); setNewPassword(""); setConfirmPassword(""); }, 1000);
+  };
+
+  const inp = "w-full rounded-lg bg-[#111C2E] border border-[#1E2D45] px-4 py-2.5 text-sm text-white placeholder-muted outline-none transition-colors focus:border-brand";
+  const lbl = "block text-sm font-medium text-[#7A8BA3] mb-1.5";
+  const apiKey = profile?.tenant.id ? `sk_live_${profile.tenant.id.replace(/-/g, "").slice(0, 24)}` : "sk_live_...";
+
+  return (
+    <div className="max-w-2xl space-y-6">
+      <div className="rounded-2xl bg-dark-card border border-[#1E2D45] p-6">
+        <h3 className="text-sm font-semibold text-white mb-4">Account Owner</h3>
+        <div className="grid grid-cols-2 gap-4">
+          <div><p className="text-xs text-muted">Name</p><p className="text-sm text-white font-medium">{profile?.firstName} {profile?.lastName}</p></div>
+          <div><p className="text-xs text-muted">Email</p><p className="text-sm text-white font-medium">{profile?.email}</p></div>
+        </div>
+      </div>
+
+      <div className="rounded-2xl bg-dark-card border border-[#1E2D45] p-6">
+        <h3 className="text-sm font-semibold text-white mb-4">Change Password</h3>
+        <form onSubmit={handlePasswordChange} className="space-y-3">
+          {passwordError && <div className="rounded-lg bg-red-500/10 px-3 py-2 text-xs text-red-400">{passwordError}</div>}
+          <div><label className={lbl}>Current Password</label><input type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} className={inp} required /></div>
+          <div><label className={lbl}>New Password</label><input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className={inp} required /></div>
+          <div><label className={lbl}>Confirm New Password</label><input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className={inp} required /></div>
+          <button type="submit" disabled={passwordSaving} className="rounded-lg bg-[#2ECC71] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1FA855] disabled:opacity-50 transition-colors">
+            {passwordSaving ? "Updating..." : "Update Password"}
+          </button>
+        </form>
+      </div>
+
+      <div className="rounded-2xl bg-dark-card border border-[#1E2D45] p-6">
+        <div className="flex items-center justify-between">
+          <div><h3 className="text-sm font-semibold text-white">Two-Factor Authentication</h3><p className="text-xs text-muted mt-0.5">Add an extra layer of security</p></div>
+          <Toggle label="" checked={false} onChange={() => {}} />
+        </div>
+        <p className="text-xs text-muted mt-2">Coming soon</p>
+      </div>
+
+      <div className="rounded-2xl bg-dark-card border border-[#1E2D45] p-6">
+        <h3 className="text-sm font-semibold text-white mb-4">API Access</h3>
+        <div className="space-y-3">
+          <div>
+            <label className={lbl}>API Key</label>
+            <div className="flex gap-2">
+              <input type={showApiKey ? "text" : "password"} value={apiKey} readOnly className={`flex-1 ${inp} font-mono text-xs`} />
+              <button onClick={() => setShowApiKey(!showApiKey)} className="rounded-lg border border-[#1E2D45] px-3 py-2 text-muted hover:text-white transition-colors">
+                {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <button className="rounded-lg border border-[#1E2D45] px-3 py-1.5 text-xs font-medium text-muted hover:text-white transition-colors">Regenerate Key</button>
+            <button className="rounded-lg border border-[#1E2D45] px-3 py-1.5 text-xs font-medium text-muted hover:text-white transition-colors">API Docs</button>
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded-2xl bg-dark-card border border-[#1E2D45] p-6">
+        <h3 className="text-sm font-semibold text-white mb-2">Data Export</h3>
+        <p className="text-xs text-muted mb-3">Download a complete export of all your data</p>
+        <button className="flex items-center gap-2 rounded-lg border border-[#1E2D45] px-4 py-2 text-sm font-medium text-foreground hover:bg-dark-card-hover transition-colors">
+          <Download className="h-4 w-4" /> Export All Data
+        </button>
+      </div>
+
+      <div className="rounded-2xl bg-dark-card border border-red-500/20 p-6">
+        <h3 className="text-sm font-semibold text-red-400 mb-2">Danger Zone</h3>
+        <p className="text-xs text-muted mb-3">Permanently delete your account and all data. This cannot be undone.</p>
+        {!deleteConfirm ? (
+          <button onClick={() => setDeleteConfirm(true)} className="rounded-lg bg-red-500/10 px-4 py-2 text-sm font-medium text-red-400 hover:bg-red-500/20 transition-colors">Delete Account</button>
+        ) : (
+          <div className="rounded-lg bg-red-500/10 border border-red-500/20 p-4 space-y-3">
+            <p className="text-sm text-red-400 font-medium flex items-center gap-2"><AlertTriangle className="h-4 w-4" /> Are you absolutely sure?</p>
+            <p className="text-xs text-muted">This will permanently delete your company, all jobs, invoices, customers, and assets.</p>
+            <div className="flex gap-2">
+              <button className="rounded-lg bg-red-500 px-4 py-2 text-sm font-semibold text-white hover:bg-red-600 transition-colors">Yes, Delete Everything</button>
+              <button onClick={() => setDeleteConfirm(false)} className="rounded-lg border border-[#1E2D45] px-4 py-2 text-sm text-muted hover:text-white transition-colors">Cancel</button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
