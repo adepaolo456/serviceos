@@ -43,6 +43,7 @@ import { AutomationModule } from './modules/automation/automation.module';
 import { DriverModule } from './modules/driver/driver.module';
 import { AutomationLog } from './modules/automation/entities/automation-log.entity';
 import { DumpLocationsModule } from './modules/dump-locations/dump-locations.module';
+import { ReportingModule } from './modules/reporting/reporting.module';
 import { DumpLocation, DumpLocationRate, DumpLocationSurcharge } from './modules/dump-locations/entities/dump-location.entity';
 import { DumpTicket } from './modules/dump-locations/entities/dump-ticket.entity';
 
@@ -111,6 +112,7 @@ import { DumpTicket } from './modules/dump-locations/entities/dump-ticket.entity
     AutomationModule,
     DriverModule,
     DumpLocationsModule,
+    ReportingModule,
   ],
   controllers: [AppController],
   providers: [
