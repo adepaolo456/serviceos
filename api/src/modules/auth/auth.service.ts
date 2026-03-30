@@ -186,10 +186,24 @@ export class AuthService {
         name: user.tenant.name,
         slug: user.tenant.slug,
         businessType: user.tenant.business_type,
+        businessTypeLabel: user.tenant.business_type_label,
+        enabledModules: user.tenant.enabled_modules || [],
         address: user.tenant.address,
         serviceRadius: user.tenant.service_radius_miles,
         subscriptionTier: user.tenant.subscription_tier,
         subscriptionStatus: user.tenant.subscription_status,
+        websiteEnabled: user.tenant.website_enabled,
+        websiteHeadline: user.tenant.website_headline,
+        websitePrimaryColor: user.tenant.website_primary_color,
+        websitePhone: user.tenant.website_phone,
+        websiteEmail: user.tenant.website_email,
+        websiteServiceArea: user.tenant.website_service_area,
+        websiteAbout: user.tenant.website_about,
+        websiteDescription: user.tenant.website_description,
+        websiteLogoUrl: user.tenant.website_logo_url,
+        websiteHeroImageUrl: user.tenant.website_hero_image_url,
+        widgetEnabled: user.tenant.widget_enabled,
+        allowedWidgetDomains: user.tenant.allowed_widget_domains,
       },
     };
   }
@@ -213,6 +227,8 @@ export class AuthService {
       websiteAbout?: string;
       widgetEnabled?: boolean;
       allowedWidgetDomains?: string[];
+      businessTypeLabel?: string;
+      enabledModules?: string[];
     },
   ) {
     const update: Record<string, unknown> = {};
@@ -232,6 +248,8 @@ export class AuthService {
     if (data.websiteAbout !== undefined) update.website_about = data.websiteAbout;
     if (data.widgetEnabled !== undefined) update.widget_enabled = data.widgetEnabled;
     if (data.allowedWidgetDomains !== undefined) update.allowed_widget_domains = data.allowedWidgetDomains;
+    if (data.businessTypeLabel !== undefined) update.business_type_label = data.businessTypeLabel;
+    if (data.enabledModules !== undefined) update.enabled_modules = data.enabledModules;
 
     await this.tenantsRepository.update(tenantId, update);
 
