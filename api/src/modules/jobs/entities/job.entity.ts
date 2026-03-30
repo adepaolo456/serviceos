@@ -156,6 +156,12 @@ export class Job {
   @Column({ name: 'failed_reason', type: 'text', nullable: true })
   failed_reason!: string;
 
+  @Column({ name: 'failed_reason_code', nullable: true })
+  failed_reason_code!: string;
+
+  @Column({ name: 'failed_at', type: 'timestamptz', nullable: true })
+  failed_at!: Date;
+
   @Column({ name: 'drop_off_asset_id', type: 'uuid', nullable: true })
   drop_off_asset_id!: string;
 
