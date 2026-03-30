@@ -261,4 +261,66 @@ export class PortalService {
     await this.jobRepo.update(jobId, { signature_url: signatureUrl });
     return { message: 'Agreement signed' };
   }
+
+  async rescheduleRental(customerId: string, tenantId: string, jobId: string, body: { scheduledDate: string; reason?: string }) {
+    const job = await this.jobRepo.findOne({
+      where: { id: jobId, customer_id: customerId, tenant_id: tenantId },
+    });
+    if (!job) throw new NotFoundException('Job not found');
+
+    // Only allow rescheduling pending/confirmed jobs
+    if (!['pending', 'confirmed'].includes(job.status)) {
+      throw new BadRequestException('This job cannot be rescheduled. Please call us for changes.');
+    }
+
+    // Must be a future date
+    const newDate = new Date(body.scheduledDate);
+    if (newDate <= new Date()) {
+      throw new BadRequestException('Please select a future date.');
+    }
+
+    // 24-hour cutoff
+    if (job.scheduled_date) {
+      const scheduled = new Date(job.scheduled_date);
+      const hoursUntil = (scheduled.getTime() - Date.now()) / (1000 * 60 * 60);
+      if (hoursUntil < 24) {
+        throw new BadRequestException('Jobs cannot be rescheduled within 24 hours of the scheduled date. Please call us for same-day changes.');
+      }
+    }
+
+    const oldDate = job.scheduled_date;
+    const updates: Record<string, unknown> = {
+      scheduled_date: body.scheduledDate,
+      rescheduled_by_customer: true,
+      rescheduled_at: new Date(),
+      rescheduled_from_date: oldDate,
+      rescheduled_reason: body.reason || null,
+    };
+
+    // Recalculate rental end date
+    if (job.rental_days) {
+      const end = new Date(body.scheduledDate);
+      end.setDate(end.getDate() + job.rental_days);
+      updates.rental_end_date = end.toISOString().split('T')[0];
+      if (!job.rental_start_date) {
+        updates.rental_start_date = body.scheduledDate;
+      }
+    }
+
+    await this.jobRepo.update(jobId, updates);
+
+    // Update linked pickup
+    const pickupJob = await this.jobRepo.findOne({
+      where: { tenant_id: tenantId, customer_id: customerId, job_type: 'pickup', status: In(['pending', 'confirmed']) },
+    });
+    if (pickupJob && updates.rental_end_date) {
+      await this.jobRepo.update(pickupJob.id, { scheduled_date: updates.rental_end_date as string });
+    }
+
+    const updated = await this.jobRepo.findOne({ where: { id: jobId } });
+    return {
+      ...updated,
+      message: `Your delivery has been moved to ${body.scheduledDate}.${updates.rental_end_date ? ` Your new pickup date is ${updates.rental_end_date}.` : ''} The company has been notified.`,
+    };
+  }
 }

@@ -126,6 +126,7 @@ export default function DashboardPage() {
   const [todayJobs, setTodayJobs] = useState<TodayJob[]>([]);
   const [unassignedJobs, setUnassignedJobs] = useState<TodayJob[]>([]);
   const [overdueJobs, setOverdueJobs] = useState<any[]>([]);
+  const [rescheduledJobs, setRescheduledJobs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [jobPanelOpen, setJobPanelOpen] = useState(false);
   const [scheduleDate, setScheduleDate] = useState(today);
@@ -164,6 +165,10 @@ export default function DashboardPage() {
     }
     loadDashboard();
     api.get<any[]>("/automation/overdue").then(setOverdueJobs).catch(() => {});
+    api.get<{ data: any[] }>("/jobs?limit=10").then(res => {
+      const rescheduled = (res.data || []).filter((j: any) => j.rescheduled_by_customer);
+      setRescheduledJobs(rescheduled);
+    }).catch(() => {});
   }, []);
 
   // Load jobs for selected schedule date
@@ -313,6 +318,27 @@ export default function DashboardPage() {
                   <button onClick={() => { api.post(`/automation/overdue/${j.id}/action`, { action: "dismiss" }).then(() => api.get<any[]>("/automation/overdue").then(setOverdueJobs)).catch(() => {}); }}
                     className="rounded bg-dark-elevated px-2 py-1 text-[10px] font-medium text-muted hover:text-foreground">Dismiss</button>
                 </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ============ Customer Reschedule Alert ============ */}
+      {rescheduledJobs.length > 0 && (
+        <div className="mb-5 rounded-2xl bg-blue-500/10 border border-blue-500/20 p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="text-sm font-semibold text-blue-400">{rescheduledJobs.length} Customer Reschedule{rescheduledJobs.length > 1 ? "s" : ""}</span>
+          </div>
+          <div className="space-y-2">
+            {rescheduledJobs.slice(0, 3).map((j: any) => (
+              <div key={j.id} className="flex items-center justify-between rounded-lg bg-dark-card border border-[#1E2D45] px-3 py-2">
+                <div className="min-w-0">
+                  <p className="text-xs font-medium text-white truncate">{j.customer ? `${j.customer.first_name} ${j.customer.last_name}` : j.job_number}</p>
+                  <p className="text-[10px] text-muted">Moved from {j.rescheduled_from_date} &rarr; {j.scheduled_date}</p>
+                </div>
+                <button onClick={() => { api.patch(`/jobs/${j.id}`, { rescheduledByCustomer: false }).then(() => setRescheduledJobs(prev => prev.filter(x => x.id !== j.id))).catch(() => {}); }}
+                  className="rounded bg-dark-elevated px-2 py-1 text-[10px] font-medium text-muted hover:text-foreground shrink-0 ml-2">Acknowledge</button>
               </div>
             ))}
           </div>
