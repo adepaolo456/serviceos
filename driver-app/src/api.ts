@@ -50,4 +50,21 @@ export async function updateJobStatus(jobId: string, status: string) {
   return data;
 }
 
+export async function uploadJobPhoto(jobId: string, base64: string, type: string) {
+  const { data } = await client.patch(`/driver/jobs/${jobId}/photos`, { photo: base64, type });
+  return data;
+}
+
+export async function getDriverToday(userId: string) {
+  const { data } = await client.get('/driver/today');
+  return data;
+}
+
+export async function updateDriverJobStatus(jobId: string, status: string, signatureUrl?: string) {
+  const body: Record<string, unknown> = { status };
+  if (signatureUrl) body.signatureUrl = signatureUrl;
+  const { data } = await client.patch(`/driver/jobs/${jobId}/status`, body);
+  return data;
+}
+
 export default client;
