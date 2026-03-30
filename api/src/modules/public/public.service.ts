@@ -6,6 +6,7 @@ import { PricingRule } from '../pricing/entities/pricing-rule.entity';
 import { Asset } from '../assets/entities/asset.entity';
 import { Job } from '../jobs/entities/job.entity';
 import { Customer } from '../customers/entities/customer.entity';
+import { Invoice } from '../billing/entities/invoice.entity';
 
 @Injectable()
 export class PublicService {
@@ -15,6 +16,7 @@ export class PublicService {
     @InjectRepository(Asset) private assetRepo: Repository<Asset>,
     @InjectRepository(Job) private jobRepo: Repository<Job>,
     @InjectRepository(Customer) private customerRepo: Repository<Customer>,
+    @InjectRepository(Invoice) private invoiceRepo: Repository<Invoice>,
   ) {}
 
   private async findTenant(slug: string): Promise<Tenant> {
@@ -189,9 +191,38 @@ export class PublicService {
 
     const saved = await this.jobRepo.save(job);
 
+    // Create POS invoice (paid at booking)
+    const invNumber = `INV-${dateStr}-${Math.floor(Math.random() * 9000) + 1000}`;
+    const lineItems = [
+      { description: `${assetSubtype || 'Dumpster'} Rental — ${rentalDays} day rental`, quantity: 1, unitPrice: basePrice, amount: basePrice },
+    ];
+    if (deliveryFee > 0) {
+      lineItems.push({ description: 'Delivery Fee', quantity: 1, unitPrice: deliveryFee, amount: deliveryFee });
+    }
+    const invoice = this.invoiceRepo.create({
+      tenant_id: t.id,
+      invoice_number: invNumber,
+      customer_id: customer.id,
+      job_id: saved.id,
+      status: 'paid',
+      source: 'booking',
+      invoice_type: 'rental',
+      payment_method: 'card',
+      due_date: new Date().toISOString().split('T')[0],
+      subtotal: totalPrice,
+      total: totalPrice,
+      amount_paid: totalPrice,
+      balance_due: 0,
+      line_items: lineItems,
+      notes: 'Paid at time of booking',
+      paid_at: new Date(),
+    } as Partial<Invoice>);
+    const savedInvoice = await this.invoiceRepo.save(invoice);
+
     return {
       jobNumber: saved.job_number,
       jobId: saved.id,
+      invoiceNumber: savedInvoice.invoice_number,
       status: saved.status,
       scheduledDate: saved.scheduled_date,
       pricing: {

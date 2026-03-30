@@ -147,6 +147,9 @@ export class PricingRule {
   })
   tax_rate!: number;
 
+  @Column({ name: 'failed_trip_base_fee', type: 'decimal', precision: 10, scale: 2, default: 150 })
+  failed_trip_base_fee!: number;
+
   @Column({ name: 'min_rental_days', type: 'int', default: 1 })
   min_rental_days!: number;
 
