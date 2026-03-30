@@ -23,6 +23,7 @@ import { Yard } from './modules/yards/yard.entity';
 import { NotesModule } from './modules/notes/notes.module';
 import { CustomerNote } from './modules/notes/note.entity';
 import { TeamModule } from './modules/team/team.module';
+import { PortalModule } from './modules/portal/portal.module';
 import { TimeEntry } from './modules/team/time-entry.entity';
 import { JwtAuthGuard } from './common/guards';
 import { Tenant } from './modules/tenants/entities/tenant.entity';
@@ -91,6 +92,7 @@ import { MarketplaceBooking } from './modules/marketplace/entities/marketplace-b
     YardsModule,
     NotesModule,
     TeamModule,
+    PortalModule,
   ],
   controllers: [AppController],
   providers: [

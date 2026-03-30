@@ -83,6 +83,12 @@ export class Customer {
   @Column({ name: 'is_active', default: true })
   is_active!: boolean;
 
+  @Column({ name: 'portal_password_hash', nullable: true, select: false })
+  portal_password_hash!: string;
+
+  @Column({ name: 'portal_last_login', type: 'timestamptz', nullable: true })
+  portal_last_login!: Date;
+
   @CreateDateColumn({ name: 'created_at' })
   created_at!: Date;
 
