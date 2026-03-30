@@ -65,6 +65,7 @@ const TABS = [
   { key: "billing", label: "Billing", icon: CreditCard },
   { key: "notifications", label: "Notifications", icon: Bell },
   { key: "integrations", label: "Integrations", icon: Plug },
+  { key: "website", label: "Website", icon: Globe },
   { key: "account", label: "Account", icon: Shield },
 ] as const;
 
@@ -128,6 +129,7 @@ export default function SettingsPage() {
       {tab === "billing" && <BillingTab profile={profile} />}
       {tab === "notifications" && <NotificationsTab />}
       {tab === "integrations" && <IntegrationsTab profile={profile} />}
+      {tab === "website" && profile && <WebsiteTab slug={profile.tenant.slug} />}
       {tab === "account" && <AccountTab profile={profile} />}
     </div>
   );
@@ -1192,6 +1194,167 @@ function AccountTab({ profile }: { profile: Profile | null }) {
             </div>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================
+   Website
+   ============================================================ */
+
+function WebsiteTab({ slug }: { slug: string }) {
+  const [config, setConfig] = useState({
+    websiteEnabled: false,
+    websiteHeadline: "",
+    websiteDescription: "",
+    websiteHeroImageUrl: "",
+    websiteLogoUrl: "",
+    websitePrimaryColor: "#2ECC71",
+    websitePhone: "",
+    websiteEmail: "",
+    websiteServiceArea: "",
+    websiteAbout: "",
+    widgetEnabled: false,
+    allowedWidgetDomains: "",
+  });
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    api.get<Record<string, unknown>>("/auth/profile").then((p: any) => {
+      const t = p.tenant || {};
+      setConfig({
+        websiteEnabled: t.websiteEnabled || false,
+        websiteHeadline: t.websiteHeadline || "",
+        websiteDescription: t.websiteDescription || "",
+        websiteHeroImageUrl: t.websiteHeroImageUrl || "",
+        websiteLogoUrl: t.websiteLogoUrl || "",
+        websitePrimaryColor: t.websitePrimaryColor || "#2ECC71",
+        websitePhone: t.websitePhone || "",
+        websiteEmail: t.websiteEmail || "",
+        websiteServiceArea: t.websiteServiceArea || "",
+        websiteAbout: t.websiteAbout || "",
+        widgetEnabled: t.widgetEnabled || false,
+        allowedWidgetDomains: (t.allowedWidgetDomains || []).join(", "),
+      });
+    }).catch(() => {});
+  }, []);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await api.patch("/auth/profile", {
+        ...config,
+        allowedWidgetDomains: config.allowedWidgetDomains ? config.allowedWidgetDomains.split(",").map((d: string) => d.trim()).filter(Boolean) : [],
+      });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    } catch {} finally { setSaving(false); }
+  };
+
+  const websiteUrl = `${slug}.serviceos.com`;
+  const widgetCode = `<script src="https://serviceos-web-zeta.vercel.app/widget.js" data-slug="${slug}"></script>`;
+
+  const copyText = (text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const inputCls = "w-full bg-[#111C2E] border border-[#1E2D45] rounded-lg px-4 py-2.5 text-sm text-white placeholder-muted outline-none focus:border-brand";
+  const labelCls = "block text-xs font-medium text-muted uppercase tracking-wider mb-1.5";
+
+  return (
+    <div className="max-w-2xl space-y-6">
+      {/* Website URL */}
+      <div className="rounded-xl bg-dark-card border border-[#1E2D45] p-5">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-semibold text-white">Your Website</h3>
+          <label className="flex items-center gap-2">
+            <span className="text-xs text-muted">Enabled</span>
+            <button onClick={() => setConfig(c => ({ ...c, websiteEnabled: !c.websiteEnabled }))}
+              className={`w-10 h-5 rounded-full transition-colors ${config.websiteEnabled ? "bg-brand" : "bg-dark-elevated"}`}>
+              <span className={`block w-4 h-4 rounded-full bg-white shadow transition-transform ${config.websiteEnabled ? "translate-x-5" : "translate-x-0.5"}`} />
+            </button>
+          </label>
+        </div>
+        <div className="flex items-center gap-2">
+          <code className="flex-1 rounded-lg bg-[#111C2E] border border-[#1E2D45] px-4 py-2.5 text-sm text-brand font-mono">{websiteUrl}</code>
+          <button onClick={() => copyText(`https://${websiteUrl}`)} className="rounded-lg bg-dark-elevated px-3 py-2.5 text-xs text-muted hover:text-white transition-colors">
+            {copied ? <Check className="h-4 w-4 text-brand" /> : <Copy className="h-4 w-4" />}
+          </button>
+          <a href={`https://${websiteUrl}`} target="_blank" rel="noopener" className="rounded-lg bg-dark-elevated px-3 py-2.5 text-xs text-muted hover:text-white transition-colors">
+            <ExternalLink className="h-4 w-4" />
+          </a>
+        </div>
+      </div>
+
+      {/* Branding */}
+      <div className="rounded-xl bg-dark-card border border-[#1E2D45] p-5 space-y-4">
+        <h3 className="text-sm font-semibold text-white">Branding</h3>
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className={labelCls}>Primary Color</label>
+            <div className="flex gap-2">
+              <input type="color" value={config.websitePrimaryColor} onChange={e => setConfig(c => ({ ...c, websitePrimaryColor: e.target.value }))}
+                className="h-10 w-10 rounded-lg border border-[#1E2D45] bg-transparent cursor-pointer" />
+              <input value={config.websitePrimaryColor} onChange={e => setConfig(c => ({ ...c, websitePrimaryColor: e.target.value }))} className={inputCls} />
+            </div>
+          </div>
+          <div><label className={labelCls}>Logo URL</label><input value={config.websiteLogoUrl} onChange={e => setConfig(c => ({ ...c, websiteLogoUrl: e.target.value }))} className={inputCls} placeholder="https://..." /></div>
+        </div>
+        <div><label className={labelCls}>Hero Image URL</label><input value={config.websiteHeroImageUrl} onChange={e => setConfig(c => ({ ...c, websiteHeroImageUrl: e.target.value }))} className={inputCls} placeholder="https://..." /></div>
+      </div>
+
+      {/* Content */}
+      <div className="rounded-xl bg-dark-card border border-[#1E2D45] p-5 space-y-4">
+        <h3 className="text-sm font-semibold text-white">Content</h3>
+        <div><label className={labelCls}>Headline</label><input value={config.websiteHeadline} onChange={e => setConfig(c => ({ ...c, websiteHeadline: e.target.value }))} className={inputCls} placeholder="Fast Dumpster Delivery in Your Area" maxLength={255} /></div>
+        <div><label className={labelCls}>Description</label><textarea value={config.websiteDescription} onChange={e => setConfig(c => ({ ...c, websiteDescription: e.target.value }))} className={`${inputCls} resize-none`} rows={3} placeholder="Brief description of your services..." /></div>
+        <div><label className={labelCls}>About</label><textarea value={config.websiteAbout} onChange={e => setConfig(c => ({ ...c, websiteAbout: e.target.value }))} className={`${inputCls} resize-none`} rows={3} placeholder="Tell customers about your company..." /></div>
+        <div><label className={labelCls}>Service Area</label><textarea value={config.websiteServiceArea} onChange={e => setConfig(c => ({ ...c, websiteServiceArea: e.target.value }))} className={`${inputCls} resize-none`} rows={2} placeholder="e.g. Greater Brockton area including Easton, Stoughton..." /></div>
+      </div>
+
+      {/* Contact */}
+      <div className="rounded-xl bg-dark-card border border-[#1E2D45] p-5 space-y-4">
+        <h3 className="text-sm font-semibold text-white">Contact Info</h3>
+        <div className="grid grid-cols-2 gap-4">
+          <div><label className={labelCls}>Phone</label><input value={config.websitePhone} onChange={e => setConfig(c => ({ ...c, websitePhone: e.target.value }))} className={inputCls} placeholder="(508) 555-1234" /></div>
+          <div><label className={labelCls}>Email</label><input value={config.websiteEmail} onChange={e => setConfig(c => ({ ...c, websiteEmail: e.target.value }))} className={inputCls} placeholder="info@company.com" /></div>
+        </div>
+      </div>
+
+      {/* Embed Widget */}
+      <div className="rounded-xl bg-dark-card border border-[#1E2D45] p-5 space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-white">Embed Widget</h3>
+          <label className="flex items-center gap-2">
+            <span className="text-xs text-muted">Enabled</span>
+            <button onClick={() => setConfig(c => ({ ...c, widgetEnabled: !c.widgetEnabled }))}
+              className={`w-10 h-5 rounded-full transition-colors ${config.widgetEnabled ? "bg-brand" : "bg-dark-elevated"}`}>
+              <span className={`block w-4 h-4 rounded-full bg-white shadow transition-transform ${config.widgetEnabled ? "translate-x-5" : "translate-x-0.5"}`} />
+            </button>
+          </label>
+        </div>
+        <div>
+          <label className={labelCls}>Embed Code</label>
+          <div className="relative">
+            <textarea readOnly value={widgetCode} className={`${inputCls} resize-none font-mono text-xs`} rows={2} />
+            <button onClick={() => copyText(widgetCode)} className="absolute top-2 right-2 rounded bg-dark-elevated px-2 py-1 text-[10px] text-muted hover:text-white">Copy</button>
+          </div>
+          <p className="text-[10px] text-muted mt-1.5">Add this code to your existing website to embed the booking widget.</p>
+        </div>
+        <div><label className={labelCls}>Allowed Domains (comma-separated)</label><input value={config.allowedWidgetDomains} onChange={e => setConfig(c => ({ ...c, allowedWidgetDomains: e.target.value }))} className={inputCls} placeholder="mysite.com, example.com" /></div>
+      </div>
+
+      {/* Save */}
+      <div className="flex items-center gap-3">
+        <button onClick={handleSave} disabled={saving} className="rounded-lg bg-brand px-6 py-3 text-sm font-bold text-white hover:bg-brand-light disabled:opacity-50 btn-press">
+          {saving ? "Saving..." : "Save Website Settings"}
+        </button>
+        {saved && <span className="text-sm text-brand flex items-center gap-1"><Check className="h-4 w-4" /> Saved</span>}
       </div>
     </div>
   );
