@@ -39,6 +39,7 @@ import { Route } from './modules/dispatch/entities/route.entity';
 import { Notification } from './modules/notifications/entities/notification.entity';
 import { MarketplaceBooking } from './modules/marketplace/entities/marketplace-booking.entity';
 import { AutomationModule } from './modules/automation/automation.module';
+import { DriverModule } from './modules/driver/driver.module';
 import { AutomationLog } from './modules/automation/entities/automation-log.entity';
 
 @Module({
@@ -99,6 +100,7 @@ import { AutomationLog } from './modules/automation/entities/automation-log.enti
     PortalModule,
     PublicModule,
     AutomationModule,
+    DriverModule,
   ],
   controllers: [AppController],
   providers: [
