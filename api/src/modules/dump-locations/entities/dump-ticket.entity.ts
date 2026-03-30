@@ -55,6 +55,21 @@ export class DumpTicket {
   @Column({ name: 'submitted_at', type: 'timestamptz', nullable: true })
   submitted_at!: Date;
 
+  @Column({ name: 'dump_tonnage_cost', type: 'decimal', precision: 10, scale: 2, default: 0 })
+  dump_tonnage_cost!: number;
+
+  @Column({ name: 'dump_surcharge_cost', type: 'decimal', precision: 10, scale: 2, default: 0 })
+  dump_surcharge_cost!: number;
+
+  @Column({ name: 'customer_tonnage_charge', type: 'decimal', precision: 10, scale: 2, default: 0 })
+  customer_tonnage_charge!: number;
+
+  @Column({ name: 'customer_surcharge_charge', type: 'decimal', precision: 10, scale: 2, default: 0 })
+  customer_surcharge_charge!: number;
+
+  @Column({ name: 'profit_margin', type: 'decimal', precision: 10, scale: 2, default: 0 })
+  profit_margin!: number;
+
   @Column({ default: 'submitted' })
   status!: string;
 
