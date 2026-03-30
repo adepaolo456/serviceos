@@ -1,374 +1,763 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
-  DollarSign,
-  Briefcase,
-  TrendingUp,
-  TrendingDown,
-  Box,
-  Users,
-  Truck,
-  Download,
-  ChevronDown,
-  ChevronUp,
   BarChart3,
-  Clock,
+  DollarSign,
+  TrendingUp,
+  Truck,
+  Users,
+  Box,
   FileText,
+  Download,
+  Loader2,
 } from "lucide-react";
-import {
-  ResponsiveContainer,
-  AreaChart,
-  Area,
-  BarChart,
-  Bar,
-  PieChart,
-  Pie,
-  Cell,
-  XAxis,
-  YAxis,
-  Tooltip,
-  CartesianGrid,
-  Legend,
-} from "recharts";
 import { api } from "@/lib/api";
+import { formatCurrency } from "@/lib/utils";
 
 /* ─── Types ─── */
 
-interface DashboardData {
-  revenue: { total: number; thisMonth: number };
-  jobs: { total: number; thisMonth: number; completed: number; cancelled: number; averageValue: number };
-  customers: { total: number; newThisMonth: number };
-  assets: { total: number; byStatus: { status: string; count: number }[]; utilizationRate: number };
+interface RevenueData {
+  totalRevenue: number;
+  collected: number;
+  outstanding: number;
+  overdue: number;
+  revenueBySource: { source: string; amount: number }[];
+  revenueBySize: { size: string; amount: number; count: number }[];
 }
 
-interface RevenueDay { date: string; revenue: number }
-interface StatusCount { status: string; count: number }
+interface DumpCostsData {
+  totalDumpCosts: number;
+  totalCustomerCharges: number;
+  margin: number;
+  marginPercent: number;
+  costsByFacility: { facility: string; cost: number; loads: number }[];
+  costsByWasteType: { wasteType: string; cost: number; loads: number }[];
+}
 
-/* ─── Constants ─── */
+interface ProfitData {
+  revenue: number;
+  dumpCosts: number;
+  grossProfit: number;
+  marginPercent: number;
+}
 
-const DATE_RANGES = [
-  { value: "week", label: "This Week", days: 7 },
-  { value: "month", label: "This Month", days: 30 },
-  { value: "quarter", label: "This Quarter", days: 90 },
-  { value: "year", label: "This Year", days: 365 },
-] as const;
+interface DriverRow {
+  id: string;
+  name: string;
+  totalJobs: number;
+  completed: number;
+  failed: number;
+  deliveries: number;
+  pickups: number;
+}
 
-const STATUS_COLORS: Record<string, string> = {
-  pending: "#EAB308", confirmed: "#3B82F6", dispatched: "#A855F7",
-  en_route: "#F97316", arrived: "#14B8A6", in_progress: "#2ECC71",
-  completed: "#10B981", cancelled: "#EF4444",
-};
+interface DriversData {
+  totalDrivers: number;
+  totalCompleted: number;
+  drivers: DriverRow[];
+}
 
-const CHART_GREEN = "#2ECC71";
-const GRID_COLOR = "#1E2D45";
-const TEXT_COLOR = "#7A8BA3";
+interface AssetSizeRow {
+  size: string;
+  total: number;
+  available: number;
+  deployed: number;
+  staged: number;
+}
+
+interface AssetsData {
+  total: number;
+  available: number;
+  deployed: number;
+  staged: number;
+  bySize: AssetSizeRow[];
+}
+
+interface CustomerRow {
+  id: string;
+  name: string;
+  type: string;
+  totalSpend: number;
+  jobCount: number;
+}
+
+interface CustomersData {
+  total: number;
+  newCustomers: number;
+  byType: { type: string; count: number }[];
+  topCustomers: CustomerRow[];
+}
+
+interface AgingBucket {
+  label: string;
+  amount: number;
+  count: number;
+}
+
+interface OverdueInvoice {
+  id: string;
+  customer: string;
+  amount: number;
+  dueDate: string;
+  daysOverdue: number;
+}
+
+interface ReceivablesData {
+  totalOutstanding: number;
+  totalOverdue: number;
+  aging: AgingBucket[];
+  overdueInvoices: OverdueInvoice[];
+}
+
+/* ─── Tabs ─── */
+
+type TabKey = "revenue" | "dump-costs" | "profit" | "drivers" | "assets" | "customers" | "receivables";
+
+const TABS: { key: TabKey; label: string; icon: typeof DollarSign }[] = [
+  { key: "revenue", label: "Revenue", icon: DollarSign },
+  { key: "dump-costs", label: "Dump Costs", icon: TrendingUp },
+  { key: "profit", label: "Profit", icon: BarChart3 },
+  { key: "drivers", label: "Drivers", icon: Truck },
+  { key: "assets", label: "Assets", icon: Box },
+  { key: "customers", label: "Customers", icon: Users },
+  { key: "receivables", label: "Receivables", icon: FileText },
+];
 
 /* ─── Helpers ─── */
 
-import { formatCurrency } from "@/lib/utils";
-
-function fmt(n: number): string {
-  if (isNaN(n)) return "$0.00";
-  if (n >= 10000) return `$${(n / 1000).toFixed(1)}k`;
-  return formatCurrency(n);
+function downloadCSV(data: Record<string, unknown>[], filename: string) {
+  if (!data.length) return;
+  const headers = Object.keys(data[0]);
+  const csv = [
+    headers.join(","),
+    ...data.map((row) =>
+      headers.map((h) => JSON.stringify(row[h] ?? "")).join(",")
+    ),
+  ].join("\n");
+  const blob = new Blob([csv], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
-const fmtFull = (n: number) => formatCurrency(n);
-
-function fmtPct(n: number): string { return `${Math.round(n)}%`; }
-
-function getDateRange(days: number): { start: string; end: string } {
-  const end = new Date();
-  const start = new Date(); start.setDate(end.getDate() - days);
-  return { start: start.toISOString().split("T")[0], end: end.toISOString().split("T")[0] };
+function fmtPct(n: number | undefined | null): string {
+  if (n === null || n === undefined || isNaN(n)) return "0%";
+  return `${n.toFixed(1)}%`;
 }
 
-/* ─── Page ─── */
+function fmtNum(n: number | undefined | null): string {
+  if (n === null || n === undefined || isNaN(n)) return "0";
+  return n.toLocaleString("en-US");
+}
+
+/* ─── Sub-components ─── */
+
+function KPI({
+  label,
+  value,
+  sub,
+  color,
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+  color?: string;
+}) {
+  return (
+    <div className="rounded-xl bg-dark-card border border-[#1E2D45] p-4">
+      <p className="text-xs text-muted uppercase tracking-wider font-medium">
+        {label}
+      </p>
+      <p
+        className={`text-2xl font-bold mt-1 tabular-nums ${color || "text-white"}`}
+      >
+        {value}
+      </p>
+      {sub && <p className="text-xs text-muted mt-0.5">{sub}</p>}
+    </div>
+  );
+}
+
+function Skeleton({ className = "" }: { className?: string }) {
+  return <div className={`skeleton rounded-xl animate-pulse ${className}`} />;
+}
+
+function KPIGrid({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-6">
+      {children}
+    </div>
+  );
+}
+
+function KPISkeleton() {
+  return (
+    <KPIGrid>
+      {Array.from({ length: 4 }).map((_, i) => (
+        <Skeleton key={i} className="h-24" />
+      ))}
+    </KPIGrid>
+  );
+}
+
+function TableSkeleton() {
+  return (
+    <div className="space-y-2">
+      {Array.from({ length: 5 }).map((_, i) => (
+        <Skeleton key={i} className="h-10 w-full" />
+      ))}
+    </div>
+  );
+}
+
+function EmptyState({ text }: { text: string }) {
+  return (
+    <div className="py-16 text-center">
+      <BarChart3 className="mx-auto h-10 w-10 text-muted/20 mb-3" />
+      <p className="text-sm text-muted">{text}</p>
+    </div>
+  );
+}
+
+function DataTable({
+  headers,
+  rows,
+}: {
+  headers: string[];
+  rows: (string | number)[][];
+}) {
+  if (!rows.length) return <EmptyState text="No data for this period" />;
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b border-[#1E2D45]">
+            {headers.map((h) => (
+              <th
+                key={h}
+                className="text-left text-xs text-muted uppercase tracking-wider font-medium py-3 px-3"
+              >
+                {h}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, i) => (
+            <tr
+              key={i}
+              className="border-b border-[#1E2D45]/50 hover:bg-[#111C2E] transition-colors"
+            >
+              {row.map((cell, j) => (
+                <td key={j} className="py-3 px-3 text-white tabular-nums">
+                  {cell}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/* ─── Tab Content Components ─── */
+
+function RevenueTab({
+  data,
+  loading,
+}: {
+  data: RevenueData | null;
+  loading: boolean;
+}) {
+  if (loading) return <><KPISkeleton /><TableSkeleton /></>;
+  if (!data) return <EmptyState text="No revenue data available" />;
+
+  return (
+    <div className="space-y-6">
+      <KPIGrid>
+        <KPI label="Total Revenue" value={formatCurrency(data.totalRevenue)} color="text-[#2ECC71]" />
+        <KPI label="Collected" value={formatCurrency(data.collected)} color="text-emerald-400" />
+        <KPI label="Outstanding" value={formatCurrency(data.outstanding)} color="text-yellow-400" />
+        <KPI label="Overdue" value={formatCurrency(data.overdue)} color="text-red-400" />
+      </KPIGrid>
+
+      {data.revenueBySource?.length > 0 && (
+        <div className="rounded-xl border border-[#1E2D45] bg-dark-card p-5">
+          <h3 className="text-sm font-semibold text-white mb-4">Revenue by Source</h3>
+          <DataTable
+            headers={["Source", "Amount"]}
+            rows={data.revenueBySource.map((r) => [r.source, formatCurrency(r.amount)])}
+          />
+        </div>
+      )}
+
+      {data.revenueBySize?.length > 0 && (
+        <div className="rounded-xl border border-[#1E2D45] bg-dark-card p-5">
+          <h3 className="text-sm font-semibold text-white mb-4">Revenue by Size</h3>
+          <DataTable
+            headers={["Size", "Jobs", "Amount"]}
+            rows={data.revenueBySize.map((r) => [r.size, fmtNum(r.count), formatCurrency(r.amount)])}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DumpCostsTab({
+  data,
+  loading,
+}: {
+  data: DumpCostsData | null;
+  loading: boolean;
+}) {
+  if (loading) return <><KPISkeleton /><TableSkeleton /></>;
+  if (!data) return <EmptyState text="No dump cost data available" />;
+
+  return (
+    <div className="space-y-6">
+      <KPIGrid>
+        <KPI label="Dump Costs" value={formatCurrency(data.totalDumpCosts)} color="text-red-400" />
+        <KPI label="Customer Charges" value={formatCurrency(data.totalCustomerCharges)} color="text-white" />
+        <KPI label="Margin" value={formatCurrency(data.margin)} color="text-[#2ECC71]" />
+        <KPI label="Margin %" value={fmtPct(data.marginPercent)} color="text-[#2ECC71]" />
+      </KPIGrid>
+
+      {data.costsByFacility?.length > 0 && (
+        <div className="rounded-xl border border-[#1E2D45] bg-dark-card p-5">
+          <h3 className="text-sm font-semibold text-white mb-4">Costs by Facility</h3>
+          <DataTable
+            headers={["Facility", "Loads", "Cost"]}
+            rows={data.costsByFacility.map((r) => [r.facility, fmtNum(r.loads), formatCurrency(r.cost)])}
+          />
+        </div>
+      )}
+
+      {data.costsByWasteType?.length > 0 && (
+        <div className="rounded-xl border border-[#1E2D45] bg-dark-card p-5">
+          <h3 className="text-sm font-semibold text-white mb-4">Costs by Waste Type</h3>
+          <DataTable
+            headers={["Waste Type", "Loads", "Cost"]}
+            rows={data.costsByWasteType.map((r) => [r.wasteType, fmtNum(r.loads), formatCurrency(r.cost)])}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ProfitTab({
+  data,
+  loading,
+}: {
+  data: ProfitData | null;
+  loading: boolean;
+}) {
+  if (loading) return <KPISkeleton />;
+  if (!data) return <EmptyState text="No profit data available" />;
+
+  return (
+    <KPIGrid>
+      <KPI label="Revenue" value={formatCurrency(data.revenue)} color="text-white" />
+      <KPI label="Dump Costs" value={formatCurrency(data.dumpCosts)} color="text-red-400" />
+      <KPI label="Gross Profit" value={formatCurrency(data.grossProfit)} color="text-[#2ECC71]" />
+      <KPI label="Margin %" value={fmtPct(data.marginPercent)} color="text-[#2ECC71]" />
+    </KPIGrid>
+  );
+}
+
+function DriversTab({
+  data,
+  loading,
+}: {
+  data: DriversData | null;
+  loading: boolean;
+}) {
+  if (loading) return <><KPISkeleton /><TableSkeleton /></>;
+  if (!data) return <EmptyState text="No driver data available" />;
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 mb-6">
+        <KPI label="Total Drivers" value={fmtNum(data.totalDrivers)} />
+        <KPI label="Total Completed" value={fmtNum(data.totalCompleted)} color="text-[#2ECC71]" />
+      </div>
+
+      {data.drivers?.length > 0 && (
+        <div className="rounded-xl border border-[#1E2D45] bg-dark-card p-5">
+          <h3 className="text-sm font-semibold text-white mb-4">Driver Stats</h3>
+          <DataTable
+            headers={["Name", "Jobs", "Completed", "Failed", "Deliveries", "Pickups"]}
+            rows={data.drivers.map((d) => [
+              d.name,
+              fmtNum(d.totalJobs),
+              fmtNum(d.completed),
+              fmtNum(d.failed),
+              fmtNum(d.deliveries),
+              fmtNum(d.pickups),
+            ])}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AssetsTab({
+  data,
+  loading,
+}: {
+  data: AssetsData | null;
+  loading: boolean;
+}) {
+  if (loading) return <><KPISkeleton /><TableSkeleton /></>;
+  if (!data) return <EmptyState text="No asset data available" />;
+
+  return (
+    <div className="space-y-6">
+      <KPIGrid>
+        <KPI label="Total" value={fmtNum(data.total)} />
+        <KPI label="Available" value={fmtNum(data.available)} color="text-[#2ECC71]" />
+        <KPI label="Deployed" value={fmtNum(data.deployed)} color="text-blue-400" />
+        <KPI label="Staged" value={fmtNum(data.staged)} color="text-yellow-400" />
+      </KPIGrid>
+
+      {data.bySize?.length > 0 && (
+        <div className="rounded-xl border border-[#1E2D45] bg-dark-card p-5">
+          <h3 className="text-sm font-semibold text-white mb-4">Assets by Size</h3>
+          <DataTable
+            headers={["Size", "Total", "Available", "Deployed", "Staged"]}
+            rows={data.bySize.map((r) => [
+              r.size,
+              fmtNum(r.total),
+              fmtNum(r.available),
+              fmtNum(r.deployed),
+              fmtNum(r.staged),
+            ])}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CustomersTab({
+  data,
+  loading,
+}: {
+  data: CustomersData | null;
+  loading: boolean;
+}) {
+  if (loading) return <><KPISkeleton /><TableSkeleton /></>;
+  if (!data) return <EmptyState text="No customer data available" />;
+
+  return (
+    <div className="space-y-6">
+      <KPIGrid>
+        <KPI label="Total Customers" value={fmtNum(data.total)} />
+        <KPI label="New Customers" value={fmtNum(data.newCustomers)} color="text-[#2ECC71]" />
+        {data.byType?.slice(0, 2).map((t) => (
+          <KPI key={t.type} label={t.type} value={fmtNum(t.count)} />
+        ))}
+      </KPIGrid>
+
+      {data.topCustomers?.length > 0 && (
+        <div className="rounded-xl border border-[#1E2D45] bg-dark-card p-5">
+          <h3 className="text-sm font-semibold text-white mb-4">Top Customers</h3>
+          <DataTable
+            headers={["Name", "Type", "Jobs", "Total Spend"]}
+            rows={data.topCustomers.map((c) => [
+              c.name,
+              c.type,
+              fmtNum(c.jobCount),
+              formatCurrency(c.totalSpend),
+            ])}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ReceivablesTab({
+  data,
+  loading,
+}: {
+  data: ReceivablesData | null;
+  loading: boolean;
+}) {
+  if (loading) return <><KPISkeleton /><TableSkeleton /></>;
+  if (!data) return <EmptyState text="No receivables data available" />;
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 mb-6">
+        <KPI label="Outstanding" value={formatCurrency(data.totalOutstanding)} color="text-yellow-400" />
+        <KPI label="Overdue" value={formatCurrency(data.totalOverdue)} color="text-red-400" />
+      </div>
+
+      {data.aging?.length > 0 && (
+        <div className="rounded-xl border border-[#1E2D45] bg-dark-card p-5">
+          <h3 className="text-sm font-semibold text-white mb-4">Aging Summary</h3>
+          <DataTable
+            headers={["Bucket", "Invoices", "Amount"]}
+            rows={data.aging.map((a) => [a.label, fmtNum(a.count), formatCurrency(a.amount)])}
+          />
+        </div>
+      )}
+
+      {data.overdueInvoices?.length > 0 && (
+        <div className="rounded-xl border border-[#1E2D45] bg-dark-card p-5">
+          <h3 className="text-sm font-semibold text-white mb-4">Overdue Invoices</h3>
+          <DataTable
+            headers={["Customer", "Amount", "Due Date", "Days Overdue"]}
+            rows={data.overdueInvoices.map((inv) => [
+              inv.customer,
+              formatCurrency(inv.amount),
+              inv.dueDate,
+              fmtNum(inv.daysOverdue),
+            ])}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ─── Main Page ─── */
 
 export default function AnalyticsPage() {
-  const [dashboard, setDashboard] = useState<DashboardData | null>(null);
-  const [revenue, setRevenue] = useState<RevenueDay[]>([]);
-  const [jobsByStatus, setJobsByStatus] = useState<StatusCount[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [dateRange, setDateRange] = useState("month");
-  const [expandedSection, setExpandedSection] = useState<string | null>(null);
+  const now = new Date();
+  const [startDate, setStartDate] = useState(
+    new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split("T")[0]
+  );
+  const [endDate, setEndDate] = useState(now.toISOString().split("T")[0]);
+  const [activeTab, setActiveTab] = useState<TabKey>("revenue");
+  const [loading, setLoading] = useState(false);
 
-  const days = DATE_RANGES.find((r) => r.value === dateRange)?.days || 30;
-  const { start, end } = useMemo(() => getDateRange(days), [days]);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [tabData, setTabData] = useState<Record<TabKey, any>>({
+    revenue: null,
+    "dump-costs": null,
+    profit: null,
+    drivers: null,
+    assets: null,
+    customers: null,
+    receivables: null,
+  });
 
-  const fetchData = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [dash, rev, jobs] = await Promise.all([
-        api.get<DashboardData>("/analytics/dashboard"),
-        api.get<RevenueDay[]>(`/analytics/revenue?startDate=${start}&endDate=${end}`),
-        api.get<StatusCount[]>("/analytics/jobs-by-status"),
-      ]);
-      setDashboard(dash);
-      setRevenue(rev);
-      setJobsByStatus(jobs);
-    } catch { /* */ } finally { setLoading(false); }
-  }, [start, end]);
+  const setPreset = (preset: "month" | "quarter" | "year") => {
+    const today = new Date();
+    let start: Date;
+    if (preset === "month") {
+      start = new Date(today.getFullYear(), today.getMonth(), 1);
+    } else if (preset === "quarter") {
+      const q = Math.floor(today.getMonth() / 3) * 3;
+      start = new Date(today.getFullYear(), q, 1);
+    } else {
+      start = new Date(today.getFullYear(), 0, 1);
+    }
+    setStartDate(start.toISOString().split("T")[0]);
+    setEndDate(today.toISOString().split("T")[0]);
+  };
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  const fetchTab = useCallback(
+    async (tab: TabKey) => {
+      setLoading(true);
+      try {
+        const qs = `startDate=${startDate}&endDate=${endDate}`;
+        let result;
+        switch (tab) {
+          case "revenue":
+            result = await api.get<RevenueData>(`/reporting/revenue?${qs}`);
+            break;
+          case "dump-costs":
+            result = await api.get<DumpCostsData>(`/reporting/dump-costs?${qs}`);
+            break;
+          case "profit":
+            result = await api.get<ProfitData>(`/reporting/profit?${qs}`);
+            break;
+          case "drivers":
+            result = await api.get<DriversData>(`/reporting/drivers?${qs}`);
+            break;
+          case "assets":
+            result = await api.get<AssetsData>("/reporting/assets");
+            break;
+          case "customers":
+            result = await api.get<CustomersData>(`/reporting/customers?${qs}`);
+            break;
+          case "receivables":
+            result = await api.get<ReceivablesData>("/reporting/accounts-receivable");
+            break;
+        }
+        setTabData((prev) => ({ ...prev, [tab]: result }));
+      } catch (err) {
+        console.error(`Failed to fetch ${tab}:`, err);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [startDate, endDate]
+  );
 
-  const totalRevenue = revenue.reduce((s, r) => s + Number(r.revenue), 0);
-  const completedJobs = dashboard?.jobs.completed || 0;
-  const avgJobValue = completedJobs > 0 ? totalRevenue / completedJobs : 0;
-  const utilization = dashboard?.assets.utilizationRate || 0;
-  const totalJobs = jobsByStatus.reduce((s, j) => s + Number(j.count), 0);
+  useEffect(() => {
+    fetchTab(activeTab);
+  }, [activeTab, fetchTab]);
 
-  const toggleSection = (section: string) => setExpandedSection(expandedSection === section ? null : section);
-  const scrollTo = (id: string) => { setExpandedSection(id); setTimeout(() => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" }), 100); };
+  const handleExport = () => {
+    const data = tabData[activeTab];
+    if (!data) return;
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let rows: Record<string, any>[] = [];
+    switch (activeTab) {
+      case "revenue":
+        rows = data.revenueBySource || data.revenueBySize || [];
+        break;
+      case "dump-costs":
+        rows = data.costsByFacility || data.costsByWasteType || [];
+        break;
+      case "profit":
+        rows = [{ revenue: data.revenue, dumpCosts: data.dumpCosts, grossProfit: data.grossProfit, marginPercent: data.marginPercent }];
+        break;
+      case "drivers":
+        rows = data.drivers || [];
+        break;
+      case "assets":
+        rows = data.bySize || [];
+        break;
+      case "customers":
+        rows = data.topCustomers || [];
+        break;
+      case "receivables":
+        rows = data.overdueInvoices || data.aging || [];
+        break;
+    }
+    downloadCSV(rows, `${activeTab}-report-${startDate}-to-${endDate}.csv`);
+  };
+
+  const presetClass = (preset: string, s: string, e: string) => {
+    const today = new Date();
+    let expectedStart: Date;
+    if (preset === "month") {
+      expectedStart = new Date(today.getFullYear(), today.getMonth(), 1);
+    } else if (preset === "quarter") {
+      const q = Math.floor(today.getMonth() / 3) * 3;
+      expectedStart = new Date(today.getFullYear(), q, 1);
+    } else {
+      expectedStart = new Date(today.getFullYear(), 0, 1);
+    }
+    const expectedEnd = today.toISOString().split("T")[0];
+    const expectedStartStr = expectedStart.toISOString().split("T")[0];
+    const isActive = s === expectedStartStr && e === expectedEnd;
+    return isActive
+      ? "bg-[#2ECC71]/10 text-[#2ECC71] border-[#2ECC71]/30"
+      : "text-muted hover:text-white border-transparent";
+  };
 
   return (
     <div>
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="font-display text-2xl font-bold tracking-tight text-white">Analytics</h1>
-          <p className="mt-1 text-sm text-muted">Business performance insights</p>
-        </div>
-        <div className="flex items-center gap-3">
+      {/* ─── Top Bar ─── */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-6">
+        <h1 className="font-display text-2xl font-bold tracking-tight text-white">
+          Reports
+        </h1>
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Preset buttons */}
           <div className="flex rounded-lg border border-[#1E2D45] overflow-hidden">
-            {DATE_RANGES.map((opt) => (
-              <button key={opt.value} onClick={() => setDateRange(opt.value)} className={`px-3 py-1.5 text-xs font-medium transition-colors ${dateRange === opt.value ? "bg-brand/10 text-brand" : "text-muted hover:text-white"}`}>
-                {opt.label}
+            {(["month", "quarter", "year"] as const).map((p) => (
+              <button
+                key={p}
+                onClick={() => setPreset(p)}
+                className={`px-3 py-1.5 text-xs font-medium transition-colors border-r last:border-r-0 border-[#1E2D45] ${presetClass(p, startDate, endDate)}`}
+              >
+                This {p.charAt(0).toUpperCase() + p.slice(1)}
               </button>
             ))}
           </div>
-          <button className="flex items-center gap-1.5 rounded-lg border border-[#1E2D45] px-3 py-1.5 text-xs font-medium text-muted hover:text-white transition-colors">
-            <Download className="h-3.5 w-3.5" /> Export
+
+          {/* Custom date inputs */}
+          <div className="flex items-center gap-2">
+            <input
+              type="date"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              className="rounded-lg border border-[#1E2D45] bg-dark-card px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-[#2ECC71]/50"
+            />
+            <span className="text-xs text-muted">to</span>
+            <input
+              type="date"
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+              className="rounded-lg border border-[#1E2D45] bg-dark-card px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-[#2ECC71]/50"
+            />
+          </div>
+
+          {/* Export */}
+          <button
+            onClick={handleExport}
+            disabled={!tabData[activeTab]}
+            className="flex items-center gap-1.5 rounded-lg border border-[#1E2D45] px-3 py-1.5 text-xs font-medium text-muted hover:text-white hover:border-white/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <Download className="h-3.5 w-3.5" /> Export CSV
           </button>
         </div>
       </div>
 
-      {/* KPI Tiles */}
-      {loading ? (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-8">
-          {Array.from({ length: 4 }).map((_, i) => <div key={i} className="h-28 skeleton rounded-2xl" />)}
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-8">
-          <KPITile icon={DollarSign} label="Revenue" value={fmt(totalRevenue)} sparkData={revenue.slice(-14).map((r) => Number(r.revenue))} color="brand" onClick={() => scrollTo("revenue")} />
-          <KPITile icon={Briefcase} label="Jobs Completed" value={String(completedJobs)} sparkData={[]} color="blue" onClick={() => scrollTo("jobs")} />
-          <KPITile icon={TrendingUp} label="Avg Job Value" value={fmtFull(avgJobValue)} sparkData={[]} color="violet" onClick={() => scrollTo("revenue")} />
-          <KPITile icon={Box} label="Asset Utilization" value={fmtPct(utilization)} sparkData={[]} color={utilization > 70 ? "emerald" : utilization > 40 ? "yellow" : "red"} onClick={() => scrollTo("fleet")} />
-        </div>
-      )}
-
-      {/* Revenue */}
-      <Section id="revenue" title="Revenue" icon={DollarSign} expanded={expandedSection === "revenue"} onToggle={() => toggleSection("revenue")}>
-        {revenue.length > 0 ? (
-          <div className="space-y-6">
-            <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={revenue}>
-                  <defs><linearGradient id="rg" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={CHART_GREEN} stopOpacity={0.3} /><stop offset="95%" stopColor={CHART_GREEN} stopOpacity={0} /></linearGradient></defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke={GRID_COLOR} />
-                  <XAxis dataKey="date" tick={{ fill: TEXT_COLOR, fontSize: 11 }} tickFormatter={(d) => new Date(d + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })} />
-                  <YAxis tick={{ fill: TEXT_COLOR, fontSize: 11 }} tickFormatter={(v) => `$${v}`} />
-                  <Tooltip contentStyle={{ background: "#162033", border: "1px solid #1E2D45", borderRadius: 8, color: "#fff", fontSize: 13 }} formatter={(v) => [fmtFull(Number(v)), "Revenue"]} labelFormatter={(d) => new Date(d + "T12:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })} />
-                  <Area type="monotone" dataKey="revenue" stroke={CHART_GREEN} fill="url(#rg)" strokeWidth={2} dot={false} animationDuration={800} />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-              {["10yd", "15yd", "20yd", "30yd", "40yd"].map((size) => (
-                <div key={size} className="rounded-xl border border-[#1E2D45] bg-[#111C2E] p-3 text-center">
-                  <p className="text-xs text-muted mb-1">{size}</p>
-                  <p className="text-sm font-bold text-white">—</p>
-                  <p className="text-[10px] text-muted">Coming soon</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        ) : <Placeholder text="Complete more jobs to see revenue data" />}
-      </Section>
-
-      {/* Jobs */}
-      <Section id="jobs" title="Jobs" icon={Briefcase} expanded={expandedSection === "jobs"} onToggle={() => toggleSection("jobs")}>
-        {jobsByStatus.length > 0 ? (
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-            <div>
-              <h4 className="text-sm font-medium text-white mb-3">Jobs by Status</h4>
-              <div className="h-56">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie data={jobsByStatus} dataKey="count" nameKey="status" cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={2} animationDuration={800}>
-                      {jobsByStatus.map((e) => <Cell key={e.status} fill={STATUS_COLORS[e.status] || "#64748B"} />)}
-                    </Pie>
-                    <Tooltip contentStyle={{ background: "#162033", border: "1px solid #1E2D45", borderRadius: 8, color: "#fff", fontSize: 13 }} formatter={(v, name) => [Number(v), String(name).replace(/_/g, " ")]} />
-                    <Legend formatter={(v) => <span className="text-xs text-muted capitalize">{v.replace(/_/g, " ")}</span>} />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-            <div className="space-y-3">
-              <Stat label="Total Jobs" value={String(totalJobs)} icon={Briefcase} />
-              <Stat label="Completion Rate" value={totalJobs > 0 ? fmtPct((completedJobs / Math.max(totalJobs - (dashboard?.jobs.cancelled || 0), 1)) * 100) : "—"} icon={TrendingUp} accent="emerald" />
-              <Stat label="Average Job Value" value={fmtFull(avgJobValue)} icon={DollarSign} accent="brand" />
-              <Stat label="Avg Completion Time" value="—" sub="Coming soon" icon={Clock} />
-            </div>
-          </div>
-        ) : <Placeholder text="No job data yet" />}
-      </Section>
-
-      {/* Fleet */}
-      <Section id="fleet" title="Fleet & Assets" icon={Box} expanded={expandedSection === "fleet"} onToggle={() => toggleSection("fleet")}>
-        {dashboard?.assets ? (
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-            <div>
-              <h4 className="text-sm font-medium text-white mb-3">Assets by Status</h4>
-              <div className="h-56">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={dashboard.assets.byStatus} layout="vertical">
-                    <CartesianGrid strokeDasharray="3 3" stroke={GRID_COLOR} />
-                    <XAxis type="number" tick={{ fill: TEXT_COLOR, fontSize: 11 }} />
-                    <YAxis type="category" dataKey="status" tick={{ fill: TEXT_COLOR, fontSize: 11 }} tickFormatter={(v) => v.replace(/_/g, " ")} width={80} />
-                    <Tooltip contentStyle={{ background: "#162033", border: "1px solid #1E2D45", borderRadius: 8, color: "#fff", fontSize: 13 }} />
-                    <Bar dataKey="count" radius={[0, 4, 4, 0]} animationDuration={800}>
-                      {dashboard.assets.byStatus.map((e) => <Cell key={e.status} fill={STATUS_COLORS[e.status] || CHART_GREEN} />)}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-            <div className="space-y-3">
-              <div className={`rounded-xl border p-4 ${utilization > 70 ? "border-emerald-500/20 bg-emerald-500/5" : utilization > 40 ? "border-yellow-500/20 bg-yellow-500/5" : "border-red-500/20 bg-red-500/5"}`}>
-                <p className="text-xs text-muted mb-1">Current Utilization</p>
-                <p className={`text-3xl font-bold ${utilization > 70 ? "text-emerald-400" : utilization > 40 ? "text-yellow-400" : "text-red-400"}`}>{fmtPct(utilization)}</p>
-                <div className="mt-2 h-2 w-full rounded-full bg-dark-elevated overflow-hidden">
-                  <div className={`h-full rounded-full ${utilization > 70 ? "bg-emerald-500" : utilization > 40 ? "bg-yellow-500" : "bg-red-500"}`} style={{ width: `${Math.min(utilization, 100)}%` }} />
-                </div>
-              </div>
-              <Stat label="Total Fleet" value={`${dashboard.assets.total} units`} icon={Box} />
-              <Stat label="Avg Rental Duration" value="—" sub="Coming soon" icon={Clock} />
-              <Stat label="Overdue Rate" value="—" sub="Coming soon" icon={Clock} />
-            </div>
-          </div>
-        ) : <Placeholder text="No fleet data yet" />}
-      </Section>
-
-      {/* Customers */}
-      <Section id="customers" title="Customers" icon={Users} expanded={expandedSection === "customers"} onToggle={() => toggleSection("customers")}>
-        {dashboard?.customers ? (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <StatCard label="Total Customers" value={String(dashboard.customers.total)} />
-            <StatCard label="New This Month" value={String(dashboard.customers.newThisMonth)} accent />
-            <StatCard label="Repeat Rate" value="—" sub="Coming soon" />
-            <StatCard label="Top Source" value="—" sub="Coming soon" />
-          </div>
-        ) : <Placeholder text="No customer data yet" />}
-      </Section>
-
-      {/* Drivers */}
-      <Section id="drivers" title="Driver Performance" icon={Truck} expanded={expandedSection === "drivers"} onToggle={() => toggleSection("drivers")}>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <StatCard label="Jobs per Driver" value="—" sub="Coming soon" />
-          <StatCard label="Revenue per Driver" value="—" sub="Coming soon" />
-          <StatCard label="On-Time Rate" value="—" sub="Coming soon" />
-          <StatCard label="Avg Jobs/Day" value="—" sub="Coming soon" />
-        </div>
-      </Section>
-
-      {/* Financial */}
-      <Section id="financial" title="Financial Overview" icon={FileText} expanded={expandedSection === "financial"} onToggle={() => toggleSection("financial")}>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <StatCard label="Accounts Receivable" value="—" sub="Coming soon" />
-          <StatCard label="Avg Days to Payment" value="—" sub="Coming soon" />
-          <StatCard label="Overdue Amount" value="—" sub="Coming soon" />
-          <StatCard label="Collection Rate" value="—" sub="Coming soon" />
-        </div>
-      </Section>
-
-      {/* Profit */}
-      <Section id="profit" title="Profit per Job" icon={TrendingUp} expanded={expandedSection === "profit"} onToggle={() => toggleSection("profit")}>
-        <Placeholder text="Coming soon — complete more jobs to see per-job profitability analysis including fuel costs, driver pay, dump fees, and net profit margins" />
-      </Section>
-    </div>
-  );
-}
-
-/* ─── Components ─── */
-
-function KPITile({ icon: Icon, label, value, sparkData, color, onClick }: {
-  icon: typeof DollarSign; label: string; value: string; sparkData: number[]; color: string; onClick: () => void;
-}) {
-  const accentMap: Record<string, string> = {
-    brand: "bg-brand/10 text-brand", blue: "bg-blue-500/10 text-blue-400",
-    violet: "bg-violet-500/10 text-violet-400", emerald: "bg-emerald-500/10 text-emerald-400",
-    yellow: "bg-yellow-500/10 text-yellow-400", red: "bg-red-500/10 text-red-400",
-  };
-  return (
-    <button onClick={onClick} className="rounded-2xl border border-[#1E2D45] bg-dark-card p-5 text-left transition-all hover:bg-dark-card-hover hover:border-white/10 card-hover btn-press">
-      <div className={`flex h-9 w-9 items-center justify-center rounded-xl mb-3 ${accentMap[color] || accentMap.brand}`}>
-        <Icon className="h-4 w-4" />
+      {/* ─── Tab Row ─── */}
+      <div className="flex overflow-x-auto gap-1 mb-6 pb-1 -mx-1 px-1 scrollbar-hide">
+        {TABS.map((tab) => {
+          const Icon = tab.icon;
+          const isActive = activeTab === tab.key;
+          return (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              className={`flex items-center gap-1.5 whitespace-nowrap rounded-lg px-3.5 py-2 text-xs font-medium transition-all shrink-0 ${
+                isActive
+                  ? "bg-[#2ECC71]/10 text-[#2ECC71] border border-[#2ECC71]/30"
+                  : "text-muted hover:text-white border border-transparent hover:border-[#1E2D45]"
+              }`}
+            >
+              <Icon className="h-3.5 w-3.5" />
+              {tab.label}
+              {loading && isActive && (
+                <Loader2 className="h-3 w-3 animate-spin ml-1" />
+              )}
+            </button>
+          );
+        })}
       </div>
-      <p className="text-2xl font-bold text-white tabular-nums">{value}</p>
-      <p className="text-xs text-muted mt-0.5">{label}</p>
-      {sparkData.length > 3 && (
-        <div className="mt-2 h-8">
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={sparkData.map((v, i) => ({ v, i }))}>
-              <defs><linearGradient id={`sp-${label}`} x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={CHART_GREEN} stopOpacity={0.3} /><stop offset="95%" stopColor={CHART_GREEN} stopOpacity={0} /></linearGradient></defs>
-              <Area type="monotone" dataKey="v" stroke={CHART_GREEN} fill={`url(#sp-${label})`} strokeWidth={1.5} dot={false} />
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
-      )}
-    </button>
-  );
-}
 
-function Section({ id, title, icon: Icon, expanded, onToggle, children }: {
-  id: string; title: string; icon: typeof DollarSign; expanded: boolean; onToggle: () => void; children: React.ReactNode;
-}) {
-  return (
-    <div id={id} className="mb-4">
-      <button onClick={onToggle} className="w-full flex items-center justify-between rounded-2xl border border-[#1E2D45] bg-dark-card px-5 py-4 text-left transition-all hover:bg-dark-card-hover btn-press">
-        <div className="flex items-center gap-3">
-          <Icon className="h-5 w-5 text-muted" />
-          <h2 className="font-display text-base font-semibold text-white">{title}</h2>
-        </div>
-        {expanded ? <ChevronUp className="h-5 w-5 text-muted" /> : <ChevronDown className="h-5 w-5 text-muted" />}
-      </button>
-      {expanded && (
-        <div className="mt-2 rounded-2xl border border-[#1E2D45] bg-dark-card p-6 animate-fade-in">{children}</div>
-      )}
-    </div>
-  );
-}
-
-function Stat({ label, value, sub, icon: Icon, accent }: { label: string; value: string; sub?: string; icon: typeof DollarSign; accent?: string }) {
-  return (
-    <div className="rounded-xl border border-[#1E2D45] bg-[#111C2E] p-4 flex items-center justify-between">
-      <div>
-        <p className="text-xs text-muted">{label}</p>
-        <p className={`text-xl font-bold ${accent === "emerald" ? "text-emerald-400" : accent === "brand" ? "text-brand" : "text-white"}`}>{value}</p>
-        {sub && <p className="text-[10px] text-muted">{sub}</p>}
+      {/* ─── Tab Content ─── */}
+      <div className="min-h-[400px]">
+        {activeTab === "revenue" && (
+          <RevenueTab data={tabData.revenue} loading={loading && !tabData.revenue} />
+        )}
+        {activeTab === "dump-costs" && (
+          <DumpCostsTab data={tabData["dump-costs"]} loading={loading && !tabData["dump-costs"]} />
+        )}
+        {activeTab === "profit" && (
+          <ProfitTab data={tabData.profit} loading={loading && !tabData.profit} />
+        )}
+        {activeTab === "drivers" && (
+          <DriversTab data={tabData.drivers} loading={loading && !tabData.drivers} />
+        )}
+        {activeTab === "assets" && (
+          <AssetsTab data={tabData.assets} loading={loading && !tabData.assets} />
+        )}
+        {activeTab === "customers" && (
+          <CustomersTab data={tabData.customers} loading={loading && !tabData.customers} />
+        )}
+        {activeTab === "receivables" && (
+          <ReceivablesTab data={tabData.receivables} loading={loading && !tabData.receivables} />
+        )}
       </div>
-      <Icon className="h-8 w-8 text-muted/20" />
-    </div>
-  );
-}
-
-function StatCard({ label, value, sub, accent }: { label: string; value: string; sub?: string; accent?: boolean }) {
-  return (
-    <div className="rounded-xl border border-[#1E2D45] bg-[#111C2E] p-4">
-      <p className="text-xs text-muted mb-1">{label}</p>
-      <p className={`text-xl font-bold ${accent ? "text-brand" : "text-white"}`}>{value}</p>
-      {sub && <p className="text-[10px] text-muted mt-0.5">{sub}</p>}
-    </div>
-  );
-}
-
-function Placeholder({ text }: { text: string }) {
-  return (
-    <div className="py-12 text-center">
-      <BarChart3 className="mx-auto h-10 w-10 text-muted/20 mb-3" />
-      <p className="text-sm text-muted">{text}</p>
     </div>
   );
 }
