@@ -115,6 +115,15 @@ export class Invoice {
     amount: number;
   }>;
 
+  @Column({ nullable: true })
+  source!: string; // booking, dump_slip, exchange, extra_days, failed_trip
+
+  @Column({ name: 'invoice_type', nullable: true })
+  invoice_type!: string; // rental, overage, exchange, extra_days, failure_charge
+
+  @Column({ name: 'payment_method', nullable: true })
+  payment_method!: string;
+
   @Column({ type: 'text', nullable: true })
   notes!: string;
 

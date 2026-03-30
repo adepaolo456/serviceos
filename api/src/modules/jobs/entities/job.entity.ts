@@ -147,6 +147,12 @@ export class Job {
   @Column({ name: 'overdue_notification_count', type: 'int', default: 0 })
   overdue_notification_count!: number;
 
+  @Column({ name: 'is_failed_trip', default: false })
+  is_failed_trip!: boolean;
+
+  @Column({ name: 'failed_reason', type: 'text', nullable: true })
+  failed_reason!: string;
+
   @Column({ name: 'drop_off_asset_id', type: 'uuid', nullable: true })
   drop_off_asset_id!: string;
 

@@ -17,9 +17,9 @@ const VALID_TRANSITIONS: Record<string, string[]> = {
   pending: ['confirmed', 'cancelled'],
   confirmed: ['dispatched', 'cancelled'],
   dispatched: ['en_route', 'cancelled'],
-  en_route: ['arrived', 'cancelled'],
-  arrived: ['in_progress', 'cancelled'],
-  in_progress: ['completed', 'cancelled'],
+  en_route: ['arrived', 'cancelled', 'failed'],
+  arrived: ['in_progress', 'cancelled', 'failed'],
+  in_progress: ['completed', 'cancelled', 'failed'],
 };
 
 @Injectable()
