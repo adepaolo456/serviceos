@@ -1,13 +1,15 @@
 "use client";
 
-import { useState, useEffect, useCallback, memo } from "react";
+import { useState, useEffect, useCallback, memo, useRef } from "react";
 import Link from "next/link";
 import {
   ChevronLeft, ChevronRight, Calendar, Clock, MapPin, UserPlus, Truck,
   Phone, Plus, Box, Search, CheckCircle2, RefreshCw, Zap, X, ExternalLink,
   ChevronDown, ChevronUp, Navigation, Mail, MoreHorizontal, Eye, EyeOff,
-  FileText, Send,
+  FileText, Send, Map as MapIcon, LayoutDashboard,
 } from "lucide-react";
+import mapboxgl from "mapbox-gl";
+import "mapbox-gl/dist/mapbox-gl.css";
 import {
   DndContext, closestCenter, DragOverlay, useSensor, useSensors, PointerSensor,
   DragStartEvent, DragEndEvent, useDroppable,
@@ -39,6 +41,44 @@ interface DispatchJob {
 interface Driver { id: string; firstName: string; lastName: string; phone: string; vehicleInfo?: { year?: string; make?: string; model?: string } | null; }
 interface DriverColumn { driver: Driver; route: { id: string; status: string; total_stops: number } | null; jobs: DispatchJob[]; jobCount: number; }
 interface DispatchBoard { date: string; drivers: DriverColumn[]; unassigned: DispatchJob[]; }
+
+/* ---- Mapbox ---- */
+
+const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "";
+const HAS_MAP = MAPBOX_TOKEN && MAPBOX_TOKEN !== "pk.placeholder";
+
+const ADDR_COORDS: Record<string, [number, number]> = {
+  "45 Pearl Street": [-71.0234, 42.0834],
+  "15 Maple Drive": [-70.9340, 42.0801],
+  "200 Centre Street": [-70.9451, 42.1051],
+  "89 Tosca Drive": [-71.1010, 42.1241],
+  "500 Industrial Drive": [-71.0300, 42.0750],
+  "23 Josephs Road": [-71.0180, 42.0810],
+  "78 Oak Street": [-71.1285, 42.0235],
+  "120 West Elm Street": [-70.9450, 42.0350],
+  "55 North Avenue": [-70.9070, 42.1295],
+  "88 Summer Street": [-71.1010, 42.1240],
+  "340 Bedford Street": [-70.9720, 42.0350],
+  "150 Washington Street": [-70.8120, 42.1135],
+};
+const DUMP_COORDS: Record<string, [number, number]> = {
+  "Recycling Solutions": [-71.0440, 41.9280],
+  "Brockton Transfer Station": [-71.0190, 42.0830],
+  "Stoughton Transfer Station": [-71.0980, 42.1250],
+  "SEMASS Resource Recovery": [-70.8210, 41.7580],
+};
+const YARD_COORDS: [number, number] = [-71.0184, 42.0834];
+
+function getJobCoords(job: DispatchJob): [number, number] | null {
+  const addr = job.service_address;
+  if (!addr) return null;
+  if (addr.lng && addr.lat) return [Number(addr.lng), Number(addr.lat)];
+  const street = addr.street || "";
+  for (const [key, coords] of Object.entries(ADDR_COORDS)) {
+    if (street.includes(key)) return coords;
+  }
+  return null;
+}
 
 /* ---- Constants ---- */
 
@@ -91,6 +131,7 @@ export default function DispatchPage() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [collapsedCols, setCollapsedCols] = useState<Set<string>>(new Set());
   const [hiddenCols, setHiddenCols] = useState<Set<string>>(new Set());
+  const [showColumns, setShowColumns] = useState(true);
   const { toast } = useToast();
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
@@ -254,6 +295,11 @@ export default function DispatchPage() {
               style={{ background: "rgba(255,255,255,0.06)", borderColor: "rgba(255,255,255,0.08)", color: "var(--t-frame-text-muted)" }}>
               <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
             </button>
+            <button onClick={() => setShowColumns(!showColumns)} className="flex items-center gap-1.5 rounded-full px-3 py-2 text-xs font-medium border"
+              style={{ borderColor: "rgba(255,255,255,0.12)", color: "var(--t-frame-text-muted)" }}>
+              {showColumns ? <MapIcon className="h-3.5 w-3.5" /> : <LayoutDashboard className="h-3.5 w-3.5" />}
+              {showColumns ? "Map View" : "Show Columns"}
+            </button>
             <button className="flex items-center gap-1.5 rounded-full px-3.5 py-2 text-xs font-semibold active:scale-95" style={{ background: "var(--t-accent)", color: "#000" }}>
               <Zap className="h-3.5 w-3.5" /> Optimize Routes
             </button>
@@ -299,7 +345,10 @@ export default function DispatchPage() {
 
       {/* ── Board ── */}
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-        <div className="flex-1 min-h-0 overflow-hidden">
+        <div className="flex-1 min-h-0 overflow-hidden relative">
+          <DispatchMap board={board} activeJobId={activeId} />
+          <div style={{ position: "relative", zIndex: 10, height: "100%", pointerEvents: "none" }}>
+            <div style={{ pointerEvents: "auto", height: "100%" }}>
           {loading ? (
             <div className="flex h-full gap-3 overflow-x-auto pb-2">
               {[1,2,3,4].map(i => <div key={i} className="w-[330px] shrink-0"><div className="h-20 skeleton rounded-t-[20px]" /><div className="space-y-2 mt-2">{[1,2,3].map(j => <div key={j} className="h-24 skeleton rounded-[14px]" />)}</div></div>)}
@@ -315,7 +364,7 @@ export default function DispatchPage() {
                 <Plus className="h-3.5 w-3.5" /> New Job
               </Link>
             </div>
-          ) : (
+          ) : showColumns ? (
             <div className="flex gap-3 overflow-x-auto pb-2 items-start h-full">
               <ColumnCard columnId="unassigned" title="Unassigned" isUnassigned count={board.unassigned.length}
                 jobs={filterJobs(board.unassigned, filter, search)} drivers={board.drivers.map(d => d.driver)}
@@ -333,7 +382,9 @@ export default function DispatchPage() {
                   onHide={() => hideColumn(col.driver.id)} />
               ))}
             </div>
-          )}
+          ) : null}
+            </div>
+          </div>
         </div>
         <DragOverlay>{activeJob ? <JobTileGhost job={activeJob} /> : null}</DragOverlay>
       </DndContext>
@@ -377,6 +428,83 @@ export default function DispatchPage() {
 }
 
 /* ═══════════════════════════════════════════════════
+   Dispatch Map — Mapbox GL background
+   ═══════════════════════════════════════════════════ */
+
+function DispatchMap({ board, activeJobId }: { board: DispatchBoard | null; activeJobId: string | null }) {
+  const mapContainer = useRef<HTMLDivElement>(null);
+  const map = useRef<mapboxgl.Map | null>(null);
+  const markersRef = useRef<mapboxgl.Marker[]>([]);
+
+  useEffect(() => {
+    if (!HAS_MAP || !mapContainer.current || map.current) return;
+    mapboxgl.accessToken = MAPBOX_TOKEN;
+    map.current = new mapboxgl.Map({
+      container: mapContainer.current,
+      style: "mapbox://styles/mapbox/dark-v11",
+      center: YARD_COORDS,
+      zoom: 11,
+    });
+    map.current.addControl(new mapboxgl.NavigationControl(), "bottom-right");
+
+    // Yard pin
+    const yardEl = document.createElement("div");
+    yardEl.innerHTML = `<div style="width:30px;height:30px;border-radius:50%;background:#3B82F6;border:2px solid #fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:bold;color:#fff;">🏠</div>`;
+    new mapboxgl.Marker(yardEl).setLngLat(YARD_COORDS).setPopup(new mapboxgl.Popup({ offset: 10 }).setHTML("<strong>Yard</strong><br>Brockton, MA")).addTo(map.current);
+
+    return () => { map.current?.remove(); map.current = null; };
+  }, []);
+
+  // Update job pins when board changes
+  useEffect(() => {
+    if (!map.current || !board) return;
+    // Clear old markers
+    markersRef.current.forEach(m => m.remove());
+    markersRef.current = [];
+
+    const allJobs = [...board.unassigned, ...board.drivers.flatMap(d => d.jobs)];
+    for (const job of allJobs) {
+      const coords = getJobCoords(job);
+      if (!coords) continue;
+      const tc = TYPE_CONFIG[job.job_type] || { letter: "?", stripe: "#8A8A8A" };
+      const isActive = job.id === activeJobId;
+      const el = document.createElement("div");
+      el.style.cssText = `width:${isActive ? 40 : 32}px;height:${isActive ? 40 : 32}px;border-radius:50%;background:${tc.stripe};border:2px solid #fff;display:flex;align-items:center;justify-content:center;font-size:${isActive ? 14 : 11}px;font-weight:bold;color:#fff;cursor:pointer;transition:all 0.2s;box-shadow:0 2px 8px rgba(0,0,0,0.3);`;
+      el.textContent = tc.letter;
+      const popup = new mapboxgl.Popup({ offset: 15 }).setHTML(
+        `<div style="font-family:system-ui;padding:4px"><strong>${job.customer ? `${job.customer.first_name} ${job.customer.last_name}` : job.job_number}</strong><br><span style="font-size:12px;color:#666">${job.service_address?.street || ""}, ${job.service_address?.city || ""}</span><br><span style="font-size:11px;color:${tc.stripe};font-weight:600">${job.asset?.subtype || ""} ${TYPE_CONFIG[job.job_type]?.label || job.job_type}</span></div>`
+      );
+      const marker = new mapboxgl.Marker(el).setLngLat(coords).setPopup(popup).addTo(map.current!);
+      markersRef.current.push(marker);
+    }
+
+    // Dump location pins
+    for (const [name, coords] of Object.entries(DUMP_COORDS)) {
+      const el = document.createElement("div");
+      el.style.cssText = "width:26px;height:26px;border-radius:50%;background:#8B5CF6;border:2px solid #fff;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:bold;color:#fff;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,0.3);";
+      el.textContent = "♻";
+      const popup = new mapboxgl.Popup({ offset: 10 }).setHTML(`<strong>${name}</strong>`);
+      const marker = new mapboxgl.Marker(el).setLngLat(coords).setPopup(popup).addTo(map.current!);
+      markersRef.current.push(marker);
+    }
+  }, [board, activeJobId]);
+
+  if (!HAS_MAP) {
+    // Fallback dark grid background
+    return (
+      <div style={{ position: "absolute", inset: 0, background: "#0A0A0A", zIndex: 0 }}>
+        <div style={{ position: "absolute", inset: 0, backgroundImage: "radial-gradient(circle, #1a1a1a 1px, transparent 1px)", backgroundSize: "30px 30px", opacity: 0.5 }} />
+        <div style={{ position: "absolute", top: 16, left: "50%", transform: "translateX(-50%)", background: "rgba(217,119,6,0.15)", border: "1px solid rgba(217,119,6,0.3)", borderRadius: 12, padding: "8px 16px", fontSize: 12, color: "#D97706", zIndex: 5 }}>
+          Add Mapbox token in Settings to enable the live dispatch map
+        </div>
+      </div>
+    );
+  }
+
+  return <div ref={mapContainer} style={{ position: "absolute", inset: 0, zIndex: 0 }} />;
+}
+
+/* ═══════════════════════════════════════════════════
    Column Card — white card with accordion collapse
    ═══════════════════════════════════════════════════ */
 
@@ -402,9 +530,11 @@ function ColumnCard({ columnId, title, driver, isUnassigned, count, progress, jo
       className="shrink-0 rounded-[20px] overflow-hidden transition-all duration-200"
       style={{
         width: 340, minWidth: 340,
-        border: isOver && activeId ? "2px dashed var(--t-accent)" : "1px solid #E5E5E5",
-        background: "#FFFFFF",
-        boxShadow: "0 2px 12px rgba(0,0,0,0.08)",
+        border: isOver && activeId ? "2px dashed var(--t-accent)" : "1px solid rgba(255,255,255,0.3)",
+        background: "rgba(255,255,255,0.92)",
+        backdropFilter: "blur(16px)",
+        WebkitBackdropFilter: "blur(16px)",
+        boxShadow: "0 8px 32px rgba(0,0,0,0.25)",
       }}>
 
       {/* ── Header — two rows for full name ── */}
@@ -464,7 +594,7 @@ function ColumnCard({ columnId, title, driver, isUnassigned, count, progress, jo
           maxHeight: collapsed ? 120 : 2000,
           overflow: "hidden",
           transition: "max-height 0.25s ease",
-          background: "#FAFAFA",
+          background: "rgba(245,245,245,0.95)",
           padding: jobs.length > 0 ? 10 : 0,
         }}>
           {jobs.length === 0 ? (

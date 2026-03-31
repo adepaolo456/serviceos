@@ -3,7 +3,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Between } from 'typeorm';
+import { Repository, Between, MoreThan } from 'typeorm';
 import type { Request, Response } from 'express';
 import { User } from '../auth/entities/user.entity';
 import { Job } from '../jobs/entities/job.entity';
@@ -18,6 +18,28 @@ export class TeamController {
     @InjectRepository(TimeEntry) private timeRepo: Repository<TimeEntry>,
     @InjectRepository(Job) private jobsRepo: Repository<Job>,
   ) {}
+
+  @Get('locations')
+  async locations(@Req() req: Request) {
+    const tenantId = (req.user as { tenantId: string }).tenantId;
+    const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000);
+    const drivers = await this.usersRepo.find({
+      where: {
+        tenant_id: tenantId,
+        role: 'driver',
+        current_location_updated_at: MoreThan(tenMinAgo),
+      },
+    });
+    return drivers.map(d => ({
+      id: d.id,
+      firstName: d.first_name,
+      lastName: d.last_name,
+      latitude: d.current_latitude ? Number(d.current_latitude) : null,
+      longitude: d.current_longitude ? Number(d.current_longitude) : null,
+      updatedAt: d.current_location_updated_at,
+      statusText: d.current_status_text,
+    }));
+  }
 
   @Get()
   async list(@Req() req: Request, @Query('weekOf') weekOf?: string) {

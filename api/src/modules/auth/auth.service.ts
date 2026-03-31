@@ -269,6 +269,15 @@ export class AuthService {
     };
   }
 
+  async updateLocation(userId: string, data: { latitude: number; longitude: number; statusText?: string }) {
+    await this.usersRepository.update(userId, {
+      current_latitude: data.latitude,
+      current_longitude: data.longitude,
+      current_location_updated_at: new Date(),
+      current_status_text: data.statusText || null,
+    } as any);
+  }
+
   async inviteUser(dto: InviteUserDto, tenantId: string) {
     const existingUser = await this.usersRepository.findOne({
       where: { email: dto.email },

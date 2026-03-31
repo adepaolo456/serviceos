@@ -87,6 +87,18 @@ export class User {
   @Column({ name: 'address', type: 'jsonb', nullable: true })
   address!: Record<string, unknown> | null;
 
+  @Column({ name: 'current_latitude', type: 'decimal', precision: 10, scale: 6, nullable: true })
+  current_latitude!: number | null;
+
+  @Column({ name: 'current_longitude', type: 'decimal', precision: 10, scale: 6, nullable: true })
+  current_longitude!: number | null;
+
+  @Column({ name: 'current_location_updated_at', type: 'timestamptz', nullable: true })
+  current_location_updated_at!: Date | null;
+
+  @Column({ name: 'current_status_text', nullable: true })
+  current_status_text!: string | null;
+
   @Column({ name: 'last_login_at', type: 'timestamptz', nullable: true })
   last_login_at!: Date;
 
