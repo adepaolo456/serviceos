@@ -82,6 +82,20 @@ export class AuthController {
     return this.authService.updateTenantProfile(tenantId, body);
   }
 
+  @Get('preferences')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get user preferences' })
+  async getPreferences(@CurrentUser('id') userId: string) {
+    return this.authService.getPreferences(userId);
+  }
+
+  @Patch('preferences')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Update user preferences' })
+  async updatePreferences(@CurrentUser('id') userId: string, @Body() body: Record<string, unknown>) {
+    return this.authService.updatePreferences(userId, body);
+  }
+
   @Post('clock-in')
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Clock in (driver app)' })
