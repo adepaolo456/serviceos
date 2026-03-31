@@ -12,6 +12,8 @@ import {
   ParseUUIDPipe,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 import { PricingService } from './pricing.service';
 import {
   CreatePricingRuleDto,
@@ -19,13 +21,20 @@ import {
   ListPricingRulesQueryDto,
   CalculatePriceDto,
 } from './dto/pricing.dto';
+import { DeliveryZone } from './entities/delivery-zone.entity';
+import { Tenant } from '../tenants/entities/tenant.entity';
 import { TenantId } from '../../common/decorators';
+import { haversineDistance } from './pricing.utils';
 
 @ApiTags('Pricing')
 @ApiBearerAuth()
 @Controller('pricing')
 export class PricingController {
-  constructor(private readonly pricingService: PricingService) {}
+  constructor(
+    private readonly pricingService: PricingService,
+    @InjectRepository(DeliveryZone) private zoneRepo: Repository<DeliveryZone>,
+    @InjectRepository(Tenant) private tenantRepo: Repository<Tenant>,
+  ) {}
 
   @Post()
   @ApiOperation({ summary: 'Create a pricing rule' })
@@ -97,5 +106,74 @@ export class PricingController {
   @ApiOperation({ summary: 'Delete pricing template' })
   deleteTemplate(@TenantId() tenantId: string, @Param('id') id: string) {
     return this.pricingService.deleteTemplate(id);
+  }
+
+  // ── Delivery Zones ──
+
+  @Get('delivery-zones')
+  @ApiOperation({ summary: 'List delivery zones' })
+  async listZones(@TenantId() tenantId: string) {
+    return this.zoneRepo.find({ where: { tenant_id: tenantId }, order: { sort_order: 'ASC' } });
+  }
+
+  @Post('delivery-zones')
+  @ApiOperation({ summary: 'Create delivery zone' })
+  async createZone(@TenantId() tenantId: string, @Body() body: { zoneName: string; minMiles: number; maxMiles: number; surcharge: number; sortOrder?: number }) {
+    return this.zoneRepo.save(this.zoneRepo.create({
+      tenant_id: tenantId, zone_name: body.zoneName,
+      min_miles: body.minMiles, max_miles: body.maxMiles,
+      surcharge: body.surcharge, sort_order: body.sortOrder || 0,
+    }));
+  }
+
+  @Patch('delivery-zones/:id')
+  @ApiOperation({ summary: 'Update delivery zone' })
+  async updateZone(@TenantId() tenantId: string, @Param('id', ParseUUIDPipe) id: string, @Body() body: Record<string, unknown>) {
+    const updates: Record<string, unknown> = {};
+    if (body.zoneName !== undefined) updates.zone_name = body.zoneName;
+    if (body.minMiles !== undefined) updates.min_miles = body.minMiles;
+    if (body.maxMiles !== undefined) updates.max_miles = body.maxMiles;
+    if (body.surcharge !== undefined) updates.surcharge = body.surcharge;
+    if (body.sortOrder !== undefined) updates.sort_order = body.sortOrder;
+    if (body.isActive !== undefined) updates.is_active = body.isActive;
+    await this.zoneRepo.update({ id, tenant_id: tenantId }, updates);
+    return this.zoneRepo.findOne({ where: { id, tenant_id: tenantId } });
+  }
+
+  @Delete('delivery-zones/:id')
+  @ApiOperation({ summary: 'Delete delivery zone' })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async deleteZone(@TenantId() tenantId: string, @Param('id', ParseUUIDPipe) id: string) {
+    await this.zoneRepo.delete({ id, tenant_id: tenantId });
+  }
+
+  @Get('calculate-distance')
+  @ApiOperation({ summary: 'Calculate distance and delivery zone' })
+  async calculateDistance(
+    @TenantId() tenantId: string,
+    @Query('destLat') destLat: string,
+    @Query('destLng') destLng: string,
+  ) {
+    const tenant = await this.tenantRepo.findOne({ where: { id: tenantId } });
+    if (!tenant?.yard_latitude || !tenant?.yard_longitude) {
+      return { error: 'Yard location not configured', distanceMiles: null, zone: null, outsideServiceArea: false };
+    }
+
+    const dist = haversineDistance(
+      Number(tenant.yard_latitude), Number(tenant.yard_longitude),
+      Number(destLat), Number(destLng),
+    );
+    const distRounded = Math.round(dist * 10) / 10;
+
+    const zones = await this.zoneRepo.find({ where: { tenant_id: tenantId, is_active: true }, order: { sort_order: 'ASC' } });
+    const matchedZone = zones.find(z => distRounded >= Number(z.min_miles) && distRounded < Number(z.max_miles));
+    const maxZone = zones.length > 0 ? Math.max(...zones.map(z => Number(z.max_miles))) : 0;
+
+    return {
+      distanceMiles: distRounded,
+      zone: matchedZone ? { id: matchedZone.id, name: matchedZone.zone_name, surcharge: Number(matchedZone.surcharge) } : null,
+      outsideServiceArea: maxZone > 0 && distRounded >= maxZone,
+      maxServiceMiles: maxZone,
+    };
   }
 }

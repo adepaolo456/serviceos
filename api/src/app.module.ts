@@ -47,6 +47,7 @@ import { ReportingModule } from './modules/reporting/reporting.module';
 import { StripeModule } from './modules/stripe/stripe.module';
 import { QuotesModule } from './modules/quotes/quotes.module';
 import { Quote } from './modules/quotes/quote.entity';
+import { DeliveryZone } from './modules/pricing/entities/delivery-zone.entity';
 import { DumpLocation, DumpLocationRate, DumpLocationSurcharge } from './modules/dump-locations/entities/dump-location.entity';
 import { DumpTicket } from './modules/dump-locations/entities/dump-ticket.entity';
 import { SubscriptionPlan } from './modules/subscriptions/entities/subscription-plan.entity';
@@ -89,6 +90,7 @@ import { SubscriptionPlan } from './modules/subscriptions/entities/subscription-
             DumpTicket,
             SubscriptionPlan,
             Quote,
+            DeliveryZone,
           ],
           synchronize: true,
           ssl: {
