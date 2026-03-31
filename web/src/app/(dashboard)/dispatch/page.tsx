@@ -370,6 +370,7 @@ export default function DispatchPage() {
                 jobs={filterJobs(board.unassigned, filter, search)} drivers={board.drivers.map(d => d.driver)}
                 onAssign={async (jid, did) => { try { await api.patch(`/jobs/${jid}/assign`, { assignedDriverId: did }); toast("success", "Assigned"); await fetchBoard(true); } catch { toast("error", "Failed"); } }}
                 onQuickView={openQuickView} activeId={activeId}
+                onStatusChange={async (jid, s) => { try { await api.patch(`/jobs/${jid}/status`, { status: s, cancellationReason: s === "failed" ? "Dispatcher override" : undefined }); toast("success", `Status → ${s.replace(/_/g, " ")}`); await fetchBoard(true); } catch { toast("error", "Failed"); } }}
                 collapsed={collapsedCols.has("unassigned")} onToggleCollapse={() => toggleCollapse("unassigned")} />
               {visibleDrivers.map(col => (
                 <ColumnCard key={col.driver.id} columnId={col.driver.id} title={`${col.driver.firstName} ${col.driver.lastName}`}
@@ -378,6 +379,7 @@ export default function DispatchPage() {
                   jobs={filterJobs(col.jobs, filter, search)}
                   onUnassign={async (jid) => { try { await api.patch(`/jobs/${jid}/assign`, { assignedDriverId: null }); toast("success", "Unassigned"); await fetchBoard(true); } catch { toast("error", "Failed"); } }}
                   onQuickView={openQuickView} activeId={activeId}
+                  onStatusChange={async (jid, s) => { try { await api.patch(`/jobs/${jid}/status`, { status: s, cancellationReason: s === "failed" ? "Dispatcher override" : undefined }); toast("success", `Status → ${s.replace(/_/g, " ")}`); await fetchBoard(true); } catch { toast("error", "Failed"); } }}
                   collapsed={collapsedCols.has(col.driver.id)} onToggleCollapse={() => toggleCollapse(col.driver.id)}
                   onHide={() => hideColumn(col.driver.id)} />
               ))}
@@ -508,13 +510,14 @@ function DispatchMap({ board, activeJobId }: { board: DispatchBoard | null; acti
    Column Card — white card with accordion collapse
    ═══════════════════════════════════════════════════ */
 
-function ColumnCard({ columnId, title, driver, isUnassigned, count, progress, jobs, drivers, onAssign, onUnassign, onQuickView, activeId, collapsed, onToggleCollapse, onHide }: {
+function ColumnCard({ columnId, title, driver, isUnassigned, count, progress, jobs, drivers, onAssign, onUnassign, onQuickView, onStatusChange, activeId, collapsed, onToggleCollapse, onHide }: {
   columnId: string; title: string; driver?: Driver; isUnassigned?: boolean;
   count: number; progress?: { completed: number; total: number };
   jobs: DispatchJob[]; drivers?: Driver[];
   onAssign?: (jobId: string, driverId: string | null) => void;
   onUnassign?: (jobId: string) => void;
   onQuickView: (job: DispatchJob) => void;
+  onStatusChange?: (jobId: string, newStatus: string) => void;
   activeId: string | null;
   collapsed: boolean; onToggleCollapse: () => void; onHide?: () => void;
 }) {
@@ -607,7 +610,8 @@ function ColumnCard({ columnId, title, driver, isUnassigned, count, progress, jo
             <div className="space-y-2">
               {jobs.map(job => (
                 <JobTile key={job.id} job={job} isUnassigned={!!isUnassigned} drivers={drivers}
-                  onAssign={onAssign} onUnassign={onUnassign} onQuickView={() => onQuickView(job)} />
+                  onAssign={onAssign} onUnassign={onUnassign} onQuickView={() => onQuickView(job)}
+                  onStatusChange={onStatusChange} />
               ))}
             </div>
           )}
@@ -629,11 +633,12 @@ function ColumnCard({ columnId, title, driver, isUnassigned, count, progress, jo
    Job Tile — white card, entire tile draggable
    ═══════════════════════════════════════════════════ */
 
-const JobTile = memo(function JobTile({ job, isUnassigned, drivers, onAssign, onUnassign, onQuickView }: {
+const JobTile = memo(function JobTile({ job, isUnassigned, drivers, onAssign, onUnassign, onQuickView, onStatusChange }: {
   job: DispatchJob; isUnassigned: boolean; drivers?: Driver[];
   onAssign?: (jobId: string, driverId: string | null) => void;
   onUnassign?: (jobId: string) => void;
   onQuickView: () => void;
+  onStatusChange?: (jobId: string, newStatus: string) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: job.id });
   const [expanded, setExpanded] = useState(false);
@@ -727,7 +732,25 @@ const JobTile = memo(function JobTile({ job, isUnassigned, drivers, onAssign, on
               className="flex items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-medium" style={{ borderColor: "#E5E5E5", color: "#5C5C5C" }}><Navigation className="h-2.5 w-2.5" /> Navigate</button>}
             {job.customer?.phone && <a href={`tel:${job.customer.phone}`} className="flex items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-medium" style={{ borderColor: "#E5E5E5", color: "#5C5C5C" }}><Phone className="h-2.5 w-2.5" /> Call</a>}
             <button onClick={onQuickView} className="flex items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-medium" style={{ borderColor: "#E5E5E5", color: "#5C5C5C" }}><ExternalLink className="h-2.5 w-2.5" /> Details</button>
-            {!isUnassigned && onUnassign && <button onClick={() => onUnassign(job.id)} className="flex items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-semibold ml-auto" style={{ background: "rgba(220,38,38,0.06)", borderColor: "#DC2626", color: "#DC2626" }}><X className="h-2.5 w-2.5" /> Unassign</button>}
+            {!isUnassigned && onUnassign && <button onClick={() => onUnassign(job.id)} className="flex items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-semibold" style={{ background: "rgba(220,38,38,0.06)", borderColor: "#DC2626", color: "#DC2626" }}><X className="h-2.5 w-2.5" /> Unassign</button>}
+            {/* Status override dropdown */}
+            {onStatusChange && (
+              <Dropdown trigger={
+                <button className="flex items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-medium ml-auto" style={{ borderColor: "#E5E5E5", color: "#5C5C5C" }}>
+                  Status: {job.status.replace(/_/g, " ")} ▾
+                </button>
+              } align="right">
+                {["pending", "confirmed", "en_route", "arrived", "in_progress", "completed", "failed", "cancelled"].map(s => (
+                  <button key={s} disabled={s === job.status}
+                    onClick={() => { if (confirm(`Change status from "${job.status.replace(/_/g, " ")}" to "${s.replace(/_/g, " ")}"?`)) onStatusChange(job.id, s); }}
+                    className="flex w-full items-center gap-2 px-3 py-2 text-xs whitespace-nowrap disabled:opacity-30"
+                    style={{ color: s === job.status ? "var(--t-text-muted)" : "var(--t-text-primary)" }}>
+                    <span className="w-2 h-2 rounded-full" style={{ background: s === "completed" ? "#22C55E" : s === "failed" || s === "cancelled" ? "#DC2626" : s === "pending" ? "#D97706" : "#3B82F6" }} />
+                    {s.replace(/_/g, " ")}
+                  </button>
+                ))}
+              </Dropdown>
+            )}
           </div>
         </div>
       )}

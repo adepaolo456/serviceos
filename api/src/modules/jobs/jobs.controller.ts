@@ -17,7 +17,7 @@ import {
   ChangeStatusDto,
   CalendarQueryDto,
 } from './dto/job.dto';
-import { TenantId } from '../../common/decorators';
+import { TenantId, CurrentUser } from '../../common/decorators';
 
 @ApiTags('Jobs')
 @ApiBearerAuth()
@@ -91,8 +91,9 @@ export class JobsController {
     @TenantId() tenantId: string,
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: ChangeStatusDto,
+    @CurrentUser('role') userRole: string,
   ) {
-    return this.jobsService.changeStatus(tenantId, id, dto);
+    return this.jobsService.changeStatus(tenantId, id, dto, userRole);
   }
 
   @Patch(':id/assign')
