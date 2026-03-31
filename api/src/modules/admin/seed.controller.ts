@@ -220,11 +220,14 @@ export class SeedController {
     const tid = tenant.id;
     const log: string[] = [];
 
-    // Clear existing seed data to allow re-seeding
-    await this.ticketRepo.delete({ tenant_id: tid });
-    await this.invoiceRepo.delete({ tenant_id: tid });
-    await this.jobRepo.delete({ tenant_id: tid });
-    log.push('Cleared existing jobs, invoices, and dump tickets');
+    // Clear existing seed data to allow re-seeding (order matters for FK constraints)
+    await this.ticketRepo.query(`DELETE FROM automation_logs WHERE tenant_id = $1`, [tid]);
+    await this.ticketRepo.query(`DELETE FROM dump_tickets WHERE tenant_id = $1`, [tid]);
+    await this.ticketRepo.query(`DELETE FROM invoices WHERE tenant_id = $1`, [tid]);
+    // Clear parent_job_id references first to avoid self-referencing FK constraint
+    await this.ticketRepo.query(`UPDATE jobs SET parent_job_id = NULL, linked_job_ids = NULL WHERE tenant_id = $1`, [tid]);
+    await this.ticketRepo.query(`DELETE FROM jobs WHERE tenant_id = $1`, [tid]);
+    log.push('Cleared existing jobs, invoices, dump tickets, and automation logs');
 
     // Lookup helpers
     const findCust = async (email: string) => (await this.customerRepo.findOne({ where: { tenant_id: tid, email } }))?.id;
