@@ -10,28 +10,16 @@ interface SlideOverProps {
   children: ReactNode;
 }
 
-export default function SlideOver({
-  open,
-  onClose,
-  title,
-  children,
-}: SlideOverProps) {
+export default function SlideOver({ open, onClose, title, children }: SlideOverProps) {
   useEffect(() => {
-    if (open) {
-      document.body.style.overflow = "hidden";
-    } else {
-      document.body.style.overflow = "";
-    }
-    return () => {
-      document.body.style.overflow = "";
-    };
+    if (open) document.body.style.overflow = "hidden";
+    else document.body.style.overflow = "";
+    return () => { document.body.style.overflow = ""; };
   }, [open]);
 
   useEffect(() => {
     if (!open) return;
-    const handleEsc = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
+    const handleEsc = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", handleEsc);
     return () => window.removeEventListener("keydown", handleEsc);
   }, [open, onClose]);
@@ -40,23 +28,29 @@ export default function SlideOver({
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end">
+      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm animate-fade-in" onClick={onClose} />
       <div
-        className="fixed inset-0 bg-black/60 backdrop-blur-sm animate-fade-in"
-        onClick={onClose}
-      />
-      <div className="relative w-full max-w-lg bg-dark-secondary shadow-2xl animate-slide-in-right">
-        <div className="flex h-16 items-center justify-between border-b border-[#1E2D45] px-6">
-          <h2 className="font-display text-lg font-semibold text-white">
+        className="relative w-full max-w-lg shadow-2xl animate-slide-in-right"
+        style={{ backgroundColor: "var(--t-bg-secondary)" }}
+      >
+        <div
+          className="flex h-14 items-center justify-between px-6"
+          style={{ borderBottom: "1px solid var(--t-border)" }}
+        >
+          <h2 className="text-[15px] font-semibold" style={{ color: "var(--t-text-primary)" }}>
             {title}
           </h2>
           <button
             onClick={onClose}
-            className="rounded-lg p-1.5 text-muted transition-all hover:bg-dark-card hover:text-white active:scale-90"
+            className="rounded-lg p-1.5 transition-colors duration-150"
+            style={{ color: "var(--t-text-muted)" }}
+            onMouseEnter={(e) => { e.currentTarget.style.color = "var(--t-text-primary)"; e.currentTarget.style.backgroundColor = "var(--t-bg-card-hover)"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.color = "var(--t-text-muted)"; e.currentTarget.style.backgroundColor = "transparent"; }}
           >
             <X className="h-5 w-5" />
           </button>
         </div>
-        <div className="h-[calc(100vh-4rem)] overflow-y-auto p-6">
+        <div className="h-[calc(100vh-3.5rem)] overflow-y-auto p-6">
           {children}
         </div>
       </div>

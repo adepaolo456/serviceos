@@ -20,7 +20,7 @@ import SlideOver from "@/components/slide-over";
 import Dropdown from "@/components/dropdown";
 import { useToast } from "@/components/toast";
 
-/* ─── Types ─── */
+/* --- Types --- */
 
 interface Invoice {
   id: string;
@@ -53,20 +53,20 @@ interface LineItem {
 interface CustomerOption { id: string; first_name: string; last_name: string }
 interface JobOption { id: string; job_number: string; status: string; total_price: number; customer: { first_name: string; last_name: string } | null }
 
-/* ─── Constants ─── */
+/* --- Constants --- */
 
-const TABS = ["all", "draft", "sent", "paid", "overdue", "void"] as const;
+const TABS = ["all", "paid", "sent", "draft", "overdue", "void"] as const;
 
-const STATUS_BADGE: Record<string, { bg: string; text: string; dot: string }> = {
-  draft:   { bg: "bg-zinc-500/10", text: "text-zinc-400", dot: "bg-zinc-400" },
-  sent:    { bg: "bg-blue-500/10", text: "text-blue-400", dot: "bg-blue-400" },
-  paid:    { bg: "bg-emerald-500/10", text: "text-emerald-400", dot: "bg-emerald-400" },
-  overdue: { bg: "bg-red-500/10", text: "text-red-400", dot: "bg-red-400" },
-  void:    { bg: "bg-zinc-600/10", text: "text-zinc-500 line-through", dot: "bg-zinc-500" },
+const STATUS_COLOR: Record<string, string> = {
+  draft:   "var(--t-text-muted)",
+  sent:    "var(--t-warning)",
+  paid:    "var(--t-accent)",
+  overdue: "var(--t-error)",
+  void:    "var(--t-text-muted)",
 };
 
 const TAB_LABELS: Record<string, string> = {
-  all: "All", draft: "Draft", sent: "Sent", paid: "Paid", overdue: "Overdue", void: "Void",
+  all: "All", draft: "Draft", sent: "Pending", paid: "Paid", overdue: "Overdue", void: "Void",
 };
 
 const DATE_RANGES = [
@@ -90,13 +90,13 @@ const PAYMENT_TERMS = [
   { value: "60", label: "Net 60" },
 ] as const;
 
-/* ─── Helpers ─── */
+/* --- Helpers --- */
 
 import { formatCurrency } from "@/lib/utils";
 const fmt = (n: number | null | undefined) => formatCurrency(n as number);
 
 function fmtDate(d: string): string {
-  if (!d) return "—";
+  if (!d) return "--";
   return new Date(d + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
@@ -126,7 +126,7 @@ function getDateRange(range: string): { dateFrom?: string; dateTo?: string } {
   return {};
 }
 
-/* ─── Main Page ─── */
+/* --- Main Page --- */
 
 export default function InvoicesPage() {
   const router = useRouter();
@@ -190,6 +190,18 @@ export default function InvoicesPage() {
     allInvoices.filter((i) => i.status === "overdue"),
   [allInvoices]);
 
+  const collectedTotal = useMemo(() =>
+    allInvoices.filter((i) => i.status === "paid").reduce((s, i) => s + Number(i.total), 0),
+  [allInvoices]);
+
+  const totalInvoiced = useMemo(() =>
+    allInvoices.reduce((s, i) => s + Number(i.total), 0),
+  [allInvoices]);
+
+  const overdueTotal = useMemo(() =>
+    overdueInvoices.reduce((s, i) => s + Number(i.balance_due), 0),
+  [overdueInvoices]);
+
   // Client-side search + sort
   const filteredInvoices = useMemo(() => {
     let result = [...invoices];
@@ -214,43 +226,34 @@ export default function InvoicesPage() {
     return result;
   }, [invoices, searchQuery, sortBy]);
 
+  /* --- KPI cards data --- */
+  const kpis = [
+    { label: "Total", value: fmt(totalInvoiced) },
+    { label: "Collected", value: fmt(collectedTotal), color: "var(--t-accent)" },
+    { label: "Outstanding", value: fmt(outstandingTotal), color: "var(--t-warning)" },
+    { label: "Overdue", value: fmt(overdueTotal), color: "var(--t-error)" },
+  ];
+
   return (
     <div>
-      {/* Overdue Alert */}
-      {overdueInvoices.length > 0 && (
-        <div className="mb-6 flex items-center justify-between rounded-xl border border-red-500/30 bg-red-500/10 px-5 py-3">
-          <div className="flex items-center gap-3">
-            <AlertTriangle className="h-5 w-5 text-red-400" />
-            <span className="text-sm font-medium text-red-300">
-              {overdueInvoices.length} invoice{overdueInvoices.length !== 1 ? "s" : ""} overdue totaling {fmt(overdueInvoices.reduce((s, i) => s + Number(i.balance_due), 0))}
-            </span>
-          </div>
-          <button className="flex items-center gap-1.5 text-sm font-medium text-red-400 hover:text-red-300 transition-colors">
-            <Bell className="h-3.5 w-3.5" /> Send Reminders
-          </button>
-        </div>
-      )}
-
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="font-display text-2xl font-bold tracking-tight text-white">Invoices</h1>
-          <p className="mt-1 text-sm text-muted">
-            {tabStats.all.count} invoices
-            {outstandingTotal > 0 && <> &middot; <span className="text-yellow-400">{fmt(outstandingTotal)} outstanding</span></>}
-          </p>
-        </div>
+        <h1 style={{ fontSize: 28, fontWeight: 700, letterSpacing: "-1px", color: "var(--t-text-primary)" }}>
+          Invoices
+        </h1>
         <div className="flex gap-2">
           <button
             onClick={() => { setPanelMode("from-job"); setPanelOpen(true); }}
-            className="flex items-center gap-2 rounded-lg border border-white/10 bg-dark-card px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-dark-card-hover btn-press"
+            className="flex items-center gap-2 rounded-full border px-4 py-2.5 text-sm font-medium transition-all duration-150"
+            style={{ borderColor: "var(--t-border)", color: "var(--t-text-primary)", background: "transparent" }}
           >
             <FileText className="h-4 w-4" />
             Generate from Job
           </button>
           <button
             onClick={() => { setPanelMode("create"); setPanelOpen(true); }}
-            className="flex items-center gap-2 rounded-lg bg-[#2ECC71] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1FA855] btn-press"
+            className="flex items-center gap-2 rounded-full px-4 py-2.5 text-sm font-semibold transition-all duration-150 active:scale-95"
+            style={{ background: "var(--t-accent)", color: "#000" }}
           >
             <Plus className="h-4 w-4" />
             New Invoice
@@ -258,30 +261,53 @@ export default function InvoicesPage() {
         </div>
       </div>
 
-      {/* Status Tabs */}
-      <div className="mb-6 flex gap-0 overflow-x-auto border-b border-[#1E2D45]">
+      {/* KPI Row */}
+      <div className="grid grid-cols-4 gap-3 mb-6">
+        {kpis.map((kpi) => (
+          <div key={kpi.label} className="rounded-[14px] border p-4"
+            style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)" }}>
+            <p className="uppercase tracking-wider mb-1" style={{ fontSize: 13, color: "var(--t-text-muted)" }}>{kpi.label}</p>
+            <p className="font-bold tabular-nums" style={{ fontSize: 24, color: kpi.color || "var(--t-text-primary)" }}>{kpi.value}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Overdue Alert */}
+      {overdueInvoices.length > 0 && (
+        <div className="mb-6 flex items-center justify-between rounded-[14px] border px-5 py-3"
+          style={{ borderColor: "var(--t-error)", background: "var(--t-bg-card)" }}>
+          <div className="flex items-center gap-3">
+            <AlertTriangle className="h-5 w-5" style={{ color: "var(--t-error)" }} />
+            <span className="text-sm font-medium" style={{ color: "var(--t-error)" }}>
+              {overdueInvoices.length} invoice{overdueInvoices.length !== 1 ? "s" : ""} overdue totaling {fmt(overdueTotal)}
+            </span>
+          </div>
+          <button className="flex items-center gap-1.5 text-sm font-medium transition-all duration-150"
+            style={{ color: "var(--t-error)" }}>
+            <Bell className="h-3.5 w-3.5" /> Send Reminders
+          </button>
+        </div>
+      )}
+
+      {/* Filter Tabs */}
+      <div className="mb-6 flex gap-1">
         {TABS.map((t) => {
           const stats = tabStats[t] || { count: 0, amount: 0 };
-          const isOverdueTab = t === "overdue" && stats.count > 0;
+          const isActive = tab === t;
           return (
             <button
               key={t}
               onClick={() => setTab(t)}
-              className={`relative shrink-0 px-4 py-3 text-sm font-medium transition-colors btn-press ${
-                tab === t ? (isOverdueTab ? "text-red-400" : "text-brand") : isOverdueTab ? "text-red-400/70 hover:text-red-400" : "text-muted hover:text-foreground"
-              }`}
+              className="rounded-full px-4 py-1.5 text-sm font-medium transition-all duration-150"
+              style={{
+                background: isActive ? "var(--t-accent-soft)" : "transparent",
+                color: isActive ? "var(--t-accent)" : "var(--t-text-muted)",
+              }}
             >
               {TAB_LABELS[t]}
-              <span className={`ml-1.5 text-xs ${tab === t ? "opacity-70" : "opacity-40"}`}>
+              <span className="ml-1.5 text-xs" style={{ opacity: isActive ? 0.8 : 0.5 }}>
                 {stats.count}
-                {t !== "all" && t !== "void" && stats.amount > 0 && (
-                  <span className="ml-1">&middot; {fmt(stats.amount)}</span>
-                )}
-                {isOverdueTab && " ⚠️"}
               </span>
-              {tab === t && (
-                <span className={`absolute inset-x-0 bottom-0 h-0.5 rounded-full ${isOverdueTab ? "bg-red-400" : "bg-brand"}`} />
-              )}
             </button>
           );
         })}
@@ -290,24 +316,31 @@ export default function InvoicesPage() {
       {/* Search & Sort */}
       <div className="flex items-center gap-3 mb-5">
         <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4" style={{ color: "var(--t-text-muted)" }} />
           <input
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search invoice #, customer name..."
-            className="w-full rounded-lg bg-[#111C2E] border border-[#1E2D45] pl-10 pr-4 py-2 text-sm text-white placeholder-muted outline-none transition-colors focus:border-brand"
+            className="w-full rounded-[14px] border pl-10 pr-4 py-2 text-sm outline-none transition-all duration-150"
+            style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)", color: "var(--t-text-primary)" }}
           />
         </div>
-        <div className="flex rounded-lg border border-[#1E2D45] overflow-hidden">
+        <div className="flex rounded-full border overflow-hidden" style={{ borderColor: "var(--t-border)" }}>
           {DATE_RANGES.map((opt) => (
-            <button key={opt.value} onClick={() => setDateRange(opt.value)} className={`px-3 py-1.5 text-xs font-medium transition-colors ${dateRange === opt.value ? "bg-brand/10 text-brand" : "text-muted hover:text-white"}`}>
+            <button key={opt.value} onClick={() => setDateRange(opt.value)}
+              className="px-3 py-1.5 text-xs font-medium transition-all duration-150"
+              style={{
+                background: dateRange === opt.value ? "var(--t-accent-soft)" : "transparent",
+                color: dateRange === opt.value ? "var(--t-accent)" : "var(--t-text-muted)",
+              }}>
               {opt.label}
             </button>
           ))}
         </div>
         <Dropdown
           trigger={
-            <button className="flex items-center gap-2 rounded-lg border border-[#1E2D45] bg-[#111C2E] px-3 py-2 text-sm text-muted hover:text-white transition-colors">
+            <button className="flex items-center gap-2 rounded-full border px-3 py-2 text-sm transition-all duration-150"
+              style={{ borderColor: "var(--t-border)", background: "var(--t-bg-card)", color: "var(--t-text-muted)" }}>
               <ArrowDownUp className="h-3.5 w-3.5" />
               {SORT_OPTIONS.find((o) => o.value === sortBy)?.label}
             </button>
@@ -315,35 +348,39 @@ export default function InvoicesPage() {
           align="right"
         >
           {SORT_OPTIONS.map((opt) => (
-            <button key={opt.value} onClick={() => setSortBy(opt.value)} className={`block w-full px-4 py-2 text-left text-sm transition-colors ${sortBy === opt.value ? "text-brand bg-brand/5" : "text-foreground hover:bg-dark-card"}`}>
+            <button key={opt.value} onClick={() => setSortBy(opt.value)}
+              className="block w-full px-4 py-2 text-left text-sm transition-all duration-150"
+              style={{ color: sortBy === opt.value ? "var(--t-accent)" : "var(--t-text-primary)" }}>
               {opt.label}
             </button>
           ))}
         </Dropdown>
       </div>
 
-      {/* Invoice Cards */}
+      {/* Invoice List */}
       {loading ? (
         <div className="space-y-2">
           {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="h-20 w-full skeleton rounded-xl" />
+            <div key={i} className="h-16 w-full skeleton rounded-[14px]" />
           ))}
         </div>
       ) : filteredInvoices.length === 0 ? (
         <div className="py-24 flex flex-col items-center justify-center text-center">
-          <FileText size={48} className="text-[#7A8BA3]/30 mb-4" />
-          <h2 className="text-lg font-semibold text-white mb-1">{searchQuery ? "No matching invoices" : "No invoices yet"}</h2>
-          <p className="text-sm text-muted mb-6">{searchQuery ? "Try a different search" : "Create an invoice or generate one from a completed job"}</p>
+          <FileText size={48} className="mb-4" style={{ color: "var(--t-text-muted)", opacity: 0.3 }} />
+          <h2 className="text-lg font-semibold mb-1" style={{ color: "var(--t-text-primary)" }}>{searchQuery ? "No matching invoices" : "No invoices yet"}</h2>
+          <p className="text-sm mb-6" style={{ color: "var(--t-text-muted)" }}>{searchQuery ? "Try a different search" : "Create an invoice or generate one from a completed job"}</p>
           {!searchQuery && (
-            <button onClick={() => { setPanelMode("create"); setPanelOpen(true); }} className="flex items-center gap-2 rounded-lg bg-[#2ECC71] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1FA855] btn-press">
+            <button onClick={() => { setPanelMode("create"); setPanelOpen(true); }}
+              className="flex items-center gap-2 rounded-full px-4 py-2.5 text-sm font-semibold transition-all duration-150 active:scale-95"
+              style={{ background: "var(--t-accent)", color: "#000" }}>
               <Plus className="h-4 w-4" /> New Invoice
             </button>
           )}
         </div>
       ) : (
-        <div className="space-y-2">
+        <div className="space-y-1">
           {filteredInvoices.map((inv) => {
-            const badge = STATUS_BADGE[inv.status] || STATUS_BADGE.draft;
+            const statusColor = STATUS_COLOR[inv.status] || STATUS_COLOR.draft;
             const customerName = inv.customer ? `${inv.customer.first_name} ${inv.customer.last_name}` : "No customer";
             const isOverdue = inv.status === "overdue";
             const days = daysUntil(inv.due_date);
@@ -353,53 +390,39 @@ export default function InvoicesPage() {
               <button
                 key={inv.id}
                 onClick={() => router.push(`/invoices/${inv.id}`)}
-                className={`w-full rounded-xl border p-4 text-left transition-all hover:bg-dark-card-hover card-hover btn-press ${
-                  isOverdue ? "border-red-500/30 bg-dark-card border-l-4 border-l-red-500" : "border-[#1E2D45] bg-dark-card"
-                }`}
+                className="w-full flex items-center gap-4 rounded-[14px] border px-5 py-3.5 text-left transition-all duration-150"
+                style={{
+                  background: "var(--t-bg-card)",
+                  borderColor: "var(--t-border)",
+                }}
+                onMouseEnter={e => { e.currentTarget.style.background = "var(--t-bg-card-hover)"; }}
+                onMouseLeave={e => { e.currentTarget.style.background = "var(--t-bg-card)"; }}
               >
-                <div className="flex items-start gap-4">
-                  {/* Left: Invoice # + Status */}
-                  <div className="shrink-0 w-36">
-                    <p className="font-mono text-sm font-semibold text-white">{inv.invoice_number}</p>
-                    <span className={`inline-flex items-center gap-1.5 mt-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-medium ${badge.bg} ${badge.text}`}>
-                      <span className={`h-1.5 w-1.5 rounded-full ${badge.dot} ${isOverdue ? "animate-pulse" : ""}`} />
-                      {inv.status}
-                    </span>
-                  </div>
+                {/* Left: Customer + invoice info */}
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold truncate" style={{ color: "var(--t-text-primary)" }}>{customerName}</p>
+                  <p className="text-xs mt-0.5 truncate" style={{ color: "var(--t-text-muted)" }}>
+                    {inv.invoice_number}
+                    {lineDesc && <span> · {lineDesc}</span>}
+                  </p>
+                </div>
 
-                  {/* Center: Customer + description + dates */}
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-white truncate">{customerName}</p>
-                    {lineDesc && <p className="text-xs text-muted truncate mt-0.5">{lineDesc}</p>}
-                    <div className="flex items-center gap-3 mt-1.5 text-xs text-muted">
-                      <span className="flex items-center gap-1">
-                        <Calendar className="h-3 w-3" /> {fmtDate(inv.created_at.split("T")[0])}
-                      </span>
-                      {inv.due_date && (
-                        <span className="flex items-center gap-1">
-                          <Clock className="h-3 w-3" /> Due {fmtDate(inv.due_date)}
-                        </span>
-                      )}
-                    </div>
-                  </div>
+                {/* Center: Date info */}
+                <div className="hidden sm:block shrink-0 text-right" style={{ minWidth: 120 }}>
+                  <p className="text-xs" style={{ color: "var(--t-text-muted)" }}>{fmtDate(inv.created_at.split("T")[0])}</p>
+                  {inv.due_date && inv.status !== "paid" && inv.status !== "void" && inv.status !== "draft" && (
+                    <p className="text-[11px] mt-0.5" style={{ color: isOverdue ? "var(--t-error)" : days <= 3 ? "var(--t-warning)" : "var(--t-text-muted)" }}>
+                      {isOverdue ? `${Math.abs(days)}d overdue` : `${days}d left`}
+                    </p>
+                  )}
+                </div>
 
-                  {/* Right: Amount + balance + days */}
-                  <div className="shrink-0 text-right space-y-1">
-                    <p className="text-lg font-bold text-white tabular-nums">{fmt(inv.total)}</p>
-                    {Number(inv.amount_paid) > 0 && Number(inv.balance_due) > 0 && (
-                      <p className="text-xs text-muted tabular-nums">Paid {fmt(inv.amount_paid)}</p>
-                    )}
-                    {Number(inv.balance_due) > 0 && inv.status !== "draft" && (
-                      <p className={`text-xs font-medium tabular-nums ${isOverdue ? "text-red-400" : "text-foreground"}`}>
-                        Balance {fmt(inv.balance_due)}
-                      </p>
-                    )}
-                    {inv.due_date && inv.status !== "paid" && inv.status !== "void" && inv.status !== "draft" && (
-                      <p className={`text-[10px] font-medium ${isOverdue ? "text-red-400" : days <= 3 ? "text-yellow-400" : "text-muted"}`}>
-                        {isOverdue ? `⚠ ${Math.abs(days)} days overdue` : `${days} days left`}
-                      </p>
-                    )}
-                  </div>
+                {/* Right: Amount + status */}
+                <div className="shrink-0 text-right" style={{ minWidth: 100 }}>
+                  <p className="text-sm font-bold tabular-nums" style={{ color: "var(--t-text-primary)" }}>{fmt(inv.total)}</p>
+                  <p className="text-xs font-medium capitalize mt-0.5" style={{ color: statusColor, textDecoration: inv.status === "void" ? "line-through" : "none" }}>
+                    {inv.status === "sent" ? "Pending" : inv.status}
+                  </p>
                 </div>
               </button>
             );
@@ -409,11 +432,15 @@ export default function InvoicesPage() {
 
       {/* Pagination */}
       {total > 30 && (
-        <div className="mt-6 flex items-center justify-between text-sm text-muted">
-          <span>Showing {(page - 1) * 30 + 1}–{Math.min(page * 30, total)} of {total}</span>
+        <div className="mt-6 flex items-center justify-between text-sm" style={{ color: "var(--t-text-muted)" }}>
+          <span>Showing {(page - 1) * 30 + 1}--{Math.min(page * 30, total)} of {total}</span>
           <div className="flex gap-2">
-            <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1} className="rounded-lg bg-dark-card px-3 py-1.5 transition-colors hover:bg-dark-card-hover disabled:opacity-40">Previous</button>
-            <button onClick={() => setPage((p) => p + 1)} disabled={page * 30 >= total} className="rounded-lg bg-dark-card px-3 py-1.5 transition-colors hover:bg-dark-card-hover disabled:opacity-40">Next</button>
+            <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}
+              className="rounded-full border px-3 py-1.5 transition-all duration-150 disabled:opacity-40"
+              style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)", color: "var(--t-text-primary)" }}>Previous</button>
+            <button onClick={() => setPage((p) => p + 1)} disabled={page * 30 >= total}
+              className="rounded-full border px-3 py-1.5 transition-all duration-150 disabled:opacity-40"
+              style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)", color: "var(--t-text-primary)" }}>Next</button>
           </div>
         </div>
       )}
@@ -430,7 +457,7 @@ export default function InvoicesPage() {
   );
 }
 
-/* ─── Generate from Job ─── */
+/* --- Generate from Job --- */
 
 function FromJobForm({ onSuccess }: { onSuccess: () => void }) {
   const [jobs, setJobs] = useState<JobOption[]>([]);
@@ -460,15 +487,15 @@ function FromJobForm({ onSuccess }: { onSuccess: () => void }) {
 
   return (
     <div className="space-y-5">
-      {error && <div className="rounded-lg bg-red-500/10 px-4 py-3 text-sm text-red-400">{error}</div>}
-      <p className="text-sm text-muted">Select a completed job to auto-generate an invoice from its pricing.</p>
+      {error && <div className="rounded-[14px] px-4 py-3 text-sm" style={{ background: "var(--t-error-soft)", color: "var(--t-error)" }}>{error}</div>}
+      <p className="text-sm" style={{ color: "var(--t-text-muted)" }}>Select a completed job to auto-generate an invoice from its pricing.</p>
 
       {loading ? (
-        <div className="space-y-2">{Array.from({ length: 3 }).map((_, i) => <div key={i} className="h-14 skeleton rounded-lg" />)}</div>
+        <div className="space-y-2">{Array.from({ length: 3 }).map((_, i) => <div key={i} className="h-14 skeleton rounded-[14px]" />)}</div>
       ) : jobs.length === 0 ? (
         <div className="py-8 text-center">
-          <FileText className="mx-auto h-8 w-8 text-muted/30 mb-2" />
-          <p className="text-sm text-muted">No completed jobs without invoices</p>
+          <FileText className="mx-auto h-8 w-8 mb-2" style={{ color: "var(--t-text-muted)", opacity: 0.3 }} />
+          <p className="text-sm" style={{ color: "var(--t-text-muted)" }}>No completed jobs without invoices</p>
         </div>
       ) : (
         <div className="space-y-2 max-h-[400px] overflow-y-auto">
@@ -476,30 +503,34 @@ function FromJobForm({ onSuccess }: { onSuccess: () => void }) {
             <button
               key={j.id}
               onClick={() => setSelectedJob(selectedJob?.id === j.id ? null : j)}
-              className={`w-full rounded-lg border p-3 text-left transition-all ${
-                selectedJob?.id === j.id ? "border-brand/30 bg-brand/5 ring-1 ring-brand/20" : "border-[#1E2D45] bg-[#111C2E] hover:bg-dark-card-hover"
-              }`}
+              className="w-full rounded-[14px] border p-3 text-left transition-all duration-150"
+              style={{
+                borderColor: selectedJob?.id === j.id ? "var(--t-accent)" : "var(--t-border)",
+                background: selectedJob?.id === j.id ? "var(--t-accent-soft)" : "var(--t-bg-card)",
+              }}
             >
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-white">{j.job_number}</p>
-                  {j.customer && <p className="text-xs text-muted">{j.customer.first_name} {j.customer.last_name}</p>}
+                  <p className="text-sm font-medium" style={{ color: "var(--t-text-primary)" }}>{j.job_number}</p>
+                  {j.customer && <p className="text-xs" style={{ color: "var(--t-text-muted)" }}>{j.customer.first_name} {j.customer.last_name}</p>}
                 </div>
-                {j.total_price > 0 && <span className="text-sm font-semibold text-brand tabular-nums">{fmt(j.total_price)}</span>}
+                {j.total_price > 0 && <span className="text-sm font-semibold tabular-nums" style={{ color: "var(--t-accent)" }}>{fmt(j.total_price)}</span>}
               </div>
             </button>
           ))}
         </div>
       )}
 
-      <button onClick={handleGenerate} disabled={!selectedJob || saving} className="w-full rounded-lg bg-[#2ECC71] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1FA855] disabled:opacity-50 btn-press">
+      <button onClick={handleGenerate} disabled={!selectedJob || saving}
+        className="w-full rounded-full px-4 py-2.5 text-sm font-semibold transition-all duration-150 disabled:opacity-50 active:scale-95"
+        style={{ background: "var(--t-accent)", color: "#000" }}>
         {saving ? "Generating..." : "Generate Invoice"}
       </button>
     </div>
   );
 }
 
-/* ─── Create Invoice Form ─── */
+/* --- Create Invoice Form --- */
 
 function CreateInvoiceForm({ onSuccess }: { onSuccess: () => void }) {
   const [customerId, setCustomerId] = useState("");
@@ -585,28 +616,38 @@ function CreateInvoiceForm({ onSuccess }: { onSuccess: () => void }) {
     } finally { setSaving(false); }
   };
 
-  const inp = "w-full rounded-lg border border-[#1E2D45] bg-[#111C2E] px-4 py-2.5 text-sm text-white placeholder-muted outline-none transition-colors focus:border-brand";
-  const lbl = "block text-sm font-medium text-[#7A8BA3] mb-1.5";
+  const inp = "w-full rounded-[14px] px-4 py-2.5 text-sm outline-none transition-all duration-150";
+  const inpStyle = { background: "var(--t-bg-card)", borderWidth: 1, borderStyle: "solid" as const, borderColor: "var(--t-border)", color: "var(--t-text-primary)" };
+  const lbl = "block text-sm font-medium mb-1.5";
+  const lblStyle = { color: "var(--t-text-muted)" };
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
-      {error && <div className="rounded-lg bg-red-500/10 px-4 py-3 text-sm text-red-400">{error}</div>}
+      {error && <div className="rounded-[14px] px-4 py-3 text-sm" style={{ background: "var(--t-error-soft)", color: "var(--t-error)" }}>{error}</div>}
 
       {/* Customer */}
       <div className="relative">
-        <label className={lbl}>Customer</label>
+        <label className={lbl} style={lblStyle}>Customer</label>
         {customerName ? (
-          <div className="flex items-center justify-between rounded-lg border border-white/10 bg-dark-card px-4 py-2.5">
-            <span className="text-sm text-white">{customerName}</span>
-            <button type="button" onClick={() => { setCustomerId(""); setCustomerName(""); }} className="text-xs text-muted hover:text-red-400">Clear</button>
+          <div className="flex items-center justify-between rounded-[14px] border px-4 py-2.5"
+            style={{ borderColor: "var(--t-border)", background: "var(--t-bg-card)" }}>
+            <span className="text-sm" style={{ color: "var(--t-text-primary)" }}>{customerName}</span>
+            <button type="button" onClick={() => { setCustomerId(""); setCustomerName(""); }}
+              className="text-xs transition-all duration-150" style={{ color: "var(--t-text-muted)" }}>Clear</button>
           </div>
         ) : (
-          <input value={customerSearch} onChange={(e) => setCustomerSearch(e.target.value)} onFocus={() => customerResults.length > 0 && setShowDropdown(true)} className={inp} placeholder="Search customers..." />
+          <input value={customerSearch} onChange={(e) => setCustomerSearch(e.target.value)}
+            onFocus={() => customerResults.length > 0 && setShowDropdown(true)}
+            className={inp} style={inpStyle} placeholder="Search customers..." />
         )}
         {showDropdown && customerResults.length > 0 && (
-          <div className="absolute z-10 mt-1 w-full rounded-lg border border-white/10 bg-dark-secondary shadow-xl overflow-hidden">
+          <div className="absolute z-10 mt-1 w-full rounded-[14px] border shadow-xl overflow-hidden"
+            style={{ borderColor: "var(--t-border)", background: "var(--t-bg-card)" }}>
             {customerResults.map((c) => (
-              <button key={c.id} type="button" onClick={() => { setCustomerId(c.id); setCustomerName(`${c.first_name} ${c.last_name}`); setShowDropdown(false); setCustomerSearch(""); }} className="w-full px-4 py-2.5 text-left text-sm text-foreground transition-colors hover:bg-dark-card-hover">
+              <button key={c.id} type="button"
+                onClick={() => { setCustomerId(c.id); setCustomerName(`${c.first_name} ${c.last_name}`); setShowDropdown(false); setCustomerSearch(""); }}
+                className="w-full px-4 py-2.5 text-left text-sm transition-all duration-150"
+                style={{ color: "var(--t-text-primary)" }}>
                 {c.first_name} {c.last_name}
               </button>
             ))}
@@ -616,60 +657,78 @@ function CreateInvoiceForm({ onSuccess }: { onSuccess: () => void }) {
 
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label className={lbl}>Payment Terms</label>
-          <select value={paymentTerms} onChange={(e) => setPaymentTerms(e.target.value)} className={`${inp} appearance-none`}>
+          <label className={lbl} style={lblStyle}>Payment Terms</label>
+          <select value={paymentTerms} onChange={(e) => setPaymentTerms(e.target.value)}
+            className={`${inp} appearance-none`} style={inpStyle}>
             {PAYMENT_TERMS.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
           </select>
         </div>
         <div>
-          <label className={lbl}>Due Date</label>
-          <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className={inp} />
+          <label className={lbl} style={lblStyle}>Due Date</label>
+          <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)}
+            className={inp} style={inpStyle} />
         </div>
       </div>
 
       <div>
-        <label className={lbl}>Tax Rate</label>
-        <input type="number" step="0.0001" value={taxRate} onChange={(e) => setTaxRate(e.target.value)} className={inp} placeholder="0.0825" />
-        <p className="mt-1 text-[10px] text-muted">{(Number(taxRate) * 100).toFixed(2)}%</p>
+        <label className={lbl} style={lblStyle}>Tax Rate</label>
+        <input type="number" step="0.0001" value={taxRate} onChange={(e) => setTaxRate(e.target.value)}
+          className={inp} style={inpStyle} placeholder="0.0825" />
+        <p className="mt-1 text-[10px]" style={{ color: "var(--t-text-muted)" }}>{(Number(taxRate) * 100).toFixed(2)}%</p>
       </div>
 
       {/* Line Items */}
       <div>
-        <label className={lbl}>Line Items</label>
+        <label className={lbl} style={lblStyle}>Line Items</label>
         <div className="space-y-2">
           {lineItems.map((line, idx) => (
             <div key={idx} className="flex gap-2 items-start">
-              <input value={line.description} onChange={(e) => updateLineItem(idx, "description", e.target.value)} className={`flex-1 ${inp}`} placeholder="Description" />
-              <input type="number" value={line.quantity || ""} onChange={(e) => updateLineItem(idx, "quantity", e.target.value)} className={`w-16 ${inp}`} placeholder="Qty" />
-              <input type="number" step="0.01" value={line.unitPrice || ""} onChange={(e) => updateLineItem(idx, "unitPrice", e.target.value)} className={`w-24 ${inp}`} placeholder="Price" />
-              <span className="flex items-center py-2.5 text-sm text-foreground w-20 justify-end tabular-nums">{fmt(line.amount)}</span>
+              <input value={line.description} onChange={(e) => updateLineItem(idx, "description", e.target.value)}
+                className={`flex-1 ${inp}`} style={inpStyle} placeholder="Description" />
+              <input type="number" value={line.quantity || ""} onChange={(e) => updateLineItem(idx, "quantity", e.target.value)}
+                className={`w-16 ${inp}`} style={inpStyle} placeholder="Qty" />
+              <input type="number" step="0.01" value={line.unitPrice || ""} onChange={(e) => updateLineItem(idx, "unitPrice", e.target.value)}
+                className={`w-24 ${inp}`} style={inpStyle} placeholder="Price" />
+              <span className="flex items-center py-2.5 text-sm w-20 justify-end tabular-nums"
+                style={{ color: "var(--t-text-primary)" }}>{fmt(line.amount)}</span>
               {lineItems.length > 1 && (
-                <button type="button" onClick={() => removeLine(idx)} className="p-2.5 text-muted hover:text-red-400"><Trash2 className="h-4 w-4" /></button>
+                <button type="button" onClick={() => removeLine(idx)} className="p-2.5 transition-all duration-150"
+                  style={{ color: "var(--t-text-muted)" }}><Trash2 className="h-4 w-4" /></button>
               )}
             </div>
           ))}
         </div>
-        <button type="button" onClick={addLine} className="mt-2 text-sm text-brand hover:text-brand-light btn-press">+ Add line item</button>
+        <button type="button" onClick={addLine} className="mt-2 text-sm font-medium transition-all duration-150"
+          style={{ color: "var(--t-accent)" }}>+ Add line item</button>
       </div>
 
       {/* Totals */}
-      <div className="rounded-xl bg-[#111C2E] border border-[#1E2D45] p-4 space-y-2 text-sm">
-        <div className="flex justify-between text-foreground"><span>Subtotal</span><span className="tabular-nums">{fmt(subtotal)}</span></div>
-        {tax > 0 && <div className="flex justify-between text-foreground"><span>Tax ({(Number(taxRate) * 100).toFixed(2)}%)</span><span className="tabular-nums">{fmt(tax)}</span></div>}
-        <div className="flex justify-between border-t border-[#1E2D45] pt-2 font-semibold"><span className="text-white">Total</span><span className="text-brand tabular-nums">{fmt(invoiceTotal)}</span></div>
+      <div className="rounded-[14px] border p-4 space-y-2 text-sm"
+        style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)" }}>
+        <div className="flex justify-between" style={{ color: "var(--t-text-primary)" }}><span>Subtotal</span><span className="tabular-nums">{fmt(subtotal)}</span></div>
+        {tax > 0 && <div className="flex justify-between" style={{ color: "var(--t-text-primary)" }}><span>Tax ({(Number(taxRate) * 100).toFixed(2)}%)</span><span className="tabular-nums">{fmt(tax)}</span></div>}
+        <div className="flex justify-between pt-2 font-semibold" style={{ borderTop: "1px solid var(--t-border)" }}>
+          <span style={{ color: "var(--t-text-primary)" }}>Total</span>
+          <span className="tabular-nums" style={{ color: "var(--t-accent)" }}>{fmt(invoiceTotal)}</span>
+        </div>
       </div>
 
       <div>
-        <label className={lbl}>Notes to Customer</label>
-        <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} className={`${inp} resize-none`} placeholder="Payment instructions, thank you note..." />
+        <label className={lbl} style={lblStyle}>Notes to Customer</label>
+        <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2}
+          className={`${inp} resize-none`} style={inpStyle} placeholder="Payment instructions, thank you note..." />
       </div>
 
       {/* Save buttons */}
       <div className="flex gap-2">
-        <button type="submit" onClick={() => setSaveMode("draft")} disabled={saving} className="flex-1 rounded-lg border border-[#1E2D45] px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-dark-card-hover disabled:opacity-50 btn-press">
+        <button type="submit" onClick={() => setSaveMode("draft")} disabled={saving}
+          className="flex-1 rounded-full border px-4 py-2.5 text-sm font-medium transition-all duration-150 disabled:opacity-50"
+          style={{ borderColor: "var(--t-border)", color: "var(--t-text-primary)", background: "transparent" }}>
           {saving && saveMode === "draft" ? "Saving..." : "Save as Draft"}
         </button>
-        <button type="submit" onClick={() => setSaveMode("send")} disabled={saving} className="flex-1 rounded-lg bg-[#2ECC71] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1FA855] disabled:opacity-50 btn-press">
+        <button type="submit" onClick={() => setSaveMode("send")} disabled={saving}
+          className="flex-1 rounded-full px-4 py-2.5 text-sm font-semibold transition-all duration-150 disabled:opacity-50 active:scale-95"
+          style={{ background: "var(--t-accent)", color: "#000" }}>
           {saving && saveMode === "send" ? "Sending..." : "Save & Send"}
         </button>
       </div>

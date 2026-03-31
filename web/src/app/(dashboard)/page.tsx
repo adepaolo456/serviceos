@@ -70,22 +70,21 @@ interface UserProfile {
 
 /* ---- Helpers ---- */
 
-const JOB_TYPE_BADGE: Record<string, string> = {
-  delivery: "bg-blue-500/10 text-blue-400",
-  pickup: "bg-orange-500/10 text-orange-400",
-  exchange: "bg-purple-500/10 text-purple-400",
+const JOB_TYPE_COLOR: Record<string, string> = {
+  delivery: "var(--t-accent)",
+  pickup: "var(--t-warning)",
+  exchange: "var(--t-text-muted)",
 };
 
-const STATUS_BADGE: Record<string, string> = {
-  pending: "bg-yellow-500/10 text-yellow-400",
-  confirmed: "bg-blue-500/10 text-blue-400",
-  dispatched: "bg-purple-500/10 text-purple-400",
-  en_route: "bg-orange-500/10 text-orange-400",
-  in_progress: "bg-brand/10 text-brand",
-  completed: "bg-emerald-500/10 text-emerald-400",
-  cancelled: "bg-red-500/10 text-red-400",
+const STATUS_COLOR: Record<string, string> = {
+  pending: "var(--t-warning)",
+  confirmed: "var(--t-accent)",
+  dispatched: "var(--t-text-muted)",
+  en_route: "var(--t-warning)",
+  in_progress: "var(--t-accent)",
+  completed: "var(--t-accent)",
+  cancelled: "var(--t-error)",
 };
-
 
 function getGreeting(): string {
   const h = new Date().getHours();
@@ -115,6 +114,10 @@ function fmtShortDate(d: string): string {
   if (d === shiftDate(t, 1)) return "Tomorrow";
   if (d === shiftDate(t, -1)) return "Yesterday";
   return new Date(d + "T00:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+}
+
+function fmtLongDate(d: string): string {
+  return new Date(d + "T00:00:00").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
 }
 
 /* ---- Component ---- */
@@ -210,113 +213,272 @@ export default function DashboardPage() {
 
   if (loading) {
     return (
-      <div className="space-y-6">
-        <div className="h-14 skeleton rounded-xl" />
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
-          <div className="lg:col-span-3 h-96 skeleton rounded-2xl" />
-          <div className="lg:col-span-2 h-96 skeleton rounded-2xl" />
+      <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+        <div className="skeleton" style={{ height: 56, borderRadius: 14 }} />
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 16 }}>
+          {[1, 2, 3, 4].map((i) => <div key={i} className="skeleton" style={{ height: 88, borderRadius: 14 }} />)}
         </div>
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-          {[1, 2, 3, 4].map((i) => <div key={i} className="h-24 skeleton rounded-xl" />)}
-        </div>
+        <div className="skeleton" style={{ height: 400, borderRadius: 14 }} />
       </div>
     );
   }
 
   const activeRentals = (dashboard?.jobs.total ?? 0) - (dashboard?.jobs.completed ?? 0) - (dashboard?.jobs.cancelled ?? 0);
 
+  const kpis = [
+    { label: "Revenue", value: `$${(dashboard?.revenue.thisMonth ?? 0).toLocaleString()}`, trend: "+12%", positive: true },
+    { label: "Jobs This Month", value: String(dashboard?.jobs.thisMonth ?? 0), trend: "+3", positive: true },
+    { label: "Completed", value: String(dashboard?.jobs.completed ?? 0), trend: null, positive: true },
+    { label: "Active Rentals", value: String(activeRentals), trend: null, positive: true },
+  ];
+
   return (
     <div>
-      {/* Greeting */}
-      <p className="text-sm text-muted mb-4">
-        {getGreeting()}, {user?.firstName || "there"}
-      </p>
+      {/* ---- Greeting + Quick Actions ---- */}
+      <div style={{ marginBottom: 32 }}>
+        <h1 style={{
+          fontSize: 28,
+          fontWeight: 700,
+          letterSpacing: "-1px",
+          color: "var(--t-text-primary)",
+          lineHeight: 1.2,
+          marginBottom: 4,
+        }}>
+          {getGreeting()}, {user?.firstName || "Anthony"}
+        </h1>
+        <p style={{ fontSize: 14, color: "var(--t-text-muted)", marginBottom: 20 }}>
+          {fmtLongDate(today())} &middot; {todayJobs.length} job{todayJobs.length !== 1 ? "s" : ""} today
+        </p>
 
-      {/* ============ SECTION 1: Quick Actions ============ */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center mb-8">
-        <Link
-          href="/book"
-          className="flex items-center gap-2 rounded-xl bg-[#2ECC71] px-5 py-3 text-sm font-bold text-white shadow-lg shadow-brand/20 transition-all hover:bg-[#1FA855] active:scale-95"
-        >
-          <Plus className="h-5 w-5" strokeWidth={2.5} />
-          New Booking
-        </Link>
-        <Link
-          href="/customers"
-          className="flex items-center gap-2 rounded-xl bg-[#1E2D45] px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-[#1A2740] active:scale-95"
-        >
-          <UserPlus className="h-4 w-4" />
-          New Customer
-        </Link>
-        <Link
-          href="/pricing"
-          className="flex items-center gap-2 rounded-xl bg-[#1E2D45] px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-[#1A2740] active:scale-95"
-        >
-          <Calculator className="h-4 w-4" />
-          New Quote
-        </Link>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <Link
+            href="/book"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              backgroundColor: "var(--t-accent)",
+              color: "#000",
+              fontSize: 14,
+              fontWeight: 600,
+              padding: "10px 20px",
+              borderRadius: 24,
+              textDecoration: "none",
+              transition: "opacity 0.15s ease",
+            }}
+          >
+            <Plus style={{ width: 16, height: 16 }} strokeWidth={2.5} />
+            New Booking
+          </Link>
+          <Link
+            href="/customers"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              backgroundColor: "transparent",
+              color: "var(--t-text-primary)",
+              fontSize: 14,
+              fontWeight: 600,
+              padding: "10px 20px",
+              borderRadius: 24,
+              border: "1px solid var(--t-border)",
+              textDecoration: "none",
+              transition: "all 0.15s ease",
+            }}
+          >
+            <UserPlus style={{ width: 16, height: 16, color: "var(--t-text-muted)" }} />
+            New Customer
+          </Link>
+          <Link
+            href="/pricing"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              backgroundColor: "transparent",
+              color: "var(--t-text-primary)",
+              fontSize: 14,
+              fontWeight: 600,
+              padding: "10px 20px",
+              borderRadius: 24,
+              border: "1px solid var(--t-border)",
+              textDecoration: "none",
+              transition: "all 0.15s ease",
+            }}
+          >
+            <Calculator style={{ width: 16, height: 16, color: "var(--t-text-muted)" }} />
+            New Quote
+          </Link>
 
-        {/* Global search */}
-        <div className="relative flex-1 max-w-sm sm:ml-auto">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
-          <input
-            type="text"
-            placeholder="Search customers, jobs, assets..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            onFocus={() => searchResults.length > 0 && setSearchOpen(true)}
-            onBlur={() => setTimeout(() => setSearchOpen(false), 200)}
-            className="w-full rounded-xl bg-[#111C2E] border border-[#1E2D45] py-2.5 pl-10 pr-4 text-sm text-white placeholder-muted outline-none focus:border-brand focus:ring-1 focus:ring-brand"
-          />
-          {searchOpen && searchResults.length > 0 && (
-            <div className="absolute z-30 mt-1 w-full rounded-xl border border-[#1E2D45] bg-dark-secondary shadow-xl overflow-hidden">
-              {searchResults.map((r) => (
-                <button
-                  key={`${r.type}-${r.id}`}
-                  onMouseDown={() => router.push(r.href)}
-                  className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-dark-card-hover"
-                >
-                  <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold uppercase ${r.type === "customer" ? "bg-brand/10 text-brand" : r.type === "job" ? "bg-blue-500/10 text-blue-400" : "bg-orange-500/10 text-orange-400"}`}>
-                    {r.type}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-white truncate">{r.title}</p>
-                    <p className="text-xs text-muted truncate">{r.subtitle}</p>
-                  </div>
-                </button>
-              ))}
-            </div>
-          )}
+          {/* Search */}
+          <div style={{ position: "relative", flex: 1, maxWidth: 340, marginLeft: "auto" }}>
+            <Search style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", width: 16, height: 16, color: "var(--t-text-muted)" }} />
+            <input
+              type="text"
+              placeholder="Search customers, jobs, assets..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onFocus={() => searchResults.length > 0 && setSearchOpen(true)}
+              onBlur={() => setTimeout(() => setSearchOpen(false), 200)}
+              style={{
+                width: "100%",
+                backgroundColor: "var(--t-bg-card)",
+                border: "1px solid var(--t-border)",
+                borderRadius: 24,
+                padding: "10px 16px 10px 38px",
+                fontSize: 14,
+                color: "var(--t-text-primary)",
+                outline: "none",
+                transition: "border-color 0.15s ease",
+              }}
+            />
+            {searchOpen && searchResults.length > 0 && (
+              <div style={{
+                position: "absolute",
+                zIndex: 30,
+                marginTop: 6,
+                width: "100%",
+                borderRadius: 14,
+                border: "1px solid var(--t-border)",
+                backgroundColor: "var(--t-bg-card)",
+                overflow: "hidden",
+                boxShadow: "0 8px 32px rgba(0,0,0,0.3)",
+              }}>
+                {searchResults.map((r) => (
+                  <button
+                    key={`${r.type}-${r.id}`}
+                    onMouseDown={() => router.push(r.href)}
+                    style={{
+                      display: "flex",
+                      width: "100%",
+                      alignItems: "center",
+                      gap: 12,
+                      padding: "10px 16px",
+                      textAlign: "left",
+                      transition: "background 0.15s ease",
+                      backgroundColor: "transparent",
+                      border: "none",
+                      cursor: "pointer",
+                    }}
+                    className="hover:bg-dark-card-hover"
+                  >
+                    <span style={{
+                      fontSize: 11,
+                      fontWeight: 600,
+                      textTransform: "uppercase",
+                      color: r.type === "customer" ? "var(--t-accent)" : "var(--t-text-muted)",
+                    }}>
+                      {r.type}
+                    </span>
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <p style={{ fontSize: 14, fontWeight: 500, color: "var(--t-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.title}</p>
+                      <p style={{ fontSize: 12, color: "var(--t-text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.subtitle}</p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* ============ Overdue Rental Alert ============ */}
-      {overdueJobs.length > 0 && (
-        <div className="mb-5 rounded-2xl bg-red-500/10 border border-red-500/20 p-4">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <span className="relative flex h-2.5 w-2.5"><span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-75" /><span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" /></span>
-              <span className="text-sm font-semibold text-red-400">{overdueJobs.length} Overdue Rental{overdueJobs.length > 1 ? "s" : ""}</span>
-              <span className="text-xs text-red-400/70">— ${overdueJobs.reduce((s: number, j: any) => s + Number(j.extra_day_charges || 0), 0).toFixed(2)} in extra charges</span>
+      {/* ---- KPI Cards ---- */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 12, marginBottom: 24 }} className="lg:!grid-cols-4">
+        {kpis.map((kpi) => (
+          <Link key={kpi.label} href="/analytics" style={{
+            backgroundColor: "var(--t-bg-card)",
+            border: "1px solid var(--t-border)",
+            borderRadius: 14,
+            padding: "18px 16px",
+            textDecoration: "none",
+            transition: "background 0.15s ease",
+          }} className="hover:bg-dark-card-hover">
+            <p style={{
+              fontSize: 12,
+              fontWeight: 600,
+              textTransform: "uppercase",
+              letterSpacing: "0.5px",
+              color: "var(--t-text-muted)",
+              marginBottom: 6,
+            }}>
+              {kpi.label}
+            </p>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+              <span style={{
+                fontSize: 24,
+                fontWeight: 700,
+                letterSpacing: "-0.5px",
+                color: "var(--t-text-primary)",
+                fontVariantNumeric: "tabular-nums",
+              }}>
+                {kpi.value}
+              </span>
+              {kpi.trend && (
+                <span style={{
+                  fontSize: 12,
+                  fontWeight: 600,
+                  color: kpi.positive ? "var(--t-accent)" : "var(--t-error)",
+                }}>
+                  {kpi.trend}
+                </span>
+              )}
             </div>
+          </Link>
+        ))}
+      </div>
+
+      {/* ---- Overdue Alerts ---- */}
+      {overdueJobs.length > 0 && (
+        <div style={{
+          backgroundColor: "var(--t-error-soft)",
+          border: "1px solid var(--t-border)",
+          borderRadius: 14,
+          padding: "14px 16px",
+          marginBottom: 16,
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+            <span style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: "var(--t-error)", flexShrink: 0 }} />
+            <span style={{ fontSize: 13, fontWeight: 600, color: "var(--t-error)" }}>
+              {overdueJobs.length} Overdue Rental{overdueJobs.length > 1 ? "s" : ""}
+            </span>
+            <span style={{ fontSize: 12, color: "var(--t-text-muted)" }}>
+              &mdash; ${overdueJobs.reduce((s: number, j: any) => s + Number(j.extra_day_charges || 0), 0).toFixed(2)} in extra charges
+            </span>
           </div>
-          <div className="space-y-2">
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {overdueJobs.slice(0, 5).map((j: any) => (
-              <div key={j.id} className="flex items-center justify-between rounded-lg bg-dark-card border border-[#1E2D45] px-3 py-2">
-                <div className="flex items-center gap-3 min-w-0">
-                  <span className="rounded bg-red-500/15 px-2 py-0.5 text-[10px] font-bold text-red-400">{j.extra_days}d</span>
-                  <div className="min-w-0">
-                    <p className="text-xs font-medium text-white truncate">{j.customer ? `${j.customer.first_name} ${j.customer.last_name}` : j.job_number}</p>
-                    <p className="text-[10px] text-muted">{j.asset?.identifier || j.service_type} · ${Number(j.extra_day_charges || 0).toFixed(2)} charges</p>
+              <div key={j.id} style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                backgroundColor: "var(--t-bg-card)",
+                border: "1px solid var(--t-border)",
+                borderRadius: 10,
+                padding: "8px 12px",
+              }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: "var(--t-error)" }}>{j.extra_days}d</span>
+                  <div style={{ minWidth: 0 }}>
+                    <p style={{ fontSize: 13, fontWeight: 500, color: "var(--t-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {j.customer ? `${j.customer.first_name} ${j.customer.last_name}` : j.job_number}
+                    </p>
+                    <p style={{ fontSize: 11, color: "var(--t-text-muted)" }}>{j.asset?.identifier || j.service_type} &middot; ${Number(j.extra_day_charges || 0).toFixed(2)} charges</p>
                   </div>
                 </div>
-                <div className="flex gap-1.5 shrink-0" onClick={e => e.stopPropagation()}>
+                <div style={{ display: "flex", gap: 6, flexShrink: 0 }} onClick={e => e.stopPropagation()}>
                   <button onClick={() => { api.post(`/automation/overdue/${j.id}/action`, { action: "schedule_pickup" }).then(() => api.get<any[]>("/automation/overdue").then(setOverdueJobs)).catch(() => {}); }}
-                    className="rounded bg-dark-elevated px-2 py-1 text-[10px] font-medium text-foreground hover:bg-dark-card-hover">Pickup</button>
+                    style={{ fontSize: 11, fontWeight: 500, color: "var(--t-text-primary)", backgroundColor: "transparent", border: "1px solid var(--t-border)", borderRadius: 20, padding: "4px 10px", cursor: "pointer", transition: "background 0.15s ease" }}>
+                    Pickup
+                  </button>
                   <button onClick={() => { api.post(`/automation/overdue/${j.id}/action`, { action: "extend", days: 7 }).then(() => api.get<any[]>("/automation/overdue").then(setOverdueJobs)).catch(() => {}); }}
-                    className="rounded bg-dark-elevated px-2 py-1 text-[10px] font-medium text-foreground hover:bg-dark-card-hover">+7 Days</button>
+                    style={{ fontSize: 11, fontWeight: 500, color: "var(--t-text-primary)", backgroundColor: "transparent", border: "1px solid var(--t-border)", borderRadius: 20, padding: "4px 10px", cursor: "pointer", transition: "background 0.15s ease" }}>
+                    +7 Days
+                  </button>
                   <button onClick={() => { api.post(`/automation/overdue/${j.id}/action`, { action: "dismiss" }).then(() => api.get<any[]>("/automation/overdue").then(setOverdueJobs)).catch(() => {}); }}
-                    className="rounded bg-dark-elevated px-2 py-1 text-[10px] font-medium text-muted hover:text-foreground">Dismiss</button>
+                    style={{ fontSize: 11, fontWeight: 500, color: "var(--t-text-muted)", backgroundColor: "transparent", border: "1px solid var(--t-border)", borderRadius: 20, padding: "4px 10px", cursor: "pointer", transition: "background 0.15s ease" }}>
+                    Dismiss
+                  </button>
                 </div>
               </div>
             ))}
@@ -324,156 +486,320 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* ============ Customer Reschedule Alert ============ */}
+      {/* ---- Reschedule Alerts ---- */}
       {rescheduledJobs.length > 0 && (
-        <div className="mb-5 rounded-2xl bg-blue-500/10 border border-blue-500/20 p-4">
-          <div className="flex items-center gap-2 mb-3">
-            <span className="text-sm font-semibold text-blue-400">{rescheduledJobs.length} Customer Reschedule{rescheduledJobs.length > 1 ? "s" : ""}</span>
+        <div style={{
+          backgroundColor: "var(--t-warning-soft)",
+          border: "1px solid var(--t-border)",
+          borderRadius: 14,
+          padding: "14px 16px",
+          marginBottom: 16,
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+            <span style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: "var(--t-warning)", flexShrink: 0 }} />
+            <span style={{ fontSize: 13, fontWeight: 600, color: "var(--t-warning)" }}>
+              {rescheduledJobs.length} Customer Reschedule{rescheduledJobs.length > 1 ? "s" : ""}
+            </span>
           </div>
-          <div className="space-y-2">
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {rescheduledJobs.slice(0, 3).map((j: any) => (
-              <div key={j.id} className="flex items-center justify-between rounded-lg bg-dark-card border border-[#1E2D45] px-3 py-2">
-                <div className="min-w-0">
-                  <p className="text-xs font-medium text-white truncate">{j.customer ? `${j.customer.first_name} ${j.customer.last_name}` : j.job_number}</p>
-                  <p className="text-[10px] text-muted">Moved from {j.rescheduled_from_date} &rarr; {j.scheduled_date}</p>
+              <div key={j.id} style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                backgroundColor: "var(--t-bg-card)",
+                border: "1px solid var(--t-border)",
+                borderRadius: 10,
+                padding: "8px 12px",
+              }}>
+                <div style={{ minWidth: 0 }}>
+                  <p style={{ fontSize: 13, fontWeight: 500, color: "var(--t-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {j.customer ? `${j.customer.first_name} ${j.customer.last_name}` : j.job_number}
+                  </p>
+                  <p style={{ fontSize: 11, color: "var(--t-text-muted)" }}>Moved from {j.rescheduled_from_date} &rarr; {j.scheduled_date}</p>
                 </div>
                 <button onClick={() => { api.patch(`/jobs/${j.id}`, { rescheduledByCustomer: false }).then(() => setRescheduledJobs(prev => prev.filter(x => x.id !== j.id))).catch(() => {}); }}
-                  className="rounded bg-dark-elevated px-2 py-1 text-[10px] font-medium text-muted hover:text-foreground shrink-0 ml-2">Acknowledge</button>
+                  style={{ fontSize: 11, fontWeight: 500, color: "var(--t-text-muted)", backgroundColor: "transparent", border: "1px solid var(--t-border)", borderRadius: 20, padding: "4px 10px", cursor: "pointer", flexShrink: 0, marginLeft: 8, transition: "all 0.15s ease" }}>
+                  Acknowledge
+                </button>
               </div>
             ))}
           </div>
         </div>
       )}
 
-      {/* ============ SECTION 2: Today's Overview ============ */}
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-5 mb-8">
-        {/* Left: Today's Schedule */}
-        <div className="lg:col-span-3 space-y-5">
-          <div className="rounded-2xl border border-[#1E2D45] bg-dark-card overflow-hidden">
-            <div className="flex items-center justify-between px-4 py-2.5 border-b border-[#1E2D45]">
-              <div className="flex items-center gap-0">
-                <button onClick={() => setScheduleDate(d => shiftDate(d, -1))} className="flex items-center justify-center w-9 h-9 rounded-lg text-muted hover:text-white hover:bg-dark-elevated transition-colors active:scale-90">
-                  <ChevronLeft className="h-5 w-5" />
+      {/* ---- Today's Schedule + Sidebar ---- */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 20, marginBottom: 32 }} className="lg:!grid-cols-5">
+        {/* Schedule */}
+        <div className="lg:col-span-3" style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+          <div style={{
+            backgroundColor: "var(--t-bg-card)",
+            border: "1px solid var(--t-border)",
+            borderRadius: 14,
+            overflow: "hidden",
+          }}>
+            {/* Date nav header */}
+            <div style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              padding: "10px 16px",
+              borderBottom: "1px solid var(--t-border)",
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 0 }}>
+                <button
+                  onClick={() => setScheduleDate(d => shiftDate(d, -1))}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    width: 36,
+                    height: 36,
+                    borderRadius: 10,
+                    color: "var(--t-text-muted)",
+                    backgroundColor: "transparent",
+                    border: "none",
+                    cursor: "pointer",
+                    transition: "color 0.15s ease",
+                  }}
+                >
+                  <ChevronLeft style={{ width: 18, height: 18 }} />
                 </button>
                 {scheduleDate !== today() && (
-                  <button onClick={() => setScheduleDate(today())} className="rounded-md px-2 py-1 text-[10px] font-semibold text-brand bg-brand/10 hover:bg-brand/20 transition-colors mx-1">
+                  <button
+                    onClick={() => setScheduleDate(today())}
+                    style={{
+                      fontSize: 11,
+                      fontWeight: 600,
+                      color: "var(--t-accent)",
+                      backgroundColor: "var(--t-accent-soft)",
+                      border: "none",
+                      borderRadius: 20,
+                      padding: "4px 10px",
+                      cursor: "pointer",
+                      margin: "0 4px",
+                      transition: "opacity 0.15s ease",
+                    }}
+                  >
                     Today
                   </button>
                 )}
-                <div className="min-w-[140px] text-center flex items-center justify-center gap-1.5">
-                  <Clock className="h-3.5 w-3.5 text-brand shrink-0" />
-                  <h2 className="font-display text-sm font-semibold text-white whitespace-nowrap">{fmtShortDate(scheduleDate)}</h2>
-                  <span className="rounded-full bg-brand/10 px-1.5 py-0.5 text-[10px] font-bold text-brand tabular-nums ml-0.5">{todayJobs.length}</span>
+                <div style={{ minWidth: 140, textAlign: "center", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+                  <Clock style={{ width: 14, height: 14, color: "var(--t-text-muted)", flexShrink: 0 }} />
+                  <span style={{ fontSize: 14, fontWeight: 600, color: "var(--t-text-primary)", whiteSpace: "nowrap" }}>
+                    {fmtShortDate(scheduleDate)}
+                  </span>
+                  <span style={{
+                    fontSize: 11,
+                    fontWeight: 700,
+                    color: "var(--t-accent)",
+                    fontVariantNumeric: "tabular-nums",
+                  }}>
+                    {todayJobs.length}
+                  </span>
                 </div>
-                <button onClick={() => setScheduleDate(d => shiftDate(d, 1))} className="flex items-center justify-center w-9 h-9 rounded-lg text-muted hover:text-white hover:bg-dark-elevated transition-colors active:scale-90">
-                  <ChevronRight className="h-5 w-5" />
+                <button
+                  onClick={() => setScheduleDate(d => shiftDate(d, 1))}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    width: 36,
+                    height: 36,
+                    borderRadius: 10,
+                    color: "var(--t-text-muted)",
+                    backgroundColor: "transparent",
+                    border: "none",
+                    cursor: "pointer",
+                    transition: "color 0.15s ease",
+                  }}
+                >
+                  <ChevronRight style={{ width: 18, height: 18 }} />
                 </button>
               </div>
-              <Link href="/dispatch" className="text-xs text-brand hover:text-brand-light transition-colors">
-                Dispatch <ArrowRight className="inline h-3 w-3" />
+              <Link href="/dispatch" style={{ fontSize: 12, color: "var(--t-accent)", textDecoration: "none", display: "flex", alignItems: "center", gap: 4, transition: "opacity 0.15s ease" }}>
+                Dispatch <ArrowRight style={{ width: 12, height: 12 }} />
               </Link>
             </div>
+
+            {/* Job list */}
             <div key={scheduleDate} className="animate-fade-in">
-            {todayJobs.length === 0 ? (
-              <div className="flex flex-col items-center py-12">
-                <Briefcase className="h-10 w-10 text-muted/20 mb-2" />
-                <p className="text-sm text-muted">No jobs scheduled for {fmtShortDate(scheduleDate).toLowerCase()}</p>
-                <Link href="/book" className="mt-3 text-xs text-brand hover:text-brand-light">+ Create a job</Link>
-              </div>
-            ) : (
-              <div className="divide-y divide-[#1E2D45]">
-                {todayJobs.slice(0, 8).map((job) => {
-                  const addr = job.service_address;
-                  const addrStr = addr ? [addr.street, addr.city].filter(Boolean).join(", ") : "";
-                  return (
-                    <Link key={job.id} href={`/jobs/${job.id}`} className="flex items-center gap-4 px-5 py-3 transition-colors hover:bg-dark-card-hover">
-                      <div className="w-16 shrink-0 text-center">
-                        <p className="text-sm font-medium text-white tabular-nums">{formatTime(job.scheduled_window_start)}</p>
-                        {job.scheduled_window_end && <p className="text-[10px] text-muted tabular-nums">{formatTime(job.scheduled_window_end)}</p>}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium text-white truncate">
-                          {job.customer ? `${job.customer.first_name} ${job.customer.last_name}` : job.job_number}
-                        </p>
-                        {addrStr && <p className="text-xs text-muted truncate flex items-center gap-1"><MapPin className="h-3 w-3 shrink-0" />{addrStr}</p>}
-                      </div>
-                      <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium capitalize ${JOB_TYPE_BADGE[job.job_type] || "bg-zinc-500/10 text-zinc-400"}`}>{job.job_type}</span>
-                      <div className="w-20 shrink-0 text-right">
-                        {job.assigned_driver ? (
-                          <p className="text-xs text-foreground truncate">{job.assigned_driver.first_name}</p>
-                        ) : (
-                          <span className="text-[10px] text-red-400">Unassigned</span>
-                        )}
-                      </div>
-                      <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium capitalize ${STATUS_BADGE[job.status] || "bg-zinc-500/10 text-zinc-400"}`}>{job.status.replace(/_/g, " ")}</span>
-                    </Link>
-                  );
-                })}
-              </div>
-            )}
+              {todayJobs.length === 0 ? (
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: "48px 16px" }}>
+                  <Briefcase style={{ width: 40, height: 40, color: "var(--t-text-muted)", opacity: 0.3, marginBottom: 8 }} />
+                  <p style={{ fontSize: 14, color: "var(--t-text-muted)" }}>No jobs scheduled for {fmtShortDate(scheduleDate).toLowerCase()}</p>
+                  <Link href="/book" style={{ marginTop: 12, fontSize: 12, color: "var(--t-accent)", textDecoration: "none" }}>+ Create a job</Link>
+                </div>
+              ) : (
+                <div>
+                  {todayJobs.slice(0, 8).map((job, idx) => {
+                    const addr = job.service_address;
+                    const addrStr = addr ? [addr.street, addr.city].filter(Boolean).join(", ") : "";
+                    return (
+                      <Link
+                        key={job.id}
+                        href={`/jobs/${job.id}`}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 16,
+                          padding: "12px 20px",
+                          textDecoration: "none",
+                          borderBottom: idx < todayJobs.slice(0, 8).length - 1 ? "1px solid var(--t-border)" : "none",
+                          transition: "background 0.15s ease",
+                        }}
+                        className="hover:bg-dark-card-hover"
+                      >
+                        {/* Time */}
+                        <div style={{ width: 52, flexShrink: 0, textAlign: "center" }}>
+                          <p style={{ fontSize: 14, fontWeight: 600, color: "var(--t-text-primary)", fontVariantNumeric: "tabular-nums" }}>
+                            {formatTime(job.scheduled_window_start)}
+                          </p>
+                          {job.scheduled_window_end && (
+                            <p style={{ fontSize: 11, color: "var(--t-text-muted)", fontVariantNumeric: "tabular-nums" }}>
+                              {formatTime(job.scheduled_window_end)}
+                            </p>
+                          )}
+                        </div>
+
+                        {/* Customer + Address */}
+                        <div style={{ minWidth: 0, flex: 1 }}>
+                          <p style={{ fontSize: 14, fontWeight: 600, color: "var(--t-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {job.customer ? `${job.customer.first_name} ${job.customer.last_name}` : job.job_number}
+                          </p>
+                          {addrStr && (
+                            <p style={{ fontSize: 12, color: "var(--t-text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 4 }}>
+                              <MapPin style={{ width: 12, height: 12, flexShrink: 0 }} />{addrStr}
+                            </p>
+                          )}
+                        </div>
+
+                        {/* Job type */}
+                        <span style={{
+                          fontSize: 11,
+                          fontWeight: 600,
+                          color: JOB_TYPE_COLOR[job.job_type] || "var(--t-text-muted)",
+                          textTransform: "capitalize",
+                          flexShrink: 0,
+                        }}>
+                          {job.job_type}
+                        </span>
+
+                        {/* Driver + Asset */}
+                        <div style={{ width: 80, flexShrink: 0, textAlign: "right" }}>
+                          {job.assigned_driver ? (
+                            <p style={{ fontSize: 12, color: "var(--t-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              {job.assigned_driver.first_name}
+                            </p>
+                          ) : (
+                            <span style={{ fontSize: 11, fontWeight: 600, color: "var(--t-error)" }}>Unassigned</span>
+                          )}
+                          {job.asset && (
+                            <p style={{ fontSize: 11, color: "var(--t-text-muted)" }}>{job.asset.identifier}</p>
+                          )}
+                        </div>
+
+                        {/* Status */}
+                        <span style={{
+                          fontSize: 11,
+                          fontWeight: 600,
+                          color: STATUS_COLOR[job.status] || "var(--t-text-muted)",
+                          textTransform: "capitalize",
+                          flexShrink: 0,
+                        }}>
+                          {job.status.replace(/_/g, " ")}
+                        </span>
+                      </Link>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
         </div>
 
-        {/* Right: This Week + Unassigned (if any) */}
-        <div className="lg:col-span-2 space-y-5">
+        {/* Sidebar: Week View + Unassigned */}
+        <div className="lg:col-span-2" style={{ display: "flex", flexDirection: "column", gap: 20 }}>
           {/* This Week */}
-          <div className="rounded-2xl border border-[#1E2D45] bg-dark-card overflow-hidden">
-            <div className="flex items-center justify-between px-5 py-3 border-b border-[#1E2D45]">
-              <div className="flex items-center gap-2">
-                <BarChart3 className="h-4 w-4 text-brand" />
-                <h2 className="font-display text-sm font-semibold text-white">This Week</h2>
+          <div style={{
+            backgroundColor: "var(--t-bg-card)",
+            border: "1px solid var(--t-border)",
+            borderRadius: 14,
+            overflow: "hidden",
+          }}>
+            <div style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              padding: "12px 16px",
+              borderBottom: "1px solid var(--t-border)",
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <BarChart3 style={{ width: 16, height: 16, color: "var(--t-text-muted)" }} />
+                <span style={{ fontSize: 15, fontWeight: 600, color: "var(--t-text-primary)" }}>This Week</span>
               </div>
             </div>
-            <div className="divide-y divide-[#1E2D45]">
-              <WeekView scheduleDate={scheduleDate} onSelectDay={setScheduleDate} />
-            </div>
+            <WeekView scheduleDate={scheduleDate} onSelectDay={setScheduleDate} />
           </div>
 
-          {/* Unassigned Jobs — only show if there are any */}
+          {/* Unassigned */}
           {unassignedJobs.length > 0 && (
-            <div className="rounded-2xl border border-red-500/10 bg-dark-card overflow-hidden">
-              <div className="flex items-center gap-2 px-5 py-3 border-b border-[#1E2D45]">
-                <UserPlus2 className="h-4 w-4 text-red-400" />
-                <h2 className="font-display text-sm font-semibold text-white">Unassigned</h2>
-                <span className="rounded-full bg-red-500/10 px-2 py-0.5 text-[10px] font-medium text-red-400">{unassignedJobs.length}</span>
+            <div style={{
+              backgroundColor: "var(--t-bg-card)",
+              border: "1px solid var(--t-border)",
+              borderRadius: 14,
+              overflow: "hidden",
+            }}>
+              <div style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                padding: "12px 16px",
+                borderBottom: "1px solid var(--t-border)",
+              }}>
+                <UserPlus2 style={{ width: 16, height: 16, color: "var(--t-error)" }} />
+                <span style={{ fontSize: 15, fontWeight: 600, color: "var(--t-text-primary)" }}>Unassigned</span>
+                <span style={{ fontSize: 11, fontWeight: 600, color: "var(--t-error)" }}>{unassignedJobs.length}</span>
               </div>
-              <div className="divide-y divide-[#1E2D45]">
-                {unassignedJobs.slice(0, 5).map((job) => (
-                  <Link key={job.id} href={`/jobs/${job.id}`} className="flex items-center justify-between px-5 py-2.5 transition-colors hover:bg-dark-card-hover">
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium text-white truncate">
+              <div>
+                {unassignedJobs.slice(0, 5).map((job, idx) => (
+                  <Link
+                    key={job.id}
+                    href={`/jobs/${job.id}`}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      padding: "10px 16px",
+                      textDecoration: "none",
+                      borderBottom: idx < unassignedJobs.slice(0, 5).length - 1 ? "1px solid var(--t-border)" : "none",
+                      transition: "background 0.15s ease",
+                    }}
+                    className="hover:bg-dark-card-hover"
+                  >
+                    <div style={{ minWidth: 0 }}>
+                      <p style={{ fontSize: 14, fontWeight: 500, color: "var(--t-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                         {job.customer ? `${job.customer.first_name} ${job.customer.last_name}` : job.job_number}
                       </p>
-                      <p className="text-[10px] text-muted capitalize">{job.job_type} · {job.asset?.identifier || "No asset"}</p>
+                      <p style={{ fontSize: 11, color: "var(--t-text-muted)", textTransform: "capitalize" }}>
+                        {job.job_type} &middot; {job.asset?.identifier || "No asset"}
+                      </p>
                     </div>
-                    <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium capitalize ${JOB_TYPE_BADGE[job.job_type] || "bg-zinc-500/10 text-zinc-400"}`}>{job.job_type}</span>
+                    <span style={{
+                      fontSize: 11,
+                      fontWeight: 600,
+                      color: JOB_TYPE_COLOR[job.job_type] || "var(--t-text-muted)",
+                      textTransform: "capitalize",
+                      flexShrink: 0,
+                    }}>
+                      {job.job_type}
+                    </span>
                   </Link>
                 ))}
               </div>
             </div>
           )}
         </div>
-      </div>
-
-      {/* ============ SECTION 3: Business Snapshot ============ */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        {[
-          { label: "Revenue This Month", value: `$${(dashboard?.revenue.thisMonth ?? 0).toLocaleString()}`, icon: DollarSign },
-          { label: "Jobs This Month", value: String(dashboard?.jobs.thisMonth ?? 0), icon: Briefcase },
-          { label: "Completed", value: String(dashboard?.jobs.completed ?? 0), icon: CheckCircle2 },
-          { label: "Active Rentals", value: String(activeRentals), icon: Truck },
-        ].map((s) => (
-          <Link key={s.label} href="/analytics" className="group flex items-center gap-3 rounded-xl border border-[#1E2D45] bg-dark-card p-4 transition-all hover:bg-dark-card-hover hover:border-brand/20">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand/10 shrink-0">
-              <s.icon className="h-4 w-4 text-brand" />
-            </div>
-            <div>
-              <p className="text-lg font-bold text-white tabular-nums">{s.value}</p>
-              <p className="text-[10px] text-muted">{s.label}</p>
-            </div>
-          </Link>
-        ))}
       </div>
 
       {/* Quick Job Create SlideOver */}
@@ -536,7 +862,6 @@ function QuickJobForm({ onSuccess }: { onSuccess: () => void }) {
     api.post<PriceQuote>("/pricing/calculate", {
       serviceType: "dumpster_rental", assetSubtype, jobType,
       customerLat: address.lat || 30.27, customerLng: address.lng || -97.74,
-      // yardLat/yardLng omitted — API auto-fetches from primary yard
     }).then(setPriceQuote).catch(() => {});
   }, [step, assetSubtype, jobType, address.lat, address.lng]);
 
@@ -562,61 +887,173 @@ function QuickJobForm({ onSuccess }: { onSuccess: () => void }) {
     finally { setSaving(false); }
   };
 
-  const inputClass = "w-full bg-[#111C2E] border border-[#1E2D45] rounded-lg px-4 py-3 text-sm text-white placeholder-muted outline-none focus:border-brand focus:ring-1 focus:ring-brand";
-  const labelClass = "block text-xs font-medium text-muted uppercase tracking-wider mb-1.5";
+  const inputStyle: React.CSSProperties = {
+    width: "100%",
+    backgroundColor: "var(--t-bg-card)",
+    border: "1px solid var(--t-border)",
+    borderRadius: 10,
+    padding: "12px 16px",
+    fontSize: 14,
+    color: "var(--t-text-primary)",
+    outline: "none",
+    transition: "border-color 0.15s ease",
+  };
+
+  const labelStyle: React.CSSProperties = {
+    display: "block",
+    fontSize: 12,
+    fontWeight: 600,
+    color: "var(--t-text-muted)",
+    textTransform: "uppercase",
+    letterSpacing: "0.5px",
+    marginBottom: 6,
+  };
+
+  const pillBtnActive: React.CSSProperties = {
+    backgroundColor: "var(--t-accent)",
+    color: "#000",
+    fontWeight: 600,
+    fontSize: 13,
+    borderRadius: 10,
+    padding: "10px 0",
+    border: "none",
+    cursor: "pointer",
+    transition: "all 0.15s ease",
+  };
+
+  const pillBtnInactive: React.CSSProperties = {
+    backgroundColor: "var(--t-bg-card)",
+    color: "var(--t-text-muted)",
+    fontWeight: 500,
+    fontSize: 13,
+    borderRadius: 10,
+    padding: "10px 0",
+    border: "1px solid var(--t-border)",
+    cursor: "pointer",
+    transition: "all 0.15s ease",
+  };
+
+  const primaryBtn: React.CSSProperties = {
+    width: "100%",
+    backgroundColor: "var(--t-accent)",
+    color: "#000",
+    fontWeight: 600,
+    fontSize: 14,
+    borderRadius: 24,
+    padding: "12px 0",
+    border: "none",
+    cursor: "pointer",
+    transition: "opacity 0.15s ease",
+  };
+
+  const secondaryBtn: React.CSSProperties = {
+    flex: 1,
+    backgroundColor: "transparent",
+    color: "var(--t-text-muted)",
+    fontWeight: 500,
+    fontSize: 14,
+    borderRadius: 24,
+    padding: "12px 0",
+    border: "1px solid var(--t-border)",
+    cursor: "pointer",
+    transition: "all 0.15s ease",
+  };
 
   return (
-    <div className="space-y-5">
-      {error && <div className="rounded-lg bg-red-500/10 px-4 py-3 text-sm text-red-400">{error}</div>}
+    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      {error && (
+        <div style={{
+          backgroundColor: "var(--t-error-soft)",
+          border: "1px solid var(--t-border)",
+          borderRadius: 10,
+          padding: "12px 16px",
+          fontSize: 13,
+          color: "var(--t-error)",
+        }}>
+          {error}
+        </div>
+      )}
 
       {/* Progress */}
-      <div className="flex items-center gap-2">
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
         {[1, 2, 3, 4].map((s) => (
-          <div key={s} className={`h-1 flex-1 rounded-full transition-colors ${step >= s ? "bg-brand" : "bg-dark-elevated"}`} />
+          <div key={s} style={{
+            height: 3,
+            flex: 1,
+            borderRadius: 2,
+            backgroundColor: step >= s ? "var(--t-accent)" : "var(--t-border)",
+            transition: "background 0.15s ease",
+          }} />
         ))}
       </div>
 
       {/* Step 1: Customer */}
       {step === 1 && (
-        <div className="space-y-4">
-          <h3 className="font-display text-base font-semibold text-white">Who is this for?</h3>
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <h3 style={{ fontSize: 15, fontWeight: 600, color: "var(--t-text-primary)" }}>Who is this for?</h3>
           {customerId ? (
-            <div className="flex items-center justify-between rounded-lg border border-brand/20 bg-brand/5 px-4 py-3">
-              <span className="text-sm text-white font-medium">{customerName}</span>
-              <button onClick={() => { setCustomerId(""); setCustomerName(""); setIsNewCustomer(false); }} className="text-xs text-muted hover:text-red-400">Change</button>
+            <div style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              borderRadius: 10,
+              border: "1px solid var(--t-border)",
+              backgroundColor: "var(--t-accent-soft)",
+              padding: "12px 16px",
+            }}>
+              <span style={{ fontSize: 14, fontWeight: 500, color: "var(--t-text-primary)" }}>{customerName}</span>
+              <button onClick={() => { setCustomerId(""); setCustomerName(""); setIsNewCustomer(false); }}
+                style={{ fontSize: 12, color: "var(--t-text-muted)", background: "none", border: "none", cursor: "pointer" }}>Change</button>
             </div>
           ) : isNewCustomer ? (
-            <div className="space-y-3">
-              <div className="grid grid-cols-2 gap-3">
-                <input value={newFirstName} onChange={(e) => setNewFirstName(e.target.value)} className={inputClass} placeholder="First name" />
-                <input value={newLastName} onChange={(e) => setNewLastName(e.target.value)} className={inputClass} placeholder="Last name" />
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                <input value={newFirstName} onChange={(e) => setNewFirstName(e.target.value)} style={inputStyle} placeholder="First name" />
+                <input value={newLastName} onChange={(e) => setNewLastName(e.target.value)} style={inputStyle} placeholder="Last name" />
               </div>
-              <input value={newPhone} onChange={(e) => setNewPhone(e.target.value)} className={inputClass} placeholder="Phone (optional)" />
-              <button onClick={() => setIsNewCustomer(false)} className="text-xs text-muted hover:text-white">← Search existing</button>
+              <input value={newPhone} onChange={(e) => setNewPhone(e.target.value)} style={inputStyle} placeholder="Phone (optional)" />
+              <button onClick={() => setIsNewCustomer(false)} style={{ fontSize: 12, color: "var(--t-text-muted)", background: "none", border: "none", cursor: "pointer", textAlign: "left" }}>
+                &larr; Search existing
+              </button>
             </div>
           ) : (
-            <div className="space-y-3">
-              <input value={customerSearch} onChange={(e) => setCustomerSearch(e.target.value)} className={inputClass} placeholder="Type name or phone number..." autoFocus />
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <input value={customerSearch} onChange={(e) => setCustomerSearch(e.target.value)} style={inputStyle} placeholder="Type name or phone number..." autoFocus />
               {customerResults.length > 0 && (
-                <div className="rounded-lg border border-[#1E2D45] bg-dark-secondary overflow-hidden">
+                <div style={{ borderRadius: 10, border: "1px solid var(--t-border)", backgroundColor: "var(--t-bg-card)", overflow: "hidden" }}>
                   {customerResults.map((c) => (
                     <button key={c.id} onClick={() => { setCustomerId(c.id); setCustomerName(`${c.first_name} ${c.last_name}`); setCustomerSearch(""); }}
-                      className="flex w-full items-center justify-between px-4 py-2.5 text-sm text-foreground hover:bg-dark-card-hover">
-                      <span className="font-medium text-white">{c.first_name} {c.last_name}</span>
-                      {c.phone && <a href={`tel:${c.phone}`} className="text-xs text-muted hover:text-brand" onClick={(e) => e.stopPropagation()}>{c.phone}</a>}
+                      style={{
+                        display: "flex",
+                        width: "100%",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        padding: "10px 16px",
+                        fontSize: 14,
+                        color: "var(--t-text-primary)",
+                        backgroundColor: "transparent",
+                        border: "none",
+                        borderBottom: "1px solid var(--t-border)",
+                        cursor: "pointer",
+                        transition: "background 0.15s ease",
+                      }}
+                      className="hover:bg-dark-card-hover"
+                    >
+                      <span style={{ fontWeight: 500 }}>{c.first_name} {c.last_name}</span>
+                      {c.phone && <span style={{ fontSize: 12, color: "var(--t-text-muted)" }}>{c.phone}</span>}
                     </button>
                   ))}
                 </div>
               )}
-              <button onClick={() => setIsNewCustomer(true)} className="flex items-center gap-1.5 text-xs text-brand hover:text-brand-light">
-                <UserPlus className="h-3 w-3" /> Create new customer
+              <button onClick={() => setIsNewCustomer(true)} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--t-accent)", background: "none", border: "none", cursor: "pointer" }}>
+                <UserPlus style={{ width: 12, height: 12 }} /> Create new customer
               </button>
             </div>
           )}
           <button
             onClick={() => step === 1 && (customerId || (isNewCustomer && newFirstName)) && setStep(2)}
             disabled={!customerId && !(isNewCustomer && newFirstName)}
-            className="w-full rounded-lg bg-[#2ECC71] py-3 text-sm font-semibold text-white disabled:opacity-40 hover:bg-[#1FA855] active:scale-[0.98] transition-all"
+            style={{ ...primaryBtn, opacity: (!customerId && !(isNewCustomer && newFirstName)) ? 0.4 : 1 }}
           >
             Next: Job Details
           </button>
@@ -625,47 +1062,47 @@ function QuickJobForm({ onSuccess }: { onSuccess: () => void }) {
 
       {/* Step 2: Job Details */}
       {step === 2 && (
-        <div className="space-y-4">
-          <h3 className="font-display text-base font-semibold text-white">Job Details</h3>
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <h3 style={{ fontSize: 15, fontWeight: 600, color: "var(--t-text-primary)" }}>Job Details</h3>
           <div>
-            <label className={labelClass}>Job Type</label>
-            <div className="grid grid-cols-3 gap-2">
+            <label style={labelStyle}>Job Type</label>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
               {(["delivery", "pickup", "exchange"] as const).map((t) => (
-                <button key={t} onClick={() => setJobType(t)} className={`rounded-lg py-2.5 text-sm font-medium capitalize transition-colors ${jobType === t ? "bg-brand text-dark-primary" : "bg-dark-elevated text-muted hover:text-white"}`}>{t}</button>
+                <button key={t} onClick={() => setJobType(t)} style={{ ...(jobType === t ? pillBtnActive : pillBtnInactive), textTransform: "capitalize" }}>{t}</button>
               ))}
             </div>
           </div>
           <div>
-            <label className={labelClass}>Dumpster Size</label>
-            <div className="grid grid-cols-4 gap-2">
+            <label style={labelStyle}>Dumpster Size</label>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 8 }}>
               {["10yd", "20yd", "30yd", "40yd"].map((s) => (
-                <button key={s} onClick={() => setAssetSubtype(s)} className={`rounded-lg py-2.5 text-sm font-medium transition-colors ${assetSubtype === s ? "bg-brand text-dark-primary" : "bg-dark-elevated text-muted hover:text-white"}`}>{s}</button>
+                <button key={s} onClick={() => setAssetSubtype(s)} style={assetSubtype === s ? pillBtnActive : pillBtnInactive}>{s}</button>
               ))}
             </div>
           </div>
           <div>
-            <label className={labelClass}>Date</label>
-            <input type="date" value={scheduledDate} onChange={(e) => setScheduledDate(e.target.value)} className={inputClass} />
+            <label style={labelStyle}>Date</label>
+            <input type="date" value={scheduledDate} onChange={(e) => setScheduledDate(e.target.value)} style={inputStyle} />
           </div>
           <div>
-            <label className={labelClass}>Time Window</label>
-            <div className="grid grid-cols-3 gap-2">
+            <label style={labelStyle}>Time Window</label>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
               {([["morning", "AM (8-12)"], ["afternoon", "PM (12-5)"], ["fullday", "All Day"]] as const).map(([k, label]) => (
-                <button key={k} onClick={() => setTimeWindow(k)} className={`rounded-lg py-2.5 text-xs font-medium transition-colors ${timeWindow === k ? "bg-brand text-dark-primary" : "bg-dark-elevated text-muted hover:text-white"}`}>{label}</button>
+                <button key={k} onClick={() => setTimeWindow(k)} style={{ ...(timeWindow === k ? pillBtnActive : pillBtnInactive), fontSize: 12 }}>{label}</button>
               ))}
             </div>
           </div>
-          <div className="flex gap-2">
-            <button onClick={() => setStep(1)} className="flex-1 rounded-lg bg-dark-elevated py-3 text-sm text-muted hover:text-white">Back</button>
-            <button onClick={() => setStep(3)} className="flex-[2] rounded-lg bg-[#2ECC71] py-3 text-sm font-semibold text-white hover:bg-[#1FA855] active:scale-[0.98] transition-all">Next: Address</button>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={() => setStep(1)} style={secondaryBtn}>Back</button>
+            <button onClick={() => setStep(3)} style={{ ...primaryBtn, flex: 2 }}>Next: Address</button>
           </div>
         </div>
       )}
 
       {/* Step 3: Address */}
       {step === 3 && (
-        <div className="space-y-4">
-          <h3 className="font-display text-base font-semibold text-white">Service Address</h3>
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <h3 style={{ fontSize: 15, fontWeight: 600, color: "var(--t-text-primary)" }}>Service Address</h3>
           <AddressAutocomplete
             value={address}
             onChange={setAddress}
@@ -673,45 +1110,72 @@ function QuickJobForm({ onSuccess }: { onSuccess: () => void }) {
             placeholder="Start typing an address..."
           />
           {address.street && (
-            <div className="rounded-lg bg-dark-elevated p-3 text-xs text-muted space-y-1">
-              <p className="text-white font-medium">{address.street}</p>
-              <p>{address.city}, {address.state} {address.zip}</p>
-              {address.lat && <p className="text-[10px]">GPS: {address.lat.toFixed(4)}, {address.lng?.toFixed(4)}</p>}
+            <div style={{
+              borderRadius: 10,
+              backgroundColor: "var(--t-bg-card)",
+              border: "1px solid var(--t-border)",
+              padding: 12,
+            }}>
+              <p style={{ fontSize: 13, fontWeight: 500, color: "var(--t-text-primary)" }}>{address.street}</p>
+              <p style={{ fontSize: 12, color: "var(--t-text-muted)" }}>{address.city}, {address.state} {address.zip}</p>
+              {address.lat && <p style={{ fontSize: 11, color: "var(--t-text-muted)", marginTop: 4 }}>GPS: {address.lat.toFixed(4)}, {address.lng?.toFixed(4)}</p>}
             </div>
           )}
-          <div className="flex gap-2">
-            <button onClick={() => setStep(2)} className="flex-1 rounded-lg bg-dark-elevated py-3 text-sm text-muted hover:text-white">Back</button>
-            <button onClick={() => setStep(4)} className="flex-[2] rounded-lg bg-[#2ECC71] py-3 text-sm font-semibold text-white hover:bg-[#1FA855] active:scale-[0.98] transition-all">Next: Review</button>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={() => setStep(2)} style={secondaryBtn}>Back</button>
+            <button onClick={() => setStep(4)} style={{ ...primaryBtn, flex: 2 }}>Next: Review</button>
           </div>
         </div>
       )}
 
       {/* Step 4: Review & Confirm */}
       {step === 4 && (
-        <div className="space-y-4">
-          <h3 className="font-display text-base font-semibold text-white">Review & Create</h3>
-          <div className="rounded-lg bg-dark-elevated p-4 space-y-2 text-sm">
-            <div className="flex justify-between"><span className="text-muted">Customer</span><span className="text-white font-medium">{isNewCustomer ? `${newFirstName} ${newLastName}` : customerName}</span></div>
-            <div className="flex justify-between"><span className="text-muted">Type</span><span className="text-white capitalize">{jobType}</span></div>
-            <div className="flex justify-between"><span className="text-muted">Size</span><span className="text-white">{assetSubtype}</span></div>
-            <div className="flex justify-between"><span className="text-muted">Date</span><span className="text-white">{scheduledDate}</span></div>
-            <div className="flex justify-between"><span className="text-muted">Window</span><span className="text-white capitalize">{timeWindow === "fullday" ? "All Day" : timeWindow === "morning" ? "AM (8-12)" : "PM (12-5)"}</span></div>
-            {address.street && <div className="flex justify-between"><span className="text-muted">Address</span><span className="text-white truncate ml-4">{address.street}, {address.city}</span></div>}
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <h3 style={{ fontSize: 15, fontWeight: 600, color: "var(--t-text-primary)" }}>Review & Create</h3>
+          <div style={{
+            borderRadius: 10,
+            backgroundColor: "var(--t-bg-card)",
+            border: "1px solid var(--t-border)",
+            padding: 16,
+            display: "flex",
+            flexDirection: "column",
+            gap: 8,
+          }}>
+            {[
+              ["Customer", isNewCustomer ? `${newFirstName} ${newLastName}` : customerName],
+              ["Type", jobType],
+              ["Size", assetSubtype],
+              ["Date", scheduledDate],
+              ["Window", timeWindow === "fullday" ? "All Day" : timeWindow === "morning" ? "AM (8-12)" : "PM (12-5)"],
+              ...(address.street ? [["Address", `${address.street}, ${address.city}`]] : []),
+            ].map(([label, value]) => (
+              <div key={label} style={{ display: "flex", justifyContent: "space-between", fontSize: 14 }}>
+                <span style={{ color: "var(--t-text-muted)" }}>{label}</span>
+                <span style={{ color: "var(--t-text-primary)", fontWeight: 500, textTransform: "capitalize" }}>{value}</span>
+              </div>
+            ))}
           </div>
           {priceQuote && (
-            <div className="rounded-lg border border-brand/20 bg-brand/5 p-4">
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-brand font-medium">Estimated Price</span>
-                <span className="font-display text-xl font-bold text-brand tabular-nums">${priceQuote.breakdown.total}</span>
+            <div style={{
+              borderRadius: 10,
+              border: "1px solid var(--t-border)",
+              backgroundColor: "var(--t-accent-soft)",
+              padding: 16,
+            }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <span style={{ fontSize: 14, fontWeight: 500, color: "var(--t-accent)" }}>Estimated Price</span>
+                <span style={{ fontSize: 22, fontWeight: 700, color: "var(--t-accent)", letterSpacing: "-0.5px", fontVariantNumeric: "tabular-nums" }}>
+                  ${priceQuote.breakdown.total}
+                </span>
               </div>
-              <div className="mt-2">
-                <input value={priceOverride} onChange={(e) => setPriceOverride(e.target.value)} className={`${inputClass} mt-1`} placeholder={`Override price (default: $${priceQuote.breakdown.total})`} />
+              <div style={{ marginTop: 8 }}>
+                <input value={priceOverride} onChange={(e) => setPriceOverride(e.target.value)} style={{ ...inputStyle, marginTop: 4 }} placeholder={`Override price (default: $${priceQuote.breakdown.total})`} />
               </div>
             </div>
           )}
-          <div className="flex gap-2">
-            <button onClick={() => setStep(3)} className="flex-1 rounded-lg bg-dark-elevated py-3 text-sm text-muted hover:text-white">Back</button>
-            <button onClick={handleSubmit} disabled={saving} className="flex-[2] rounded-lg bg-[#2ECC71] py-3 text-sm font-bold text-white hover:bg-[#1FA855] active:scale-[0.98] transition-all disabled:opacity-50">
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={() => setStep(3)} style={secondaryBtn}>Back</button>
+            <button onClick={handleSubmit} disabled={saving} style={{ ...primaryBtn, flex: 2, opacity: saving ? 0.5 : 1 }}>
               {saving ? "Creating..." : "Create Job"}
             </button>
           </div>
@@ -754,7 +1218,7 @@ function WeekView({ scheduleDate, onSelectDay }: { scheduleDate: string; onSelec
 
   return (
     <>
-      {days.map((d) => {
+      {days.map((d, idx) => {
         const isToday = d === today();
         const isSelected = d === scheduleDate;
         const data = weekJobs[d] || { total: 0, deliveries: 0, pickups: 0, exchanges: 0 };
@@ -770,28 +1234,45 @@ function WeekView({ scheduleDate, onSelectDay }: { scheduleDate: string; onSelec
           <button
             key={d}
             onClick={() => onSelectDay(d)}
-            className={`flex w-full items-center justify-between px-5 py-2.5 text-left transition-colors hover:bg-dark-card-hover ${isSelected ? "border-l-2 border-l-brand bg-brand/5" : "border-l-2 border-l-transparent"}`}
+            style={{
+              display: "flex",
+              width: "100%",
+              alignItems: "center",
+              justifyContent: "space-between",
+              padding: "10px 16px",
+              textAlign: "left",
+              backgroundColor: isSelected ? "var(--t-accent-soft)" : "transparent",
+              borderLeft: isSelected ? "2px solid var(--t-accent)" : "2px solid transparent",
+              borderRight: "none",
+              borderTop: "none",
+              borderBottom: idx < days.length - 1 ? "1px solid var(--t-border)" : "none",
+              cursor: "pointer",
+              transition: "background 0.15s ease",
+            }}
+            className="hover:bg-dark-card-hover"
           >
-            <div className="flex items-center gap-3">
-              <div className={`w-10 text-center ${isToday ? "text-brand font-bold" : "text-muted"}`}>
-                <p className="text-[10px] uppercase">{dayName}</p>
-                <p className="text-sm font-semibold">{dayNum}</p>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <div style={{ width: 40, textAlign: "center", color: isToday ? "var(--t-accent)" : "var(--t-text-muted)" }}>
+                <p style={{ fontSize: 10, textTransform: "uppercase", fontWeight: isToday ? 700 : 500 }}>{dayName}</p>
+                <p style={{ fontSize: 14, fontWeight: 600 }}>{dayNum}</p>
               </div>
               {data.total > 0 ? (
                 <div>
-                  <p className="text-sm font-medium text-white">{data.total} {data.total === 1 ? "job" : "jobs"}</p>
-                  <p className="text-[10px] text-muted">{parts.join(", ")}</p>
+                  <p style={{ fontSize: 14, fontWeight: 500, color: "var(--t-text-primary)" }}>
+                    {data.total} {data.total === 1 ? "job" : "jobs"}
+                  </p>
+                  <p style={{ fontSize: 11, color: "var(--t-text-muted)" }}>{parts.join(", ")}</p>
                 </div>
               ) : (
-                <p className="text-xs text-muted/50">No jobs</p>
+                <p style={{ fontSize: 12, color: "var(--t-text-muted)", opacity: 0.5 }}>No jobs</p>
               )}
             </div>
             {data.total > 0 && (
-              <div className="flex gap-0.5">
+              <div style={{ display: "flex", gap: 3, alignItems: "center" }}>
                 {Array.from({ length: Math.min(data.total, 5) }).map((_, i) => (
-                  <div key={i} className="h-1.5 w-1.5 rounded-full bg-brand/40" />
+                  <div key={i} style={{ width: 5, height: 5, borderRadius: "50%", backgroundColor: "var(--t-accent)", opacity: 0.4 }} />
                 ))}
-                {data.total > 5 && <span className="text-[8px] text-muted">+{data.total - 5}</span>}
+                {data.total > 5 && <span style={{ fontSize: 9, color: "var(--t-text-muted)" }}>+{data.total - 5}</span>}
               </div>
             )}
           </button>

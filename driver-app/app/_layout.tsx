@@ -3,11 +3,13 @@ import { useEffect } from 'react';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { AuthProvider, useAuth } from '../src/AuthContext';
+import { useAppTheme } from '../constants/theme';
 
 function AuthGuard() {
   const { user, isLoading } = useAuth();
   const segments = useSegments();
   const router = useRouter();
+  const colors = useAppTheme();
 
   useEffect(() => {
     if (isLoading) return;
@@ -18,8 +20,8 @@ function AuthGuard() {
 
   if (isLoading)
     return (
-      <View style={styles.loading}>
-        <ActivityIndicator size="large" color="#2ECC71" />
+      <View style={[styles.loading, { backgroundColor: colors.background }]}>
+        <ActivityIndicator size="large" color={colors.accent} />
       </View>
     );
   return <Slot />;
@@ -39,6 +41,5 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#0B1220',
   },
 });

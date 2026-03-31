@@ -50,24 +50,24 @@ export default function PortalLoginPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[#F8FAFC] px-4" style={{ colorScheme: "light" }}>
+    <div className="flex min-h-screen items-center justify-center bg-[var(--t-bg-primary)] px-4">
       <div className="w-full max-w-sm">
         <div className="mb-8 text-center">
-          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-[#2ECC71] shadow-lg shadow-[#2ECC71]/20">
-            <span className="text-xl font-bold text-white">S</span>
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-[var(--t-accent)]">
+            <span className="text-xl font-bold text-black">S</span>
           </div>
-          <h1 className="text-2xl font-bold text-[#0F172A]">Customer Portal</h1>
-          <p className="mt-2 text-sm text-[#64748B]">
+          <h1 className="text-[28px] font-bold tracking-[-1px] text-[var(--t-text-primary)]">Customer Portal</h1>
+          <p className="mt-2 text-sm text-[var(--t-text-muted)]">
             {mode === "login" ? "Sign in to manage your rentals and invoices" : "Create your portal account"}
           </p>
         </div>
 
         {magicSent ? (
-          <div className="rounded-xl bg-[#2ECC71]/10 border border-[#2ECC71]/20 p-6 text-center">
-            <Mail className="mx-auto h-8 w-8 text-[#2ECC71] mb-3" />
-            <p className="text-sm font-medium text-[#0F172A]">Check your email</p>
-            <p className="text-xs text-[#64748B] mt-1">We sent a login link to {email}</p>
-            <button onClick={() => setMagicSent(false)} className="mt-4 text-xs text-[#2ECC71] font-medium hover:underline">
+          <div className="rounded-[14px] bg-[var(--t-accent-soft)] border border-[var(--t-accent)]/20 p-6 text-center">
+            <Mail className="mx-auto h-8 w-8 text-[var(--t-accent)] mb-3" />
+            <p className="text-sm font-medium text-[var(--t-text-primary)]">Check your email</p>
+            <p className="text-xs text-[var(--t-text-muted)] mt-1">We sent a login link to {email}</p>
+            <button onClick={() => setMagicSent(false)} className="mt-4 text-xs text-[var(--t-accent)] font-medium hover:underline">
               Back to login
             </button>
           </div>
@@ -75,31 +75,31 @@ export default function PortalLoginPage() {
           <>
             <form onSubmit={handleSubmit} className="space-y-4">
               {error && (
-                <div className="rounded-lg bg-red-50 border border-red-100 px-4 py-3 text-sm text-red-600">{error}</div>
+                <div className="rounded-[14px] bg-[var(--t-error-soft)] px-4 py-3 text-sm text-[var(--t-error)]">{error}</div>
               )}
 
               <div>
-                <label className="block text-sm font-medium text-[#334155] mb-1.5">Email</label>
+                <label className="block text-sm font-medium text-[var(--t-text-primary)] mb-1.5">Email</label>
                 <div className="relative">
-                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[#94A3B8]" />
+                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--t-text-muted)]" />
                   <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required placeholder="you@email.com"
-                    className="w-full rounded-lg border border-[#E2E8F0] bg-white pl-10 pr-4 py-2.5 text-sm text-[#0F172A] placeholder-[#94A3B8] outline-none focus:border-[#2ECC71] focus:ring-1 focus:ring-[#2ECC71]" />
+                    className="w-full rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] pl-10 pr-4 py-2.5 text-sm text-[var(--t-text-primary)] placeholder-[var(--t-text-muted)] outline-none focus:border-[var(--t-accent)] focus:ring-1 focus:ring-[var(--t-accent)]" />
                 </div>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-[#334155] mb-1.5">Password</label>
+                <label className="block text-sm font-medium text-[var(--t-text-primary)] mb-1.5">Password</label>
                 <div className="relative">
-                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[#94A3B8]" />
+                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--t-text-muted)]" />
                   <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required
                     placeholder={mode === "register" ? "Choose a password (8+ characters)" : "Your password"}
                     minLength={mode === "register" ? 8 : undefined}
-                    className="w-full rounded-lg border border-[#E2E8F0] bg-white pl-10 pr-4 py-2.5 text-sm text-[#0F172A] placeholder-[#94A3B8] outline-none focus:border-[#2ECC71] focus:ring-1 focus:ring-[#2ECC71]" />
+                    className="w-full rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] pl-10 pr-4 py-2.5 text-sm text-[var(--t-text-primary)] placeholder-[var(--t-text-muted)] outline-none focus:border-[var(--t-accent)] focus:ring-1 focus:ring-[var(--t-accent)]" />
                 </div>
               </div>
 
               <button type="submit" disabled={loading}
-                className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#2ECC71] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#27AE60] disabled:opacity-50">
+                className="flex w-full items-center justify-center gap-2 rounded-full bg-[var(--t-accent)] px-4 py-2.5 text-sm font-semibold text-black transition-opacity hover:opacity-90 disabled:opacity-50">
                 {loading ? (mode === "login" ? "Signing in..." : "Creating account...") : (
                   <>{mode === "login" ? "Sign In" : "Create Account"} <ArrowRight className="h-4 w-4" /></>
                 )}
@@ -110,20 +110,20 @@ export default function PortalLoginPage() {
               {mode === "login" ? (
                 <>
                   <button onClick={handleMagicLink} disabled={!email || loading}
-                    className="text-xs text-[#2ECC71] font-medium hover:underline disabled:opacity-50">
+                    className="text-xs text-[var(--t-accent)] font-medium hover:underline disabled:opacity-50">
                     Send me a magic link instead
                   </button>
-                  <p className="text-sm text-[#64748B]">
+                  <p className="text-sm text-[var(--t-text-muted)]">
                     First time?{" "}
-                    <button onClick={() => { setMode("register"); setError(""); }} className="font-medium text-[#2ECC71] hover:underline">
+                    <button onClick={() => { setMode("register"); setError(""); }} className="font-medium text-[var(--t-accent)] hover:underline">
                       Set up your account
                     </button>
                   </p>
                 </>
               ) : (
-                <p className="text-sm text-[#64748B]">
+                <p className="text-sm text-[var(--t-text-muted)]">
                   Already have a password?{" "}
-                  <button onClick={() => { setMode("login"); setError(""); }} className="font-medium text-[#2ECC71] hover:underline">
+                  <button onClick={() => { setMode("login"); setError(""); }} className="font-medium text-[var(--t-accent)] hover:underline">
                     Sign in
                   </button>
                 </p>
@@ -132,7 +132,7 @@ export default function PortalLoginPage() {
           </>
         )}
 
-        <p className="mt-8 text-center text-xs text-[#94A3B8]">
+        <p className="mt-8 text-center text-xs text-[var(--t-text-muted)]">
           Need help? Contact the office during business hours.
         </p>
       </div>

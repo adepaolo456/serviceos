@@ -25,19 +25,25 @@ interface Rental {
 
 const tabs = ["Active", "Upcoming", "Completed", "All"] as const;
 
-function statusBadge(status: string) {
-  const map: Record<string, { cls: string; label: string }> = {
-    pending: { cls: "bg-amber-50 border-amber-200 text-amber-700", label: "Pending" },
-    confirmed: { cls: "bg-blue-50 border-blue-200 text-blue-700", label: "Confirmed" },
-    dispatched: { cls: "bg-indigo-50 border-indigo-200 text-indigo-700", label: "Dispatched" },
-    en_route: { cls: "bg-purple-50 border-purple-200 text-purple-700", label: "En Route" },
-    in_progress: { cls: "bg-green-50 border-green-200 text-green-700", label: "Delivered" },
-    completed: { cls: "bg-gray-50 border-gray-200 text-gray-600", label: "Completed" },
-    cancelled: { cls: "bg-red-50 border-red-200 text-red-600", label: "Cancelled" },
-  };
-  const s = map[status] || map.pending;
-  return <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${s.cls}`}>{s.label}</span>;
-}
+const STATUS_COLORS: Record<string, string> = {
+  pending: "text-yellow-500",
+  confirmed: "text-blue-400",
+  dispatched: "text-indigo-400",
+  en_route: "text-purple-400",
+  in_progress: "text-[var(--t-accent)]",
+  completed: "text-[var(--t-text-muted)]",
+  cancelled: "text-[var(--t-error)]",
+};
+
+const STATUS_LABELS: Record<string, string> = {
+  pending: "Pending",
+  confirmed: "Confirmed",
+  dispatched: "Dispatched",
+  en_route: "En Route",
+  in_progress: "Delivered",
+  completed: "Completed",
+  cancelled: "Cancelled",
+};
 
 export default function PortalRentalsPage() {
   const [rentals, setRentals] = useState<Rental[]>([]);
@@ -61,6 +67,8 @@ export default function PortalRentalsPage() {
     return true;
   });
 
+  const inputCls = "w-full rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-3 py-2 text-sm text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)]";
+
   if (detail) {
     const steps = [
       { label: "Requested", date: detail.created_at, done: true },
@@ -72,28 +80,28 @@ export default function PortalRentalsPage() {
 
     return (
       <div className="space-y-6">
-        <button onClick={() => setDetail(null)} className="text-sm text-[#2ECC71] font-medium hover:underline">&larr; Back to rentals</button>
-        <div className="rounded-xl border border-[#E2E8F0] bg-white p-6">
+        <button onClick={() => setDetail(null)} className="text-sm text-[var(--t-accent)] font-medium hover:underline">&larr; Back to rentals</button>
+        <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6">
           <div className="flex flex-wrap items-start justify-between gap-3 mb-6">
             <div>
-              <h2 className="text-lg font-bold text-[#0F172A]">{detail.asset?.size || detail.service_type || "Dumpster"} Rental</h2>
-              <p className="text-sm text-[#64748B]">{detail.job_number}</p>
+              <h2 className="text-lg font-bold text-[var(--t-text-primary)]">{detail.asset?.size || detail.service_type || "Dumpster"} Rental</h2>
+              <p className="text-sm text-[var(--t-text-muted)]">{detail.job_number}</p>
             </div>
-            {statusBadge(detail.status)}
+            <span className={`text-xs font-medium ${STATUS_COLORS[detail.status] || ""}`}>{STATUS_LABELS[detail.status] || detail.status}</span>
           </div>
 
           {/* Timeline */}
           <div className="mb-6">
-            <h3 className="text-sm font-semibold text-[#0F172A] mb-3">Timeline</h3>
+            <h3 className="text-sm font-semibold text-[var(--t-text-primary)] mb-3">Timeline</h3>
             <div className="space-y-3">
               {steps.map((s, i) => (
                 <div key={i} className="flex items-start gap-3">
-                  <div className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 ${s.done ? "border-[#2ECC71] bg-[#2ECC71]" : "border-[#CBD5E1]"}`}>
-                    {s.done && <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
+                  <div className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 ${s.done ? "border-[var(--t-accent)] bg-[var(--t-accent)]" : "border-[var(--t-border)]"}`}>
+                    {s.done && <svg className="h-3 w-3 text-black" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
                   </div>
                   <div>
-                    <p className={`text-sm font-medium ${s.done ? "text-[#0F172A]" : "text-[#94A3B8]"}`}>{s.label}</p>
-                    {s.date && <p className="text-xs text-[#64748B]">{new Date(s.date).toLocaleDateString()}</p>}
+                    <p className={`text-sm font-medium ${s.done ? "text-[var(--t-text-primary)]" : "text-[var(--t-text-muted)]"}`}>{s.label}</p>
+                    {s.date && <p className="text-xs text-[var(--t-text-muted)]">{new Date(s.date).toLocaleDateString()}</p>}
                   </div>
                 </div>
               ))}
@@ -102,10 +110,10 @@ export default function PortalRentalsPage() {
 
           {/* Details grid */}
           <div className="grid grid-cols-2 gap-4 text-sm">
-            <div><span className="text-[#64748B]">Address</span><p className="font-medium text-[#0F172A] mt-0.5">{detail.service_address?.formatted || detail.service_address?.street || "—"}</p></div>
-            <div><span className="text-[#64748B]">Duration</span><p className="font-medium text-[#0F172A] mt-0.5">{detail.rental_days || "—"} days</p></div>
-            <div><span className="text-[#64748B]">Total Cost</span><p className="font-medium text-[#0F172A] mt-0.5">{formatCurrency(detail.total_price)}</p></div>
-            <div><span className="text-[#64748B]">Asset</span><p className="font-medium text-[#0F172A] mt-0.5">{detail.asset?.identifier || "—"}</p></div>
+            <div><span className="text-[var(--t-text-muted)]">Address</span><p className="font-medium text-[var(--t-text-primary)] mt-0.5">{detail.service_address?.formatted || detail.service_address?.street || "—"}</p></div>
+            <div><span className="text-[var(--t-text-muted)]">Duration</span><p className="font-medium text-[var(--t-text-primary)] mt-0.5">{detail.rental_days || "—"} days</p></div>
+            <div><span className="text-[var(--t-text-muted)]">Total Cost</span><p className="font-medium text-[var(--t-text-primary)] mt-0.5">{formatCurrency(detail.total_price)}</p></div>
+            <div><span className="text-[var(--t-text-muted)]">Asset</span><p className="font-medium text-[var(--t-text-primary)] mt-0.5">{detail.asset?.identifier || "—"}</p></div>
           </div>
 
           {/* Reschedule */}
@@ -113,28 +121,28 @@ export default function PortalRentalsPage() {
             <div className="mt-6">
               {!rescheduleOpen ? (
                 <button onClick={() => { setRescheduleOpen(true); setNewDate(detail.scheduled_date || ""); }}
-                  className="rounded-lg border border-[#E2E8F0] px-4 py-2 text-sm font-medium text-[#334155] hover:bg-[#F1F5F9]">
+                  className="rounded-full border border-[var(--t-border)] px-4 py-2 text-sm font-medium text-[var(--t-text-primary)] hover:bg-[var(--t-bg-card-hover)] transition-colors">
                   Reschedule Delivery
                 </button>
               ) : (
-                <div className="rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] p-4 space-y-3">
-                  <p className="text-sm font-semibold text-[#0F172A]">Reschedule Delivery</p>
+                <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-primary)] p-4 space-y-3">
+                  <p className="text-sm font-semibold text-[var(--t-text-primary)]">Reschedule Delivery</p>
                   <div>
-                    <label className="block text-xs font-medium text-[#334155] mb-1">New Date</label>
+                    <label className="block text-xs font-medium text-[var(--t-text-primary)] mb-1">New Date</label>
                     <input type="date" value={newDate} onChange={e => setNewDate(e.target.value)}
                       min={new Date(Date.now() + 86400000).toISOString().split("T")[0]}
-                      className="w-full rounded-lg border border-[#E2E8F0] bg-white px-3 py-2 text-sm text-[#0F172A] outline-none focus:border-[#2ECC71]" />
+                      className={inputCls} />
                   </div>
                   {detail.rental_days && newDate && (
-                    <p className="text-xs text-[#64748B]">
+                    <p className="text-xs text-[var(--t-text-muted)]">
                       New pickup by: {new Date(new Date(newDate).getTime() + detail.rental_days * 86400000).toLocaleDateString()}
                     </p>
                   )}
                   <div>
-                    <label className="block text-xs font-medium text-[#334155] mb-1">Reason (optional)</label>
+                    <label className="block text-xs font-medium text-[var(--t-text-primary)] mb-1">Reason (optional)</label>
                     <input value={rescheduleReason} onChange={e => setRescheduleReason(e.target.value)}
                       placeholder="Why are you rescheduling?"
-                      className="w-full rounded-lg border border-[#E2E8F0] bg-white px-3 py-2 text-sm text-[#0F172A] placeholder-[#94A3B8] outline-none focus:border-[#2ECC71]" />
+                      className={`${inputCls} placeholder-[var(--t-text-muted)]`} />
                   </div>
                   <div className="flex gap-2">
                     <button onClick={async () => {
@@ -150,10 +158,10 @@ export default function PortalRentalsPage() {
                         alert(err.message || "Failed to reschedule");
                       } finally { setRescheduling(false); }
                     }} disabled={!newDate || rescheduling}
-                      className="rounded-lg bg-[#2ECC71] px-4 py-2 text-sm font-semibold text-white hover:bg-[#27AE60] disabled:opacity-50">
+                      className="rounded-full bg-[var(--t-accent)] px-4 py-2 text-sm font-semibold text-black hover:opacity-90 disabled:opacity-50 transition-opacity">
                       {rescheduling ? "Rescheduling..." : "Confirm Reschedule"}
                     </button>
-                    <button onClick={() => setRescheduleOpen(false)} className="rounded-lg border border-[#E2E8F0] px-4 py-2 text-sm text-[#64748B]">Cancel</button>
+                    <button onClick={() => setRescheduleOpen(false)} className="rounded-full border border-[var(--t-border)] px-4 py-2 text-sm text-[var(--t-text-muted)] hover:bg-[var(--t-bg-card-hover)] transition-colors">Cancel</button>
                   </div>
                 </div>
               )}
@@ -166,44 +174,45 @@ export default function PortalRentalsPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-[#0F172A]">My Rentals</h1>
+      <h1 className="text-[28px] font-bold tracking-[-1px] text-[var(--t-text-primary)]">My Rentals</h1>
 
       {/* Tabs */}
-      <div className="flex gap-1 rounded-lg bg-[#F1F5F9] p-1">
+      <div className="flex gap-0 border-b border-[var(--t-border)]">
         {tabs.map(t => (
           <button key={t} onClick={() => setTab(t)}
-            className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${tab === t ? "bg-white text-[#0F172A] shadow-sm" : "text-[#64748B] hover:text-[#0F172A]"}`}>
+            className={`relative flex-1 px-3 py-2.5 text-sm font-medium transition-colors text-center ${tab === t ? "text-[var(--t-accent)]" : "text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)]"}`}>
             {t}
+            {tab === t && <span className="absolute inset-x-0 bottom-0 h-0.5 bg-[var(--t-accent)] rounded-full" />}
           </button>
         ))}
       </div>
 
       {loading ? (
-        <div className="space-y-3">{[1, 2, 3].map(i => <div key={i} className="h-28 rounded-xl bg-[#E2E8F0] animate-pulse" />)}</div>
+        <div className="space-y-3">{[1, 2, 3].map(i => <div key={i} className="h-28 rounded-[14px] bg-[var(--t-bg-card)] border border-[var(--t-border)] animate-pulse" />)}</div>
       ) : filtered.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-[#CBD5E1] bg-white p-8 text-center">
-          <Package className="mx-auto h-10 w-10 text-[#CBD5E1] mb-3" />
-          <p className="text-sm font-medium text-[#64748B]">No {tab.toLowerCase()} rentals</p>
+        <div className="rounded-[14px] border border-dashed border-[var(--t-border)] bg-[var(--t-bg-card)] p-8 text-center">
+          <Package className="mx-auto h-10 w-10 text-[var(--t-text-muted)]/30 mb-3" />
+          <p className="text-sm font-medium text-[var(--t-text-muted)]">No {tab.toLowerCase()} rentals</p>
         </div>
       ) : (
         <div className="space-y-3">
           {filtered.map(r => (
             <button key={r.id} onClick={() => setDetail(r)}
-              className="w-full text-left rounded-xl border border-[#E2E8F0] bg-white p-4 hover:border-[#2ECC71]/30 hover:shadow-sm transition-all">
+              className="w-full text-left rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-4 hover:bg-[var(--t-bg-card-hover)] transition-colors">
               <div className="flex items-center justify-between">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1">
-                    <p className="text-sm font-semibold text-[#0F172A]">{r.asset?.size || r.service_type || "Dumpster"}</p>
-                    {statusBadge(r.status)}
+                    <p className="text-sm font-semibold text-[var(--t-text-primary)]">{r.asset?.size || r.service_type || "Dumpster"}</p>
+                    <span className={`text-xs font-medium ${STATUS_COLORS[r.status] || ""}`}>{STATUS_LABELS[r.status] || r.status}</span>
                   </div>
-                  <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-[#64748B]">
+                  <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-[var(--t-text-muted)]">
                     <span>{r.job_number}</span>
                     {r.service_address && <span className="flex items-center gap-1"><MapPin className="h-3 w-3" />{r.service_address.formatted || r.service_address.street}</span>}
                     {r.rental_start_date && <span className="flex items-center gap-1"><Calendar className="h-3 w-3" />{new Date(r.rental_start_date).toLocaleDateString()}</span>}
-                    {r.total_price && <span className="font-medium text-[#0F172A]">{formatCurrency(r.total_price)}</span>}
+                    {r.total_price && <span className="font-medium text-[var(--t-text-primary)]">{formatCurrency(r.total_price)}</span>}
                   </div>
                 </div>
-                <ChevronRight className="h-4 w-4 text-[#CBD5E1] shrink-0 ml-2" />
+                <ChevronRight className="h-4 w-4 text-[var(--t-text-muted)] shrink-0 ml-2" />
               </div>
             </button>
           ))}

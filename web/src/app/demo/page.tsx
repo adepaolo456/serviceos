@@ -40,21 +40,21 @@ export default function DemoPage() {
     }
   };
 
-  const inputClass = "w-full rounded-lg border border-white/10 bg-dark-card px-4 py-3 text-sm text-white placeholder-muted outline-none transition-colors focus:border-brand focus:ring-1 focus:ring-brand";
+  const inputClass = "w-full rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-3 text-sm text-[var(--t-text-primary)] placeholder-[var(--t-text-muted)] outline-none transition-colors focus:border-[var(--t-accent)] focus:ring-1 focus:ring-[var(--t-accent)]";
 
   if (submitted) {
     return (
-      <div className="min-h-screen bg-dark-primary flex flex-col items-center justify-center px-4">
-        <CheckCircle2 className="h-16 w-16 text-brand mb-4" />
-        <h1 className="font-display text-2xl font-bold text-white">Thanks for your interest!</h1>
-        <p className="mt-2 text-muted max-w-md text-center">
+      <div className="min-h-screen bg-[var(--t-bg-primary)] flex flex-col items-center justify-center px-4">
+        <CheckCircle2 className="h-16 w-16 text-[var(--t-accent)] mb-4" />
+        <h1 className="text-[28px] font-bold text-[var(--t-text-primary)] tracking-[-1px]">Thanks for your interest!</h1>
+        <p className="mt-2 text-[var(--t-text-muted)] max-w-md text-center">
           We&apos;ll reach out within 24 hours to schedule your personalized demo.
         </p>
         <div className="mt-8 flex gap-3">
-          <Link href="/register" className="rounded-lg bg-brand px-5 py-2.5 text-sm font-semibold text-dark-primary hover:bg-brand-light transition-colors">
+          <Link href="/register" className="rounded-full bg-[var(--t-accent)] px-6 py-2.5 text-sm font-semibold text-black hover:brightness-110 transition-all">
             Sign Up Now
           </Link>
-          <Link href="/login" className="rounded-lg bg-dark-card border border-[#1E2D45] px-5 py-2.5 text-sm font-medium text-white hover:bg-dark-card-hover transition-colors">
+          <Link href="/login" className="rounded-full border border-[var(--t-border)] bg-[var(--t-bg-card)] px-6 py-2.5 text-sm font-medium text-[var(--t-text-primary)] hover:bg-[var(--t-bg-card-hover)] transition-colors">
             Sign In
           </Link>
         </div>
@@ -63,18 +63,18 @@ export default function DemoPage() {
   }
 
   return (
-    <div className="min-h-screen bg-dark-primary flex items-center justify-center px-4 py-12">
+    <div className="min-h-screen bg-[var(--t-bg-primary)] flex items-center justify-center px-4 py-12">
       <div className="w-full max-w-lg">
         <div className="text-center mb-8">
-          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-brand">
-            <span className="font-display text-xl font-bold text-dark-primary">S</span>
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-[var(--t-accent)]">
+            <span className="text-xl font-bold text-black">S</span>
           </div>
-          <h1 className="font-display text-2xl font-bold text-white">Request a Demo</h1>
-          <p className="mt-2 text-sm text-muted">See how ServiceOS can transform your service business</p>
+          <h1 className="text-[28px] font-bold text-[var(--t-text-primary)] tracking-[-1px]">Request a Demo</h1>
+          <p className="mt-2 text-sm text-[var(--t-text-muted)]">See how ServiceOS can transform your service business</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          {error && <div className="rounded-lg bg-red-500/10 px-4 py-3 text-sm text-red-400">{error}</div>}
+          {error && <div className="rounded-[14px] bg-[var(--t-error-soft)] border border-[var(--t-error)] px-4 py-3 text-sm text-[var(--t-error)]">{error}</div>}
 
           <div className="grid grid-cols-2 gap-3">
             <input value={name} onChange={(e) => setName(e.target.value)} required className={inputClass} placeholder="Your name" />
@@ -99,16 +99,16 @@ export default function DemoPage() {
 
           <textarea value={message} onChange={(e) => setMessage(e.target.value)} rows={3} className={`${inputClass} resize-none`} placeholder="Tell us about your needs (optional)" />
 
-          <button type="submit" disabled={submitting} className="w-full rounded-lg bg-brand py-3 text-sm font-bold text-dark-primary transition-all hover:bg-brand-light active:scale-[0.98] disabled:opacity-50">
+          <button type="submit" disabled={submitting} className="w-full rounded-full bg-[var(--t-accent)] py-3 text-sm font-bold text-black transition-all hover:brightness-110 active:scale-[0.98] disabled:opacity-50">
             {submitting ? "Submitting..." : "Request Demo"}
           </button>
         </form>
 
-        <p className="mt-6 text-center text-sm text-muted">
+        <p className="mt-6 text-center text-sm text-[var(--t-text-muted)]">
           Ready to get started?{" "}
-          <Link href="/register" className="text-brand hover:text-brand-light font-medium">Sign up for free</Link>
+          <Link href="/register" className="text-[var(--t-accent)] hover:brightness-110 font-medium">Sign up for free</Link>
           {" "}or{" "}
-          <Link href="/login" className="text-brand hover:text-brand-light font-medium">sign in</Link>
+          <Link href="/login" className="text-[var(--t-accent)] hover:brightness-110 font-medium">sign in</Link>
         </p>
       </div>
     </div>

@@ -16,26 +16,6 @@ interface TeamMember {
   weekHours: number; weekEntries: number;
 }
 
-const ROLE_CLS: Record<string, string> = {
-  owner: "bg-amber-500/10 text-amber-400",
-  admin: "bg-blue-500/10 text-blue-400",
-  dispatcher: "bg-purple-500/10 text-purple-400",
-  driver: "bg-brand/10 text-brand",
-  viewer: "bg-zinc-500/10 text-zinc-400",
-};
-
-const ROLE_AVATAR: Record<string, string> = {
-  owner: "bg-amber-500/15 text-amber-400",
-  admin: "bg-blue-500/15 text-blue-400",
-  dispatcher: "bg-purple-500/15 text-purple-400",
-  driver: "bg-brand/15 text-brand",
-  viewer: "bg-zinc-500/15 text-zinc-400",
-};
-
-const STATUS_DOT: Record<string, string> = {
-  active: "bg-brand", inactive: "bg-zinc-500", "on_break": "bg-yellow-500",
-};
-
 import { formatPhone } from "@/lib/utils";
 const fmtPhone = formatPhone;
 
@@ -84,40 +64,50 @@ export default function TeamPage() {
     return m.role === filter;
   });
 
+  const roleCounts = {
+    owner: members.filter(m => m.role === "owner").length,
+    admin: members.filter(m => m.role === "admin").length,
+    dispatcher: members.filter(m => m.role === "dispatcher").length,
+    driver: members.filter(m => m.role === "driver").length,
+  };
+
+  const driverHours = members.filter(m => m.role === "driver").reduce((s, m) => s + m.weekHours, 0);
+
   return (
     <div>
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="font-display text-2xl font-bold tracking-tight text-white">Team</h1>
-          <p className="mt-0.5 text-sm text-muted">{members.length} team members</p>
+          <h1 className="text-[28px] font-bold tracking-[-1px] text-[var(--t-text-primary)]">Team</h1>
+          <p className="mt-1 text-[13px] text-[var(--t-text-muted)]">{members.length} team members</p>
         </div>
-        <Link href="/settings" className="flex items-center gap-2 rounded-lg bg-brand px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-light btn-press">
-          <Plus className="h-4 w-4" /> Add Employee
+        <Link
+          href="/settings"
+          className="flex items-center gap-2 rounded-full bg-[#22C55E] px-6 py-2.5 text-sm font-semibold text-black transition-opacity hover:opacity-90"
+        >
+          <Plus className="h-4 w-4" /> Add Member
         </Link>
       </div>
 
-      {/* Role Tiles */}
+      {/* Role Summary Row */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
         {[
-          { role: "owner", label: "Owners", icon: Shield, color: "amber" },
-          { role: "admin", label: "Admins", icon: UserCog, color: "blue" },
-          { role: "dispatcher", label: "Dispatchers", icon: Radio, color: "purple" },
-          { role: "driver", label: "Drivers", icon: Truck, color: "brand" },
+          { role: "owner", label: "Owners", icon: Shield, count: roleCounts.owner },
+          { role: "admin", label: "Admins", icon: UserCog, count: roleCounts.admin },
+          { role: "dispatcher", label: "Dispatchers", icon: Radio, count: roleCounts.dispatcher },
+          { role: "driver", label: "Drivers", icon: Truck, count: roleCounts.driver },
         ].map(t => {
-          const count = members.filter(m => m.role === t.role).length;
           const active = filter === t.role;
-          const driverHours = t.role === "driver" ? members.filter(m => m.role === "driver").reduce((s, m) => s + m.weekHours, 0) : 0;
           return (
             <button key={t.role} onClick={() => setFilter(active ? "all" : t.role)}
-              className={`rounded-xl border p-4 text-left transition-all btn-press ${active ? "border-brand bg-brand/5" : "border-[#1E2D45] bg-dark-card hover:bg-dark-card-hover"}`}>
+              className={`rounded-[14px] border p-4 text-left transition-all ${active ? "border-[var(--t-accent)] bg-[var(--t-accent-soft)]" : "border-[var(--t-border)] bg-[var(--t-bg-card)] hover:bg-[var(--t-bg-card-hover)]"}`}>
               <div className="flex items-center justify-between mb-2">
-                <t.icon className={`h-5 w-5 ${active ? "text-brand" : "text-muted"}`} />
-                <span className="text-xl font-bold text-white tabular-nums">{count}</span>
+                <t.icon className={`h-5 w-5 ${active ? "text-[var(--t-accent)]" : "text-[var(--t-text-muted)]"}`} />
+                <span className="text-[24px] font-bold text-[var(--t-text-primary)] tabular-nums">{t.count}</span>
               </div>
-              <p className="text-xs font-medium text-muted">{t.label}</p>
+              <p className="text-[13px] uppercase font-semibold tracking-wide text-[var(--t-text-muted)]">{t.label}</p>
               {t.role === "driver" && driverHours > 0 && (
-                <p className="text-[10px] text-muted mt-0.5">{driverHours.toFixed(1)}h this week</p>
+                <p className="text-[11px] text-[var(--t-text-muted)] mt-0.5">{driverHours.toFixed(1)}h this week</p>
               )}
             </button>
           );
@@ -126,69 +116,74 @@ export default function TeamPage() {
 
       {/* Week Navigation */}
       <div className="flex items-center gap-3 mb-5">
-        <button onClick={() => setWeekOf(w => addDays(w, -7))} className="rounded-lg bg-dark-card border border-[#1E2D45] p-2 text-muted hover:text-white active:scale-95 transition-all">
+        <button onClick={() => setWeekOf(w => addDays(w, -7))} className="rounded-full border border-[var(--t-border)] bg-[var(--t-bg-card)] p-2 text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)] active:scale-95 transition-all">
           <ChevronLeft className="h-4 w-4" />
         </button>
-        <p className="text-sm font-medium text-white min-w-[300px] text-center">{fmtWeek(weekOf)}</p>
-        <button onClick={() => setWeekOf(w => addDays(w, 7))} className="rounded-lg bg-dark-card border border-[#1E2D45] p-2 text-muted hover:text-white active:scale-95 transition-all">
+        <p className="text-sm font-medium text-[var(--t-text-primary)] min-w-[300px] text-center">{fmtWeek(weekOf)}</p>
+        <button onClick={() => setWeekOf(w => addDays(w, 7))} className="rounded-full border border-[var(--t-border)] bg-[var(--t-bg-card)] p-2 text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)] active:scale-95 transition-all">
           <ChevronRight className="h-4 w-4" />
         </button>
-        <button onClick={() => setWeekOf(getMonday(new Date()))} className={`rounded-lg border px-3 py-2 text-xs font-medium transition-all active:scale-95 ${weekOf === getMonday(new Date()) ? "bg-brand/10 border-brand/20 text-brand" : "bg-dark-card border-[#1E2D45] text-muted hover:text-white"}`}>This Week</button>
+        <button onClick={() => setWeekOf(getMonday(new Date()))} className={`rounded-full border px-3 py-2 text-xs font-medium transition-all active:scale-95 ${weekOf === getMonday(new Date()) ? "bg-[var(--t-accent-soft)] border-[var(--t-accent)] text-[var(--t-accent)]" : "bg-[var(--t-bg-card)] border-[var(--t-border)] text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)]"}`}>This Week</button>
       </div>
 
       {/* Filters */}
       <div className="flex gap-1 mb-5">
         {FILTERS.map(f => (
           <button key={f} onClick={() => setFilter(f)}
-            className={`rounded-full px-3 py-1.5 text-xs font-medium capitalize transition-colors btn-press ${filter === f ? "bg-brand/15 text-brand" : "bg-dark-card text-muted hover:text-foreground"}`}>
+            className={`rounded-full px-3 py-1.5 text-xs font-medium capitalize transition-colors ${filter === f ? "bg-[var(--t-accent-soft)] text-[var(--t-accent)]" : "text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)]"}`}>
             {f}
           </button>
         ))}
       </div>
 
-      {/* Team Cards */}
+      {/* Team List */}
       {loading ? (
-        <div className="grid gap-3">{Array.from({ length: 4 }).map((_, i) => <div key={i} className="h-24 skeleton rounded-xl" />)}</div>
+        <div className="space-y-2">{Array.from({ length: 4 }).map((_, i) => <div key={i} className="h-16 skeleton rounded-[14px]" />)}</div>
       ) : filtered.length === 0 ? (
-        <div className="rounded-2xl bg-dark-card border border-[#1E2D45] py-16 text-center">
-          <Users className="mx-auto h-10 w-10 text-muted/20 mb-2" />
-          <p className="text-sm text-muted">No team members</p>
+        <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] py-16 text-center">
+          <Users className="mx-auto h-10 w-10 text-[var(--t-text-muted)] opacity-20 mb-2" />
+          <p className="text-sm text-[var(--t-text-muted)]">No team members</p>
         </div>
       ) : (
-        <div className="grid gap-3">
+        <div className="space-y-1">
           {filtered.map(m => (
             <div key={m.id} onClick={() => router.push(`/team/${m.id}`)}
-              className="rounded-xl bg-dark-card border border-[#1E2D45] p-4 cursor-pointer hover:bg-dark-card-hover hover:border-white/10 transition-all">
-              <div className="flex items-center gap-4">
-                {/* Avatar + Name */}
-                <div className="flex items-center gap-3 min-w-[180px]">
-                  <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-sm font-bold ${ROLE_AVATAR[m.role] || ROLE_AVATAR.viewer}`}>
-                    {m.firstName[0]}{m.lastName[0]}
-                  </div>
-                  <div>
-                    <p className="text-sm font-semibold text-white">{m.firstName} {m.lastName}</p>
-                    <span className={`inline-block mt-0.5 rounded-full px-2 py-0.5 text-[10px] font-medium capitalize ${ROLE_CLS[m.role] || ROLE_CLS.viewer}`}>{m.role}</span>
+              className="flex items-center justify-between rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-5 py-3.5 cursor-pointer hover:bg-[var(--t-bg-card-hover)] transition-colors">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--t-bg-card-hover)] text-sm font-bold text-[var(--t-text-primary)]">
+                  {m.firstName[0]}{m.lastName[0]}
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-[var(--t-text-primary)]">{m.firstName} {m.lastName}</p>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <span className="text-[11px] font-semibold capitalize text-[var(--t-text-muted)]">{m.role}</span>
+                    {m.role === "driver" && (
+                      <span className="text-[11px] font-semibold text-[var(--t-accent)]">Billable</span>
+                    )}
                   </div>
                 </div>
+              </div>
 
-                {/* Contact */}
-                <div className="flex-1 min-w-0 hidden sm:flex items-center gap-4" onClick={e => e.stopPropagation()}>
-                  {m.phone && <a href={`tel:${m.phone}`} className="flex items-center gap-1 text-xs text-foreground hover:text-brand shrink-0"><Phone className="h-3 w-3 text-muted" />{fmtPhone(m.phone)}</a>}
-                  {m.email && <a href={`mailto:${m.email}`} className="flex items-center gap-1 text-xs text-foreground hover:text-brand truncate"><Mail className="h-3 w-3 text-muted" /><span className="truncate max-w-[160px]">{m.email}</span></a>}
-                  {m.vehicleInfo && <span className="flex items-center gap-1 text-xs text-muted shrink-0"><Truck className="h-3 w-3" />{`${m.vehicleInfo.year || ""} ${m.vehicleInfo.make || ""}`.trim()}</span>}
+              <div className="flex items-center gap-6 shrink-0">
+                {/* Hours */}
+                <div className="text-right hidden sm:block">
+                  <p className={`text-sm font-semibold tabular-nums ${m.weekHours > 40 ? "text-[var(--t-error)]" : "text-[var(--t-text-primary)]"}`}>{m.weekHours.toFixed(1)}h</p>
+                  <p className="text-[11px] text-[var(--t-text-muted)]">{m.payRate ? `$${Number(m.payRate).toFixed(2)}/hr` : ""}</p>
                 </div>
 
-                {/* Right: Status + Hours + Rate */}
-                <div className="flex items-center gap-4 shrink-0">
-                  <span className="inline-flex items-center gap-1.5 text-[10px] font-medium capitalize">
-                    <span className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT[m.employeeStatus] || STATUS_DOT.active}`} />
-                    <span className="hidden md:inline">{m.employeeStatus || "active"}</span>
+                {/* Phone */}
+                {m.phone && (
+                  <span onClick={e => e.stopPropagation()} className="hidden md:flex items-center gap-1 text-[13px] text-[var(--t-text-muted)]">
+                    <Phone className="h-3 w-3" />
+                    <a href={`tel:${m.phone}`} className="hover:text-[var(--t-accent)]">{fmtPhone(m.phone)}</a>
                   </span>
-                  <div className="text-right min-w-[60px]">
-                    <p className={`text-sm font-semibold tabular-nums ${m.weekHours > 40 ? "text-red-400" : "text-white"}`}>{m.weekHours.toFixed(1)}h</p>
-                    <p className="text-[10px] text-muted">{m.payRate ? `$${Number(m.payRate).toFixed(2)}/hr` : ""}</p>
-                  </div>
-                </div>
+                )}
+
+                {/* Status */}
+                <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold capitalize">
+                  <span className={`h-1.5 w-1.5 rounded-full ${m.employeeStatus === "inactive" ? "bg-[var(--t-text-muted)]" : m.employeeStatus === "on_break" ? "bg-yellow-500" : "bg-[var(--t-accent)]"}`} />
+                  <span className="hidden md:inline text-[var(--t-text-muted)]">{m.employeeStatus || "active"}</span>
+                </span>
               </div>
             </div>
           ))}

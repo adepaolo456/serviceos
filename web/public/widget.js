@@ -28,7 +28,7 @@
     .catch(function(e) { console.error('[ServiceOS] Widget config failed:', e); });
 
   function init() {
-    var color = (config && config.primaryColor) || '#2ECC71';
+    var color = (config && config.primaryColor) || '#22C55E';
 
     // Create floating button
     btn = document.createElement('button');
@@ -39,7 +39,7 @@
       (position === 'bottom-left' ? 'left:24px;' : 'right:24px;') +
       'bottom:24px;' +
       'background:' + color + ';' +
-      'color:#fff;border:none;cursor:pointer;' +
+      'color:#000;border:none;cursor:pointer;' +
       'padding:14px 28px;border-radius:50px;' +
       'font-size:16px;font-weight:600;' +
       'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;' +
@@ -62,15 +62,15 @@
     overlay = document.createElement('div');
     overlay.id = 'serviceos-widget-overlay';
     overlay.style.cssText = 'position:fixed;inset:0;z-index:100000;' +
-      'background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;' +
+      'background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;' +
       'animation:serviceos-fadein 0.2s ease;';
     overlay.onclick = function(e) { if (e.target === overlay) closeModal(); };
 
     var modal = document.createElement('div');
     modal.id = 'serviceos-widget-modal';
     modal.style.cssText = 'position:relative;width:90%;max-width:520px;height:85vh;max-height:800px;' +
-      'background:#fff;border-radius:16px;overflow:hidden;' +
-      'box-shadow:0 25px 60px rgba(0,0,0,0.3);' +
+      'background:#000;border:1px solid #1F1F1F;border-radius:14px;overflow:hidden;' +
+      'box-shadow:0 25px 60px rgba(0,0,0,0.5);' +
       'animation:serviceos-scalein 0.2s ease;';
 
     var closeBtn = document.createElement('button');
@@ -79,10 +79,10 @@
     closeBtn.setAttribute('aria-label', 'Close');
     closeBtn.style.cssText = 'position:absolute;top:12px;right:12px;z-index:10;' +
       'width:32px;height:32px;border-radius:50%;border:none;cursor:pointer;' +
-      'background:rgba(0,0,0,0.08);color:#333;font-size:20px;line-height:32px;text-align:center;' +
+      'background:rgba(255,255,255,0.08);color:#FFFFFF;font-size:20px;line-height:32px;text-align:center;' +
       'font-family:sans-serif;transition:background 0.15s;';
-    closeBtn.onmouseenter = function() { closeBtn.style.background = 'rgba(0,0,0,0.15)'; };
-    closeBtn.onmouseleave = function() { closeBtn.style.background = 'rgba(0,0,0,0.08)'; };
+    closeBtn.onmouseenter = function() { closeBtn.style.background = 'rgba(255,255,255,0.15)'; };
+    closeBtn.onmouseleave = function() { closeBtn.style.background = 'rgba(255,255,255,0.08)'; };
     closeBtn.onclick = closeModal;
 
     var iframe = document.createElement('iframe');

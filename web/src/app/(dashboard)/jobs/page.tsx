@@ -70,37 +70,33 @@ interface PriceQuote { breakdown: { basePrice: number; total: number; tax: numbe
 
 const STATUSES = ["all", "overdue", "pending", "confirmed", "dispatched", "en_route", "in_progress", "completed", "cancelled"] as const;
 
-const STATUS_COLORS: Record<string, { bg: string; text: string; dot: string }> = {
-  overdue:     { bg: "bg-red-500/10",    text: "text-red-400",    dot: "bg-red-400" },
-  pending:     { bg: "bg-yellow-500/10", text: "text-yellow-400", dot: "bg-yellow-400" },
-  confirmed:   { bg: "bg-blue-500/10",   text: "text-blue-400",   dot: "bg-blue-400" },
-  dispatched:  { bg: "bg-purple-500/10", text: "text-purple-400", dot: "bg-purple-400" },
-  en_route:    { bg: "bg-orange-500/10", text: "text-orange-400", dot: "bg-orange-400" },
-  arrived:     { bg: "bg-teal-500/10",   text: "text-teal-400",   dot: "bg-teal-400" },
-  in_progress: { bg: "bg-brand/10",      text: "text-brand",      dot: "bg-brand" },
-  completed:   { bg: "bg-emerald-500/10",text: "text-emerald-400",dot: "bg-emerald-400" },
-  cancelled:   { bg: "bg-red-500/10",    text: "text-red-400",    dot: "bg-red-400" },
-};
-
 const STATUS_LABELS: Record<string, string> = {
   all: "All", overdue: "Overdue", pending: "Pending", confirmed: "Confirmed", dispatched: "Dispatched",
   en_route: "En Route", arrived: "Arrived", in_progress: "In Progress",
   completed: "Completed", cancelled: "Cancelled",
 };
 
-const JOB_TYPE_BADGE: Record<string, { icon: string; color: string }> = {
-  delivery: { icon: "🔵", color: "bg-blue-500/10 text-blue-400 border-blue-500/20" },
-  pickup:   { icon: "🟠", color: "bg-orange-500/10 text-orange-400 border-orange-500/20" },
-  exchange: { icon: "🟣", color: "bg-purple-500/10 text-purple-400 border-purple-500/20" },
-};
+/* ─── Status text colors (no badge backgrounds) ─── */
 
-const SIZE_BADGE: Record<string, string> = {
-  "10yd": "bg-sky-500/10 text-sky-400 border-sky-500/20",
-  "15yd": "bg-indigo-500/10 text-indigo-400 border-indigo-500/20",
-  "20yd": "bg-violet-500/10 text-violet-400 border-violet-500/20",
-  "30yd": "bg-amber-500/10 text-amber-400 border-amber-500/20",
-  "40yd": "bg-rose-500/10 text-rose-400 border-rose-500/20",
-};
+function statusTextClass(s: string): string {
+  if (s === "completed") return "text-[#22C55E]";
+  if (s === "confirmed") return "text-[#22C55E]";
+  if (s === "overdue" || s === "cancelled") return "text-[#EF4444]";
+  if (s === "pending") return "text-[#F59E0B]";
+  if (s === "dispatched") return "text-[#F59E0B]";
+  if (s === "en_route") return "text-[#F59E0B]";
+  if (s === "in_progress") return "text-[#3B82F6]";
+  return "text-[var(--t-text-muted)]";
+}
+
+/* ─── Job type text (no badge backgrounds) ─── */
+
+function jobTypeTextClass(t: string): string {
+  if (t === "delivery") return "text-[#3B82F6]";
+  if (t === "pickup") return "text-[#F97316]";
+  if (t === "exchange") return "text-[#A855F7]";
+  return "text-[var(--t-text-muted)]";
+}
 
 const DATE_RANGE_OPTIONS = [
   { value: "today", label: "Today" },
@@ -125,7 +121,7 @@ function fmtDate(d: string): string {
 }
 
 function fmtDateFull(d: string): string {
-  if (!d) return "—";
+  if (!d) return "\u2014";
   return new Date(d + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
@@ -220,13 +216,11 @@ export default function JobsPage() {
     return Number(statusCounts.find((c) => c.status === s)?.count ?? 0);
   };
 
-  // Counts for subtitle
   const totalCount = getCount("all");
   const todayStr = new Date().toISOString().split("T")[0];
   const todayCount = jobs.filter((j) => j.scheduled_date === todayStr).length;
   const unassignedCount = statusCounts.filter((c) => ["pending", "confirmed"].includes(c.status)).reduce((s, c) => s + Number(c.count), 0);
 
-  // Client-side search + sort
   const filteredJobs = useMemo(() => {
     let result = [...jobs];
     if (searchQuery.trim()) {
@@ -261,29 +255,34 @@ export default function JobsPage() {
   return (
     <div>
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="font-display text-2xl font-bold tracking-tight text-white">Jobs</h1>
-          <p className="mt-1 text-sm text-muted">
+          <h1 style={{ fontSize: 28, fontWeight: 700, letterSpacing: "-1px", color: "var(--t-text-primary)" }}>
+            Jobs
+          </h1>
+          <p style={{ fontSize: 14, color: "var(--t-text-muted)", marginTop: 4 }}>
             {totalCount} total &middot;{" "}
-            <span className="text-white">{todayCount} today</span> &middot;{" "}
+            <span style={{ color: "var(--t-text-primary)" }}>{todayCount} today</span> &middot;{" "}
             {unassignedCount > 0 ? (
-              <span className="text-red-400">{unassignedCount} unassigned</span>
+              <span style={{ color: "var(--t-error)" }}>{unassignedCount} unassigned</span>
             ) : (
-              <span className="text-emerald-400">All assigned</span>
+              <span style={{ color: "#22C55E" }}>All assigned</span>
             )}
           </p>
         </div>
         <div className="flex items-center gap-3">
-          {/* Date range */}
-          <div className="flex rounded-lg border border-[#1E2D45] overflow-hidden">
+          {/* Date range pills */}
+          <div className="flex overflow-hidden" style={{ borderRadius: 24, border: "1px solid var(--t-border)" }}>
             {DATE_RANGE_OPTIONS.map((opt) => (
               <button
                 key={opt.value}
                 onClick={() => setDateRange(opt.value)}
-                className={`px-3 py-1.5 text-xs font-medium transition-colors ${
-                  dateRange === opt.value ? "bg-brand/10 text-brand" : "text-muted hover:text-white"
-                }`}
+                style={{
+                  padding: "6px 14px", fontSize: 12, fontWeight: 500,
+                  background: dateRange === opt.value ? "var(--t-accent-soft)" : "transparent",
+                  color: dateRange === opt.value ? "#22C55E" : "var(--t-text-muted)",
+                  border: "none", cursor: "pointer", transition: "all 0.15s ease",
+                }}
               >
                 {opt.label}
               </button>
@@ -291,7 +290,14 @@ export default function JobsPage() {
           </div>
           <button
             onClick={() => router.push("/book")}
-            className="flex items-center gap-2 rounded-lg bg-[#2ECC71] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1FA855] btn-press"
+            style={{
+              display: "inline-flex", alignItems: "center", gap: 8,
+              background: "#22C55E", color: "#000", fontWeight: 600, fontSize: 14,
+              padding: "10px 20px", borderRadius: 24,
+              transition: "opacity 0.15s ease", cursor: "pointer", border: "none",
+            }}
+            onMouseOver={(e) => (e.currentTarget.style.opacity = "0.9")}
+            onMouseOut={(e) => (e.currentTarget.style.opacity = "1")}
           >
             <Plus className="h-4 w-4" />
             New Booking
@@ -299,41 +305,56 @@ export default function JobsPage() {
         </div>
       </div>
 
-      {/* Status Tabs */}
-      <div className="mb-6 flex gap-0 overflow-x-auto border-b border-[#1E2D45]">
-        {STATUSES.map((s) => (
-          <button
-            key={s}
-            onClick={() => setStatusFilter(s)}
-            className={`relative shrink-0 px-4 py-3 text-sm font-medium transition-colors btn-press ${
-              statusFilter === s ? "text-brand" : "text-muted hover:text-foreground"
-            }`}
-          >
-            {STATUS_LABELS[s]}
-            <span className={`ml-1.5 text-xs ${statusFilter === s ? "text-brand/70" : "text-muted/50"}`}>
-              {getCount(s)}
-            </span>
-            {statusFilter === s && (
-              <span className="absolute inset-x-0 bottom-0 h-0.5 bg-brand rounded-full" />
-            )}
-          </button>
-        ))}
+      {/* ─── Filter Tabs (Pills) ─── */}
+      <div className="flex gap-2 mb-6 flex-wrap">
+        {STATUSES.map((s) => {
+          const isActive = statusFilter === s;
+          return (
+            <button
+              key={s}
+              onClick={() => setStatusFilter(s)}
+              style={{
+                display: "inline-flex", alignItems: "center", gap: 6,
+                padding: "6px 14px", borderRadius: 24, fontSize: 13, fontWeight: 500,
+                background: isActive ? "var(--t-accent-soft)" : "transparent",
+                color: isActive ? "#22C55E" : "var(--t-text-muted)",
+                border: isActive ? "1px solid transparent" : "1px solid var(--t-border)",
+                transition: "all 0.15s ease", cursor: "pointer",
+              }}
+            >
+              {STATUS_LABELS[s]}
+              <span style={{ fontSize: 11, opacity: 0.7 }}>{getCount(s)}</span>
+            </button>
+          );
+        })}
       </div>
 
       {/* Search & Sort */}
       <div className="flex items-center gap-3 mb-5">
         <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4" style={{ color: "var(--t-text-muted)" }} />
           <input
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search job #, customer, phone, address..."
-            className="w-full rounded-lg bg-[#111C2E] border border-[#1E2D45] pl-10 pr-4 py-2 text-sm text-white placeholder-muted outline-none transition-colors focus:border-brand"
+            style={{
+              width: "100%", borderRadius: 14, border: "1px solid var(--t-border)",
+              background: "var(--t-bg-card)", padding: "10px 16px 10px 40px",
+              fontSize: 14, color: "var(--t-text-primary)", outline: "none",
+              transition: "border 0.15s ease",
+            }}
           />
         </div>
         <Dropdown
           trigger={
-            <button className="flex items-center gap-2 rounded-lg border border-[#1E2D45] bg-[#111C2E] px-3 py-2 text-sm text-muted hover:text-white transition-colors">
+            <button
+              style={{
+                display: "inline-flex", alignItems: "center", gap: 6,
+                padding: "8px 14px", borderRadius: 24, fontSize: 13, fontWeight: 500,
+                border: "1px solid var(--t-border)", background: "transparent",
+                color: "var(--t-text-muted)", cursor: "pointer", transition: "all 0.15s ease",
+              }}
+            >
               <ArrowDownUp className="h-3.5 w-3.5" />
               {SORT_OPTIONS.find((o) => o.value === sortBy)?.label}
             </button>
@@ -344,9 +365,11 @@ export default function JobsPage() {
             <button
               key={opt.value}
               onClick={() => setSortBy(opt.value)}
-              className={`block w-full px-4 py-2 text-left text-sm transition-colors ${
-                sortBy === opt.value ? "text-brand bg-brand/5" : "text-foreground hover:bg-dark-card"
-              }`}
+              className="block w-full px-4 py-2 text-left text-sm transition-colors"
+              style={{
+                color: sortBy === opt.value ? "#22C55E" : "var(--t-text-primary)",
+                background: sortBy === opt.value ? "var(--t-accent-soft)" : "transparent",
+              }}
             >
               {opt.label}
             </button>
@@ -354,26 +377,31 @@ export default function JobsPage() {
         </Dropdown>
       </div>
 
-      {/* Job Cards */}
+      {/* ─── Job Table ─── */}
       {loading ? (
-        <div className="space-y-3">
+        <div className="space-y-2">
           {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="h-24 w-full skeleton rounded-2xl" />
+            <div key={i} className="h-16 w-full skeleton" style={{ borderRadius: 14 }} />
           ))}
         </div>
       ) : filteredJobs.length === 0 ? (
         <div className="py-24 flex flex-col items-center justify-center text-center">
-          <Briefcase size={48} className="text-[#7A8BA3]/30 mb-4" />
-          <h2 className="text-lg font-semibold text-white mb-1">
+          <Briefcase size={48} style={{ color: "var(--t-text-muted)", opacity: 0.3 }} className="mb-4" />
+          <h2 style={{ fontSize: 18, fontWeight: 600, color: "var(--t-text-primary)" }} className="mb-1">
             {searchQuery ? "No matching jobs" : "No jobs yet"}
           </h2>
-          <p className="text-sm text-muted mb-6">
+          <p style={{ fontSize: 14, color: "var(--t-text-muted)" }} className="mb-6">
             {searchQuery ? "Try a different search" : "Create your first job to get started"}
           </p>
           {!searchQuery && (
             <button
               onClick={() => setPanelOpen(true)}
-              className="flex items-center gap-2 rounded-lg bg-[#2ECC71] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1FA855] btn-press"
+              style={{
+                display: "inline-flex", alignItems: "center", gap: 8,
+                background: "#22C55E", color: "#000", fontWeight: 600, fontSize: 14,
+                padding: "10px 20px", borderRadius: 24,
+                transition: "opacity 0.15s ease", cursor: "pointer", border: "none",
+              }}
             >
               <Plus className="h-4 w-4" />
               New Job
@@ -381,20 +409,156 @@ export default function JobsPage() {
           )}
         </div>
       ) : (
-        <div className="space-y-2">
-          {filteredJobs.map((job) => (
-            <JobCard key={job.id} job={job} onClick={() => router.push(`/jobs/${job.id}`)} />
-          ))}
+        <div style={{ borderRadius: 14, border: "1px solid var(--t-border)", background: "var(--t-bg-card)", overflow: "hidden" }}>
+          <div className="table-scroll">
+            <table className="w-full text-sm">
+              <thead>
+                <tr style={{ borderBottom: "1px solid var(--t-border)" }}>
+                  <th style={{ padding: "12px 16px", textAlign: "left", fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--t-text-muted)" }}>Customer</th>
+                  <th style={{ padding: "12px 16px", textAlign: "left", fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--t-text-muted)" }}>Address</th>
+                  <th style={{ padding: "12px 16px", textAlign: "left", fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--t-text-muted)" }}>Schedule</th>
+                  <th style={{ padding: "12px 16px", textAlign: "left", fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--t-text-muted)" }}>Type</th>
+                  <th style={{ padding: "12px 16px", textAlign: "left", fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--t-text-muted)" }}>Size</th>
+                  <th style={{ padding: "12px 16px", textAlign: "left", fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--t-text-muted)" }}>Driver</th>
+                  <th style={{ padding: "12px 16px", textAlign: "left", fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--t-text-muted)" }}>Status</th>
+                  <th style={{ padding: "12px 16px", textAlign: "right", fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--t-text-muted)" }}>Price</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredJobs.map((job) => {
+                  const customerName = job.customer ? `${job.customer.first_name} ${job.customer.last_name}` : "No customer";
+                  const address = fmtAddress(job.service_address);
+                  const hasRental = job.rental_start_date && job.rental_end_date;
+                  const rentalDays = hasRental ? daysBetween(job.rental_start_date, job.rental_end_date) : job.rental_days;
+
+                  return (
+                    <tr
+                      key={job.id}
+                      onClick={() => router.push(`/jobs/${job.id}`)}
+                      className="cursor-pointer"
+                      style={{ borderBottom: "1px solid var(--t-border)", transition: "background 0.15s ease" }}
+                      onMouseOver={(e) => (e.currentTarget.style.background = "var(--t-bg-card-hover)")}
+                      onMouseOut={(e) => (e.currentTarget.style.background = "transparent")}
+                    >
+                      {/* Customer */}
+                      <td style={{ padding: "14px 16px" }}>
+                        <p style={{ fontWeight: 600, fontSize: 14, color: "var(--t-text-primary)" }}>{customerName}</p>
+                        <p style={{ fontSize: 12, color: "var(--t-text-muted)", fontFamily: "monospace" }}>{job.job_number}</p>
+                      </td>
+
+                      {/* Address */}
+                      <td style={{ padding: "14px 16px", maxWidth: 220 }} className="truncate">
+                        {address ? (
+                          <span style={{ fontSize: 13, color: "var(--t-text-muted)" }}>{address}</span>
+                        ) : (
+                          <span style={{ fontSize: 13, color: "var(--t-text-muted)", opacity: 0.5 }}>\u2014</span>
+                        )}
+                      </td>
+
+                      {/* Schedule */}
+                      <td style={{ padding: "14px 16px" }}>
+                        <p style={{ fontSize: 13, color: "var(--t-text-primary)" }}>
+                          {job.scheduled_date ? fmtDateFull(job.scheduled_date) : "Unscheduled"}
+                        </p>
+                        {job.scheduled_window_start && (
+                          <p style={{ fontSize: 12, color: "var(--t-text-muted)" }}>
+                            {fmtTime(job.scheduled_window_start)}{job.scheduled_window_end ? ` \u2013 ${fmtTime(job.scheduled_window_end)}` : ""}
+                          </p>
+                        )}
+                      </td>
+
+                      {/* Type */}
+                      <td style={{ padding: "14px 16px" }}>
+                        <span className={jobTypeTextClass(job.job_type)} style={{ fontSize: 11, fontWeight: 600, textTransform: "capitalize" }}>
+                          {job.job_type}
+                        </span>
+                      </td>
+
+                      {/* Size */}
+                      <td style={{ padding: "14px 16px" }}>
+                        {job.asset?.subtype ? (
+                          <span style={{ fontSize: 13, color: "var(--t-text-muted)" }}>{job.asset.subtype}</span>
+                        ) : (
+                          <span style={{ fontSize: 13, color: "var(--t-text-muted)", opacity: 0.5 }}>\u2014</span>
+                        )}
+                      </td>
+
+                      {/* Driver */}
+                      <td style={{ padding: "14px 16px" }}>
+                        {job.assigned_driver ? (
+                          <span style={{ fontSize: 13, color: "var(--t-text-primary)" }}>
+                            {job.assigned_driver.first_name} {job.assigned_driver.last_name}
+                          </span>
+                        ) : (
+                          <span style={{ fontSize: 11, fontWeight: 600, color: "#F59E0B" }}>Unassigned</span>
+                        )}
+                      </td>
+
+                      {/* Status */}
+                      <td style={{ padding: "14px 16px" }}>
+                        <span className={statusTextClass(job.status)} style={{ fontSize: 11, fontWeight: 600 }}>
+                          {STATUS_LABELS[job.status] || job.status.replace(/_/g, " ")}
+                        </span>
+                        {job.is_overdue && (
+                          <p style={{ fontSize: 10, fontWeight: 700, color: "var(--t-error)", marginTop: 2 }}>
+                            OVERDUE {job.extra_days}d
+                          </p>
+                        )}
+                        {job.rescheduled_by_customer && (
+                          <p style={{ fontSize: 10, fontWeight: 500, color: "#F59E0B", marginTop: 2 }}>
+                            Rescheduled by customer
+                          </p>
+                        )}
+                      </td>
+
+                      {/* Price */}
+                      <td style={{ padding: "14px 16px", textAlign: "right" }}>
+                        {job.total_price > 0 ? (
+                          <span className="tabular-nums" style={{ fontSize: 14, fontWeight: 600, color: "var(--t-text-primary)" }}>
+                            ${Number(job.total_price).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </span>
+                        ) : (
+                          <span style={{ fontSize: 13, color: "var(--t-text-muted)", opacity: 0.5 }}>\u2014</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
       {/* Pagination */}
       {total > 30 && (
-        <div className="mt-6 flex items-center justify-between text-sm text-muted">
-          <span>Showing {(page - 1) * 30 + 1}–{Math.min(page * 30, total)} of {total}</span>
+        <div className="mt-6 flex items-center justify-between" style={{ fontSize: 14, color: "var(--t-text-muted)" }}>
+          <span>Showing {(page - 1) * 30 + 1}\u2013{Math.min(page * 30, total)} of {total}</span>
           <div className="flex gap-2">
-            <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1} className="rounded-lg bg-dark-card px-3 py-1.5 transition-colors hover:bg-dark-card-hover disabled:opacity-40">Previous</button>
-            <button onClick={() => setPage((p) => p + 1)} disabled={page * 30 >= total} className="rounded-lg bg-dark-card px-3 py-1.5 transition-colors hover:bg-dark-card-hover disabled:opacity-40">Next</button>
+            <button
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page === 1}
+              style={{
+                padding: "6px 14px", borderRadius: 24, fontSize: 13,
+                border: "1px solid var(--t-border)", background: "var(--t-bg-card)",
+                color: "var(--t-text-muted)", cursor: "pointer",
+                transition: "all 0.15s ease", opacity: page === 1 ? 0.4 : 1,
+              }}
+            >
+              Previous
+            </button>
+            <button
+              onClick={() => setPage((p) => p + 1)}
+              disabled={page * 30 >= total}
+              style={{
+                padding: "6px 14px", borderRadius: 24, fontSize: 13,
+                border: "1px solid var(--t-border)", background: "var(--t-bg-card)",
+                color: "var(--t-text-muted)", cursor: "pointer",
+                transition: "all 0.15s ease", opacity: page * 30 >= total ? 0.4 : 1,
+              }}
+            >
+              Next
+            </button>
           </div>
         </div>
       )}
@@ -404,100 +568,6 @@ export default function JobsPage() {
         <NewJobForm onSuccess={() => { setPanelOpen(false); fetchJobs(); toast("success", "Job created"); }} />
       </SlideOver>
     </div>
-  );
-}
-
-/* ─── Job Card ─── */
-
-function JobCard({ job, onClick }: { job: Job; onClick: () => void }) {
-  const status = STATUS_COLORS[job.status] || STATUS_COLORS.pending;
-  const typeBadge = JOB_TYPE_BADGE[job.job_type] || JOB_TYPE_BADGE.delivery;
-  const sizeBadge = job.asset?.subtype ? (SIZE_BADGE[job.asset.subtype] || "bg-zinc-500/10 text-zinc-400 border-zinc-500/20") : null;
-  const customerName = job.customer ? `${job.customer.first_name} ${job.customer.last_name}` : "No customer";
-  const address = fmtAddress(job.service_address);
-  const hasRental = job.rental_start_date && job.rental_end_date;
-  const rentalDays = hasRental ? daysBetween(job.rental_start_date, job.rental_end_date) : job.rental_days;
-
-  return (
-    <button
-      onClick={onClick}
-      className="w-full rounded-xl border border-[#1E2D45] bg-dark-card p-4 text-left transition-all hover:bg-dark-card-hover hover:border-white/10 card-hover btn-press"
-    >
-      <div className="flex items-start gap-4">
-        {/* Left — Job # + Status */}
-        <div className="shrink-0 w-32">
-          <p className="font-mono text-sm font-semibold text-white">{job.job_number}</p>
-          <span className={`inline-flex items-center gap-1.5 mt-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-medium ${status.bg} ${status.text}`}>
-            <span className={`h-1.5 w-1.5 rounded-full ${status.dot}`} />
-            {STATUS_LABELS[job.status] || job.status.replace(/_/g, " ")}
-          </span>
-          {job.is_overdue && (
-            <span className="inline-flex items-center gap-1 mt-1 rounded-full bg-red-500/10 px-2 py-0.5 text-[10px] font-bold text-red-400">
-              OVERDUE {job.extra_days}d
-            </span>
-          )}
-          {job.rescheduled_by_customer && (
-            <span className="rounded-full bg-blue-500/10 text-blue-400 px-2 py-0.5 text-[10px] font-medium mt-1 inline-flex">
-              Rescheduled by customer
-            </span>
-          )}
-        </div>
-
-        {/* Center — Customer, Address, Type/Size */}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-1">
-            <p className="text-sm font-semibold text-white truncate">{customerName}</p>
-            <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium ${typeBadge.color}`}>
-              {typeBadge.icon} {job.job_type}
-            </span>
-            {sizeBadge && (
-              <span className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-medium ${sizeBadge}`}>
-                {job.asset?.subtype}
-              </span>
-            )}
-          </div>
-          {address && (
-            <p className="text-xs text-muted truncate max-w-[400px]">
-              <MapPin className="inline h-3 w-3 mr-1 -mt-0.5" />{address}
-            </p>
-          )}
-          {/* Rental period */}
-          {hasRental && (
-            <p className="text-xs text-muted mt-1">
-              {fmtDate(job.rental_start_date)} <ArrowRight className="inline h-3 w-3 mx-0.5" /> {fmtDate(job.rental_end_date)}
-              {rentalDays ? ` (${rentalDays} days)` : ""}
-            </p>
-          )}
-        </div>
-
-        {/* Right — Date, Driver, Price */}
-        <div className="shrink-0 text-right space-y-1">
-          <div className="flex items-center gap-1.5 justify-end">
-            <Calendar className="h-3 w-3 text-muted" />
-            <span className="text-xs text-foreground">{job.scheduled_date ? fmtDateFull(job.scheduled_date) : "Unscheduled"}</span>
-          </div>
-          {job.scheduled_window_start && (
-            <div className="flex items-center gap-1.5 justify-end">
-              <Clock className="h-3 w-3 text-muted" />
-              <span className="text-xs text-muted">
-                {fmtTime(job.scheduled_window_start)}{job.scheduled_window_end ? ` – ${fmtTime(job.scheduled_window_end)}` : ""}
-              </span>
-            </div>
-          )}
-          <div className="flex items-center gap-1.5 justify-end">
-            <User className="h-3 w-3 text-muted" />
-            {job.assigned_driver ? (
-              <span className="text-xs text-foreground">{job.assigned_driver.first_name} {job.assigned_driver.last_name}</span>
-            ) : (
-              <span className="text-xs text-red-400 font-medium">Unassigned</span>
-            )}
-          </div>
-          {job.total_price > 0 && (
-            <p className="text-sm font-semibold text-white tabular-nums">${Number(job.total_price).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-          )}
-        </div>
-      </div>
-    </button>
   );
 }
 
@@ -579,28 +649,42 @@ function NewJobForm({ onSuccess }: { onSuccess: () => void }) {
     }
   };
 
-  const inp = "w-full rounded-lg bg-[#111C2E] border border-[#1E2D45] px-4 py-2.5 text-sm text-white placeholder-muted outline-none transition-colors focus:border-brand";
-  const lbl = "block text-sm font-medium text-[#7A8BA3] mb-1.5";
+  const inp: React.CSSProperties = {
+    width: "100%", borderRadius: 14, border: "1px solid var(--t-border)",
+    background: "var(--t-bg-card)", padding: "10px 16px",
+    fontSize: 14, color: "var(--t-text-primary)", outline: "none",
+  };
+  const lbl: React.CSSProperties = { display: "block", fontSize: 13, fontWeight: 500, color: "var(--t-text-muted)", marginBottom: 6 };
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
-      {error && <div className="rounded-lg bg-red-500/10 px-4 py-3 text-sm text-red-400">{error}</div>}
+      {error && (
+        <div style={{ borderRadius: 14, background: "var(--t-error-soft)", padding: "12px 16px", fontSize: 14, color: "var(--t-error)" }}>{error}</div>
+      )}
 
       {/* Customer search */}
       <div className="relative">
-        <label className={lbl}>Customer</label>
+        <label style={lbl}>Customer</label>
         {selectedCustomerName ? (
-          <div className="flex items-center justify-between rounded-lg border border-white/10 bg-dark-card px-4 py-2.5">
-            <span className="text-sm text-white">{selectedCustomerName}</span>
-            <button type="button" onClick={() => { setCustomerId(""); setSelectedCustomerName(""); setCustomerSearch(""); }} className="text-xs text-muted hover:text-red-400">Clear</button>
+          <div className="flex items-center justify-between" style={{ borderRadius: 14, border: "1px solid var(--t-border)", background: "var(--t-bg-card)", padding: "10px 16px" }}>
+            <span style={{ fontSize: 14, color: "var(--t-text-primary)" }}>{selectedCustomerName}</span>
+            <button type="button" onClick={() => { setCustomerId(""); setSelectedCustomerName(""); setCustomerSearch(""); }} style={{ fontSize: 12, color: "var(--t-text-muted)", background: "none", border: "none", cursor: "pointer" }}>Clear</button>
           </div>
         ) : (
-          <input value={customerSearch} onChange={(e) => setCustomerSearch(e.target.value)} onFocus={() => customerResults.length > 0 && setShowCustomerDropdown(true)} className={inp} placeholder="Search customers..." />
+          <input value={customerSearch} onChange={(e) => setCustomerSearch(e.target.value)} onFocus={() => customerResults.length > 0 && setShowCustomerDropdown(true)} style={inp} placeholder="Search customers..." />
         )}
         {showCustomerDropdown && customerResults.length > 0 && (
-          <div className="absolute z-10 mt-1 w-full rounded-lg border border-white/10 bg-dark-secondary shadow-xl">
+          <div className="absolute z-10 mt-1 w-full" style={{ borderRadius: 14, border: "1px solid var(--t-border)", background: "var(--t-bg-primary)", boxShadow: "0 10px 30px rgba(0,0,0,0.3)" }}>
             {customerResults.map((c) => (
-              <button key={c.id} type="button" onClick={() => { setCustomerId(c.id); setSelectedCustomerName(`${c.first_name} ${c.last_name}`); setShowCustomerDropdown(false); setCustomerSearch(""); }} className="w-full px-4 py-2.5 text-left text-sm text-foreground transition-colors hover:bg-dark-card-hover first:rounded-t-lg last:rounded-b-lg">
+              <button
+                key={c.id}
+                type="button"
+                onClick={() => { setCustomerId(c.id); setSelectedCustomerName(`${c.first_name} ${c.last_name}`); setShowCustomerDropdown(false); setCustomerSearch(""); }}
+                className="w-full text-left transition-colors first:rounded-t-[14px] last:rounded-b-[14px]"
+                style={{ padding: "10px 16px", fontSize: 14, color: "var(--t-text-primary)", background: "transparent", border: "none", cursor: "pointer" }}
+                onMouseOver={(e) => (e.currentTarget.style.background = "var(--t-bg-card-hover)")}
+                onMouseOut={(e) => (e.currentTarget.style.background = "transparent")}
+              >
                 {c.first_name} {c.last_name}
               </button>
             ))}
@@ -610,16 +694,16 @@ function NewJobForm({ onSuccess }: { onSuccess: () => void }) {
 
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label className={lbl}>Job Type</label>
-          <select value={jobType} onChange={(e) => setJobType(e.target.value)} className={`${inp} appearance-none`}>
+          <label style={lbl}>Job Type</label>
+          <select value={jobType} onChange={(e) => setJobType(e.target.value)} style={{ ...inp, appearance: "none" as const }}>
             <option value="delivery">Delivery</option>
             <option value="pickup">Pickup</option>
             <option value="exchange">Exchange</option>
           </select>
         </div>
         <div>
-          <label className={lbl}>Service Type</label>
-          <select value={serviceType} onChange={(e) => setServiceType(e.target.value)} className={`${inp} appearance-none`}>
+          <label style={lbl}>Service Type</label>
+          <select value={serviceType} onChange={(e) => setServiceType(e.target.value)} style={{ ...inp, appearance: "none" as const }}>
             <option value="dumpster_rental">Dumpster Rental</option>
             <option value="pod_storage">Pod Storage</option>
             <option value="restroom_service">Restroom Service</option>
@@ -628,10 +712,21 @@ function NewJobForm({ onSuccess }: { onSuccess: () => void }) {
       </div>
 
       <div>
-        <label className={lbl}>Dumpster Size</label>
-        <div className="flex gap-1 rounded-lg bg-dark-card p-1">
+        <label style={lbl}>Dumpster Size</label>
+        <div className="flex gap-1 rounded-[14px] p-1" style={{ background: "var(--t-bg-card)" }}>
           {["10yd", "15yd", "20yd", "30yd", "40yd"].map((s) => (
-            <button key={s} type="button" onClick={() => setAssetSubtype(s)} className={`flex-1 rounded-md py-2 text-sm font-medium transition-colors btn-press ${assetSubtype === s ? "bg-brand text-dark-primary" : "text-muted hover:text-foreground"}`}>
+            <button
+              key={s}
+              type="button"
+              onClick={() => setAssetSubtype(s)}
+              className="flex-1 py-2 text-sm font-medium"
+              style={{
+                borderRadius: 10, border: "none", cursor: "pointer",
+                background: assetSubtype === s ? "#22C55E" : "transparent",
+                color: assetSubtype === s ? "#000" : "var(--t-text-muted)",
+                transition: "all 0.15s ease",
+              }}
+            >
               {s}
             </button>
           ))}
@@ -639,35 +734,35 @@ function NewJobForm({ onSuccess }: { onSuccess: () => void }) {
       </div>
 
       <div>
-        <label className={lbl}>Scheduled Date</label>
-        <input type="date" value={scheduledDate} onChange={(e) => setScheduledDate(e.target.value)} className={inp} />
+        <label style={lbl}>Scheduled Date</label>
+        <input type="date" value={scheduledDate} onChange={(e) => setScheduledDate(e.target.value)} style={inp} />
       </div>
 
       <div className="grid grid-cols-2 gap-4">
-        <div><label className={lbl}>Window Start</label><input type="time" value={windowStart} onChange={(e) => setWindowStart(e.target.value)} className={inp} /></div>
-        <div><label className={lbl}>Window End</label><input type="time" value={windowEnd} onChange={(e) => setWindowEnd(e.target.value)} className={inp} /></div>
+        <div><label style={lbl}>Window Start</label><input type="time" value={windowStart} onChange={(e) => setWindowStart(e.target.value)} style={inp} /></div>
+        <div><label style={lbl}>Window End</label><input type="time" value={windowEnd} onChange={(e) => setWindowEnd(e.target.value)} style={inp} /></div>
       </div>
 
-      <fieldset>
-        <legend className="text-sm font-medium text-foreground mb-3">Service Address</legend>
+      <fieldset style={{ border: "none", padding: 0, margin: 0 }}>
+        <legend style={{ fontSize: 14, fontWeight: 500, color: "var(--t-text-primary)", marginBottom: 12 }}>Service Address</legend>
         <div className="space-y-3">
-          <input value={street} onChange={(e) => setStreet(e.target.value)} className={inp} placeholder="Street address" />
+          <input value={street} onChange={(e) => setStreet(e.target.value)} style={inp} placeholder="Street address" />
           <div className="grid grid-cols-3 gap-3">
-            <input value={city} onChange={(e) => setCity(e.target.value)} className={inp} placeholder="City" />
-            <input value={addrState} onChange={(e) => setAddrState(e.target.value)} className={inp} placeholder="State" />
-            <input value={zip} onChange={(e) => setZip(e.target.value)} className={inp} placeholder="ZIP" />
+            <input value={city} onChange={(e) => setCity(e.target.value)} style={inp} placeholder="City" />
+            <input value={addrState} onChange={(e) => setAddrState(e.target.value)} style={inp} placeholder="State" />
+            <input value={zip} onChange={(e) => setZip(e.target.value)} style={inp} placeholder="ZIP" />
           </div>
         </div>
       </fieldset>
 
       <div>
-        <label className={lbl}>Placement Notes</label>
-        <textarea value={placementNotes} onChange={(e) => setPlacementNotes(e.target.value)} rows={2} className={`${inp} resize-none`} placeholder="Where to place the dumpster..." />
+        <label style={lbl}>Placement Notes</label>
+        <textarea value={placementNotes} onChange={(e) => setPlacementNotes(e.target.value)} rows={2} style={{ ...inp, resize: "none" as const }} placeholder="Where to place the dumpster..." />
       </div>
 
       <div>
-        <label className={lbl}>Assign Asset</label>
-        <select value={assetId} onChange={(e) => setAssetId(e.target.value)} className={`${inp} appearance-none`}>
+        <label style={lbl}>Assign Asset</label>
+        <select value={assetId} onChange={(e) => setAssetId(e.target.value)} style={{ ...inp, appearance: "none" as const }}>
           <option value="">Auto-assign later</option>
           {assets.filter((a) => a.subtype === assetSubtype).map((a) => (
             <option key={a.id} value={a.id}>{a.identifier} ({a.subtype})</option>
@@ -677,31 +772,40 @@ function NewJobForm({ onSuccess }: { onSuccess: () => void }) {
 
       {/* Price */}
       {priceQuote && (
-        <div className="rounded-xl border border-[#1E2D45] bg-[#111C2E] p-4 space-y-2">
+        <div className="space-y-2" style={{ borderRadius: 14, border: "1px solid var(--t-border)", background: "var(--t-bg-card)", padding: 16 }}>
           <div className="flex justify-between text-sm">
-            <span className="text-muted">Base Price</span>
-            <span className="text-foreground tabular-nums">${priceQuote.breakdown.basePrice.toFixed(2)}</span>
+            <span style={{ color: "var(--t-text-muted)" }}>Base Price</span>
+            <span className="tabular-nums" style={{ color: "var(--t-text-primary)" }}>${priceQuote.breakdown.basePrice.toFixed(2)}</span>
           </div>
           {priceQuote.breakdown.distanceSurcharge > 0 && (
             <div className="flex justify-between text-sm">
-              <span className="text-muted">Distance Surcharge</span>
-              <span className="text-foreground tabular-nums">${priceQuote.breakdown.distanceSurcharge.toFixed(2)}</span>
+              <span style={{ color: "var(--t-text-muted)" }}>Distance Surcharge</span>
+              <span className="tabular-nums" style={{ color: "var(--t-text-primary)" }}>${priceQuote.breakdown.distanceSurcharge.toFixed(2)}</span>
             </div>
           )}
           {priceQuote.breakdown.jobFee > 0 && (
             <div className="flex justify-between text-sm">
-              <span className="text-muted">Service Fee</span>
-              <span className="text-foreground tabular-nums">${priceQuote.breakdown.jobFee.toFixed(2)}</span>
+              <span style={{ color: "var(--t-text-muted)" }}>Service Fee</span>
+              <span className="tabular-nums" style={{ color: "var(--t-text-primary)" }}>${priceQuote.breakdown.jobFee.toFixed(2)}</span>
             </div>
           )}
-          <div className="flex justify-between text-sm border-t border-[#1E2D45] pt-2 mt-2">
-            <span className="text-white font-semibold">Total</span>
-            <span className="text-brand font-bold tabular-nums">${priceQuote.breakdown.total.toFixed(2)}</span>
+          <div className="flex justify-between text-sm pt-2 mt-2" style={{ borderTop: "1px solid var(--t-border)" }}>
+            <span style={{ fontWeight: 600, color: "var(--t-text-primary)" }}>Total</span>
+            <span className="tabular-nums" style={{ fontWeight: 700, color: "#22C55E" }}>${priceQuote.breakdown.total.toFixed(2)}</span>
           </div>
         </div>
       )}
 
-      <button type="submit" disabled={saving} className="w-full rounded-lg bg-[#2ECC71] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1FA855] disabled:opacity-50 btn-press">
+      <button
+        type="submit"
+        disabled={saving}
+        style={{
+          width: "100%", background: "#22C55E", color: "#000", fontWeight: 600, fontSize: 14,
+          padding: "10px 20px", borderRadius: 24, border: "none",
+          cursor: "pointer", transition: "opacity 0.15s ease",
+          opacity: saving ? 0.5 : 1,
+        }}
+      >
         {saving ? "Creating..." : "Create Job"}
       </button>
     </form>

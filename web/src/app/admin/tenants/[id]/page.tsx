@@ -91,50 +91,50 @@ export default function TenantDetailPage({
   if (loading) {
     return (
       <div className="space-y-6">
-        <div className="h-6 w-40 animate-pulse rounded bg-gray-200" />
-        <div className="h-64 animate-pulse rounded-xl bg-gray-200" />
+        <div className="h-6 w-40 animate-pulse rounded bg-[var(--t-bg-card)]" />
+        <div className="h-64 animate-pulse rounded-[14px] bg-[var(--t-bg-card)] border border-[var(--t-border)]" />
       </div>
     );
   }
 
   if (!tenant) {
-    return <div className="py-20 text-center text-gray-500">Tenant not found</div>;
+    return <div className="py-20 text-center text-[var(--t-text-muted)]">Tenant not found</div>;
   }
 
-  const tierBadge: Record<string, string> = {
-    trial: "bg-gray-100 text-gray-600",
-    starter: "bg-blue-100 text-blue-700",
-    professional: "bg-purple-100 text-purple-700",
-    business: "bg-amber-100 text-amber-700",
+  const tierColors: Record<string, string> = {
+    trial: "text-[var(--t-text-muted)]",
+    starter: "text-blue-400",
+    professional: "text-purple-400",
+    business: "text-amber-400",
   };
 
-  const roleBadge: Record<string, string> = {
-    owner: "bg-amber-100 text-amber-700",
-    admin: "bg-purple-100 text-purple-700",
-    dispatcher: "bg-blue-100 text-blue-700",
-    driver: "bg-cyan-100 text-cyan-700",
-    viewer: "bg-gray-100 text-gray-600",
+  const roleColors: Record<string, string> = {
+    owner: "text-amber-400",
+    admin: "text-purple-400",
+    dispatcher: "text-blue-400",
+    driver: "text-cyan-400",
+    viewer: "text-[var(--t-text-muted)]",
   };
 
   return (
     <div>
-      <Link href="/admin/tenants" className="mb-6 inline-flex items-center gap-2 text-sm text-gray-500 hover:text-gray-900 transition-colors">
+      <Link href="/admin/tenants" className="mb-6 inline-flex items-center gap-2 text-sm text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)] transition-colors">
         <ArrowLeft className="h-4 w-4" /> Back to Tenants
       </Link>
 
       <div className="flex items-start justify-between mb-8">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">{tenant.name}</h1>
-          <p className="mt-1 text-sm text-gray-500">{tenant.slug} &middot; {tenant.businessType || "General"}</p>
+          <h1 className="text-[28px] font-bold tracking-[-1px] text-[var(--t-text-primary)]">{tenant.name}</h1>
+          <p className="mt-1 text-sm text-[var(--t-text-muted)]">{tenant.slug} &middot; {tenant.businessType || "General"}</p>
         </div>
         <div className="flex gap-2">
           <button
             onClick={handleToggleActive}
             disabled={updating}
-            className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50 ${
+            className={`flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50 ${
               tenant.isActive
-                ? "bg-red-50 text-red-600 hover:bg-red-100"
-                : "bg-emerald-50 text-emerald-600 hover:bg-emerald-100"
+                ? "border border-[var(--t-error)]/20 text-[var(--t-error)] hover:bg-[var(--t-error-soft)]"
+                : "border border-[var(--t-accent)]/20 text-[var(--t-accent)] hover:bg-[var(--t-accent-soft)]"
             }`}
           >
             {tenant.isActive ? <><XCircle className="h-4 w-4" /> Deactivate</> : <><Shield className="h-4 w-4" /> Reactivate</>}
@@ -146,47 +146,47 @@ export default function TenantDetailPage({
         {/* Info cards */}
         <div className="space-y-6 lg:col-span-1">
           {/* Status */}
-          <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-            <h2 className="text-sm font-semibold text-gray-900 mb-4">Subscription</h2>
+          <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5">
+            <h2 className="text-sm font-semibold text-[var(--t-text-primary)] mb-4">Subscription</h2>
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <span className="text-sm text-gray-500">Tier</span>
-                <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium capitalize ${tierBadge[tenant.subscriptionTier] || tierBadge.trial}`}>
+                <span className="text-sm text-[var(--t-text-muted)]">Tier</span>
+                <span className={`text-xs font-medium capitalize ${tierColors[tenant.subscriptionTier] || tierColors.trial}`}>
                   {tenant.subscriptionTier}
                 </span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-sm text-gray-500">Status</span>
-                <span className={`text-sm font-medium capitalize ${tenant.isActive ? "text-emerald-600" : "text-red-500"}`}>
+                <span className="text-sm text-[var(--t-text-muted)]">Status</span>
+                <span className={`text-sm font-medium capitalize ${tenant.isActive ? "text-[var(--t-accent)]" : "text-[var(--t-error)]"}`}>
                   {tenant.subscriptionStatus}
                 </span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-sm text-gray-500">Created</span>
-                <span className="text-sm text-gray-700">{new Date(tenant.createdAt).toLocaleDateString()}</span>
+                <span className="text-sm text-[var(--t-text-muted)]">Created</span>
+                <span className="text-sm text-[var(--t-text-primary)]">{new Date(tenant.createdAt).toLocaleDateString()}</span>
               </div>
               {tenant.trialEndsAt && (
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-gray-500">Trial ends</span>
-                  <span className="text-sm text-gray-700">{new Date(tenant.trialEndsAt).toLocaleDateString()}</span>
+                  <span className="text-sm text-[var(--t-text-muted)]">Trial ends</span>
+                  <span className="text-sm text-[var(--t-text-primary)]">{new Date(tenant.trialEndsAt).toLocaleDateString()}</span>
                 </div>
               )}
             </div>
           </div>
 
           {/* Change plan */}
-          <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-            <h2 className="text-sm font-semibold text-gray-900 mb-3">Change Plan</h2>
+          <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5">
+            <h2 className="text-sm font-semibold text-[var(--t-text-primary)] mb-3">Change Plan</h2>
             <div className="grid grid-cols-2 gap-2">
               {TIERS.map((t) => (
                 <button
                   key={t}
                   onClick={() => handleChangePlan(t)}
                   disabled={updating || tenant.subscriptionTier === t}
-                  className={`rounded-lg py-2 text-xs font-medium capitalize transition-colors disabled:opacity-40 ${
+                  className={`rounded-full py-2 text-xs font-medium capitalize transition-all disabled:opacity-40 ${
                     tenant.subscriptionTier === t
-                      ? "bg-[#2ECC71] text-white"
-                      : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                      ? "bg-[var(--t-accent)] text-black"
+                      : "border border-[var(--t-border)] text-[var(--t-text-primary)] hover:bg-[var(--t-bg-card-hover)]"
                   }`}
                 >
                   {t}
@@ -196,18 +196,18 @@ export default function TenantDetailPage({
           </div>
 
           {/* Stats */}
-          <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-            <h2 className="text-sm font-semibold text-gray-900 mb-4">Usage</h2>
+          <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5">
+            <h2 className="text-sm font-semibold text-[var(--t-text-primary)] mb-4">Usage</h2>
             <div className="grid grid-cols-3 gap-4 text-center">
               {[
                 { label: "Jobs", value: tenant.jobCount, icon: Briefcase },
                 { label: "Customers", value: tenant.customerCount, icon: Users },
                 { label: "Assets", value: tenant.assetCount, icon: Package },
               ].map((s) => (
-                <div key={s.label} className="group relative rounded-lg p-2 cursor-default transition-colors hover:bg-gray-50" title="Coming soon: drill into tenant data">
-                  <s.icon className="mx-auto h-5 w-5 text-gray-400 mb-1 group-hover:text-[#2ECC71] transition-colors" />
-                  <p className="text-xl font-bold text-gray-900 tabular-nums">{s.value}</p>
-                  <p className="text-[11px] text-gray-500">{s.label}</p>
+                <div key={s.label} className="group relative rounded-[14px] p-2 cursor-default transition-colors hover:bg-[var(--t-bg-card-hover)]" title="Coming soon: drill into tenant data">
+                  <s.icon className="mx-auto h-5 w-5 text-[var(--t-text-muted)] mb-1 group-hover:text-[var(--t-accent)] transition-colors" />
+                  <p className="text-xl font-bold text-[var(--t-text-primary)] tabular-nums">{s.value}</p>
+                  <p className="text-[11px] text-[var(--t-text-muted)]">{s.label}</p>
                 </div>
               ))}
             </div>
@@ -216,43 +216,43 @@ export default function TenantDetailPage({
 
         {/* Users table */}
         <div className="lg:col-span-2">
-          <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-              <h2 className="text-sm font-semibold text-gray-900">Users ({tenant.users.length})</h2>
+          <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--t-border)]">
+              <h2 className="text-sm font-semibold text-[var(--t-text-primary)]">Users ({tenant.users.length})</h2>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-gray-100 bg-gray-50/50">
+                  <tr className="border-b border-[var(--t-border)]">
                     {["Name", "Email", "Role", "Status", "Last Login"].map((h) => (
-                      <th key={h} className="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">{h}</th>
+                      <th key={h} className="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-[var(--t-text-muted)]">{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {tenant.users.map((u) => (
-                    <tr key={u.id} className="border-b border-gray-50">
+                    <tr key={u.id} className="border-b border-[var(--t-border)] last:border-0">
                       <td className="px-5 py-3.5">
                         <div className="flex items-center gap-2.5">
-                          <div className="flex h-7 w-7 items-center justify-center rounded-full bg-gray-100 text-[10px] font-bold text-gray-600">
+                          <div className="flex h-7 w-7 items-center justify-center rounded-full bg-[var(--t-border)] text-[10px] font-bold text-[var(--t-text-muted)]">
                             {u.firstName?.[0]}{u.lastName?.[0]}
                           </div>
-                          <span className="font-medium text-gray-900">{u.firstName} {u.lastName}</span>
+                          <span className="font-medium text-[var(--t-text-primary)]">{u.firstName} {u.lastName}</span>
                         </div>
                       </td>
-                      <td className="px-5 py-3.5 text-gray-600">{u.email}</td>
+                      <td className="px-5 py-3.5 text-[var(--t-text-muted)]">{u.email}</td>
                       <td className="px-5 py-3.5">
-                        <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium capitalize ${roleBadge[u.role] || roleBadge.viewer}`}>
+                        <span className={`text-[10px] font-medium capitalize ${roleColors[u.role] || roleColors.viewer}`}>
                           {u.role}
                         </span>
                       </td>
                       <td className="px-5 py-3.5">
-                        <span className={`inline-flex items-center gap-1 text-xs ${u.isActive ? "text-emerald-600" : "text-red-400"}`}>
-                          <span className={`h-1.5 w-1.5 rounded-full ${u.isActive ? "bg-emerald-500" : "bg-red-400"}`} />
+                        <span className={`inline-flex items-center gap-1 text-xs ${u.isActive ? "text-[var(--t-accent)]" : "text-[var(--t-error)]"}`}>
+                          <span className={`h-1.5 w-1.5 rounded-full ${u.isActive ? "bg-[var(--t-accent)]" : "bg-[var(--t-error)]"}`} />
                           {u.isActive ? "Active" : "Inactive"}
                         </span>
                       </td>
-                      <td className="px-5 py-3.5 text-xs text-gray-400">
+                      <td className="px-5 py-3.5 text-xs text-[var(--t-text-muted)]">
                         {u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleDateString() : "Never"}
                       </td>
                     </tr>

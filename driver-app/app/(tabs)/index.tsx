@@ -14,6 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { format } from 'date-fns';
 import { useAuth } from '../../src/AuthContext';
 import { getDriverJobs } from '../../src/api';
+import { useAppTheme, type ThemeColors } from '../../constants/theme';
 
 interface Job {
   id: string;
@@ -63,6 +64,7 @@ function fmtTime(t: string | null) {
 export default function TodayScreen() {
   const { user } = useAuth();
   const router = useRouter();
+  const colors = useAppTheme();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
   const today = format(new Date(), 'yyyy-MM-dd');
@@ -88,23 +90,29 @@ export default function TodayScreen() {
   }, [fetchJobs]);
 
   const completed = jobs.filter((j) => j.status === 'completed').length;
+  const s = makeStyles(colors);
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Today's Route</Text>
-        <Text style={styles.headerDate}>{format(new Date(), 'EEEE, MMMM d')}</Text>
+    <View style={s.container}>
+      <View style={s.header}>
+        <Text style={s.headerTitle}>Today's Route</Text>
+        <Text style={s.headerDate}>{format(new Date(), 'EEEE, MMMM d')}</Text>
       </View>
 
       {jobs.length > 0 && (
-        <View style={styles.progressCard}>
-          <Text style={styles.progressText}>
-            {completed} of {jobs.length} stops completed
-          </Text>
-          <View style={styles.progressBar}>
+        <View style={s.progressCard}>
+          <View style={s.progressRow}>
+            <Text style={s.progressText}>
+              {completed} of {jobs.length} stops
+            </Text>
+            <Text style={s.progressPercent}>
+              {Math.round((completed / jobs.length) * 100)}%
+            </Text>
+          </View>
+          <View style={s.progressBar}>
             <View
               style={[
-                styles.progressFill,
+                s.progressFill,
                 { width: `${(completed / jobs.length) * 100}%` },
               ]}
             />
@@ -116,14 +124,14 @@ export default function TodayScreen() {
         data={jobs}
         keyExtractor={(j) => j.id}
         refreshControl={
-          <RefreshControl refreshing={loading} onRefresh={fetchJobs} tintColor="#2ECC71" />
+          <RefreshControl refreshing={loading} onRefresh={fetchJobs} tintColor={colors.accent} />
         }
-        contentContainerStyle={jobs.length === 0 ? styles.emptyContainer : styles.list}
+        contentContainerStyle={jobs.length === 0 ? s.emptyContainer : s.list}
         ListEmptyComponent={
-          <View style={styles.empty}>
-            <Ionicons name="sunny" size={48} color="#1E2D45" />
-            <Text style={styles.emptyTitle}>No jobs today</Text>
-            <Text style={styles.emptyText}>Enjoy your day off!</Text>
+          <View style={s.empty}>
+            <Ionicons name="sunny" size={48} color={colors.textTertiary} />
+            <Text style={s.emptyTitle}>No jobs today</Text>
+            <Text style={s.emptyText}>Enjoy your day off!</Text>
           </View>
         }
         renderItem={({ item: j, index }) => {
@@ -133,26 +141,26 @@ export default function TodayScreen() {
           return (
             <TouchableOpacity
               style={[
-                styles.card,
-                { borderLeftColor: isNextStop ? '#2ECC71' : (STATUS_COLORS[j.status] || '#71717A'), borderLeftWidth: isNextStop ? 4 : 3 },
-                isCompleted && styles.cardCompleted,
-                isNextStop && styles.cardNextStop,
+                s.card,
+                isNextStop && s.cardNextStop,
+                isCompleted && s.cardCompleted,
               ]}
               onPress={() => router.push(`/job/${j.id}`)}
               activeOpacity={0.7}
             >
-              <View style={styles.cardRow}>
-                <View style={[styles.stopCircle, isCompleted && styles.stopCircleDone]}>
+              {isNextStop && <View style={s.cardGreenEdge} />}
+              <View style={s.cardRow}>
+                <View style={[s.stopCircle, isCompleted && s.stopCircleDone]}>
                   {isCompleted ? (
                     <Ionicons name="checkmark" size={14} color="#fff" />
                   ) : (
-                    <Text style={styles.stopNum}>{index + 1}</Text>
+                    <Text style={s.stopNum}>{index + 1}</Text>
                   )}
                 </View>
-                <View style={styles.cardContent}>
-                  <View style={styles.cardTop}>
+                <View style={s.cardContent}>
+                  <View style={s.cardTop}>
                     <Text
-                      style={[styles.customerName, isCompleted && styles.textFaded]}
+                      style={[s.customerName, isCompleted && s.textFaded]}
                       numberOfLines={1}
                     >
                       {j.customer
@@ -161,16 +169,16 @@ export default function TodayScreen() {
                     </Text>
                     <View
                       style={[
-                        styles.typeBadge,
+                        s.typeBadge,
                         {
                           backgroundColor:
-                            (TYPE_COLORS[j.job_type] || '#71717A') + '20',
+                            (TYPE_COLORS[j.job_type] || '#71717A') + '14',
                         },
                       ]}
                     >
                       <Text
                         style={[
-                          styles.typeText,
+                          s.typeText,
                           { color: TYPE_COLORS[j.job_type] || '#71717A' },
                         ]}
                       >
@@ -180,16 +188,16 @@ export default function TodayScreen() {
                   </View>
                   {addr && (
                     <Text
-                      style={[styles.address, isCompleted && styles.textFaded]}
+                      style={[s.address, isCompleted && s.textFaded]}
                       numberOfLines={1}
                     >
                       {[addr.street, addr.city].filter(Boolean).join(', ')}
                     </Text>
                   )}
-                  <View style={styles.cardMeta}>
-                    {j.asset?.identifier && <View style={styles.sizeBadge}><Text style={styles.sizeBadgeText}>{j.asset.identifier}</Text></View>}
+                  <View style={s.cardMeta}>
+                    {j.asset?.identifier && <View style={s.sizeBadge}><Text style={s.sizeBadgeText}>{j.asset.identifier}</Text></View>}
                     {j.scheduled_window_start && (
-                      <Text style={styles.metaText}>
+                      <Text style={s.metaText}>
                         {fmtTime(j.scheduled_window_start)}
                         {j.scheduled_window_end
                           ? ` - ${fmtTime(j.scheduled_window_end)}`
@@ -197,31 +205,31 @@ export default function TodayScreen() {
                       </Text>
                     )}
                     {j.is_overdue && (
-                      <Text style={styles.overdueBadge}>OVERDUE {j.extra_days}d</Text>
+                      <Text style={s.overdueBadge}>OVERDUE {j.extra_days}d</Text>
                     )}
                   </View>
                 </View>
                 {j.service_address && !isCompleted && (
-                  <TouchableOpacity style={styles.cardNavBtn} onPress={(e) => {
+                  <TouchableOpacity style={s.cardNavBtn} onPress={(e) => {
                     e.stopPropagation?.();
                     const a = j.service_address!;
                     const q = [a.street, a.city, a.state].filter(Boolean).join(', ');
                     Linking.openURL(Platform.OS === 'ios' ? `maps://?daddr=${encodeURIComponent(q)}` : `google.navigation:q=${encodeURIComponent(q)}`);
                   }}>
-                    <Ionicons name="navigate" size={14} color="#2ECC71" />
+                    <Ionicons name="navigate" size={14} color={colors.accent} />
                   </TouchableOpacity>
                 )}
-                <Ionicons name="chevron-forward" size={16} color="#7A8BA3" />
+                <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
               </View>
               {isNextStop && j.service_address && (
-                <TouchableOpacity style={styles.inlineNav} onPress={(e) => {
+                <TouchableOpacity style={s.inlineNav} onPress={(e) => {
                   e.stopPropagation?.();
                   const a = j.service_address!;
                   const q = [a.street, a.city, a.state].filter(Boolean).join(', ');
                   Linking.openURL(Platform.OS === 'ios' ? `maps://?daddr=${encodeURIComponent(q)}` : `google.navigation:q=${encodeURIComponent(q)}`);
                 }}>
                   <Ionicons name="navigate" size={14} color="#fff" />
-                  <Text style={styles.inlineNavText}>Navigate</Text>
+                  <Text style={s.inlineNavText}>Navigate</Text>
                 </TouchableOpacity>
               )}
             </TouchableOpacity>
@@ -232,88 +240,115 @@ export default function TodayScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0B1220' },
-  header: { paddingHorizontal: 20, paddingTop: 60, paddingBottom: 12 },
-  headerTitle: { fontSize: 28, fontWeight: '700', color: '#fff' },
-  headerDate: { fontSize: 14, color: '#7A8BA3', marginTop: 2 },
-  progressCard: {
-    marginHorizontal: 20,
-    marginBottom: 12,
-    backgroundColor: '#111C2E',
-    borderRadius: 12,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: '#1E2D45',
-  },
-  progressText: { fontSize: 13, fontWeight: '600', color: '#fff', marginBottom: 8 },
-  progressBar: {
-    height: 4,
-    backgroundColor: '#1E2D45',
-    borderRadius: 2,
-    overflow: 'hidden',
-  },
-  progressFill: { height: 4, backgroundColor: '#2ECC71', borderRadius: 2 },
-  list: { paddingHorizontal: 20, paddingBottom: 20 },
-  card: {
-    backgroundColor: '#111C2E',
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 8,
-    borderLeftWidth: 3,
-    borderWidth: 1,
-    borderColor: '#1E2D45',
-  },
-  cardCompleted: { opacity: 0.5 },
-  cardNextStop: { borderWidth: 1, borderColor: '#2ECC71' },
-  inlineNav: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 10, backgroundColor: '#2ECC71', borderRadius: 8, paddingVertical: 8 },
-  inlineNavText: { fontSize: 13, fontWeight: '600', color: '#fff' },
-  sizeBadge: { backgroundColor: 'rgba(46,204,113,0.15)', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 },
-  sizeBadgeText: { fontSize: 11, fontWeight: '700', color: '#2ECC71' },
-  cardRow: { flexDirection: 'row', alignItems: 'center' },
-  stopCircle: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: '#1E2D45',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  stopCircleDone: { backgroundColor: '#2ECC71' },
-  stopNum: { fontSize: 12, fontWeight: '700', color: '#7A8BA3' },
-  cardContent: { flex: 1 },
-  cardTop: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 4,
-  },
-  customerName: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#fff',
-    flex: 1,
-    marginRight: 8,
-  },
-  typeBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 },
-  typeText: { fontSize: 10, fontWeight: '700' },
-  address: { fontSize: 12, color: '#7A8BA3', marginBottom: 4 },
-  cardMeta: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
-  metaText: { fontSize: 11, color: '#7A8BA3' },
-  overdueBadge: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#EF4444',
-    backgroundColor: 'rgba(239,68,68,0.1)',
-    paddingHorizontal: 6,
-    paddingVertical: 1,
-    borderRadius: 4,
-  },
-  textFaded: { color: '#7A8BA3' },
-  cardNavBtn: { padding: 8, marginRight: 4 },
-  emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  empty: { alignItems: 'center' },
-  emptyTitle: { fontSize: 18, fontWeight: '600', color: '#fff', marginTop: 16 },
-  emptyText: { fontSize: 14, color: '#7A8BA3', marginTop: 4 },
-});
+const makeStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
+    container: { flex: 1, backgroundColor: colors.background },
+    header: { paddingHorizontal: 20, paddingTop: 60, paddingBottom: 12 },
+    headerTitle: { fontSize: 28, fontWeight: '700', color: colors.text, letterSpacing: -0.5 },
+    headerDate: { fontSize: 14, color: colors.textSecondary, marginTop: 2 },
+    progressCard: {
+      marginHorizontal: 20,
+      marginBottom: 12,
+      backgroundColor: colors.surface,
+      borderRadius: 14,
+      padding: 14,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    progressRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 10,
+    },
+    progressText: { fontSize: 13, fontWeight: '600', color: colors.text },
+    progressPercent: { fontSize: 13, fontWeight: '700', color: colors.accent },
+    progressBar: {
+      height: 3,
+      backgroundColor: colors.border,
+      borderRadius: 1.5,
+      overflow: 'hidden',
+    },
+    progressFill: { height: 3, backgroundColor: colors.accent, borderRadius: 1.5 },
+    list: { paddingHorizontal: 20, paddingBottom: 20 },
+    card: {
+      backgroundColor: colors.surface,
+      borderRadius: 14,
+      padding: 14,
+      marginBottom: 8,
+      borderWidth: 1,
+      borderColor: colors.border,
+      overflow: 'hidden',
+    },
+    cardCompleted: { opacity: 0.45 },
+    cardNextStop: { borderColor: colors.accent },
+    cardGreenEdge: {
+      position: 'absolute',
+      left: 0,
+      top: 0,
+      bottom: 0,
+      width: 3,
+      backgroundColor: colors.accent,
+      borderTopLeftRadius: 14,
+      borderBottomLeftRadius: 14,
+    },
+    inlineNav: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 6,
+      marginTop: 10,
+      backgroundColor: colors.accent,
+      borderRadius: 10,
+      paddingVertical: 8,
+    },
+    inlineNavText: { fontSize: 13, fontWeight: '600', color: '#fff' },
+    sizeBadge: { backgroundColor: colors.accentSoft, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 },
+    sizeBadgeText: { fontSize: 11, fontWeight: '700', color: colors.accent },
+    cardRow: { flexDirection: 'row', alignItems: 'center' },
+    stopCircle: {
+      width: 28,
+      height: 28,
+      borderRadius: 14,
+      backgroundColor: colors.surfaceHover,
+      justifyContent: 'center',
+      alignItems: 'center',
+      marginRight: 12,
+    },
+    stopCircleDone: { backgroundColor: colors.accent },
+    stopNum: { fontSize: 12, fontWeight: '700', color: colors.textSecondary },
+    cardContent: { flex: 1 },
+    cardTop: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginBottom: 4,
+    },
+    customerName: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: colors.text,
+      flex: 1,
+      marginRight: 8,
+    },
+    typeBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 },
+    typeText: { fontSize: 10, fontWeight: '700' },
+    address: { fontSize: 12, color: colors.textSecondary, marginBottom: 4 },
+    cardMeta: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
+    metaText: { fontSize: 11, color: colors.textSecondary },
+    overdueBadge: {
+      fontSize: 10,
+      fontWeight: '700',
+      color: colors.error,
+      backgroundColor: colors.errorSoft,
+      paddingHorizontal: 6,
+      paddingVertical: 1,
+      borderRadius: 4,
+    },
+    textFaded: { color: colors.textSecondary },
+    cardNavBtn: { padding: 8, marginRight: 4 },
+    emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+    empty: { alignItems: 'center' },
+    emptyTitle: { fontSize: 18, fontWeight: '600', color: colors.text, marginTop: 16 },
+    emptyText: { fontSize: 14, color: colors.textSecondary, marginTop: 4 },
+  });

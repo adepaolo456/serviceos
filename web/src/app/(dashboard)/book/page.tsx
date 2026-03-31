@@ -4,16 +4,8 @@ import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
-  DollarSign,
-  User,
-  Calendar,
-  CreditCard,
-  CheckCircle2,
-  ArrowLeft,
-  Phone,
-  Truck,
-  Package,
-  AlertTriangle,
+  DollarSign, User, Calendar, CreditCard, CheckCircle2, ArrowLeft,
+  Phone, Truck, Package, AlertTriangle,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import AddressAutocomplete, { type AddressValue } from "@/components/address-autocomplete";
@@ -23,31 +15,16 @@ import AddressAutocomplete, { type AddressValue } from "@/components/address-aut
 interface PriceQuote {
   rule?: { name: string };
   breakdown: {
-    basePrice: number;
-    total: number;
-    tax: number;
-    taxRate: number;
-    deliveryFee: number;
-    pickupFee: number;
-    extraDayRate: number;
-    extraDayCharges: number;
-    includedDays: number;
-    rentalDays: number;
-    distanceSurcharge: number;
-    requireDeposit: boolean;
-    depositAmount: number;
-    jobFee: number;
+    basePrice: number; total: number; tax: number; taxRate: number;
+    deliveryFee: number; pickupFee: number; extraDayRate: number;
+    extraDayCharges: number; includedDays: number; rentalDays: number;
+    distanceSurcharge: number; requireDeposit: boolean; depositAmount: number; jobFee: number;
   };
 }
 
 interface CustomerMatch {
-  id: string;
-  first_name: string;
-  last_name: string;
-  phone: string;
-  email: string;
-  company_name: string;
-  billing_address: Record<string, string> | null;
+  id: string; first_name: string; last_name: string; phone: string;
+  email: string; company_name: string; billing_address: Record<string, string> | null;
 }
 
 interface BookingResult {
@@ -64,15 +41,13 @@ interface BookingResult {
 /* ---- Helpers ---- */
 
 function nextBusinessDay() {
-  const d = new Date();
-  d.setDate(d.getDate() + 1);
+  const d = new Date(); d.setDate(d.getDate() + 1);
   while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() + 1);
   return d.toISOString().split("T")[0];
 }
 
 function addDays(date: string, days: number) {
-  const d = new Date(date + "T00:00:00");
-  d.setDate(d.getDate() + days);
+  const d = new Date(date + "T00:00:00"); d.setDate(d.getDate() + days);
   return d.toISOString().split("T")[0];
 }
 
@@ -82,8 +57,6 @@ function fmtDate(d: string) {
 
 import { formatCurrency, formatPhone } from "@/lib/utils";
 const fmtMoney = (n: number) => formatCurrency(n);
-
-/* ---- Steps ---- */
 
 const STEPS = [
   { num: 1, label: "Quote", icon: DollarSign },
@@ -97,8 +70,6 @@ const STEPS = [
 export default function BookingPage() {
   const router = useRouter();
   const [step, setStep] = useState(1);
-
-  // Load last booking settings from localStorage
   const [prefilledFromLast, setPrefilledFromLast] = useState(false);
 
   // Step 1: Quote
@@ -114,7 +85,6 @@ export default function BookingPage() {
   const [address, setAddress] = useState<AddressValue>({ street: "", city: "", state: "", zip: "", lat: null, lng: null });
   const [rentalDays, setRentalDays] = useState(14);
 
-  // Check if pre-filled
   useEffect(() => {
     try { const s = localStorage.getItem("serviceos-last-booking"); if (s) setPrefilledFromLast(true); } catch {}
   }, []);
@@ -148,44 +118,24 @@ export default function BookingPage() {
   const [result, setResult] = useState<BookingResult | null>(null);
   const [error, setError] = useState("");
 
-  // Auto-quote when address changes + check availability
+  // Auto-quote
   useEffect(() => {
     if (!address.lat || !address.lng) return;
     setQuoting(true);
     Promise.all([
-      api.post<PriceQuote>("/pricing/calculate", {
-        serviceType, assetSubtype, jobType,
-        customerLat: address.lat, customerLng: address.lng,
-        rentalDays,
-      }),
-      api.get<{ availableOnDate: number; availableNow: number; pickupsBeforeDate: number; total: number }>(
-        `/assets/availability?subtype=${assetSubtype}&date=${deliveryDate}`
-      ),
-    ]).then(([q, avail]) => {
-      setQuote(q);
-      setAvailability(avail);
-      if (q.breakdown.includedDays) setRentalDays(q.breakdown.includedDays);
-    }).catch(() => { setQuote(null); setAvailability(null); })
-    .finally(() => setQuoting(false));
+      api.post<PriceQuote>("/pricing/calculate", { serviceType, assetSubtype, jobType, customerLat: address.lat, customerLng: address.lng, rentalDays }),
+      api.get<{ availableOnDate: number; availableNow: number; pickupsBeforeDate: number; total: number }>(`/assets/availability?subtype=${assetSubtype}&date=${deliveryDate}`),
+    ]).then(([q, avail]) => { setQuote(q); setAvailability(avail); if (q.breakdown.includedDays) setRentalDays(q.breakdown.includedDays); })
+    .catch(() => { setQuote(null); setAvailability(null); }).finally(() => setQuoting(false));
   }, [address.lat, address.lng, serviceType, assetSubtype, jobType, deliveryDate]);
 
-  // Recalc when rental days change
   useEffect(() => {
     if (!address.lat || !quote) return;
-    api.post<PriceQuote>("/pricing/calculate", {
-      serviceType, assetSubtype, jobType,
-      customerLat: address.lat, customerLng: address.lng,
-      // yardLat/yardLng omitted — API auto-fetches from primary yard
-      rentalDays,
-    }).then(setQuote).catch(() => {});
+    api.post<PriceQuote>("/pricing/calculate", { serviceType, assetSubtype, jobType, customerLat: address.lat, customerLng: address.lng, rentalDays }).then(setQuote).catch(() => {});
   }, [rentalDays]);
 
-  // Update pickup date when delivery date or rental days change
-  useEffect(() => {
-    setPickupDate(addDays(deliveryDate, rentalDays));
-  }, [deliveryDate, rentalDays]);
+  useEffect(() => { setPickupDate(addDays(deliveryDate, rentalDays)); }, [deliveryDate, rentalDays]);
 
-  // Customer phone search + auto-fill name
   useEffect(() => {
     if (searchTimeout.current) clearTimeout(searchTimeout.current);
     if (!phoneSearch || phoneSearch.length < 2) { setCustomerResults([]); return; }
@@ -193,7 +143,6 @@ export default function BookingPage() {
       try {
         const res = await api.get<{ data: CustomerMatch[] }>(`/customers?search=${encodeURIComponent(phoneSearch)}&limit=5`);
         setCustomerResults(res.data);
-        // Auto-fill name fields if no match and input looks like a name (not a phone number)
         if (res.data.length === 0 && !/^\d/.test(phoneSearch)) {
           const parts = phoneSearch.trim().split(/\s+/);
           if (parts.length >= 1) setFirstName(parts[0]);
@@ -204,30 +153,16 @@ export default function BookingPage() {
   }, [phoneSearch]);
 
   const selectCustomer = (c: CustomerMatch) => {
-    setCustomerId(c.id);
-    setFirstName(c.first_name);
-    setLastName(c.last_name);
-    setEmail(c.email || "");
-    setPhone(c.phone || "");
-    setPhoneSearch("");
-    setCustomerResults([]);
-    if (c.company_name) {
-      setCustType("commercial");
-      setCompanyName(c.company_name);
-    }
+    setCustomerId(c.id); setFirstName(c.first_name); setLastName(c.last_name);
+    setEmail(c.email || ""); setPhone(c.phone || ""); setPhoneSearch(""); setCustomerResults([]);
+    if (c.company_name) { setCustType("commercial"); setCompanyName(c.company_name); }
   };
 
   const handleSubmit = async () => {
     if (!quote) return;
-    setError("");
-    setSubmitting(true);
-    const windows: Record<string, [string, string]> = {
-      morning: ["08:00", "12:00"],
-      afternoon: ["12:00", "17:00"],
-      fullday: ["08:00", "17:00"],
-    };
+    setError(""); setSubmitting(true);
+    const windows: Record<string, [string, string]> = { morning: ["08:00", "12:00"], afternoon: ["12:00", "17:00"], fullday: ["08:00", "17:00"] };
     const [wStart, wEnd] = windows[timeWindow] || windows.morning;
-
     try {
       const res = await api.post<BookingResult>("/bookings/complete", {
         customerId: customerId || undefined,
@@ -243,33 +178,25 @@ export default function BookingPage() {
         placementNotes: instructions || undefined,
         basePrice: quote.breakdown.basePrice,
         deliveryFee: quote.breakdown.deliveryFee || quote.breakdown.jobFee || 0,
-        taxAmount: quote.breakdown.tax,
-        totalPrice: quote.breakdown.total,
+        taxAmount: quote.breakdown.tax, totalPrice: quote.breakdown.total,
         depositAmount: quote.breakdown.requireDeposit ? quote.breakdown.depositAmount : 0,
         paymentMethod,
       });
       setResult(res);
-      // Save last booking settings for pre-fill
       try { localStorage.setItem("serviceos-last-booking", JSON.stringify({ serviceType, assetSubtype, timeWindow })); } catch {}
       setStep(5);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Booking failed");
-    } finally {
-      setSubmitting(false);
-    }
+    } catch (err) { setError(err instanceof Error ? err.message : "Booking failed"); }
+    finally { setSubmitting(false); }
   };
 
-  // Keyboard shortcut: Escape goes back
   useEffect(() => {
-    const handleKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && step > 1 && step < 5) setStep(s => s - 1);
-    };
+    const handleKey = (e: KeyboardEvent) => { if (e.key === "Escape" && step > 1 && step < 5) setStep(s => s - 1); };
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
   }, [step]);
 
-  const inputCls = "w-full bg-[#111C2E] border border-[#1E2D45] rounded-lg px-4 py-3 text-sm text-white placeholder-muted outline-none focus:border-brand focus:ring-1 focus:ring-brand transition-colors";
-  const labelCls = "block text-xs font-medium text-muted uppercase tracking-wider mb-1.5";
+  const inputCls = "w-full rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-3 text-sm text-[var(--t-text-primary)] placeholder-[var(--t-text-muted)] outline-none focus:border-[var(--t-accent)] focus:ring-1 focus:ring-[var(--t-accent)] transition-colors";
+  const labelCls = "block text-[13px] font-semibold uppercase tracking-wide text-[var(--t-text-muted)] mb-1.5";
 
   return (
     <div className="max-w-3xl mx-auto">
@@ -277,54 +204,50 @@ export default function BookingPage() {
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
           {step < 5 && step > 1 && (
-            <button onClick={() => setStep(s => s - 1)} className="rounded-lg bg-dark-card border border-[#1E2D45] p-2 text-muted hover:text-white transition-colors active:scale-95">
+            <button onClick={() => setStep(s => s - 1)} className="rounded-full border border-[var(--t-border)] bg-[var(--t-bg-card)] p-2 text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)] transition-colors active:scale-95">
               <ArrowLeft className="h-4 w-4" />
             </button>
           )}
           <div>
-            <h1 className="font-display text-xl font-bold text-white">
+            <h1 className="text-[28px] font-bold tracking-[-1px] text-[var(--t-text-primary)]">
               {step === 5 ? "Booking Confirmed!" : "New Booking"}
             </h1>
-            {step < 5 && <p className="text-xs text-muted mt-0.5">Step {step} of 4</p>}
+            {step < 5 && <p className="text-[13px] text-[var(--t-text-muted)] mt-0.5">Step {step} of 4</p>}
           </div>
         </div>
-        {step < 5 && (
-          <Link href="/" className="text-xs text-muted hover:text-white transition-colors">Cancel</Link>
-        )}
+        {step < 5 && <Link href="/" className="text-[13px] text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)] transition-colors">Cancel</Link>}
       </div>
 
-      {/* Progress bar */}
+      {/* Progress */}
       {step < 5 && (
-        <div className="flex items-center gap-1 mb-8">
+        <div className="flex items-center gap-2 mb-8">
           {STEPS.map((s) => (
-            <div key={s.num} className="flex-1 flex items-center gap-2">
-              <div className={`h-1.5 flex-1 rounded-full transition-colors ${step >= s.num ? "bg-brand" : "bg-dark-elevated"}`} />
+            <div key={s.num} className="flex-1">
+              <div className={`h-1.5 rounded-full transition-colors ${step >= s.num ? "bg-[#22C55E]" : "bg-[var(--t-bg-card-hover)]"}`} />
             </div>
           ))}
         </div>
       )}
 
-      {/* ==================== STEP 1: Quote ==================== */}
+      {/* ===== STEP 1: Quote ===== */}
       {step === 1 && (
         <div className="space-y-5">
-          {prefilledFromLast && (
-            <p className="text-xs text-muted italic">Pre-filled from your last booking</p>
-          )}
-          {/* Job type toggle */}
+          {prefilledFromLast && <p className="text-[13px] text-[var(--t-text-muted)] italic">Pre-filled from your last booking</p>}
+
           <div>
             <label className={labelCls}>Type</label>
             <div className="grid grid-cols-2 gap-2">
               <button onClick={() => setJobType("delivery")}
-                className={`rounded-lg py-3 text-sm font-medium transition-all active:scale-95 ${jobType === "delivery" ? "bg-blue-500/15 text-blue-400 border border-blue-500/20" : "bg-dark-elevated text-muted hover:text-white border border-transparent"}`}>
+                className={`rounded-[14px] py-3 text-sm font-medium transition-all active:scale-95 ${jobType === "delivery" ? "bg-[var(--t-accent-soft)] text-[var(--t-accent)] border border-[var(--t-accent)]" : "bg-[var(--t-bg-card)] text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)] border border-[var(--t-border)]"}`}>
                 New Delivery
               </button>
               <button onClick={() => setJobType("exchange")}
-                className={`rounded-lg py-3 text-sm font-medium transition-all active:scale-95 ${jobType === "exchange" ? "bg-purple-500/15 text-purple-400 border border-purple-500/20" : "bg-dark-elevated text-muted hover:text-white border border-transparent"}`}>
+                className={`rounded-[14px] py-3 text-sm font-medium transition-all active:scale-95 ${jobType === "exchange" ? "bg-[var(--t-accent-soft)] text-[var(--t-accent)] border border-[var(--t-accent)]" : "bg-[var(--t-bg-card)] text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)] border border-[var(--t-border)]"}`}>
                 Exchange
               </button>
             </div>
             {jobType === "exchange" && (
-              <p className="mt-2 text-xs text-purple-400 bg-purple-500/5 rounded-lg px-3 py-2 border border-purple-500/10">
+              <p className="mt-2 text-[13px] text-[var(--t-text-muted)] rounded-[14px] bg-[var(--t-bg-card)] px-3 py-2 border border-[var(--t-border)]">
                 Exchange = Pickup existing dumpster + Deliver new one. Priced same as delivery.
               </p>
             )}
@@ -344,7 +267,7 @@ export default function BookingPage() {
               <div className="grid grid-cols-5 gap-1">
                 {["10yd", "15yd", "20yd", "30yd", "40yd"].map(s => (
                   <button key={s} onClick={() => setAssetSubtype(s)}
-                    className={`rounded-lg py-3 text-xs font-bold transition-all active:scale-95 ${assetSubtype === s ? "bg-brand text-dark-primary" : "bg-dark-elevated text-muted hover:text-white"}`}>
+                    className={`rounded-[14px] py-3 text-xs font-bold transition-all active:scale-95 ${assetSubtype === s ? "bg-[#22C55E] text-black" : "bg-[var(--t-bg-card)] text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)] border border-[var(--t-border)]"}`}>
                     {s}
                   </button>
                 ))}
@@ -355,43 +278,39 @@ export default function BookingPage() {
           <AddressAutocomplete value={address} onChange={setAddress} label="Delivery Address" placeholder="Customer address or zip code..." />
 
           {quoting && (
-            <div className="rounded-xl bg-dark-card border border-[#1E2D45] p-6 text-center">
-              <div className="h-6 w-6 mx-auto animate-spin rounded-full border-2 border-brand border-t-transparent mb-2" />
-              <p className="text-xs text-muted">Calculating price...</p>
+            <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6 text-center">
+              <div className="h-6 w-6 mx-auto animate-spin rounded-full border-2 border-[var(--t-accent)] border-t-transparent mb-2" />
+              <p className="text-[13px] text-[var(--t-text-muted)]">Calculating price...</p>
             </div>
           )}
 
           {quote && !quoting && (
-            <div className="rounded-xl bg-brand/5 border border-brand/20 p-6">
+            <div className="rounded-[14px] border border-[var(--t-accent)] bg-[var(--t-accent-soft)] p-6">
               <div className="text-center mb-4">
-                <p className="font-display text-4xl font-bold text-brand tabular-nums">{fmtMoney(quote.breakdown.total)}</p>
-                <p className="text-sm text-muted mt-1">
-                  {rentalDays}-day rental, delivery included
-                </p>
+                <p className="text-4xl font-bold text-[var(--t-accent)] tabular-nums">{fmtMoney(quote.breakdown.total)}</p>
+                <p className="text-sm text-[var(--t-text-muted)] mt-1">{rentalDays}-day rental, delivery included</p>
               </div>
-
               <div className="space-y-1.5 text-sm">
-                <div className="flex justify-between"><span className="text-muted">Base price</span><span className="text-white tabular-nums">{fmtMoney(quote.breakdown.basePrice)}</span></div>
+                <div className="flex justify-between"><span className="text-[var(--t-text-muted)]">Base price</span><span className="text-[var(--t-text-primary)] tabular-nums">{fmtMoney(quote.breakdown.basePrice)}</span></div>
                 {(quote.breakdown.deliveryFee > 0 || quote.breakdown.jobFee > 0) && (
-                  <div className="flex justify-between"><span className="text-muted">Delivery fee</span><span className="text-white tabular-nums">{fmtMoney(quote.breakdown.deliveryFee || quote.breakdown.jobFee)}</span></div>
+                  <div className="flex justify-between"><span className="text-[var(--t-text-muted)]">Delivery fee</span><span className="text-[var(--t-text-primary)] tabular-nums">{fmtMoney(quote.breakdown.deliveryFee || quote.breakdown.jobFee)}</span></div>
                 )}
                 {quote.breakdown.distanceSurcharge > 0 && (
-                  <div className="flex justify-between"><span className="text-muted">Distance surcharge</span><span className="text-white tabular-nums">{fmtMoney(quote.breakdown.distanceSurcharge)}</span></div>
+                  <div className="flex justify-between"><span className="text-[var(--t-text-muted)]">Distance surcharge</span><span className="text-[var(--t-text-primary)] tabular-nums">{fmtMoney(quote.breakdown.distanceSurcharge)}</span></div>
                 )}
                 {quote.breakdown.extraDayCharges > 0 && (
-                  <div className="flex justify-between"><span className="text-yellow-400">Extra days (+{rentalDays - quote.breakdown.includedDays})</span><span className="text-yellow-400 tabular-nums">+{fmtMoney(quote.breakdown.extraDayCharges)}</span></div>
+                  <div className="flex justify-between"><span className="text-[var(--t-warning)]">Extra days (+{rentalDays - quote.breakdown.includedDays})</span><span className="text-[var(--t-warning)] tabular-nums">+{fmtMoney(quote.breakdown.extraDayCharges)}</span></div>
                 )}
                 {quote.breakdown.tax > 0 && (
-                  <div className="flex justify-between"><span className="text-muted">Tax</span><span className="text-white tabular-nums">{fmtMoney(quote.breakdown.tax)}</span></div>
+                  <div className="flex justify-between"><span className="text-[var(--t-text-muted)]">Tax</span><span className="text-[var(--t-text-primary)] tabular-nums">{fmtMoney(quote.breakdown.tax)}</span></div>
                 )}
-                <div className="border-t border-brand/20 pt-2 flex justify-between font-semibold">
-                  <span className="text-brand">Total</span><span className="text-brand tabular-nums">{fmtMoney(quote.breakdown.total)}</span>
+                <div className="border-t border-[var(--t-accent)] pt-2 flex justify-between font-semibold">
+                  <span className="text-[var(--t-accent)]">Total</span><span className="text-[var(--t-accent)] tabular-nums">{fmtMoney(quote.breakdown.total)}</span>
                 </div>
                 {quote.breakdown.requireDeposit && (
-                  <div className="flex justify-between text-xs"><span className="text-muted">Deposit required</span><span className="text-white tabular-nums">{fmtMoney(quote.breakdown.depositAmount)}</span></div>
+                  <div className="flex justify-between text-[13px]"><span className="text-[var(--t-text-muted)]">Deposit required</span><span className="text-[var(--t-text-primary)] tabular-nums">{fmtMoney(quote.breakdown.depositAmount)}</span></div>
                 )}
               </div>
-
               <div className="mt-4">
                 <label className={labelCls}>Rental Days</label>
                 <input type="number" min={1} max={90} value={rentalDays} onChange={e => setRentalDays(Number(e.target.value) || 1)} className={inputCls} />
@@ -399,19 +318,16 @@ export default function BookingPage() {
             </div>
           )}
 
-          {/* Availability indicator */}
           {availability && (
-            <div className={`rounded-lg px-4 py-3 text-sm flex items-center gap-2 ${
-              availability.availableOnDate > 0
-                ? "bg-brand/5 border border-brand/20 text-brand"
-                : availability.pickupsBeforeDate > 0
-                  ? "bg-yellow-500/5 border border-yellow-500/20 text-yellow-400"
-                  : "bg-red-500/5 border border-red-500/20 text-red-400"
+            <div className={`rounded-[14px] px-4 py-3 text-sm flex items-center gap-2 border ${
+              availability.availableOnDate > 0 ? "bg-[var(--t-accent-soft)] border-[var(--t-accent)] text-[var(--t-accent)]"
+              : availability.pickupsBeforeDate > 0 ? "bg-[var(--t-warning-soft)] border-[var(--t-warning)] text-[var(--t-warning)]"
+              : "bg-[var(--t-error-soft)] border-[var(--t-error)] text-[var(--t-error)]"
             }`}>
               {availability.availableOnDate > 0 ? (
                 <><CheckCircle2 className="h-4 w-4 shrink-0" /> {availability.availableOnDate} available for {deliveryDate}</>
               ) : availability.pickupsBeforeDate > 0 ? (
-                <><AlertTriangle className="h-4 w-4 shrink-0" /> 0 available now — {availability.pickupsBeforeDate} pickup{availability.pickupsBeforeDate > 1 ? "s" : ""} scheduled before then</>
+                <><AlertTriangle className="h-4 w-4 shrink-0" /> 0 available now -- {availability.pickupsBeforeDate} pickup{availability.pickupsBeforeDate > 1 ? "s" : ""} scheduled before then</>
               ) : (
                 <><AlertTriangle className="h-4 w-4 shrink-0" /> None available and no pickups scheduled</>
               )}
@@ -419,31 +335,30 @@ export default function BookingPage() {
           )}
 
           <button onClick={() => setStep(2)} disabled={!quote}
-            className="w-full rounded-xl bg-brand py-3.5 text-sm font-bold text-dark-primary transition-all hover:bg-brand-light active:scale-[0.98] disabled:opacity-40">
-            Customer wants to book →
+            className="w-full rounded-full bg-[#22C55E] py-3.5 text-sm font-bold text-black transition-all hover:opacity-90 active:scale-[0.98] disabled:opacity-40">
+            Customer wants to book
           </button>
         </div>
       )}
 
-      {/* ==================== STEP 2: Customer ==================== */}
+      {/* ===== STEP 2: Customer ===== */}
       {step === 2 && (
         <div className="space-y-5">
-          {/* Phone search */}
           <div className="relative">
             <label className={labelCls}>Phone Number</label>
             <div className="relative">
-              <Phone className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
+              <Phone className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--t-text-muted)]" />
               <input value={customerId ? phone : phoneSearch}
                 onChange={e => { setPhoneSearch(e.target.value); setPhone(e.target.value); setCustomerId(null); }}
                 className={`${inputCls} pl-10`} placeholder="Search by phone or name..." autoFocus />
             </div>
             {customerResults.length > 0 && !customerId && (
-              <div className="absolute z-20 mt-1 w-full rounded-lg border border-[#1E2D45] bg-dark-secondary shadow-xl overflow-hidden">
+              <div className="absolute z-20 mt-1 w-full rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] shadow-xl overflow-hidden">
                 {customerResults.map(c => (
                   <button key={c.id} onClick={() => selectCustomer(c)}
-                    className="flex w-full items-center justify-between px-4 py-2.5 text-sm hover:bg-dark-card-hover transition-colors">
-                    <span className="font-medium text-white">{c.first_name} {c.last_name}</span>
-                    <span className="text-xs text-muted">{c.phone ? <a href={`tel:${c.phone}`} className="hover:text-brand" onClick={(e) => e.stopPropagation()}>{c.phone}</a> : c.email}</span>
+                    className="flex w-full items-center justify-between px-4 py-2.5 text-sm hover:bg-[var(--t-bg-card-hover)] transition-colors">
+                    <span className="font-medium text-[var(--t-text-primary)]">{c.first_name} {c.last_name}</span>
+                    <span className="text-[13px] text-[var(--t-text-muted)]">{c.phone ? <a href={`tel:${c.phone}`} className="hover:text-[var(--t-accent)]" onClick={(e) => e.stopPropagation()}>{c.phone}</a> : c.email}</span>
                   </button>
                 ))}
               </div>
@@ -451,9 +366,9 @@ export default function BookingPage() {
           </div>
 
           {customerId && (
-            <div className="rounded-lg bg-brand/5 border border-brand/20 px-4 py-3 flex items-center justify-between">
-              <span className="text-sm text-brand font-medium">Existing customer: {firstName} {lastName}</span>
-              <button onClick={() => { setCustomerId(null); setFirstName(""); setLastName(""); }} className="text-xs text-muted hover:text-red-400">Clear</button>
+            <div className="rounded-[14px] bg-[var(--t-accent-soft)] border border-[var(--t-accent)] px-4 py-3 flex items-center justify-between">
+              <span className="text-sm text-[var(--t-accent)] font-medium">Existing customer: {firstName} {lastName}</span>
+              <button onClick={() => { setCustomerId(null); setFirstName(""); setLastName(""); }} className="text-[13px] text-[var(--t-text-muted)] hover:text-[var(--t-error)]">Clear</button>
             </div>
           )}
 
@@ -468,7 +383,7 @@ export default function BookingPage() {
                 <label className={labelCls}>Type</label>
                 <div className="grid grid-cols-2 gap-2">
                   {(["residential", "commercial"] as const).map(t => (
-                    <button key={t} onClick={() => setCustType(t)} className={`rounded-lg py-2.5 text-xs font-medium capitalize transition-all ${custType === t ? "bg-brand text-dark-primary" : "bg-dark-elevated text-muted hover:text-white"}`}>{t}</button>
+                    <button key={t} onClick={() => setCustType(t)} className={`rounded-[14px] py-2.5 text-xs font-medium capitalize transition-all ${custType === t ? "bg-[#22C55E] text-black" : "bg-[var(--t-bg-card)] text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)] border border-[var(--t-border)]"}`}>{t}</button>
                   ))}
                 </div>
               </div>
@@ -476,36 +391,33 @@ export default function BookingPage() {
                 <div><label className={labelCls}>Company Name</label><input value={companyName} onChange={e => setCompanyName(e.target.value)} className={inputCls} /></div>
               )}
               <div className="flex items-center gap-2">
-                <input type="checkbox" checked={sameAddress} onChange={e => setSameAddress(e.target.checked)} className="h-4 w-4 rounded accent-brand" />
-                <span className="text-xs text-muted">Billing address same as delivery</span>
+                <input type="checkbox" checked={sameAddress} onChange={e => setSameAddress(e.target.checked)} className="h-4 w-4 rounded accent-[#22C55E]" />
+                <span className="text-[13px] text-[var(--t-text-muted)]">Billing address same as delivery</span>
               </div>
               {!sameAddress && <AddressAutocomplete value={billingAddress} onChange={setBillingAddress} label="Billing Address" />}
             </>
           )}
 
           <button onClick={() => setStep(3)} disabled={!firstName || !lastName}
-            className="w-full rounded-xl bg-brand py-3.5 text-sm font-bold text-dark-primary transition-all hover:bg-brand-light active:scale-[0.98] disabled:opacity-40">
-            Continue to scheduling →
+            className="w-full rounded-full bg-[#22C55E] py-3.5 text-sm font-bold text-black transition-all hover:opacity-90 active:scale-[0.98] disabled:opacity-40">
+            Continue to scheduling
           </button>
         </div>
       )}
 
-      {/* ==================== STEP 3: Schedule ==================== */}
+      {/* ===== STEP 3: Schedule ===== */}
       {step === 3 && (
         <div className="space-y-5">
-          <div>
-            <label className={labelCls}>Delivery Date</label>
-            <input type="date" value={deliveryDate} onChange={e => setDeliveryDate(e.target.value)} className={inputCls} />
-          </div>
+          <div><label className={labelCls}>Delivery Date</label><input type="date" value={deliveryDate} onChange={e => setDeliveryDate(e.target.value)} className={inputCls} /></div>
 
           <div>
             <label className={labelCls}>Time Window</label>
             <div className="grid grid-cols-3 gap-2">
-              {([["morning", "Morning", "8 AM – 12 PM"], ["afternoon", "Afternoon", "12 – 5 PM"], ["fullday", "Full Day", "8 AM – 5 PM"]] as const).map(([k, label, sub]) => (
+              {([["morning", "Morning", "8 AM - 12 PM"], ["afternoon", "Afternoon", "12 - 5 PM"], ["fullday", "Full Day", "8 AM - 5 PM"]] as const).map(([k, label, sub]) => (
                 <button key={k} onClick={() => setTimeWindow(k)}
-                  className={`rounded-xl p-4 text-center transition-all active:scale-95 ${timeWindow === k ? "bg-brand/10 border border-brand/30 ring-1 ring-brand/20" : "bg-dark-card border border-[#1E2D45] hover:border-[#2a3d5a]"}`}>
-                  <p className={`text-sm font-semibold ${timeWindow === k ? "text-brand" : "text-white"}`}>{label}</p>
-                  <p className="text-[10px] text-muted mt-0.5">{sub}</p>
+                  className={`rounded-[14px] p-4 text-center transition-all active:scale-95 ${timeWindow === k ? "bg-[var(--t-accent-soft)] border border-[var(--t-accent)]" : "bg-[var(--t-bg-card)] border border-[var(--t-border)]"}`}>
+                  <p className={`text-sm font-semibold ${timeWindow === k ? "text-[var(--t-accent)]" : "text-[var(--t-text-primary)]"}`}>{label}</p>
+                  <p className="text-[11px] text-[var(--t-text-muted)] mt-0.5">{sub}</p>
                 </button>
               ))}
             </div>
@@ -516,122 +428,118 @@ export default function BookingPage() {
             <textarea value={instructions} onChange={e => setInstructions(e.target.value)} rows={2} className={`${inputCls} resize-none`} placeholder="Place in driveway, call before delivery..." />
           </div>
 
-          <div className="rounded-lg bg-dark-card border border-[#1E2D45] p-4">
+          <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-xs text-muted">Pickup Date</p>
-                <p className="text-sm font-medium text-white">{fmtDate(pickupDate)}</p>
-                <p className="text-[10px] text-muted">{rentalDays}-day rental</p>
+                <p className="text-[13px] text-[var(--t-text-muted)]">Pickup Date</p>
+                <p className="text-sm font-medium text-[var(--t-text-primary)]">{fmtDate(pickupDate)}</p>
+                <p className="text-[11px] text-[var(--t-text-muted)]">{rentalDays}-day rental</p>
               </div>
               <input type="date" value={pickupDate} onChange={e => {
                 setPickupDate(e.target.value);
                 const days = Math.round((new Date(e.target.value).getTime() - new Date(deliveryDate).getTime()) / 86400000);
                 if (days > 0) setRentalDays(days);
-              }} className="rounded-lg bg-dark-elevated border border-[#1E2D45] px-3 py-1.5 text-xs text-white outline-none focus:border-brand" />
+              }} className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card-hover)] px-3 py-1.5 text-xs text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)]" />
             </div>
           </div>
 
           <button onClick={() => setStep(4)}
-            className="w-full rounded-xl bg-brand py-3.5 text-sm font-bold text-dark-primary transition-all hover:bg-brand-light active:scale-[0.98]">
-            Continue to payment →
+            className="w-full rounded-full bg-[#22C55E] py-3.5 text-sm font-bold text-black transition-all hover:opacity-90 active:scale-[0.98]">
+            Continue to payment
           </button>
         </div>
       )}
 
-      {/* ==================== STEP 4: Confirm ==================== */}
+      {/* ===== STEP 4: Confirm ===== */}
       {step === 4 && quote && (
         <div className="space-y-5">
-          {error && <div className="rounded-lg bg-red-500/10 px-4 py-3 text-sm text-red-400">{error}</div>}
+          {error && <div className="rounded-[14px] bg-[var(--t-error-soft)] px-4 py-3 text-sm text-[var(--t-error)]">{error}</div>}
 
-          {/* Summary */}
-          <div className="rounded-xl bg-dark-card border border-[#1E2D45] p-5 space-y-3">
-            <h3 className="text-xs text-muted uppercase tracking-wider">Order Summary</h3>
-            <div className="flex justify-between text-sm"><span className="text-muted">Service</span><span className="text-white">{assetSubtype} {serviceType.replace(/_/g, " ")}</span></div>
-            <div className="flex justify-between text-sm"><span className="text-muted">Customer</span><span className="text-white">{firstName} {lastName}</span></div>
-            <div className="flex justify-between text-sm"><span className="text-muted">Delivery</span><span className="text-white">{fmtDate(deliveryDate)}</span></div>
-            <div className="flex justify-between text-sm"><span className="text-muted">Pickup</span><span className="text-white">{fmtDate(pickupDate)}</span></div>
-            <div className="flex justify-between text-sm"><span className="text-muted">Rental</span><span className="text-white">{rentalDays} days</span></div>
-            {address.street && <div className="flex justify-between text-sm"><span className="text-muted">Address</span><span className="text-white truncate ml-4">{address.street}, {address.city}</span></div>}
-            <div className="border-t border-[#1E2D45] pt-3 flex justify-between font-semibold text-lg">
-              <span className="text-brand">Total</span><span className="text-brand tabular-nums">{fmtMoney(quote.breakdown.total)}</span>
+          <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5 space-y-3">
+            <h3 className="text-[13px] font-semibold uppercase tracking-wide text-[var(--t-text-muted)]">Order Summary</h3>
+            <div className="flex justify-between text-sm"><span className="text-[var(--t-text-muted)]">Service</span><span className="text-[var(--t-text-primary)]">{assetSubtype} {serviceType.replace(/_/g, " ")}</span></div>
+            <div className="flex justify-between text-sm"><span className="text-[var(--t-text-muted)]">Customer</span><span className="text-[var(--t-text-primary)]">{firstName} {lastName}</span></div>
+            <div className="flex justify-between text-sm"><span className="text-[var(--t-text-muted)]">Delivery</span><span className="text-[var(--t-text-primary)]">{fmtDate(deliveryDate)}</span></div>
+            <div className="flex justify-between text-sm"><span className="text-[var(--t-text-muted)]">Pickup</span><span className="text-[var(--t-text-primary)]">{fmtDate(pickupDate)}</span></div>
+            <div className="flex justify-between text-sm"><span className="text-[var(--t-text-muted)]">Rental</span><span className="text-[var(--t-text-primary)]">{rentalDays} days</span></div>
+            {address.street && <div className="flex justify-between text-sm"><span className="text-[var(--t-text-muted)]">Address</span><span className="text-[var(--t-text-primary)] truncate ml-4">{address.street}, {address.city}</span></div>}
+            <div className="border-t border-[var(--t-border)] pt-3 flex justify-between font-semibold text-lg">
+              <span className="text-[var(--t-accent)]">Total</span><span className="text-[var(--t-accent)] tabular-nums">{fmtMoney(quote.breakdown.total)}</span>
             </div>
           </div>
 
-          {/* Payment method */}
           <div>
             <label className={labelCls}>Payment</label>
             <div className="grid grid-cols-2 gap-2">
               <button onClick={() => setPaymentMethod("invoice")}
-                className={`rounded-xl p-4 text-center transition-all ${paymentMethod === "invoice" ? "bg-brand/10 border border-brand/30" : "bg-dark-card border border-[#1E2D45]"}`}>
-                <Package className={`mx-auto h-5 w-5 mb-1 ${paymentMethod === "invoice" ? "text-brand" : "text-muted"}`} />
-                <p className={`text-sm font-medium ${paymentMethod === "invoice" ? "text-brand" : "text-white"}`}>Send Invoice</p>
-                <p className="text-[10px] text-muted">Email invoice to customer</p>
+                className={`rounded-[14px] p-4 text-center transition-all ${paymentMethod === "invoice" ? "bg-[var(--t-accent-soft)] border border-[var(--t-accent)]" : "bg-[var(--t-bg-card)] border border-[var(--t-border)]"}`}>
+                <Package className={`mx-auto h-5 w-5 mb-1 ${paymentMethod === "invoice" ? "text-[var(--t-accent)]" : "text-[var(--t-text-muted)]"}`} />
+                <p className={`text-sm font-medium ${paymentMethod === "invoice" ? "text-[var(--t-accent)]" : "text-[var(--t-text-primary)]"}`}>Send Invoice</p>
+                <p className="text-[11px] text-[var(--t-text-muted)]">Email invoice to customer</p>
               </button>
               <button onClick={() => setPaymentMethod("card")}
-                className={`rounded-xl p-4 text-center transition-all ${paymentMethod === "card" ? "bg-brand/10 border border-brand/30" : "bg-dark-card border border-[#1E2D45]"}`}>
-                <CreditCard className={`mx-auto h-5 w-5 mb-1 ${paymentMethod === "card" ? "text-brand" : "text-muted"}`} />
-                <p className={`text-sm font-medium ${paymentMethod === "card" ? "text-brand" : "text-white"}`}>Charge Card</p>
-                <p className="text-[10px] text-muted">Collect payment now</p>
+                className={`rounded-[14px] p-4 text-center transition-all ${paymentMethod === "card" ? "bg-[var(--t-accent-soft)] border border-[var(--t-accent)]" : "bg-[var(--t-bg-card)] border border-[var(--t-border)]"}`}>
+                <CreditCard className={`mx-auto h-5 w-5 mb-1 ${paymentMethod === "card" ? "text-[var(--t-accent)]" : "text-[var(--t-text-muted)]"}`} />
+                <p className={`text-sm font-medium ${paymentMethod === "card" ? "text-[var(--t-accent)]" : "text-[var(--t-text-primary)]"}`}>Charge Card</p>
+                <p className="text-[11px] text-[var(--t-text-muted)]">Collect payment now</p>
               </button>
             </div>
           </div>
 
           {paymentMethod === "card" && (
-            <div className="rounded-lg bg-dark-card border border-[#1E2D45] p-4 text-center text-xs text-muted">
-              <CreditCard className="mx-auto h-6 w-6 text-muted/30 mb-2" />
+            <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-4 text-center text-[13px] text-[var(--t-text-muted)]">
+              <CreditCard className="mx-auto h-6 w-6 text-[var(--t-text-muted)] opacity-30 mb-2" />
               Stripe card form will be integrated here
             </div>
           )}
 
           {quote.breakdown.requireDeposit && (
-            <div className="rounded-lg bg-yellow-500/5 border border-yellow-500/20 p-3 text-xs text-yellow-400">
+            <div className="rounded-[14px] bg-[var(--t-warning-soft)] border border-[var(--t-warning)] p-3 text-[13px] text-[var(--t-warning)]">
               Deposit due now: {fmtMoney(quote.breakdown.depositAmount)}. Remaining {fmtMoney(quote.breakdown.total - quote.breakdown.depositAmount)} due on pickup.
             </div>
           )}
 
           <button onClick={handleSubmit} disabled={submitting}
-            className="w-full rounded-xl bg-brand py-4 text-sm font-bold text-dark-primary transition-all hover:bg-brand-light active:scale-[0.98] disabled:opacity-50 shadow-lg shadow-brand/20">
+            className="w-full rounded-full bg-[#22C55E] py-4 text-sm font-bold text-black transition-all hover:opacity-90 active:scale-[0.98] disabled:opacity-50">
             {submitting ? (
               <span className="flex items-center justify-center gap-2">
-                <div className="h-4 w-4 animate-spin rounded-full border-2 border-dark-primary border-t-transparent" />
+                <div className="h-4 w-4 animate-spin rounded-full border-2 border-black border-t-transparent" />
                 Processing...
               </span>
             ) : (
-              `Complete Booking — ${fmtMoney(quote.breakdown.total)}`
+              `Complete Booking -- ${fmtMoney(quote.breakdown.total)}`
             )}
           </button>
         </div>
       )}
 
-      {/* ==================== STEP 5: Success ==================== */}
+      {/* ===== STEP 5: Success ===== */}
       {step === 5 && result && (
         <div className="text-center py-8">
-          <CheckCircle2 className="mx-auto h-16 w-16 text-brand mb-4" />
-          <h2 className="font-display text-2xl font-bold text-white">Booking Confirmed!</h2>
-          <p className="text-muted mt-2">
-            Job #{result.deliveryJob.jobNumber} created
-          </p>
+          <CheckCircle2 className="mx-auto h-16 w-16 text-[var(--t-accent)] mb-4" />
+          <h2 className="text-[28px] font-bold tracking-[-1px] text-[var(--t-text-primary)]">Booking Confirmed!</h2>
+          <p className="text-[var(--t-text-muted)] mt-2">Job #{result.deliveryJob.jobNumber} created</p>
 
-          <div className="mt-6 rounded-xl bg-dark-card border border-[#1E2D45] p-5 text-left max-w-sm mx-auto space-y-2 text-sm">
-            <div className="flex justify-between"><span className="text-muted">Delivery Job</span><span className="text-white font-medium">{result.deliveryJob.jobNumber}</span></div>
-            <div className="flex justify-between"><span className="text-muted">Pickup Job</span><span className="text-white font-medium">{result.pickupJob.jobNumber}</span></div>
-            <div className="flex justify-between"><span className="text-muted">Invoice</span><span className="text-white font-medium">{result.invoice.invoiceNumber}</span></div>
-            <div className="flex justify-between"><span className="text-muted">Status</span><span className={`font-medium ${result.autoApproved ? "text-brand" : "text-yellow-400"}`}>{result.autoApproved ? "Auto-Confirmed" : "Pending Approval"}</span></div>
-            {result.asset && <div className="flex justify-between"><span className="text-muted">Asset</span><span className="text-white font-medium">{result.asset.identifier}</span></div>}
-            <div className="flex justify-between"><span className="text-muted">Payment</span><span className="text-white font-medium capitalize">{paymentMethod === "card" ? "Paid" : "Invoice sent"}</span></div>
+          <div className="mt-6 rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5 text-left max-w-sm mx-auto space-y-2 text-sm">
+            <div className="flex justify-between"><span className="text-[var(--t-text-muted)]">Delivery Job</span><span className="text-[var(--t-text-primary)] font-medium">{result.deliveryJob.jobNumber}</span></div>
+            <div className="flex justify-between"><span className="text-[var(--t-text-muted)]">Pickup Job</span><span className="text-[var(--t-text-primary)] font-medium">{result.pickupJob.jobNumber}</span></div>
+            <div className="flex justify-between"><span className="text-[var(--t-text-muted)]">Invoice</span><span className="text-[var(--t-text-primary)] font-medium">{result.invoice.invoiceNumber}</span></div>
+            <div className="flex justify-between"><span className="text-[var(--t-text-muted)]">Status</span><span className={`font-medium ${result.autoApproved ? "text-[var(--t-accent)]" : "text-[var(--t-warning)]"}`}>{result.autoApproved ? "Auto-Confirmed" : "Pending Approval"}</span></div>
+            {result.asset && <div className="flex justify-between"><span className="text-[var(--t-text-muted)]">Asset</span><span className="text-[var(--t-text-primary)] font-medium">{result.asset.identifier}</span></div>}
+            <div className="flex justify-between"><span className="text-[var(--t-text-muted)]">Payment</span><span className="text-[var(--t-text-primary)] font-medium capitalize">{paymentMethod === "card" ? "Paid" : "Invoice sent"}</span></div>
           </div>
 
           <div className="mt-8 flex flex-col gap-2 max-w-sm mx-auto">
             <button onClick={() => { setStep(1); setResult(null); setQuote(null); setCustomerId(null); setFirstName(""); setLastName(""); setAddress({ street: "", city: "", state: "", zip: "", lat: null, lng: null }); }}
-              className="rounded-xl bg-brand py-3 text-sm font-bold text-dark-primary hover:bg-brand-light transition-all active:scale-[0.98]">
+              className="rounded-full bg-[#22C55E] py-3 text-sm font-bold text-black hover:opacity-90 transition-all active:scale-[0.98]">
               Create Another Booking
             </button>
             <Link href={`/jobs/${result.deliveryJob.id}`}
-              className="rounded-xl bg-dark-card border border-[#1E2D45] py-3 text-sm font-medium text-white text-center hover:bg-dark-card-hover transition-colors">
+              className="rounded-full border border-[var(--t-border)] bg-[var(--t-bg-card)] py-3 text-sm font-medium text-[var(--t-text-primary)] text-center hover:bg-[var(--t-bg-card-hover)] transition-colors">
               View Job
             </Link>
             <Link href="/"
-              className="rounded-xl py-3 text-sm text-muted text-center hover:text-white transition-colors">
+              className="rounded-full py-3 text-sm text-[var(--t-text-muted)] text-center hover:text-[var(--t-text-primary)] transition-colors">
               Back to Dashboard
             </Link>
           </div>

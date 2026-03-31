@@ -13,6 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { format, addDays } from 'date-fns';
 import { useAuth } from '../../src/AuthContext';
 import { getDriverJobs } from '../../src/api';
+import { useAppTheme, type ThemeColors } from '../../constants/theme';
 
 interface Job {
   id: string;
@@ -55,6 +56,7 @@ function fmtTime(t: string | null) {
 export default function JobsScreen() {
   const { user } = useAuth();
   const router = useRouter();
+  const colors = useAppTheme();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<Filter>('today');
@@ -102,27 +104,29 @@ export default function JobsScreen() {
     { key: 'completed', label: 'Completed' },
   ];
 
+  const s = makeStyles(colors);
+
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Jobs</Text>
+    <View style={s.container}>
+      <View style={s.header}>
+        <Text style={s.headerTitle}>Jobs</Text>
       </View>
 
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.filterRow}
+        contentContainerStyle={s.filterRow}
       >
         {filters.map((f) => (
           <TouchableOpacity
             key={f.key}
-            style={[styles.filterBtn, filter === f.key && styles.filterBtnActive]}
+            style={[s.filterBtn, filter === f.key && s.filterBtnActive]}
             onPress={() => setFilter(f.key)}
           >
             <Text
               style={[
-                styles.filterText,
-                filter === f.key && styles.filterTextActive,
+                s.filterText,
+                filter === f.key && s.filterTextActive,
               ]}
             >
               {f.label}
@@ -135,14 +139,14 @@ export default function JobsScreen() {
         data={jobs}
         keyExtractor={(j) => j.id}
         refreshControl={
-          <RefreshControl refreshing={loading} onRefresh={fetchJobs} tintColor="#2ECC71" />
+          <RefreshControl refreshing={loading} onRefresh={fetchJobs} tintColor={colors.accent} />
         }
-        contentContainerStyle={jobs.length === 0 ? styles.emptyContainer : styles.list}
+        contentContainerStyle={jobs.length === 0 ? s.emptyContainer : s.list}
         ListEmptyComponent={
-          <View style={styles.empty}>
-            <Ionicons name="clipboard-outline" size={48} color="#1E2D45" />
-            <Text style={styles.emptyTitle}>No jobs found</Text>
-            <Text style={styles.emptyText}>Pull to refresh</Text>
+          <View style={s.empty}>
+            <Ionicons name="clipboard-outline" size={48} color={colors.textTertiary} />
+            <Text style={s.emptyTitle}>No jobs found</Text>
+            <Text style={s.emptyText}>Pull to refresh</Text>
           </View>
         }
         renderItem={({ item: j }) => {
@@ -151,31 +155,34 @@ export default function JobsScreen() {
           return (
             <TouchableOpacity
               style={[
-                styles.card,
-                { borderLeftColor: STATUS_COLORS[j.status] || '#71717A' },
-                isCompleted && styles.cardCompleted,
+                s.card,
+                isCompleted && s.cardCompleted,
               ]}
               onPress={() => router.push(`/job/${j.id}`)}
               activeOpacity={0.7}
             >
-              <View style={styles.cardTop}>
-                <Text style={styles.customerName} numberOfLines={1}>
+              <View style={[
+                s.cardLeftEdge,
+                { backgroundColor: STATUS_COLORS[j.status] || '#71717A' },
+              ]} />
+              <View style={s.cardTop}>
+                <Text style={s.customerName} numberOfLines={1}>
                   {j.customer
                     ? `${j.customer.first_name} ${j.customer.last_name}`
                     : j.job_number}
                 </Text>
                 <View
                   style={[
-                    styles.typeBadge,
+                    s.typeBadge,
                     {
                       backgroundColor:
-                        (TYPE_COLORS[j.job_type] || '#71717A') + '20',
+                        (TYPE_COLORS[j.job_type] || '#71717A') + '14',
                     },
                   ]}
                 >
                   <Text
                     style={[
-                      styles.typeText,
+                      s.typeText,
                       { color: TYPE_COLORS[j.job_type] || '#71717A' },
                     ]}
                   >
@@ -184,18 +191,18 @@ export default function JobsScreen() {
                 </View>
               </View>
               {addr && (
-                <Text style={styles.address} numberOfLines={1}>
+                <Text style={s.address} numberOfLines={1}>
                   {[addr.street, addr.city].filter(Boolean).join(', ')}
                 </Text>
               )}
-              <View style={styles.cardMeta}>
+              <View style={s.cardMeta}>
                 {j.scheduled_date && (
-                  <Text style={styles.metaText}>
+                  <Text style={s.metaText}>
                     {format(new Date(j.scheduled_date + 'T00:00:00'), 'MMM d')}
                   </Text>
                 )}
                 {j.scheduled_window_start && (
-                  <Text style={styles.metaText}>
+                  <Text style={s.metaText}>
                     {fmtTime(j.scheduled_window_start)}
                     {j.scheduled_window_end
                       ? ` - ${fmtTime(j.scheduled_window_end)}`
@@ -203,20 +210,20 @@ export default function JobsScreen() {
                   </Text>
                 )}
                 {j.asset?.identifier && (
-                  <Text style={styles.metaText}>{j.asset.identifier}</Text>
+                  <Text style={s.metaText}>{j.asset.identifier}</Text>
                 )}
                 <View
                   style={[
-                    styles.statusBadge,
+                    s.statusBadge,
                     {
                       backgroundColor:
-                        (STATUS_COLORS[j.status] || '#71717A') + '20',
+                        (STATUS_COLORS[j.status] || '#71717A') + '14',
                     },
                   ]}
                 >
                   <Text
                     style={[
-                      styles.statusText,
+                      s.statusText,
                       { color: STATUS_COLORS[j.status] || '#71717A' },
                     ]}
                   >
@@ -232,59 +239,69 @@ export default function JobsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0B1220' },
-  header: { paddingHorizontal: 20, paddingTop: 60, paddingBottom: 8 },
-  headerTitle: { fontSize: 28, fontWeight: '700', color: '#fff' },
-  filterRow: { paddingHorizontal: 20, paddingBottom: 12, gap: 8 },
-  filterBtn: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: '#111C2E',
-    borderWidth: 1,
-    borderColor: '#1E2D45',
-  },
-  filterBtnActive: { backgroundColor: '#2ECC71', borderColor: '#2ECC71' },
-  filterText: { fontSize: 13, fontWeight: '600', color: '#7A8BA3' },
-  filterTextActive: { color: '#fff' },
-  list: { paddingHorizontal: 20, paddingBottom: 20 },
-  card: {
-    backgroundColor: '#111C2E',
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 8,
-    borderLeftWidth: 3,
-    borderWidth: 1,
-    borderColor: '#1E2D45',
-  },
-  cardCompleted: { opacity: 0.5 },
-  cardTop: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 4,
-  },
-  customerName: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#fff',
-    flex: 1,
-    marginRight: 8,
-  },
-  typeBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 },
-  typeText: { fontSize: 10, fontWeight: '700', textTransform: 'capitalize' },
-  address: { fontSize: 12, color: '#7A8BA3', marginBottom: 4 },
-  cardMeta: { flexDirection: 'row', gap: 8, flexWrap: 'wrap', alignItems: 'center' },
-  metaText: { fontSize: 11, color: '#7A8BA3' },
-  statusBadge: { paddingHorizontal: 6, paddingVertical: 1, borderRadius: 4 },
-  statusText: {
-    fontSize: 10,
-    fontWeight: '700',
-    textTransform: 'capitalize',
-  },
-  emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  empty: { alignItems: 'center' },
-  emptyTitle: { fontSize: 18, fontWeight: '600', color: '#fff', marginTop: 16 },
-  emptyText: { fontSize: 14, color: '#7A8BA3', marginTop: 4 },
-});
+const makeStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
+    container: { flex: 1, backgroundColor: colors.background },
+    header: { paddingHorizontal: 20, paddingTop: 60, paddingBottom: 8 },
+    headerTitle: { fontSize: 28, fontWeight: '700', color: colors.text, letterSpacing: -0.5 },
+    filterRow: { paddingHorizontal: 20, paddingBottom: 12, gap: 8 },
+    filterBtn: {
+      paddingHorizontal: 16,
+      paddingVertical: 8,
+      borderRadius: 20,
+      backgroundColor: 'transparent',
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    filterBtnActive: { backgroundColor: colors.accent, borderColor: colors.accent },
+    filterText: { fontSize: 13, fontWeight: '600', color: colors.textSecondary },
+    filterTextActive: { color: '#fff' },
+    list: { paddingHorizontal: 20, paddingBottom: 20 },
+    card: {
+      backgroundColor: colors.surface,
+      borderRadius: 14,
+      padding: 14,
+      marginBottom: 8,
+      borderWidth: 1,
+      borderColor: colors.border,
+      overflow: 'hidden',
+    },
+    cardLeftEdge: {
+      position: 'absolute',
+      left: 0,
+      top: 0,
+      bottom: 0,
+      width: 3,
+      borderTopLeftRadius: 14,
+      borderBottomLeftRadius: 14,
+    },
+    cardCompleted: { opacity: 0.45 },
+    cardTop: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginBottom: 4,
+    },
+    customerName: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: colors.text,
+      flex: 1,
+      marginRight: 8,
+    },
+    typeBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 },
+    typeText: { fontSize: 10, fontWeight: '700', textTransform: 'capitalize' },
+    address: { fontSize: 12, color: colors.textSecondary, marginBottom: 4 },
+    cardMeta: { flexDirection: 'row', gap: 8, flexWrap: 'wrap', alignItems: 'center' },
+    metaText: { fontSize: 11, color: colors.textSecondary },
+    statusBadge: { paddingHorizontal: 6, paddingVertical: 1, borderRadius: 4 },
+    statusText: {
+      fontSize: 10,
+      fontWeight: '700',
+      textTransform: 'capitalize',
+    },
+    emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+    empty: { alignItems: 'center' },
+    emptyTitle: { fontSize: 18, fontWeight: '600', color: colors.text, marginTop: 16 },
+    emptyText: { fontSize: 14, color: colors.textSecondary, marginTop: 4 },
+  });
