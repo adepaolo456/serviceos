@@ -45,10 +45,13 @@ export default function PricingPage() {
   // Quote state
   const [quoteSize, setQuoteSize] = useState<string>("");
   const [quoteAddress, setQuoteAddress] = useState("");
+  const [quoteCoords, setQuoteCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [quoteName, setQuoteName] = useState("");
   const [quoteEmail, setQuoteEmail] = useState("");
   const [quotePhone, setQuotePhone] = useState("");
   const [quoteSending, setQuoteSending] = useState(false);
+  const [distanceInfo, setDistanceInfo] = useState<{ distanceMiles: number; zone: { name: string; surcharge: number } | null; outsideServiceArea: boolean; maxServiceMiles: number } | null>(null);
+  const [zones, setZones] = useState<Array<{ id: string; zone_name: string; min_miles: number; max_miles: number; surcharge: number }>>([]);
   const { toast } = useToast();
 
   const fetchRules = useCallback(async () => {
@@ -56,6 +59,8 @@ export default function PricingPage() {
     try {
       const res = await api.get<PricingResponse>("/pricing?limit=100");
       setRules(res.data);
+      const zoneRes = await api.get<any[]>("/pricing/delivery-zones");
+      setZones(Array.isArray(zoneRes) ? zoneRes : []);
     } catch {
       /* handled */
     } finally {
@@ -63,11 +68,19 @@ export default function PricingPage() {
     }
   }, []);
 
+  useEffect(() => { fetchRules(); }, [fetchRules]);
+
+  // Calculate distance when coords change
   useEffect(() => {
-    fetchRules();
-  }, [fetchRules]);
+    if (!quoteCoords) { setDistanceInfo(null); return; }
+    api.get<any>(`/pricing/calculate-distance?destLat=${quoteCoords.lat}&destLng=${quoteCoords.lng}`)
+      .then(setDistanceInfo)
+      .catch(() => setDistanceInfo(null));
+  }, [quoteCoords]);
 
   const selectedRule = rules.find((r) => r.asset_subtype === quoteSize);
+  const deliverySurcharge = distanceInfo?.zone?.surcharge || 0;
+  const totalQuoted = selectedRule ? Number(selectedRule.base_price) + deliverySurcharge : 0;
 
   const saveRule = async (data: Partial<PricingRule>) => {
     if (!editRule) return;
@@ -170,7 +183,11 @@ export default function PricingPage() {
               <label className="block text-[11px] font-semibold uppercase tracking-wide mb-1" style={{ color: "var(--t-text-muted)" }}>Delivery Address</label>
               <AddressAutocomplete
                 value={quoteAddress ? { street: quoteAddress } : undefined}
-                onChange={(addr) => setQuoteAddress(addr.formatted || [addr.street, addr.city, addr.state, addr.zip].filter(Boolean).join(", "))}
+                onChange={(addr) => {
+                  setQuoteAddress(addr.formatted || [addr.street, addr.city, addr.state, addr.zip].filter(Boolean).join(", "));
+                  if (addr.lat && addr.lng) setQuoteCoords({ lat: addr.lat, lng: addr.lng });
+                  else setQuoteCoords(null);
+                }}
                 placeholder="Address or ZIP"
               />
             </div>
@@ -200,9 +217,29 @@ export default function PricingPage() {
               style={{ background: "var(--t-bg-card)", borderColor: "var(--t-accent)", borderTop: "1px solid var(--t-border)", borderRight: "1px solid var(--t-border)", borderBottom: "1px solid var(--t-border)" }}>
               <div className="flex items-center justify-between mb-3">
                 <p className="text-[15px] font-bold" style={{ color: "var(--t-text-primary)" }}>{selectedRule.asset_subtype?.replace("yd", " Yard")} Dumpster</p>
-                <p className="text-[24px] font-extrabold tracking-tight" style={{ color: "var(--t-accent)" }}>${Number(selectedRule.base_price).toLocaleString()}</p>
+                <p className="text-[24px] font-extrabold tracking-tight" style={{ color: distanceInfo?.outsideServiceArea ? "var(--t-error)" : "var(--t-accent)" }}>
+                  ${totalQuoted.toLocaleString()}
+                </p>
               </div>
+              {distanceInfo?.outsideServiceArea && (
+                <div className="rounded-lg px-3 py-2 mb-3 text-[12px] font-semibold" style={{ background: "var(--t-error-soft)", color: "var(--t-error)" }}>
+                  ⚠ Outside service area ({distanceInfo.distanceMiles} miles). Maximum is {distanceInfo.maxServiceMiles} miles.
+                </div>
+              )}
               <div className="space-y-1.5 text-[13px]" style={{ color: "var(--t-text-muted)" }}>
+                <div className="flex justify-between"><span>Base price</span><span style={{ color: "var(--t-text-primary)" }}>${Number(selectedRule.base_price).toLocaleString()}</span></div>
+                {distanceInfo && !distanceInfo.outsideServiceArea && (
+                  <div className="flex justify-between">
+                    <span>Delivery zone</span>
+                    <span style={{ color: deliverySurcharge > 0 ? "var(--t-warning)" : "var(--t-accent)" }}>
+                      {distanceInfo.zone ? `${distanceInfo.zone.name} · ${distanceInfo.distanceMiles} mi` : `${distanceInfo.distanceMiles} mi`}
+                      {deliverySurcharge > 0 ? ` (+$${deliverySurcharge})` : " (Free)"}
+                    </span>
+                  </div>
+                )}
+                {!distanceInfo && quoteAddress && (
+                  <div className="flex justify-between"><span>Delivery zone</span><span className="text-[11px] italic" style={{ color: "var(--t-text-tertiary)" }}>Select address for zone pricing</span></div>
+                )}
                 <div className="flex justify-between"><span>Includes</span><span style={{ color: "var(--t-text-primary)" }}>{Number(selectedRule.included_tons)} tons · {selectedRule.rental_period_days} day rental</span></div>
                 <div className="flex justify-between"><span>Overage</span><span style={{ color: "var(--t-text-primary)" }}>${Number(selectedRule.overage_per_ton)}/ton after {Number(selectedRule.included_tons)} tons</span></div>
                 <div className="flex justify-between"><span>Extra days</span><span style={{ color: "var(--t-text-primary)" }}>${Number(selectedRule.extra_day_rate)}/day after {selectedRule.rental_period_days} days</span></div>
@@ -318,6 +355,36 @@ export default function PricingPage() {
           </button>
         </div>
       )}
+
+      {/* ── DELIVERY ZONES ── */}
+      <div className="mt-8">
+        <p className="text-[11px] font-extrabold uppercase tracking-[1.2px] mb-3" style={{ color: "var(--t-frame-text-muted)" }}>DELIVERY ZONES</p>
+        <div className="rounded-[20px] border overflow-hidden" style={{ background: "var(--t-bg-secondary)", borderColor: "var(--t-border)", boxShadow: "0 2px 12px var(--t-shadow)" }}>
+          <table className="w-full text-sm">
+            <thead>
+              <tr style={{ borderBottom: "1px solid var(--t-border)" }}>
+                <th className="text-left px-5 py-3 text-[11px] font-semibold uppercase tracking-wide" style={{ color: "var(--t-text-muted)" }}>Zone</th>
+                <th className="text-left px-5 py-3 text-[11px] font-semibold uppercase tracking-wide" style={{ color: "var(--t-text-muted)" }}>Distance</th>
+                <th className="text-right px-5 py-3 text-[11px] font-semibold uppercase tracking-wide" style={{ color: "var(--t-text-muted)" }}>Surcharge</th>
+              </tr>
+            </thead>
+            <tbody>
+              {zones.map((z, i) => (
+                <tr key={z.id} style={{ borderBottom: i < zones.length - 1 ? "1px solid var(--t-border-subtle)" : "none" }}>
+                  <td className="px-5 py-3 font-semibold" style={{ color: "var(--t-text-primary)" }}>{z.zone_name}</td>
+                  <td className="px-5 py-3" style={{ color: "var(--t-text-muted)" }}>{Number(z.min_miles)} – {Number(z.max_miles)} miles</td>
+                  <td className="px-5 py-3 text-right font-semibold" style={{ color: Number(z.surcharge) > 0 ? "var(--t-warning)" : "var(--t-accent)" }}>
+                    {Number(z.surcharge) > 0 ? `+$${Number(z.surcharge)}` : "Free"}
+                  </td>
+                </tr>
+              ))}
+              {zones.length === 0 && (
+                <tr><td colSpan={3} className="px-5 py-6 text-center text-xs" style={{ color: "var(--t-text-muted)" }}>No delivery zones configured. Re-run seed to create defaults.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
 
       {/* Edit Pricing SlideOver */}
       <SlideOver

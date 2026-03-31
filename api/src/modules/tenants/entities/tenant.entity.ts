@@ -32,6 +32,15 @@ export class Tenant {
   @Column({ name: 'service_radius_miles', type: 'int', nullable: true })
   service_radius_miles!: number;
 
+  @Column({ name: 'yard_latitude', type: 'decimal', precision: 10, scale: 6, nullable: true })
+  yard_latitude!: number | null;
+
+  @Column({ name: 'yard_longitude', type: 'decimal', precision: 10, scale: 6, nullable: true })
+  yard_longitude!: number | null;
+
+  @Column({ name: 'yard_address', type: 'jsonb', nullable: true })
+  yard_address!: Record<string, string> | null;
+
   @Column({ type: 'jsonb', nullable: true, default: '{}' })
   settings!: Record<string, any>;
 

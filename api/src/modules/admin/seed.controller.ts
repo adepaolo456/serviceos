@@ -10,6 +10,7 @@ import { Invoice } from '../billing/entities/invoice.entity';
 import { User } from '../auth/entities/user.entity';
 import { DumpLocation, DumpLocationRate, DumpLocationSurcharge } from '../dump-locations/entities/dump-location.entity';
 import { DumpTicket } from '../dump-locations/entities/dump-ticket.entity';
+import { DeliveryZone } from '../pricing/entities/delivery-zone.entity';
 import * as bcrypt from 'bcrypt';
 
 @Controller('admin/seed')
@@ -25,6 +26,7 @@ export class SeedController {
     @InjectRepository(DumpLocationRate) private rateRepo: Repository<DumpLocationRate>,
     @InjectRepository(DumpLocationSurcharge) private surRepo: Repository<DumpLocationSurcharge>,
     @InjectRepository(DumpTicket) private ticketRepo: Repository<DumpTicket>,
+    @InjectRepository(DeliveryZone) private zoneRepo: Repository<DeliveryZone>,
   ) {}
 
   @Public()
@@ -196,6 +198,27 @@ export class SeedController {
         await this.surRepo.save(this.surRepo.create({ ...s, dump_location_id: loc.id } as any));
       }
     }
+
+    // --- YARD LOCATION ---
+    await this.tenantRepo.update(tid, {
+      yard_latitude: 42.0834,
+      yard_longitude: -71.0184,
+      yard_address: { street: '100 Industrial Park Rd', city: 'Brockton', state: 'MA', zip: '02301' },
+    } as any);
+    log.push('Set yard location: Brockton, MA (42.0834, -71.0184)');
+
+    // --- DELIVERY ZONES ---
+    await this.zoneRepo.delete({ tenant_id: tid });
+    const zones = [
+      { zone_name: 'Zone 1', min_miles: 0, max_miles: 15, surcharge: 0, sort_order: 1 },
+      { zone_name: 'Zone 2', min_miles: 15, max_miles: 30, surcharge: 50, sort_order: 2 },
+      { zone_name: 'Zone 3', min_miles: 30, max_miles: 45, surcharge: 100, sort_order: 3 },
+      { zone_name: 'Zone 4', min_miles: 45, max_miles: 60, surcharge: 150, sort_order: 4 },
+    ];
+    for (const z of zones) {
+      await this.zoneRepo.save(this.zoneRepo.create({ ...z, tenant_id: tid }));
+    }
+    log.push(`Created ${zones.length} delivery zones`);
 
     // --- SUMMARY ---
     const custCount = await this.customerRepo.count({ where: { tenant_id: tid } });
