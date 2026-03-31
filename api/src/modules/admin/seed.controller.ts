@@ -215,6 +215,7 @@ export class SeedController {
   async seedJobs(@Query('secret') secret: string) {
     if (secret !== 'SEED_2026') return { error: 'Invalid secret' };
 
+    try {
     const tenant = await this.tenantRepo.findOne({ where: { slug: 'rent-this-dumpster-mnbxs4jm' } });
     if (!tenant) return { error: 'Tenant not found' };
     const tid = tenant.id;
@@ -488,5 +489,8 @@ export class SeedController {
         todayJobs, tomorrowJobs,
       },
     };
+    } catch (err: any) {
+      return { error: err.message, stack: err.stack?.split('\n').slice(0, 5) };
+    }
   }
 }
