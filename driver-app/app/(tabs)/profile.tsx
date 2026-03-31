@@ -4,7 +4,7 @@ import { useAuth } from '../../src/AuthContext';
 import { useAppTheme, type ThemeColors } from '../../constants/theme';
 
 export default function ProfileScreen() {
-  const { user, logout } = useAuth();
+  const { user, logout, isClockedIn, doClockIn, doClockOut } = useAuth();
   const colors = useAppTheme();
 
   if (!user) return null;
@@ -34,6 +34,34 @@ export default function ProfileScreen() {
           {user.firstName} {user.lastName}
         </Text>
         <Text style={s.role}>{user.role}</Text>
+      </View>
+
+      {/* Clock Status Card */}
+      <View style={[s.card, { marginBottom: 12 }]}>
+        <View style={s.infoRow}>
+          <Ionicons name={isClockedIn ? 'time' : 'time-outline'} size={20} color={isClockedIn ? colors.accent : colors.textSecondary} style={s.infoIcon} />
+          <View style={s.infoContent}>
+            <Text style={s.infoLabel}>Clock Status</Text>
+            <Text style={[s.infoValue, { color: isClockedIn ? colors.accent : colors.textSecondary }]}>
+              {isClockedIn ? 'Clocked In' : 'Clocked Out'}
+            </Text>
+          </View>
+          <TouchableOpacity
+            onPress={async () => {
+              try {
+                if (isClockedIn) await doClockOut();
+                else await doClockIn();
+              } catch {}
+            }}
+            style={{
+              backgroundColor: isClockedIn ? colors.errorSoft : colors.accentSoft,
+              paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20,
+            }}>
+            <Text style={{ color: isClockedIn ? colors.error : colors.accent, fontSize: 12, fontWeight: '700' }}>
+              {isClockedIn ? 'Clock Out' : 'Clock In'}
+            </Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <View style={s.card}>

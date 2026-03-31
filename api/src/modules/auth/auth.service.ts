@@ -269,6 +269,24 @@ export class AuthService {
     };
   }
 
+  async clockIn(userId: string) {
+    await this.usersRepository.update(userId, {
+      is_clocked_in: true,
+      clocked_in_at: new Date(),
+    } as any);
+  }
+
+  async clockOut(userId: string) {
+    await this.usersRepository.update(userId, {
+      is_clocked_in: false,
+      clocked_out_at: new Date(),
+      current_latitude: null,
+      current_longitude: null,
+      current_location_updated_at: null,
+      current_status_text: null,
+    } as any);
+  }
+
   async updateLocation(userId: string, data: { latitude: number; longitude: number; statusText?: string }) {
     await this.usersRepository.update(userId, {
       current_latitude: data.latitude,
