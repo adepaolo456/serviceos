@@ -58,8 +58,8 @@ interface Job {
 
 const TYPE_COLORS: Record<string, string> = {
   delivery: '#22C55E',
-  pickup: '#F59E0B',
-  exchange: '#3B82F6',
+  pickup: '#22C55E',
+  exchange: '#22C55E',
 };
 const TYPE_LABELS: Record<string, string> = {
   delivery: 'Delivery',
@@ -156,14 +156,12 @@ export default function JobDetailScreen() {
 
       // Step 3 complete: post-completion routing
       if (newStatus === 'completed') {
-        if (job.job_type === 'delivery') {
-          Alert.alert('Job Complete! ✓', 'Take a photo of the placed dumpster?', [
-            { text: 'Camera', onPress: captureFromCamera },
-            { text: 'Skip', style: 'cancel', onPress: () => router.back() },
-          ]);
-        } else {
-          // Pickup or exchange — where to next?
+        if (job.job_type === 'pickup' || job.job_type === 'exchange') {
           setShowWhereNext(true);
+        } else {
+          Alert.alert('Job Complete', 'Job has been completed.', [
+            { text: 'OK', onPress: () => router.replace('/(tabs)' as any) },
+          ]);
         }
       }
     } catch (err) {
@@ -585,13 +583,14 @@ export default function JobDetailScreen() {
 
       {job.status === 'completed' && (
         <View style={s.actionBar}>
-          <View style={s.completedBanner}>
+          <TouchableOpacity style={s.completedBanner} onPress={() => router.replace('/(tabs)' as any)}>
             <Ionicons name="checkmark-circle" size={20} color={colors.accent} />
             <Text style={s.completedText}>Job Completed</Text>
-          </View>
+            <Text style={{ fontSize: 12, color: '#8A8A8A', marginLeft: 'auto' }}>Back to Route</Text>
+          </TouchableOpacity>
           {(job.job_type === 'pickup' || job.job_type === 'exchange') && (
             <TouchableOpacity
-              style={[s.actionBtn, { marginTop: 10, backgroundColor: '#F97316' }]}
+              style={[s.actionBtn, { marginTop: 10, backgroundColor: '#22C55E' }]}
               onPress={() => router.push({ pathname: '/job/dump-slip', params: { jobId: job.id, customerName: `${job.customer?.first_name || ''} ${job.customer?.last_name || ''}`.trim() } })}
             >
               <Ionicons name="document-text" size={20} color="#fff" />
