@@ -74,6 +74,9 @@ export class AuthController {
       businessType?: string;
       address?: Record<string, string>;
       serviceRadius?: number;
+      yardLatitude?: number;
+      yardLongitude?: number;
+      yardAddress?: Record<string, string>;
     },
   ) {
     return this.authService.updateTenantProfile(tenantId, body);

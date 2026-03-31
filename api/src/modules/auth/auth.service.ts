@@ -205,6 +205,9 @@ export class AuthService {
         websiteHeroImageUrl: user.tenant.website_hero_image_url,
         widgetEnabled: user.tenant.widget_enabled,
         allowedWidgetDomains: user.tenant.allowed_widget_domains,
+        yardLatitude: user.tenant.yard_latitude ? Number(user.tenant.yard_latitude) : null,
+        yardLongitude: user.tenant.yard_longitude ? Number(user.tenant.yard_longitude) : null,
+        yardAddress: user.tenant.yard_address,
       },
     };
   }
@@ -233,10 +236,16 @@ export class AuthService {
       subscriptionTier?: string;
       subscriptionStatus?: string;
       customerOverageRates?: Record<string, unknown>;
+      yardLatitude?: number;
+      yardLongitude?: number;
+      yardAddress?: Record<string, string>;
     },
   ) {
     const update: Record<string, unknown> = {};
     if (data.companyName !== undefined) update.name = data.companyName;
+    if (data.yardLatitude !== undefined) update.yard_latitude = data.yardLatitude;
+    if (data.yardLongitude !== undefined) update.yard_longitude = data.yardLongitude;
+    if (data.yardAddress !== undefined) update.yard_address = data.yardAddress;
     if (data.businessType !== undefined) update.business_type = data.businessType;
     if (data.address !== undefined) update.address = data.address;
     if (data.serviceRadius !== undefined) update.service_radius_miles = data.serviceRadius;
