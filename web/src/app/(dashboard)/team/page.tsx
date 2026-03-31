@@ -78,8 +78,8 @@ export default function TeamPage() {
       {/* Header */}
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="text-[28px] font-bold tracking-[-1px] text-[var(--t-text-primary)]">Team</h1>
-          <p className="mt-1 text-[13px] text-[var(--t-text-muted)]">{members.length} team members</p>
+          <h1 className="text-[28px] font-bold tracking-[-1px] text-[var(--t-frame-text)]">Team</h1>
+          <p className="mt-1 text-[13px] text-[var(--t-frame-text-muted)]">{members.length} team members</p>
         </div>
         <Link
           href="/settings"
@@ -100,7 +100,7 @@ export default function TeamPage() {
           const active = filter === t.role;
           return (
             <button key={t.role} onClick={() => setFilter(active ? "all" : t.role)}
-              className={`rounded-[18px] border p-4 text-left transition-all ${active ? "border-[var(--t-accent)] bg-[var(--t-accent-soft)]" : "border-[var(--t-border)] bg-[var(--t-bg-card)] hover:bg-[var(--t-bg-card-hover)]"}`}>
+              className={`rounded-[20px] border p-4 text-left transition-all ${active ? "border-[var(--t-accent)] bg-[var(--t-accent-soft)]" : "border-[var(--t-border)] bg-[var(--t-bg-card)] hover:bg-[var(--t-bg-card-hover)]"}`}>
               <div className="flex items-center justify-between mb-2">
                 <t.icon className={`h-5 w-5 ${active ? "text-[var(--t-accent)]" : "text-[var(--t-text-muted)]"}`} />
                 <span className="text-[24px] font-bold text-[var(--t-text-primary)] tabular-nums">{t.count}</span>
@@ -116,21 +116,21 @@ export default function TeamPage() {
 
       {/* Week Navigation */}
       <div className="flex items-center gap-3 mb-5">
-        <button onClick={() => setWeekOf(w => addDays(w, -7))} className="rounded-full border border-[var(--t-border)] bg-[var(--t-bg-card)] p-2 text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)] active:scale-95 transition-all">
+        <button onClick={() => setWeekOf(w => addDays(w, -7))} className="rounded-full border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.06)] p-2 text-[var(--t-frame-text-muted)] hover:text-[var(--t-frame-text)] active:scale-95 transition-all">
           <ChevronLeft className="h-4 w-4" />
         </button>
-        <p className="text-sm font-medium text-[var(--t-text-primary)] min-w-[300px] text-center">{fmtWeek(weekOf)}</p>
-        <button onClick={() => setWeekOf(w => addDays(w, 7))} className="rounded-full border border-[var(--t-border)] bg-[var(--t-bg-card)] p-2 text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)] active:scale-95 transition-all">
+        <p className="text-sm font-medium text-[var(--t-frame-text)] min-w-[300px] text-center">{fmtWeek(weekOf)}</p>
+        <button onClick={() => setWeekOf(w => addDays(w, 7))} className="rounded-full border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.06)] p-2 text-[var(--t-frame-text-muted)] hover:text-[var(--t-frame-text)] active:scale-95 transition-all">
           <ChevronRight className="h-4 w-4" />
         </button>
-        <button onClick={() => setWeekOf(getMonday(new Date()))} className={`rounded-full border px-3 py-2 text-xs font-medium transition-all active:scale-95 ${weekOf === getMonday(new Date()) ? "bg-[var(--t-accent-soft)] border-[var(--t-accent)] text-[var(--t-accent)]" : "bg-[var(--t-bg-card)] border-[var(--t-border)] text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)]"}`}>This Week</button>
+        <button onClick={() => setWeekOf(getMonday(new Date()))} className={`rounded-full border px-3 py-2 text-xs font-medium transition-all active:scale-95 ${weekOf === getMonday(new Date()) ? "bg-[var(--t-accent-soft)] border-[var(--t-accent)] text-[var(--t-accent)]" : "bg-[rgba(255,255,255,0.06)] border-[rgba(255,255,255,0.08)] text-[var(--t-frame-text-muted)] hover:text-[var(--t-frame-text)]"}`}>This Week</button>
       </div>
 
       {/* Filters */}
       <div className="flex gap-1 mb-5">
         {FILTERS.map(f => (
           <button key={f} onClick={() => setFilter(f)}
-            className={`rounded-full px-3 py-1.5 text-xs font-medium capitalize transition-colors ${filter === f ? "bg-[var(--t-accent-soft)] text-[var(--t-accent)]" : "text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)]"}`}>
+            className={`rounded-full px-3 py-1.5 text-xs font-medium capitalize transition-colors ${filter === f ? "bg-[var(--t-accent-soft)] text-[var(--t-accent)]" : "text-[var(--t-frame-text-muted)] hover:text-[var(--t-frame-text)]"}`}>
             {f}
           </button>
         ))}
@@ -138,9 +138,9 @@ export default function TeamPage() {
 
       {/* Team List */}
       {loading ? (
-        <div className="space-y-2">{Array.from({ length: 4 }).map((_, i) => <div key={i} className="h-16 skeleton rounded-[18px]" />)}</div>
+        <div className="space-y-2">{Array.from({ length: 4 }).map((_, i) => <div key={i} className="h-16 skeleton rounded-[20px]" />)}</div>
       ) : filtered.length === 0 ? (
-        <div className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] py-16 text-center">
+        <div className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] py-16 text-center">
           <Users className="mx-auto h-10 w-10 text-[var(--t-text-muted)] opacity-20 mb-2" />
           <p className="text-sm text-[var(--t-text-muted)]">No team members</p>
         </div>
@@ -148,7 +148,7 @@ export default function TeamPage() {
         <div className="space-y-1">
           {filtered.map(m => (
             <div key={m.id} onClick={() => router.push(`/team/${m.id}`)}
-              className="flex items-center justify-between rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-5 py-3.5 cursor-pointer hover:bg-[var(--t-bg-card-hover)] transition-colors">
+              className="flex items-center justify-between rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-5 py-3.5 cursor-pointer hover:bg-[var(--t-bg-card-hover)] transition-colors">
               <div className="flex items-center gap-3 min-w-0">
                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--t-bg-card-hover)] text-sm font-bold text-[var(--t-text-primary)]">
                   {m.firstName[0]}{m.lastName[0]}

@@ -139,12 +139,12 @@ export default function CustomersPage() {
             fontSize: 28,
             fontWeight: 700,
             letterSpacing: "-1px",
-            color: "var(--t-text-primary)",
+            color: "var(--t-frame-text)",
             lineHeight: 1.2,
           }}>
             Customers
           </h1>
-          <p style={{ marginTop: 2, fontSize: 14, color: "var(--t-text-muted)" }}>{total} total</p>
+          <p style={{ marginTop: 2, fontSize: 14, color: "var(--t-frame-text-muted)" }}>{total} total</p>
         </div>
         <button
           onClick={() => setPanelOpen(true)}
@@ -170,7 +170,7 @@ export default function CustomersPage() {
       {/* Search + Filters */}
       <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 20 }} className="sm:!flex-row sm:!items-center">
         <div style={{ position: "relative", flex: 1, maxWidth: 420 }}>
-          <Search style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", width: 16, height: 16, color: "var(--t-text-muted)" }} />
+          <Search style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", width: 16, height: 16, color: "var(--t-frame-text-muted)" }} />
           <input
             type="text"
             placeholder="Search name, phone, email, address..."
@@ -178,18 +178,18 @@ export default function CustomersPage() {
             onChange={(e) => setSearch(e.target.value)}
             style={{
               width: "100%",
-              backgroundColor: "var(--t-bg-card)",
-              border: "1px solid var(--t-border)",
+              backgroundColor: "rgba(255,255,255,0.06)",
+              border: "1px solid rgba(255,255,255,0.08)",
               borderRadius: 24,
               padding: "10px 40px 10px 38px",
               fontSize: 14,
-              color: "var(--t-text-primary)",
+              color: "var(--t-frame-text)",
               outline: "none",
               transition: "border-color 0.15s ease",
             }}
           />
           {search && (
-            <span style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", fontSize: 11, color: "var(--t-text-muted)" }}>
+            <span style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", fontSize: 11, color: "var(--t-frame-text-muted)" }}>
               {total} result{total !== 1 ? "s" : ""}
             </span>
           )}
@@ -207,8 +207,8 @@ export default function CustomersPage() {
                 border: "none",
                 cursor: "pointer",
                 transition: "all 0.15s ease",
-                backgroundColor: typeFilter === f.key ? "var(--t-accent-soft)" : "transparent",
-                color: typeFilter === f.key ? "var(--t-accent)" : "var(--t-text-muted)",
+                backgroundColor: typeFilter === f.key ? "var(--t-accent-soft)" : "rgba(255,255,255,0.06)",
+                color: typeFilter === f.key ? "var(--t-accent)" : "var(--t-frame-text-muted)",
               }}
             >
               {f.label}
@@ -449,7 +449,7 @@ export default function CustomersPage() {
           alignItems: "center",
           justifyContent: "space-between",
           fontSize: 14,
-          color: "var(--t-text-muted)",
+          color: "var(--t-frame-text-muted)",
         }}>
           <span>Showing {(page - 1) * 25 + 1}&ndash;{Math.min(page * 25, total)} of {total}</span>
           <div style={{ display: "flex", gap: 8 }}>
@@ -460,8 +460,8 @@ export default function CustomersPage() {
                 padding: "6px 16px",
                 borderRadius: 24,
                 backgroundColor: "transparent",
-                border: "1px solid var(--t-border)",
-                color: "var(--t-text-primary)",
+                border: "1px solid var(--t-frame-border)",
+                color: "var(--t-frame-text)",
                 fontSize: 13,
                 fontWeight: 500,
                 cursor: page === 1 ? "default" : "pointer",
@@ -478,8 +478,8 @@ export default function CustomersPage() {
                 padding: "6px 16px",
                 borderRadius: 24,
                 backgroundColor: "transparent",
-                border: "1px solid var(--t-border)",
-                color: "var(--t-text-primary)",
+                border: "1px solid var(--t-frame-border)",
+                color: "var(--t-frame-text)",
                 fontSize: 13,
                 fontWeight: 500,
                 cursor: page * 25 >= total ? "default" : "pointer",

@@ -40,14 +40,14 @@ export default function DemoPage() {
     }
   };
 
-  const inputClass = "w-full rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-3 text-sm text-[var(--t-text-primary)] placeholder-[var(--t-text-muted)] outline-none transition-colors focus:border-[var(--t-accent)] focus:ring-1 focus:ring-[var(--t-accent)]";
+  const inputClass = "w-full rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-3 text-sm text-[var(--t-text-primary)] placeholder-[var(--t-text-muted)] outline-none transition-colors focus:border-[var(--t-accent)] focus:ring-1 focus:ring-[var(--t-accent)]";
 
   if (submitted) {
     return (
       <div className="min-h-screen bg-[var(--t-bg-primary)] flex flex-col items-center justify-center px-4">
         <CheckCircle2 className="h-16 w-16 text-[var(--t-accent)] mb-4" />
-        <h1 className="text-[28px] font-bold text-[var(--t-text-primary)] tracking-[-1px]">Thanks for your interest!</h1>
-        <p className="mt-2 text-[var(--t-text-muted)] max-w-md text-center">
+        <h1 className="text-[28px] font-bold text-[var(--t-frame-text)] tracking-[-1px]">Thanks for your interest!</h1>
+        <p className="mt-2 text-[var(--t-frame-text-muted)] max-w-md text-center">
           We&apos;ll reach out within 24 hours to schedule your personalized demo.
         </p>
         <div className="mt-8 flex gap-3">
@@ -69,12 +69,12 @@ export default function DemoPage() {
           <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-[var(--t-accent)]">
             <span className="text-xl font-bold text-black">S</span>
           </div>
-          <h1 className="text-[28px] font-bold text-[var(--t-text-primary)] tracking-[-1px]">Request a Demo</h1>
-          <p className="mt-2 text-sm text-[var(--t-text-muted)]">See how ServiceOS can transform your service business</p>
+          <h1 className="text-[28px] font-bold text-[var(--t-frame-text)] tracking-[-1px]">Request a Demo</h1>
+          <p className="mt-2 text-sm text-[var(--t-frame-text-muted)]">See how ServiceOS can transform your service business</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          {error && <div className="rounded-[18px] bg-[var(--t-error-soft)] border border-[var(--t-error)] px-4 py-3 text-sm text-[var(--t-error)]">{error}</div>}
+          {error && <div className="rounded-[20px] bg-[var(--t-error-soft)] border border-[var(--t-error)] px-4 py-3 text-sm text-[var(--t-error)]">{error}</div>}
 
           <div className="grid grid-cols-2 gap-3">
             <input value={name} onChange={(e) => setName(e.target.value)} required className={inputClass} placeholder="Your name" />
@@ -104,7 +104,7 @@ export default function DemoPage() {
           </button>
         </form>
 
-        <p className="mt-6 text-center text-sm text-[var(--t-text-muted)]">
+        <p className="mt-6 text-center text-sm text-[var(--t-frame-text-muted)]">
           Ready to get started?{" "}
           <Link href="/register" className="text-[var(--t-accent)] hover:brightness-110 font-medium">Sign up for free</Link>
           {" "}or{" "}

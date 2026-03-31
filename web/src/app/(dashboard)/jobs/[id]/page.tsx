@@ -198,7 +198,7 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
       <div className="py-10">
         <div className="mb-6 h-4 w-28 animate-pulse rounded bg-[var(--t-bg-card)]" />
         <div className="mb-8 space-y-2"><div className="h-7 w-40 animate-pulse rounded bg-[var(--t-bg-card)]" /><div className="h-4 w-56 animate-pulse rounded bg-[var(--t-bg-card)]" /></div>
-        <div className="mb-8 rounded-[18px] bg-[var(--t-bg-card)] border border-[var(--t-border)] p-6">
+        <div className="mb-8 rounded-[20px] bg-[var(--t-bg-card)] border border-[var(--t-border)] p-6">
           <div className="flex items-center justify-between gap-4">{Array.from({ length: 6 }).map((_, i) => (<div key={i} className="flex flex-col items-center flex-1"><div className="h-8 w-8 animate-pulse rounded-full bg-[var(--t-border)]" /><div className="mt-2 h-3 w-14 animate-pulse rounded bg-[var(--t-border)]" /></div>))}</div>
         </div>
       </div>
@@ -216,7 +216,7 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
 
   return (
     <div>
-      <Link href="/jobs" className="mb-6 inline-flex items-center gap-2 text-sm text-[var(--t-text-muted)] transition-colors hover:text-[var(--t-text-primary)]">
+      <Link href="/jobs" className="mb-6 inline-flex items-center gap-2 text-sm text-[var(--t-frame-text-muted)] transition-colors hover:text-[var(--t-frame-text)]">
         <ArrowLeft className="h-4 w-4" /> Back to Jobs
       </Link>
 
@@ -224,7 +224,7 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
       <div className="mb-8 flex items-start justify-between">
         <div>
           <div className="flex items-center gap-3 mb-1 flex-wrap">
-            <h1 className="text-[28px] font-bold tracking-[-1px] text-[var(--t-text-primary)]">{job.job_number}</h1>
+            <h1 className="text-[28px] font-bold tracking-[-1px] text-[var(--t-frame-text)]">{job.job_number}</h1>
             <span className={`text-xs font-medium ${STATUS_COLORS[job.status] || ""}`}>
               {job.status.replace(/_/g, " ")}
             </span>
@@ -242,7 +242,7 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
               {job.customer.first_name} {job.customer.last_name}
             </Link>
           )}
-          <p className="text-xs text-[var(--t-text-muted)] mt-0.5">
+          <p className="text-xs text-[var(--t-frame-text-muted)] mt-0.5">
             Created {new Date(job.created_at).toLocaleDateString()} {job.source && `· Source: ${job.source}`}
           </p>
         </div>
@@ -278,7 +278,7 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
       </div>
 
       {/* --- Timeline --- */}
-      <div className="mb-8 rounded-[18px] bg-[var(--t-bg-card)] border border-[var(--t-border)] p-6">
+      <div className="mb-8 rounded-[20px] bg-[var(--t-bg-card)] border border-[var(--t-border)] p-6">
         <div className="flex items-center justify-between">
           {TIMELINE_STEPS.map((step, i) => {
             const isCompleted = i <= statusIdx && job.status !== "cancelled";
@@ -319,7 +319,7 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
           })}
         </div>
         {job.status === "cancelled" && (
-          <div className="mt-4 rounded-[18px] bg-[var(--t-error-soft)] border border-[var(--t-error)]/20 px-4 py-3 text-sm text-[var(--t-error)]">
+          <div className="mt-4 rounded-[20px] bg-[var(--t-error-soft)] border border-[var(--t-error)]/20 px-4 py-3 text-sm text-[var(--t-error)]">
             <XCircle className="inline h-4 w-4 mr-1.5 -mt-0.5" />
             Cancelled{job.cancelled_at && ` on ${new Date(job.cancelled_at).toLocaleString()}`}
             {job.cancellation_reason && ` — ${job.cancellation_reason}`}
@@ -380,7 +380,7 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
             <Card title={`Photos (${job.photos.length})`} icon={Box}>
               <div className="grid grid-cols-3 gap-3">
                 {job.photos.map((p, i) => (
-                  <div key={i} className="aspect-square rounded-[18px] bg-[var(--t-border)] overflow-hidden">
+                  <div key={i} className="aspect-square rounded-[20px] bg-[var(--t-border)] overflow-hidden">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={p.url} alt={`Photo ${i + 1}`} className="h-full w-full object-cover" />
                   </div>
@@ -408,7 +408,7 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
           {/* Customer */}
           {job.customer && (
             <Link href={`/customers/${job.customer.id}`} className="block">
-              <div className="rounded-[18px] bg-[var(--t-bg-card)] border border-[var(--t-border)] p-5 transition-colors hover:bg-[var(--t-bg-card-hover)]">
+              <div className="rounded-[20px] bg-[var(--t-bg-card)] border border-[var(--t-border)] p-5 transition-colors hover:bg-[var(--t-bg-card-hover)]">
                 <div className="flex items-center gap-2 mb-3">
                   <User className="h-4 w-4 text-[var(--t-text-muted)]" />
                   <span className="text-xs font-medium uppercase tracking-wider text-[var(--t-text-muted)]">Customer</span>
@@ -421,7 +421,7 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
           )}
 
           {/* Driver */}
-          <div className="rounded-[18px] bg-[var(--t-bg-card)] border border-[var(--t-border)] p-5">
+          <div className="rounded-[20px] bg-[var(--t-bg-card)] border border-[var(--t-border)] p-5">
             <div className="flex items-center gap-2 mb-3">
               <Truck className="h-4 w-4 text-[var(--t-text-muted)]" />
               <span className="text-xs font-medium uppercase tracking-wider text-[var(--t-text-muted)]">Driver</span>
@@ -437,7 +437,7 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
           </div>
 
           {/* Asset */}
-          <div className="rounded-[18px] bg-[var(--t-bg-card)] border border-[var(--t-border)] p-5">
+          <div className="rounded-[20px] bg-[var(--t-bg-card)] border border-[var(--t-border)] p-5">
             <div className="flex items-center gap-2 mb-3">
               <Box className="h-4 w-4 text-[var(--t-text-muted)]" />
               <span className="text-xs font-medium uppercase tracking-wider text-[var(--t-text-muted)]">Asset</span>
@@ -454,7 +454,7 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
 
           {/* Signature */}
           {job.signature_url && (
-            <div className="rounded-[18px] bg-[var(--t-bg-card)] border border-[var(--t-border)] p-5">
+            <div className="rounded-[20px] bg-[var(--t-bg-card)] border border-[var(--t-border)] p-5">
               <h3 className="text-xs font-medium uppercase tracking-wider text-[var(--t-text-muted)] mb-3">Signature</h3>
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={job.signature_url} alt="Signature" className="max-h-20 rounded bg-white p-2" />
@@ -470,7 +470,7 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
 
 function Card({ title, icon: Icon, children }: { title: string; icon: typeof User; children: React.ReactNode }) {
   return (
-    <div className="rounded-[18px] bg-[var(--t-bg-card)] border border-[var(--t-border)] p-5">
+    <div className="rounded-[20px] bg-[var(--t-bg-card)] border border-[var(--t-border)] p-5">
       <div className="flex items-center gap-2 mb-4">
         <Icon className="h-4 w-4 text-[var(--t-text-muted)]" />
         <h3 className="text-sm font-semibold text-[var(--t-text-primary)]">{title}</h3>

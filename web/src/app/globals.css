@@ -20,28 +20,33 @@
   --font-body: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 
-/* ===== Theme Variables — Dark (default) ===== */
+/* ===== Theme Variables — Dark (default): dark frame + white cards ===== */
 
 :root, .dark {
   --t-bg-primary: #000000;
-  --t-bg-secondary: #212121;
-  --t-bg-card: #212121;
-  --t-bg-card-hover: #2A2A2A;
-  --t-bg-elevated: #2A2A2A;
-  --t-bg-input: #212121;
-  --t-border: #3A3A3A;
-  --t-border-subtle: #2E2E2E;
-  --t-text-primary: #FFFFFF;
-  --t-text-secondary: #C0C0C0;
-  --t-text-muted: #C0C0C0;
+  --t-bg-secondary: #FFFFFF;
+  --t-bg-card: #FFFFFF;
+  --t-bg-card-hover: #F5F5F5;
+  --t-bg-elevated: #F5F5F5;
+  --t-bg-input: #F5F5F5;
+  --t-border: #E5E5E5;
+  --t-border-subtle: #F0F0F0;
+  --t-text-primary: #0A0A0A;
+  --t-text-secondary: #5C5C5C;
+  --t-text-muted: #5C5C5C;
   --t-text-tertiary: #8A8A8A;
-  --t-shadow: rgba(0, 0, 0, 0.5);
+  --t-shadow: rgba(0, 0, 0, 0.08);
   --t-accent: #22C55E;
-  --t-accent-soft: rgba(34, 197, 94, 0.14);
-  --t-error: #F87171;
-  --t-error-soft: rgba(248, 113, 113, 0.14);
-  --t-warning: #FCD34D;
-  --t-warning-soft: rgba(252, 211, 77, 0.12);
+  --t-accent-soft: rgba(34, 197, 94, 0.08);
+  --t-error: #DC2626;
+  --t-error-soft: rgba(220, 38, 38, 0.06);
+  --t-warning: #D97706;
+  --t-warning-soft: rgba(217, 119, 6, 0.06);
+  /* Frame — dark sidebar, page bg, headers */
+  --t-frame-bg: #000000;
+  --t-frame-text: #FFFFFF;
+  --t-frame-text-muted: #B0B0B0;
+  --t-frame-border: #1E1E1E;
   color-scheme: dark;
 }
 
@@ -49,17 +54,17 @@
 
 .light {
   --t-bg-primary: #FFFFFF;
-  --t-bg-secondary: #EBEBEB;
-  --t-bg-card: #EBEBEB;
-  --t-bg-card-hover: #E0E0E0;
-  --t-bg-elevated: #E0E0E0;
-  --t-bg-input: #EBEBEB;
-  --t-border: #CCCCCC;
-  --t-border-subtle: #D6D6D6;
+  --t-bg-secondary: #F5F5F5;
+  --t-bg-card: #F5F5F5;
+  --t-bg-card-hover: #EEEEEE;
+  --t-bg-elevated: #EEEEEE;
+  --t-bg-input: #F5F5F5;
+  --t-border: #E0E0E0;
+  --t-border-subtle: #EBEBEB;
   --t-text-primary: #0A0A0A;
-  --t-text-secondary: #3D3D3D;
-  --t-text-muted: #3D3D3D;
-  --t-text-tertiary: #666666;
+  --t-text-secondary: #5C5C5C;
+  --t-text-muted: #5C5C5C;
+  --t-text-tertiary: #8A8A8A;
   --t-shadow: rgba(0, 0, 0, 0.06);
   --t-accent: #16A34A;
   --t-accent-soft: rgba(22, 163, 74, 0.12);
@@ -67,6 +72,11 @@
   --t-error-soft: rgba(220, 38, 38, 0.10);
   --t-warning: #92400E;
   --t-warning-soft: rgba(146, 64, 14, 0.08);
+  /* Frame — light mode frame colors */
+  --t-frame-bg: #FAFAFA;
+  --t-frame-text: #0A0A0A;
+  --t-frame-text-muted: #666666;
+  --t-frame-border: #E0E0E0;
   color-scheme: light;
 }
 
@@ -149,7 +159,7 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .skeleton {
-  background: linear-gradient(90deg, #212121 25%, #2A2A2A 50%, #212121 75%);
+  background: linear-gradient(90deg, #F0F0F0 25%, #F8F8F8 50%, #F0F0F0 75%);
   background-size: 200% 100%;
   animation: shimmer 1.5s ease-in-out infinite;
   border-radius: 0.5rem;
@@ -264,3 +274,26 @@ div[style*="background-color: white"][style*="position: absolute"][style*="z-ind
 
 .pac-icon, .pac-icon-marker { display: none !important; }
 .pac-matched { color: #22C55E !important; font-weight: 600 !important; }
+
+/* ===== White Cards on Dark Frame — auto-contrast ===== */
+
+/* Card containers: white bg, dark text, shadow, 20px radius */
+[style*="--t-bg-secondary"], [style*="--t-bg-card"] {
+  border-radius: 20px;
+}
+
+/* Global 20px radius for rounded-[18px] or rounded-[16px] classes */
+[class*="rounded-[18px]"] { border-radius: 20px !important; }
+[class*="rounded-[16px]"] { border-radius: 20px !important; }
+
+/* Add subtle shadow to cards in dark mode */
+:root [style*="backgroundColor"][style*="var(--t-bg-secondary)"],
+:root [style*="backgroundColor"][style*="var(--t-bg-card)"],
+:root [style*="background"][style*="var(--t-bg-secondary)"],
+:root [style*="background-color: var(--t-bg-secondary)"] {
+  box-shadow: 0 2px 12px var(--t-shadow);
+}
+
+/* Frame text utility — for elements on the dark frame */
+.frame-text { color: var(--t-frame-text) !important; }
+.frame-text-muted { color: var(--t-frame-text-muted) !important; }

@@ -45,7 +45,7 @@ export default function AdminDashboardPage() {
         <div className="mb-8 h-8 w-64 animate-pulse rounded bg-[var(--t-bg-card)]" />
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
-            <div key={i} className="h-28 animate-pulse rounded-[18px] bg-[var(--t-bg-card)] border border-[var(--t-border)]" />
+            <div key={i} className="h-28 animate-pulse rounded-[20px] bg-[var(--t-bg-card)] border border-[var(--t-border)]" />
           ))}
         </div>
       </div>
@@ -73,8 +73,8 @@ export default function AdminDashboardPage() {
   return (
     <div>
       <div className="mb-8">
-        <h1 className="text-[28px] font-bold tracking-[-1px] text-[var(--t-text-primary)]">Platform Overview</h1>
-        <p className="mt-1 text-sm text-[var(--t-text-muted)]">ServiceOS SaaS metrics at a glance</p>
+        <h1 className="text-[28px] font-bold tracking-[-1px]" style={{ color: "var(--t-frame-text)" }}>Platform Overview</h1>
+        <p className="mt-1 text-sm" style={{ color: "var(--t-frame-text-muted)" }}>ServiceOS SaaS metrics at a glance</p>
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -82,7 +82,7 @@ export default function AdminDashboardPage() {
           <Link
             key={s.label}
             href={s.href}
-            className="group relative rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5 cursor-pointer transition-colors hover:bg-[var(--t-bg-card-hover)]"
+            className="group relative rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5 cursor-pointer transition-colors hover:bg-[var(--t-bg-card-hover)]"
           >
             <ArrowUpRight className="absolute top-4 right-4 h-4 w-4 text-[var(--t-text-muted)] opacity-0 transition-opacity group-hover:opacity-100 group-hover:text-[var(--t-accent)]" />
             <div className="flex items-center gap-3 mb-3">
@@ -95,14 +95,14 @@ export default function AdminDashboardPage() {
       </div>
 
       {/* Tier breakdown */}
-      <div className="mt-8 rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6">
+      <div className="mt-8 rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6">
         <h2 className="text-base font-semibold text-[var(--t-text-primary)] mb-4">Subscription Breakdown</h2>
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
           {(data?.tierBreakdown ?? []).map((t) => (
             <Link
               key={t.tier}
               href={`/admin/tenants?tier=${t.tier}`}
-              className="group rounded-[18px] border border-[var(--t-border)] p-4 text-center cursor-pointer transition-colors hover:bg-[var(--t-bg-card-hover)]"
+              className="group rounded-[20px] border border-[var(--t-border)] p-4 text-center cursor-pointer transition-colors hover:bg-[var(--t-bg-card-hover)]"
             >
               <span className={`text-xs font-medium capitalize ${tierColors[t.tier] || tierColors.trial}`}>
                 {t.tier}

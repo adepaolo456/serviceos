@@ -69,16 +69,16 @@ export default function PortalHomePage() {
     <div className="space-y-8">
       {/* Welcome */}
       <div>
-        <h1 className="text-[28px] font-bold tracking-[-1px] text-[var(--t-text-primary)]">
+        <h1 className="text-[28px] font-bold tracking-[-1px]" style={{ color: "var(--t-frame-text)" }}>
           Welcome back, {customer?.firstName || "there"}
         </h1>
-        <p className="mt-1 text-sm text-[var(--t-text-muted)]">Here&apos;s an overview of your rentals and account.</p>
+        <p className="mt-1 text-sm" style={{ color: "var(--t-frame-text-muted)" }}>Here&apos;s an overview of your rentals and account.</p>
       </div>
 
       {/* Quick Actions */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <Link href="/portal/request" className="flex items-center gap-3 rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-4 hover:bg-[var(--t-bg-card-hover)] transition-colors">
-          <div className="flex h-10 w-10 items-center justify-center rounded-[18px] bg-[var(--t-accent-soft)]">
+        <Link href="/portal/request" className="flex items-center gap-3 rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-4 hover:bg-[var(--t-bg-card-hover)] transition-colors">
+          <div className="flex h-10 w-10 items-center justify-center rounded-[20px] bg-[var(--t-accent-soft)]">
             <PlusCircle className="h-5 w-5 text-[var(--t-accent)]" />
           </div>
           <div>
@@ -86,8 +86,8 @@ export default function PortalHomePage() {
             <p className="text-xs text-[var(--t-text-muted)]">Get a quote instantly</p>
           </div>
         </Link>
-        <Link href="/portal/invoices" className="flex items-center gap-3 rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-4 hover:bg-[var(--t-bg-card-hover)] transition-colors">
-          <div className="flex h-10 w-10 items-center justify-center rounded-[18px] bg-blue-500/10">
+        <Link href="/portal/invoices" className="flex items-center gap-3 rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-4 hover:bg-[var(--t-bg-card-hover)] transition-colors">
+          <div className="flex h-10 w-10 items-center justify-center rounded-[20px] bg-blue-500/10">
             <FileText className="h-5 w-5 text-blue-400" />
           </div>
           <div>
@@ -95,8 +95,8 @@ export default function PortalHomePage() {
             <p className="text-xs text-[var(--t-text-muted)]">View & pay open invoices</p>
           </div>
         </Link>
-        <a href="tel:+1234567890" className="flex items-center gap-3 rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-4 hover:bg-[var(--t-bg-card-hover)] transition-colors">
-          <div className="flex h-10 w-10 items-center justify-center rounded-[18px] bg-[var(--t-warning-soft)]">
+        <a href="tel:+1234567890" className="flex items-center gap-3 rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-4 hover:bg-[var(--t-bg-card-hover)] transition-colors">
+          <div className="flex h-10 w-10 items-center justify-center rounded-[20px] bg-[var(--t-warning-soft)]">
             <Phone className="h-5 w-5 text-amber-500" />
           </div>
           <div>
@@ -111,10 +111,10 @@ export default function PortalHomePage() {
         <h2 className="text-lg font-bold text-[var(--t-text-primary)] mb-4">Active Rentals</h2>
         {loading ? (
           <div className="space-y-3">
-            {[1, 2].map(i => <div key={i} className="h-40 rounded-[18px] bg-[var(--t-bg-card)] border border-[var(--t-border)] animate-pulse" />)}
+            {[1, 2].map(i => <div key={i} className="h-40 rounded-[20px] bg-[var(--t-bg-card)] border border-[var(--t-border)] animate-pulse" />)}
           </div>
         ) : active.length === 0 ? (
-          <div className="rounded-[18px] border border-dashed border-[var(--t-border)] bg-[var(--t-bg-card)] p-8 text-center">
+          <div className="rounded-[20px] border border-dashed border-[var(--t-border)] bg-[var(--t-bg-card)] p-8 text-center">
             <Package className="mx-auto h-10 w-10 text-[var(--t-text-muted)]/30 mb-3" />
             <p className="text-sm font-medium text-[var(--t-text-muted)]">No active rentals</p>
             <Link href="/portal/request" className="mt-3 inline-flex items-center gap-1 text-sm font-medium text-[var(--t-accent)] hover:underline">
@@ -127,7 +127,7 @@ export default function PortalHomePage() {
               const days = daysRemaining(r.rental_end_date);
               const overdue = days !== null && days < 0;
               return (
-                <div key={r.id} className={`rounded-[18px] border bg-[var(--t-bg-card)] p-5 ${overdue ? "border-[var(--t-error)]/30" : "border-[var(--t-border)]"}`}>
+                <div key={r.id} className={`rounded-[20px] border bg-[var(--t-bg-card)] p-5 ${overdue ? "border-[var(--t-error)]/30" : "border-[var(--t-border)]"}`}>
                   <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
                     <div>
                       <div className="flex items-center gap-2">
@@ -178,7 +178,7 @@ export default function PortalHomePage() {
           <h2 className="text-lg font-bold text-[var(--t-text-primary)] mb-4">Upcoming</h2>
           <div className="grid gap-3">
             {upcoming.map(r => (
-              <div key={r.id} className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-4 flex items-center justify-between">
+              <div key={r.id} className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-4 flex items-center justify-between">
                 <div>
                   <p className="text-sm font-medium text-[var(--t-text-primary)]">{r.asset?.size || "Dumpster"} Delivery</p>
                   <p className="text-xs text-[var(--t-text-muted)] mt-0.5">

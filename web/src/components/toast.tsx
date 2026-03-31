@@ -58,10 +58,11 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: (id: number)
 
   return (
     <div
-      className="pointer-events-auto flex items-center gap-3 rounded-xl px-4 py-3 shadow-xl animate-slide-in-right"
+      className="pointer-events-auto flex items-center gap-3 rounded-[20px] px-4 py-3 animate-slide-in-right"
       style={{
         backgroundColor: "var(--t-bg-secondary)",
         border: "1px solid var(--t-border)",
+        boxShadow: "0 4px 20px rgba(0,0,0,0.12)",
       }}
     >
       <Icon className="h-5 w-5 shrink-0" style={{ color }} />

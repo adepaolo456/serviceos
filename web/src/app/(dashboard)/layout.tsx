@@ -33,7 +33,7 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
         }}
         className={collapsed ? "md:pl-[72px]" : "md:pl-64"}
       >
-        <div className="mx-auto max-w-[1400px] px-5 py-6 md:px-8 pt-16 md:pt-6">{children}</div>
+        <div className="mx-auto max-w-[1400px] px-5 py-6 md:px-8 pt-16 md:pt-6" style={{ color: "var(--t-frame-text)" }}>{children}</div>
       </main>
       <NotificationBell />
       <KeyboardShortcuts open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />

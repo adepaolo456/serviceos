@@ -370,10 +370,10 @@ export default function AssetsPage() {
       {/* Header */}
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 style={{ fontSize: 28, fontWeight: 700, letterSpacing: "-1px", color: "var(--t-text-primary)" }}>
+          <h1 style={{ fontSize: 28, fontWeight: 700, letterSpacing: "-1px", color: "var(--t-frame-text)" }}>
             Assets
           </h1>
-          <p style={{ fontSize: 14, color: "var(--t-text-muted)", marginTop: 4 }}>
+          <p style={{ fontSize: 14, color: "var(--t-frame-text-muted)", marginTop: 4 }}>
             {assets.length} dumpsters across {sizeGroups.length} sizes
           </p>
         </div>
@@ -440,9 +440,9 @@ export default function AssetsPage() {
                 style={{
                   display: "inline-flex", alignItems: "center", gap: 6,
                   padding: "6px 14px", borderRadius: 24, fontSize: 13, fontWeight: 500,
-                  background: isActive ? "var(--t-accent-soft)" : "transparent",
-                  color: isActive ? "#22C55E" : "var(--t-text-muted)",
-                  border: isActive ? "1px solid transparent" : "1px solid var(--t-border)",
+                  background: isActive ? "var(--t-accent-soft)" : "rgba(255,255,255,0.06)",
+                  color: isActive ? "#22C55E" : "var(--t-frame-text-muted)",
+                  border: isActive ? "1px solid transparent" : "1px solid rgba(255,255,255,0.08)",
                   transition: "all 0.15s ease", cursor: "pointer",
                 }}
               >
@@ -455,7 +455,7 @@ export default function AssetsPage() {
           {/* Size filter pills when no tile selected */}
           {sizeGroups.length > 0 && (
             <>
-              <span style={{ width: 1, background: "var(--t-border)", margin: "0 4px", alignSelf: "stretch" }} />
+              <span style={{ width: 1, background: "rgba(255,255,255,0.08)", margin: "0 4px", alignSelf: "stretch" }} />
               {sizeGroups.map((g) => {
                 const isActive = selectedSize === g.size;
                 return (
@@ -465,9 +465,9 @@ export default function AssetsPage() {
                     style={{
                       display: "inline-flex", alignItems: "center", gap: 6,
                       padding: "6px 14px", borderRadius: 24, fontSize: 13, fontWeight: 500,
-                      background: isActive ? "var(--t-accent-soft)" : "transparent",
-                      color: isActive ? "#22C55E" : "var(--t-text-muted)",
-                      border: isActive ? "1px solid transparent" : "1px solid var(--t-border)",
+                      background: isActive ? "var(--t-accent-soft)" : "rgba(255,255,255,0.06)",
+                      color: isActive ? "#22C55E" : "var(--t-frame-text-muted)",
+                      border: isActive ? "1px solid transparent" : "1px solid rgba(255,255,255,0.08)",
                       transition: "all 0.15s ease", cursor: "pointer",
                     }}
                   >
@@ -483,13 +483,13 @@ export default function AssetsPage() {
 
       {/* Last updated + refresh */}
       {!loading && (
-        <div className="flex items-center gap-2 mb-4" style={{ fontSize: 11, color: "var(--t-text-muted)" }}>
+        <div className="flex items-center gap-2 mb-4" style={{ fontSize: 11, color: "var(--t-frame-text-muted)" }}>
           <span>Updated {lastUpdated.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}</span>
           <button
             onClick={() => fetchAssets(true)}
             disabled={refreshing}
             className="p-1 rounded transition-colors disabled:opacity-40"
-            style={{ color: "var(--t-text-muted)" }}
+            style={{ color: "var(--t-frame-text-muted)" }}
           >
             <RefreshCw className={`h-3 w-3 ${refreshing ? "animate-spin" : ""}`} />
           </button>

@@ -18,9 +18,9 @@ function ConfirmationContent() {
       <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-[var(--t-accent-soft)] mb-6">
         <CheckCircle2 className="h-10 w-10 text-[var(--t-accent)]" />
       </div>
-      <h1 className="text-[28px] font-bold text-[var(--t-text-primary)] tracking-[-1px]">Booking Confirmed!</h1>
-      {jobNumber && <p className="mt-3 text-[var(--t-text-muted)]">Reference: <span className="font-semibold text-[var(--t-text-primary)]">{jobNumber}</span></p>}
-      <div className="mt-8 rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6 text-left">
+      <h1 className="text-[28px] font-bold text-[var(--t-frame-text)] tracking-[-1px]">Booking Confirmed!</h1>
+      {jobNumber && <p className="mt-3 text-[var(--t-frame-text-muted)]">Reference: <span className="font-semibold text-[var(--t-frame-text)]">{jobNumber}</span></p>}
+      <div className="mt-8 rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6 text-left">
         <h3 className="font-semibold text-[var(--t-text-primary)] mb-2">What happens next?</h3>
         <ul className="space-y-2 text-sm text-[var(--t-text-muted)]">
           <li>1. You&apos;ll receive a confirmation email shortly</li>
@@ -33,7 +33,7 @@ function ConfirmationContent() {
         {tenant?.phone && <a href={`tel:${tenant.phone}`} className="rounded-full border border-[var(--t-border)] px-7 py-3 text-sm font-semibold text-[var(--t-text-primary)] hover:bg-[var(--t-bg-card)] transition-colors"><Phone className="inline h-4 w-4 mr-1" />Call Us</a>}
         {embed && <button onClick={() => window.parent.postMessage({ type: "serviceos-close" }, "*")} className="rounded-full border border-[var(--t-border)] bg-[var(--t-bg-card)] px-7 py-3 text-sm font-medium text-[var(--t-text-muted)] hover:bg-[var(--t-bg-card-hover)] transition-colors">Close</button>}
       </div>
-      {embed && <p className="mt-8 text-xs text-[var(--t-text-muted)]">Powered by <a href="https://serviceos.com" className="hover:text-[var(--t-text-primary)]">ServiceOS</a></p>}
+      {embed && <p className="mt-8 text-xs text-[var(--t-frame-text-muted)]">Powered by <a href="https://serviceos.com" className="hover:text-[var(--t-frame-text)]">ServiceOS</a></p>}
     </div>
   );
 }

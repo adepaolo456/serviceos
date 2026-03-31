@@ -52,7 +52,7 @@ const WASTE_TYPES = [
 ];
 
 const inputCls =
-  "w-full rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-3 py-2 text-sm text-[var(--t-text-primary)] placeholder-[var(--t-text-muted)] outline-none focus:border-[var(--t-accent)]";
+  "w-full rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-3 py-2 text-sm text-[var(--t-text-primary)] placeholder-[var(--t-text-muted)] outline-none focus:border-[var(--t-accent)]";
 
 /* ─── Page ─── */
 
@@ -110,10 +110,10 @@ export default function DumpLocationsPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-[28px] font-bold tracking-[-1px] text-[var(--t-text-primary)]">
+          <h1 className="text-[28px] font-bold tracking-[-1px] text-[var(--t-frame-text)]">
             Dump Locations
           </h1>
-          <p className="mt-1 text-[13px] text-[var(--t-text-muted)]">
+          <p className="mt-1 text-[13px] text-[var(--t-frame-text-muted)]">
             {locations.length} facilities configured
           </p>
         </div>
@@ -127,7 +127,7 @@ export default function DumpLocationsPage() {
 
       {/* Add form */}
       {adding && (
-        <div className="rounded-[18px] border border-[var(--t-accent)] bg-[var(--t-bg-card)] p-5 space-y-3">
+        <div className="rounded-[20px] border border-[var(--t-accent)] bg-[var(--t-bg-card)] p-5 space-y-3">
           <p className="text-sm font-semibold text-[var(--t-text-primary)]">New Dump Location</p>
           <div className="grid grid-cols-2 gap-3">
             <input value={newName} onChange={(e) => setNewName(e.target.value)} className={inputCls} placeholder="Facility name" />
@@ -156,11 +156,11 @@ export default function DumpLocationsPage() {
       {loading ? (
         <div className="space-y-3">
           {[1, 2, 3].map((i) => (
-            <div key={i} className="h-24 skeleton rounded-[18px]" />
+            <div key={i} className="h-24 skeleton rounded-[20px]" />
           ))}
         </div>
       ) : locations.length === 0 ? (
-        <div className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] py-16 text-center">
+        <div className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] py-16 text-center">
           <MapPin className="mx-auto h-10 w-10 text-[var(--t-text-muted)] opacity-20 mb-2" />
           <p className="text-sm text-[var(--t-text-muted)]">No dump locations configured</p>
         </div>
@@ -197,7 +197,7 @@ function LocationCard({
   onRefresh: () => void;
 }) {
   return (
-    <div className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] overflow-hidden">
+    <div className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] overflow-hidden">
       {/* Header row */}
       <button
         onClick={onToggle}

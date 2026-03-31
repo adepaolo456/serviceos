@@ -87,7 +87,7 @@ const fmt = (n: number | null | undefined) => formatCurrency(n as number);
 
 /* ── Design-system helpers ── */
 const inputCls =
-  "w-full rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-2.5 text-sm text-[var(--t-text-primary)] placeholder-[var(--t-text-muted)] outline-none transition-colors focus:border-[var(--t-accent)]";
+  "w-full rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-2.5 text-sm text-[var(--t-text-primary)] placeholder-[var(--t-text-muted)] outline-none transition-colors focus:border-[var(--t-accent)]";
 const labelCls =
   "block text-[13px] font-semibold uppercase tracking-wide text-[var(--t-text-muted)] mb-1.5";
 const sectionCls =
@@ -138,10 +138,10 @@ export default function PricingPage() {
       {/* Header */}
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="text-[28px] font-bold tracking-[-1px] text-[var(--t-text-primary)]">
+          <h1 className="text-[28px] font-bold tracking-[-1px] text-[var(--t-frame-text)]">
             Pricing
           </h1>
-          <p className="mt-1 text-[13px] text-[var(--t-text-muted)]">{rules.length} pricing rules</p>
+          <p className="mt-1 text-[13px] text-[var(--t-frame-text-muted)]">{rules.length} pricing rules</p>
         </div>
         <button
           onClick={() => setPanelOpen(true)}
@@ -153,7 +153,7 @@ export default function PricingPage() {
       </div>
 
       {/* Price Calculator */}
-      <div className="mb-8 rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] overflow-hidden">
+      <div className="mb-8 rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] overflow-hidden">
         <button
           onClick={() => setCalcOpen(!calcOpen)}
           className="flex w-full items-center justify-between px-6 py-4 text-left transition-colors hover:bg-[var(--t-bg-card-hover)]"
@@ -186,7 +186,7 @@ export default function PricingPage() {
       {loading ? (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="h-48 skeleton rounded-[18px]" />
+            <div key={i} className="h-48 skeleton rounded-[20px]" />
           ))}
         </div>
       ) : rules.length === 0 ? (
@@ -279,7 +279,7 @@ function RuleCard({ rule, onEdit }: { rule: PricingRule; onEdit: () => void }) {
   return (
     <div
       onClick={onEdit}
-      className={`group relative cursor-pointer rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5 transition-colors hover:bg-[var(--t-bg-card-hover)] ${
+      className={`group relative cursor-pointer rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5 transition-colors hover:bg-[var(--t-bg-card-hover)] ${
         !rule.is_active ? "opacity-50" : ""
       }`}
     >
@@ -442,14 +442,14 @@ function PriceCalculator() {
         </button>
 
         {error && (
-          <div className="rounded-[18px] bg-[var(--t-error-soft)] px-4 py-3 text-sm text-[var(--t-error)]">
+          <div className="rounded-[20px] bg-[var(--t-error-soft)] px-4 py-3 text-sm text-[var(--t-error)]">
             {error}
           </div>
         )}
       </form>
 
       {/* Receipt */}
-      <div className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5">
+      <div className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5">
         {!result ? (
           <div className="flex h-full items-center justify-center text-sm text-[var(--t-text-muted)] py-12">
             <div className="text-center">
@@ -617,7 +617,7 @@ function CreateRuleForm({ onSuccess }: { onSuccess: () => void }) {
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       {error && (
-        <div className="rounded-[18px] bg-[var(--t-error-soft)] px-4 py-3 text-sm text-[var(--t-error)]">{error}</div>
+        <div className="rounded-[20px] bg-[var(--t-error-soft)] px-4 py-3 text-sm text-[var(--t-error)]">{error}</div>
       )}
 
       <div>
@@ -777,7 +777,7 @@ function EditRuleForm({ rule, onSuccess, onDelete }: { rule: PricingRule; onSucc
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       {error && (
-        <div className="rounded-[18px] bg-[var(--t-error-soft)] px-4 py-3 text-sm text-[var(--t-error)]">{error}</div>
+        <div className="rounded-[20px] bg-[var(--t-error-soft)] px-4 py-3 text-sm text-[var(--t-error)]">{error}</div>
       )}
 
       <div><label className={labelCls}>Rule Name</label><input value={name} onChange={(e) => setName(e.target.value)} required className={inputCls} /></div>

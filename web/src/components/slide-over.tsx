@@ -30,8 +30,8 @@ export default function SlideOver({ open, onClose, title, children }: SlideOverP
     <div className="fixed inset-0 z-50 flex justify-end">
       <div className="fixed inset-0 bg-black/60 backdrop-blur-sm animate-fade-in" onClick={onClose} />
       <div
-        className="relative w-full max-w-lg shadow-2xl animate-slide-in-right"
-        style={{ backgroundColor: "var(--t-bg-secondary)" }}
+        className="relative w-full max-w-lg shadow-2xl animate-slide-in-right rounded-l-[20px]"
+        style={{ backgroundColor: "var(--t-bg-secondary)", borderLeft: "1px solid var(--t-border)" }}
       >
         <div
           className="flex h-14 items-center justify-between px-6"

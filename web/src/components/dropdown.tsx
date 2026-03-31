@@ -48,13 +48,13 @@ export default function Dropdown({ trigger, children, align = "left", className 
       {open && (
         <div
           ref={menuRef}
-          className={`absolute z-50 min-w-[160px] max-h-[280px] overflow-y-auto rounded-xl overflow-hidden animate-dropdown ${
+          className={`absolute z-50 min-w-[160px] max-h-[280px] overflow-y-auto rounded-[16px] overflow-hidden animate-dropdown ${
             direction === "up" ? "bottom-full mb-1" : "top-full mt-1"
           } ${align === "right" ? "right-0" : "left-0"} ${className || ""}`}
           style={{
             backgroundColor: "var(--t-bg-secondary)",
             border: "1px solid var(--t-border)",
-            boxShadow: "0 12px 32px var(--t-shadow)",
+            boxShadow: "0 8px 30px rgba(0,0,0,0.15)",
           }}
           onClick={() => setOpen(false)}
         >

@@ -152,13 +152,13 @@ export default function InvoiceDetailPage({
           <div className="lg:col-span-2 space-y-6">
             <div className="grid grid-cols-2 gap-4">
               {Array.from({ length: 2 }).map((_, i) => (
-                <div key={i} className="rounded-[18px] bg-[var(--t-bg-card)] border border-[var(--t-border)] p-5">
+                <div key={i} className="rounded-[20px] bg-[var(--t-bg-card)] border border-[var(--t-border)] p-5">
                   <div className="h-3 w-16 animate-pulse rounded bg-[var(--t-border)] mb-3" />
                   <div className="h-4 w-28 animate-pulse rounded bg-[var(--t-border)]" />
                 </div>
               ))}
             </div>
-            <div className="rounded-[18px] bg-[var(--t-bg-card)] border border-[var(--t-border)] p-6">
+            <div className="rounded-[20px] bg-[var(--t-bg-card)] border border-[var(--t-border)] p-6">
               <div className="h-5 w-24 animate-pulse rounded bg-[var(--t-border)] mb-4" />
               <div className="space-y-3">
                 {Array.from({ length: 3 }).map((_, i) => (
@@ -168,7 +168,7 @@ export default function InvoiceDetailPage({
             </div>
           </div>
           <div>
-            <div className="rounded-[18px] bg-[var(--t-bg-card)] border border-[var(--t-border)] p-6">
+            <div className="rounded-[20px] bg-[var(--t-bg-card)] border border-[var(--t-border)] p-6">
               <div className="h-5 w-20 animate-pulse rounded bg-[var(--t-border)] mb-5" />
               <div className="space-y-3">
                 {Array.from({ length: 5 }).map((_, i) => (
@@ -198,7 +198,7 @@ export default function InvoiceDetailPage({
     <div>
       <Link
         href="/invoices"
-        className="mb-6 inline-flex items-center gap-2 text-sm text-[var(--t-text-muted)] transition-colors hover:text-[var(--t-text-primary)]"
+        className="mb-6 inline-flex items-center gap-2 text-sm text-[var(--t-frame-text-muted)] transition-colors hover:text-[var(--t-frame-text)]"
       >
         <ArrowLeft className="h-4 w-4" />
         Back to Invoices
@@ -208,7 +208,7 @@ export default function InvoiceDetailPage({
       <div className="mb-8 flex items-start justify-between">
         <div>
           <div className="flex items-center gap-3 mb-1">
-            <h1 className="text-[28px] font-bold tracking-[-1px] text-[var(--t-text-primary)]">
+            <h1 className="text-[28px] font-bold tracking-[-1px] text-[var(--t-frame-text)]">
               {invoice.invoice_number}
             </h1>
             <span
@@ -217,7 +217,7 @@ export default function InvoiceDetailPage({
               {invoice.status}
             </span>
           </div>
-          <p className="text-sm text-[var(--t-text-muted)]">
+          <p className="text-sm text-[var(--t-frame-text-muted)]">
             Created {new Date(invoice.created_at).toLocaleDateString()}
             {invoice.sent_at &&
               ` · Sent ${new Date(invoice.sent_at).toLocaleDateString()}`}
@@ -263,7 +263,7 @@ export default function InvoiceDetailPage({
         <div className="space-y-6 lg:col-span-2">
           {/* Info cards */}
           <div className="grid grid-cols-2 gap-4">
-            <div className="rounded-[18px] bg-[var(--t-bg-card)] border border-[var(--t-border)] p-5">
+            <div className="rounded-[20px] bg-[var(--t-bg-card)] border border-[var(--t-border)] p-5">
               <div className="flex items-center gap-2 mb-2">
                 <User className="h-4 w-4 text-[var(--t-text-muted)]" />
                 <span className="text-xs font-medium uppercase tracking-wider text-[var(--t-text-muted)]">
@@ -286,7 +286,7 @@ export default function InvoiceDetailPage({
                 </p>
               )}
             </div>
-            <div className="rounded-[18px] bg-[var(--t-bg-card)] border border-[var(--t-border)] p-5">
+            <div className="rounded-[20px] bg-[var(--t-bg-card)] border border-[var(--t-border)] p-5">
               <div className="flex items-center gap-2 mb-2">
                 <Calendar className="h-4 w-4 text-[var(--t-text-muted)]" />
                 <span className="text-xs font-medium uppercase tracking-wider text-[var(--t-text-muted)]">
@@ -309,7 +309,7 @@ export default function InvoiceDetailPage({
           </div>
 
           {/* Line items */}
-          <div className="rounded-[18px] bg-[var(--t-bg-card)] border border-[var(--t-border)] overflow-hidden">
+          <div className="rounded-[20px] bg-[var(--t-bg-card)] border border-[var(--t-border)] overflow-hidden">
             <div className="px-6 py-4 border-b border-[var(--t-border)]">
               <h2 className="text-base font-semibold text-[var(--t-text-primary)]">
                 Line Items
@@ -357,7 +357,7 @@ export default function InvoiceDetailPage({
           </div>
 
           {/* Payment history */}
-          <div className="rounded-[18px] bg-[var(--t-bg-card)] border border-[var(--t-border)] overflow-hidden">
+          <div className="rounded-[20px] bg-[var(--t-bg-card)] border border-[var(--t-border)] overflow-hidden">
             <div className="px-6 py-4 border-b border-[var(--t-border)]">
               <h2 className="text-base font-semibold text-[var(--t-text-primary)]">
                 Payment History ({payments.length})
@@ -417,7 +417,7 @@ export default function InvoiceDetailPage({
 
         {/* Sidebar totals */}
         <div className="space-y-6">
-          <div className="rounded-[18px] bg-[var(--t-bg-card)] border border-[var(--t-border)] p-6">
+          <div className="rounded-[20px] bg-[var(--t-bg-card)] border border-[var(--t-border)] p-6">
             <div className="flex items-center gap-2 mb-5">
               <DollarSign className="h-4 w-4 text-[var(--t-accent)]" />
               <h3 className="text-base font-semibold text-[var(--t-text-primary)]">
@@ -461,7 +461,7 @@ export default function InvoiceDetailPage({
           </div>
 
           {invoice.notes && (
-            <div className="rounded-[18px] bg-[var(--t-bg-card)] border border-[var(--t-border)] p-6">
+            <div className="rounded-[20px] bg-[var(--t-bg-card)] border border-[var(--t-border)] p-6">
               <h3 className="text-sm font-semibold text-[var(--t-text-primary)] mb-2">Notes</h3>
               <p className="text-sm text-[var(--t-text-primary)] whitespace-pre-wrap">
                 {invoice.notes}
@@ -528,18 +528,18 @@ function RecordPaymentForm({
   };
 
   const inputClass =
-    "w-full rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-2.5 text-sm text-[var(--t-text-primary)] placeholder-[var(--t-text-muted)] outline-none transition-colors focus:border-[var(--t-accent)]";
+    "w-full rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-2.5 text-sm text-[var(--t-text-primary)] placeholder-[var(--t-text-muted)] outline-none transition-colors focus:border-[var(--t-accent)]";
   const labelClass = "block text-sm font-medium text-[var(--t-text-primary)] mb-1.5";
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
       {error && (
-        <div className="rounded-[18px] bg-[var(--t-error-soft)] px-4 py-3 text-sm text-[var(--t-error)]">
+        <div className="rounded-[20px] bg-[var(--t-error-soft)] px-4 py-3 text-sm text-[var(--t-error)]">
           {error}
         </div>
       )}
 
-      <div className="rounded-[18px] bg-[var(--t-bg-card)] border border-[var(--t-border)] p-4 text-center">
+      <div className="rounded-[20px] bg-[var(--t-bg-card)] border border-[var(--t-border)] p-4 text-center">
         <p className="text-xs text-[var(--t-text-muted)] mb-1">Balance Due</p>
         <p className="text-2xl font-bold text-[var(--t-text-primary)] tabular-nums">
           {fmt(balanceDue)}
@@ -560,7 +560,7 @@ function RecordPaymentForm({
 
       <div>
         <label className={labelClass}>Payment Method</label>
-        <div className="grid grid-cols-4 gap-1 rounded-[18px] bg-[var(--t-bg-card)] border border-[var(--t-border)] p-1">
+        <div className="grid grid-cols-4 gap-1 rounded-[20px] bg-[var(--t-bg-card)] border border-[var(--t-border)] p-1">
           {(["card", "ach", "cash", "check"] as const).map((m) => (
             <button
               key={m}

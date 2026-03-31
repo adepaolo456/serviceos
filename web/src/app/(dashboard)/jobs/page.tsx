@@ -257,12 +257,12 @@ export default function JobsPage() {
       {/* Header */}
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 style={{ fontSize: 28, fontWeight: 700, letterSpacing: "-1px", color: "var(--t-text-primary)" }}>
+          <h1 style={{ fontSize: 28, fontWeight: 700, letterSpacing: "-1px", color: "var(--t-frame-text)" }}>
             Jobs
           </h1>
-          <p style={{ fontSize: 14, color: "var(--t-text-muted)", marginTop: 4 }}>
+          <p style={{ fontSize: 14, color: "var(--t-frame-text-muted)", marginTop: 4 }}>
             {totalCount} total &middot;{" "}
-            <span style={{ color: "var(--t-text-primary)" }}>{todayCount} today</span> &middot;{" "}
+            <span style={{ color: "var(--t-frame-text)" }}>{todayCount} today</span> &middot;{" "}
             {unassignedCount > 0 ? (
               <span style={{ color: "var(--t-error)" }}>{unassignedCount} unassigned</span>
             ) : (
@@ -272,7 +272,7 @@ export default function JobsPage() {
         </div>
         <div className="flex items-center gap-3">
           {/* Date range pills */}
-          <div className="flex overflow-hidden" style={{ borderRadius: 24, border: "1px solid var(--t-border)" }}>
+          <div className="flex overflow-hidden" style={{ borderRadius: 24, border: "1px solid rgba(255,255,255,0.08)" }}>
             {DATE_RANGE_OPTIONS.map((opt) => (
               <button
                 key={opt.value}
@@ -280,7 +280,7 @@ export default function JobsPage() {
                 style={{
                   padding: "6px 14px", fontSize: 12, fontWeight: 500,
                   background: dateRange === opt.value ? "var(--t-accent-soft)" : "transparent",
-                  color: dateRange === opt.value ? "#22C55E" : "var(--t-text-muted)",
+                  color: dateRange === opt.value ? "#22C55E" : "var(--t-frame-text-muted)",
                   border: "none", cursor: "pointer", transition: "all 0.15s ease",
                 }}
               >
@@ -316,9 +316,9 @@ export default function JobsPage() {
               style={{
                 display: "inline-flex", alignItems: "center", gap: 6,
                 padding: "6px 14px", borderRadius: 24, fontSize: 13, fontWeight: 500,
-                background: isActive ? "var(--t-accent-soft)" : "transparent",
-                color: isActive ? "#22C55E" : "var(--t-text-muted)",
-                border: isActive ? "1px solid transparent" : "1px solid var(--t-border)",
+                background: isActive ? "var(--t-accent-soft)" : "rgba(255,255,255,0.06)",
+                color: isActive ? "#22C55E" : "var(--t-frame-text-muted)",
+                border: isActive ? "1px solid transparent" : "1px solid rgba(255,255,255,0.08)",
                 transition: "all 0.15s ease", cursor: "pointer",
               }}
             >
@@ -332,15 +332,15 @@ export default function JobsPage() {
       {/* Search & Sort */}
       <div className="flex items-center gap-3 mb-5">
         <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4" style={{ color: "var(--t-text-muted)" }} />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4" style={{ color: "var(--t-frame-text-muted)" }} />
           <input
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search job #, customer, phone, address..."
             style={{
-              width: "100%", borderRadius: 14, border: "1px solid var(--t-border)",
-              background: "var(--t-bg-card)", padding: "10px 16px 10px 40px",
-              fontSize: 14, color: "var(--t-text-primary)", outline: "none",
+              width: "100%", borderRadius: 14, border: "1px solid rgba(255,255,255,0.08)",
+              background: "rgba(255,255,255,0.06)", padding: "10px 16px 10px 40px",
+              fontSize: 14, color: "var(--t-frame-text)", outline: "none",
               transition: "border 0.15s ease",
             }}
           />
@@ -351,8 +351,8 @@ export default function JobsPage() {
               style={{
                 display: "inline-flex", alignItems: "center", gap: 6,
                 padding: "8px 14px", borderRadius: 24, fontSize: 13, fontWeight: 500,
-                border: "1px solid var(--t-border)", background: "transparent",
-                color: "var(--t-text-muted)", cursor: "pointer", transition: "all 0.15s ease",
+                border: "1px solid var(--t-frame-border)", background: "transparent",
+                color: "var(--t-frame-text-muted)", cursor: "pointer", transition: "all 0.15s ease",
               }}
             >
               <ArrowDownUp className="h-3.5 w-3.5" />
@@ -713,7 +713,7 @@ function NewJobForm({ onSuccess }: { onSuccess: () => void }) {
 
       <div>
         <label style={lbl}>Dumpster Size</label>
-        <div className="flex gap-1 rounded-[18px] p-1" style={{ background: "var(--t-bg-card)" }}>
+        <div className="flex gap-1 rounded-[20px] p-1" style={{ background: "var(--t-bg-card)" }}>
           {["10yd", "15yd", "20yd", "30yd", "40yd"].map((s) => (
             <button
               key={s}
