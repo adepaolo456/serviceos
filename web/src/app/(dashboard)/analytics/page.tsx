@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   BarChart3,
   DollarSign,
@@ -11,6 +11,11 @@ import {
   FileText,
   Download,
   Loader2,
+  Search,
+  ClipboardList,
+  ChevronDown,
+  ChevronRight,
+  ExternalLink,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { formatCurrency } from "@/lib/utils";
@@ -110,9 +115,61 @@ interface ReceivablesData {
   overdueInvoices: OverdueInvoice[];
 }
 
+interface DumpSlipTicket {
+  id: string;
+  ticketNumber: string;
+  submittedAt: string;
+  jobId: string;
+  jobNumber: string;
+  customerName: string;
+  dumpLocationName: string;
+  wasteType: string;
+  weightTons: number;
+  dumpTonnageCost: number;
+  fuelEnvCost: number;
+  dumpSurchargeCost: number;
+  totalDumpCost: number;
+  customerTonnageCharge: number;
+  customerSurchargeCharge: number;
+  totalCustomerCharge: number;
+  overageItems: Array<{ type: string; label: string; quantity: number; chargePerUnit: number; total: number }>;
+  status: string;
+  invoiced: boolean;
+  invoiceId: string | null;
+}
+
+interface FacilitySummary {
+  dumpLocationId: string;
+  dumpLocationName: string;
+  ticketCount: number;
+  totalWeight: number;
+  totalDumpCost: number;
+  totalFuelEnv: number;
+  totalCost: number;
+  totalCustomerCharges: number;
+}
+
+interface DumpSlipsData {
+  summary: {
+    totalTickets: number;
+    totalWeightTons: number;
+    totalDumpCost: number;
+    totalFuelEnvCost: number;
+    totalCustomerCharges: number;
+    totalMargin: number;
+  };
+  byFacility: FacilitySummary[];
+  tickets: DumpSlipTicket[];
+}
+
+interface DumpLocationOption {
+  id: string;
+  name: string;
+}
+
 /* ─── Tabs ─── */
 
-type TabKey = "revenue" | "dump-costs" | "profit" | "drivers" | "assets" | "customers" | "receivables";
+type TabKey = "revenue" | "dump-costs" | "profit" | "drivers" | "assets" | "customers" | "receivables" | "dump-slips";
 
 const TABS: { key: TabKey; label: string; icon: typeof DollarSign }[] = [
   { key: "revenue", label: "Revenue", icon: DollarSign },
@@ -122,6 +179,7 @@ const TABS: { key: TabKey; label: string; icon: typeof DollarSign }[] = [
   { key: "assets", label: "Assets", icon: Box },
   { key: "customers", label: "Customers", icon: Users },
   { key: "receivables", label: "Receivables", icon: FileText },
+  { key: "dump-slips", label: "Dump Slips", icon: ClipboardList },
 ];
 
 /* ─── Helpers ─── */
@@ -375,6 +433,307 @@ function ReceivablesTab({ data, loading }: { data: ReceivablesData | null; loadi
   );
 }
 
+/* ─── Dump Slips Tab ─── */
+
+const WASTE_LABELS: Record<string, string> = { dtm: "DTM", cnd: "C&D", msw: "MSW", shingles: "Shingles" };
+const SLIP_STATUS_FILTERS = ["all", "submitted", "reviewed", "invoiced"] as const;
+
+function DumpSlipsTab({
+  data,
+  loading,
+  startDate,
+  endDate,
+  onRefetch,
+}: {
+  data: DumpSlipsData | null;
+  loading: boolean;
+  startDate: string;
+  endDate: string;
+  onRefetch: (params: { search?: string; dumpLocationId?: string; status?: string }) => void;
+}) {
+  const [search, setSearch] = useState("");
+  const [dumpLocationId, setDumpLocationId] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [locations, setLocations] = useState<DumpLocationOption[]>([]);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [reconOpen, setReconOpen] = useState(true);
+  const searchTimeout = useRef<ReturnType<typeof setTimeout>>(null);
+
+  // Load dump location options
+  useEffect(() => {
+    api.get<Array<{ id: string; name: string }>>("/dump-locations")
+      .then((locs) => setLocations(locs.map((l) => ({ id: l.id, name: l.name }))))
+      .catch(() => {});
+  }, []);
+
+  // Debounced search
+  useEffect(() => {
+    if (searchTimeout.current) clearTimeout(searchTimeout.current);
+    searchTimeout.current = setTimeout(() => {
+      onRefetch({ search: search || undefined, dumpLocationId: dumpLocationId || undefined, status: statusFilter === "all" ? undefined : statusFilter });
+    }, 400);
+    return () => { if (searchTimeout.current) clearTimeout(searchTimeout.current); };
+  }, [search, dumpLocationId, statusFilter]);
+
+  const handleExportSlips = () => {
+    if (!data?.tickets?.length) return;
+    const rows = data.tickets.map((t) => ({
+      date: t.submittedAt ? new Date(t.submittedAt).toLocaleDateString() : "",
+      ticketNumber: t.ticketNumber,
+      jobNumber: t.jobNumber,
+      customer: t.customerName,
+      dumpLocation: t.dumpLocationName,
+      wasteType: WASTE_LABELS[t.wasteType] || t.wasteType,
+      weightTons: t.weightTons,
+      dumpTonnageCost: t.dumpTonnageCost,
+      fuelEnvCost: t.fuelEnvCost,
+      dumpSurchargeCost: t.dumpSurchargeCost,
+      totalDumpCost: t.totalDumpCost,
+      customerTonnageCharge: t.customerTonnageCharge,
+      customerSurchargeCharge: t.customerSurchargeCharge,
+      totalCustomerCharge: t.totalCustomerCharge,
+      status: t.status,
+      invoiced: t.invoiced ? "Yes" : "No",
+    }));
+    downloadCSV(rows, `dump-slips-${startDate}-to-${endDate}.csv`);
+  };
+
+  if (loading && !data) return <><KPISkeleton /><TableSkeleton /></>;
+
+  return (
+    <div className="space-y-5">
+      {/* Search + Filters */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="relative flex-1 max-w-md">
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4" style={{ color: "var(--t-text-tertiary)" }} />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search ticket number, customer name..."
+            className="w-full rounded-full border px-10 py-2 text-[15px] outline-none transition-colors"
+            style={{
+              backgroundColor: "var(--t-bg-card)",
+              borderColor: "var(--t-border)",
+              color: "var(--t-text-primary)",
+            }}
+          />
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Location dropdown */}
+          <select
+            value={dumpLocationId}
+            onChange={(e) => setDumpLocationId(e.target.value)}
+            className="rounded-full border px-3 py-2 text-xs font-medium outline-none appearance-none cursor-pointer"
+            style={{ backgroundColor: "var(--t-bg-card)", borderColor: "var(--t-border)", color: "var(--t-text-primary)" }}
+          >
+            <option value="">All Locations</option>
+            {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+          </select>
+          {/* Status pills */}
+          <div className="flex gap-1">
+            {SLIP_STATUS_FILTERS.map((s) => (
+              <button
+                key={s}
+                onClick={() => setStatusFilter(s)}
+                className={`rounded-full px-3 py-1.5 text-xs font-medium capitalize transition-colors ${
+                  statusFilter === s
+                    ? "bg-[var(--t-accent-soft)] text-[var(--t-accent)]"
+                    : "text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)]"
+                }`}
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+          {/* Export */}
+          <button
+            onClick={handleExportSlips}
+            disabled={!data?.tickets?.length}
+            className="flex items-center gap-1.5 rounded-full border px-4 py-1.5 text-xs font-medium transition-colors disabled:opacity-40"
+            style={{ borderColor: "var(--t-border)", color: "var(--t-text-muted)" }}
+          >
+            <Download className="h-3.5 w-3.5" /> Export CSV
+          </button>
+        </div>
+      </div>
+
+      {/* KPIs */}
+      {data && (
+        <KPIGrid>
+          <KPI label="Total Tickets" value={fmtNum(data.summary.totalTickets)} />
+          <KPI label="Total Weight" value={`${data.summary.totalWeightTons.toFixed(2)} tons`} />
+          <KPI label="Our Cost" value={formatCurrency(data.summary.totalDumpCost)} color="text-[var(--t-error)]" sub={`incl. ${formatCurrency(data.summary.totalFuelEnvCost)} fuel/env`} />
+          <KPI label="Customer Charged" value={formatCurrency(data.summary.totalCustomerCharges)} color="text-[var(--t-accent)]" />
+        </KPIGrid>
+      )}
+
+      {/* Reconciliation by Facility */}
+      {data && data.byFacility.length > 0 && (
+        <div className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)]">
+          <button
+            onClick={() => setReconOpen(!reconOpen)}
+            className="flex items-center justify-between w-full px-5 py-4 text-left"
+          >
+            <span className="text-[11px] font-extrabold uppercase tracking-[1.2px]" style={{ color: "var(--t-text-tertiary)" }}>
+              Reconciliation by Facility
+            </span>
+            {reconOpen ? <ChevronDown className="h-4 w-4" style={{ color: "var(--t-text-tertiary)" }} /> : <ChevronRight className="h-4 w-4" style={{ color: "var(--t-text-tertiary)" }} />}
+          </button>
+          {reconOpen && (
+            <div className="overflow-x-auto pb-3">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr style={{ borderBottom: "1px solid var(--t-border)" }}>
+                    {["Facility", "Tickets", "Weight", "Dump Cost", "Fuel/Env", "Total Cost", "Customer Charged"].map((h) => (
+                      <th key={h} className="text-left py-2.5 px-5 text-[11px] font-extrabold uppercase tracking-[1.2px]" style={{ color: "var(--t-text-tertiary)" }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.byFacility.map((f) => (
+                    <tr key={f.dumpLocationId} className="transition-colors hover:bg-[var(--t-bg-card-hover)]" style={{ borderBottom: "1px solid var(--t-border-subtle, var(--t-border))" }}>
+                      <td className="py-3 px-5 font-medium" style={{ color: "var(--t-text-primary)" }}>{f.dumpLocationName}</td>
+                      <td className="py-3 px-5 tabular-nums" style={{ color: "var(--t-text-secondary)" }}>{f.ticketCount}</td>
+                      <td className="py-3 px-5 tabular-nums" style={{ color: "var(--t-text-secondary)" }}>{f.totalWeight.toFixed(2)}t</td>
+                      <td className="py-3 px-5 tabular-nums" style={{ color: "var(--t-text-secondary)" }}>{formatCurrency(f.totalDumpCost)}</td>
+                      <td className="py-3 px-5 tabular-nums" style={{ color: "var(--t-text-secondary)" }}>{formatCurrency(f.totalFuelEnv)}</td>
+                      <td className="py-3 px-5 tabular-nums font-semibold" style={{ color: "var(--t-text-primary)" }}>{formatCurrency(f.totalCost)}</td>
+                      <td className="py-3 px-5 tabular-nums" style={{ color: "var(--t-accent)" }}>{formatCurrency(f.totalCustomerCharges)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Ticket Table */}
+      {data && (
+        <div className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr style={{ borderBottom: "1px solid var(--t-border)" }}>
+                  {["Date", "Ticket #", "Job #", "Customer", "Location", "Type", "Weight", "Our Cost", "Cust. Charge", "Items", "Status"].map((h) => (
+                    <th key={h} className="text-left py-3 px-4 text-[11px] font-extrabold uppercase tracking-[1.2px]" style={{ color: "var(--t-text-tertiary)" }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {data.tickets.length === 0 ? (
+                  <tr><td colSpan={11} className="py-16 text-center text-sm" style={{ color: "var(--t-text-muted)" }}>No dump slips found for this period</td></tr>
+                ) : data.tickets.map((t) => {
+                  const isExpanded = expandedId === t.id;
+                  const itemCount = t.overageItems?.length || 0;
+                  const itemSummary = t.overageItems?.map((i) => `${i.quantity}x ${i.label}`).join(", ") || "";
+                  return (
+                    <React.Fragment key={t.id}>
+                      <tr
+                        onClick={() => setExpandedId(isExpanded ? null : t.id)}
+                        className="cursor-pointer transition-colors hover:bg-[var(--t-bg-card-hover)]"
+                        style={{ borderBottom: isExpanded ? "none" : "1px solid var(--t-border-subtle, var(--t-border))" }}
+                      >
+                        <td className="py-3 px-4 tabular-nums" style={{ color: "var(--t-text-secondary)" }}>{t.submittedAt ? new Date(t.submittedAt).toLocaleDateString("en-US", { month: "2-digit", day: "2-digit" }) : "—"}</td>
+                        <td className="py-3 px-4 font-medium" style={{ color: "var(--t-text-primary)" }}>{t.ticketNumber || "—"}</td>
+                        <td className="py-3 px-4" style={{ color: "var(--t-text-secondary)" }}>{t.jobNumber || "—"}</td>
+                        <td className="py-3 px-4" style={{ color: "var(--t-text-primary)" }}>{t.customerName}</td>
+                        <td className="py-3 px-4" style={{ color: "var(--t-text-secondary)" }}>{t.dumpLocationName}</td>
+                        <td className="py-3 px-4 text-xs" style={{ color: "var(--t-text-secondary)" }}>{WASTE_LABELS[t.wasteType] || t.wasteType}</td>
+                        <td className="py-3 px-4 tabular-nums" style={{ color: "var(--t-text-primary)" }}>{t.weightTons.toFixed(2)}</td>
+                        <td className="py-3 px-4 tabular-nums" style={{ color: "var(--t-text-secondary)" }}>{formatCurrency(t.totalDumpCost)}</td>
+                        <td className="py-3 px-4 tabular-nums font-semibold" style={{ color: t.totalCustomerCharge > 0 ? "var(--t-text-primary)" : "var(--t-text-tertiary)" }}>{t.totalCustomerCharge > 0 ? formatCurrency(t.totalCustomerCharge) : "$0"}</td>
+                        <td className="py-3 px-4 text-xs" style={{ color: "var(--t-text-secondary)" }} title={itemSummary}>{itemCount > 0 ? `${itemCount} item${itemCount > 1 ? "s" : ""}` : "—"}</td>
+                        <td className="py-3 px-4">
+                          <span className="text-[11px] font-semibold" style={{
+                            color: t.invoiced ? "#60A5FA" : t.status === "reviewed" ? "var(--t-accent)" : "var(--t-warning)",
+                          }}>
+                            {t.invoiced ? "Invoiced" : t.status === "reviewed" ? "Reviewed" : "Submitted"}
+                          </span>
+                        </td>
+                      </tr>
+                      {/* Expanded detail */}
+                      {isExpanded && (
+                        <tr style={{ borderBottom: "1px solid var(--t-border)" }}>
+                          <td colSpan={11} className="px-4 py-4" style={{ backgroundColor: "var(--t-bg-primary)" }}>
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm mb-3">
+                              <div>
+                                <p className="text-[11px] uppercase font-bold tracking-wide" style={{ color: "var(--t-text-tertiary)" }}>Dump Tonnage</p>
+                                <p className="tabular-nums" style={{ color: "var(--t-text-primary)" }}>{formatCurrency(t.dumpTonnageCost)}</p>
+                              </div>
+                              <div>
+                                <p className="text-[11px] uppercase font-bold tracking-wide" style={{ color: "var(--t-text-tertiary)" }}>Fuel/Env Fee</p>
+                                <p className="tabular-nums" style={{ color: "var(--t-text-primary)" }}>{formatCurrency(t.fuelEnvCost)}</p>
+                              </div>
+                              <div>
+                                <p className="text-[11px] uppercase font-bold tracking-wide" style={{ color: "var(--t-text-tertiary)" }}>Dump Surcharges</p>
+                                <p className="tabular-nums" style={{ color: "var(--t-text-primary)" }}>{formatCurrency(t.dumpSurchargeCost)}</p>
+                              </div>
+                              <div>
+                                <p className="text-[11px] uppercase font-bold tracking-wide" style={{ color: "var(--t-text-tertiary)" }}>Total Dump Cost</p>
+                                <p className="tabular-nums font-semibold" style={{ color: "var(--t-error)" }}>{formatCurrency(t.totalDumpCost)}</p>
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm mb-3">
+                              <div>
+                                <p className="text-[11px] uppercase font-bold tracking-wide" style={{ color: "var(--t-text-tertiary)" }}>Cust. Tonnage</p>
+                                <p className="tabular-nums" style={{ color: "var(--t-text-primary)" }}>{formatCurrency(t.customerTonnageCharge)}</p>
+                              </div>
+                              <div>
+                                <p className="text-[11px] uppercase font-bold tracking-wide" style={{ color: "var(--t-text-tertiary)" }}>Cust. Surcharges</p>
+                                <p className="tabular-nums" style={{ color: "var(--t-text-primary)" }}>{formatCurrency(t.customerSurchargeCharge)}</p>
+                              </div>
+                              <div>
+                                <p className="text-[11px] uppercase font-bold tracking-wide" style={{ color: "var(--t-text-tertiary)" }}>Total Cust. Charge</p>
+                                <p className="tabular-nums font-semibold" style={{ color: "var(--t-accent)" }}>{formatCurrency(t.totalCustomerCharge)}</p>
+                              </div>
+                              <div>
+                                <p className="text-[11px] uppercase font-bold tracking-wide" style={{ color: "var(--t-text-tertiary)" }}>Margin</p>
+                                <p className="tabular-nums font-semibold" style={{ color: t.totalCustomerCharge - t.totalDumpCost >= 0 ? "var(--t-accent)" : "var(--t-error)" }}>
+                                  {formatCurrency(t.totalCustomerCharge - t.totalDumpCost)}
+                                </p>
+                              </div>
+                            </div>
+                            {t.overageItems && t.overageItems.length > 0 && (
+                              <div className="mb-3">
+                                <p className="text-[11px] uppercase font-bold tracking-wide mb-2" style={{ color: "var(--t-text-tertiary)" }}>Surcharge Items</p>
+                                <div className="flex flex-wrap gap-2">
+                                  {t.overageItems.map((item, idx) => (
+                                    <span key={idx} className="text-xs px-2.5 py-1 rounded-full" style={{ backgroundColor: "var(--t-bg-card)", border: "1px solid var(--t-border)", color: "var(--t-text-secondary)" }}>
+                                      {item.quantity}x {item.label} @ ${item.chargePerUnit}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                            <div className="flex items-center gap-3">
+                              {t.jobId && (
+                                <a href={`/jobs/${t.jobId}`} className="inline-flex items-center gap-1 text-xs font-medium rounded-full px-3 py-1.5 transition-colors" style={{ color: "var(--t-accent)", backgroundColor: "var(--t-accent-soft)" }}>
+                                  <ExternalLink className="h-3 w-3" /> View Job
+                                </a>
+                              )}
+                              {t.invoiceId && (
+                                <a href={`/invoices/${t.invoiceId}`} className="inline-flex items-center gap-1 text-xs font-medium rounded-full px-3 py-1.5 transition-colors" style={{ color: "#60A5FA", backgroundColor: "rgba(96,165,250,0.1)" }}>
+                                  <ExternalLink className="h-3 w-3" /> View Invoice
+                                </a>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ─── Main Page ─── */
 
 export default function AnalyticsPage() {
@@ -388,13 +747,20 @@ export default function AnalyticsPage() {
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [tabData, setTabData] = useState<Record<TabKey, any>>({
-    revenue: null, "dump-costs": null, profit: null, drivers: null, assets: null, customers: null, receivables: null,
+    revenue: null, "dump-costs": null, profit: null, drivers: null, assets: null, customers: null, receivables: null, "dump-slips": null,
   });
 
-  const setPreset = (preset: "month" | "quarter" | "year") => {
+  const [dumpSlipParams, setDumpSlipParams] = useState<{ search?: string; dumpLocationId?: string; status?: string }>({});
+
+  const setPreset = (preset: "week" | "month" | "quarter" | "year") => {
     const today = new Date();
     let start: Date;
-    if (preset === "month") {
+    if (preset === "week") {
+      const day = today.getDay();
+      const diff = day === 0 ? 6 : day - 1; // Monday
+      start = new Date(today);
+      start.setDate(today.getDate() - diff);
+    } else if (preset === "month") {
       start = new Date(today.getFullYear(), today.getMonth(), 1);
     } else if (preset === "quarter") {
       const q = Math.floor(today.getMonth() / 3) * 3;
@@ -420,6 +786,14 @@ export default function AnalyticsPage() {
           case "assets": result = await api.get<AssetsData>("/reporting/assets"); break;
           case "customers": result = await api.get<CustomersData>(`/reporting/customers?${qs}`); break;
           case "receivables": result = await api.get<ReceivablesData>("/reporting/accounts-receivable"); break;
+          case "dump-slips": {
+            const slipParams = new URLSearchParams({ startDate, endDate });
+            if (dumpSlipParams.search) slipParams.set("search", dumpSlipParams.search);
+            if (dumpSlipParams.dumpLocationId) slipParams.set("dumpLocationId", dumpSlipParams.dumpLocationId);
+            if (dumpSlipParams.status) slipParams.set("status", dumpSlipParams.status);
+            result = await api.get<DumpSlipsData>(`/reporting/dump-slips?${slipParams}`);
+            break;
+          }
         }
         setTabData((prev) => ({ ...prev, [tab]: result }));
       } catch (err) {
@@ -428,10 +802,17 @@ export default function AnalyticsPage() {
         setLoading(false);
       }
     },
-    [startDate, endDate]
+    [startDate, endDate, dumpSlipParams]
   );
 
-  useEffect(() => { fetchTab(activeTab); }, [activeTab, fetchTab]);
+  useEffect(() => {
+    // When switching to dump-slips, default to this week if currently on a month range
+    if (activeTab === "dump-slips" && presetActive("month")) {
+      setPreset("week");
+      return; // setPreset will trigger re-render and fetchTab
+    }
+    fetchTab(activeTab);
+  }, [activeTab, fetchTab]);
 
   const handleExport = () => {
     const data = tabData[activeTab];
@@ -446,6 +827,7 @@ export default function AnalyticsPage() {
       case "assets": rows = data.bySize || []; break;
       case "customers": rows = data.topCustomers || []; break;
       case "receivables": rows = data.overdueInvoices || data.aging || []; break;
+      case "dump-slips": rows = data.tickets || []; break;
     }
     downloadCSV(rows, `${activeTab}-report-${startDate}-to-${endDate}.csv`);
   };
@@ -453,7 +835,12 @@ export default function AnalyticsPage() {
   const presetActive = (preset: string) => {
     const today = new Date();
     let expectedStart: Date;
-    if (preset === "month") expectedStart = new Date(today.getFullYear(), today.getMonth(), 1);
+    if (preset === "week") {
+      const day = today.getDay();
+      const diff = day === 0 ? 6 : day - 1;
+      expectedStart = new Date(today);
+      expectedStart.setDate(today.getDate() - diff);
+    } else if (preset === "month") expectedStart = new Date(today.getFullYear(), today.getMonth(), 1);
     else if (preset === "quarter") { const q = Math.floor(today.getMonth() / 3) * 3; expectedStart = new Date(today.getFullYear(), q, 1); }
     else expectedStart = new Date(today.getFullYear(), 0, 1);
     return startDate === expectedStart.toISOString().split("T")[0] && endDate === today.toISOString().split("T")[0];
@@ -467,7 +854,7 @@ export default function AnalyticsPage() {
         <div className="flex flex-wrap items-center gap-3">
           {/* Preset pills */}
           <div className="flex gap-1">
-            {(["month", "quarter", "year"] as const).map((p) => (
+            {(activeTab === "dump-slips" ? ["week", "month", "quarter", "year"] as const : ["month", "quarter", "year"] as const).map((p) => (
               <button key={p} onClick={() => setPreset(p)}
                 className={`rounded-full px-4 py-1.5 text-xs font-medium transition-colors ${
                   presetActive(p)
@@ -525,6 +912,15 @@ export default function AnalyticsPage() {
         {activeTab === "assets" && <AssetsTab data={tabData.assets} loading={loading && !tabData.assets} />}
         {activeTab === "customers" && <CustomersTab data={tabData.customers} loading={loading && !tabData.customers} />}
         {activeTab === "receivables" && <ReceivablesTab data={tabData.receivables} loading={loading && !tabData.receivables} />}
+        {activeTab === "dump-slips" && (
+          <DumpSlipsTab
+            data={tabData["dump-slips"]}
+            loading={loading && !tabData["dump-slips"]}
+            startDate={startDate}
+            endDate={endDate}
+            onRefetch={(params) => { setDumpSlipParams(params); }}
+          />
+        )}
       </div>
     </div>
   );

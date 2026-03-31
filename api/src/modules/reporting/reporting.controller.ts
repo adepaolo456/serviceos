@@ -21,6 +21,19 @@ export class ReportingController {
     return this.service.getDumpCosts(tid, s, e);
   }
 
+  @Get('dump-slips')
+  @ApiOperation({ summary: 'Dump slip ticket-level report' })
+  dumpSlips(
+    @TenantId() tid: string,
+    @Query('startDate') s?: string,
+    @Query('endDate') e?: string,
+    @Query('dumpLocationId') loc?: string,
+    @Query('search') search?: string,
+    @Query('status') status?: string,
+  ) {
+    return this.service.getDumpSlips(tid, s, e, loc, search, status);
+  }
+
   @Get('profit')
   @ApiOperation({ summary: 'Profit report' })
   profit(@TenantId() tid: string, @Query('startDate') s?: string, @Query('endDate') e?: string) {
