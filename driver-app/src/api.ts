@@ -67,4 +67,36 @@ export async function updateDriverJobStatus(jobId: string, status: string, signa
   return data;
 }
 
+// Clock in/out
+export async function clockIn(): Promise<void> {
+  await client.post('/auth/clock-in');
+}
+
+export async function clockOut(): Promise<void> {
+  await client.post('/auth/clock-out');
+}
+
+// Location tracking
+export async function updateLocation(latitude: number, longitude: number, statusText?: string): Promise<void> {
+  await client.patch('/auth/location', { latitude, longitude, statusText });
+}
+
+// Dump locations
+export async function getDumpLocations(): Promise<any[]> {
+  const res = await client.get('/dump-locations');
+  return res.data?.data || res.data || [];
+}
+
+// Submit dump slip
+export async function submitDumpSlip(jobId: string, data: {
+  dumpLocationId: string;
+  ticketNumber: string;
+  wasteType: string;
+  weightTons: number;
+  surchargeItems?: Array<{ itemType: string; quantity: number }>;
+}): Promise<any> {
+  const res = await client.post(`/dump-locations/jobs/${jobId}/dump-slip`, data);
+  return res.data;
+}
+
 export default client;

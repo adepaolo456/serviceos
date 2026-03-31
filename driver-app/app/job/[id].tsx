@@ -500,6 +500,15 @@ export default function JobDetailScreen() {
             <Ionicons name="checkmark-circle" size={20} color={colors.accent} />
             <Text style={s.completedText}>Job Completed</Text>
           </View>
+          {job.job_type === 'pickup' && (
+            <TouchableOpacity
+              style={[s.actionBtn, { marginTop: 10, backgroundColor: '#F97316' }]}
+              onPress={() => router.push({ pathname: '/job/dump-slip', params: { jobId: job.id, customerName: `${job.customer?.first_name || ''} ${job.customer?.last_name || ''}`.trim() } })}
+            >
+              <Ionicons name="document-text" size={20} color="#fff" />
+              <Text style={s.actionBtnText}>Enter Dump Slip</Text>
+            </TouchableOpacity>
+          )}
         </View>
       )}
     </View>

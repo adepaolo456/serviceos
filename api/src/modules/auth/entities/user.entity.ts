@@ -99,6 +99,15 @@ export class User {
   @Column({ name: 'current_status_text', nullable: true })
   current_status_text!: string | null;
 
+  @Column({ name: 'is_clocked_in', default: false })
+  is_clocked_in!: boolean;
+
+  @Column({ name: 'clocked_in_at', type: 'timestamptz', nullable: true })
+  clocked_in_at!: Date | null;
+
+  @Column({ name: 'clocked_out_at', type: 'timestamptz', nullable: true })
+  clocked_out_at!: Date | null;
+
   @Column({ name: 'last_login_at', type: 'timestamptz', nullable: true })
   last_login_at!: Date;
 

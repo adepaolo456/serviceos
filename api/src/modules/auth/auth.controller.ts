@@ -79,6 +79,22 @@ export class AuthController {
     return this.authService.updateTenantProfile(tenantId, body);
   }
 
+  @Post('clock-in')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Clock in (driver app)' })
+  async clockIn(@CurrentUser('id') userId: string) {
+    await this.authService.clockIn(userId);
+    return { ok: true };
+  }
+
+  @Post('clock-out')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Clock out (driver app)' })
+  async clockOut(@CurrentUser('id') userId: string) {
+    await this.authService.clockOut(userId);
+    return { ok: true };
+  }
+
   @Patch('location')
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Update current user GPS location (driver app)' })

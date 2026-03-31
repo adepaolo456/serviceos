@@ -62,7 +62,7 @@ function fmtTime(t: string | null) {
 }
 
 export default function TodayScreen() {
-  const { user } = useAuth();
+  const { user, isClockedIn, doClockIn, doClockOut } = useAuth();
   const router = useRouter();
   const colors = useAppTheme();
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -97,6 +97,22 @@ export default function TodayScreen() {
       <View style={s.header}>
         <Text style={s.headerTitle}>Today's Route</Text>
         <Text style={s.headerDate}>{format(new Date(), 'EEEE, MMMM d')}</Text>
+        <TouchableOpacity
+          onPress={async () => {
+            try {
+              if (isClockedIn) await doClockOut();
+              else await doClockIn();
+            } catch {}
+          }}
+          style={{
+            backgroundColor: isClockedIn ? colors.errorSoft : colors.accentSoft,
+            paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20,
+            alignSelf: 'flex-start', marginTop: 8,
+          }}>
+          <Text style={{ color: isClockedIn ? colors.error : colors.accent, fontSize: 13, fontWeight: '700' }}>
+            {isClockedIn ? '⏹ Clock Out' : '▶ Clock In'}
+          </Text>
+        </TouchableOpacity>
       </View>
 
       {jobs.length > 0 && (
