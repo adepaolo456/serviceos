@@ -5,7 +5,7 @@ import Link from "next/link";
 import {
   ChevronLeft, ChevronRight, Calendar, Clock, MapPin, UserPlus, Truck,
   Phone, Plus, Box, Search, CheckCircle2, RefreshCw, Zap, X, ExternalLink,
-  ChevronDown, ChevronUp, Navigation, Mail, GripVertical,
+  ChevronDown, ChevronUp, Navigation, Mail,
 } from "lucide-react";
 import {
   DndContext, closestCenter, DragOverlay, useSensor, useSensors, PointerSensor,
@@ -96,7 +96,7 @@ export default function DispatchPage() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const { toast } = useToast();
 
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
   const fetchBoard = useCallback(async (silent = false) => {
     if (!silent) setLoading(true); else setRefreshing(true);
@@ -413,11 +413,11 @@ function DriverColumnComponent({ columnId, title, driver, isUnassigned, count, p
     return (
       <div onClick={toggleCollapse}
         className="flex w-[56px] shrink-0 cursor-pointer flex-col items-center rounded-[20px] py-3 transition-all duration-150 hover:opacity-80"
-        style={{ background: "#111111", border: "1px solid #1E1E1E" }}>
-        <ChevronDown className="h-3.5 w-3.5 mb-2" style={{ color: "var(--t-frame-text-muted)" }} />
+        style={{ background: "#FFFFFF", border: "1px solid #E5E5E5", boxShadow: "0 2px 8px rgba(0,0,0,0.06)" }}>
+        <ChevronDown className="h-3.5 w-3.5 mb-2" style={{ color: "#8A8A8A" }} />
         <span className="rounded-full px-2 py-0.5 text-[10px] font-bold tabular-nums"
-          style={{ background: "rgba(255,255,255,0.08)", color: "var(--t-frame-text)" }}>{count}</span>
-        <p className="mt-2 text-[9px] font-medium" style={{ writingMode: "vertical-lr", color: "var(--t-frame-text-muted)" }}>{title}</p>
+          style={{ background: "#F0F0F0", color: "#0A0A0A" }}>{count}</span>
+        <p className="mt-2 text-[9px] font-medium" style={{ writingMode: "vertical-lr", color: "#5C5C5C" }}>{title}</p>
       </div>
     );
   }
@@ -427,16 +427,17 @@ function DriverColumnComponent({ columnId, title, driver, isUnassigned, count, p
       className="flex shrink-0 flex-col rounded-[20px] overflow-hidden transition-all duration-200"
       style={{
         width: 330, minWidth: 330,
-        border: isOver && activeId ? "2px dashed var(--t-accent)" : "1px solid #1E1E1E",
-        background: "#080808",
+        border: isOver && activeId ? "2px dashed var(--t-accent)" : "1px solid #E5E5E5",
+        background: "#FFFFFF",
+        boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
       }}>
-      {/* Dark header */}
-      <div className="px-3.5 py-3 shrink-0" style={{ background: isUnassigned ? "#1A1400" : "#111111" }}>
+      {/* Header — white with light border */}
+      <div className="px-3.5 py-3 shrink-0" style={{ background: isUnassigned ? "#FFFBEB" : "#FFFFFF", borderBottom: "1px solid #E5E5E5" }}>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2.5 min-w-0">
             {isUnassigned ? (
               <div className="flex h-8 w-8 items-center justify-center rounded-full shrink-0"
-                style={{ background: "rgba(217,119,6,0.15)", color: "var(--t-warning)" }}>
+                style={{ background: "rgba(217,119,6,0.1)", color: "#D97706" }}>
                 <UserPlus className="h-4 w-4" />
               </div>
             ) : (
@@ -446,37 +447,37 @@ function DriverColumnComponent({ columnId, title, driver, isUnassigned, count, p
               </div>
             )}
             <div className="min-w-0">
-              <p className="text-sm font-bold truncate" style={{ color: isUnassigned ? "var(--t-warning)" : "var(--t-frame-text)" }}>{title}</p>
-              {vehicleStr && <p className="text-[10px] truncate" style={{ color: "var(--t-frame-text-muted)" }}>{vehicleStr}</p>}
-              {driver?.phone && <p className="text-[10px]" style={{ color: "var(--t-frame-text-muted)" }}><Phone className="inline h-2.5 w-2.5 mr-0.5" />{formatPhone(driver.phone)}</p>}
+              <p className="text-sm font-bold truncate" style={{ color: isUnassigned ? "#D97706" : "#0A0A0A" }}>{title}</p>
+              {vehicleStr && <p className="text-[10px] truncate" style={{ color: "#8A8A8A" }}>{vehicleStr}</p>}
+              {driver?.phone && <p className="text-[10px]" style={{ color: "#5C5C5C" }}><Phone className="inline h-2.5 w-2.5 mr-0.5" />{formatPhone(driver.phone)}</p>}
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
             <span className="rounded-full px-2.5 py-1 text-[10px] font-bold tabular-nums"
-              style={{ background: "rgba(255,255,255,0.08)", color: "var(--t-frame-text)" }}>{count}</span>
-            <button onClick={toggleCollapse} className="p-1 transition-all duration-150" style={{ color: "var(--t-frame-text-muted)" }}>
+              style={{ background: "#F0F0F0", color: "#5C5C5C" }}>{count}</span>
+            <button onClick={toggleCollapse} className="p-1 transition-all duration-150" style={{ color: "#8A8A8A" }}>
               <ChevronUp className="h-3.5 w-3.5" />
             </button>
           </div>
         </div>
         {progress && progress.total > 0 && (
           <div className="mt-2.5 flex items-center gap-2">
-            <div className="h-1.5 flex-1 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.08)" }}>
+            <div className="h-1.5 flex-1 rounded-full overflow-hidden" style={{ background: "#F0F0F0" }}>
               <div className="h-full rounded-full transition-all duration-300" style={{ width: `${(progress.completed / progress.total) * 100}%`, background: "var(--t-accent)" }} />
             </div>
-            <span className="text-[10px] tabular-nums font-medium" style={{ color: "var(--t-frame-text-muted)" }}>{progress.completed}/{progress.total}</span>
+            <span className="text-[10px] tabular-nums font-medium" style={{ color: "#8A8A8A" }}>{progress.completed}/{progress.total}</span>
           </div>
         )}
       </div>
 
-      {/* Job cards area — dark body with white cards */}
+      {/* Job cards area — light gray body with white cards */}
       <SortableContext items={jobs.map(j => j.id)} strategy={verticalListSortingStrategy}>
-        <div className="flex-1 overflow-y-auto p-2 space-y-2 max-h-[calc(100vh-300px)]" style={{ minHeight: 120, paddingBottom: 8 }}>
+        <div className="flex-1 overflow-y-auto p-2 space-y-2 max-h-[calc(100vh-300px)]" style={{ minHeight: 120, paddingBottom: 8, background: "#F5F5F5" }}>
           {jobs.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-10">
               {isUnassigned
                 ? <><CheckCircle2 className="h-6 w-6 mb-1.5" style={{ color: "var(--t-accent)", opacity: 0.4 }} /><p className="text-[10px]" style={{ color: "var(--t-accent)" }}>All jobs assigned</p></>
-                : <><Box className="h-6 w-6 mb-1.5" style={{ color: "var(--t-frame-text-muted)", opacity: 0.15 }} /><p className="text-[10px]" style={{ color: "var(--t-frame-text-muted)" }}>No jobs</p></>}
+                : <><Box className="h-6 w-6 mb-1.5" style={{ color: "#8A8A8A", opacity: 0.15 }} /><p className="text-[10px]" style={{ color: "#8A8A8A" }}>No jobs</p></>}
             </div>
           ) : jobs.map(job => (
             <SortableJobTile key={job.id} job={job}
@@ -498,7 +499,7 @@ const SortableJobTile = memo(function SortableJobTile({ job, isUnassigned, drive
   onUnassign?: (jobId: string) => void;
   onQuickView: () => void;
 }) {
-  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({ id: job.id });
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: job.id });
   const [expanded, setExpanded] = useState(false);
   const isCompleted = job.status === "completed";
   const tc = TYPE_CONFIG[job.job_type] || { label: job.job_type, letter: "?", color: "var(--t-text-muted)", stripe: "#8A8A8A" };
@@ -507,30 +508,24 @@ const SortableJobTile = memo(function SortableJobTile({ job, isUnassigned, drive
   const size = job.asset?.subtype || "";
 
   return (
-    <div ref={setNodeRef}
+    <div ref={setNodeRef} {...attributes} {...listeners}
       style={{
         transform: CSS.Transform.toString(transform),
         transition,
         opacity: isDragging ? 0.3 : isCompleted ? 0.45 : 1,
         border: "1px solid #E8E8E8",
         boxShadow: isDragging ? "0 8px 24px rgba(0,0,0,0.15)" : "0 1px 4px rgba(0,0,0,0.06)",
+        cursor: isDragging ? "grabbing" : "grab",
+        touchAction: "none",
       }}
       className="group relative rounded-[14px] bg-white transition-all duration-150"
-      {...attributes}
     >
       {/* Left color stripe */}
       <div className="absolute left-0 top-2.5 bottom-2.5 w-[4px] rounded-full" style={{ background: tc.stripe }} />
 
       <div className="py-3 pl-4 pr-3.5" style={{ borderBottom: expanded ? "1px solid #F0F0F0" : "none" }}>
-        {/* Row 1: Drag handle + Size + Type + Customer name */}
+        {/* Row 1: Size + Type + Customer name + Status + Chevron */}
         <div className="flex items-start gap-1.5">
-          {/* Drag handle — always interactive, above everything */}
-          <div ref={setActivatorNodeRef} {...listeners}
-            className="shrink-0 cursor-grab active:cursor-grabbing mt-0.5 opacity-30 group-hover:opacity-60 hover:!opacity-100 transition-opacity"
-            style={{ touchAction: "none", color: "#999" }}>
-            <GripVertical className="h-4 w-4" />
-          </div>
-
           {/* Size badge */}
           {size && (
             <span className="shrink-0 rounded-md px-2 py-0.5 text-[12px] font-bold leading-tight mt-px"
@@ -545,10 +540,10 @@ const SortableJobTile = memo(function SortableJobTile({ job, isUnassigned, drive
             {tc.letter}
           </span>
 
-          {/* Customer name — allow wrapping */}
+          {/* Customer name — click to open QuickView */}
           <div className="flex-1 min-w-0">
             <span className="text-[14px] font-semibold leading-snug cursor-pointer hover:underline" style={{ color: "#0A0A0A" }}
-              onClick={onQuickView}>
+              onClick={(e) => { e.stopPropagation(); onQuickView(); }}>
               {job.customer ? `${job.customer.first_name} ${job.customer.last_name}` : job.job_number}
             </span>
           </div>
@@ -563,13 +558,13 @@ const SortableJobTile = memo(function SortableJobTile({ job, isUnassigned, drive
 
           {/* Expand chevron */}
           <button onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }}
-            className="shrink-0 p-0.5 mt-0.5" style={{ color: "#bbb" }}>
+            className="shrink-0 p-0.5 mt-0.5 cursor-pointer" style={{ color: "#bbb" }}>
             {expanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
           </button>
         </div>
 
         {/* Row 2: Address + Time window */}
-        <div className="flex items-center justify-between mt-1.5 pl-6">
+        <div className="flex items-center justify-between mt-1.5">
           {addrStr && (
             <p className="flex items-center gap-1 text-[12px] truncate flex-1" style={{ color: "#5C5C5C" }}>
               <MapPin className="h-3 w-3 shrink-0" style={{ color: "#999" }} />{addrStr}
@@ -583,7 +578,7 @@ const SortableJobTile = memo(function SortableJobTile({ job, isUnassigned, drive
         </div>
 
         {/* Row 3: Badges (asset, failed, overdue) */}
-        <div className="flex items-center gap-1.5 mt-1.5 pl-6 flex-wrap">
+        <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
           {job.asset?.identifier && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ background: "rgba(34,197,94,0.08)", color: "#22C55E" }}>{job.asset.identifier}</span>}
           {job.is_failed_trip && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: "rgba(220,38,38,0.08)", color: "#DC2626" }}>FAILED</span>}
           {job.source === "rescheduled_from_failure" && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: "rgba(217,119,6,0.08)", color: "#D97706" }}>FROM FAILED</span>}
@@ -613,7 +608,7 @@ const SortableJobTile = memo(function SortableJobTile({ job, isUnassigned, drive
 
       {/* Expanded details */}
       {expanded && (
-        <div className="px-4 py-3 pl-10 space-y-2">
+        <div className="px-4 py-3 space-y-2" onClick={(e) => e.stopPropagation()} style={{ cursor: "default" }}>
           <div className="flex items-center gap-3 text-[11px]" style={{ color: "#5C5C5C" }}>
             <span>{job.job_number}</span>
             {job.asset?.identifier && <span className="font-semibold" style={{ color: "#22C55E" }}>{job.asset.identifier}</span>}
