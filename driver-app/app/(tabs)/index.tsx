@@ -35,9 +35,9 @@ interface Job {
 }
 
 const TYPE_COLORS: Record<string, string> = {
-  delivery: '#3B82F6',
-  pickup: '#F97316',
-  exchange: '#8B5CF6',
+  delivery: '#22C55E',
+  pickup: '#22C55E',
+  exchange: '#22C55E',
 };
 const TYPE_LABELS: Record<string, string> = {
   delivery: 'Delivery',
@@ -45,14 +45,14 @@ const TYPE_LABELS: Record<string, string> = {
   exchange: 'Exchange',
 };
 const STATUS_COLORS: Record<string, string> = {
-  pending: '#71717A',
-  confirmed: '#3B82F6',
-  dispatched: '#8B5CF6',
-  en_route: '#EAB308',
-  arrived: '#06B6D4',
-  in_progress: '#F97316',
-  completed: '#22C55E',
-  cancelled: '#F87171',
+  pending: '#8A8A8A',
+  confirmed: '#22C55E',
+  dispatched: '#22C55E',
+  en_route: '#22C55E',
+  arrived: '#22C55E',
+  in_progress: '#22C55E',
+  completed: '#8A8A8A',
+  cancelled: '#DC2626',
 };
 
 function fmtTime(t: string | null) {
