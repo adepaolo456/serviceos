@@ -58,6 +58,9 @@ export class DumpTicket {
   @Column({ name: 'dump_tonnage_cost', type: 'decimal', precision: 10, scale: 2, default: 0 })
   dump_tonnage_cost!: number;
 
+  @Column({ name: 'fuel_env_cost', type: 'decimal', precision: 10, scale: 2, default: 0 })
+  fuel_env_cost!: number;
+
   @Column({ name: 'dump_surcharge_cost', type: 'decimal', precision: 10, scale: 2, default: 0 })
   dump_surcharge_cost!: number;
 

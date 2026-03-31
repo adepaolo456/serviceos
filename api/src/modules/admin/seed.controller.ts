@@ -37,6 +37,25 @@ export class SeedController {
     const tid = tenant.id;
     const log: string[] = [];
 
+    // --- CUSTOMER OVERAGE RATES ---
+    await this.tenantRepo.update(tid, {
+      customer_overage_rates: {
+        perTon: { dtm: 185, cnd: 185, msw: 150, shingles: 172 },
+        surchargeItems: {
+          mattress: { label: 'Mattress', price: 100 },
+          box_spring: { label: 'Box Spring', price: 100 },
+          tire_car: { label: 'Tire (Car)', price: 50 },
+          propane_tank: { label: 'Propane Tank', price: 50 },
+          refrigerator: { label: 'Refrigerator', price: 75 },
+          air_conditioner: { label: 'Air Conditioner', price: 50 },
+          tv: { label: 'TV/Monitor', price: 50 },
+          couch: { label: 'Couch/Sofa', price: 75 },
+          hot_water_heater: { label: 'Hot Water Heater', price: 50 },
+        },
+      },
+    } as any);
+    log.push('Updated customer_overage_rates on tenant');
+
     // --- TEAM ---
     const owner = await this.userRepo.findOne({ where: { tenant_id: tid, role: 'owner' } });
     const pw = await bcrypt.hash('TestDriver2026', 12);
@@ -126,7 +145,8 @@ export class SeedController {
     ];
 
     const rates = [
-      { waste_type: 'cnd', waste_type_label: 'C&D (Construction & Demolition)', rate_per_ton: 185 },
+      { waste_type: 'dtm', waste_type_label: 'DTM (Demo/Mixed)', rate_per_ton: 170 },
+      { waste_type: 'cnd', waste_type_label: 'C&D (Construction & Demolition)', rate_per_ton: 164 },
       { waste_type: 'msw', waste_type_label: 'MSW (Municipal Solid Waste)', rate_per_ton: 150 },
       { waste_type: 'shingles', waste_type_label: 'Shingles', rate_per_ton: 172 },
     ];
@@ -144,10 +164,10 @@ export class SeedController {
     for (const d of dumpData) {
       let loc: any = await this.dumpLocRepo.findOne({ where: { tenant_id: tid, name: d.name } });
       if (!loc) {
-        loc = await this.dumpLocRepo.save(this.dumpLocRepo.create({ ...d, tenant_id: tid } as any));
+        loc = await this.dumpLocRepo.save(this.dumpLocRepo.create({ ...d, tenant_id: tid, fuel_env_surcharge_per_ton: 4.08 } as any));
         log.push(`Created dump: ${d.name}`);
       } else {
-        await this.dumpLocRepo.update(loc.id, d as any);
+        await this.dumpLocRepo.update(loc.id, { ...d, fuel_env_surcharge_per_ton: 4.08 } as any);
       }
       dumpIds[d.name] = loc.id;
 
@@ -242,7 +262,7 @@ export class SeedController {
     await this.jobRepo.update(jobB.id, { linked_job_ids: [jobB2.id] });
     // Dump ticket: clean
     const dumpRS = await findDump('Recycling Solutions');
-    await this.ticketRepo.save(this.ticketRepo.create({ job_id: jobB2.id, tenant_id: tid, dump_location_id: dumpRS, dump_location_name: 'Recycling Solutions', ticket_number: 'T-12445', waste_type: 'cnd', weight_tons: 1.8, base_cost: 333, overage_items: [], overage_charges: 0, total_cost: 333, customer_charges: 0, submitted_by: jake, submitted_at: new Date('2026-03-25T14:30:00'), status: 'reviewed' } as any));
+    await this.ticketRepo.save(this.ticketRepo.create({ job_id: jobB2.id, tenant_id: tid, dump_location_id: dumpRS, dump_location_name: 'Recycling Solutions', ticket_number: 'T-12445', waste_type: 'cnd', weight_tons: 1.8, base_cost: 295.20, dump_tonnage_cost: 295.20, fuel_env_cost: 7.34, overage_items: [], overage_charges: 0, dump_surcharge_cost: 0, total_cost: 302.54, customer_charges: 0, customer_tonnage_charge: 0, customer_surcharge_charge: 0, profit_margin: -302.54, submitted_by: jake, submitted_at: new Date('2026-03-25T14:30:00'), status: 'reviewed' } as any));
     log.push('Job B: Jennifer Walsh 15yd Delivery+Pickup (clean, no overage)');
 
     // --- JOB C: Robert Patel 20yd (HAS overage) ---
@@ -271,7 +291,7 @@ export class SeedController {
     // Overage invoice
     const invC: any = await this.invoiceRepo.save(makeInv({ invoice_number: 'INV-2026-0030', customer_id: custRobert, job_id: jobC.id, status: 'sent', source: 'dump_slip', invoice_type: 'overage', subtotal: 422, total: 422, amount_paid: 0, balance_due: 422, due_date: '2026-04-27', line_items: [{ description: 'Weight overage: 1.2 tons over 3 ton allowance @ $185/ton', quantity: 1, unitPrice: 222, amount: 222 }, { description: 'Mattress (qty: 2) @ $100/each', quantity: 2, unitPrice: 100, amount: 200 }], notes: 'Additional charges from dump slip #T-89234 at Brockton Transfer Station' }));
     const dumpBT = await findDump('Brockton Transfer Station');
-    await this.ticketRepo.save(this.ticketRepo.create({ job_id: jobC2.id, tenant_id: tid, dump_location_id: dumpBT, dump_location_name: 'Brockton Transfer Station', ticket_number: 'T-89234', waste_type: 'cnd', weight_tons: 4.2, base_cost: 777, overage_items: [{ type: 'mattress', label: 'Mattress', quantity: 2, chargePerUnit: 100, total: 200 }], overage_charges: 200, total_cost: 977, customer_charges: 422, submitted_by: jake, submitted_at: new Date('2026-03-28T15:30:00'), status: 'reviewed', invoiced: true, invoice_id: invC.id } as any));
+    await this.ticketRepo.save(this.ticketRepo.create({ job_id: jobC2.id, tenant_id: tid, dump_location_id: dumpBT, dump_location_name: 'Brockton Transfer Station', ticket_number: 'T-89234', waste_type: 'cnd', weight_tons: 4.2, base_cost: 688.80, dump_tonnage_cost: 688.80, fuel_env_cost: 17.14, overage_items: [{ type: 'mattress', label: 'Mattress', quantity: 2, chargePerUnit: 100, total: 200 }], overage_charges: 200, dump_surcharge_cost: 200, total_cost: 905.94, customer_charges: 422, customer_tonnage_charge: 222, customer_surcharge_charge: 200, profit_margin: -483.94, submitted_by: jake, submitted_at: new Date('2026-03-28T15:30:00'), status: 'reviewed', invoiced: true, invoice_id: invC.id } as any));
     log.push('Job C: Robert Patel 20yd Delivery+Pickup (4.2t overage, $422 invoice)');
 
     // --- JOB D: South Shore Renovations 15yd (15% discount, MSW overage) ---
@@ -291,14 +311,14 @@ export class SeedController {
       service_address: { street: '150 Washington Street', city: 'Hanover', state: 'MA', zip: '02339' },
       scheduled_date: '2026-03-22', status: 'completed', completed_at: new Date('2026-03-22T16:00:00'),
       assigned_driver_id: mike, asset_id: assetD, pick_up_asset_id: assetD,
-      parent_job_id: jobD.id, dump_disposition: 'dumped', customer_additional_charges: 92.5, dump_status: 'submitted',
+      parent_job_id: jobD.id, dump_disposition: 'dumped', customer_additional_charges: 75, dump_status: 'submitted',
     }));
     if (assetD) await this.assetRepo.update(assetD, { status: 'available', current_location: null, current_job_id: null } as any);
     await this.jobRepo.update(jobD.id, { linked_job_ids: [jobD2.id] });
     const dumpST = await findDump('Stoughton Transfer Station');
-    const invD: any = await this.invoiceRepo.save(makeInv({ invoice_number: 'INV-2026-0031', customer_id: custSSR, job_id: jobD.id, status: 'sent', source: 'dump_slip', invoice_type: 'overage', subtotal: 92.5, total: 92.5, amount_paid: 0, balance_due: 92.5, due_date: '2026-04-21', line_items: [{ description: 'Weight overage: 0.5 tons over 2 ton allowance @ $185/ton', quantity: 1, unitPrice: 92.5, amount: 92.5 }] }));
-    await this.ticketRepo.save(this.ticketRepo.create({ job_id: jobD2.id, tenant_id: tid, dump_location_id: dumpST, dump_location_name: 'Stoughton Transfer Station', ticket_number: 'T-45821', waste_type: 'msw', weight_tons: 2.5, base_cost: 375, overage_items: [], overage_charges: 0, total_cost: 375, customer_charges: 92.5, submitted_by: mike, submitted_at: new Date('2026-03-22T16:30:00'), status: 'reviewed', invoiced: true, invoice_id: invD.id } as any));
-    log.push('Job D: South Shore Renovations 15yd (15% off, 0.5t MSW overage, $92.50 invoice)');
+    const invD: any = await this.invoiceRepo.save(makeInv({ invoice_number: 'INV-2026-0031', customer_id: custSSR, job_id: jobD.id, status: 'sent', source: 'dump_slip', invoice_type: 'overage', subtotal: 75, total: 75, amount_paid: 0, balance_due: 75, due_date: '2026-04-21', line_items: [{ description: 'Weight overage: 0.5 tons over 2 ton allowance @ $150/ton', quantity: 1, unitPrice: 75, amount: 75 }] }));
+    await this.ticketRepo.save(this.ticketRepo.create({ job_id: jobD2.id, tenant_id: tid, dump_location_id: dumpST, dump_location_name: 'Stoughton Transfer Station', ticket_number: 'T-45821', waste_type: 'msw', weight_tons: 2.5, base_cost: 375, dump_tonnage_cost: 375, fuel_env_cost: 10.20, overage_items: [], overage_charges: 0, dump_surcharge_cost: 0, total_cost: 385.20, customer_charges: 75, customer_tonnage_charge: 75, customer_surcharge_charge: 0, profit_margin: -310.20, submitted_by: mike, submitted_at: new Date('2026-03-22T16:30:00'), status: 'reviewed', invoiced: true, invoice_id: invD.id } as any));
+    log.push('Job D: South Shore Renovations 15yd (15% off, 0.5t MSW overage, $75 invoice)');
 
     // --- JOB E: Tom Richards FAILED pickup ---
     const custTom = await findCust('tom.richards@email.com');

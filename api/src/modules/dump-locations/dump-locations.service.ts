@@ -192,7 +192,9 @@ export class DumpLocationsService {
     const minimumCharge = rate ? Number(rate.minimum_charge) || 0 : 0;
 
     // What the dump charges us
-    const baseCost = Math.max(weightTons * ratePerTon, minimumCharge);
+    const dumpTonnageCost = Math.max(weightTons * ratePerTon, minimumCharge);
+    const fuelEnvSurchargePerTon = Number(location.fuel_env_surcharge_per_ton) || 0;
+    const fuelEnvCost = Math.round(weightTons * fuelEnvSurchargePerTon * 100) / 100;
 
     // Included tonnage from pricing rule
     const pricingRule = await this.pricingRepo.findOne({
@@ -226,7 +228,7 @@ export class DumpLocationsService {
       }
     }
 
-    const dumpTotalCost = baseCost + totalDumpOverage;
+    const dumpTotalCost = dumpTonnageCost + fuelEnvCost + totalDumpOverage;
     const customerCharges = customerTonnageOverage + totalCustomerSurcharges;
 
     // Create dump ticket
@@ -234,9 +236,10 @@ export class DumpLocationsService {
       job_id: jobId, tenant_id: tenantId, dump_location_id: dumpLocationId,
       dump_location_name: location.name, ticket_number: ticketNumber,
       ticket_photo: ticketPhoto, waste_type: wasteType, weight_tons: weightTons,
-      base_cost: baseCost, overage_items: calculatedItems, overage_charges: totalDumpOverage,
+      base_cost: dumpTonnageCost, overage_items: calculatedItems, overage_charges: totalDumpOverage,
       total_cost: dumpTotalCost, customer_charges: customerCharges,
-      dump_tonnage_cost: baseCost, dump_surcharge_cost: totalDumpOverage,
+      dump_tonnage_cost: dumpTonnageCost, fuel_env_cost: fuelEnvCost,
+      dump_surcharge_cost: totalDumpOverage,
       customer_tonnage_charge: customerTonnageOverage, customer_surcharge_charge: totalCustomerSurcharges,
       profit_margin: customerCharges - dumpTotalCost,
       submitted_by: userId, submitted_at: new Date(), status: 'submitted',
