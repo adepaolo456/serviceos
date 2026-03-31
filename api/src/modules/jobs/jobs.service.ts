@@ -10,6 +10,7 @@ import { Asset } from '../assets/entities/asset.entity';
 import { Invoice } from '../billing/entities/invoice.entity';
 import { PricingRule } from '../pricing/entities/pricing-rule.entity';
 import { AutomationLog } from '../automation/entities/automation-log.entity';
+import { Customer } from '../customers/entities/customer.entity';
 import {
   CreateJobDto,
   UpdateJobDto,
@@ -39,6 +40,8 @@ export class JobsService {
     private pricingRepo: Repository<PricingRule>,
     @InjectRepository(AutomationLog)
     private logRepo: Repository<AutomationLog>,
+    @InjectRepository(Customer)
+    private customerRepo: Repository<Customer>,
   ) {}
 
   async create(tenantId: string, dto: CreateJobDto): Promise<Job> {
@@ -53,6 +56,34 @@ export class JobsService {
 
     const seq = String(countToday + 1).padStart(3, '0');
     const jobNumber = `JOB-${dateStr}-${seq}`;
+
+    // Auto-calculate pricing if assetSubtype provided but no explicit price
+    let basePrice = dto.basePrice;
+    let totalPrice = dto.totalPrice;
+    let rentalDays = dto.rentalDays;
+    let discountPercentage = 0;
+    let discountAmount = 0;
+
+    if (dto.assetSubtype && !dto.basePrice) {
+      const rule = await this.pricingRepo.findOne({
+        where: { tenant_id: tenantId, asset_subtype: dto.assetSubtype, is_active: true },
+      });
+      if (rule) {
+        basePrice = Number(rule.base_price);
+        rentalDays = rentalDays ?? rule.rental_period_days ?? 14;
+
+        // Check customer discount
+        if (dto.customerId) {
+          const customer = await this.customerRepo.findOne({ where: { id: dto.customerId } });
+          if (customer?.discount_percentage) {
+            discountPercentage = Number(customer.discount_percentage);
+            discountAmount = Math.round(basePrice * discountPercentage) / 100;
+          }
+        }
+
+        totalPrice = basePrice - discountAmount;
+      }
+    }
 
     const job = this.jobsRepository.create({
       tenant_id: tenantId,
@@ -70,14 +101,63 @@ export class JobsService {
       placement_notes: dto.placementNotes,
       rental_start_date: dto.rentalStartDate,
       rental_end_date: dto.rentalEndDate,
-      rental_days: dto.rentalDays,
-      base_price: dto.basePrice,
-      total_price: dto.totalPrice,
+      rental_days: rentalDays,
+      base_price: basePrice,
+      total_price: totalPrice,
       deposit_amount: dto.depositAmount,
+      discount_percentage: discountPercentage || undefined,
+      discount_amount: discountAmount || undefined,
       source: dto.source,
-    });
+    } as Partial<Job>);
 
-    return this.jobsRepository.save(job);
+    const savedJob = await this.jobsRepository.save(job);
+
+    // Auto-create POS invoice for delivery jobs with a price
+    const price = Number(savedJob.total_price) || 0;
+    if (savedJob.job_type === 'delivery' && price > 0) {
+      const existingInvoice = await this.invoiceRepo.findOne({
+        where: { tenant_id: tenantId, job_id: savedJob.id, source: 'booking' },
+      });
+      if (!existingInvoice) {
+        const bp = Number(savedJob.base_price) || price;
+        const disc = Number(savedJob.discount_amount) || 0;
+        const discPct = Number(savedJob.discount_percentage) || 0;
+        const now = new Date();
+        const invSeq = await this.invoiceRepo
+          .createQueryBuilder('i')
+          .where('i.tenant_id = :tenantId', { tenantId })
+          .getCount();
+        const invNumber = `INV-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}-${String(invSeq + 1).padStart(3, '0')}`;
+
+        const lineItems: Array<{ description: string; quantity: number; unitPrice: number; amount: number }> = [
+          { description: `${dto.assetSubtype || ''} Dumpster Rental`.trim(), quantity: 1, unitPrice: bp, amount: bp },
+        ];
+        if (disc > 0) {
+          lineItems.push({ description: `Customer discount (${discPct}%)`, quantity: 1, unitPrice: -disc, amount: -disc });
+        }
+
+        await this.invoiceRepo.save(this.invoiceRepo.create({
+          tenant_id: tenantId,
+          invoice_number: invNumber,
+          customer_id: savedJob.customer_id,
+          job_id: savedJob.id,
+          status: 'paid',
+          source: 'booking',
+          invoice_type: 'rental',
+          subtotal: bp,
+          total: price,
+          amount_paid: price,
+          balance_due: 0,
+          discount_amount: disc,
+          paid_at: now,
+          payment_method: 'card',
+          line_items: lineItems,
+          notes: 'Paid at time of booking',
+        } as Partial<Invoice>));
+      }
+    }
+
+    return savedJob;
   }
 
   async findAll(tenantId: string, query: ListJobsQueryDto) {
