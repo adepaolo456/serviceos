@@ -6,8 +6,6 @@ import {
   TouchableOpacity,
   StyleSheet,
   RefreshControl,
-  Platform,
-  Linking,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -161,10 +159,13 @@ export default function TodayScreen() {
         }
         renderItem={({ item: j, index }) => {
           const isCompleted = j.status === 'completed';
-          const isNextStop = !isCompleted && jobs.findIndex(j => j.status !== 'completed' && j.status !== 'cancelled') === index;
-          const addr = j.service_address;
+          const isNextStop = !isCompleted && jobs.findIndex(x => x.status !== 'completed' && x.status !== 'cancelled') === index;
           const nextAction = getNextAction(j.status);
           const hasNotes = !!(j.placement_notes || j.driver_notes);
+          const typeColor = TYPE_COLORS[j.job_type] || '#71717A';
+          const typeLabel = TYPE_LABELS[j.job_type] || j.job_type;
+          const sizeLabel = j.asset?.subtype || '';
+
           return (
             <TouchableOpacity
               style={[
@@ -175,8 +176,11 @@ export default function TodayScreen() {
               onPress={() => router.push(`/job/${j.id}`)}
               activeOpacity={0.7}
             >
-              {isNextStop && <View style={s.cardGreenEdge} />}
-              <View style={s.cardRow}>
+              {/* Left color stripe */}
+              <View style={[s.cardStripe, { backgroundColor: typeColor }]} />
+
+              {/* ROW 1: Stop circle + Size + Type + Chevron */}
+              <View style={s.cardRow1}>
                 <View style={[s.stopCircle, isCompleted && s.stopCircleDone]}>
                   {isCompleted ? (
                     <Ionicons name="checkmark" size={16} color="#fff" />
@@ -184,89 +188,45 @@ export default function TodayScreen() {
                     <Text style={s.stopNum}>{index + 1}</Text>
                   )}
                 </View>
-                <View style={s.cardContent}>
-                  <View style={s.cardTop}>
-                    <Text
-                      style={[s.customerName, isCompleted && s.textFaded]}
-                      numberOfLines={1}
-                    >
-                      {j.customer
-                        ? `${j.customer.first_name} ${j.customer.last_name}`
-                        : j.job_number}
-                    </Text>
-                    <View style={s.cardTopRight}>
-                      <View
-                        style={[
-                          s.typeBadge,
-                          {
-                            backgroundColor:
-                              (TYPE_COLORS[j.job_type] || '#71717A') + '14',
-                          },
-                        ]}
-                      >
-                        <View style={[s.typeDot, { backgroundColor: TYPE_COLORS[j.job_type] || '#71717A' }]} />
-                        <Text
-                          style={[
-                            s.typeText,
-                            { color: TYPE_COLORS[j.job_type] || '#71717A' },
-                          ]}
-                        >
-                          {TYPE_LABELS[j.job_type] || j.job_type}
-                        </Text>
-                      </View>
-                    </View>
-                  </View>
-                  {addr && (
-                    <View style={s.addressRow}>
-                      <Text
-                        style={[s.address, isCompleted && s.textFaded]}
-                        numberOfLines={1}
-                      >
-                        {[addr.street, addr.city].filter(Boolean).join(', ')}
-                      </Text>
-                      {hasNotes && <Text style={s.notesIndicator}>📝</Text>}
+                <Text style={[s.sizeText, isCompleted && s.textFaded]}>
+                  {sizeLabel || '—'}
+                </Text>
+                <Text style={[s.typeLabel, { color: typeColor }]}>{typeLabel}</Text>
+                <View style={{ flex: 1 }} />
+                <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
+              </View>
+
+              {/* ROW 2: Customer name + Status */}
+              <View style={s.cardRow2}>
+                <Text style={[s.customerName, isCompleted && s.textFaded]}>
+                  {j.customer
+                    ? `${j.customer.first_name} ${j.customer.last_name}`
+                    : j.job_number}
+                </Text>
+                <Text style={[s.nextActionText, { color: nextAction.color }]}>
+                  {nextAction.label}
+                </Text>
+              </View>
+
+              {/* ROW 3: Badges (optional) */}
+              {(j.asset?.identifier || hasNotes || j.scheduled_window_start || j.is_overdue) && (
+                <View style={s.cardRow3}>
+                  {j.asset?.identifier && (
+                    <View style={s.assetBadge}>
+                      <Text style={s.assetBadgeText}>{j.asset.identifier}</Text>
                     </View>
                   )}
-                  <View style={s.cardMeta}>
-                    {j.asset?.identifier && <View style={s.sizeBadge}><Text style={s.sizeBadgeText}>{j.asset.identifier}</Text></View>}
-                    {j.scheduled_window_start && (
-                      <Text style={s.metaText}>
-                        {fmtTime(j.scheduled_window_start)}
-                        {j.scheduled_window_end
-                          ? ` - ${fmtTime(j.scheduled_window_end)}`
-                          : ''}
-                      </Text>
-                    )}
-                    {j.is_overdue && (
-                      <Text style={s.overdueBadge}>OVERDUE {j.extra_days}d</Text>
-                    )}
-                    <Text style={[s.nextActionText, { color: nextAction.color }]}>
-                      {nextAction.label}
+                  {hasNotes && <Text style={s.notesIndicator}>📝</Text>}
+                  {j.scheduled_window_start && (
+                    <Text style={s.metaText}>
+                      {fmtTime(j.scheduled_window_start)}
+                      {j.scheduled_window_end ? `–${fmtTime(j.scheduled_window_end)}` : ''}
                     </Text>
-                  </View>
+                  )}
+                  {j.is_overdue && (
+                    <Text style={s.overdueBadge}>OVERDUE {j.extra_days}d</Text>
+                  )}
                 </View>
-                {j.service_address && !isCompleted && (
-                  <TouchableOpacity style={s.cardNavBtn} onPress={(e) => {
-                    e.stopPropagation?.();
-                    const a = j.service_address!;
-                    const q = [a.street, a.city, a.state].filter(Boolean).join(', ');
-                    Linking.openURL(Platform.OS === 'ios' ? `maps://?daddr=${encodeURIComponent(q)}` : `google.navigation:q=${encodeURIComponent(q)}`);
-                  }}>
-                    <Ionicons name="navigate" size={18} color={colors.accent} />
-                  </TouchableOpacity>
-                )}
-                <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
-              </View>
-              {isNextStop && j.service_address && (
-                <TouchableOpacity style={s.inlineNav} onPress={(e) => {
-                  e.stopPropagation?.();
-                  const a = j.service_address!;
-                  const q = [a.street, a.city, a.state].filter(Boolean).join(', ');
-                  Linking.openURL(Platform.OS === 'ios' ? `maps://?daddr=${encodeURIComponent(q)}` : `google.navigation:q=${encodeURIComponent(q)}`);
-                }}>
-                  <Ionicons name="navigate" size={14} color="#fff" />
-                  <Text style={s.inlineNavText}>Navigate</Text>
-                </TouchableOpacity>
               )}
             </TouchableOpacity>
           );
@@ -309,82 +269,85 @@ const makeStyles = (colors: ThemeColors) =>
     list: { paddingHorizontal: 20, paddingBottom: 20 },
     card: {
       backgroundColor: colors.surface,
-      borderRadius: 14,
+      borderRadius: 16,
       paddingVertical: 18,
       paddingHorizontal: 16,
-      marginBottom: 8,
+      marginBottom: 10,
       borderWidth: 1,
       borderColor: colors.border,
       overflow: 'hidden',
+      shadowColor: '#000',
+      shadowOpacity: 0.04,
+      shadowRadius: 4,
+      shadowOffset: { width: 0, height: 1 },
     },
-    cardCompleted: { opacity: 0.45 },
-    cardNextStop: { borderColor: colors.accent },
-    cardGreenEdge: {
+    cardCompleted: { opacity: 0.4 },
+    cardNextStop: { borderColor: colors.accent, borderWidth: 2 },
+    cardStripe: {
       position: 'absolute',
       left: 0,
-      top: 0,
-      bottom: 0,
-      width: 3,
-      backgroundColor: colors.accent,
-      borderTopLeftRadius: 14,
-      borderBottomLeftRadius: 14,
+      top: 8,
+      bottom: 8,
+      width: 4,
+      borderRadius: 2,
     },
-    inlineNav: {
+    cardRow1: {
       flexDirection: 'row',
       alignItems: 'center',
-      justifyContent: 'center',
-      gap: 6,
-      marginTop: 10,
-      backgroundColor: colors.accent,
-      borderRadius: 10,
-      paddingVertical: 8,
+      gap: 10,
     },
-    inlineNavText: { fontSize: 13, fontWeight: '600', color: '#fff' },
-    sizeBadge: { backgroundColor: colors.accentSoft, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 },
-    sizeBadgeText: { fontSize: 11, fontWeight: '700', color: colors.accent },
-    cardRow: { flexDirection: 'row', alignItems: 'center' },
     stopCircle: {
       width: 32,
       height: 32,
       borderRadius: 16,
-      backgroundColor: colors.surfaceHover,
+      backgroundColor: '#22C55E',
       justifyContent: 'center',
       alignItems: 'center',
-      marginRight: 12,
     },
     stopCircleDone: { backgroundColor: colors.accent },
-    stopNum: { fontSize: 13, fontWeight: '700', color: colors.textSecondary },
-    cardContent: { flex: 1 },
-    cardTop: {
+    stopNum: { fontSize: 14, fontWeight: '800', color: '#fff' },
+    sizeText: {
+      fontSize: 20,
+      fontWeight: '800',
+      color: colors.text,
+      letterSpacing: -0.5,
+    },
+    typeLabel: {
+      fontSize: 16,
+      fontWeight: '700',
+    },
+    cardRow2: {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
-      marginBottom: 4,
+      marginTop: 8,
+      paddingLeft: 42,
     },
-    cardTopRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
     customerName: {
-      fontSize: 17,
-      fontWeight: '700',
+      fontSize: 15,
+      fontWeight: '600',
       color: colors.text,
       flex: 1,
       marginRight: 8,
     },
-    typeBadge: {
+    nextActionText: { fontSize: 12, fontWeight: '700' },
+    cardRow3: {
       flexDirection: 'row',
+      gap: 8,
+      flexWrap: 'wrap',
       alignItems: 'center',
+      marginTop: 6,
+      paddingLeft: 42,
+    },
+    assetBadge: {
+      backgroundColor: colors.accentSoft,
       paddingHorizontal: 8,
       paddingVertical: 2,
       borderRadius: 6,
-      gap: 4,
     },
-    typeDot: { width: 24, height: 24, borderRadius: 12 },
-    typeText: { fontSize: 10, fontWeight: '700' },
-    addressRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
-    address: { fontSize: 14, color: colors.textSecondary, flex: 1 },
-    notesIndicator: { fontSize: 12, marginLeft: 4, color: '#D97706' },
-    cardMeta: { flexDirection: 'row', gap: 8, flexWrap: 'wrap', alignItems: 'center' },
+    assetBadgeText: { fontSize: 11, fontWeight: '700', color: colors.accent },
+    notesIndicator: { fontSize: 12, color: '#D97706' },
     metaText: { fontSize: 11, color: colors.textSecondary },
-    nextActionText: { fontSize: 12, fontWeight: '700' },
     overdueBadge: {
       fontSize: 10,
       fontWeight: '700',
@@ -395,13 +358,6 @@ const makeStyles = (colors: ThemeColors) =>
       borderRadius: 4,
     },
     textFaded: { color: colors.textSecondary },
-    cardNavBtn: {
-      width: 48,
-      height: 48,
-      justifyContent: 'center',
-      alignItems: 'center',
-      marginLeft: 16,
-    },
     emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
     empty: { alignItems: 'center' },
     emptyTitle: { fontSize: 18, fontWeight: '600', color: colors.text, marginTop: 16 },

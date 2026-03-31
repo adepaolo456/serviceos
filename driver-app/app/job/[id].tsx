@@ -121,6 +121,16 @@ export default function JobDetailScreen() {
       const resolvedStatus = updated.status || newStatus;
       setJob((prev) => (prev ? { ...prev, status: resolvedStatus } : prev));
 
+      // Auto-open Google Maps when "On My Way" is tapped
+      if (resolvedStatus === 'en_route' && job.service_address) {
+        const a = job.service_address;
+        const q = [a.street, a.city, a.state, a.zip].filter(Boolean).join(', ');
+        const url = Platform.OS === 'ios'
+          ? `maps://?daddr=${encodeURIComponent(q)}`
+          : `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(q)}`;
+        Linking.openURL(url).catch(() => {});
+      }
+
       if (resolvedStatus === 'arrived') {
         // Show dumpster confirmation after arriving
         if (job.job_type === 'delivery' || job.job_type === 'exchange') {
@@ -789,7 +799,7 @@ const makeStyles = (colors: ThemeColors) =>
       borderBottomWidth: 0.5,
       borderBottomColor: colors.frameBorder,
     },
-    backBtn: { padding: 4, marginRight: 12 },
+    backBtn: { width: 44, height: 44, justifyContent: 'center', alignItems: 'center', marginRight: 8 },
     headerContent: { flex: 1 },
     headerBadges: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 },
     headerTypeBadge: {
