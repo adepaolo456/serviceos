@@ -44,17 +44,22 @@ interface DispatchBoard { date: string; drivers: DriverColumn[]; unassigned: Dis
 
 /* ---- Constants ---- */
 
-const TYPE_CONFIG: Record<string, { label: string; letter: string; cls: string }> = {
-  delivery: { label: "Drop Off", letter: "D", cls: "bg-blue-500/15 text-blue-400" },
-  pickup: { label: "Pick Up", letter: "P", cls: "bg-orange-500/15 text-orange-400" },
-  exchange: { label: "Exchange", letter: "E", cls: "bg-purple-500/15 text-purple-400" },
-  dump_run: { label: "Dump Run", letter: "DR", cls: "bg-amber-600/15 text-amber-500" },
+const TYPE_CONFIG: Record<string, { label: string; letter: string; color: string }> = {
+  delivery: { label: "Drop Off", letter: "D", color: "var(--t-accent)" },
+  pickup: { label: "Pick Up", letter: "P", color: "var(--t-warning)" },
+  exchange: { label: "Exchange", letter: "E", color: "#a78bfa" },
+  dump_run: { label: "Dump Run", letter: "DR", color: "var(--t-warning)" },
 };
 
-const STATUS_BORDER: Record<string, string> = {
-  pending: "border-l-zinc-500", confirmed: "border-l-blue-500", dispatched: "border-l-purple-500",
-  en_route: "border-l-yellow-500", arrived: "border-l-teal-500", in_progress: "border-l-orange-500",
-  completed: "border-l-emerald-500", cancelled: "border-l-red-500",
+const STATUS_LEFT_BORDER: Record<string, string> = {
+  pending: "var(--t-warning)",
+  confirmed: "var(--t-accent)",
+  dispatched: "#a78bfa",
+  en_route: "var(--t-warning)",
+  arrived: "#2dd4bf",
+  in_progress: "var(--t-warning)",
+  completed: "var(--t-text-muted)",
+  cancelled: "var(--t-error)",
 };
 
 const FILTER_TABS = [
@@ -205,38 +210,72 @@ export default function DispatchPage() {
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-1">
-              <button onClick={() => setDate(d => shiftDate(d, -1))} className="rounded-lg bg-dark-card border border-[#1E2D45] p-2 text-muted hover:text-white active:scale-95 transition-all"><ChevronLeft className="h-4 w-4" /></button>
+              <button onClick={() => setDate(d => shiftDate(d, -1))}
+                className="p-2 rounded-[14px] border transition-all duration-150"
+                style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)", color: "var(--t-text-muted)" }}
+                onMouseEnter={e => { e.currentTarget.style.color = "var(--t-text-primary)"; }}
+                onMouseLeave={e => { e.currentTarget.style.color = "var(--t-text-muted)"; }}>
+                <ChevronLeft className="h-4 w-4" />
+              </button>
               <div className="relative">
-                <Calendar className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
-                <input type="date" value={date} onChange={e => setDate(e.target.value)} className="rounded-lg border border-[#1E2D45] bg-[#111C2E] py-2 pl-10 pr-3 text-sm font-medium text-white outline-none focus:border-brand w-52" />
+                <Calendar className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" style={{ color: "var(--t-text-muted)" }} />
+                <input type="date" value={date} onChange={e => setDate(e.target.value)}
+                  className="rounded-[14px] py-2 pl-10 pr-3 text-sm font-medium outline-none w-52 transition-all duration-150"
+                  style={{ background: "var(--t-bg-card)", borderWidth: 1, borderStyle: "solid", borderColor: "var(--t-border)", color: "var(--t-text-primary)" }} />
               </div>
-              <button onClick={() => setDate(d => shiftDate(d, 1))} className="rounded-lg bg-dark-card border border-[#1E2D45] p-2 text-muted hover:text-white active:scale-95 transition-all"><ChevronRight className="h-4 w-4" /></button>
-              <button onClick={() => setDate(today())} className={`ml-1 rounded-lg border px-3 py-2 text-xs font-medium transition-all active:scale-95 ${date === today() ? "bg-brand/10 border-brand/20 text-brand" : "bg-dark-card border-[#1E2D45] text-muted hover:text-white"}`}>Today</button>
+              <button onClick={() => setDate(d => shiftDate(d, 1))}
+                className="p-2 rounded-[14px] border transition-all duration-150"
+                style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)", color: "var(--t-text-muted)" }}
+                onMouseEnter={e => { e.currentTarget.style.color = "var(--t-text-primary)"; }}
+                onMouseLeave={e => { e.currentTarget.style.color = "var(--t-text-muted)"; }}>
+                <ChevronRight className="h-4 w-4" />
+              </button>
+              <button onClick={() => setDate(today())}
+                className="ml-1 rounded-full px-3 py-2 text-xs font-medium transition-all duration-150 border"
+                style={{
+                  background: date === today() ? "var(--t-accent-soft)" : "var(--t-bg-card)",
+                  borderColor: date === today() ? "var(--t-accent)" : "var(--t-border)",
+                  color: date === today() ? "var(--t-accent)" : "var(--t-text-muted)",
+                }}>
+                Today
+              </button>
             </div>
-            <div className="hidden sm:flex items-center gap-2 text-sm text-muted">
-              <span className="font-medium text-white">{fmtDate(date)}</span>
+            <div className="hidden sm:flex items-center gap-2 text-sm" style={{ color: "var(--t-text-muted)" }}>
+              <span className="font-medium" style={{ color: "var(--t-text-primary)" }}>{fmtDate(date)}</span>
               <span>·</span><span>{totalJobs} jobs</span><span>·</span><span>{driverCount} drivers</span>
-              {unassignedCount > 0 && <><span>·</span><span className="text-red-400 font-medium">{unassignedCount} unassigned</span></>}
+              {unassignedCount > 0 && <><span>·</span><span className="font-medium" style={{ color: "var(--t-warning)" }}>{unassignedCount} unassigned</span></>}
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={() => fetchBoard(true)} disabled={refreshing} className="rounded-lg bg-dark-card border border-[#1E2D45] p-2 text-muted hover:text-white transition-all active:scale-95 disabled:opacity-50">
+            <button onClick={() => fetchBoard(true)} disabled={refreshing}
+              className="p-2 rounded-[14px] border transition-all duration-150 disabled:opacity-50"
+              style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)", color: "var(--t-text-muted)" }}>
               <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
             </button>
-            <button className="flex items-center gap-1.5 rounded-lg bg-[#2ECC71] px-3.5 py-2 text-xs font-semibold text-white hover:bg-[#1FA855] transition-all active:scale-95"><Zap className="h-3.5 w-3.5" /> Optimize Routes</button>
+            <button className="flex items-center gap-1.5 rounded-full px-3.5 py-2 text-xs font-semibold transition-all duration-150 active:scale-95"
+              style={{ background: "var(--t-accent)", color: "#000" }}>
+              <Zap className="h-3.5 w-3.5" /> Optimize Routes
+            </button>
           </div>
         </div>
         <div className="flex items-center gap-3 mt-3">
           <div className="flex gap-1">
             {FILTER_TABS.map(t => (
               <button key={t.key} onClick={() => setFilter(t.key)}
-                className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${filter === t.key ? "bg-brand text-dark-primary" : "bg-dark-card text-muted hover:text-white"}`}>{t.label}</button>
+                className="rounded-full px-3 py-1.5 text-xs font-medium transition-all duration-150"
+                style={{
+                  background: filter === t.key ? "var(--t-accent-soft)" : "var(--t-bg-card)",
+                  color: filter === t.key ? "var(--t-accent)" : "var(--t-text-muted)",
+                }}>
+                {t.label}
+              </button>
             ))}
           </div>
           <div className="relative flex-1 max-w-xs">
-            <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted" />
+            <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2" style={{ color: "var(--t-text-muted)" }} />
             <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search jobs or locations..."
-              className="w-full rounded-lg bg-[#111C2E] border border-[#1E2D45] py-1.5 pl-9 pr-3 text-xs text-white placeholder-muted outline-none focus:border-brand" />
+              className="w-full rounded-[14px] py-1.5 pl-9 pr-3 text-xs outline-none transition-all duration-150"
+              style={{ background: "var(--t-bg-card)", borderWidth: 1, borderStyle: "solid", borderColor: "var(--t-border)", color: "var(--t-text-primary)" }} />
           </div>
         </div>
       </div>
@@ -246,22 +285,25 @@ export default function DispatchPage() {
         <div className="flex-1 min-w-0 overflow-hidden">
           {loading ? (
             <div className="flex h-full gap-3 overflow-x-auto pb-2">
-              {[1,2,3,4].map(i => (<div key={i} className="w-64 shrink-0 space-y-2"><div className="h-16 skeleton rounded-xl" />{[1,2,3].map(j => <div key={j} className="h-24 skeleton rounded-lg" />)}</div>))}
+              {[1,2,3,4].map(i => (<div key={i} className="w-64 shrink-0 space-y-2"><div className="h-16 skeleton rounded-[14px]" />{[1,2,3].map(j => <div key={j} className="h-24 skeleton rounded-[14px]" />)}</div>))}
             </div>
           ) : !board ? (
-            <div className="flex h-full items-center justify-center text-muted">Failed to load</div>
+            <div className="flex h-full items-center justify-center" style={{ color: "var(--t-text-muted)" }}>Failed to load</div>
           ) : totalJobs === 0 && board.drivers.length === 0 ? (
             <div className="flex h-full flex-col items-center justify-center">
-              <Truck className="h-14 w-14 text-muted/15 mb-3" />
-              <h2 className="font-display text-base font-semibold text-white">No jobs for {fmtDate(date)}</h2>
-              <p className="mt-1 text-xs text-muted">Schedule some deliveries!</p>
-              <Link href="/" className="mt-3 flex items-center gap-1.5 rounded-lg bg-brand px-4 py-2 text-xs font-semibold text-dark-primary hover:bg-brand-light active:scale-95 transition-all"><Plus className="h-3.5 w-3.5" /> New Job</Link>
+              <Truck className="h-14 w-14 mb-3" style={{ color: "var(--t-text-muted)", opacity: 0.15 }} />
+              <h2 className="text-base font-semibold" style={{ color: "var(--t-text-primary)", letterSpacing: "-0.025em" }}>No jobs for {fmtDate(date)}</h2>
+              <p className="mt-1 text-xs" style={{ color: "var(--t-text-muted)" }}>Schedule some deliveries!</p>
+              <Link href="/" className="mt-3 flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-semibold active:scale-95 transition-all duration-150"
+                style={{ background: "var(--t-accent)", color: "#000" }}>
+                <Plus className="h-3.5 w-3.5" /> New Job
+              </Link>
             </div>
           ) : (
             <div className="flex h-full gap-2.5 overflow-x-auto pb-2">
               {/* Unassigned */}
-              <Column id="unassigned" title="Unassigned" icon={<UserPlus className="h-3.5 w-3.5 text-red-400" />}
-                count={board.unassigned.length} accentCls="bg-red-500/10 text-red-400"
+              <Column id="unassigned" title="Unassigned" icon={<UserPlus className="h-3.5 w-3.5" style={{ color: "var(--t-warning)" }} />}
+                count={board.unassigned.length} isUnassignedHeader
                 jobs={filterJobs(board.unassigned, filter, search)} drivers={board.drivers.map(d => d.driver)}
                 onAssign={moveJobTo} selectedJobId={selectedJobId} onSelectJob={setSelectedJobId}
                 onQuickView={(j) => { setQuickViewJob(j); setQvLoading(true); setQvDetail(null); api.get(`/jobs/${j.id}`).then(setQvDetail).catch(() => {}).finally(() => setQvLoading(false)); }}
@@ -272,7 +314,7 @@ export default function DispatchPage() {
                 return (
                   <Column key={col.driver.id} id={col.driver.id}
                     title={`${col.driver.firstName} ${col.driver.lastName}`}
-                    icon={<div className="flex h-7 w-7 items-center justify-center rounded-full bg-brand/15 text-[10px] font-bold text-brand">{col.driver.firstName[0]}{col.driver.lastName[0]}</div>}
+                    icon={<div className="flex h-7 w-7 items-center justify-center rounded-full text-[10px] font-bold" style={{ background: "var(--t-accent-soft)", color: "var(--t-accent)" }}>{col.driver.firstName[0]}{col.driver.lastName[0]}</div>}
                     count={col.jobs.length}
                     progress={col.jobs.length > 0 ? { completed, total: col.jobs.length } : undefined}
                     phone={col.driver.phone}
@@ -284,8 +326,10 @@ export default function DispatchPage() {
                 );
               })}
               {board.drivers.length === 0 && board.unassigned.length > 0 && (
-                <div className="flex w-56 shrink-0 flex-col items-center justify-center rounded-xl bg-[#111C2E] border border-dashed border-[#1E2D45] p-4">
-                  <Truck className="h-8 w-8 text-muted/15 mb-2" /><p className="text-xs text-muted text-center">Add drivers in Settings &gt; Team</p>
+                <div className="flex w-56 shrink-0 flex-col items-center justify-center rounded-[14px] border border-dashed p-4"
+                  style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)" }}>
+                  <Truck className="h-8 w-8 mb-2" style={{ color: "var(--t-text-muted)", opacity: 0.15 }} />
+                  <p className="text-xs text-center" style={{ color: "var(--t-text-muted)" }}>Add drivers in Settings &gt; Team</p>
                 </div>
               )}
             </div>
@@ -293,29 +337,34 @@ export default function DispatchPage() {
         </div>
       </div>
 
-      {/* Floating Action Bar — appears when a job is selected */}
+      {/* Floating Action Bar -- appears when a job is selected */}
       {selectedJob && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 animate-fade-in">
-          <div className="flex items-center gap-2 rounded-2xl bg-[#111C2E] border border-[#2ECC71]/30 shadow-2xl shadow-black/40 px-4 py-3">
-            <span className="text-xs text-muted mr-1">Move:</span>
-            <span className="text-xs font-semibold text-white truncate max-w-[180px]">
+          <div className="flex items-center gap-2 rounded-2xl border shadow-2xl shadow-black/40 px-4 py-3"
+            style={{ background: "var(--t-bg-card)", borderColor: "var(--t-accent)" }}>
+            <span className="text-xs mr-1" style={{ color: "var(--t-text-muted)" }}>Move:</span>
+            <span className="text-xs font-semibold truncate max-w-[180px]" style={{ color: "var(--t-text-primary)" }}>
               {selectedJob.customer ? `${selectedJob.customer.first_name} ${selectedJob.customer.last_name}` : selectedJob.job_number}
             </span>
-            <span className="text-xs text-muted mx-1">→</span>
+            <span className="text-xs mx-1" style={{ color: "var(--t-text-muted)" }}>→</span>
             {columnTargets.map(col => {
               const isCurrent = findColumnForJob(selectedJob.id) === col.id;
               return (
                 <button key={col.id} onClick={() => moveJobTo(selectedJob.id, col.driverId)} disabled={isCurrent}
-                  className={`rounded-lg px-3 py-1.5 text-[11px] font-semibold transition-all active:scale-95 ${
-                    isCurrent ? "bg-dark-elevated text-muted/50 cursor-not-allowed"
-                    : col.id === "unassigned" ? "bg-red-500/15 text-red-400 hover:bg-red-500/25"
-                    : "bg-brand/15 text-brand hover:bg-brand/25"
-                  }`}>
+                  className="rounded-full px-3 py-1.5 text-[11px] font-semibold transition-all duration-150 active:scale-95"
+                  style={{
+                    background: isCurrent ? "var(--t-bg-card-hover)" : col.id === "unassigned" ? "var(--t-warning-soft)" : "var(--t-accent-soft)",
+                    color: isCurrent ? "var(--t-text-muted)" : col.id === "unassigned" ? "var(--t-warning)" : "var(--t-accent)",
+                    cursor: isCurrent ? "not-allowed" : "pointer",
+                    opacity: isCurrent ? 0.5 : 1,
+                  }}>
                   {col.label}
                 </button>
               );
             })}
-            <button onClick={() => setSelectedJobId(null)} className="ml-1 rounded-lg p-1.5 text-muted hover:text-white hover:bg-dark-elevated transition-all">
+            <button onClick={() => setSelectedJobId(null)}
+              className="ml-1 rounded-full p-1.5 transition-all duration-150"
+              style={{ color: "var(--t-text-muted)" }}>
               <X className="h-3.5 w-3.5" />
             </button>
           </div>
@@ -324,15 +373,22 @@ export default function DispatchPage() {
 
       {/* Bottom Bar */}
       {!loading && board && totalJobs > 0 && !selectedJob && (
-        <div className="shrink-0 mt-3 flex items-center justify-between rounded-xl bg-[#111C2E] border border-[#1E2D45] px-5 py-3">
-          <div className="flex items-center gap-5 text-xs text-muted">
-            <span><span className="text-white font-semibold">{totalStops}</span> stops remaining</span>
-            <span><span className="text-white font-semibold">{completedJobs}</span> completed</span>
-            <span><span className="text-white font-semibold">{driverCount}</span> active drivers</span>
+        <div className="shrink-0 mt-3 flex items-center justify-between rounded-[14px] border px-5 py-3"
+          style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)" }}>
+          <div className="flex items-center gap-5 text-xs" style={{ color: "var(--t-text-muted)" }}>
+            <span><span className="font-semibold" style={{ color: "var(--t-text-primary)" }}>{totalStops}</span> stops remaining</span>
+            <span><span className="font-semibold" style={{ color: "var(--t-text-primary)" }}>{completedJobs}</span> completed</span>
+            <span><span className="font-semibold" style={{ color: "var(--t-text-primary)" }}>{driverCount}</span> active drivers</span>
           </div>
           <div className="flex items-center gap-2">
-            <button className="rounded-lg border border-[#1E2D45] px-3 py-1.5 text-xs font-medium text-muted hover:text-white transition-colors">Print Route Sheets</button>
-            <button className="rounded-lg bg-brand/10 border border-brand/20 px-3 py-1.5 text-xs font-semibold text-brand hover:bg-brand/20 transition-colors">Send Routes to Drivers</button>
+            <button className="rounded-full border px-3 py-1.5 text-xs font-medium transition-all duration-150"
+              style={{ borderColor: "var(--t-border)", color: "var(--t-text-muted)", background: "transparent" }}>
+              Print Route Sheets
+            </button>
+            <button className="rounded-full border px-3 py-1.5 text-xs font-semibold transition-all duration-150"
+              style={{ background: "var(--t-accent-soft)", borderColor: "var(--t-accent)", color: "var(--t-accent)" }}>
+              Send Routes to Drivers
+            </button>
           </div>
         </div>
       )}
@@ -340,15 +396,22 @@ export default function DispatchPage() {
       {/* QuickView Panel */}
       <QuickView isOpen={!!quickViewJob} onClose={() => { setQuickViewJob(null); setQvDetail(null); }}
         title={quickViewJob ? jobTitle(quickViewJob) : ""} subtitle={quickViewJob?.job_number}
-        actions={quickViewJob ? <Link href={`/jobs/${quickViewJob.id}`} className="rounded-lg bg-dark-elevated px-3 py-1.5 text-xs font-medium text-foreground hover:bg-dark-card-hover transition-colors"><ExternalLink className="h-3 w-3 inline mr-1" />Full Detail</Link> : undefined}
+        actions={quickViewJob ? <Link href={`/jobs/${quickViewJob.id}`} className="rounded-full px-3 py-1.5 text-xs font-medium transition-all duration-150" style={{ background: "var(--t-bg-card-hover)", color: "var(--t-text-primary)" }}><ExternalLink className="h-3 w-3 inline mr-1" />Full Detail</Link> : undefined}
         footer={quickViewJob ? (
           <div className="flex gap-2">
             {quickViewJob.customer?.phone && (
-              <a href={`tel:${quickViewJob.customer.phone}`} className="flex-1 flex items-center justify-center gap-1.5 rounded-lg bg-brand py-2.5 text-xs font-semibold text-dark-primary hover:bg-brand-light transition-colors"><Phone className="h-3.5 w-3.5" /> Call Customer</a>
+              <a href={`tel:${quickViewJob.customer.phone}`}
+                className="flex-1 flex items-center justify-center gap-1.5 rounded-full py-2.5 text-xs font-semibold transition-all duration-150"
+                style={{ background: "var(--t-accent)", color: "#000" }}>
+                <Phone className="h-3.5 w-3.5" /> Call Customer
+              </a>
             )}
             {quickViewJob.service_address && (
               <button onClick={() => { const a = quickViewJob.service_address!; const q = [a.street, a.city, a.state].filter(Boolean).join(", "); window.open(`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(q)}`, "_blank"); }}
-                className="flex-1 flex items-center justify-center gap-1.5 rounded-lg bg-dark-elevated py-2.5 text-xs font-semibold text-foreground hover:bg-dark-card-hover transition-colors"><Navigation className="h-3.5 w-3.5" /> Navigate</button>
+                className="flex-1 flex items-center justify-center gap-1.5 rounded-full py-2.5 text-xs font-semibold transition-all duration-150 border"
+                style={{ background: "transparent", borderColor: "var(--t-border)", color: "var(--t-text-primary)" }}>
+                <Navigation className="h-3.5 w-3.5" /> Navigate
+              </button>
             )}
           </div>
         ) : undefined}
@@ -372,9 +435,9 @@ export default function DispatchPage() {
 
 /* ======== Column ======== */
 
-function Column({ id, title, icon, count, accentCls, progress, phone, jobs, drivers, onAssign, onUnassign, selectedJobId, onSelectJob, onQuickView, onReorder, busyJobId, isUnassigned }: {
+function Column({ id, title, icon, count, isUnassignedHeader, progress, phone, jobs, drivers, onAssign, onUnassign, selectedJobId, onSelectJob, onQuickView, onReorder, busyJobId, isUnassigned }: {
   id: string; title: string; icon: React.ReactNode; count: number;
-  accentCls?: string; progress?: { completed: number; total: number }; phone?: string;
+  isUnassignedHeader?: boolean; progress?: { completed: number; total: number }; phone?: string;
   jobs: DispatchJob[]; drivers?: Driver[];
   onAssign?: (jobId: string, driverId: string | null) => void;
   onUnassign?: (jobId: string) => void;
@@ -391,37 +454,44 @@ function Column({ id, title, icon, count, accentCls, progress, phone, jobs, driv
   if (collapsed) {
     return (
       <div onClick={toggleCollapse}
-        className="flex w-[60px] shrink-0 cursor-pointer flex-col items-center rounded-xl bg-[#111C2E] border border-[#1E2D45] py-3 hover:bg-[#162033] transition-all">
-        <ChevDown className="h-3.5 w-3.5 text-muted mb-2" />
-        <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold tabular-nums ${accentCls || "bg-dark-elevated text-foreground"}`}>{count}</span>
-        <p className="mt-2 text-[9px] text-muted font-medium" style={{ writingMode: "vertical-lr" }}>{title}</p>
+        className="flex w-[60px] shrink-0 cursor-pointer flex-col items-center rounded-[14px] border py-3 transition-all duration-150"
+        style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)" }}>
+        <ChevDown className="h-3.5 w-3.5 mb-2" style={{ color: "var(--t-text-muted)" }} />
+        <span className="rounded-full px-2 py-0.5 text-[10px] font-bold tabular-nums"
+          style={{ background: "var(--t-bg-card-hover)", color: "var(--t-text-primary)" }}>{count}</span>
+        <p className="mt-2 text-[9px] font-medium" style={{ writingMode: "vertical-lr", color: "var(--t-text-muted)" }}>{title}</p>
       </div>
     );
   }
 
   return (
-    <div className={`flex shrink-0 flex-col rounded-xl bg-[#111C2E] border border-[#1E2D45] transition-all ${isUnassigned ? "min-w-[280px] w-[280px]" : "min-w-[300px] w-[300px]"}`}>
+    <div className={`flex shrink-0 flex-col rounded-[14px] border transition-all duration-150 ${isUnassigned ? "min-w-[280px] w-[280px]" : "min-w-[300px] w-[300px]"}`}
+      style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)" }}>
       {/* Header */}
-      <div className="px-3 py-2.5 border-b border-[#1E2D45] shrink-0">
+      <div className="px-3 py-2.5 shrink-0" style={{ borderBottom: "1px solid var(--t-border)" }}>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <button onClick={toggleCollapse} className="text-muted hover:text-white p-0.5 -ml-0.5 shrink-0"><ChevUp className="h-3.5 w-3.5" /></button>
+            <button onClick={toggleCollapse} className="p-0.5 -ml-0.5 shrink-0 transition-all duration-150" style={{ color: "var(--t-text-muted)" }}>
+              <ChevUp className="h-3.5 w-3.5" />
+            </button>
             {typeof icon === "object" && "type" in (icon as object)
-              ? <div className={`flex h-7 w-7 items-center justify-center rounded-lg ${accentCls || "bg-dark-elevated"}`}>{icon}</div>
+              ? <div className="flex h-7 w-7 items-center justify-center rounded-[10px]" style={{ background: "var(--t-bg-card-hover)" }}>{icon}</div>
               : icon}
             <div>
-              <p className="text-xs font-semibold text-white truncate max-w-[120px]">{title}</p>
-              {phone && <a href={`tel:${phone}`} className="text-[10px] text-muted hover:text-brand" onClick={e => e.stopPropagation()}><Phone className="inline h-2 w-2 mr-0.5" />{formatPhone(phone)}</a>}
+              <p className="text-xs font-bold truncate max-w-[120px]"
+                style={{ color: isUnassignedHeader ? "var(--t-warning)" : "var(--t-text-primary)" }}>{title}</p>
+              {phone && <a href={`tel:${phone}`} className="text-[10px] transition-all duration-150" style={{ color: "var(--t-text-muted)" }} onClick={e => e.stopPropagation()}><Phone className="inline h-2 w-2 mr-0.5" />{formatPhone(phone)}</a>}
             </div>
           </div>
-          <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold tabular-nums ${accentCls || "bg-dark-elevated text-foreground"}`}>{count}</span>
+          <span className="rounded-full px-2 py-0.5 text-[10px] font-bold tabular-nums"
+            style={{ color: "var(--t-text-muted)" }}>{count}</span>
         </div>
         {progress && (
           <div className="mt-2 flex items-center gap-2">
-            <div className="h-1 flex-1 rounded-full bg-dark-elevated overflow-hidden">
-              <div className="h-full rounded-full bg-brand transition-all" style={{ width: `${(progress.completed / progress.total) * 100}%` }} />
+            <div className="h-1 flex-1 rounded-full overflow-hidden" style={{ background: "var(--t-bg-card-hover)" }}>
+              <div className="h-full rounded-full transition-all duration-150" style={{ width: `${(progress.completed / progress.total) * 100}%`, background: "var(--t-accent)" }} />
             </div>
-            <span className="text-[9px] text-muted tabular-nums">{progress.completed}/{progress.total}</span>
+            <span className="text-[9px] tabular-nums" style={{ color: "var(--t-text-muted)" }}>{progress.completed}/{progress.total}</span>
           </div>
         )}
       </div>
@@ -431,8 +501,8 @@ function Column({ id, title, icon, count, accentCls, progress, phone, jobs, driv
         {jobs.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-8" style={{ minHeight: 160 }}>
             {isUnassigned
-              ? <><CheckCircle2 className="mx-auto h-6 w-6 text-emerald-400/40 mb-1" /><p className="text-[10px] text-emerald-400">All jobs assigned</p></>
-              : <><Box className="mx-auto h-6 w-6 text-muted/15 mb-1" /><p className="text-[10px] text-muted">No jobs assigned</p></>}
+              ? <><CheckCircle2 className="mx-auto h-6 w-6 mb-1" style={{ color: "var(--t-accent)", opacity: 0.4 }} /><p className="text-[10px]" style={{ color: "var(--t-accent)" }}>All jobs assigned</p></>
+              : <><Box className="mx-auto h-6 w-6 mb-1" style={{ color: "var(--t-text-muted)", opacity: 0.15 }} /><p className="text-[10px]" style={{ color: "var(--t-text-muted)" }}>No jobs assigned</p></>}
           </div>
         ) : jobs.map((job, i) => (
           <JobCard key={job.id} job={job} order={i + 1} isFirst={i === 0} isLast={i === jobs.length - 1}
@@ -462,51 +532,64 @@ function JobCard({ job, order, isFirst, isLast, isSelected, isBusy, drivers, onA
   onReorder: (jobId: string, dir: "up" | "down") => void;
 }) {
   const isCompleted = job.status === "completed";
-  const tc = TYPE_CONFIG[job.job_type] || { label: job.job_type, letter: "?", cls: "bg-zinc-500/10 text-zinc-400" };
-  const statusBorder = STATUS_BORDER[job.status] || "border-l-zinc-500";
+  const tc = TYPE_CONFIG[job.job_type] || { label: job.job_type, letter: "?", color: "var(--t-text-muted)" };
+  const statusColor = STATUS_LEFT_BORDER[job.status] || "var(--t-text-muted)";
   const addr = job.service_address;
   const addrStr = addr ? [addr.street, addr.city, addr.state].filter(Boolean).join(", ") : "";
 
   return (
-    <div className={`relative group rounded-lg bg-[#162033] border border-l-[3px] ${statusBorder} p-2.5 pl-3 transition-all duration-200 ${
-      isSelected ? "ring-2 ring-[#2ECC71] border-[#2ECC71]/40 shadow-lg shadow-[#2ECC71]/10" : "border-[#1E2D45] hover:border-[#2ECC71]/20"
-    } ${isCompleted ? "opacity-60" : ""} ${isBusy ? "opacity-50 pointer-events-none" : ""}`}>
+    <div
+      className="relative group rounded-[10px] border p-2.5 pl-3 transition-all duration-150"
+      style={{
+        background: "var(--t-bg-card)",
+        borderColor: isSelected ? "var(--t-accent)" : "var(--t-border)",
+        borderLeftWidth: 3,
+        borderLeftColor: statusColor,
+        opacity: isCompleted ? 0.6 : isBusy ? 0.5 : 1,
+        pointerEvents: isBusy ? "none" : "auto",
+        boxShadow: isSelected ? "0 0 12px rgba(0,0,0,0.2)" : "none",
+      }}>
 
       {/* Loading spinner overlay */}
       {isBusy && (
-        <div className="absolute inset-0 flex items-center justify-center z-20 rounded-lg bg-[#162033]/60">
-          <RefreshCw className="h-4 w-4 text-brand animate-spin" />
+        <div className="absolute inset-0 flex items-center justify-center z-20 rounded-[10px]" style={{ background: "var(--t-bg-card)", opacity: 0.6 }}>
+          <RefreshCw className="h-4 w-4 animate-spin" style={{ color: "var(--t-accent)" }} />
         </div>
       )}
 
       {/* Top-right action buttons */}
       <div className="absolute right-1.5 top-1.5 z-10 flex items-center gap-1">
-        {/* Reorder arrows — shown on hover */}
+        {/* Reorder arrows -- shown on hover */}
         {!isFirst && (
           <button onClick={(e) => { e.stopPropagation(); onReorder(job.id, "up"); }}
-            className="rounded p-0.5 text-muted/30 hover:text-white hover:bg-dark-elevated transition-all opacity-0 group-hover:opacity-100">
+            className="rounded p-0.5 transition-all duration-150 opacity-0 group-hover:opacity-100"
+            style={{ color: "var(--t-text-muted)" }}>
             <ArrowUp className="h-3 w-3" />
           </button>
         )}
         {!isLast && (
           <button onClick={(e) => { e.stopPropagation(); onReorder(job.id, "down"); }}
-            className="rounded p-0.5 text-muted/30 hover:text-white hover:bg-dark-elevated transition-all opacity-0 group-hover:opacity-100">
+            className="rounded p-0.5 transition-all duration-150 opacity-0 group-hover:opacity-100"
+            style={{ color: "var(--t-text-muted)" }}>
             <ArrowDown className="h-3 w-3" />
           </button>
         )}
 
-        {/* Assign dropdown — unassigned cards */}
+        {/* Assign dropdown -- unassigned cards */}
         {drivers && onAssign && (
           <div onClick={e => e.stopPropagation()}>
             <Dropdown trigger={
-              <button className="flex items-center gap-0.5 rounded bg-brand/15 border border-brand/20 px-1.5 py-0.5 text-[9px] font-semibold text-brand hover:bg-brand/25 transition-all">
+              <button className="flex items-center gap-0.5 rounded-full border px-1.5 py-0.5 text-[9px] font-semibold transition-all duration-150"
+                style={{ background: "var(--t-accent-soft)", borderColor: "var(--t-accent)", color: "var(--t-accent)" }}>
                 <UserPlus className="h-2.5 w-2.5" /> Assign
               </button>
             } align="right">
               {drivers.map(d => (
                 <button key={d.id} onClick={() => onAssign(job.id, d.id)}
-                  className="flex w-full items-center gap-2 px-3 py-2 text-xs text-foreground hover:bg-dark-card-hover whitespace-nowrap">
-                  <div className="flex h-5 w-5 items-center justify-center rounded-full bg-brand/10 text-[8px] font-bold text-brand">{d.firstName[0]}{d.lastName[0]}</div>
+                  className="flex w-full items-center gap-2 px-3 py-2 text-xs whitespace-nowrap transition-all duration-150"
+                  style={{ color: "var(--t-text-primary)" }}>
+                  <div className="flex h-5 w-5 items-center justify-center rounded-full text-[8px] font-bold"
+                    style={{ background: "var(--t-accent-soft)", color: "var(--t-accent)" }}>{d.firstName[0]}{d.lastName[0]}</div>
                   {d.firstName} {d.lastName}
                 </button>
               ))}
@@ -514,49 +597,52 @@ function JobCard({ job, order, isFirst, isLast, isSelected, isBusy, drivers, onA
           </div>
         )}
 
-        {/* Unassign button — driver cards */}
+        {/* Unassign button -- driver cards */}
         {onUnassign && (
           <button onClick={(e) => { e.stopPropagation(); onUnassign(job.id); }}
-            className="rounded bg-red-500/10 border border-red-500/20 px-1.5 py-0.5 text-[9px] font-semibold text-red-400 hover:bg-red-500/20 transition-all opacity-0 group-hover:opacity-100">
+            className="rounded-full border px-1.5 py-0.5 text-[9px] font-semibold transition-all duration-150 opacity-0 group-hover:opacity-100"
+            style={{ background: "var(--t-error-soft)", borderColor: "var(--t-error)", color: "var(--t-error)" }}>
             <X className="inline h-2.5 w-2.5" />
           </button>
         )}
 
-        {/* Move button — opens floating bar for driver assignment */}
+        {/* Move button -- opens floating bar for driver assignment */}
         <button onClick={(e) => { e.stopPropagation(); onSelect(); }}
-          className="rounded bg-dark-elevated px-1.5 py-0.5 text-[9px] font-medium text-muted hover:text-white transition-all opacity-0 group-hover:opacity-100"
+          className="rounded-full px-1.5 py-0.5 text-[9px] font-medium transition-all duration-150 opacity-0 group-hover:opacity-100"
+          style={{ background: "var(--t-bg-card-hover)", color: "var(--t-text-muted)" }}
           title="Move to another column">
           ↔
         </button>
       </div>
 
-      {/* Card body — click to open QuickView, long-press/right-click to select for move */}
+      {/* Card body -- click to open QuickView */}
       <div onClick={onQuickView} className="cursor-pointer">
         {/* Title row */}
         <div className="flex items-start justify-between gap-2 mb-1.5 pr-16">
           <div className="flex items-center gap-1.5 min-w-0">
-            <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-dark-elevated text-[9px] font-bold text-muted tabular-nums">{order}</span>
-            <span className={`shrink-0 rounded px-1.5 py-0.5 text-[8px] font-bold ${tc.cls}`}>{tc.label}</span>
-            <span className="text-xs font-semibold text-white truncate">{jobTitle(job)}</span>
+            <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[9px] font-bold tabular-nums"
+              style={{ background: "var(--t-bg-card-hover)", color: "var(--t-text-muted)" }}>{order}</span>
+            <span className="shrink-0 text-[9px] font-bold" style={{ color: tc.color }}>{tc.letter}</span>
+            <span className="text-xs font-semibold truncate" style={{ color: "var(--t-text-primary)" }}>{jobTitle(job)}</span>
           </div>
           <div className="flex items-center gap-1 shrink-0">
-            {job.is_failed_trip && <span className="rounded bg-red-500/15 px-1.5 py-0.5 text-[8px] font-bold text-red-400">FAILED</span>}
-            {job.source === "rescheduled_from_failure" && <span className="rounded bg-yellow-500/15 px-1.5 py-0.5 text-[8px] font-bold text-yellow-400">FROM FAILED</span>}
-            {job.rescheduled_by_customer && <span className="rounded bg-blue-500/15 px-1.5 py-0.5 text-[8px] font-bold text-blue-400">RESCHEDULED</span>}
-            {job.is_overdue && <span className="rounded bg-red-500/15 px-1.5 py-0.5 text-[8px] font-bold text-red-400">OVERDUE {job.extra_days}d</span>}
-            {job.asset?.identifier && <span className="rounded bg-brand/10 text-brand px-1.5 py-0.5 text-[9px] font-bold">{job.asset.identifier}</span>}
-            {job.priority === "high" && <span className="rounded bg-red-500/15 px-1 py-0.5 text-[8px] font-bold text-red-400">H</span>}
-            {isCompleted && <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />}
+            {job.is_failed_trip && <span className="text-[8px] font-bold" style={{ color: "var(--t-error)" }}>FAILED</span>}
+            {job.source === "rescheduled_from_failure" && <span className="text-[8px] font-bold" style={{ color: "var(--t-warning)" }}>FROM FAILED</span>}
+            {job.rescheduled_by_customer && <span className="text-[8px] font-bold" style={{ color: "#60a5fa" }}>RESCHEDULED</span>}
+            {job.is_overdue && <span className="text-[8px] font-bold" style={{ color: "var(--t-error)" }}>OVERDUE {job.extra_days}d</span>}
+            {job.asset?.identifier && <span className="text-[9px] font-bold" style={{ color: "var(--t-accent)" }}>{job.asset.identifier}</span>}
+            {job.priority === "high" && <span className="text-[8px] font-bold" style={{ color: "var(--t-error)" }}>H</span>}
+            {isCompleted && <CheckCircle2 className="h-3.5 w-3.5" style={{ color: "var(--t-accent)" }} />}
           </div>
         </div>
 
-        <p className="text-[11px] font-medium text-foreground truncate">
+        <p className="text-[11px] font-semibold" style={{ color: "var(--t-text-primary)" }}>
           {job.customer ? `${job.customer.first_name} ${job.customer.last_name}` : job.job_number}
         </p>
-        {addrStr && <p className="mt-0.5 flex items-center gap-1 text-[10px] text-muted truncate"><MapPin className="h-2.5 w-2.5 shrink-0" />{addrStr}</p>}
+        {addrStr && <p className="mt-0.5 flex items-center gap-1 text-[10px] truncate" style={{ color: "var(--t-text-muted)" }}><MapPin className="h-2.5 w-2.5 shrink-0" />{addrStr}</p>}
         {(job.scheduled_window_start || job.scheduled_window_end) && (
-          <p className="mt-1 flex items-center gap-1 text-[10px] text-muted">
-            <Clock className="h-2.5 w-2.5" />{fmtTime(job.scheduled_window_start)}{job.scheduled_window_end && ` – ${fmtTime(job.scheduled_window_end)}`}
+          <p className="mt-1 flex items-center gap-1 text-[10px]" style={{ color: "var(--t-text-muted)" }}>
+            <Clock className="h-2.5 w-2.5" />{fmtTime(job.scheduled_window_start)}{job.scheduled_window_end && ` - ${fmtTime(job.scheduled_window_end)}`}
           </p>
         )}
       </div>
@@ -578,7 +664,7 @@ function JobQuickViewContent({ job, detail, loading, board, date, onAssign, onRe
   const [reason, setReason] = useState("");
   const [rescheduling, setRescheduling] = useState(false);
 
-  const tc = TYPE_CONFIG[job.job_type] || { label: job.job_type, letter: "?", cls: "bg-zinc-500/10 text-zinc-400" };
+  const tc = TYPE_CONFIG[job.job_type] || { label: job.job_type, letter: "?", color: "var(--t-text-muted)" };
   const isCompleted = job.status === "completed";
   const d = detail || job; // Use detail if loaded, fallback to board data
   const addr = d.service_address;
@@ -604,62 +690,64 @@ function JobQuickViewContent({ job, detail, loading, board, date, onAssign, onRe
     <div className="space-y-4">
       {/* Badges */}
       <div className="flex items-center gap-2 flex-wrap">
-        <span className={`rounded-full px-3 py-1 text-xs font-medium ${tc.cls}`}>{tc.label}</span>
-        <span className={`rounded-full px-3 py-1 text-xs font-medium capitalize ${isCompleted ? "bg-emerald-500/10 text-emerald-400" : "bg-yellow-500/10 text-yellow-400"}`}>{job.status.replace(/_/g, " ")}</span>
-        {job.priority === "high" && <span className="rounded-full bg-red-500/10 px-2.5 py-1 text-xs font-bold text-red-400">High Priority</span>}
-        {job.rescheduled_by_customer && <span className="rounded-full bg-blue-500/10 px-2.5 py-1 text-xs font-medium text-blue-400">Rescheduled by customer</span>}
-        {d.asset?.identifier && <span className="rounded-full bg-brand/10 px-2.5 py-1 text-xs font-bold text-brand">{d.asset.identifier}</span>}
+        <span className="text-xs font-medium" style={{ color: tc.color }}>{tc.label}</span>
+        <span className="text-xs font-medium capitalize" style={{ color: isCompleted ? "var(--t-accent)" : "var(--t-warning)" }}>{job.status.replace(/_/g, " ")}</span>
+        {job.priority === "high" && <span className="text-xs font-bold" style={{ color: "var(--t-error)" }}>High Priority</span>}
+        {job.rescheduled_by_customer && <span className="text-xs font-medium" style={{ color: "#60a5fa" }}>Rescheduled by customer</span>}
+        {d.asset?.identifier && <span className="text-xs font-bold" style={{ color: "var(--t-accent)" }}>{d.asset.identifier}</span>}
       </div>
 
       {/* Customer */}
-      <div className="rounded-lg bg-dark-card border border-[#1E2D45] p-4">
-        <p className="text-xs text-muted uppercase tracking-wider mb-2">Customer</p>
+      <div className="rounded-[14px] border p-4" style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)" }}>
+        <p className="text-[13px] uppercase tracking-wider mb-2" style={{ color: "var(--t-text-muted)" }}>Customer</p>
         {cust ? (
           <div>
-            <Link href={`/customers/${cust.id}`} className="text-sm font-semibold text-white hover:text-brand">{cust.first_name} {cust.last_name}</Link>
-            {cust.phone && <a href={`tel:${cust.phone}`} className="flex items-center gap-1.5 mt-2 text-xs text-brand hover:text-brand-light"><Phone className="h-3 w-3" />{formatPhone(cust.phone)}</a>}
-            {cust.email && <a href={`mailto:${cust.email}`} className="flex items-center gap-1.5 mt-1 text-xs text-muted hover:text-brand"><Mail className="h-3 w-3" />{cust.email}</a>}
+            <Link href={`/customers/${cust.id}`} className="text-sm font-semibold transition-all duration-150" style={{ color: "var(--t-text-primary)" }}>{cust.first_name} {cust.last_name}</Link>
+            {cust.phone && <a href={`tel:${cust.phone}`} className="flex items-center gap-1.5 mt-2 text-xs transition-all duration-150" style={{ color: "var(--t-accent)" }}><Phone className="h-3 w-3" />{formatPhone(cust.phone)}</a>}
+            {cust.email && <a href={`mailto:${cust.email}`} className="flex items-center gap-1.5 mt-1 text-xs transition-all duration-150" style={{ color: "var(--t-text-muted)" }}><Mail className="h-3 w-3" />{cust.email}</a>}
           </div>
-        ) : <p className="text-sm text-muted">No customer</p>}
+        ) : <p className="text-sm" style={{ color: "var(--t-text-muted)" }}>No customer</p>}
       </div>
 
       {/* Address */}
       {addr && (
-        <div className="rounded-lg bg-dark-card border border-[#1E2D45] p-4">
-          <p className="text-xs text-muted uppercase tracking-wider mb-2">Service Address</p>
-          <p className="text-sm text-white">{addr.street}</p>
-          <p className="text-xs text-muted">{[addr.city, addr.state, addr.zip].filter(Boolean).join(", ")}</p>
-          {d.placement_notes && <p className="text-xs text-muted mt-2 italic">"{d.placement_notes}"</p>}
+        <div className="rounded-[14px] border p-4" style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)" }}>
+          <p className="text-[13px] uppercase tracking-wider mb-2" style={{ color: "var(--t-text-muted)" }}>Service Address</p>
+          <p className="text-sm" style={{ color: "var(--t-text-primary)" }}>{addr.street}</p>
+          <p className="text-xs" style={{ color: "var(--t-text-muted)" }}>{[addr.city, addr.state, addr.zip].filter(Boolean).join(", ")}</p>
+          {d.placement_notes && <p className="text-xs mt-2 italic" style={{ color: "var(--t-text-muted)" }}>"{d.placement_notes}"</p>}
         </div>
       )}
 
       {/* Schedule */}
-      <div className="rounded-lg bg-dark-card border border-[#1E2D45] p-4">
-        <p className="text-xs text-muted uppercase tracking-wider mb-2">Schedule</p>
+      <div className="rounded-[14px] border p-4" style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)" }}>
+        <p className="text-[13px] uppercase tracking-wider mb-2" style={{ color: "var(--t-text-muted)" }}>Schedule</p>
         <div className="space-y-1.5 text-sm">
-          {d.scheduled_date && <div className="flex justify-between"><span className="text-muted">Date</span><span className="text-white font-medium">{new Date(d.scheduled_date + "T00:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}</span></div>}
-          {d.scheduled_window_start && <div className="flex justify-between"><span className="text-muted">Time</span><span className="text-white">{fmtTime(d.scheduled_window_start)}{d.scheduled_window_end ? ` – ${fmtTime(d.scheduled_window_end)}` : ""}</span></div>}
-          {d.rental_days && <div className="flex justify-between"><span className="text-muted">Rental</span><span className="text-white">{d.rental_days} days</span></div>}
-          {d.rental_end_date && <div className="flex justify-between"><span className="text-muted">Pickup by</span><span className="text-white">{new Date(d.rental_end_date + "T00:00:00").toLocaleDateString()}</span></div>}
+          {d.scheduled_date && <div className="flex justify-between"><span style={{ color: "var(--t-text-muted)" }}>Date</span><span className="font-medium" style={{ color: "var(--t-text-primary)" }}>{new Date(d.scheduled_date + "T00:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}</span></div>}
+          {d.scheduled_window_start && <div className="flex justify-between"><span style={{ color: "var(--t-text-muted)" }}>Time</span><span style={{ color: "var(--t-text-primary)" }}>{fmtTime(d.scheduled_window_start)}{d.scheduled_window_end ? ` - ${fmtTime(d.scheduled_window_end)}` : ""}</span></div>}
+          {d.rental_days && <div className="flex justify-between"><span style={{ color: "var(--t-text-muted)" }}>Rental</span><span style={{ color: "var(--t-text-primary)" }}>{d.rental_days} days</span></div>}
+          {d.rental_end_date && <div className="flex justify-between"><span style={{ color: "var(--t-text-muted)" }}>Pickup by</span><span style={{ color: "var(--t-text-primary)" }}>{new Date(d.rental_end_date + "T00:00:00").toLocaleDateString()}</span></div>}
         </div>
-        {job.rescheduled_from_date && <p className="text-xs text-blue-400 mt-2">Originally scheduled: {job.rescheduled_from_date}</p>}
+        {job.rescheduled_from_date && <p className="text-xs mt-2" style={{ color: "#60a5fa" }}>Originally scheduled: {job.rescheduled_from_date}</p>}
       </div>
 
       {/* Assignment */}
-      <div className="rounded-lg bg-dark-card border border-[#1E2D45] p-4">
-        <p className="text-xs text-muted uppercase tracking-wider mb-2">Assignment</p>
+      <div className="rounded-[14px] border p-4" style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)" }}>
+        <p className="text-[13px] uppercase tracking-wider mb-2" style={{ color: "var(--t-text-muted)" }}>Assignment</p>
         <div className="space-y-1.5 text-sm">
-          <div className="flex justify-between"><span className="text-muted">Driver</span><span className={job.assigned_driver ? "text-white" : "text-red-400"}>{job.assigned_driver ? `${job.assigned_driver.first_name} ${job.assigned_driver.last_name}` : "Unassigned"}</span></div>
-          <div className="flex justify-between"><span className="text-muted">Asset</span><span className="text-white">{d.asset?.identifier || "Not assigned"}</span></div>
+          <div className="flex justify-between"><span style={{ color: "var(--t-text-muted)" }}>Driver</span><span style={{ color: job.assigned_driver ? "var(--t-text-primary)" : "var(--t-error)" }}>{job.assigned_driver ? `${job.assigned_driver.first_name} ${job.assigned_driver.last_name}` : "Unassigned"}</span></div>
+          <div className="flex justify-between"><span style={{ color: "var(--t-text-muted)" }}>Asset</span><span style={{ color: "var(--t-text-primary)" }}>{d.asset?.identifier || "Not assigned"}</span></div>
         </div>
         {board && (
-          <div className="mt-3 pt-3 border-t border-[#1E2D45]" onClick={e => e.stopPropagation()}>
-            <Dropdown trigger={<button className="text-xs text-brand hover:text-brand-light font-medium">{job.assigned_driver ? "Reassign Driver" : "Assign Driver"}</button>}>
-              <button onClick={() => onAssign(job.id, null)} className="flex w-full items-center gap-2 px-3 py-2 text-xs text-red-400 hover:bg-dark-card-hover">Unassign</button>
+          <div className="mt-3 pt-3" style={{ borderTop: "1px solid var(--t-border)" }} onClick={e => e.stopPropagation()}>
+            <Dropdown trigger={<button className="text-xs font-medium" style={{ color: "var(--t-accent)" }}>{job.assigned_driver ? "Reassign Driver" : "Assign Driver"}</button>}>
+              <button onClick={() => onAssign(job.id, null)} className="flex w-full items-center gap-2 px-3 py-2 text-xs" style={{ color: "var(--t-error)" }}>Unassign</button>
               {board.drivers.map(col => (
                 <button key={col.driver.id} onClick={() => onAssign(job.id, col.driver.id)}
-                  className="flex w-full items-center gap-2 px-3 py-2 text-xs text-foreground hover:bg-dark-card-hover whitespace-nowrap">
-                  <div className="flex h-5 w-5 items-center justify-center rounded-full bg-brand/10 text-[8px] font-bold text-brand">{col.driver.firstName[0]}{col.driver.lastName[0]}</div>
+                  className="flex w-full items-center gap-2 px-3 py-2 text-xs whitespace-nowrap transition-all duration-150"
+                  style={{ color: "var(--t-text-primary)" }}>
+                  <div className="flex h-5 w-5 items-center justify-center rounded-full text-[8px] font-bold"
+                    style={{ background: "var(--t-accent-soft)", color: "var(--t-accent)" }}>{col.driver.firstName[0]}{col.driver.lastName[0]}</div>
                   {col.driver.firstName} {col.driver.lastName}
                 </button>
               ))}
@@ -670,10 +758,10 @@ function JobQuickViewContent({ job, detail, loading, board, date, onAssign, onRe
 
       {/* Price */}
       {d.total_price > 0 && (
-        <div className="rounded-lg bg-brand/5 border border-brand/20 p-4">
+        <div className="rounded-[14px] border p-4" style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)" }}>
           <div className="flex justify-between items-center">
-            <p className="text-xs text-brand uppercase tracking-wider">Total Price</p>
-            <p className="text-lg font-bold text-brand tabular-nums">${Number(d.total_price).toLocaleString()}</p>
+            <p className="text-[13px] uppercase tracking-wider" style={{ color: "var(--t-text-muted)" }}>Total Price</p>
+            <p className="text-lg font-bold tabular-nums" style={{ color: "var(--t-accent)" }}>${Number(d.total_price).toLocaleString()}</p>
           </div>
         </div>
       )}
@@ -683,25 +771,31 @@ function JobQuickViewContent({ job, detail, loading, board, date, onAssign, onRe
         <div>
           {!rescheduleOpen ? (
             <button onClick={() => { setRescheduleOpen(true); setNewDate(d.scheduled_date || ""); }}
-              className="w-full rounded-lg border border-blue-500/20 bg-blue-500/5 py-2.5 text-xs font-semibold text-blue-400 hover:bg-blue-500/10 transition-colors">
+              className="w-full rounded-full border py-2.5 text-xs font-semibold transition-all duration-150"
+              style={{ borderColor: "var(--t-border)", color: "#60a5fa", background: "transparent" }}>
               <Calendar className="h-3.5 w-3.5 inline mr-1.5" />Reschedule Job
             </button>
           ) : (
-            <div className="rounded-lg border border-blue-500/20 bg-blue-500/5 p-4 space-y-3">
-              <p className="text-xs font-semibold text-blue-400">Reschedule Job</p>
+            <div className="rounded-[14px] border p-4 space-y-3" style={{ borderColor: "var(--t-border)", background: "var(--t-bg-card)" }}>
+              <p className="text-xs font-semibold" style={{ color: "#60a5fa" }}>Reschedule Job</p>
               <input type="date" value={newDate} onChange={e => setNewDate(e.target.value)}
-                className="w-full rounded-lg bg-[#111C2E] border border-[#1E2D45] px-3 py-2 text-sm text-white outline-none focus:border-brand" />
+                className="w-full rounded-[10px] border px-3 py-2 text-sm outline-none transition-all duration-150"
+                style={{ background: "var(--t-bg-primary)", borderColor: "var(--t-border)", color: "var(--t-text-primary)" }} />
               {d.rental_days && newDate && (
-                <p className="text-xs text-muted">
+                <p className="text-xs" style={{ color: "var(--t-text-muted)" }}>
                   New delivery: {new Date(newDate + "T00:00:00").toLocaleDateString()} · Pickup by: {new Date(new Date(newDate).getTime() + d.rental_days * 86400000).toLocaleDateString()}
                 </p>
               )}
               <input value={reason} onChange={e => setReason(e.target.value)} placeholder="Reason (optional)"
-                className="w-full rounded-lg bg-[#111C2E] border border-[#1E2D45] px-3 py-2 text-sm text-white placeholder-muted outline-none focus:border-brand" />
+                className="w-full rounded-[10px] border px-3 py-2 text-sm outline-none transition-all duration-150"
+                style={{ background: "var(--t-bg-primary)", borderColor: "var(--t-border)", color: "var(--t-text-primary)" }} />
               <div className="flex gap-2">
                 <button onClick={handleReschedule} disabled={!newDate || rescheduling}
-                  className="flex-1 rounded-lg bg-blue-500 py-2 text-xs font-semibold text-white hover:bg-blue-600 disabled:opacity-50">{rescheduling ? "Moving..." : "Confirm Move"}</button>
-                <button onClick={() => setRescheduleOpen(false)} className="rounded-lg bg-dark-elevated px-4 py-2 text-xs text-muted hover:text-white">Cancel</button>
+                  className="flex-1 rounded-full py-2 text-xs font-semibold disabled:opacity-50 transition-all duration-150"
+                  style={{ background: "#3b82f6", color: "#fff" }}>{rescheduling ? "Moving..." : "Confirm Move"}</button>
+                <button onClick={() => setRescheduleOpen(false)}
+                  className="rounded-full px-4 py-2 text-xs transition-all duration-150"
+                  style={{ background: "var(--t-bg-card-hover)", color: "var(--t-text-muted)" }}>Cancel</button>
               </div>
             </div>
           )}
@@ -713,7 +807,8 @@ function JobQuickViewContent({ job, detail, loading, board, date, onAssign, onRe
         <button onClick={async () => {
           if (!confirm("Cancel this job? This cannot be undone.")) return;
           try { await api.patch(`/jobs/${job.id}/status`, { status: "cancelled" }); toast("success", "Job cancelled"); await onRefresh(); } catch { toast("error", "Failed to cancel"); }
-        }} className="w-full rounded-lg border border-red-500/20 py-2 text-xs font-medium text-red-400 hover:bg-red-500/10 transition-colors">
+        }} className="w-full rounded-full border py-2 text-xs font-medium transition-all duration-150"
+          style={{ borderColor: "var(--t-error)", color: "var(--t-error)", background: "transparent" }}>
           Cancel Job
         </button>
       )}

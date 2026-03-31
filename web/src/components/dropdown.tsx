@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback, type ReactNode } from "react";
+import { useState, useRef, useEffect, type ReactNode } from "react";
 
 interface DropdownProps {
   trigger: ReactNode;
@@ -15,7 +15,6 @@ export default function Dropdown({ trigger, children, align = "left", className 
   const triggerRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  // Calculate position when opening
   useEffect(() => {
     if (!open || !triggerRef.current) return;
     const rect = triggerRef.current.getBoundingClientRect();
@@ -24,21 +23,16 @@ export default function Dropdown({ trigger, children, align = "left", className 
     setDirection(spaceBelow < menuHeight + 8 ? "up" : "down");
   }, [open]);
 
-  // Close on click outside
   useEffect(() => {
     if (!open) return;
     const handler = (e: MouseEvent) => {
-      if (
-        triggerRef.current?.contains(e.target as Node) ||
-        menuRef.current?.contains(e.target as Node)
-      ) return;
+      if (triggerRef.current?.contains(e.target as Node) || menuRef.current?.contains(e.target as Node)) return;
       setOpen(false);
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, [open]);
 
-  // Close on ESC
   useEffect(() => {
     if (!open) return;
     const handler = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
@@ -54,9 +48,14 @@ export default function Dropdown({ trigger, children, align = "left", className 
       {open && (
         <div
           ref={menuRef}
-          className={`absolute z-50 min-w-[140px] max-h-[280px] overflow-y-auto rounded-lg border border-[#1E2D45] bg-dark-secondary shadow-xl overflow-hidden ${
-            direction === "up" ? "bottom-full mb-1 origin-bottom" : "top-full mt-1 origin-top"
-          } ${align === "right" ? "right-0" : "left-0"} animate-dropdown ${className || ""}`}
+          className={`absolute z-50 min-w-[160px] max-h-[280px] overflow-y-auto rounded-xl overflow-hidden animate-dropdown ${
+            direction === "up" ? "bottom-full mb-1" : "top-full mt-1"
+          } ${align === "right" ? "right-0" : "left-0"} ${className || ""}`}
+          style={{
+            backgroundColor: "var(--t-bg-secondary)",
+            border: "1px solid var(--t-border)",
+            boxShadow: "0 12px 32px var(--t-shadow)",
+          }}
           onClick={() => setOpen(false)}
         >
           {children}
@@ -65,5 +64,3 @@ export default function Dropdown({ trigger, children, align = "left", className 
     </div>
   );
 }
-
-/* Light mode overrides are handled by globals.css */

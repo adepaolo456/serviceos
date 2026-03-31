@@ -58,8 +58,6 @@ function BookingWizardContent() {
   const [customerEmail, setCustomerEmail] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
 
-  const color = tenant?.primaryColor || "#2ECC71";
-
   useEffect(() => {
     if (!tenant) return;
     fetch(`${API}/public/tenant/${tenant.slug}/services`)
@@ -164,12 +162,12 @@ function BookingWizardContent() {
   if (!tenant) return null;
 
   const inputClass =
-    "w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm text-gray-900 placeholder-gray-400 outline-none transition-colors focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)]";
+    "w-full rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-3 text-sm text-[var(--t-text-primary)] placeholder-[var(--t-text-muted)] outline-none transition-colors focus:border-[var(--t-accent)] focus:ring-1 focus:ring-[var(--t-accent)]";
 
   return (
-    <div className="mx-auto max-w-2xl px-4 py-8 sm:py-12" style={{ "--accent": color } as React.CSSProperties}>
+    <div className="mx-auto max-w-2xl px-4 py-8 sm:py-12">
       {/* Progress bar */}
-      <div className="mb-8">
+      <div className="mb-10">
         <div className="flex items-center justify-between mb-2">
           {STEPS.map((label, i) => {
             const Icon = STEP_ICONS[i];
@@ -178,31 +176,33 @@ function BookingWizardContent() {
             return (
               <div key={label} className="flex flex-col items-center flex-1">
                 <div
-                  className="flex h-9 w-9 items-center justify-center rounded-full text-sm font-semibold transition-colors"
-                  style={{
-                    background: done ? color : active ? `${color}15` : "#f3f4f6",
-                    color: done ? "white" : active ? color : "#9ca3af",
-                  }}
+                  className={`flex h-9 w-9 items-center justify-center rounded-full text-sm font-semibold transition-colors ${
+                    done
+                      ? "bg-[var(--t-accent)] text-black"
+                      : active
+                      ? "bg-[var(--t-accent-soft)] text-[var(--t-accent)]"
+                      : "bg-[var(--t-bg-card)] text-[var(--t-text-muted)] border border-[var(--t-border)]"
+                  }`}
                 >
                   {done ? <Check className="h-4 w-4" /> : <Icon className="h-4 w-4" />}
                 </div>
-                <span className={`mt-1.5 text-xs font-medium ${active ? "text-gray-900" : "text-gray-400"} hidden sm:block`}>
+                <span className={`mt-1.5 text-xs font-medium ${active ? "text-[var(--t-text-primary)]" : "text-[var(--t-text-muted)]"} hidden sm:block`}>
                   {label}
                 </span>
               </div>
             );
           })}
         </div>
-        <div className="h-1.5 rounded-full bg-gray-100 mt-2">
-          <div className="h-full rounded-full transition-all duration-300" style={{ width: `${((step - 1) / (STEPS.length - 1)) * 100}%`, background: color }} />
+        <div className="h-1 rounded-full bg-[var(--t-bg-card)] border border-[var(--t-border)] mt-3">
+          <div className="h-full rounded-full bg-[var(--t-accent)] transition-all duration-300" style={{ width: `${((step - 1) / (STEPS.length - 1)) * 100}%` }} />
         </div>
       </div>
 
       {/* Step 1: Service Selection */}
       {step === 1 && (
         <div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Choose Your Service</h2>
-          <p className="text-sm text-gray-500 mb-6">Select a service type and size</p>
+          <h2 className="text-[28px] font-bold text-[var(--t-text-primary)] mb-2 tracking-[-1px]">Choose Your Service</h2>
+          <p className="text-sm text-[var(--t-text-muted)] mb-6">Select a service type and size</p>
 
           {types.length > 1 && (
             <div className="flex flex-wrap gap-2 mb-6">
@@ -210,8 +210,11 @@ function BookingWizardContent() {
                 <button
                   key={t}
                   onClick={() => { setSelectedType(t); setSelectedServiceId(""); }}
-                  className="rounded-lg px-4 py-2 text-sm font-medium border transition-colors"
-                  style={selectedType === t ? { background: `${color}15`, borderColor: color, color } : { borderColor: "#e5e7eb", color: "#6b7280" }}
+                  className={`rounded-full px-5 py-2 text-sm font-medium border transition-colors ${
+                    selectedType === t
+                      ? "border-[var(--t-accent)] bg-[var(--t-accent-soft)] text-[var(--t-accent)]"
+                      : "border-[var(--t-border)] text-[var(--t-text-muted)] hover:border-[var(--t-text-muted)]"
+                  }`}
                 >
                   {t.replace(/_/g, " ")}
                 </button>
@@ -224,24 +227,27 @@ function BookingWizardContent() {
               <button
                 key={s.id}
                 onClick={() => setSelectedServiceId(s.id)}
-                className="rounded-xl border-2 p-5 text-left transition-all hover:shadow-md"
-                style={selectedServiceId === s.id ? { borderColor: color, background: `${color}05` } : { borderColor: "#e5e7eb" }}
+                className={`rounded-[14px] border p-5 text-left transition-all ${
+                  selectedServiceId === s.id
+                    ? "border-[var(--t-accent)] bg-[var(--t-accent-soft)]"
+                    : "border-[var(--t-border)] bg-[var(--t-bg-card)] hover:bg-[var(--t-bg-card-hover)]"
+                }`}
               >
                 <div className="flex items-center justify-between mb-2">
-                  <span className="rounded-md px-2 py-0.5 text-xs font-semibold text-white" style={{ background: color }}>
+                  <span className="text-xs font-semibold text-[var(--t-text-muted)] uppercase tracking-wider">
                     {s.subtype || s.name}
                   </span>
-                  {selectedServiceId === s.id && <Check className="h-5 w-5" style={{ color }} />}
+                  {selectedServiceId === s.id && <Check className="h-5 w-5 text-[var(--t-accent)]" />}
                 </div>
-                <h3 className="font-semibold text-gray-900">{s.name}</h3>
-                <p className="text-2xl font-bold mt-2" style={{ color }}>{formatCurrency(s.basePrice)}</p>
-                <p className="text-xs text-gray-400 mt-1">{s.rentalDays} day rental included</p>
-                {s.deliveryFee > 0 && <p className="text-xs text-gray-400">+ {formatCurrency(s.deliveryFee)} delivery</p>}
+                <h3 className="font-semibold text-[var(--t-text-primary)]">{s.name}</h3>
+                <p className="text-2xl font-bold mt-2 text-[var(--t-accent)]">{formatCurrency(s.basePrice)}</p>
+                <p className="text-xs text-[var(--t-text-muted)] mt-1">{s.rentalDays} day rental included</p>
+                {s.deliveryFee > 0 && <p className="text-xs text-[var(--t-text-muted)]">+ {formatCurrency(s.deliveryFee)} delivery</p>}
               </button>
             ))}
           </div>
           {currentServices.length === 0 && selectedType && (
-            <p className="text-center text-gray-400 py-8">No services available</p>
+            <p className="text-center text-[var(--t-text-muted)] py-8">No services available</p>
           )}
         </div>
       )}
@@ -249,41 +255,44 @@ function BookingWizardContent() {
       {/* Step 2: Schedule */}
       {step === 2 && (
         <div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Pick Your Date</h2>
-          <p className="text-sm text-gray-500 mb-6">Choose delivery date, time, and rental period</p>
+          <h2 className="text-[28px] font-bold text-[var(--t-text-primary)] mb-2 tracking-[-1px]">Pick Your Date</h2>
+          <p className="text-sm text-[var(--t-text-muted)] mb-6">Choose delivery date, time, and rental period</p>
 
           <div className="space-y-6">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">Delivery Date</label>
+              <label className="block text-sm font-medium text-[var(--t-text-primary)] mb-1.5">Delivery Date</label>
               <input type="date" value={deliveryDate} onChange={(e) => setDeliveryDate(e.target.value)} min={minDate} className={inputClass} />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">Preferred Time</label>
+              <label className="block text-sm font-medium text-[var(--t-text-primary)] mb-1.5">Preferred Time</label>
               <div className="grid grid-cols-3 gap-3">
                 {TIME_WINDOWS.map((tw) => (
                   <button
                     key={tw.value}
                     onClick={() => setTimeWindow(tw.value)}
-                    className="rounded-lg border-2 p-3 text-center transition-colors"
-                    style={timeWindow === tw.value ? { borderColor: color, background: `${color}05` } : { borderColor: "#e5e7eb" }}
+                    className={`rounded-[14px] border p-3 text-center transition-colors ${
+                      timeWindow === tw.value
+                        ? "border-[var(--t-accent)] bg-[var(--t-accent-soft)]"
+                        : "border-[var(--t-border)] bg-[var(--t-bg-card)] hover:bg-[var(--t-bg-card-hover)]"
+                    }`}
                   >
-                    <p className="text-sm font-semibold text-gray-900">{tw.label}</p>
-                    <p className="text-xs text-gray-400 mt-0.5">{tw.desc}</p>
+                    <p className="text-sm font-semibold text-[var(--t-text-primary)]">{tw.label}</p>
+                    <p className="text-xs text-[var(--t-text-muted)] mt-0.5">{tw.desc}</p>
                   </button>
                 ))}
               </div>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">Rental Period: {rentalDays} days</label>
+              <label className="block text-sm font-medium text-[var(--t-text-primary)] mb-1.5">Rental Period: {rentalDays} days</label>
               <input
                 type="range"
                 min={selectedService?.rentalDays || 1}
                 max={30}
                 value={rentalDays}
                 onChange={(e) => setRentalDays(Number(e.target.value))}
-                className="w-full accent-[var(--accent)]"
+                className="w-full accent-[#22C55E]"
               />
-              <div className="flex justify-between text-xs text-gray-400 mt-1">
+              <div className="flex justify-between text-xs text-[var(--t-text-muted)] mt-1">
                 <span>{selectedService?.rentalDays || 1} days (included)</span>
                 <span>30 days</span>
               </div>
@@ -295,8 +304,8 @@ function BookingWizardContent() {
       {/* Step 3: Delivery Details */}
       {step === 3 && (
         <div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Delivery Address</h2>
-          <p className="text-sm text-gray-500 mb-6">Where should we deliver?</p>
+          <h2 className="text-[28px] font-bold text-[var(--t-text-primary)] mb-2 tracking-[-1px]">Delivery Address</h2>
+          <p className="text-sm text-[var(--t-text-muted)] mb-6">Where should we deliver?</p>
 
           <div className="space-y-4">
             <AddressAutocomplete
@@ -307,7 +316,7 @@ function BookingWizardContent() {
               className={`${inputClass} pl-10`}
             />
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">Placement Notes (optional)</label>
+              <label className="block text-sm font-medium text-[var(--t-text-primary)] mb-1.5">Placement Notes (optional)</label>
               <textarea
                 value={placementNotes}
                 onChange={(e) => setPlacementNotes(e.target.value)}
@@ -323,20 +332,20 @@ function BookingWizardContent() {
       {/* Step 4: Customer Info */}
       {step === 4 && (
         <div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Your Information</h2>
-          <p className="text-sm text-gray-500 mb-6">We&apos;ll use this to confirm your booking</p>
+          <h2 className="text-[28px] font-bold text-[var(--t-text-primary)] mb-2 tracking-[-1px]">Your Information</h2>
+          <p className="text-sm text-[var(--t-text-muted)] mb-6">We&apos;ll use this to confirm your booking</p>
 
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">Full Name</label>
+              <label className="block text-sm font-medium text-[var(--t-text-primary)] mb-1.5">Full Name</label>
               <input type="text" value={customerName} onChange={(e) => setCustomerName(e.target.value)} placeholder="John Smith" className={inputClass} />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">Email</label>
+              <label className="block text-sm font-medium text-[var(--t-text-primary)] mb-1.5">Email</label>
               <input type="email" value={customerEmail} onChange={(e) => setCustomerEmail(e.target.value)} placeholder="john@example.com" className={inputClass} />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">Phone</label>
+              <label className="block text-sm font-medium text-[var(--t-text-primary)] mb-1.5">Phone</label>
               <input type="tel" value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} placeholder="(555) 123-4567" className={inputClass} />
             </div>
           </div>
@@ -346,56 +355,56 @@ function BookingWizardContent() {
       {/* Step 5: Review & Confirm */}
       {step === 5 && selectedService && priceBreakdown && (
         <div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Review Your Booking</h2>
-          <p className="text-sm text-gray-500 mb-6">Confirm everything looks right</p>
+          <h2 className="text-[28px] font-bold text-[var(--t-text-primary)] mb-2 tracking-[-1px]">Review Your Booking</h2>
+          <p className="text-sm text-[var(--t-text-muted)] mb-6">Confirm everything looks right</p>
 
           <div className="space-y-4">
-            <div className="rounded-xl border border-gray-200 p-5">
-              <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-3">Service</h3>
-              <p className="font-semibold text-gray-900">{selectedService.name}</p>
-              <p className="text-sm text-gray-500">{selectedType.replace(/_/g, " ")} &middot; {rentalDays} day rental</p>
+            <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5">
+              <h3 className="text-xs font-semibold text-[var(--t-text-muted)] uppercase tracking-wider mb-3">Service</h3>
+              <p className="font-semibold text-[var(--t-text-primary)]">{selectedService.name}</p>
+              <p className="text-sm text-[var(--t-text-muted)]">{selectedType.replace(/_/g, " ")} &middot; {rentalDays} day rental</p>
             </div>
-            <div className="rounded-xl border border-gray-200 p-5">
-              <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-3">Delivery</h3>
-              <p className="font-semibold text-gray-900">{deliveryDate}</p>
-              <p className="text-sm text-gray-500">{TIME_WINDOWS.find((tw) => tw.value === timeWindow)?.desc}</p>
-              {address && <p className="text-sm text-gray-500 mt-1">{address.formatted || `${address.street}, ${address.city}, ${address.state} ${address.zip}`}</p>}
-              {placementNotes && <p className="text-sm text-gray-400 mt-1 italic">{placementNotes}</p>}
+            <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5">
+              <h3 className="text-xs font-semibold text-[var(--t-text-muted)] uppercase tracking-wider mb-3">Delivery</h3>
+              <p className="font-semibold text-[var(--t-text-primary)]">{deliveryDate}</p>
+              <p className="text-sm text-[var(--t-text-muted)]">{TIME_WINDOWS.find((tw) => tw.value === timeWindow)?.desc}</p>
+              {address && <p className="text-sm text-[var(--t-text-muted)] mt-1">{address.formatted || `${address.street}, ${address.city}, ${address.state} ${address.zip}`}</p>}
+              {placementNotes && <p className="text-sm text-[var(--t-text-muted)] mt-1 italic">{placementNotes}</p>}
             </div>
-            <div className="rounded-xl border border-gray-200 p-5">
-              <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-3">Contact</h3>
-              <p className="font-semibold text-gray-900">{customerName}</p>
-              <p className="text-sm text-gray-500">{customerEmail} &middot; {customerPhone}</p>
+            <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5">
+              <h3 className="text-xs font-semibold text-[var(--t-text-muted)] uppercase tracking-wider mb-3">Contact</h3>
+              <p className="font-semibold text-[var(--t-text-primary)]">{customerName}</p>
+              <p className="text-sm text-[var(--t-text-muted)]">{customerEmail} &middot; {customerPhone}</p>
             </div>
-            <div className="rounded-xl border-2 p-5" style={{ borderColor: color, background: `${color}05` }}>
-              <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-3">Price Breakdown</h3>
+            <div className="rounded-[14px] border border-[var(--t-accent)] bg-[var(--t-accent-soft)] p-5">
+              <h3 className="text-xs font-semibold text-[var(--t-text-muted)] uppercase tracking-wider mb-3">Price Breakdown</h3>
               <div className="space-y-2 text-sm">
-                <div className="flex justify-between"><span className="text-gray-600">Base price ({selectedService.rentalDays} days)</span><span className="font-medium text-gray-900">{formatCurrency(priceBreakdown.base)}</span></div>
+                <div className="flex justify-between"><span className="text-[var(--t-text-muted)]">Base price ({selectedService.rentalDays} days)</span><span className="font-medium text-[var(--t-text-primary)]">{formatCurrency(priceBreakdown.base)}</span></div>
                 {priceBreakdown.extraDays > 0 && (
-                  <div className="flex justify-between"><span className="text-gray-600">Extra days ({priceBreakdown.extraDays} x {formatCurrency(selectedService.extraDayRate)})</span><span className="font-medium text-gray-900">{formatCurrency(priceBreakdown.extraDayCost)}</span></div>
+                  <div className="flex justify-between"><span className="text-[var(--t-text-muted)]">Extra days ({priceBreakdown.extraDays} x {formatCurrency(selectedService.extraDayRate)})</span><span className="font-medium text-[var(--t-text-primary)]">{formatCurrency(priceBreakdown.extraDayCost)}</span></div>
                 )}
                 {priceBreakdown.delivery > 0 && (
-                  <div className="flex justify-between"><span className="text-gray-600">Delivery fee</span><span className="font-medium text-gray-900">{formatCurrency(priceBreakdown.delivery)}</span></div>
+                  <div className="flex justify-between"><span className="text-[var(--t-text-muted)]">Delivery fee</span><span className="font-medium text-[var(--t-text-primary)]">{formatCurrency(priceBreakdown.delivery)}</span></div>
                 )}
                 {priceBreakdown.deposit > 0 && (
-                  <div className="flex justify-between"><span className="text-gray-600">Refundable deposit</span><span className="font-medium text-gray-900">{formatCurrency(priceBreakdown.deposit)}</span></div>
+                  <div className="flex justify-between"><span className="text-[var(--t-text-muted)]">Refundable deposit</span><span className="font-medium text-[var(--t-text-primary)]">{formatCurrency(priceBreakdown.deposit)}</span></div>
                 )}
-                <div className="flex justify-between border-t border-gray-200 pt-2 mt-2">
-                  <span className="font-semibold text-gray-900">Total</span>
-                  <span className="text-xl font-bold" style={{ color }}>{formatCurrency(priceBreakdown.total)}</span>
+                <div className="flex justify-between border-t border-[var(--t-border)] pt-2 mt-2">
+                  <span className="font-semibold text-[var(--t-text-primary)]">Total</span>
+                  <span className="text-xl font-bold text-[var(--t-accent)]">{formatCurrency(priceBreakdown.total)}</span>
                 </div>
               </div>
             </div>
           </div>
 
-          {error && <p className="mt-4 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-600">{error}</p>}
+          {error && <p className="mt-4 rounded-[14px] bg-[var(--t-error-soft)] border border-[var(--t-error)] px-4 py-3 text-sm text-[var(--t-error)]">{error}</p>}
         </div>
       )}
 
       {/* Navigation buttons */}
-      <div className="flex items-center justify-between mt-8 pt-6 border-t border-gray-100">
+      <div className="flex items-center justify-between mt-8 pt-6 border-t border-[var(--t-border)]">
         {step > 1 ? (
-          <button onClick={() => setStep(step - 1)} className="flex items-center gap-1.5 rounded-lg px-4 py-2.5 text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors">
+          <button onClick={() => setStep(step - 1)} className="flex items-center gap-1.5 rounded-full px-5 py-2.5 text-sm font-medium text-[var(--t-text-muted)] border border-[var(--t-border)] hover:bg-[var(--t-bg-card)] transition-colors">
             <ChevronLeft className="h-4 w-4" /> Back
           </button>
         ) : <div />}
@@ -404,17 +413,15 @@ function BookingWizardContent() {
           <button
             onClick={() => setStep(step + 1)}
             disabled={!canAdvance()}
-            className="flex items-center gap-1.5 rounded-xl px-6 py-2.5 text-sm font-semibold text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed hover:shadow-lg"
-            style={{ background: color }}
+            className="flex items-center gap-1.5 rounded-full px-7 py-2.5 text-sm font-semibold bg-[var(--t-accent)] text-black transition-all disabled:opacity-40 disabled:cursor-not-allowed hover:brightness-110"
           >
-            Next <ChevronRight className="h-4 w-4" />
+            Continue <ChevronRight className="h-4 w-4" />
           </button>
         ) : (
           <button
             onClick={handleSubmit}
             disabled={submitting}
-            className="flex items-center gap-2 rounded-xl px-8 py-3 text-sm font-semibold text-white transition-all hover:shadow-lg disabled:opacity-60"
-            style={{ background: color }}
+            className="flex items-center gap-2 rounded-full px-8 py-3 text-sm font-semibold bg-[var(--t-accent)] text-black transition-all hover:brightness-110 disabled:opacity-60"
           >
             {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
             {submitting ? "Submitting..." : "Confirm Booking"}
@@ -423,8 +430,8 @@ function BookingWizardContent() {
       </div>
 
       {embed && (
-        <p className="mt-8 text-center text-xs text-gray-400">
-          Powered by <a href="https://serviceos.com" className="hover:text-gray-600">ServiceOS</a>
+        <p className="mt-8 text-center text-xs text-[var(--t-text-muted)]">
+          Powered by <a href="https://serviceos.com" className="hover:text-[var(--t-text-primary)]">ServiceOS</a>
         </p>
       )}
     </div>
@@ -433,7 +440,7 @@ function BookingWizardContent() {
 
 export default function BookingPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-white flex items-center justify-center"><div className="h-8 w-8 border-2 border-gray-200 border-t-green-500 rounded-full animate-spin" /></div>}>
+    <Suspense fallback={<div className="min-h-screen bg-[var(--t-bg-primary)] flex items-center justify-center"><div className="h-8 w-8 border-2 border-[var(--t-border)] border-t-[var(--t-accent)] rounded-full animate-spin" /></div>}>
       <BookingWizardContent />
     </Suspense>
   );

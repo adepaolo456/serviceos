@@ -80,58 +80,59 @@ export default function PortalProfilePage() {
     }
   };
 
-  if (loading) return <div className="space-y-4">{[1, 2, 3].map(i => <div key={i} className="h-20 rounded-xl bg-[#E2E8F0] animate-pulse" />)}</div>;
+  if (loading) return <div className="space-y-4">{[1, 2, 3].map(i => <div key={i} className="h-20 rounded-[14px] bg-[var(--t-bg-card)] border border-[var(--t-border)] animate-pulse" />)}</div>;
+
+  const inputCls = "w-full rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-2.5 text-sm text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)] focus:ring-1 focus:ring-[var(--t-accent)]";
+  const labelCls = "block text-sm font-medium text-[var(--t-text-primary)] mb-1.5";
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-[#0F172A]">Profile</h1>
+      <h1 className="text-[28px] font-bold tracking-[-1px] text-[var(--t-text-primary)]">Profile</h1>
 
       {/* Tabs */}
-      <div className="flex gap-1 rounded-lg bg-[#F1F5F9] p-1 w-fit">
+      <div className="flex gap-0 border-b border-[var(--t-border)] overflow-x-auto">
         {([["info", "Personal Info"], ["password", "Password"], ["notifications", "Notifications"]] as const).map(([key, label]) => (
           <button key={key} onClick={() => setTab(key)}
-            className={`rounded-md px-4 py-1.5 text-sm font-medium transition-colors ${tab === key ? "bg-white text-[#0F172A] shadow-sm" : "text-[#64748B] hover:text-[#0F172A]"}`}>
+            className={`relative px-4 py-2.5 text-sm font-medium transition-colors ${tab === key ? "text-[var(--t-accent)]" : "text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)]"}`}>
             {label}
+            {tab === key && <span className="absolute inset-x-0 bottom-0 h-0.5 bg-[var(--t-accent)] rounded-full" />}
           </button>
         ))}
       </div>
 
       {tab === "info" && (
-        <form onSubmit={handleSave} className="rounded-xl border border-[#E2E8F0] bg-white p-6 space-y-5">
+        <form onSubmit={handleSave} className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6 space-y-5">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-[#334155] mb-1.5">First Name</label>
-              <input value={firstName} onChange={(e) => setFirstName(e.target.value)}
-                className="w-full rounded-lg border border-[#E2E8F0] bg-white px-4 py-2.5 text-sm text-[#0F172A] outline-none focus:border-[#2ECC71] focus:ring-1 focus:ring-[#2ECC71]" />
+              <label className={labelCls}>First Name</label>
+              <input value={firstName} onChange={(e) => setFirstName(e.target.value)} className={inputCls} />
             </div>
             <div>
-              <label className="block text-sm font-medium text-[#334155] mb-1.5">Last Name</label>
-              <input value={lastName} onChange={(e) => setLastName(e.target.value)}
-                className="w-full rounded-lg border border-[#E2E8F0] bg-white px-4 py-2.5 text-sm text-[#0F172A] outline-none focus:border-[#2ECC71] focus:ring-1 focus:ring-[#2ECC71]" />
+              <label className={labelCls}>Last Name</label>
+              <input value={lastName} onChange={(e) => setLastName(e.target.value)} className={inputCls} />
             </div>
           </div>
           <div>
-            <label className="block text-sm font-medium text-[#334155] mb-1.5">Email</label>
+            <label className={labelCls}>Email</label>
             <input value={profile?.email || ""} disabled
-              className="w-full rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] px-4 py-2.5 text-sm text-[#64748B] cursor-not-allowed" />
+              className="w-full rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-primary)] px-4 py-2.5 text-sm text-[var(--t-text-muted)] cursor-not-allowed" />
           </div>
           <div>
-            <label className="block text-sm font-medium text-[#334155] mb-1.5">Phone</label>
-            <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="(555) 555-5555"
-              className="w-full rounded-lg border border-[#E2E8F0] bg-white px-4 py-2.5 text-sm text-[#0F172A] outline-none focus:border-[#2ECC71] focus:ring-1 focus:ring-[#2ECC71]" />
+            <label className={labelCls}>Phone</label>
+            <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="(555) 555-5555" className={inputCls} />
           </div>
           <div>
-            <label className="block text-sm font-medium text-[#334155] mb-2">Billing Address</label>
+            <label className="block text-sm font-medium text-[var(--t-text-primary)] mb-2">Billing Address</label>
             <AddressAutocomplete value={billingAddress} onChange={setBillingAddress} placeholder="Enter billing address" />
           </div>
 
           {profile?.service_addresses && profile.service_addresses.length > 0 && (
             <div>
-              <label className="block text-sm font-medium text-[#334155] mb-2">Service Addresses</label>
+              <label className="block text-sm font-medium text-[var(--t-text-primary)] mb-2">Service Addresses</label>
               <div className="space-y-2">
                 {profile.service_addresses.map((addr, i) => (
-                  <div key={i} className="flex items-center gap-2 rounded-lg bg-[#F8FAFC] border border-[#E2E8F0] px-4 py-2.5 text-sm text-[#334155]">
-                    <MapPin className="h-4 w-4 text-[#64748B] shrink-0" />
+                  <div key={i} className="flex items-center gap-2 rounded-[14px] bg-[var(--t-bg-primary)] border border-[var(--t-border)] px-4 py-2.5 text-sm text-[var(--t-text-primary)]">
+                    <MapPin className="h-4 w-4 text-[var(--t-text-muted)] shrink-0" />
                     {addr.formatted || addr.street || "—"}
                   </div>
                 ))}
@@ -141,55 +142,53 @@ export default function PortalProfilePage() {
 
           <div className="flex items-center gap-3">
             <button type="submit" disabled={saving}
-              className="rounded-lg bg-[#2ECC71] px-6 py-2.5 text-sm font-semibold text-white hover:bg-[#27AE60] disabled:opacity-50">
+              className="rounded-full bg-[var(--t-accent)] px-6 py-2.5 text-sm font-semibold text-black hover:opacity-90 disabled:opacity-50 transition-opacity">
               {saving ? "Saving..." : "Save Changes"}
             </button>
-            {saved && <span className="flex items-center gap-1 text-sm text-[#2ECC71]"><CheckCircle2 className="h-4 w-4" /> Saved</span>}
+            {saved && <span className="flex items-center gap-1 text-sm text-[var(--t-accent)]"><CheckCircle2 className="h-4 w-4" /> Saved</span>}
           </div>
         </form>
       )}
 
       {tab === "password" && (
-        <form onSubmit={handlePasswordChange} className="rounded-xl border border-[#E2E8F0] bg-white p-6 space-y-5 max-w-md">
-          {pwError && <div className="rounded-lg bg-red-50 border border-red-100 px-4 py-3 text-sm text-red-600">{pwError}</div>}
-          {pwSuccess && <div className="rounded-lg bg-green-50 border border-green-100 px-4 py-3 text-sm text-green-600 flex items-center gap-2"><CheckCircle2 className="h-4 w-4" /> Password updated successfully</div>}
+        <form onSubmit={handlePasswordChange} className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6 space-y-5 max-w-md">
+          {pwError && <div className="rounded-[14px] bg-[var(--t-error-soft)] px-4 py-3 text-sm text-[var(--t-error)]">{pwError}</div>}
+          {pwSuccess && <div className="rounded-[14px] bg-[var(--t-accent-soft)] px-4 py-3 text-sm text-[var(--t-accent)] flex items-center gap-2"><CheckCircle2 className="h-4 w-4" /> Password updated successfully</div>}
           <div>
-            <label className="block text-sm font-medium text-[#334155] mb-1.5">Current Password</label>
-            <input type="password" value={currentPw} onChange={(e) => setCurrentPw(e.target.value)} required
-              className="w-full rounded-lg border border-[#E2E8F0] bg-white px-4 py-2.5 text-sm text-[#0F172A] outline-none focus:border-[#2ECC71] focus:ring-1 focus:ring-[#2ECC71]" />
+            <label className={labelCls}>Current Password</label>
+            <input type="password" value={currentPw} onChange={(e) => setCurrentPw(e.target.value)} required className={inputCls} />
           </div>
           <div>
-            <label className="block text-sm font-medium text-[#334155] mb-1.5">New Password</label>
-            <input type="password" value={newPw} onChange={(e) => setNewPw(e.target.value)} required minLength={8}
-              className="w-full rounded-lg border border-[#E2E8F0] bg-white px-4 py-2.5 text-sm text-[#0F172A] outline-none focus:border-[#2ECC71] focus:ring-1 focus:ring-[#2ECC71]" />
-            <p className="text-xs text-[#94A3B8] mt-1">Minimum 8 characters</p>
+            <label className={labelCls}>New Password</label>
+            <input type="password" value={newPw} onChange={(e) => setNewPw(e.target.value)} required minLength={8} className={inputCls} />
+            <p className="text-xs text-[var(--t-text-muted)] mt-1">Minimum 8 characters</p>
           </div>
           <button type="submit" disabled={pwSaving}
-            className="rounded-lg bg-[#2ECC71] px-6 py-2.5 text-sm font-semibold text-white hover:bg-[#27AE60] disabled:opacity-50">
+            className="rounded-full bg-[var(--t-accent)] px-6 py-2.5 text-sm font-semibold text-black hover:opacity-90 disabled:opacity-50 transition-opacity">
             {pwSaving ? "Updating..." : "Update Password"}
           </button>
         </form>
       )}
 
       {tab === "notifications" && (
-        <div className="rounded-xl border border-[#E2E8F0] bg-white p-6 space-y-4">
-          <p className="text-sm text-[#64748B]">Choose how you&apos;d like to be notified.</p>
+        <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6 space-y-4">
+          <p className="text-sm text-[var(--t-text-muted)]">Choose how you&apos;d like to be notified.</p>
           {["Delivery updates", "Pickup reminders", "Invoice notifications", "Payment confirmations"].map(label => (
-            <div key={label} className="flex items-center justify-between py-2 border-b border-[#F1F5F9] last:border-b-0">
+            <div key={label} className="flex items-center justify-between py-2 border-b border-[var(--t-border)]/50 last:border-b-0">
               <div>
-                <p className="text-sm font-medium text-[#0F172A]">{label}</p>
+                <p className="text-sm font-medium text-[var(--t-text-primary)]">{label}</p>
               </div>
               <div className="flex gap-4">
-                <label className="flex items-center gap-1.5 text-xs text-[#64748B]">
-                  <input type="checkbox" defaultChecked className="rounded border-[#CBD5E1] text-[#2ECC71] focus:ring-[#2ECC71]" /> Email
+                <label className="flex items-center gap-1.5 text-xs text-[var(--t-text-muted)]">
+                  <input type="checkbox" defaultChecked className="rounded border-[var(--t-border)] text-[var(--t-accent)] focus:ring-[var(--t-accent)]" /> Email
                 </label>
-                <label className="flex items-center gap-1.5 text-xs text-[#64748B]">
-                  <input type="checkbox" className="rounded border-[#CBD5E1] text-[#2ECC71] focus:ring-[#2ECC71]" /> SMS
+                <label className="flex items-center gap-1.5 text-xs text-[var(--t-text-muted)]">
+                  <input type="checkbox" className="rounded border-[var(--t-border)] text-[var(--t-accent)] focus:ring-[var(--t-accent)]" /> SMS
                 </label>
               </div>
             </div>
           ))}
-          <button className="rounded-lg bg-[#2ECC71] px-6 py-2.5 text-sm font-semibold text-white hover:bg-[#27AE60]">
+          <button className="rounded-full bg-[var(--t-accent)] px-6 py-2.5 text-sm font-semibold text-black hover:opacity-90 transition-opacity">
             Save Preferences
           </button>
         </div>

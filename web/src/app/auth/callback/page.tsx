@@ -23,20 +23,20 @@ function CallbackHandler() {
 
   return (
     <div className="text-center">
-      <div className="mx-auto mb-4 h-8 w-8 animate-spin rounded-full border-2 border-brand border-t-transparent" />
-      <p className="text-sm text-muted">Signing you in...</p>
+      <div className="mx-auto mb-4 h-8 w-8 animate-spin rounded-full border-2 border-[var(--t-accent)] border-t-transparent" />
+      <p className="text-sm text-[var(--t-text-muted)]">Signing you in...</p>
     </div>
   );
 }
 
 export default function AuthCallbackPage() {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-dark-primary">
+    <div className="flex min-h-screen items-center justify-center bg-[var(--t-bg-primary)]">
       <Suspense
         fallback={
           <div className="text-center">
-            <div className="mx-auto mb-4 h-8 w-8 animate-spin rounded-full border-2 border-brand border-t-transparent" />
-            <p className="text-sm text-muted">Loading...</p>
+            <div className="mx-auto mb-4 h-8 w-8 animate-spin rounded-full border-2 border-[var(--t-accent)] border-t-transparent" />
+            <p className="text-sm text-[var(--t-text-muted)]">Loading...</p>
           </div>
         }
       >

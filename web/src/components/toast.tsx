@@ -54,14 +54,19 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: (id: number)
   }, [toast.id, onDismiss]);
 
   const Icon = toast.type === "success" ? CheckCircle2 : toast.type === "error" ? XCircle : AlertTriangle;
-  const color = toast.type === "success" ? "text-brand" : toast.type === "error" ? "text-red-400" : "text-yellow-400";
-  const bg = toast.type === "success" ? "bg-brand/10" : toast.type === "error" ? "bg-red-500/10" : "bg-yellow-500/10";
+  const color = toast.type === "success" ? "var(--t-accent)" : toast.type === "error" ? "var(--t-error)" : "var(--t-warning)";
 
   return (
-    <div className={`pointer-events-auto flex items-center gap-3 rounded-xl border border-[#1E2D45] ${bg} bg-dark-secondary px-4 py-3 shadow-xl shadow-black/20 animate-in slide-in-from-right-5`}>
-      <Icon className={`h-5 w-5 shrink-0 ${color}`} />
-      <p className="text-sm text-foreground">{toast.message}</p>
-      <button onClick={() => onDismiss(toast.id)} className="ml-2 shrink-0 text-muted hover:text-white">
+    <div
+      className="pointer-events-auto flex items-center gap-3 rounded-xl px-4 py-3 shadow-xl animate-slide-in-right"
+      style={{
+        backgroundColor: "var(--t-bg-secondary)",
+        border: "1px solid var(--t-border)",
+      }}
+    >
+      <Icon className="h-5 w-5 shrink-0" style={{ color }} />
+      <p className="text-sm" style={{ color: "var(--t-text-primary)" }}>{toast.message}</p>
+      <button onClick={() => onDismiss(toast.id)} className="ml-2 shrink-0" style={{ color: "var(--t-text-muted)" }}>
         <X className="h-4 w-4" />
       </button>
     </div>

@@ -39,15 +39,15 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
   };
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC]" style={{ colorScheme: "light" }}>
+    <div className="min-h-screen bg-[var(--t-bg-primary)]">
       {/* Top navbar */}
-      <header className="sticky top-0 z-40 border-b border-[#E2E8F0] bg-white shadow-sm">
+      <header className="sticky top-0 z-40 border-b border-[var(--t-border)] bg-[var(--t-bg-card)]">
         <div className="mx-auto flex h-14 max-w-5xl items-center justify-between px-4">
           <Link href="/portal" className="flex items-center gap-2.5">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#2ECC71]">
-              <span className="text-sm font-bold text-white">S</span>
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--t-accent)]">
+              <span className="text-sm font-bold text-black">S</span>
             </div>
-            <span className="font-semibold text-[#0F172A] text-sm hidden sm:block">ServiceOS</span>
+            <span className="font-semibold text-[var(--t-text-primary)] text-sm hidden sm:block">ServiceOS</span>
           </Link>
 
           {/* Desktop nav */}
@@ -56,8 +56,8 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
               const active = pathname === item.href || (item.href !== "/portal" && pathname.startsWith(item.href));
               return (
                 <Link key={item.name} href={item.href}
-                  className={`flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-                    active ? "bg-[#2ECC71]/10 text-[#2ECC71]" : "text-[#64748B] hover:bg-[#F1F5F9] hover:text-[#0F172A]"
+                  className={`flex items-center gap-1.5 rounded-full px-3 py-2 text-sm font-medium transition-colors ${
+                    active ? "text-[var(--t-accent)]" : "text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)]"
                   }`}>
                   <item.icon className="h-4 w-4" />
                   {item.name}
@@ -68,14 +68,14 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
 
           <div className="flex items-center gap-2">
             {customer && (
-              <span className="hidden sm:block text-sm text-[#64748B]">
+              <span className="hidden sm:block text-sm text-[var(--t-text-muted)]">
                 {customer.firstName} {customer.lastName}
               </span>
             )}
-            <button onClick={handleLogout} className="rounded-lg p-2 text-[#64748B] hover:bg-[#F1F5F9] hover:text-[#0F172A]" title="Log out">
+            <button onClick={handleLogout} className="rounded-full p-2 text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)] hover:bg-[var(--t-bg-card-hover)] transition-colors" title="Log out">
               <LogOut className="h-4 w-4" />
             </button>
-            <button onClick={() => setMobileOpen(true)} className="md:hidden rounded-lg p-2 text-[#64748B] hover:bg-[#F1F5F9]">
+            <button onClick={() => setMobileOpen(true)} className="md:hidden rounded-full p-2 text-[var(--t-text-muted)] hover:bg-[var(--t-bg-card-hover)]">
               <Menu className="h-5 w-5" />
             </button>
           </div>
@@ -85,9 +85,9 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
       {/* Mobile nav overlay */}
       {mobileOpen && (
         <div className="fixed inset-0 z-50 md:hidden">
-          <div className="fixed inset-0 bg-black/30" onClick={() => setMobileOpen(false)} />
-          <div className="fixed inset-y-0 right-0 w-64 bg-white shadow-xl p-4">
-            <button onClick={() => setMobileOpen(false)} className="mb-4 rounded-lg p-2 text-[#64748B] hover:bg-[#F1F5F9]">
+          <div className="fixed inset-0 bg-black/50" onClick={() => setMobileOpen(false)} />
+          <div className="fixed inset-y-0 right-0 w-64 bg-[var(--t-bg-card)] border-l border-[var(--t-border)] p-4">
+            <button onClick={() => setMobileOpen(false)} className="mb-4 rounded-full p-2 text-[var(--t-text-muted)] hover:bg-[var(--t-bg-card-hover)]">
               <X className="h-5 w-5" />
             </button>
             <nav className="space-y-1">
@@ -95,8 +95,8 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
                 const active = pathname === item.href || (item.href !== "/portal" && pathname.startsWith(item.href));
                 return (
                   <Link key={item.name} href={item.href}
-                    className={`flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm font-medium ${
-                      active ? "bg-[#2ECC71]/10 text-[#2ECC71]" : "text-[#64748B] hover:bg-[#F1F5F9]"
+                    className={`flex items-center gap-2.5 rounded-[14px] px-3 py-2.5 text-sm font-medium ${
+                      active ? "text-[var(--t-accent)]" : "text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)]"
                     }`}>
                     <item.icon className="h-4 w-4" />
                     {item.name}
@@ -104,7 +104,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
                 );
               })}
               <button onClick={handleLogout}
-                className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm font-medium text-red-500 hover:bg-red-50">
+                className="flex w-full items-center gap-2.5 rounded-[14px] px-3 py-2.5 text-sm font-medium text-[var(--t-error)] hover:bg-[var(--t-error-soft)]">
                 <LogOut className="h-4 w-4" />
                 Log out
               </button>

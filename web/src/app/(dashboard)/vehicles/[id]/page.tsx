@@ -18,24 +18,23 @@ interface ExpandableProps { title: string; icon: React.ReactNode; children: Reac
 function Expandable({ title, icon, children, defaultOpen = false }: ExpandableProps) {
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <div className="rounded-xl bg-dark-card border border-[#1E2D45] overflow-hidden">
-      <button onClick={() => setOpen(!open)} className="flex w-full items-center justify-between px-4 py-3.5 hover:bg-dark-card-hover transition-colors">
+    <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] overflow-hidden">
+      <button onClick={() => setOpen(!open)} className="flex w-full items-center justify-between px-4 py-3.5 hover:bg-[var(--t-bg-card-hover)] transition-colors">
         <div className="flex items-center gap-2.5">
           {icon}
-          <span className="text-sm font-semibold text-white">{title}</span>
+          <span className="text-sm font-semibold text-[var(--t-text-primary)]">{title}</span>
         </div>
-        {open ? <ChevronUp className="h-4 w-4 text-muted" /> : <ChevronDown className="h-4 w-4 text-muted" />}
+        {open ? <ChevronUp className="h-4 w-4 text-[var(--t-text-muted)]" /> : <ChevronDown className="h-4 w-4 text-[var(--t-text-muted)]" />}
       </button>
-      {open && <div className="px-4 pb-4 border-t border-[#1E2D45] pt-3">{children}</div>}
+      {open && <div className="px-4 pb-4 border-t border-[var(--t-border)] pt-3">{children}</div>}
     </div>
   );
 }
 
 function Row({ label, value }: { label: string; value: React.ReactNode }) {
-  return <div className="flex items-center justify-between py-1.5 text-sm"><span className="text-muted">{label}</span><span className="text-foreground">{value}</span></div>;
+  return <div className="flex items-center justify-between py-1.5 text-sm"><span className="text-[var(--t-text-muted)]">{label}</span><span className="text-[var(--t-text-primary)]">{value}</span></div>;
 }
 
-// Hardcoded sample data for maintenance and fuel logs
 const sampleMaintenance = [
   { id: "1", date: "2026-03-15", type: "Oil Change", desc: "Full synthetic oil change + filter", cost: 89.99, mileage: 45200 },
   { id: "2", date: "2026-02-01", type: "Tire Rotation", desc: "Rotated and balanced all 4 tires", cost: 49.99, mileage: 43800 },
@@ -59,12 +58,12 @@ export default function VehicleDetailPage({ params }: { params: Promise<{ id: st
     api.get<Employee>(`/team/${id}`).then(setEmp).catch(() => {}).finally(() => setLoading(false));
   }, [id]);
 
-  if (loading) return <div className="space-y-4"><div className="h-8 w-48 skeleton rounded" /><div className="h-48 skeleton rounded-2xl" /></div>;
+  if (loading) return <div className="space-y-4"><div className="h-8 w-48 skeleton rounded-[14px]" /><div className="h-48 skeleton rounded-[14px]" /></div>;
   if (!emp || !emp.vehicleInfo) return (
     <div className="py-20 text-center">
-      <CarFront className="mx-auto h-10 w-10 text-muted/20 mb-2" />
-      <p className="text-sm text-muted">No vehicle assigned to this team member</p>
-      <Link href="/vehicles" className="text-xs text-brand hover:text-brand-light mt-2 inline-block">Back to Vehicles</Link>
+      <CarFront className="mx-auto h-10 w-10 text-[var(--t-text-muted)] opacity-20 mb-2" />
+      <p className="text-sm text-[var(--t-text-muted)]">No vehicle assigned to this team member</p>
+      <Link href="/vehicles" className="text-[11px] font-semibold text-[var(--t-accent)] hover:opacity-80 mt-2 inline-block">Back to Vehicles</Link>
     </div>
   );
 
@@ -75,135 +74,131 @@ export default function VehicleDetailPage({ params }: { params: Promise<{ id: st
 
   return (
     <div className="space-y-5">
-      <Link href="/vehicles" className="inline-flex items-center gap-1.5 text-xs text-muted hover:text-foreground transition-colors"><ArrowLeft className="h-3.5 w-3.5" /> Vehicles</Link>
+      <Link href="/vehicles" className="inline-flex items-center gap-1.5 text-[13px] text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)] transition-colors"><ArrowLeft className="h-3.5 w-3.5" /> Vehicles</Link>
 
       {/* Header */}
-      <div className="rounded-2xl bg-dark-card border border-[#1E2D45] p-5">
+      <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5">
         <div className="flex items-start justify-between">
           <div className="flex items-start gap-4">
-            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-dark-elevated">
-              <CarFront className="h-7 w-7 text-muted" />
+            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-[14px] bg-[var(--t-bg-card-hover)]">
+              <CarFront className="h-7 w-7 text-[var(--t-text-muted)]" />
             </div>
             <div>
-              <h1 className="font-display text-xl font-bold text-white">{displayName}</h1>
-              {v.plate && <p className="text-sm text-muted font-mono mt-0.5">{v.plate}</p>}
+              <h1 className="text-[28px] font-bold tracking-[-1px] text-[var(--t-text-primary)]">{displayName}</h1>
+              {v.plate && <p className="text-sm text-[var(--t-text-muted)] font-mono mt-0.5">{v.plate}</p>}
               <div className="flex items-center gap-2 mt-2">
-                <Link href={`/team/${emp.id}`} className="flex items-center gap-1.5 text-xs text-brand hover:text-brand-light">
+                <Link href={`/team/${emp.id}`} className="flex items-center gap-1.5 text-[13px] text-[var(--t-accent)] hover:opacity-80">
                   <User className="h-3 w-3" /> {emp.firstName} {emp.lastName}
                 </Link>
-                <span className="inline-flex items-center gap-1 text-[10px] text-brand">
-                  <span className="h-1.5 w-1.5 rounded-full bg-brand" />Active
+                <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-[var(--t-accent)]">
+                  <span className="h-1.5 w-1.5 rounded-full bg-[var(--t-accent)]" />Active
                 </span>
               </div>
             </div>
           </div>
-          <div className="flex gap-2">
-            <button onClick={() => setEditOpen(true)} className="rounded-lg bg-dark-elevated px-3 py-2 text-xs font-medium text-foreground hover:bg-dark-card-hover btn-press flex items-center gap-1.5"><Pencil className="h-3.5 w-3.5" /> Edit</button>
-          </div>
+          <button onClick={() => setEditOpen(true)} className="rounded-full border border-[var(--t-border)] px-4 py-2 text-[13px] font-medium text-[var(--t-text-primary)] hover:bg-[var(--t-bg-card-hover)] transition-colors flex items-center gap-1.5"><Pencil className="h-3.5 w-3.5" /> Edit</button>
         </div>
       </div>
 
       {/* Two-Column Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Left */}
         <div className="space-y-4">
-          <Expandable title="Vehicle Details" icon={<CarFront className="h-4 w-4 text-brand" />} defaultOpen>
+          <Expandable title="Vehicle Details" icon={<CarFront className="h-4 w-4 text-[var(--t-accent)]" />} defaultOpen>
             <Row label="Display Name" value={displayName} />
-            <Row label="Year" value={v.year || "—"} />
-            <Row label="Make" value={v.make || "—"} />
-            <Row label="Model" value={v.model || "—"} />
-            <Row label="License Plate" value={v.plate || "—"} />
-            <Row label="VIN" value={v.vin || "—"} />
-            <Row label="Color" value={v.color || "—"} />
-            <Row label="In-Service Date" value={v.inServiceDate || "—"} />
+            <Row label="Year" value={v.year || "\u2014"} />
+            <Row label="Make" value={v.make || "\u2014"} />
+            <Row label="Model" value={v.model || "\u2014"} />
+            <Row label="License Plate" value={v.plate || "\u2014"} />
+            <Row label="VIN" value={v.vin || "\u2014"} />
+            <Row label="Color" value={v.color || "\u2014"} />
+            <Row label="In-Service Date" value={v.inServiceDate || "\u2014"} />
           </Expandable>
 
-          <Expandable title="Purchase Info" icon={<DollarSign className="h-4 w-4 text-amber-400" />}>
-            <Row label="Seller" value={v.seller || "—"} />
-            <Row label="Purchase Price" value={v.purchasePrice ? formatCurrency(v.purchasePrice) : "—"} />
-            <Row label="Purchase Date" value={v.purchaseDate || "—"} />
-            <Row label="Monthly Payment" value={v.monthlyPayment ? formatCurrency(v.monthlyPayment) : "—"} />
+          <Expandable title="Purchase Info" icon={<DollarSign className="h-4 w-4 text-[var(--t-warning)]" />}>
+            <Row label="Seller" value={v.seller || "\u2014"} />
+            <Row label="Purchase Price" value={v.purchasePrice ? formatCurrency(v.purchasePrice) : "\u2014"} />
+            <Row label="Purchase Date" value={v.purchaseDate || "\u2014"} />
+            <Row label="Monthly Payment" value={v.monthlyPayment ? formatCurrency(v.monthlyPayment) : "\u2014"} />
           </Expandable>
         </div>
 
-        {/* Right */}
         <div className="space-y-4">
-          <Expandable title="Specifications" icon={<Truck className="h-4 w-4 text-blue-400" />} defaultOpen>
-            <Row label="Gross Weight" value={v.grossWeight ? `${v.grossWeight} LBS` : "—"} />
+          <Expandable title="Specifications" icon={<Truck className="h-4 w-4 text-[var(--t-text-muted)]" />} defaultOpen>
+            <Row label="Gross Weight" value={v.grossWeight ? `${v.grossWeight} LBS` : "\u2014"} />
             <Row label="Fuel Type" value={v.fuelType || "Diesel"} />
-            <Row label="MPG" value={v.mpg || "—"} />
-            <Row label="Cost Per Mile" value={v.costPerMile ? `$${v.costPerMile}` : "—"} />
+            <Row label="MPG" value={v.mpg || "\u2014"} />
+            <Row label="Cost Per Mile" value={v.costPerMile ? `$${v.costPerMile}` : "\u2014"} />
             <Row label="Carry Capacity" value={v.carryCapacity || "10yd, 15yd, 20yd, 30yd"} />
           </Expandable>
 
-          <Expandable title="Insurance" icon={<Shield className="h-4 w-4 text-purple-400" />}>
-            <Row label="Insurer" value={v.insurer || "—"} />
-            <Row label="Policy #" value={v.policyNumber || "—"} />
-            <Row label="Coverage" value={v.coverageType || "—"} />
-            <Row label="Premium" value={v.premium ? formatCurrency(v.premium) : "—"} />
-            <Row label="Expiration" value={v.insuranceExpiry || "—"} />
+          <Expandable title="Insurance" icon={<Shield className="h-4 w-4 text-[var(--t-text-muted)]" />}>
+            <Row label="Insurer" value={v.insurer || "\u2014"} />
+            <Row label="Policy #" value={v.policyNumber || "\u2014"} />
+            <Row label="Coverage" value={v.coverageType || "\u2014"} />
+            <Row label="Premium" value={v.premium ? formatCurrency(v.premium) : "\u2014"} />
+            <Row label="Expiration" value={v.insuranceExpiry || "\u2014"} />
           </Expandable>
         </div>
       </div>
 
-      {/* Full Width Bottom Sections */}
-      <Expandable title="Maintenance Log" icon={<Wrench className="h-4 w-4 text-amber-400" />} defaultOpen>
-        <div className="rounded-lg border border-[#1E2D45] overflow-hidden">
+      {/* Maintenance Log */}
+      <Expandable title="Maintenance Log" icon={<Wrench className="h-4 w-4 text-[var(--t-warning)]" />} defaultOpen>
+        <div className="overflow-hidden">
           <table className="w-full text-sm">
-            <thead><tr className="border-b border-[#1E2D45]">
-              {["Date", "Type", "Description", "Cost", "Mileage"].map(h => <th key={h} className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-muted">{h}</th>)}
+            <thead><tr className="border-b border-[var(--t-border)]">
+              {["Date", "Type", "Description", "Cost", "Mileage"].map(h => <th key={h} className="px-3 py-2 text-left text-[12px] font-semibold uppercase tracking-wide text-[var(--t-text-muted)]">{h}</th>)}
             </tr></thead>
             <tbody>
               {sampleMaintenance.map(m => (
-                <tr key={m.id} className="border-b border-[#1E2D45] last:border-0">
-                  <td className="px-3 py-2 text-foreground">{new Date(m.date).toLocaleDateString()}</td>
-                  <td className="px-3 py-2 text-white font-medium">{m.type}</td>
-                  <td className="px-3 py-2 text-muted">{m.desc}</td>
-                  <td className="px-3 py-2 text-foreground tabular-nums">{m.cost > 0 ? formatCurrency(m.cost) : "—"}</td>
-                  <td className="px-3 py-2 text-muted tabular-nums">{m.mileage.toLocaleString()} mi</td>
+                <tr key={m.id} className="border-b border-[var(--t-border)] last:border-0">
+                  <td className="px-3 py-2 text-[var(--t-text-primary)]">{new Date(m.date).toLocaleDateString()}</td>
+                  <td className="px-3 py-2 text-[var(--t-text-primary)] font-medium">{m.type}</td>
+                  <td className="px-3 py-2 text-[var(--t-text-muted)]">{m.desc}</td>
+                  <td className="px-3 py-2 text-[var(--t-text-primary)] tabular-nums">{m.cost > 0 ? formatCurrency(m.cost) : "\u2014"}</td>
+                  <td className="px-3 py-2 text-[var(--t-text-muted)] tabular-nums">{m.mileage.toLocaleString()} mi</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-        <button className="flex items-center gap-1.5 mt-3 text-xs text-brand hover:text-brand-light btn-press"><Plus className="h-3 w-3" /> Add Maintenance Record</button>
+        <button className="flex items-center gap-1.5 mt-3 text-[11px] font-semibold text-[var(--t-accent)] hover:opacity-80"><Plus className="h-3 w-3" /> Add Maintenance Record</button>
       </Expandable>
 
-      <Expandable title="Fuel Log" icon={<Fuel className="h-4 w-4 text-green-400" />}>
-        <div className="rounded-lg border border-[#1E2D45] overflow-hidden">
+      <Expandable title="Fuel Log" icon={<Fuel className="h-4 w-4 text-[var(--t-accent)]" />}>
+        <div className="overflow-hidden">
           <table className="w-full text-sm">
-            <thead><tr className="border-b border-[#1E2D45]">
-              {["Date", "Gallons", "Cost", "Mileage", "$/Gal"].map(h => <th key={h} className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-muted">{h}</th>)}
+            <thead><tr className="border-b border-[var(--t-border)]">
+              {["Date", "Gallons", "Cost", "Mileage", "$/Gal"].map(h => <th key={h} className="px-3 py-2 text-left text-[12px] font-semibold uppercase tracking-wide text-[var(--t-text-muted)]">{h}</th>)}
             </tr></thead>
             <tbody>
               {sampleFuel.map(f => (
-                <tr key={f.id} className="border-b border-[#1E2D45] last:border-0">
-                  <td className="px-3 py-2 text-foreground">{new Date(f.date).toLocaleDateString()}</td>
-                  <td className="px-3 py-2 text-white font-medium tabular-nums">{f.gallons.toFixed(1)}</td>
-                  <td className="px-3 py-2 text-foreground tabular-nums">{formatCurrency(f.cost)}</td>
-                  <td className="px-3 py-2 text-muted tabular-nums">{f.mileage.toLocaleString()} mi</td>
-                  <td className="px-3 py-2 text-muted tabular-nums">${(f.cost / f.gallons).toFixed(2)}</td>
+                <tr key={f.id} className="border-b border-[var(--t-border)] last:border-0">
+                  <td className="px-3 py-2 text-[var(--t-text-primary)]">{new Date(f.date).toLocaleDateString()}</td>
+                  <td className="px-3 py-2 text-[var(--t-text-primary)] font-medium tabular-nums">{f.gallons.toFixed(1)}</td>
+                  <td className="px-3 py-2 text-[var(--t-text-primary)] tabular-nums">{formatCurrency(f.cost)}</td>
+                  <td className="px-3 py-2 text-[var(--t-text-muted)] tabular-nums">{f.mileage.toLocaleString()} mi</td>
+                  <td className="px-3 py-2 text-[var(--t-text-muted)] tabular-nums">${(f.cost / f.gallons).toFixed(2)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-        <button className="flex items-center gap-1.5 mt-3 text-xs text-brand hover:text-brand-light btn-press"><Plus className="h-3 w-3" /> Add Fuel Entry</button>
+        <button className="flex items-center gap-1.5 mt-3 text-[11px] font-semibold text-[var(--t-accent)] hover:opacity-80"><Plus className="h-3 w-3" /> Add Fuel Entry</button>
       </Expandable>
 
       {/* Cost Summary */}
-      <div className="rounded-xl bg-dark-card border border-[#1E2D45] p-4">
-        <p className="text-xs text-muted uppercase tracking-wider font-semibold mb-3">Cost Summary</p>
+      <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-4">
+        <p className="text-[13px] font-semibold uppercase tracking-wide text-[var(--t-text-muted)] mb-3">Cost Summary</p>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           {[
-            { label: "Maintenance", value: totalMaint, color: "text-amber-400" },
-            { label: "Fuel", value: totalFuel, color: "text-green-400" },
-            { label: "Insurance", value: 0, color: "text-purple-400" },
-            { label: "Total", value: totalMaint + totalFuel, color: "text-brand" },
+            { label: "Maintenance", value: totalMaint },
+            { label: "Fuel", value: totalFuel },
+            { label: "Insurance", value: 0 },
+            { label: "Total", value: totalMaint + totalFuel },
           ].map(c => (
             <div key={c.label} className="text-center">
-              <p className={`text-lg font-bold tabular-nums ${c.color}`}>{formatCurrency(c.value)}</p>
-              <p className="text-[10px] text-muted mt-0.5">{c.label}</p>
+              <p className="text-[24px] font-bold tabular-nums text-[var(--t-text-primary)]">{formatCurrency(c.value)}</p>
+              <p className="text-[13px] uppercase font-semibold tracking-wide text-[var(--t-text-muted)] mt-0.5">{c.label}</p>
             </div>
           ))}
         </div>
@@ -226,8 +221,8 @@ function VehicleEditForm({ emp, onSuccess }: { emp: Employee; onSuccess: (e: Emp
   const [vin, setVin] = useState(v.vin || "");
   const [color, setColor] = useState(v.color || "");
   const [saving, setSaving] = useState(false);
-  const inputCls = "w-full bg-[#111C2E] border border-[#1E2D45] rounded-lg px-4 py-2.5 text-sm text-white outline-none focus:border-brand";
-  const labelCls = "block text-xs font-medium text-muted uppercase tracking-wider mb-1";
+  const inputCls = "w-full rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-2.5 text-sm text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)]";
+  const labelCls = "block text-[13px] font-semibold uppercase tracking-wide text-[var(--t-text-muted)] mb-1";
 
   return (
     <form onSubmit={async (e: FormEvent) => {
@@ -247,7 +242,7 @@ function VehicleEditForm({ emp, onSuccess }: { emp: Employee; onSuccess: (e: Emp
       <div><label className={labelCls}>License Plate</label><input value={plate} onChange={e => setPlate(e.target.value)} className={inputCls} placeholder="ABC-1234" /></div>
       <div><label className={labelCls}>VIN</label><input value={vin} onChange={e => setVin(e.target.value)} className={inputCls} placeholder="1HGCM..." /></div>
       <div><label className={labelCls}>Color</label><input value={color} onChange={e => setColor(e.target.value)} className={inputCls} placeholder="White" /></div>
-      <button type="submit" disabled={saving} className="w-full rounded-lg bg-brand py-3 text-sm font-bold text-white hover:bg-brand-light disabled:opacity-50 btn-press">
+      <button type="submit" disabled={saving} className="w-full rounded-full bg-[#22C55E] py-3 text-sm font-semibold text-black transition-opacity hover:opacity-90 disabled:opacity-50">
         {saving ? "Saving..." : "Save Vehicle"}
       </button>
     </form>

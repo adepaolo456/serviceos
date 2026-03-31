@@ -61,19 +61,19 @@ export default function PortalRequestPage() {
   if (submitted) {
     return (
       <div className="flex flex-col items-center justify-center py-16">
-        <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[#2ECC71]/10 mb-4">
-          <CheckCircle2 className="h-8 w-8 text-[#2ECC71]" />
+        <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[var(--t-accent-soft)] mb-4">
+          <CheckCircle2 className="h-8 w-8 text-[var(--t-accent)]" />
         </div>
-        <h2 className="text-xl font-bold text-[#0F172A]">Request Submitted!</h2>
-        <p className="mt-2 text-sm text-[#64748B] text-center max-w-sm">
+        <h2 className="text-xl font-bold text-[var(--t-text-primary)]">Request Submitted!</h2>
+        <p className="mt-2 text-sm text-[var(--t-text-muted)] text-center max-w-sm">
           Your request {jobNumber} has been received. We&apos;ll confirm availability and contact you within 1 hour.
         </p>
         <div className="mt-6 flex gap-3">
-          <button onClick={() => router.push("/portal")} className="rounded-lg border border-[#E2E8F0] px-4 py-2 text-sm font-medium text-[#334155] hover:bg-[#F1F5F9]">
+          <button onClick={() => router.push("/portal")} className="rounded-full border border-[var(--t-border)] px-4 py-2 text-sm font-medium text-[var(--t-text-primary)] hover:bg-[var(--t-bg-card-hover)] transition-colors">
             Back to Dashboard
           </button>
           <button onClick={() => { setSubmitted(false); setSize("20yd"); setDate(""); setAddress({}); setInstructions(""); }}
-            className="rounded-lg bg-[#2ECC71] px-4 py-2 text-sm font-semibold text-white hover:bg-[#27AE60]">
+            className="rounded-full bg-[var(--t-accent)] px-4 py-2 text-sm font-semibold text-black hover:opacity-90 transition-opacity">
             Request Another
           </button>
         </div>
@@ -84,25 +84,25 @@ export default function PortalRequestPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-[#0F172A]">Request a Dumpster</h1>
-        <p className="mt-1 text-sm text-[#64748B]">Choose your size and schedule delivery. We&apos;ll confirm within 1 hour.</p>
+        <h1 className="text-[28px] font-bold tracking-[-1px] text-[var(--t-text-primary)]">Request a Dumpster</h1>
+        <p className="mt-1 text-sm text-[var(--t-text-muted)]">Choose your size and schedule delivery. We&apos;ll confirm within 1 hour.</p>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">
-        {error && <div className="rounded-lg bg-red-50 border border-red-100 px-4 py-3 text-sm text-red-600">{error}</div>}
+        {error && <div className="rounded-[14px] bg-[var(--t-error-soft)] px-4 py-3 text-sm text-[var(--t-error)]">{error}</div>}
 
         {/* Size selector */}
         <div>
-          <label className="block text-sm font-semibold text-[#0F172A] mb-3">Select Size</label>
+          <label className="block text-sm font-semibold text-[var(--t-text-primary)] mb-3">Select Size</label>
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
             {sizes.map(s => (
               <button key={s.value} type="button" onClick={() => setSize(s.value)}
-                className={`rounded-xl border-2 p-4 text-center transition-all ${
-                  size === s.value ? "border-[#2ECC71] bg-[#2ECC71]/5 shadow-sm" : "border-[#E2E8F0] bg-white hover:border-[#CBD5E1]"
+                className={`rounded-[14px] border-2 p-4 text-center transition-all ${
+                  size === s.value ? "border-[var(--t-accent)] bg-[var(--t-accent-soft)]" : "border-[var(--t-border)] bg-[var(--t-bg-card)] hover:border-[var(--t-text-muted)]"
                 }`}>
-                <p className="text-lg font-bold text-[#0F172A]">{s.label}</p>
-                <p className="text-xs text-[#64748B] mt-0.5">{s.desc}</p>
-                <p className="text-sm font-semibold text-[#2ECC71] mt-2">{formatCurrency(s.price)}</p>
+                <p className="text-lg font-bold text-[var(--t-text-primary)]">{s.label}</p>
+                <p className="text-xs text-[var(--t-text-muted)] mt-0.5">{s.desc}</p>
+                <p className="text-sm font-semibold text-[var(--t-accent)] mt-2">{formatCurrency(s.price)}</p>
               </button>
             ))}
           </div>
@@ -110,25 +110,25 @@ export default function PortalRequestPage() {
 
         {/* Delivery address */}
         <div>
-          <label className="block text-sm font-semibold text-[#0F172A] mb-2">Delivery Address</label>
+          <label className="block text-sm font-semibold text-[var(--t-text-primary)] mb-2">Delivery Address</label>
           <AddressAutocomplete value={address} onChange={setAddress} placeholder="Enter delivery address" />
         </div>
 
         {/* Date + Duration row */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-semibold text-[#0F172A] mb-2">Preferred Delivery Date</label>
+            <label className="block text-sm font-semibold text-[var(--t-text-primary)] mb-2">Preferred Delivery Date</label>
             <input type="date" value={date} onChange={(e) => setDate(e.target.value)} required
               min={new Date().toISOString().split("T")[0]}
-              className="w-full rounded-lg border border-[#E2E8F0] bg-white px-4 py-2.5 text-sm text-[#0F172A] outline-none focus:border-[#2ECC71] focus:ring-1 focus:ring-[#2ECC71]" />
+              className="w-full rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-2.5 text-sm text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)] focus:ring-1 focus:ring-[var(--t-accent)]" />
           </div>
           <div>
-            <label className="block text-sm font-semibold text-[#0F172A] mb-2">Rental Duration</label>
+            <label className="block text-sm font-semibold text-[var(--t-text-primary)] mb-2">Rental Duration</label>
             <div className="flex gap-2">
               {durations.map(d => (
                 <button key={d.value} type="button" onClick={() => setRentalDays(d.value)}
-                  className={`flex-1 rounded-lg border px-3 py-2.5 text-sm font-medium transition-colors ${
-                    rentalDays === d.value ? "border-[#2ECC71] bg-[#2ECC71]/5 text-[#2ECC71]" : "border-[#E2E8F0] text-[#64748B] hover:border-[#CBD5E1]"
+                  className={`flex-1 rounded-full border px-3 py-2.5 text-sm font-medium transition-colors ${
+                    rentalDays === d.value ? "border-[var(--t-accent)] text-[var(--t-accent)] bg-[var(--t-accent-soft)]" : "border-[var(--t-border)] text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)]"
                   }`}>
                   {d.label}
                 </button>
@@ -139,25 +139,25 @@ export default function PortalRequestPage() {
 
         {/* Instructions */}
         <div>
-          <label className="block text-sm font-semibold text-[#0F172A] mb-2">Special Instructions <span className="font-normal text-[#94A3B8]">(optional)</span></label>
+          <label className="block text-sm font-semibold text-[var(--t-text-primary)] mb-2">Special Instructions <span className="font-normal text-[var(--t-text-muted)]">(optional)</span></label>
           <textarea value={instructions} onChange={(e) => setInstructions(e.target.value)} rows={3} placeholder="Placement instructions, gate codes, etc."
-            className="w-full rounded-lg border border-[#E2E8F0] bg-white px-4 py-2.5 text-sm text-[#0F172A] placeholder-[#94A3B8] outline-none focus:border-[#2ECC71] focus:ring-1 focus:ring-[#2ECC71] resize-none" />
+            className="w-full rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-2.5 text-sm text-[var(--t-text-primary)] placeholder-[var(--t-text-muted)] outline-none focus:border-[var(--t-accent)] focus:ring-1 focus:ring-[var(--t-accent)] resize-none" />
         </div>
 
         {/* Price estimate */}
-        <div className="rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] p-5">
-          <h3 className="text-sm font-semibold text-[#0F172A] mb-3">Estimated Cost</h3>
+        <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5">
+          <h3 className="text-sm font-semibold text-[var(--t-text-primary)] mb-3">Estimated Cost</h3>
           <div className="space-y-1.5 text-sm">
-            <div className="flex justify-between text-[#64748B]"><span>{selectedSize?.label} Dumpster ({rentalDays} days)</span><span>{formatCurrency(selectedSize?.price || 0)}</span></div>
-            {rentalDays > 14 && <div className="flex justify-between text-[#64748B]"><span>Extra days ({rentalDays - 14} x $15)</span><span>{formatCurrency((rentalDays - 14) * 15)}</span></div>}
-            <div className="flex justify-between border-t border-[#E2E8F0] pt-1.5 font-semibold text-[#0F172A]"><span>Estimated Total</span><span>{formatCurrency(estimatedTotal)}</span></div>
+            <div className="flex justify-between text-[var(--t-text-muted)]"><span>{selectedSize?.label} Dumpster ({rentalDays} days)</span><span>{formatCurrency(selectedSize?.price || 0)}</span></div>
+            {rentalDays > 14 && <div className="flex justify-between text-[var(--t-text-muted)]"><span>Extra days ({rentalDays - 14} x $15)</span><span>{formatCurrency((rentalDays - 14) * 15)}</span></div>}
+            <div className="flex justify-between border-t border-[var(--t-border)] pt-1.5 font-semibold text-[var(--t-text-primary)]"><span>Estimated Total</span><span>{formatCurrency(estimatedTotal)}</span></div>
           </div>
-          <p className="text-xs text-[#94A3B8] mt-2">Final price may vary based on distance and disposal fees.</p>
+          <p className="text-xs text-[var(--t-text-muted)] mt-2">Final price may vary based on distance and disposal fees.</p>
         </div>
 
         {/* Submit */}
         <button type="submit" disabled={submitting || !date || !address.street}
-          className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#2ECC71] px-4 py-3 text-sm font-semibold text-white hover:bg-[#27AE60] disabled:opacity-50">
+          className="flex w-full items-center justify-center gap-2 rounded-full bg-[var(--t-accent)] px-4 py-3 text-sm font-semibold text-black hover:opacity-90 disabled:opacity-50 transition-opacity">
           {submitting ? "Submitting..." : <><Package className="h-4 w-4" /> Submit Request</>}
         </button>
       </form>

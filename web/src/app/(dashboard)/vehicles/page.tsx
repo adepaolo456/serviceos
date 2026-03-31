@@ -11,15 +11,6 @@ interface TeamMember {
   isActive: boolean; employeeStatus: string;
 }
 
-const ROLE_CLS: Record<string, string> = {
-  owner: "bg-amber-500/10 text-amber-400", admin: "bg-blue-500/10 text-blue-400",
-  dispatcher: "bg-purple-500/10 text-purple-400", driver: "bg-brand/10 text-brand",
-};
-const ROLE_AVATAR: Record<string, string> = {
-  owner: "bg-amber-500/15 text-amber-400", admin: "bg-blue-500/15 text-blue-400",
-  dispatcher: "bg-purple-500/15 text-purple-400", driver: "bg-brand/15 text-brand",
-};
-
 export default function VehiclesPage() {
   const router = useRouter();
   const [members, setMembers] = useState<TeamMember[]>([]);
@@ -49,75 +40,73 @@ export default function VehiclesPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="font-display text-2xl font-bold tracking-tight text-white">Vehicles</h1>
-          <p className="mt-0.5 text-sm text-muted">{withVehicle.length} vehicles in fleet</p>
+          <h1 className="text-[28px] font-bold tracking-[-1px] text-[var(--t-text-primary)]">Vehicles</h1>
+          <p className="mt-1 text-[13px] text-[var(--t-text-muted)]">{withVehicle.length} vehicles in fleet</p>
         </div>
       </div>
 
       {/* Summary Tiles */}
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-        <div className="rounded-xl border border-[#1E2D45] bg-dark-card p-4">
+        <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-4">
           <div className="flex items-center justify-between mb-2">
-            <CarFront className="h-5 w-5 text-muted" />
-            <span className="text-2xl font-bold text-white tabular-nums">{withVehicle.length}</span>
+            <CarFront className="h-5 w-5 text-[var(--t-text-muted)]" />
+            <span className="text-[24px] font-bold text-[var(--t-text-primary)] tabular-nums">{withVehicle.length}</span>
           </div>
-          <p className="text-xs font-medium text-muted">Total Vehicles</p>
+          <p className="text-[13px] font-semibold uppercase tracking-wide text-[var(--t-text-muted)]">Total Vehicles</p>
         </div>
-        <div className="rounded-xl border border-[#1E2D45] bg-dark-card p-4">
+        <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-4">
           <div className="flex items-center justify-between mb-2">
-            <Truck className="h-5 w-5 text-brand" />
-            <span className="text-2xl font-bold text-white tabular-nums">{withVehicle.filter(m => m.role === "driver").length}</span>
+            <Truck className="h-5 w-5 text-[var(--t-accent)]" />
+            <span className="text-[24px] font-bold text-[var(--t-text-primary)] tabular-nums">{withVehicle.filter(m => m.role === "driver").length}</span>
           </div>
-          <p className="text-xs font-medium text-muted">Assigned to Drivers</p>
+          <p className="text-[13px] font-semibold uppercase tracking-wide text-[var(--t-text-muted)]">Assigned to Drivers</p>
         </div>
-        <div className="rounded-xl border border-[#1E2D45] bg-dark-card p-4">
+        <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-4">
           <div className="flex items-center justify-between mb-2">
-            <Users className="h-5 w-5 text-amber-400" />
-            <span className="text-2xl font-bold text-white tabular-nums">{withoutVehicle.length}</span>
+            <Users className="h-5 w-5 text-[var(--t-warning)]" />
+            <span className="text-[24px] font-bold text-[var(--t-text-primary)] tabular-nums">{withoutVehicle.length}</span>
           </div>
-          <p className="text-xs font-medium text-muted">Drivers Without Vehicle</p>
+          <p className="text-[13px] font-semibold uppercase tracking-wide text-[var(--t-text-muted)]">Drivers Without Vehicle</p>
         </div>
       </div>
 
       {/* Search */}
       <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted" />
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--t-text-muted)]" />
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search vehicles, drivers, plates..."
-          className="w-full rounded-lg bg-dark-card border border-[#1E2D45] pl-10 pr-4 py-2.5 text-sm text-white placeholder-muted outline-none focus:border-brand" />
+          className="w-full rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] pl-10 pr-4 py-2.5 text-sm text-[var(--t-text-primary)] placeholder-[var(--t-text-muted)] outline-none focus:border-[var(--t-accent)]" />
       </div>
 
-      {/* Vehicle Cards */}
+      {/* Vehicle List */}
       {loading ? (
-        <div className="grid gap-3">{Array.from({ length: 3 }).map((_, i) => <div key={i} className="h-24 skeleton rounded-xl" />)}</div>
+        <div className="space-y-2">{Array.from({ length: 3 }).map((_, i) => <div key={i} className="h-16 skeleton rounded-[14px]" />)}</div>
       ) : filtered.length === 0 ? (
-        <div className="rounded-2xl bg-dark-card border border-dashed border-[#1E2D45] py-16 text-center">
-          <CarFront className="mx-auto h-10 w-10 text-muted/20 mb-2" />
-          <p className="text-sm text-muted">{search ? "No vehicles match your search" : "No vehicles in fleet"}</p>
-          <p className="text-xs text-muted/60 mt-1">Assign vehicles from team member profiles</p>
+        <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] py-16 text-center">
+          <CarFront className="mx-auto h-10 w-10 text-[var(--t-text-muted)] opacity-20 mb-2" />
+          <p className="text-sm text-[var(--t-text-muted)]">{search ? "No vehicles match your search" : "No vehicles in fleet"}</p>
+          <p className="text-[13px] text-[var(--t-text-muted)] opacity-60 mt-1">Assign vehicles from team member profiles</p>
         </div>
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="space-y-1">
           {filtered.map(m => {
             const v = m.vehicleInfo!;
             const displayName = `${v.year || ""} ${v.make || ""} ${v.model || ""}`.trim() || "Unknown Vehicle";
             return (
               <div key={m.id} onClick={() => router.push(`/vehicles/${m.id}`)}
-                className="rounded-xl bg-dark-card border border-[#1E2D45] p-4 cursor-pointer hover:bg-dark-card-hover hover:border-white/10 transition-all">
-                <div className="flex items-start gap-3">
-                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-dark-elevated">
-                    <CarFront className="h-5 w-5 text-muted" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-white truncate">{displayName}</p>
-                    <div className="flex items-center gap-2 mt-1">
-                      <div className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[8px] font-bold ${ROLE_AVATAR[m.role] || ROLE_AVATAR.driver}`}>
-                        {m.firstName[0]}{m.lastName[0]}
-                      </div>
-                      <span className="text-xs text-muted truncate">{m.firstName} {m.lastName}</span>
-                      <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-medium capitalize ${ROLE_CLS[m.role] || ""}`}>{m.role}</span>
+                className="flex items-center justify-between rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-5 py-3.5 cursor-pointer hover:bg-[var(--t-bg-card-hover)] transition-colors">
+                <div className="flex items-center gap-3 min-w-0">
+                  <CarFront className="h-5 w-5 text-[var(--t-text-muted)] shrink-0" />
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-[var(--t-text-primary)] truncate">{displayName}</p>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <span className="text-[13px] text-[var(--t-text-muted)]">{m.firstName} {m.lastName}</span>
+                      {v.plate && <span className="text-[11px] text-[var(--t-text-muted)] font-mono">{v.plate}</span>}
                     </div>
-                    {v.plate && <p className="text-xs text-muted mt-1.5 font-mono">{v.plate}</p>}
                   </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className="text-[11px] font-semibold capitalize text-[var(--t-text-muted)]">{m.role}</span>
+                  <span className={`h-2 w-2 rounded-full ${m.isActive ? "bg-[var(--t-accent)]" : "bg-[var(--t-text-muted)]"}`} />
                 </div>
               </div>
             );

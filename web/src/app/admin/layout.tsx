@@ -47,19 +47,19 @@ export default function AdminLayout({
 
   if (auth === "loading") {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#F8FAFC]">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-[#2ECC71] border-t-transparent" />
+      <div className="flex min-h-screen items-center justify-center bg-[var(--t-bg-primary)]">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-[var(--t-accent)] border-t-transparent" />
       </div>
     );
   }
 
   if (auth === "denied") {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center bg-[#F8FAFC]">
-        <Shield className="h-16 w-16 text-red-400 mb-4" />
-        <h1 className="text-2xl font-bold text-gray-900">Access Denied</h1>
-        <p className="mt-2 text-gray-500">You don&apos;t have permission to access the admin panel.</p>
-        <a href="/" className="mt-6 rounded-lg bg-[#2ECC71] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#1FA855]">
+      <div className="flex min-h-screen flex-col items-center justify-center bg-[var(--t-bg-primary)]">
+        <Shield className="h-16 w-16 text-[var(--t-error)] mb-4" />
+        <h1 className="text-[28px] font-bold tracking-[-1px] text-[var(--t-text-primary)]">Access Denied</h1>
+        <p className="mt-2 text-[var(--t-text-muted)]">You don&apos;t have permission to access the admin panel.</p>
+        <a href="/" className="mt-6 rounded-full bg-[var(--t-accent)] px-5 py-2.5 text-sm font-semibold text-black hover:opacity-90 transition-opacity">
           Back to Dashboard
         </a>
       </div>
@@ -67,17 +67,17 @@ export default function AdminLayout({
   }
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC]">
+    <div className="min-h-screen bg-[var(--t-bg-primary)]">
       {/* Top navbar */}
-      <header className="sticky top-0 z-40 border-b border-gray-200 bg-white">
+      <header className="sticky top-0 z-40 border-b border-[var(--t-border)] bg-[var(--t-bg-card)]">
         <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-6">
           <div className="flex items-center gap-6">
             <div className="flex items-center gap-2.5">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#2ECC71]">
-                <span className="text-sm font-bold text-white">S</span>
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--t-accent)]">
+                <span className="text-sm font-bold text-black">S</span>
               </div>
-              <span className="font-display text-base font-bold text-gray-900">
-                ServiceOS <span className="text-xs font-medium text-gray-400 ml-1">Admin</span>
+              <span className="text-base font-bold text-[var(--t-text-primary)]">
+                ServiceOS <span className="text-xs font-medium text-[var(--t-text-muted)] ml-1">Admin</span>
               </span>
             </div>
             <nav className="hidden sm:flex items-center gap-1">
@@ -89,10 +89,10 @@ export default function AdminLayout({
                   <Link
                     key={item.name}
                     href={item.href}
-                    className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                    className={`flex items-center gap-2 rounded-full px-3 py-2 text-sm font-medium transition-colors ${
                       isActive
-                        ? "bg-[#2ECC71]/10 text-[#2ECC71]"
-                        : "text-gray-500 hover:bg-gray-100 hover:text-gray-900"
+                        ? "text-[var(--t-accent)]"
+                        : "text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)]"
                     }`}
                   >
                     <item.icon className="h-4 w-4" />
@@ -105,14 +105,14 @@ export default function AdminLayout({
           <div className="flex items-center gap-2">
             <Link
               href="/"
-              className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3.5 py-2 text-sm font-medium text-gray-700 transition-all hover:bg-gray-100 hover:border-gray-300 active:scale-95"
+              className="flex items-center gap-2 rounded-full border border-[var(--t-border)] bg-transparent px-3.5 py-2 text-sm font-medium text-[var(--t-text-primary)] transition-colors hover:bg-[var(--t-bg-card-hover)] active:scale-95"
             >
               <ArrowLeftRight className="h-3.5 w-3.5" />
               Switch to Dashboard
             </Link>
             <button
               onClick={() => { api.clearToken(); window.location.href = "/login"; }}
-              className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm text-gray-500 hover:bg-gray-100 hover:text-gray-900 transition-colors"
+              className="flex items-center gap-1.5 rounded-full px-3 py-2 text-sm text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)] hover:bg-[var(--t-bg-card-hover)] transition-colors"
             >
               <LogOut className="h-3.5 w-3.5" />
             </button>
@@ -149,13 +149,13 @@ function Breadcrumbs({ pathname }: { pathname: string }) {
     <nav className="mb-6 flex items-center gap-1 text-sm">
       {crumbs.map((c, i) => (
         <span key={c.href} className="flex items-center gap-1">
-          {i > 0 && <ChevronRight className="h-3.5 w-3.5 text-gray-400" />}
+          {i > 0 && <ChevronRight className="h-3.5 w-3.5 text-[var(--t-text-muted)]" />}
           {i < crumbs.length - 1 ? (
-            <Link href={c.href} className="text-gray-500 hover:text-[#2ECC71] transition-colors">
+            <Link href={c.href} className="text-[var(--t-text-muted)] hover:text-[var(--t-accent)] transition-colors">
               {c.label}
             </Link>
           ) : (
-            <span className="text-gray-900 font-medium">{c.label}</span>
+            <span className="text-[var(--t-text-primary)] font-medium">{c.label}</span>
           )}
         </span>
       ))}

@@ -58,19 +58,19 @@ interface PaymentsResponse {
   meta: { total: number };
 }
 
-const STATUS_BADGE: Record<string, string> = {
-  draft: "bg-zinc-500/10 text-zinc-400",
-  sent: "bg-blue-500/10 text-blue-400",
-  paid: "bg-brand/10 text-brand",
-  overdue: "bg-red-500/10 text-red-400",
-  void: "bg-zinc-600/10 text-zinc-500",
+const STATUS_TEXT: Record<string, string> = {
+  draft: "text-[var(--t-text-muted)]",
+  sent: "text-blue-400",
+  paid: "text-[var(--t-accent)]",
+  overdue: "text-[var(--t-error)]",
+  void: "text-[var(--t-text-muted)]",
 };
 
 const PAYMENT_STATUS: Record<string, string> = {
-  pending: "bg-yellow-500/10 text-yellow-400",
-  succeeded: "bg-brand/10 text-brand",
-  failed: "bg-red-500/10 text-red-400",
-  refunded: "bg-purple-500/10 text-purple-400",
+  pending: "text-yellow-500",
+  succeeded: "text-[var(--t-accent)]",
+  failed: "text-[var(--t-error)]",
+  refunded: "text-purple-400",
 };
 
 import { formatCurrency } from "@/lib/utils";
@@ -138,41 +138,41 @@ export default function InvoiceDetailPage({
   if (loading) {
     return (
       <div className="py-10">
-        <div className="mb-6 h-4 w-32 animate-pulse rounded bg-white/5" />
+        <div className="mb-6 h-4 w-32 animate-pulse rounded bg-[var(--t-bg-card)]" />
         <div className="mb-8 flex items-start justify-between">
           <div className="space-y-2">
-            <div className="h-7 w-36 animate-pulse rounded bg-white/5" />
-            <div className="h-4 w-52 animate-pulse rounded bg-white/5" />
+            <div className="h-7 w-36 animate-pulse rounded bg-[var(--t-bg-card)]" />
+            <div className="h-4 w-52 animate-pulse rounded bg-[var(--t-bg-card)]" />
           </div>
           <div className="flex gap-2">
-            <div className="h-9 w-24 animate-pulse rounded-lg bg-white/5" />
+            <div className="h-9 w-24 animate-pulse rounded-full bg-[var(--t-bg-card)]" />
           </div>
         </div>
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
           <div className="lg:col-span-2 space-y-6">
             <div className="grid grid-cols-2 gap-4">
               {Array.from({ length: 2 }).map((_, i) => (
-                <div key={i} className="rounded-2xl bg-dark-card border border-[#1E2D45] p-5">
-                  <div className="h-3 w-16 animate-pulse rounded bg-white/5 mb-3" />
-                  <div className="h-4 w-28 animate-pulse rounded bg-white/5" />
+                <div key={i} className="rounded-[14px] bg-[var(--t-bg-card)] border border-[var(--t-border)] p-5">
+                  <div className="h-3 w-16 animate-pulse rounded bg-[var(--t-border)] mb-3" />
+                  <div className="h-4 w-28 animate-pulse rounded bg-[var(--t-border)]" />
                 </div>
               ))}
             </div>
-            <div className="rounded-2xl bg-dark-card border border-[#1E2D45] p-6">
-              <div className="h-5 w-24 animate-pulse rounded bg-white/5 mb-4" />
+            <div className="rounded-[14px] bg-[var(--t-bg-card)] border border-[var(--t-border)] p-6">
+              <div className="h-5 w-24 animate-pulse rounded bg-[var(--t-border)] mb-4" />
               <div className="space-y-3">
                 {Array.from({ length: 3 }).map((_, i) => (
-                  <div key={i} className="h-4 w-full animate-pulse rounded bg-white/5" />
+                  <div key={i} className="h-4 w-full animate-pulse rounded bg-[var(--t-border)]" />
                 ))}
               </div>
             </div>
           </div>
           <div>
-            <div className="rounded-2xl bg-dark-card border border-[#1E2D45] p-6">
-              <div className="h-5 w-20 animate-pulse rounded bg-white/5 mb-5" />
+            <div className="rounded-[14px] bg-[var(--t-bg-card)] border border-[var(--t-border)] p-6">
+              <div className="h-5 w-20 animate-pulse rounded bg-[var(--t-border)] mb-5" />
               <div className="space-y-3">
                 {Array.from({ length: 5 }).map((_, i) => (
-                  <div key={i} className="h-4 w-full animate-pulse rounded bg-white/5" />
+                  <div key={i} className="h-4 w-full animate-pulse rounded bg-[var(--t-border)]" />
                 ))}
               </div>
             </div>
@@ -184,7 +184,7 @@ export default function InvoiceDetailPage({
 
   if (!invoice) {
     return (
-      <div className="flex items-center justify-center py-32 text-muted">
+      <div className="flex items-center justify-center py-32 text-[var(--t-text-muted)]">
         Invoice not found
       </div>
     );
@@ -198,7 +198,7 @@ export default function InvoiceDetailPage({
     <div>
       <Link
         href="/invoices"
-        className="mb-6 inline-flex items-center gap-2 text-sm text-muted transition-colors hover:text-foreground"
+        className="mb-6 inline-flex items-center gap-2 text-sm text-[var(--t-text-muted)] transition-colors hover:text-[var(--t-text-primary)]"
       >
         <ArrowLeft className="h-4 w-4" />
         Back to Invoices
@@ -208,16 +208,16 @@ export default function InvoiceDetailPage({
       <div className="mb-8 flex items-start justify-between">
         <div>
           <div className="flex items-center gap-3 mb-1">
-            <h1 className="font-display text-2xl font-bold text-white">
+            <h1 className="text-[28px] font-bold tracking-[-1px] text-[var(--t-text-primary)]">
               {invoice.invoice_number}
             </h1>
             <span
-              className={`inline-flex rounded-full px-3 py-1 text-xs font-medium ${STATUS_BADGE[invoice.status] || ""}`}
+              className={`text-xs font-medium capitalize ${STATUS_TEXT[invoice.status] || ""}`}
             >
               {invoice.status}
             </span>
           </div>
-          <p className="text-sm text-muted">
+          <p className="text-sm text-[var(--t-text-muted)]">
             Created {new Date(invoice.created_at).toLocaleDateString()}
             {invoice.sent_at &&
               ` · Sent ${new Date(invoice.sent_at).toLocaleDateString()}`}
@@ -230,7 +230,7 @@ export default function InvoiceDetailPage({
             <button
               onClick={handleSend}
               disabled={actionLoading}
-              className="flex items-center gap-2 rounded-lg bg-blue-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-600 disabled:opacity-50"
+              className="flex items-center gap-2 rounded-full bg-[var(--t-accent)] px-4 py-2 text-sm font-medium text-black transition-opacity hover:opacity-90 disabled:opacity-50"
             >
               <Send className="h-4 w-4" />
               Send
@@ -239,7 +239,7 @@ export default function InvoiceDetailPage({
           {canPay && (
             <button
               onClick={() => setPaymentPanel(true)}
-              className="flex items-center gap-2 rounded-lg bg-[#2ECC71] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#1FA855]"
+              className="flex items-center gap-2 rounded-full bg-[var(--t-accent)] px-4 py-2 text-sm font-medium text-black transition-opacity hover:opacity-90"
             >
               <CreditCard className="h-4 w-4" />
               Record Payment
@@ -249,7 +249,7 @@ export default function InvoiceDetailPage({
             <button
               onClick={handleVoid}
               disabled={actionLoading}
-              className="flex items-center gap-2 rounded-lg bg-red-500/10 px-4 py-2 text-sm font-medium text-red-400 transition-colors hover:bg-red-500/20 disabled:opacity-50"
+              className="flex items-center gap-2 rounded-full border border-[var(--t-error)]/20 bg-transparent px-4 py-2 text-sm font-medium text-[var(--t-error)] transition-colors hover:bg-[var(--t-error-soft)] disabled:opacity-50"
             >
               <XCircle className="h-4 w-4" />
               Void
@@ -263,43 +263,43 @@ export default function InvoiceDetailPage({
         <div className="space-y-6 lg:col-span-2">
           {/* Info cards */}
           <div className="grid grid-cols-2 gap-4">
-            <div className="rounded-2xl bg-dark-card border border-[#1E2D45] shadow-lg shadow-black/10 p-5">
+            <div className="rounded-[14px] bg-[var(--t-bg-card)] border border-[var(--t-border)] p-5">
               <div className="flex items-center gap-2 mb-2">
-                <User className="h-4 w-4 text-muted" />
-                <span className="text-xs font-medium uppercase tracking-wider text-muted">
+                <User className="h-4 w-4 text-[var(--t-text-muted)]" />
+                <span className="text-xs font-medium uppercase tracking-wider text-[var(--t-text-muted)]">
                   Customer
                 </span>
               </div>
               {invoice.customer ? (
                 <Link
                   href={`/customers/${invoice.customer.id}`}
-                  className="text-sm font-medium text-white hover:text-brand transition-colors"
+                  className="text-sm font-medium text-[var(--t-text-primary)] hover:text-[var(--t-accent)] transition-colors"
                 >
                   {invoice.customer.first_name} {invoice.customer.last_name}
                 </Link>
               ) : (
-                <p className="text-sm text-muted">—</p>
+                <p className="text-sm text-[var(--t-text-muted)]">—</p>
               )}
               {invoice.customer?.email && (
-                <p className="text-xs text-muted mt-0.5">
+                <p className="text-xs text-[var(--t-text-muted)] mt-0.5">
                   {invoice.customer.email}
                 </p>
               )}
             </div>
-            <div className="rounded-2xl bg-dark-card border border-[#1E2D45] shadow-lg shadow-black/10 p-5">
+            <div className="rounded-[14px] bg-[var(--t-bg-card)] border border-[var(--t-border)] p-5">
               <div className="flex items-center gap-2 mb-2">
-                <Calendar className="h-4 w-4 text-muted" />
-                <span className="text-xs font-medium uppercase tracking-wider text-muted">
+                <Calendar className="h-4 w-4 text-[var(--t-text-muted)]" />
+                <span className="text-xs font-medium uppercase tracking-wider text-[var(--t-text-muted)]">
                   Due Date
                 </span>
               </div>
-              <p className="text-sm font-medium text-white">
+              <p className="text-sm font-medium text-[var(--t-text-primary)]">
                 {invoice.due_date || "Not set"}
               </p>
               {invoice.job && (
                 <Link
                   href={`/jobs/${invoice.job.id}`}
-                  className="flex items-center gap-1 mt-1 text-xs text-brand hover:text-brand-light"
+                  className="flex items-center gap-1 mt-1 text-xs text-[var(--t-accent)] hover:underline"
                 >
                   <FileText className="h-3 w-3" />
                   Job {invoice.job.job_number}
@@ -309,25 +309,25 @@ export default function InvoiceDetailPage({
           </div>
 
           {/* Line items */}
-          <div className="rounded-2xl bg-dark-card border border-[#1E2D45] shadow-lg shadow-black/10 overflow-hidden">
-            <div className="px-6 py-4 border-b border-[#1E2D45]">
-              <h2 className="font-display text-base font-semibold text-white">
+          <div className="rounded-[14px] bg-[var(--t-bg-card)] border border-[var(--t-border)] overflow-hidden">
+            <div className="px-6 py-4 border-b border-[var(--t-border)]">
+              <h2 className="text-base font-semibold text-[var(--t-text-primary)]">
                 Line Items
               </h2>
             </div>
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-[#1E2D45]">
-                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted">
+                <tr className="border-b border-[var(--t-border)]">
+                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-[var(--t-text-muted)]">
                     Description
                   </th>
-                  <th className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-muted">
+                  <th className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-[var(--t-text-muted)]">
                     Qty
                   </th>
-                  <th className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-muted">
+                  <th className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-[var(--t-text-muted)]">
                     Unit Price
                   </th>
-                  <th className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-muted">
+                  <th className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-[var(--t-text-muted)]">
                     Amount
                   </th>
                 </tr>
@@ -336,18 +336,18 @@ export default function InvoiceDetailPage({
                 {invoice.line_items.map((item, i) => (
                   <tr
                     key={i}
-                    className="border-b border-[#1E2D45] last:border-0"
+                    className="border-b border-[var(--t-border)] last:border-0"
                   >
-                    <td className="px-6 py-3.5 text-foreground">
+                    <td className="px-6 py-3.5 text-[var(--t-text-primary)]">
                       {item.description}
                     </td>
-                    <td className="px-6 py-3.5 text-right text-foreground">
+                    <td className="px-6 py-3.5 text-right text-[var(--t-text-primary)]">
                       {item.quantity}
                     </td>
-                    <td className="px-6 py-3.5 text-right text-foreground tabular-nums">
+                    <td className="px-6 py-3.5 text-right text-[var(--t-text-primary)] tabular-nums">
                       {fmt(item.unitPrice)}
                     </td>
-                    <td className="px-6 py-3.5 text-right font-medium text-white tabular-nums">
+                    <td className="px-6 py-3.5 text-right font-medium text-[var(--t-text-primary)] tabular-nums">
                       {fmt(item.amount)}
                     </td>
                   </tr>
@@ -357,30 +357,30 @@ export default function InvoiceDetailPage({
           </div>
 
           {/* Payment history */}
-          <div className="rounded-2xl bg-dark-card border border-[#1E2D45] shadow-lg shadow-black/10 overflow-hidden">
-            <div className="px-6 py-4 border-b border-[#1E2D45]">
-              <h2 className="font-display text-base font-semibold text-white">
+          <div className="rounded-[14px] bg-[var(--t-bg-card)] border border-[var(--t-border)] overflow-hidden">
+            <div className="px-6 py-4 border-b border-[var(--t-border)]">
+              <h2 className="text-base font-semibold text-[var(--t-text-primary)]">
                 Payment History ({payments.length})
               </h2>
             </div>
             {payments.length === 0 ? (
-              <div className="px-6 py-12 text-center text-sm text-muted">
+              <div className="px-6 py-12 text-center text-sm text-[var(--t-text-muted)]">
                 No payments recorded
               </div>
             ) : (
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-[#1E2D45]">
-                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted">
+                  <tr className="border-b border-[var(--t-border)]">
+                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-[var(--t-text-muted)]">
                       Date
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted">
+                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-[var(--t-text-muted)]">
                       Method
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted">
+                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-[var(--t-text-muted)]">
                       Status
                     </th>
-                    <th className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-muted">
+                    <th className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-[var(--t-text-muted)]">
                       Amount
                     </th>
                   </tr>
@@ -389,22 +389,22 @@ export default function InvoiceDetailPage({
                   {payments.map((p) => (
                     <tr
                       key={p.id}
-                      className="border-b border-[#1E2D45] last:border-0"
+                      className="border-b border-[var(--t-border)] last:border-0"
                     >
-                      <td className="px-6 py-3.5 text-foreground">
+                      <td className="px-6 py-3.5 text-[var(--t-text-primary)]">
                         {new Date(p.created_at).toLocaleDateString()}
                       </td>
-                      <td className="px-6 py-3.5 text-foreground capitalize">
+                      <td className="px-6 py-3.5 text-[var(--t-text-primary)] capitalize">
                         {p.payment_method}
                       </td>
                       <td className="px-6 py-3.5">
                         <span
-                          className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${PAYMENT_STATUS[p.status] || ""}`}
+                          className={`text-xs font-medium capitalize ${PAYMENT_STATUS[p.status] || ""}`}
                         >
                           {p.status}
                         </span>
                       </td>
-                      <td className="px-6 py-3.5 text-right font-medium text-white tabular-nums">
+                      <td className="px-6 py-3.5 text-right font-medium text-[var(--t-text-primary)] tabular-nums">
                         {fmt(p.amount)}
                       </td>
                     </tr>
@@ -417,43 +417,43 @@ export default function InvoiceDetailPage({
 
         {/* Sidebar totals */}
         <div className="space-y-6">
-          <div className="rounded-2xl bg-dark-card border border-[#1E2D45] shadow-lg shadow-black/10 p-6">
+          <div className="rounded-[14px] bg-[var(--t-bg-card)] border border-[var(--t-border)] p-6">
             <div className="flex items-center gap-2 mb-5">
-              <DollarSign className="h-4 w-4 text-brand" />
-              <h3 className="font-display text-base font-semibold text-white">
+              <DollarSign className="h-4 w-4 text-[var(--t-accent)]" />
+              <h3 className="text-base font-semibold text-[var(--t-text-primary)]">
                 Summary
               </h3>
             </div>
             <div className="space-y-2.5 text-sm tabular-nums">
-              <div className="flex justify-between text-foreground">
-                <span className="text-muted">Subtotal</span>
+              <div className="flex justify-between text-[var(--t-text-primary)]">
+                <span className="text-[var(--t-text-muted)]">Subtotal</span>
                 <span>{fmt(invoice.subtotal)}</span>
               </div>
               {Number(invoice.discount_amount) > 0 && (
-                <div className="flex justify-between text-foreground">
-                  <span className="text-muted">Discount</span>
-                  <span className="text-red-400">
+                <div className="flex justify-between text-[var(--t-text-primary)]">
+                  <span className="text-[var(--t-text-muted)]">Discount</span>
+                  <span className="text-[var(--t-error)]">
                     -{fmt(invoice.discount_amount)}
                   </span>
                 </div>
               )}
               {Number(invoice.tax_amount) > 0 && (
-                <div className="flex justify-between text-foreground">
-                  <span className="text-muted">
+                <div className="flex justify-between text-[var(--t-text-primary)]">
+                  <span className="text-[var(--t-text-muted)]">
                     Tax ({(Number(invoice.tax_rate) * 100).toFixed(2)}%)
                   </span>
                   <span>{fmt(invoice.tax_amount)}</span>
                 </div>
               )}
-              <div className="flex justify-between border-t border-[#1E2D45] pt-2.5 font-semibold text-white">
+              <div className="flex justify-between border-t border-[var(--t-border)] pt-2.5 font-semibold text-[var(--t-text-primary)]">
                 <span>Total</span>
                 <span>{fmt(invoice.total)}</span>
               </div>
-              <div className="flex justify-between text-foreground">
-                <span className="text-muted">Paid</span>
-                <span className="text-brand">{fmt(invoice.amount_paid)}</span>
+              <div className="flex justify-between text-[var(--t-text-primary)]">
+                <span className="text-[var(--t-text-muted)]">Paid</span>
+                <span className="text-[var(--t-accent)]">{fmt(invoice.amount_paid)}</span>
               </div>
-              <div className={`flex justify-between border-t border-[#1E2D45] pt-2.5 font-bold text-base ${Number(invoice.balance_due) <= 0 ? "text-emerald-400" : invoice.status === "overdue" ? "text-red-400" : "text-white"}`}>
+              <div className={`flex justify-between border-t border-[var(--t-border)] pt-2.5 font-bold text-base ${Number(invoice.balance_due) <= 0 ? "text-emerald-400" : invoice.status === "overdue" ? "text-[var(--t-error)]" : "text-[var(--t-text-primary)]"}`}>
                 <span>Balance Due</span>
                 <span>{Number(invoice.balance_due) <= 0 ? "PAID" : fmt(invoice.balance_due)}</span>
               </div>
@@ -461,9 +461,9 @@ export default function InvoiceDetailPage({
           </div>
 
           {invoice.notes && (
-            <div className="rounded-2xl bg-dark-card border border-[#1E2D45] shadow-lg shadow-black/10 p-6">
-              <h3 className="text-sm font-semibold text-white mb-2">Notes</h3>
-              <p className="text-sm text-foreground whitespace-pre-wrap">
+            <div className="rounded-[14px] bg-[var(--t-bg-card)] border border-[var(--t-border)] p-6">
+              <h3 className="text-sm font-semibold text-[var(--t-text-primary)] mb-2">Notes</h3>
+              <p className="text-sm text-[var(--t-text-primary)] whitespace-pre-wrap">
                 {invoice.notes}
               </p>
             </div>
@@ -528,20 +528,20 @@ function RecordPaymentForm({
   };
 
   const inputClass =
-    "w-full rounded-lg border border-[#1E2D45] bg-[#111C2E] px-4 py-2.5 text-sm text-white placeholder-muted outline-none transition-colors focus:border-brand";
-  const labelClass = "block text-sm font-medium text-foreground mb-1.5";
+    "w-full rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-2.5 text-sm text-[var(--t-text-primary)] placeholder-[var(--t-text-muted)] outline-none transition-colors focus:border-[var(--t-accent)]";
+  const labelClass = "block text-sm font-medium text-[var(--t-text-primary)] mb-1.5";
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
       {error && (
-        <div className="rounded-lg bg-red-500/10 px-4 py-3 text-sm text-red-400">
+        <div className="rounded-[14px] bg-[var(--t-error-soft)] px-4 py-3 text-sm text-[var(--t-error)]">
           {error}
         </div>
       )}
 
-      <div className="rounded-lg bg-dark-elevated p-4 text-center">
-        <p className="text-xs text-muted mb-1">Balance Due</p>
-        <p className="text-2xl font-display font-bold text-white tabular-nums">
+      <div className="rounded-[14px] bg-[var(--t-bg-card)] border border-[var(--t-border)] p-4 text-center">
+        <p className="text-xs text-[var(--t-text-muted)] mb-1">Balance Due</p>
+        <p className="text-2xl font-bold text-[var(--t-text-primary)] tabular-nums">
           {fmt(balanceDue)}
         </p>
       </div>
@@ -560,16 +560,16 @@ function RecordPaymentForm({
 
       <div>
         <label className={labelClass}>Payment Method</label>
-        <div className="grid grid-cols-4 gap-1 rounded-lg bg-[#111C2E] border border-[#1E2D45] p-1">
+        <div className="grid grid-cols-4 gap-1 rounded-[14px] bg-[var(--t-bg-card)] border border-[var(--t-border)] p-1">
           {(["card", "ach", "cash", "check"] as const).map((m) => (
             <button
               key={m}
               type="button"
               onClick={() => setMethod(m)}
-              className={`rounded-md py-2 text-sm font-medium capitalize transition-colors ${
+              className={`rounded-[10px] py-2 text-sm font-medium capitalize transition-colors ${
                 method === m
-                  ? "bg-[#2ECC71] text-white"
-                  : "text-muted hover:text-foreground"
+                  ? "bg-[var(--t-accent)] text-black"
+                  : "text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)]"
               }`}
             >
               {m}
@@ -591,7 +591,7 @@ function RecordPaymentForm({
       <button
         type="submit"
         disabled={saving}
-        className="w-full rounded-lg bg-[#2ECC71] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1FA855] disabled:opacity-50"
+        className="w-full rounded-full bg-[var(--t-accent)] px-4 py-2.5 text-sm font-semibold text-black transition-opacity hover:opacity-90 disabled:opacity-50"
       >
         {saving ? "Recording..." : `Record ${fmt(Number(amount))}`}
       </button>

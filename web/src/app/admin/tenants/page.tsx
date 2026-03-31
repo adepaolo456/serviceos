@@ -26,18 +26,18 @@ interface TenantsResponse {
 
 const TIER_FILTERS = ["all", "trial", "starter", "professional", "business"];
 
-const tierBadge: Record<string, string> = {
-  trial: "bg-gray-100 text-gray-600",
-  starter: "bg-blue-100 text-blue-700",
-  professional: "bg-purple-100 text-purple-700",
-  business: "bg-amber-100 text-amber-700",
+const tierColors: Record<string, string> = {
+  trial: "text-[var(--t-text-muted)]",
+  starter: "text-blue-400",
+  professional: "text-purple-400",
+  business: "text-amber-400",
 };
 
-const statusBadge: Record<string, string> = {
-  trialing: "bg-gray-100 text-gray-600",
-  active: "bg-emerald-100 text-emerald-700",
-  past_due: "bg-red-100 text-red-700",
-  cancelled: "bg-red-50 text-red-500",
+const statusColors: Record<string, string> = {
+  trialing: "text-[var(--t-text-muted)]",
+  active: "text-[var(--t-accent)]",
+  past_due: "text-[var(--t-error)]",
+  cancelled: "text-[var(--t-error)]",
 };
 
 export default function TenantsPage() {
@@ -68,20 +68,20 @@ export default function TenantsPage() {
     <div>
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Tenants</h1>
-          <p className="mt-1 text-sm text-gray-500">{total} registered companies</p>
+          <h1 className="text-[28px] font-bold tracking-[-1px] text-[var(--t-text-primary)]">Tenants</h1>
+          <p className="mt-1 text-sm text-[var(--t-text-muted)]">{total} registered companies</p>
         </div>
       </div>
 
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center mb-6">
         <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--t-text-muted)]" />
           <input
             type="text"
             placeholder="Search tenants..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full rounded-lg border border-gray-200 bg-white py-2.5 pl-10 pr-4 text-sm text-gray-900 placeholder-gray-400 outline-none focus:border-[#2ECC71] focus:ring-1 focus:ring-[#2ECC71]"
+            className="w-full rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] py-2.5 pl-10 pr-4 text-sm text-[var(--t-text-primary)] placeholder-[var(--t-text-muted)] outline-none focus:border-[var(--t-accent)] focus:ring-1 focus:ring-[var(--t-accent)]"
           />
         </div>
         <div className="flex gap-1">
@@ -91,8 +91,8 @@ export default function TenantsPage() {
               onClick={() => setTierFilter(t)}
               className={`rounded-full px-3 py-1.5 text-xs font-medium capitalize transition-colors ${
                 tierFilter === t
-                  ? "bg-[#2ECC71] text-white"
-                  : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                  ? "bg-[var(--t-accent)] text-black"
+                  : "border border-[var(--t-border)] text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)]"
               }`}
             >
               {t}
@@ -101,56 +101,56 @@ export default function TenantsPage() {
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+      <div className="overflow-hidden rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)]">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-gray-100 bg-gray-50/50">
+              <tr className="border-b border-[var(--t-border)]">
                 {["Company", "Owner", "Tier", "Status", "Users", "Jobs", "Created"].map((h) => (
-                  <th key={h} className="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">{h}</th>
+                  <th key={h} className="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-[var(--t-text-muted)]">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 Array.from({ length: 5 }).map((_, i) => (
-                  <tr key={i} className="border-b border-gray-50">
-                    <td colSpan={7} className="px-5 py-4"><div className="h-5 w-full animate-pulse rounded bg-gray-100" /></td>
+                  <tr key={i} className="border-b border-[var(--t-border)]">
+                    <td colSpan={7} className="px-5 py-4"><div className="h-5 w-full animate-pulse rounded bg-[var(--t-border)]" /></td>
                   </tr>
                 ))
               ) : tenants.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="px-5 py-16 text-center">
-                    <Building2 className="mx-auto h-12 w-12 text-gray-300 mb-3" />
-                    <p className="text-sm font-medium text-gray-500">No tenants found</p>
+                    <Building2 className="mx-auto h-12 w-12 text-[var(--t-text-muted)]/20 mb-3" />
+                    <p className="text-sm font-medium text-[var(--t-text-muted)]">No tenants found</p>
                   </td>
                 </tr>
               ) : tenants.map((t) => (
                 <tr
                   key={t.id}
                   onClick={() => router.push(`/admin/tenants/${t.id}`)}
-                  className="border-b border-gray-50 cursor-pointer transition-colors hover:bg-gray-50"
+                  className="border-b border-[var(--t-border)] last:border-0 cursor-pointer transition-colors hover:bg-[var(--t-bg-card-hover)]"
                 >
                   <td className="px-5 py-3.5">
                     <div>
-                      <p className="font-medium text-gray-900">{t.name}</p>
-                      <p className="text-xs text-gray-400">{t.slug}</p>
+                      <p className="font-medium text-[var(--t-text-primary)]">{t.name}</p>
+                      <p className="text-xs text-[var(--t-text-muted)]">{t.slug}</p>
                     </div>
                   </td>
-                  <td className="px-5 py-3.5 text-gray-600">{t.ownerEmail}</td>
+                  <td className="px-5 py-3.5 text-[var(--t-text-muted)]">{t.ownerEmail}</td>
                   <td className="px-5 py-3.5">
-                    <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium capitalize ${tierBadge[t.subscriptionTier] || tierBadge.trial}`}>
+                    <span className={`text-xs font-medium capitalize ${tierColors[t.subscriptionTier] || tierColors.trial}`}>
                       {t.subscriptionTier}
                     </span>
                   </td>
                   <td className="px-5 py-3.5">
-                    <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium capitalize ${statusBadge[t.subscriptionStatus] || statusBadge.trialing}`}>
+                    <span className={`text-xs font-medium capitalize ${statusColors[t.subscriptionStatus] || statusColors.trialing}`}>
                       {t.subscriptionStatus}
                     </span>
                   </td>
-                  <td className="px-5 py-3.5 text-gray-600 tabular-nums">{t.userCount}</td>
-                  <td className="px-5 py-3.5 text-gray-600 tabular-nums">{t.jobCount}</td>
-                  <td className="px-5 py-3.5 text-gray-400 text-xs">{new Date(t.createdAt).toLocaleDateString()}</td>
+                  <td className="px-5 py-3.5 text-[var(--t-text-muted)] tabular-nums">{t.userCount}</td>
+                  <td className="px-5 py-3.5 text-[var(--t-text-muted)] tabular-nums">{t.jobCount}</td>
+                  <td className="px-5 py-3.5 text-[var(--t-text-muted)] text-xs">{new Date(t.createdAt).toLocaleDateString()}</td>
                 </tr>
               ))}
             </tbody>

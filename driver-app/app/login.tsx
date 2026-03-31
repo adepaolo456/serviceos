@@ -10,9 +10,11 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { useAuth } from '../src/AuthContext';
+import { useAppTheme, type ThemeColors } from '../constants/theme';
 
 export default function LoginScreen() {
   const { login } = useAuth();
+  const colors = useAppTheme();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -30,104 +32,117 @@ export default function LoginScreen() {
     }
   };
 
+  const s = makeStyles(colors);
+
   return (
     <KeyboardAvoidingView
-      style={styles.container}
+      style={s.container}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <View style={styles.inner}>
-        <View style={styles.logoBox}>
-          <Text style={styles.logoText}>S</Text>
+      <View style={s.inner}>
+        <View style={s.card}>
+          <View style={s.logoBox}>
+            <Text style={s.logoText}>S</Text>
+          </View>
+          <Text style={s.title}>ServiceOS</Text>
+          <Text style={s.subtitle}>Driver Login</Text>
+
+          {error ? <Text style={s.error}>{error}</Text> : null}
+
+          <TextInput
+            style={s.input}
+            placeholder="Email"
+            placeholderTextColor={colors.textTertiary}
+            value={email}
+            onChangeText={setEmail}
+            autoCapitalize="none"
+            keyboardType="email-address"
+            autoFocus
+          />
+          <TextInput
+            style={s.input}
+            placeholder="Password"
+            placeholderTextColor={colors.textTertiary}
+            value={password}
+            onChangeText={setPassword}
+            secureTextEntry
+          />
+
+          <TouchableOpacity
+            style={[s.button, loading && s.buttonDisabled]}
+            onPress={handleLogin}
+            disabled={loading}
+          >
+            {loading ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={s.buttonText}>Sign In</Text>
+            )}
+          </TouchableOpacity>
         </View>
-        <Text style={styles.title}>ServiceOS</Text>
-        <Text style={styles.subtitle}>Driver Login</Text>
-
-        {error ? <Text style={styles.error}>{error}</Text> : null}
-
-        <TextInput
-          style={styles.input}
-          placeholder="Email"
-          placeholderTextColor="#7A8BA3"
-          value={email}
-          onChangeText={setEmail}
-          autoCapitalize="none"
-          keyboardType="email-address"
-          autoFocus
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="Password"
-          placeholderTextColor="#7A8BA3"
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry
-        />
-
-        <TouchableOpacity
-          style={[styles.button, loading && styles.buttonDisabled]}
-          onPress={handleLogin}
-          disabled={loading}
-        >
-          {loading ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.buttonText}>Sign In</Text>
-          )}
-        </TouchableOpacity>
       </View>
     </KeyboardAvoidingView>
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0B1220' },
-  inner: { flex: 1, justifyContent: 'center', paddingHorizontal: 32 },
-  logoBox: {
-    width: 56,
-    height: 56,
-    borderRadius: 16,
-    backgroundColor: '#2ECC71',
-    alignSelf: 'center',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  logoText: { fontSize: 24, fontWeight: '800', color: '#0B1220' },
-  title: { fontSize: 28, fontWeight: '700', color: '#fff', textAlign: 'center' },
-  subtitle: {
-    fontSize: 16,
-    color: '#7A8BA3',
-    textAlign: 'center',
-    marginTop: 4,
-    marginBottom: 32,
-  },
-  error: {
-    backgroundColor: 'rgba(239,68,68,0.1)',
-    color: '#EF4444',
-    padding: 12,
-    borderRadius: 10,
-    fontSize: 14,
-    marginBottom: 16,
-    textAlign: 'center',
-  },
-  input: {
-    backgroundColor: '#111C2E',
-    borderWidth: 1,
-    borderColor: '#1E2D45',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    fontSize: 16,
-    color: '#fff',
-    marginBottom: 12,
-  },
-  button: {
-    backgroundColor: '#2ECC71',
-    borderRadius: 12,
-    paddingVertical: 16,
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  buttonDisabled: { opacity: 0.6 },
-  buttonText: { color: '#fff', fontSize: 16, fontWeight: '700' },
-});
+const makeStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
+    container: { flex: 1, backgroundColor: colors.background },
+    inner: { flex: 1, justifyContent: 'center', paddingHorizontal: 24 },
+    card: {
+      backgroundColor: colors.surface,
+      borderRadius: 20,
+      padding: 32,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    logoBox: {
+      width: 56,
+      height: 56,
+      borderRadius: 16,
+      backgroundColor: colors.accent,
+      alignSelf: 'center',
+      justifyContent: 'center',
+      alignItems: 'center',
+      marginBottom: 16,
+    },
+    logoText: { fontSize: 24, fontWeight: '800', color: '#fff' },
+    title: { fontSize: 28, fontWeight: '700', color: colors.text, textAlign: 'center', letterSpacing: -0.5 },
+    subtitle: {
+      fontSize: 16,
+      color: colors.textSecondary,
+      textAlign: 'center',
+      marginTop: 4,
+      marginBottom: 28,
+    },
+    error: {
+      backgroundColor: colors.errorSoft,
+      color: colors.error,
+      padding: 12,
+      borderRadius: 10,
+      fontSize: 14,
+      marginBottom: 16,
+      textAlign: 'center',
+      overflow: 'hidden',
+    },
+    input: {
+      backgroundColor: colors.background,
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 12,
+      paddingHorizontal: 16,
+      paddingVertical: 14,
+      fontSize: 16,
+      color: colors.text,
+      marginBottom: 12,
+    },
+    button: {
+      backgroundColor: colors.accent,
+      borderRadius: 28,
+      paddingVertical: 16,
+      alignItems: 'center',
+      marginTop: 8,
+    },
+    buttonDisabled: { opacity: 0.6 },
+    buttonText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  });

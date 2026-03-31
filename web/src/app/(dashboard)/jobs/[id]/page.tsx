@@ -26,7 +26,7 @@ import { api } from "@/lib/api";
 import Dropdown from "@/components/dropdown";
 import { useToast } from "@/components/toast";
 
-/* ─── Types ─── */
+/* --- Types --- */
 
 interface Job {
   id: string;
@@ -62,31 +62,31 @@ interface Job {
   assigned_driver: { id: string; first_name: string; last_name: string; phone: string } | null;
 }
 
-/* ─── Constants ─── */
+/* --- Constants --- */
 
 const STATUS_COLORS: Record<string, string> = {
-  pending: "bg-yellow-500/10 text-yellow-400 border-yellow-500/20",
-  confirmed: "bg-blue-500/10 text-blue-400 border-blue-500/20",
-  dispatched: "bg-purple-500/10 text-purple-400 border-purple-500/20",
-  en_route: "bg-orange-500/10 text-orange-400 border-orange-500/20",
-  arrived: "bg-teal-500/10 text-teal-400 border-teal-500/20",
-  in_progress: "bg-brand/10 text-brand border-brand/20",
-  completed: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
-  cancelled: "bg-red-500/10 text-red-400 border-red-500/20",
+  pending: "text-yellow-500",
+  confirmed: "text-blue-400",
+  dispatched: "text-purple-400",
+  en_route: "text-orange-400",
+  arrived: "text-teal-400",
+  in_progress: "text-[var(--t-accent)]",
+  completed: "text-emerald-400",
+  cancelled: "text-[var(--t-error)]",
 };
 
-const JOB_TYPE_BADGE: Record<string, { icon: string; color: string }> = {
-  delivery: { icon: "🔵", color: "bg-blue-500/10 text-blue-400 border-blue-500/20" },
-  pickup:   { icon: "🟠", color: "bg-orange-500/10 text-orange-400 border-orange-500/20" },
-  exchange: { icon: "🟣", color: "bg-purple-500/10 text-purple-400 border-purple-500/20" },
+const JOB_TYPE_COLORS: Record<string, string> = {
+  delivery: "text-blue-400",
+  pickup: "text-orange-400",
+  exchange: "text-purple-400",
 };
 
-const SIZE_BADGE: Record<string, string> = {
-  "10yd": "bg-sky-500/10 text-sky-400 border-sky-500/20",
-  "15yd": "bg-indigo-500/10 text-indigo-400 border-indigo-500/20",
-  "20yd": "bg-violet-500/10 text-violet-400 border-violet-500/20",
-  "30yd": "bg-amber-500/10 text-amber-400 border-amber-500/20",
-  "40yd": "bg-rose-500/10 text-rose-400 border-rose-500/20",
+const SIZE_COLORS: Record<string, string> = {
+  "10yd": "text-sky-400",
+  "15yd": "text-indigo-400",
+  "20yd": "text-violet-400",
+  "30yd": "text-amber-400",
+  "40yd": "text-rose-400",
 };
 
 const VALID_TRANSITIONS: Record<string, string[]> = {
@@ -99,13 +99,13 @@ const VALID_TRANSITIONS: Record<string, string[]> = {
 };
 
 const TRANSITION_STYLES: Record<string, { label: string; className: string; icon: typeof CheckCircle2 }> = {
-  confirmed: { label: "Confirm", className: "bg-blue-500 hover:bg-blue-600 text-white", icon: CheckCircle2 },
-  dispatched: { label: "Dispatch", className: "bg-purple-500 hover:bg-purple-600 text-white", icon: Truck },
-  en_route: { label: "En Route", className: "bg-orange-500 hover:bg-orange-600 text-white", icon: Truck },
-  arrived: { label: "Arrived", className: "bg-teal-500 hover:bg-teal-600 text-white", icon: MapPin },
-  in_progress: { label: "Start Work", className: "bg-[#2ECC71] hover:bg-[#1FA855] text-white", icon: AlertCircle },
-  completed: { label: "Complete", className: "bg-[#2ECC71] hover:bg-[#1FA855] text-white", icon: CheckCircle2 },
-  cancelled: { label: "Cancel", className: "bg-red-500/20 hover:bg-red-500/30 text-red-400", icon: XCircle },
+  confirmed: { label: "Confirm", className: "bg-[var(--t-accent)] text-black hover:opacity-90", icon: CheckCircle2 },
+  dispatched: { label: "Dispatch", className: "bg-[var(--t-accent)] text-black hover:opacity-90", icon: Truck },
+  en_route: { label: "En Route", className: "bg-[var(--t-accent)] text-black hover:opacity-90", icon: Truck },
+  arrived: { label: "Arrived", className: "bg-[var(--t-accent)] text-black hover:opacity-90", icon: MapPin },
+  in_progress: { label: "Start Work", className: "bg-[var(--t-accent)] text-black hover:opacity-90", icon: AlertCircle },
+  completed: { label: "Complete", className: "bg-[var(--t-accent)] text-black hover:opacity-90", icon: CheckCircle2 },
+  cancelled: { label: "Cancel", className: "border border-[var(--t-error)]/20 text-[var(--t-error)] hover:bg-[var(--t-error-soft)]", icon: XCircle },
 };
 
 const TIMELINE_STEPS = [
@@ -117,7 +117,7 @@ const TIMELINE_STEPS = [
   { key: "completed_at", label: "Completed", status: "completed" },
 ];
 
-/* ─── Helpers ─── */
+/* --- Helpers --- */
 
 import { formatCurrency } from "@/lib/utils";
 function fmt(n: number | null | undefined): string {
@@ -142,7 +142,7 @@ function daysBetween(a: string, b: string): number {
   return Math.round((new Date(b).getTime() - new Date(a).getTime()) / 86400000);
 }
 
-/* ─── Page ─── */
+/* --- Page --- */
 
 export default function JobDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -196,53 +196,53 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
   if (loading) {
     return (
       <div className="py-10">
-        <div className="mb-6 h-4 w-28 animate-pulse rounded bg-white/5" />
-        <div className="mb-8 space-y-2"><div className="h-7 w-40 animate-pulse rounded bg-white/5" /><div className="h-4 w-56 animate-pulse rounded bg-white/5" /></div>
-        <div className="mb-8 rounded-2xl bg-dark-card border border-[#1E2D45] p-6">
-          <div className="flex items-center justify-between gap-4">{Array.from({ length: 6 }).map((_, i) => (<div key={i} className="flex flex-col items-center flex-1"><div className="h-8 w-8 animate-pulse rounded-full bg-white/5" /><div className="mt-2 h-3 w-14 animate-pulse rounded bg-white/5" /></div>))}</div>
+        <div className="mb-6 h-4 w-28 animate-pulse rounded bg-[var(--t-bg-card)]" />
+        <div className="mb-8 space-y-2"><div className="h-7 w-40 animate-pulse rounded bg-[var(--t-bg-card)]" /><div className="h-4 w-56 animate-pulse rounded bg-[var(--t-bg-card)]" /></div>
+        <div className="mb-8 rounded-[14px] bg-[var(--t-bg-card)] border border-[var(--t-border)] p-6">
+          <div className="flex items-center justify-between gap-4">{Array.from({ length: 6 }).map((_, i) => (<div key={i} className="flex flex-col items-center flex-1"><div className="h-8 w-8 animate-pulse rounded-full bg-[var(--t-border)]" /><div className="mt-2 h-3 w-14 animate-pulse rounded bg-[var(--t-border)]" /></div>))}</div>
         </div>
       </div>
     );
   }
 
-  if (!job) return <div className="flex items-center justify-center py-32 text-muted">Job not found</div>;
+  if (!job) return <div className="flex items-center justify-center py-32 text-[var(--t-text-muted)]">Job not found</div>;
 
   const addr = job.service_address;
   const transitions = VALID_TRANSITIONS[job.status] || [];
   const statusIdx = TIMELINE_STEPS.findIndex((s) => s.status === job.status);
-  const typeBadge = JOB_TYPE_BADGE[job.job_type] || JOB_TYPE_BADGE.delivery;
-  const sizeBadge = job.asset?.subtype ? (SIZE_BADGE[job.asset.subtype] || "") : "";
+  const typeColor = JOB_TYPE_COLORS[job.job_type] || "text-blue-400";
+  const sizeColor = job.asset?.subtype ? (SIZE_COLORS[job.asset.subtype] || "text-[var(--t-text-muted)]") : "";
   const rentalDays = job.rental_start_date && job.rental_end_date ? daysBetween(job.rental_start_date, job.rental_end_date) : job.rental_days;
 
   return (
     <div>
-      <Link href="/jobs" className="mb-6 inline-flex items-center gap-2 text-sm text-muted transition-colors hover:text-foreground">
+      <Link href="/jobs" className="mb-6 inline-flex items-center gap-2 text-sm text-[var(--t-text-muted)] transition-colors hover:text-[var(--t-text-primary)]">
         <ArrowLeft className="h-4 w-4" /> Back to Jobs
       </Link>
 
-      {/* ─── Header ─── */}
+      {/* --- Header --- */}
       <div className="mb-8 flex items-start justify-between">
         <div>
           <div className="flex items-center gap-3 mb-1 flex-wrap">
-            <h1 className="font-display text-2xl font-bold text-white">{job.job_number}</h1>
-            <span className={`inline-flex items-center rounded-full border px-3 py-0.5 text-xs font-medium ${STATUS_COLORS[job.status] || ""}`}>
+            <h1 className="text-[28px] font-bold tracking-[-1px] text-[var(--t-text-primary)]">{job.job_number}</h1>
+            <span className={`text-xs font-medium ${STATUS_COLORS[job.status] || ""}`}>
               {job.status.replace(/_/g, " ")}
             </span>
-            <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] font-medium ${typeBadge.color}`}>
-              {typeBadge.icon} {job.job_type}
+            <span className={`text-[11px] font-medium capitalize ${typeColor}`}>
+              {job.job_type}
             </span>
-            {sizeBadge && (
-              <span className={`inline-flex rounded-full border px-2.5 py-0.5 text-[11px] font-medium ${sizeBadge}`}>
+            {sizeColor && (
+              <span className={`text-[11px] font-medium ${sizeColor}`}>
                 {job.asset?.subtype}
               </span>
             )}
           </div>
           {job.customer && (
-            <Link href={`/customers/${job.customer.id}`} className="text-sm text-brand hover:underline">
+            <Link href={`/customers/${job.customer.id}`} className="text-sm text-[var(--t-accent)] hover:underline">
               {job.customer.first_name} {job.customer.last_name}
             </Link>
           )}
-          <p className="text-xs text-muted mt-0.5">
+          <p className="text-xs text-[var(--t-text-muted)] mt-0.5">
             Created {new Date(job.created_at).toLocaleDateString()} {job.source && `· Source: ${job.source}`}
           </p>
         </div>
@@ -254,7 +254,7 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
             if (!style) return null;
             const Icon = style.icon;
             return (
-              <button key={t} onClick={() => changeStatus(t)} disabled={actionLoading} className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50 ${style.className}`}>
+              <button key={t} onClick={() => changeStatus(t)} disabled={actionLoading} className={`flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-all disabled:opacity-50 ${style.className}`}>
                 <Icon className="h-4 w-4" /> {style.label}
               </button>
             );
@@ -262,23 +262,23 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
 
           {/* Actions menu */}
           <Dropdown
-            trigger={<button className="rounded-lg border border-[#1E2D45] p-2 text-muted hover:text-white transition-colors"><MoreHorizontal className="h-4 w-4" /></button>}
+            trigger={<button className="rounded-full border border-[var(--t-border)] p-2 text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)] transition-colors"><MoreHorizontal className="h-4 w-4" /></button>}
             align="right"
           >
             {transitions.includes("cancelled") && (
-              <button onClick={() => changeStatus("cancelled")} className="flex w-full items-center gap-2 px-4 py-2 text-sm text-red-400 hover:bg-dark-card transition-colors">
+              <button onClick={() => changeStatus("cancelled")} className="flex w-full items-center gap-2 px-4 py-2 text-sm text-[var(--t-error)] hover:bg-[var(--t-bg-card-hover)] transition-colors">
                 <XCircle className="h-3.5 w-3.5" /> Cancel Job
               </button>
             )}
-            <button onClick={deleteJob} className="flex w-full items-center gap-2 px-4 py-2 text-sm text-red-400 hover:bg-dark-card transition-colors">
+            <button onClick={deleteJob} className="flex w-full items-center gap-2 px-4 py-2 text-sm text-[var(--t-error)] hover:bg-[var(--t-bg-card-hover)] transition-colors">
               <Trash2 className="h-3.5 w-3.5" /> Delete Job
             </button>
           </Dropdown>
         </div>
       </div>
 
-      {/* ─── Timeline ─── */}
-      <div className="mb-8 rounded-2xl bg-dark-card border border-[#1E2D45] shadow-lg shadow-black/10 p-6">
+      {/* --- Timeline --- */}
+      <div className="mb-8 rounded-[14px] bg-[var(--t-bg-card)] border border-[var(--t-border)] p-6">
         <div className="flex items-center justify-between">
           {TIMELINE_STEPS.map((step, i) => {
             const isCompleted = i <= statusIdx && job.status !== "cancelled";
@@ -288,30 +288,30 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
               <div key={step.key} className="flex flex-1 items-center">
                 <div className="flex flex-col items-center">
                   <div className={`flex h-9 w-9 items-center justify-center rounded-full text-xs font-bold transition-colors ${
-                    job.status === "cancelled" && i > statusIdx ? "bg-dark-elevated text-muted" :
-                    isCurrent ? "bg-brand text-dark-primary ring-4 ring-brand/20" :
-                    isCompleted ? "bg-brand/20 text-brand" : "bg-dark-elevated text-muted"
+                    job.status === "cancelled" && i > statusIdx ? "bg-[var(--t-border)] text-[var(--t-text-muted)]" :
+                    isCurrent ? "bg-[var(--t-accent)] text-black ring-4 ring-[var(--t-accent)]/20" :
+                    isCompleted ? "bg-[var(--t-accent)]/20 text-[var(--t-accent)]" : "bg-[var(--t-border)] text-[var(--t-text-muted)]"
                   }`}>
                     {job.status === "cancelled" && isCurrent ? (
-                      <XCircle className="h-4 w-4 text-red-400" />
+                      <XCircle className="h-4 w-4 text-[var(--t-error)]" />
                     ) : isCompleted ? (
                       <CheckCircle2 className="h-4 w-4" />
                     ) : (
                       i + 1
                     )}
                   </div>
-                  <span className={`mt-2 text-[11px] font-medium ${isCurrent ? "text-brand" : isCompleted ? "text-foreground" : "text-muted"}`}>
+                  <span className={`mt-2 text-[11px] font-medium ${isCurrent ? "text-[var(--t-accent)]" : isCompleted ? "text-[var(--t-text-primary)]" : "text-[var(--t-text-muted)]"}`}>
                     {step.label}
                   </span>
                   {timestamp && (
-                    <span className="mt-0.5 text-[10px] text-muted tabular-nums">
+                    <span className="mt-0.5 text-[10px] text-[var(--t-text-muted)] tabular-nums">
                       {new Date(timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                     </span>
                   )}
                 </div>
                 {i < TIMELINE_STEPS.length - 1 && (
                   <div className={`mx-2 h-0.5 flex-1 rounded-full transition-colors ${
-                    i < statusIdx && job.status !== "cancelled" ? "bg-brand/30" : "bg-dark-elevated"
+                    i < statusIdx && job.status !== "cancelled" ? "bg-[var(--t-accent)]/30" : "bg-[var(--t-border)]"
                   }`} />
                 )}
               </div>
@@ -319,7 +319,7 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
           })}
         </div>
         {job.status === "cancelled" && (
-          <div className="mt-4 rounded-lg bg-red-500/10 border border-red-500/20 px-4 py-3 text-sm text-red-400">
+          <div className="mt-4 rounded-[14px] bg-[var(--t-error-soft)] border border-[var(--t-error)]/20 px-4 py-3 text-sm text-[var(--t-error)]">
             <XCircle className="inline h-4 w-4 mr-1.5 -mt-0.5" />
             Cancelled{job.cancelled_at && ` on ${new Date(job.cancelled_at).toLocaleString()}`}
             {job.cancellation_reason && ` — ${job.cancellation_reason}`}
@@ -327,7 +327,7 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
         )}
       </div>
 
-      {/* ─── Two Column Layout ─── */}
+      {/* --- Two Column Layout --- */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
         {/* Left Column (60%) */}
         <div className="space-y-6 lg:col-span-3">
@@ -340,10 +340,10 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
               <Field label="Priority" value={job.priority} capitalize />
             </div>
             {addr && (addr.street || addr.city) && (
-              <div className="mt-4 pt-4 border-t border-[#1E2D45]">
-                <p className="text-xs text-muted mb-1">Service Address</p>
-                <p className="text-sm text-white">{[addr.street, addr.city, addr.state, addr.zip].filter(Boolean).join(", ")}</p>
-                {job.placement_notes && <p className="mt-1 text-xs text-muted italic">Placement: {job.placement_notes}</p>}
+              <div className="mt-4 pt-4 border-t border-[var(--t-border)]">
+                <p className="text-xs text-[var(--t-text-muted)] mb-1">Service Address</p>
+                <p className="text-sm text-[var(--t-text-primary)]">{[addr.street, addr.city, addr.state, addr.zip].filter(Boolean).join(", ")}</p>
+                {job.placement_notes && <p className="mt-1 text-xs text-[var(--t-text-muted)] italic">Placement: {job.placement_notes}</p>}
               </div>
             )}
           </Card>
@@ -362,7 +362,7 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
               {rentalDays ? <Field label="Rental Days" value={`${rentalDays} days`} /> : null}
             </div>
             {job.rental_start_date && job.rental_end_date && (
-              <div className="mt-3 pt-3 border-t border-[#1E2D45] text-xs text-muted">
+              <div className="mt-3 pt-3 border-t border-[var(--t-border)] text-xs text-[var(--t-text-muted)]">
                 {fmtDateFull(job.rental_start_date)} <ArrowRight className="inline h-3 w-3 mx-1" /> {fmtDateFull(job.rental_end_date)} ({rentalDays} days)
               </div>
             )}
@@ -371,7 +371,7 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
           {/* Driver Notes */}
           {job.driver_notes && (
             <Card title="Driver Notes" icon={Truck}>
-              <p className="text-sm text-foreground whitespace-pre-wrap">{job.driver_notes}</p>
+              <p className="text-sm text-[var(--t-text-primary)] whitespace-pre-wrap">{job.driver_notes}</p>
             </Card>
           )}
 
@@ -380,7 +380,7 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
             <Card title={`Photos (${job.photos.length})`} icon={Box}>
               <div className="grid grid-cols-3 gap-3">
                 {job.photos.map((p, i) => (
-                  <div key={i} className="aspect-square rounded-lg bg-dark-elevated overflow-hidden">
+                  <div key={i} className="aspect-square rounded-[14px] bg-[var(--t-border)] overflow-hidden">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={p.url} alt={`Photo ${i + 1}`} className="h-full w-full object-cover" />
                   </div>
@@ -398,9 +398,9 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
               <PriceRow label="Base Price" value={fmt(job.base_price)} />
               {job.deposit_amount > 0 && <PriceRow label="Deposit" value={fmt(job.deposit_amount)} />}
               {job.rental_days && job.rental_days > 0 && <PriceRow label="Rental Period" value={`${job.rental_days} days`} />}
-              <div className="flex justify-between border-t border-[#1E2D45] pt-2.5 font-semibold">
-                <span className="text-white">Total</span>
-                <span className="text-brand tabular-nums text-base">{fmt(job.total_price)}</span>
+              <div className="flex justify-between border-t border-[var(--t-border)] pt-2.5 font-semibold">
+                <span className="text-[var(--t-text-primary)]">Total</span>
+                <span className="text-[var(--t-accent)] tabular-nums text-base">{fmt(job.total_price)}</span>
               </div>
             </div>
           </Card>
@@ -408,54 +408,54 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
           {/* Customer */}
           {job.customer && (
             <Link href={`/customers/${job.customer.id}`} className="block">
-              <div className="rounded-2xl bg-dark-card border border-[#1E2D45] p-5 transition-colors hover:bg-dark-card-hover hover:border-white/10">
+              <div className="rounded-[14px] bg-[var(--t-bg-card)] border border-[var(--t-border)] p-5 transition-colors hover:bg-[var(--t-bg-card-hover)]">
                 <div className="flex items-center gap-2 mb-3">
-                  <User className="h-4 w-4 text-muted" />
-                  <span className="text-xs font-medium uppercase tracking-wider text-muted">Customer</span>
+                  <User className="h-4 w-4 text-[var(--t-text-muted)]" />
+                  <span className="text-xs font-medium uppercase tracking-wider text-[var(--t-text-muted)]">Customer</span>
                 </div>
-                <p className="text-sm font-semibold text-white">{job.customer.first_name} {job.customer.last_name}</p>
-                {job.customer.phone && <a href={`tel:${job.customer.phone}`} className="block text-xs text-muted mt-0.5 hover:text-brand">{job.customer.phone}</a>}
-                {job.customer.email && <p className="text-xs text-muted">{job.customer.email}</p>}
+                <p className="text-sm font-semibold text-[var(--t-text-primary)]">{job.customer.first_name} {job.customer.last_name}</p>
+                {job.customer.phone && <a href={`tel:${job.customer.phone}`} className="block text-xs text-[var(--t-text-muted)] mt-0.5 hover:text-[var(--t-accent)]">{job.customer.phone}</a>}
+                {job.customer.email && <p className="text-xs text-[var(--t-text-muted)]">{job.customer.email}</p>}
               </div>
             </Link>
           )}
 
           {/* Driver */}
-          <div className="rounded-2xl bg-dark-card border border-[#1E2D45] p-5">
+          <div className="rounded-[14px] bg-[var(--t-bg-card)] border border-[var(--t-border)] p-5">
             <div className="flex items-center gap-2 mb-3">
-              <Truck className="h-4 w-4 text-muted" />
-              <span className="text-xs font-medium uppercase tracking-wider text-muted">Driver</span>
+              <Truck className="h-4 w-4 text-[var(--t-text-muted)]" />
+              <span className="text-xs font-medium uppercase tracking-wider text-[var(--t-text-muted)]">Driver</span>
             </div>
             {job.assigned_driver ? (
               <>
-                <p className="text-sm font-semibold text-white">{job.assigned_driver.first_name} {job.assigned_driver.last_name}</p>
-                {job.assigned_driver.phone && <a href={`tel:${job.assigned_driver.phone}`} className="block text-xs text-muted mt-0.5 hover:text-brand">{job.assigned_driver.phone}</a>}
+                <p className="text-sm font-semibold text-[var(--t-text-primary)]">{job.assigned_driver.first_name} {job.assigned_driver.last_name}</p>
+                {job.assigned_driver.phone && <a href={`tel:${job.assigned_driver.phone}`} className="block text-xs text-[var(--t-text-muted)] mt-0.5 hover:text-[var(--t-accent)]">{job.assigned_driver.phone}</a>}
               </>
             ) : (
-              <p className="text-sm font-medium text-red-400">Unassigned</p>
+              <p className="text-sm font-medium text-[var(--t-error)]">Unassigned</p>
             )}
           </div>
 
           {/* Asset */}
-          <div className="rounded-2xl bg-dark-card border border-[#1E2D45] p-5">
+          <div className="rounded-[14px] bg-[var(--t-bg-card)] border border-[var(--t-border)] p-5">
             <div className="flex items-center gap-2 mb-3">
-              <Box className="h-4 w-4 text-muted" />
-              <span className="text-xs font-medium uppercase tracking-wider text-muted">Asset</span>
+              <Box className="h-4 w-4 text-[var(--t-text-muted)]" />
+              <span className="text-xs font-medium uppercase tracking-wider text-[var(--t-text-muted)]">Asset</span>
             </div>
             {job.asset ? (
               <>
-                <p className="text-sm font-semibold text-white">{job.asset.identifier}</p>
-                <p className="text-xs text-muted mt-0.5 capitalize">{job.asset.asset_type} &middot; {job.asset.subtype}</p>
+                <p className="text-sm font-semibold text-[var(--t-text-primary)]">{job.asset.identifier}</p>
+                <p className="text-xs text-[var(--t-text-muted)] mt-0.5 capitalize">{job.asset.asset_type} &middot; {job.asset.subtype}</p>
               </>
             ) : (
-              <p className="text-sm text-muted">None assigned</p>
+              <p className="text-sm text-[var(--t-text-muted)]">None assigned</p>
             )}
           </div>
 
           {/* Signature */}
           {job.signature_url && (
-            <div className="rounded-2xl bg-dark-card border border-[#1E2D45] p-5">
-              <h3 className="text-xs font-medium uppercase tracking-wider text-muted mb-3">Signature</h3>
+            <div className="rounded-[14px] bg-[var(--t-bg-card)] border border-[var(--t-border)] p-5">
+              <h3 className="text-xs font-medium uppercase tracking-wider text-[var(--t-text-muted)] mb-3">Signature</h3>
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={job.signature_url} alt="Signature" className="max-h-20 rounded bg-white p-2" />
             </div>
@@ -466,14 +466,14 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
   );
 }
 
-/* ─── Reusable Components ─── */
+/* --- Reusable Components --- */
 
 function Card({ title, icon: Icon, children }: { title: string; icon: typeof User; children: React.ReactNode }) {
   return (
-    <div className="rounded-2xl bg-dark-card border border-[#1E2D45] shadow-lg shadow-black/10 p-5">
+    <div className="rounded-[14px] bg-[var(--t-bg-card)] border border-[var(--t-border)] p-5">
       <div className="flex items-center gap-2 mb-4">
-        <Icon className="h-4 w-4 text-muted" />
-        <h3 className="text-sm font-semibold text-white">{title}</h3>
+        <Icon className="h-4 w-4 text-[var(--t-text-muted)]" />
+        <h3 className="text-sm font-semibold text-[var(--t-text-primary)]">{title}</h3>
       </div>
       {children}
     </div>
@@ -483,8 +483,8 @@ function Card({ title, icon: Icon, children }: { title: string; icon: typeof Use
 function Field({ label, value, capitalize: cap }: { label: string; value: string; capitalize?: boolean }) {
   return (
     <div>
-      <p className="text-xs text-muted mb-0.5">{label}</p>
-      <p className={`text-sm text-white font-medium ${cap ? "capitalize" : ""}`}>{value}</p>
+      <p className="text-xs text-[var(--t-text-muted)] mb-0.5">{label}</p>
+      <p className={`text-sm text-[var(--t-text-primary)] font-medium ${cap ? "capitalize" : ""}`}>{value}</p>
     </div>
   );
 }
@@ -492,8 +492,8 @@ function Field({ label, value, capitalize: cap }: { label: string; value: string
 function PriceRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex justify-between">
-      <span className="text-muted">{label}</span>
-      <span className={`text-foreground ${value.startsWith("$") ? "tabular-nums" : ""}`}>{value}</span>
+      <span className="text-[var(--t-text-muted)]">{label}</span>
+      <span className={`text-[var(--t-text-primary)] ${value.startsWith("$") ? "tabular-nums" : ""}`}>{value}</span>
     </div>
   );
 }
