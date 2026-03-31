@@ -270,7 +270,7 @@ export default function DispatchPage() {
               </Link>
             </div>
           ) : (
-            <div className="flex h-full gap-3 overflow-x-auto pb-2">
+            <div className="flex gap-3 overflow-x-auto pb-2 items-start h-full">
               <ColumnCard columnId="unassigned" title="Unassigned" isUnassigned count={board.unassigned.length}
                 jobs={filterJobs(board.unassigned, filter, search)} drivers={board.drivers.map(d => d.driver)}
                 onAssign={async (jid, did) => { try { await api.patch(`/jobs/${jid}/assign`, { assignedDriverId: did }); toast("success", "Assigned"); await fetchBoard(true); } catch { toast("error", "Failed"); } }}
@@ -348,96 +348,103 @@ function ColumnCard({ columnId, title, driver, isUnassigned, count, progress, jo
   const completedCount = progress?.completed || 0;
   const totalCount = progress?.total || count;
 
+  const firstIncomplete = jobs.find(j => j.status !== "completed");
+  const hiddenCount = collapsed && jobs.length > 1 ? jobs.length - 1 : 0;
+
   return (
     <div ref={setNodeRef}
-      className="flex shrink-0 flex-col rounded-[20px] overflow-hidden transition-all duration-200"
+      className="shrink-0 rounded-[20px] overflow-hidden transition-all duration-200"
       style={{
-        width: 330, minWidth: 330,
+        width: 340, minWidth: 340,
         border: isOver && activeId ? "2px dashed var(--t-accent)" : "1px solid #E5E5E5",
         background: "#FFFFFF",
         boxShadow: "0 2px 12px rgba(0,0,0,0.08)",
       }}>
 
-      {/* ── Header ── */}
-      <div className="px-4 py-3.5 shrink-0 flex items-center gap-3" style={{ borderBottom: collapsed ? "none" : "1px solid #F0F0F0" }}>
-        {/* Avatar */}
-        {isUnassigned ? (
-          <div className="flex h-9 w-9 items-center justify-center rounded-full shrink-0" style={{ background: "rgba(217,119,6,0.1)", color: "#D97706" }}>
-            <UserPlus className="h-4 w-4" />
+      {/* ── Header — two rows for full name ── */}
+      <div className="px-4 pt-3.5 pb-3 shrink-0" style={{ borderBottom: "1px solid #F0F0F0" }}>
+        {/* Row 1: Avatar + Full Name + Menu */}
+        <div className="flex items-center gap-2.5">
+          {isUnassigned ? (
+            <div className="flex h-9 w-9 items-center justify-center rounded-full shrink-0" style={{ background: "rgba(217,119,6,0.1)", color: "#D97706" }}>
+              <UserPlus className="h-4 w-4" />
+            </div>
+          ) : (
+            <div className="flex h-9 w-9 items-center justify-center rounded-full text-[11px] font-bold shrink-0" style={{ background: "var(--t-accent-soft)", color: "var(--t-accent)" }}>
+              {title.split(" ").map(n => n[0]).join("")}
+            </div>
+          )}
+          <div className="flex-1 min-w-0">
+            <p className="text-[15px] font-bold leading-tight" style={{ color: isUnassigned ? "#D97706" : "#0A0A0A" }}>{title}</p>
+            {driver?.phone && <p className="text-[11px] mt-0.5" style={{ color: "#8A8A8A" }}>{formatPhone(driver.phone)}</p>}
           </div>
-        ) : (
-          <div className="flex h-9 w-9 items-center justify-center rounded-full text-[11px] font-bold shrink-0" style={{ background: "var(--t-accent-soft)", color: "var(--t-accent)" }}>
-            {title.split(" ").map(n => n[0]).join("")}
-          </div>
-        )}
-
-        {/* Name + phone */}
-        <div className="flex-1 min-w-0">
-          <p className="text-[15px] font-bold truncate" style={{ color: isUnassigned ? "#D97706" : "#0A0A0A" }}>{title}</p>
-          {driver?.phone && <p className="text-[11px]" style={{ color: "#8A8A8A" }}>{formatPhone(driver.phone)}</p>}
+          {!isUnassigned && (
+            <Dropdown trigger={
+              <button className="shrink-0 p-1 rounded-lg transition-all" style={{ color: "#8A8A8A" }}
+                onMouseEnter={e => { e.currentTarget.style.background = "#F5F5F5"; }} onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}>
+                <MoreHorizontal className="h-4 w-4" />
+              </button>
+            } align="right">
+              {onHide && <button onClick={onHide} className="flex w-full items-center gap-2 px-3 py-2 text-xs" style={{ color: "var(--t-text-primary)" }}><EyeOff className="h-3 w-3" /> Hide Column</button>}
+              <button onClick={onToggleCollapse} className="flex w-full items-center gap-2 px-3 py-2 text-xs" style={{ color: "var(--t-text-primary)" }}>
+                {collapsed ? <Eye className="h-3 w-3" /> : <ChevronUp className="h-3 w-3" />} {collapsed ? "Show All" : "Collapse"}
+              </button>
+              <button className="flex w-full items-center gap-2 px-3 py-2 text-xs" style={{ color: "var(--t-text-primary)" }}><FileText className="h-3 w-3" /> Route Sheet</button>
+              <button className="flex w-full items-center gap-2 px-3 py-2 text-xs" style={{ color: "var(--t-text-primary)" }}><Send className="h-3 w-3" /> Send Route</button>
+            </Dropdown>
+          )}
         </div>
-
-        {/* Count pill */}
-        <span className="rounded-full px-2.5 py-1 text-[11px] font-bold tabular-nums shrink-0"
-          style={{ background: "#F0F0F0", color: "#5C5C5C" }}>
-          {completedCount > 0 ? `${completedCount}/${totalCount}` : `${count}`}
-        </span>
-
-        {/* Progress bar (thin, inline) */}
-        {progress && progress.total > 0 && (
-          <div className="w-12 h-1.5 rounded-full overflow-hidden shrink-0" style={{ background: "#F0F0F0" }}>
-            <div className="h-full rounded-full" style={{ width: `${(progress.completed / progress.total) * 100}%`, background: "var(--t-accent)", transition: "width 0.3s ease" }} />
-          </div>
-        )}
-
-        {/* Collapse chevron */}
-        <button onClick={onToggleCollapse} className="shrink-0 p-1 rounded-lg transition-all" style={{ color: "#8A8A8A" }}
-          onMouseEnter={e => { e.currentTarget.style.background = "#F5F5F5"; }} onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}>
-          <ChevronDown className="h-4 w-4 transition-transform duration-200" style={{ transform: collapsed ? "rotate(0deg)" : "rotate(180deg)" }} />
-        </button>
-
-        {/* Three-dot menu (driver columns only) */}
-        {!isUnassigned && (
-          <Dropdown trigger={
-            <button className="shrink-0 p-1 rounded-lg transition-all" style={{ color: "#8A8A8A" }}
-              onMouseEnter={e => { e.currentTarget.style.background = "#F5F5F5"; }} onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}>
-              <MoreHorizontal className="h-4 w-4" />
-            </button>
-          } align="right">
-            {onHide && <button onClick={onHide} className="flex w-full items-center gap-2 px-3 py-2 text-xs" style={{ color: "var(--t-text-primary)" }}><EyeOff className="h-3 w-3" /> Hide Column</button>}
-            <button onClick={onToggleCollapse} className="flex w-full items-center gap-2 px-3 py-2 text-xs" style={{ color: "var(--t-text-primary)" }}>
-              {collapsed ? <ChevronDown className="h-3 w-3" /> : <ChevronUp className="h-3 w-3" />} {collapsed ? "Expand" : "Collapse"}
-            </button>
-            <button className="flex w-full items-center gap-2 px-3 py-2 text-xs" style={{ color: "var(--t-text-primary)" }}><FileText className="h-3 w-3" /> Route Sheet</button>
-            <button className="flex w-full items-center gap-2 px-3 py-2 text-xs" style={{ color: "var(--t-text-primary)" }}><Send className="h-3 w-3" /> Send Route</button>
-          </Dropdown>
-        )}
+        {/* Row 2: Count + Progress + Chevron */}
+        <div className="flex items-center gap-2 mt-2">
+          <span className="rounded-full px-2.5 py-0.5 text-[11px] font-bold tabular-nums"
+            style={{ background: "#F0F0F0", color: "#5C5C5C" }}>
+            {completedCount > 0 ? `${completedCount}/${totalCount}` : count === 1 ? "1 stop" : `${count} stops`}
+          </span>
+          {progress && progress.total > 0 && (
+            <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: "#F0F0F0" }}>
+              <div className="h-full rounded-full" style={{ width: `${(progress.completed / progress.total) * 100}%`, background: "var(--t-accent)", transition: "width 0.3s ease" }} />
+            </div>
+          )}
+          <button onClick={onToggleCollapse} className="shrink-0 p-1 rounded-lg transition-all ml-auto" style={{ color: "#8A8A8A" }}
+            onMouseEnter={e => { e.currentTarget.style.background = "#F5F5F5"; }} onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}>
+            <ChevronDown className="h-4 w-4 transition-transform duration-200" style={{ transform: collapsed ? "rotate(0deg)" : "rotate(180deg)" }} />
+          </button>
+        </div>
       </div>
 
-      {/* ── Job cards area (accordion body) ── */}
-      <div style={{
-        maxHeight: collapsed ? 0 : 2000,
-        opacity: collapsed ? 0 : 1,
-        padding: collapsed ? "0 10px" : 10,
-        overflow: collapsed ? "hidden" : "auto",
-        transition: "max-height 0.25s ease, opacity 0.2s ease, padding 0.25s ease",
-        background: "#FAFAFA",
-      }}>
-        <SortableContext items={jobs.map(j => j.id)} strategy={verticalListSortingStrategy}>
-          <div className="space-y-2" style={{ minHeight: collapsed ? 0 : 80 }}>
-            {jobs.length === 0 && !collapsed ? (
-              <div className="flex flex-col items-center justify-center py-8">
-                {isUnassigned
-                  ? <><CheckCircle2 className="h-5 w-5 mb-1" style={{ color: "var(--t-accent)", opacity: 0.4 }} /><p className="text-[11px]" style={{ color: "var(--t-accent)" }}>All assigned</p></>
-                  : <><Box className="h-5 w-5 mb-1" style={{ color: "#ccc" }} /><p className="text-[11px]" style={{ color: "#999" }}>No jobs</p></>}
-              </div>
-            ) : jobs.map(job => (
-              <JobTile key={job.id} job={job} isUnassigned={!!isUnassigned} drivers={drivers}
-                onAssign={onAssign} onUnassign={onUnassign} onQuickView={() => onQuickView(job)} />
-            ))}
-          </div>
-        </SortableContext>
-      </div>
+      {/* ── Job cards area ── */}
+      <SortableContext items={jobs.map(j => j.id)} strategy={verticalListSortingStrategy}>
+        <div style={{
+          maxHeight: collapsed ? 120 : 2000,
+          overflow: "hidden",
+          transition: "max-height 0.25s ease",
+          background: "#FAFAFA",
+          padding: jobs.length > 0 ? 10 : 0,
+        }}>
+          {jobs.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-6" style={{ padding: 10 }}>
+              {isUnassigned
+                ? <><CheckCircle2 className="h-5 w-5 mb-1" style={{ color: "var(--t-accent)", opacity: 0.4 }} /><p className="text-[11px]" style={{ color: "var(--t-accent)" }}>All assigned</p></>
+                : <><Box className="h-5 w-5 mb-1" style={{ color: "#ccc" }} /><p className="text-[11px]" style={{ color: "#999" }}>No jobs</p></>}
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {jobs.map(job => (
+                <JobTile key={job.id} job={job} isUnassigned={!!isUnassigned} drivers={drivers}
+                  onAssign={onAssign} onUnassign={onUnassign} onQuickView={() => onQuickView(job)} />
+              ))}
+            </div>
+          )}
+        </div>
+      </SortableContext>
+
+      {/* "+N more" indicator when collapsed */}
+      {collapsed && hiddenCount > 0 && (
+        <div className="text-center py-1.5 cursor-pointer" onClick={onToggleCollapse}
+          style={{ background: "#FAFAFA", borderTop: "1px solid #F0F0F0", transition: "opacity 0.2s ease" }}>
+          <span className="text-[11px] font-medium" style={{ color: "#8A8A8A" }}>+{hiddenCount} more stop{hiddenCount > 1 ? "s" : ""}</span>
+        </div>
+      )}
     </div>
   );
 }
