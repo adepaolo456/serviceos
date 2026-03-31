@@ -639,6 +639,15 @@ export class JobsService {
     return this.findOne(tenantId, jobId);
   }
 
+  async bulkReorder(tenantId: string, jobIds: string[]): Promise<void> {
+    for (let i = 0; i < jobIds.length; i++) {
+      await this.jobsRepository.update(
+        { id: jobIds[i], tenant_id: tenantId },
+        { route_order: i + 1 },
+      );
+    }
+  }
+
   async createDumpRun(tenantId: string, body: { assetIds: string[]; dumpLocationId?: string; scheduledDate: string; timeWindow?: string; assignedDriverId?: string; notes?: string }) {
     const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
     const seq = Math.floor(Math.random() * 9000) + 1000;
