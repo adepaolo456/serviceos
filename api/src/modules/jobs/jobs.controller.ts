@@ -125,6 +125,15 @@ export class JobsController {
     return this.jobsService.stageAtYard(tenantId, id, body);
   }
 
+  @Patch('bulk-reorder')
+  @ApiOperation({ summary: 'Bulk reorder jobs within a route' })
+  bulkReorder(
+    @TenantId() tenantId: string,
+    @Body() body: { jobIds: string[] },
+  ) {
+    return this.jobsService.bulkReorder(tenantId, body.jobIds);
+  }
+
   @Post('dump-run')
   @ApiOperation({ summary: 'Create a dump run job for staged containers' })
   createDumpRun(
