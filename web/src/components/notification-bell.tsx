@@ -45,7 +45,7 @@ export default function NotificationBell() {
   }
 
   return (
-    <div ref={ref} className="fixed top-4 right-16 z-[9999]">
+    <div ref={ref} className="fixed top-4 right-6 z-[45]">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
