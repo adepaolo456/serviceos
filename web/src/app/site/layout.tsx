@@ -25,14 +25,14 @@ function SiteLayoutInner({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-[var(--t-bg-primary)] text-[var(--t-text-primary)]">
       {/* Header */}
-      <header className="sticky top-0 z-40 border-b border-[var(--t-border)] bg-[var(--t-bg-primary)]/95 backdrop-blur-sm">
+      <header className="sticky top-0 z-40 backdrop-blur-sm" style={{ backgroundColor: "var(--t-frame-bg)", borderBottom: "1px solid var(--t-frame-border)" }}>
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6">
           <Link href="/site" className="flex items-center gap-2.5">
-            {tenant.logoUrl ? <img src={tenant.logoUrl} alt="" className="h-8 w-8 rounded-[18px] object-cover" /> : <div className="flex h-8 w-8 items-center justify-center rounded-[18px] bg-[var(--t-accent)] text-black text-sm font-bold">{tenant.name[0]}</div>}
-            <span className="font-semibold text-[var(--t-text-primary)] text-sm hidden sm:block">{tenant.name}</span>
+            {tenant.logoUrl ? <img src={tenant.logoUrl} alt="" className="h-8 w-8 rounded-[20px] object-cover" /> : <div className="flex h-8 w-8 items-center justify-center rounded-[20px] bg-[var(--t-accent)] text-black text-sm font-bold">{tenant.name[0]}</div>}
+            <span className="font-semibold text-sm hidden sm:block" style={{ color: "var(--t-frame-text)" }}>{tenant.name}</span>
           </Link>
           <nav className="hidden md:flex items-center gap-6">
-            {nav.map(n => <Link key={n.label} href={n.href} className="text-sm font-medium text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)] transition-colors">{n.label}</Link>)}
+            {nav.map(n => <Link key={n.label} href={n.href} className="text-sm font-medium transition-colors" style={{ color: "var(--t-frame-text-muted)" }}>{n.label}</Link>)}
           </nav>
           <div className="flex items-center gap-3">
             {tenant.phone && (
@@ -40,7 +40,7 @@ function SiteLayoutInner({ children }: { children: React.ReactNode }) {
                 <Phone className="h-3.5 w-3.5" />{formatPhone(tenant.phone)}
               </a>
             )}
-            <button onClick={() => setMobileOpen(true)} className="md:hidden rounded-[18px] p-2 text-[var(--t-text-muted)] hover:bg-[var(--t-bg-card)]"><Menu className="h-5 w-5" /></button>
+            <button onClick={() => setMobileOpen(true)} className="md:hidden rounded-[20px] p-2 text-[var(--t-text-muted)] hover:bg-[var(--t-bg-card)]"><Menu className="h-5 w-5" /></button>
           </div>
         </div>
       </header>
@@ -52,7 +52,7 @@ function SiteLayoutInner({ children }: { children: React.ReactNode }) {
           <div className="fixed inset-y-0 right-0 w-64 bg-[var(--t-bg-card)] border-l border-[var(--t-border)] p-6">
             <button onClick={() => setMobileOpen(false)} className="mb-6 text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)]"><X className="h-5 w-5" /></button>
             <nav className="space-y-1">
-              {nav.map(n => <Link key={n.label} href={n.href} onClick={() => setMobileOpen(false)} className="block rounded-[18px] px-3 py-2.5 text-sm font-medium text-[var(--t-text-primary)] hover:bg-[var(--t-bg-card-hover)]">{n.label}</Link>)}
+              {nav.map(n => <Link key={n.label} href={n.href} onClick={() => setMobileOpen(false)} className="block rounded-[20px] px-3 py-2.5 text-sm font-medium text-[var(--t-text-primary)] hover:bg-[var(--t-bg-card-hover)]">{n.label}</Link>)}
               {tenant.phone && <a href={`tel:${tenant.phone}`} className="flex items-center gap-2 rounded-full px-4 py-2.5 text-sm font-semibold bg-[var(--t-accent)] text-black mt-4"><Phone className="h-4 w-4" />Call Us</a>}
             </nav>
           </div>

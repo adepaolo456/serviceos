@@ -238,14 +238,14 @@ export default function InvoicesPage() {
     <div>
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
-        <h1 style={{ fontSize: 28, fontWeight: 700, letterSpacing: "-1px", color: "var(--t-text-primary)" }}>
+        <h1 style={{ fontSize: 28, fontWeight: 700, letterSpacing: "-1px", color: "var(--t-frame-text)" }}>
           Invoices
         </h1>
         <div className="flex gap-2">
           <button
             onClick={() => { setPanelMode("from-job"); setPanelOpen(true); }}
             className="flex items-center gap-2 rounded-full border px-4 py-2.5 text-sm font-medium transition-all duration-150"
-            style={{ borderColor: "var(--t-border)", color: "var(--t-text-primary)", background: "transparent" }}
+            style={{ borderColor: "var(--t-frame-border)", color: "var(--t-frame-text)", background: "transparent" }}
           >
             <FileText className="h-4 w-4" />
             Generate from Job
@@ -264,7 +264,7 @@ export default function InvoicesPage() {
       {/* KPI Row */}
       <div className="grid grid-cols-4 gap-3 mb-6">
         {kpis.map((kpi) => (
-          <div key={kpi.label} className="rounded-[18px] border p-4"
+          <div key={kpi.label} className="rounded-[20px] border p-4"
             style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)" }}>
             <p className="uppercase tracking-wider mb-1" style={{ fontSize: 13, color: "var(--t-text-muted)" }}>{kpi.label}</p>
             <p className="font-bold tabular-nums" style={{ fontSize: 24, color: kpi.color || "var(--t-text-primary)" }}>{kpi.value}</p>
@@ -274,7 +274,7 @@ export default function InvoicesPage() {
 
       {/* Overdue Alert */}
       {overdueInvoices.length > 0 && (
-        <div className="mb-6 flex items-center justify-between rounded-[18px] border px-5 py-3"
+        <div className="mb-6 flex items-center justify-between rounded-[20px] border px-5 py-3"
           style={{ borderColor: "var(--t-error)", background: "var(--t-bg-card)" }}>
           <div className="flex items-center gap-3">
             <AlertTriangle className="h-5 w-5" style={{ color: "var(--t-error)" }} />
@@ -300,8 +300,8 @@ export default function InvoicesPage() {
               onClick={() => setTab(t)}
               className="rounded-full px-4 py-1.5 text-sm font-medium transition-all duration-150"
               style={{
-                background: isActive ? "var(--t-accent-soft)" : "transparent",
-                color: isActive ? "var(--t-accent)" : "var(--t-text-muted)",
+                background: isActive ? "var(--t-accent-soft)" : "rgba(255,255,255,0.06)",
+                color: isActive ? "var(--t-accent)" : "var(--t-frame-text-muted)",
               }}
             >
               {TAB_LABELS[t]}
@@ -316,22 +316,22 @@ export default function InvoicesPage() {
       {/* Search & Sort */}
       <div className="flex items-center gap-3 mb-5">
         <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4" style={{ color: "var(--t-text-muted)" }} />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4" style={{ color: "var(--t-frame-text-muted)" }} />
           <input
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search invoice #, customer name..."
-            className="w-full rounded-[18px] border pl-10 pr-4 py-2 text-sm outline-none transition-all duration-150"
-            style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)", color: "var(--t-text-primary)" }}
+            className="w-full rounded-[20px] border pl-10 pr-4 py-2 text-sm outline-none transition-all duration-150"
+            style={{ background: "rgba(255,255,255,0.06)", borderColor: "rgba(255,255,255,0.08)", color: "var(--t-frame-text)" }}
           />
         </div>
-        <div className="flex rounded-full border overflow-hidden" style={{ borderColor: "var(--t-border)" }}>
+        <div className="flex rounded-full border overflow-hidden" style={{ borderColor: "rgba(255,255,255,0.08)" }}>
           {DATE_RANGES.map((opt) => (
             <button key={opt.value} onClick={() => setDateRange(opt.value)}
               className="px-3 py-1.5 text-xs font-medium transition-all duration-150"
               style={{
                 background: dateRange === opt.value ? "var(--t-accent-soft)" : "transparent",
-                color: dateRange === opt.value ? "var(--t-accent)" : "var(--t-text-muted)",
+                color: dateRange === opt.value ? "var(--t-accent)" : "var(--t-frame-text-muted)",
               }}>
               {opt.label}
             </button>
@@ -340,7 +340,7 @@ export default function InvoicesPage() {
         <Dropdown
           trigger={
             <button className="flex items-center gap-2 rounded-full border px-3 py-2 text-sm transition-all duration-150"
-              style={{ borderColor: "var(--t-border)", background: "var(--t-bg-card)", color: "var(--t-text-muted)" }}>
+              style={{ borderColor: "var(--t-frame-border)", background: "rgba(255,255,255,0.06)", color: "var(--t-frame-text-muted)" }}>
               <ArrowDownUp className="h-3.5 w-3.5" />
               {SORT_OPTIONS.find((o) => o.value === sortBy)?.label}
             </button>
@@ -361,7 +361,7 @@ export default function InvoicesPage() {
       {loading ? (
         <div className="space-y-2">
           {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="h-16 w-full skeleton rounded-[18px]" />
+            <div key={i} className="h-16 w-full skeleton rounded-[20px]" />
           ))}
         </div>
       ) : filteredInvoices.length === 0 ? (
@@ -390,7 +390,7 @@ export default function InvoicesPage() {
               <button
                 key={inv.id}
                 onClick={() => router.push(`/invoices/${inv.id}`)}
-                className="w-full flex items-center gap-4 rounded-[18px] border px-5 py-3.5 text-left transition-all duration-150"
+                className="w-full flex items-center gap-4 rounded-[20px] border px-5 py-3.5 text-left transition-all duration-150"
                 style={{
                   background: "var(--t-bg-card)",
                   borderColor: "var(--t-border)",
@@ -487,11 +487,11 @@ function FromJobForm({ onSuccess }: { onSuccess: () => void }) {
 
   return (
     <div className="space-y-5">
-      {error && <div className="rounded-[18px] px-4 py-3 text-sm" style={{ background: "var(--t-error-soft)", color: "var(--t-error)" }}>{error}</div>}
+      {error && <div className="rounded-[20px] px-4 py-3 text-sm" style={{ background: "var(--t-error-soft)", color: "var(--t-error)" }}>{error}</div>}
       <p className="text-sm" style={{ color: "var(--t-text-muted)" }}>Select a completed job to auto-generate an invoice from its pricing.</p>
 
       {loading ? (
-        <div className="space-y-2">{Array.from({ length: 3 }).map((_, i) => <div key={i} className="h-14 skeleton rounded-[18px]" />)}</div>
+        <div className="space-y-2">{Array.from({ length: 3 }).map((_, i) => <div key={i} className="h-14 skeleton rounded-[20px]" />)}</div>
       ) : jobs.length === 0 ? (
         <div className="py-8 text-center">
           <FileText className="mx-auto h-8 w-8 mb-2" style={{ color: "var(--t-text-muted)", opacity: 0.3 }} />
@@ -503,7 +503,7 @@ function FromJobForm({ onSuccess }: { onSuccess: () => void }) {
             <button
               key={j.id}
               onClick={() => setSelectedJob(selectedJob?.id === j.id ? null : j)}
-              className="w-full rounded-[18px] border p-3 text-left transition-all duration-150"
+              className="w-full rounded-[20px] border p-3 text-left transition-all duration-150"
               style={{
                 borderColor: selectedJob?.id === j.id ? "var(--t-accent)" : "var(--t-border)",
                 background: selectedJob?.id === j.id ? "var(--t-accent-soft)" : "var(--t-bg-card)",
@@ -616,20 +616,20 @@ function CreateInvoiceForm({ onSuccess }: { onSuccess: () => void }) {
     } finally { setSaving(false); }
   };
 
-  const inp = "w-full rounded-[18px] px-4 py-2.5 text-sm outline-none transition-all duration-150";
+  const inp = "w-full rounded-[20px] px-4 py-2.5 text-sm outline-none transition-all duration-150";
   const inpStyle = { background: "var(--t-bg-card)", borderWidth: 1, borderStyle: "solid" as const, borderColor: "var(--t-border)", color: "var(--t-text-primary)" };
   const lbl = "block text-sm font-medium mb-1.5";
   const lblStyle = { color: "var(--t-text-muted)" };
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
-      {error && <div className="rounded-[18px] px-4 py-3 text-sm" style={{ background: "var(--t-error-soft)", color: "var(--t-error)" }}>{error}</div>}
+      {error && <div className="rounded-[20px] px-4 py-3 text-sm" style={{ background: "var(--t-error-soft)", color: "var(--t-error)" }}>{error}</div>}
 
       {/* Customer */}
       <div className="relative">
         <label className={lbl} style={lblStyle}>Customer</label>
         {customerName ? (
-          <div className="flex items-center justify-between rounded-[18px] border px-4 py-2.5"
+          <div className="flex items-center justify-between rounded-[20px] border px-4 py-2.5"
             style={{ borderColor: "var(--t-border)", background: "var(--t-bg-card)" }}>
             <span className="text-sm" style={{ color: "var(--t-text-primary)" }}>{customerName}</span>
             <button type="button" onClick={() => { setCustomerId(""); setCustomerName(""); }}
@@ -641,7 +641,7 @@ function CreateInvoiceForm({ onSuccess }: { onSuccess: () => void }) {
             className={inp} style={inpStyle} placeholder="Search customers..." />
         )}
         {showDropdown && customerResults.length > 0 && (
-          <div className="absolute z-10 mt-1 w-full rounded-[18px] border shadow-xl overflow-hidden"
+          <div className="absolute z-10 mt-1 w-full rounded-[20px] border shadow-xl overflow-hidden"
             style={{ borderColor: "var(--t-border)", background: "var(--t-bg-card)" }}>
             {customerResults.map((c) => (
               <button key={c.id} type="button"
@@ -703,7 +703,7 @@ function CreateInvoiceForm({ onSuccess }: { onSuccess: () => void }) {
       </div>
 
       {/* Totals */}
-      <div className="rounded-[18px] border p-4 space-y-2 text-sm"
+      <div className="rounded-[20px] border p-4 space-y-2 text-sm"
         style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)" }}>
         <div className="flex justify-between" style={{ color: "var(--t-text-primary)" }}><span>Subtotal</span><span className="tabular-nums">{fmt(subtotal)}</span></div>
         {tax > 0 && <div className="flex justify-between" style={{ color: "var(--t-text-primary)" }}><span>Tax ({(Number(taxRate) * 100).toFixed(2)}%)</span><span className="tabular-nums">{fmt(tax)}</span></div>}

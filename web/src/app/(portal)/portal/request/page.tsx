@@ -64,8 +64,8 @@ export default function PortalRequestPage() {
         <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[var(--t-accent-soft)] mb-4">
           <CheckCircle2 className="h-8 w-8 text-[var(--t-accent)]" />
         </div>
-        <h2 className="text-xl font-bold text-[var(--t-text-primary)]">Request Submitted!</h2>
-        <p className="mt-2 text-sm text-[var(--t-text-muted)] text-center max-w-sm">
+        <h2 className="text-xl font-bold text-[var(--t-frame-text)]">Request Submitted!</h2>
+        <p className="mt-2 text-sm text-[var(--t-frame-text-muted)] text-center max-w-sm">
           Your request {jobNumber} has been received. We&apos;ll confirm availability and contact you within 1 hour.
         </p>
         <div className="mt-6 flex gap-3">
@@ -84,12 +84,12 @@ export default function PortalRequestPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-[28px] font-bold tracking-[-1px] text-[var(--t-text-primary)]">Request a Dumpster</h1>
-        <p className="mt-1 text-sm text-[var(--t-text-muted)]">Choose your size and schedule delivery. We&apos;ll confirm within 1 hour.</p>
+        <h1 className="text-[28px] font-bold tracking-[-1px] text-[var(--t-frame-text)]">Request a Dumpster</h1>
+        <p className="mt-1 text-sm text-[var(--t-frame-text-muted)]">Choose your size and schedule delivery. We&apos;ll confirm within 1 hour.</p>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">
-        {error && <div className="rounded-[18px] bg-[var(--t-error-soft)] px-4 py-3 text-sm text-[var(--t-error)]">{error}</div>}
+        {error && <div className="rounded-[20px] bg-[var(--t-error-soft)] px-4 py-3 text-sm text-[var(--t-error)]">{error}</div>}
 
         {/* Size selector */}
         <div>
@@ -97,7 +97,7 @@ export default function PortalRequestPage() {
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
             {sizes.map(s => (
               <button key={s.value} type="button" onClick={() => setSize(s.value)}
-                className={`rounded-[18px] border-2 p-4 text-center transition-all ${
+                className={`rounded-[20px] border-2 p-4 text-center transition-all ${
                   size === s.value ? "border-[var(--t-accent)] bg-[var(--t-accent-soft)]" : "border-[var(--t-border)] bg-[var(--t-bg-card)] hover:border-[var(--t-text-muted)]"
                 }`}>
                 <p className="text-lg font-bold text-[var(--t-text-primary)]">{s.label}</p>
@@ -120,7 +120,7 @@ export default function PortalRequestPage() {
             <label className="block text-sm font-semibold text-[var(--t-text-primary)] mb-2">Preferred Delivery Date</label>
             <input type="date" value={date} onChange={(e) => setDate(e.target.value)} required
               min={new Date().toISOString().split("T")[0]}
-              className="w-full rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-2.5 text-sm text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)] focus:ring-1 focus:ring-[var(--t-accent)]" />
+              className="w-full rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-2.5 text-sm text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)] focus:ring-1 focus:ring-[var(--t-accent)]" />
           </div>
           <div>
             <label className="block text-sm font-semibold text-[var(--t-text-primary)] mb-2">Rental Duration</label>
@@ -141,11 +141,11 @@ export default function PortalRequestPage() {
         <div>
           <label className="block text-sm font-semibold text-[var(--t-text-primary)] mb-2">Special Instructions <span className="font-normal text-[var(--t-text-muted)]">(optional)</span></label>
           <textarea value={instructions} onChange={(e) => setInstructions(e.target.value)} rows={3} placeholder="Placement instructions, gate codes, etc."
-            className="w-full rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-2.5 text-sm text-[var(--t-text-primary)] placeholder-[var(--t-text-muted)] outline-none focus:border-[var(--t-accent)] focus:ring-1 focus:ring-[var(--t-accent)] resize-none" />
+            className="w-full rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-2.5 text-sm text-[var(--t-text-primary)] placeholder-[var(--t-text-muted)] outline-none focus:border-[var(--t-accent)] focus:ring-1 focus:ring-[var(--t-accent)] resize-none" />
         </div>
 
         {/* Price estimate */}
-        <div className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5">
+        <div className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5">
           <h3 className="text-sm font-semibold text-[var(--t-text-primary)] mb-3">Estimated Cost</h3>
           <div className="space-y-1.5 text-sm">
             <div className="flex justify-between text-[var(--t-text-muted)]"><span>{selectedSize?.label} Dumpster ({rentalDays} days)</span><span>{formatCurrency(selectedSize?.price || 0)}</span></div>

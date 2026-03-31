@@ -41,13 +41,13 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
   return (
     <div className="min-h-screen bg-[var(--t-bg-primary)]">
       {/* Top navbar */}
-      <header className="sticky top-0 z-40 border-b border-[var(--t-border)] bg-[var(--t-bg-card)]">
+      <header className="sticky top-0 z-40" style={{ backgroundColor: "var(--t-frame-bg)", borderBottom: "1px solid var(--t-frame-border)" }}>
         <div className="mx-auto flex h-14 max-w-5xl items-center justify-between px-4">
           <Link href="/portal" className="flex items-center gap-2.5">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--t-accent)]">
               <span className="text-sm font-bold text-black">S</span>
             </div>
-            <span className="font-semibold text-[var(--t-text-primary)] text-sm hidden sm:block">ServiceOS</span>
+            <span className="font-semibold text-sm hidden sm:block" style={{ color: "var(--t-frame-text)" }}>ServiceOS</span>
           </Link>
 
           {/* Desktop nav */}
@@ -57,8 +57,9 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
               return (
                 <Link key={item.name} href={item.href}
                   className={`flex items-center gap-1.5 rounded-full px-3 py-2 text-sm font-medium transition-colors ${
-                    active ? "text-[var(--t-accent)]" : "text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)]"
-                  }`}>
+                    active ? "text-[var(--t-accent)]" : ""
+                  }`}
+                  style={active ? {} : { color: "var(--t-frame-text-muted)" }}>
                   <item.icon className="h-4 w-4" />
                   {item.name}
                 </Link>
@@ -68,14 +69,14 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
 
           <div className="flex items-center gap-2">
             {customer && (
-              <span className="hidden sm:block text-sm text-[var(--t-text-muted)]">
+              <span className="hidden sm:block text-sm" style={{ color: "var(--t-frame-text-muted)" }}>
                 {customer.firstName} {customer.lastName}
               </span>
             )}
-            <button onClick={handleLogout} className="rounded-full p-2 text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)] hover:bg-[var(--t-bg-card-hover)] transition-colors" title="Log out">
+            <button onClick={handleLogout} className="rounded-full p-2 transition-colors" style={{ color: "var(--t-frame-text-muted)" }} title="Log out">
               <LogOut className="h-4 w-4" />
             </button>
-            <button onClick={() => setMobileOpen(true)} className="md:hidden rounded-full p-2 text-[var(--t-text-muted)] hover:bg-[var(--t-bg-card-hover)]">
+            <button onClick={() => setMobileOpen(true)} className="md:hidden rounded-full p-2" style={{ color: "var(--t-frame-text-muted)" }}>
               <Menu className="h-5 w-5" />
             </button>
           </div>
@@ -95,7 +96,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
                 const active = pathname === item.href || (item.href !== "/portal" && pathname.startsWith(item.href));
                 return (
                   <Link key={item.name} href={item.href}
-                    className={`flex items-center gap-2.5 rounded-[18px] px-3 py-2.5 text-sm font-medium ${
+                    className={`flex items-center gap-2.5 rounded-[20px] px-3 py-2.5 text-sm font-medium ${
                       active ? "text-[var(--t-accent)]" : "text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)]"
                     }`}>
                     <item.icon className="h-4 w-4" />
@@ -104,7 +105,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
                 );
               })}
               <button onClick={handleLogout}
-                className="flex w-full items-center gap-2.5 rounded-[18px] px-3 py-2.5 text-sm font-medium text-[var(--t-error)] hover:bg-[var(--t-error-soft)]">
+                className="flex w-full items-center gap-2.5 rounded-[20px] px-3 py-2.5 text-sm font-medium text-[var(--t-error)] hover:bg-[var(--t-error-soft)]">
                 <LogOut className="h-4 w-4" />
                 Log out
               </button>

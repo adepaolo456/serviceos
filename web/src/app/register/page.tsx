@@ -67,7 +67,7 @@ export default function RegisterPage() {
   };
 
   const inputClass =
-    "w-full rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-2.5 text-sm text-[var(--t-text-primary)] placeholder-[var(--t-text-muted)] outline-none transition-colors focus:border-[var(--t-accent)] focus:ring-1 focus:ring-[var(--t-accent)]";
+    "w-full rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-2.5 text-sm text-[var(--t-text-primary)] placeholder-[var(--t-text-muted)] outline-none transition-colors focus:border-[var(--t-accent)] focus:ring-1 focus:ring-[var(--t-accent)]";
   const labelClass = "block text-sm font-medium text-[var(--t-text-primary)] mb-1.5";
 
   return (
@@ -79,10 +79,10 @@ export default function RegisterPage() {
               S
             </span>
           </div>
-          <h1 className="text-[28px] font-bold tracking-[-1px] text-[var(--t-text-primary)]">
+          <h1 className="text-[28px] font-bold tracking-[-1px] text-[var(--t-frame-text)]">
             Create your account
           </h1>
-          <p className="mt-2 text-sm text-[var(--t-text-muted)]">
+          <p className="mt-2 text-sm text-[var(--t-frame-text-muted)]">
             Start managing your service business
           </p>
         </div>
@@ -96,12 +96,12 @@ export default function RegisterPage() {
         </a>
         <div className="relative my-5">
           <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-[var(--t-border)]" /></div>
-          <div className="relative flex justify-center"><span className="bg-[var(--t-bg-primary)] px-3 text-xs text-[var(--t-text-muted)]">or</span></div>
+          <div className="relative flex justify-center"><span className="bg-[var(--t-bg-primary)] px-3 text-xs text-[var(--t-frame-text-muted)]">or</span></div>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           {error && (
-            <div className="rounded-[18px] bg-[var(--t-error-soft)] border border-[var(--t-error)] px-4 py-3 text-sm text-[var(--t-error)]">
+            <div className="rounded-[20px] bg-[var(--t-error-soft)] border border-[var(--t-error)] px-4 py-3 text-sm text-[var(--t-error)]">
               {error}
             </div>
           )}
@@ -226,11 +226,11 @@ export default function RegisterPage() {
           </button>
         </form>
 
-        <p className="mt-6 text-center text-sm text-[var(--t-text-muted)]">
+        <p className="mt-6 text-center text-sm text-[var(--t-frame-text-muted)]">
           Already have an account?{" "}
           <a href="/login" className="font-medium text-[var(--t-accent)] hover:brightness-110 transition-colors">Sign in</a>
         </p>
-        <p className="mt-2 text-center text-sm text-[var(--t-text-muted)]">
+        <p className="mt-2 text-center text-sm text-[var(--t-frame-text-muted)]">
           Want to see it in action?{" "}
           <a href="/demo" className="font-medium text-[var(--t-accent)] hover:brightness-110 transition-colors">Request a demo</a>
         </p>

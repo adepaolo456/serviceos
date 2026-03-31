@@ -67,7 +67,7 @@ export default function PortalRentalsPage() {
     return true;
   });
 
-  const inputCls = "w-full rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-3 py-2 text-sm text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)]";
+  const inputCls = "w-full rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-3 py-2 text-sm text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)]";
 
   if (detail) {
     const steps = [
@@ -81,7 +81,7 @@ export default function PortalRentalsPage() {
     return (
       <div className="space-y-6">
         <button onClick={() => setDetail(null)} className="text-sm text-[var(--t-accent)] font-medium hover:underline">&larr; Back to rentals</button>
-        <div className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6">
+        <div className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6">
           <div className="flex flex-wrap items-start justify-between gap-3 mb-6">
             <div>
               <h2 className="text-lg font-bold text-[var(--t-text-primary)]">{detail.asset?.size || detail.service_type || "Dumpster"} Rental</h2>
@@ -125,7 +125,7 @@ export default function PortalRentalsPage() {
                   Reschedule Delivery
                 </button>
               ) : (
-                <div className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-primary)] p-4 space-y-3">
+                <div className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-primary)] p-4 space-y-3">
                   <p className="text-sm font-semibold text-[var(--t-text-primary)]">Reschedule Delivery</p>
                   <div>
                     <label className="block text-xs font-medium text-[var(--t-text-primary)] mb-1">New Date</label>
@@ -174,13 +174,13 @@ export default function PortalRentalsPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-[28px] font-bold tracking-[-1px] text-[var(--t-text-primary)]">My Rentals</h1>
+      <h1 className="text-[28px] font-bold tracking-[-1px] text-[var(--t-frame-text)]">My Rentals</h1>
 
       {/* Tabs */}
       <div className="flex gap-0 border-b border-[var(--t-border)]">
         {tabs.map(t => (
           <button key={t} onClick={() => setTab(t)}
-            className={`relative flex-1 px-3 py-2.5 text-sm font-medium transition-colors text-center ${tab === t ? "text-[var(--t-accent)]" : "text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)]"}`}>
+            className={`relative flex-1 px-3 py-2.5 text-sm font-medium transition-colors text-center ${tab === t ? "text-[var(--t-accent)]" : "text-[var(--t-frame-text-muted)] hover:text-[var(--t-frame-text)]"}`}>
             {t}
             {tab === t && <span className="absolute inset-x-0 bottom-0 h-0.5 bg-[var(--t-accent)] rounded-full" />}
           </button>
@@ -188,9 +188,9 @@ export default function PortalRentalsPage() {
       </div>
 
       {loading ? (
-        <div className="space-y-3">{[1, 2, 3].map(i => <div key={i} className="h-28 rounded-[18px] bg-[var(--t-bg-card)] border border-[var(--t-border)] animate-pulse" />)}</div>
+        <div className="space-y-3">{[1, 2, 3].map(i => <div key={i} className="h-28 rounded-[20px] bg-[var(--t-bg-card)] border border-[var(--t-border)] animate-pulse" />)}</div>
       ) : filtered.length === 0 ? (
-        <div className="rounded-[18px] border border-dashed border-[var(--t-border)] bg-[var(--t-bg-card)] p-8 text-center">
+        <div className="rounded-[20px] border border-dashed border-[var(--t-border)] bg-[var(--t-bg-card)] p-8 text-center">
           <Package className="mx-auto h-10 w-10 text-[var(--t-text-muted)]/30 mb-3" />
           <p className="text-sm font-medium text-[var(--t-text-muted)]">No {tab.toLowerCase()} rentals</p>
         </div>
@@ -198,7 +198,7 @@ export default function PortalRentalsPage() {
         <div className="space-y-3">
           {filtered.map(r => (
             <button key={r.id} onClick={() => setDetail(r)}
-              className="w-full text-left rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-4 hover:bg-[var(--t-bg-card-hover)] transition-colors">
+              className="w-full text-left rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-4 hover:bg-[var(--t-bg-card-hover)] transition-colors">
               <div className="flex items-center justify-between">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1">

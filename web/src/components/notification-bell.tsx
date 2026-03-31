@@ -49,7 +49,10 @@ export default function NotificationBell() {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="relative p-2 rounded-lg bg-dark-card border border-dark-elevated shadow-lg hover:bg-dark-card-hover transition-colors"
+        className="relative p-2 rounded-lg shadow-lg transition-colors"
+        style={{ backgroundColor: "var(--t-frame-bg)", border: "1px solid var(--t-frame-border)", color: "var(--t-frame-text)" }}
+        onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--t-frame-hover)"; }}
+        onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "var(--t-frame-bg)"; }}
       >
         <Bell className="h-4 w-4" />
         {unreadCount > 0 && (
@@ -60,9 +63,9 @@ export default function NotificationBell() {
       </button>
 
       {open && (
-        <div className="absolute right-0 mt-2 w-80 rounded-xl border border-[#1E2D45] bg-dark-secondary shadow-2xl overflow-hidden animate-fade-in">
-          <div className="px-4 py-3 border-b border-[#1E2D45] flex items-center justify-between">
-            <p className="text-sm font-semibold text-white">Notifications</p>
+        <div className="absolute right-0 mt-2 w-80 rounded-[20px] overflow-hidden animate-fade-in" style={{ backgroundColor: "var(--t-bg-secondary)", border: "1px solid var(--t-border)", boxShadow: "0 8px 30px rgba(0,0,0,0.15)" }}>
+          <div className="px-4 py-3 flex items-center justify-between" style={{ borderBottom: "1px solid var(--t-border)" }}>
+            <p className="text-sm font-semibold" style={{ color: "var(--t-text-primary)" }}>Notifications</p>
             {unreadCount > 0 && (
               <button onClick={markAllRead} className="text-[11px] text-brand hover:text-brand-light">
                 Mark all as read
@@ -74,17 +77,20 @@ export default function NotificationBell() {
               <button
                 key={n.id}
                 onClick={() => handleClick(n)}
-                className={`w-full text-left px-4 py-3 hover:bg-dark-card-hover transition-colors border-b border-[#1E2D45] last:border-b-0 ${
+                className={`w-full text-left px-4 py-3 transition-colors last:border-b-0 ${
                   n.read ? "opacity-60" : ""
                 }`}
+                style={{ borderBottom: "1px solid var(--t-border)" }}
+                onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--t-bg-card-hover)"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; }}
               >
-                <p className="text-xs text-foreground leading-relaxed">{n.message}</p>
-                <p className="text-[10px] text-muted mt-1">{n.time}</p>
+                <p className="text-xs leading-relaxed" style={{ color: "var(--t-text-primary)" }}>{n.message}</p>
+                <p className="text-[10px] mt-1" style={{ color: "var(--t-text-muted)" }}>{n.time}</p>
                 {!n.read && <span className="inline-block h-1.5 w-1.5 rounded-full bg-brand mt-1" />}
               </button>
             ))}
           </div>
-          <div className="px-4 py-2.5 border-t border-[#1E2D45]">
+          <div className="px-4 py-2.5" style={{ borderTop: "1px solid var(--t-border)" }}>
             <button
               onClick={() => { setOpen(false); router.push("/notifications"); }}
               className="text-xs text-brand hover:text-brand-light font-medium"

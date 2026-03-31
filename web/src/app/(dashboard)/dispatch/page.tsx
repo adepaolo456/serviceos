@@ -211,44 +211,44 @@ export default function DispatchPage() {
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-1">
               <button onClick={() => setDate(d => shiftDate(d, -1))}
-                className="p-2 rounded-[18px] border transition-all duration-150"
-                style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)", color: "var(--t-text-muted)" }}
-                onMouseEnter={e => { e.currentTarget.style.color = "var(--t-text-primary)"; }}
-                onMouseLeave={e => { e.currentTarget.style.color = "var(--t-text-muted)"; }}>
+                className="p-2 rounded-[20px] border transition-all duration-150"
+                style={{ background: "rgba(255,255,255,0.06)", borderColor: "rgba(255,255,255,0.08)", color: "var(--t-frame-text-muted)" }}
+                onMouseEnter={e => { e.currentTarget.style.color = "var(--t-frame-text)"; }}
+                onMouseLeave={e => { e.currentTarget.style.color = "var(--t-frame-text-muted)"; }}>
                 <ChevronLeft className="h-4 w-4" />
               </button>
               <div className="relative">
-                <Calendar className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" style={{ color: "var(--t-text-muted)" }} />
+                <Calendar className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" style={{ color: "var(--t-frame-text-muted)" }} />
                 <input type="date" value={date} onChange={e => setDate(e.target.value)}
-                  className="rounded-[18px] py-2 pl-10 pr-3 text-sm font-medium outline-none w-52 transition-all duration-150"
-                  style={{ background: "var(--t-bg-card)", borderWidth: 1, borderStyle: "solid", borderColor: "var(--t-border)", color: "var(--t-text-primary)" }} />
+                  className="rounded-[20px] py-2 pl-10 pr-3 text-sm font-medium outline-none w-52 transition-all duration-150"
+                  style={{ background: "rgba(255,255,255,0.06)", borderWidth: 1, borderStyle: "solid", borderColor: "rgba(255,255,255,0.08)", color: "var(--t-frame-text)" }} />
               </div>
               <button onClick={() => setDate(d => shiftDate(d, 1))}
-                className="p-2 rounded-[18px] border transition-all duration-150"
-                style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)", color: "var(--t-text-muted)" }}
-                onMouseEnter={e => { e.currentTarget.style.color = "var(--t-text-primary)"; }}
-                onMouseLeave={e => { e.currentTarget.style.color = "var(--t-text-muted)"; }}>
+                className="p-2 rounded-[20px] border transition-all duration-150"
+                style={{ background: "rgba(255,255,255,0.06)", borderColor: "rgba(255,255,255,0.08)", color: "var(--t-frame-text-muted)" }}
+                onMouseEnter={e => { e.currentTarget.style.color = "var(--t-frame-text)"; }}
+                onMouseLeave={e => { e.currentTarget.style.color = "var(--t-frame-text-muted)"; }}>
                 <ChevronRight className="h-4 w-4" />
               </button>
               <button onClick={() => setDate(today())}
                 className="ml-1 rounded-full px-3 py-2 text-xs font-medium transition-all duration-150 border"
                 style={{
-                  background: date === today() ? "var(--t-accent-soft)" : "var(--t-bg-card)",
-                  borderColor: date === today() ? "var(--t-accent)" : "var(--t-border)",
-                  color: date === today() ? "var(--t-accent)" : "var(--t-text-muted)",
+                  background: date === today() ? "var(--t-accent-soft)" : "rgba(255,255,255,0.06)",
+                  borderColor: date === today() ? "var(--t-accent)" : "rgba(255,255,255,0.08)",
+                  color: date === today() ? "var(--t-accent)" : "var(--t-frame-text-muted)",
                 }}>
                 Today
               </button>
             </div>
-            <div className="hidden sm:flex items-center gap-2 text-sm" style={{ color: "var(--t-text-muted)" }}>
-              <span className="font-medium" style={{ color: "var(--t-text-primary)" }}>{fmtDate(date)}</span>
+            <div className="hidden sm:flex items-center gap-2 text-sm" style={{ color: "var(--t-frame-text-muted)" }}>
+              <span className="font-medium" style={{ color: "var(--t-frame-text)" }}>{fmtDate(date)}</span>
               <span>·</span><span>{totalJobs} jobs</span><span>·</span><span>{driverCount} drivers</span>
               {unassignedCount > 0 && <><span>·</span><span className="font-medium" style={{ color: "var(--t-warning)" }}>{unassignedCount} unassigned</span></>}
             </div>
           </div>
           <div className="flex items-center gap-2">
             <button onClick={() => fetchBoard(true)} disabled={refreshing}
-              className="p-2 rounded-[18px] border transition-all duration-150 disabled:opacity-50"
+              className="p-2 rounded-[20px] border transition-all duration-150 disabled:opacity-50"
               style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)", color: "var(--t-text-muted)" }}>
               <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
             </button>
@@ -264,18 +264,18 @@ export default function DispatchPage() {
               <button key={t.key} onClick={() => setFilter(t.key)}
                 className="rounded-full px-3 py-1.5 text-xs font-medium transition-all duration-150"
                 style={{
-                  background: filter === t.key ? "var(--t-accent-soft)" : "var(--t-bg-card)",
-                  color: filter === t.key ? "var(--t-accent)" : "var(--t-text-muted)",
+                  background: filter === t.key ? "var(--t-accent-soft)" : "rgba(255,255,255,0.06)",
+                  color: filter === t.key ? "var(--t-accent)" : "var(--t-frame-text-muted)",
                 }}>
                 {t.label}
               </button>
             ))}
           </div>
           <div className="relative flex-1 max-w-xs">
-            <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2" style={{ color: "var(--t-text-muted)" }} />
+            <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2" style={{ color: "var(--t-frame-text-muted)" }} />
             <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search jobs or locations..."
-              className="w-full rounded-[18px] py-1.5 pl-9 pr-3 text-xs outline-none transition-all duration-150"
-              style={{ background: "var(--t-bg-card)", borderWidth: 1, borderStyle: "solid", borderColor: "var(--t-border)", color: "var(--t-text-primary)" }} />
+              className="w-full rounded-[20px] py-1.5 pl-9 pr-3 text-xs outline-none transition-all duration-150"
+              style={{ background: "rgba(255,255,255,0.06)", borderWidth: 1, borderStyle: "solid", borderColor: "rgba(255,255,255,0.08)", color: "var(--t-frame-text)" }} />
           </div>
         </div>
       </div>
@@ -285,7 +285,7 @@ export default function DispatchPage() {
         <div className="flex-1 min-w-0 overflow-hidden">
           {loading ? (
             <div className="flex h-full gap-3 overflow-x-auto pb-2">
-              {[1,2,3,4].map(i => (<div key={i} className="w-64 shrink-0 space-y-2"><div className="h-16 skeleton rounded-[18px]" />{[1,2,3].map(j => <div key={j} className="h-24 skeleton rounded-[18px]" />)}</div>))}
+              {[1,2,3,4].map(i => (<div key={i} className="w-64 shrink-0 space-y-2"><div className="h-16 skeleton rounded-[20px]" />{[1,2,3].map(j => <div key={j} className="h-24 skeleton rounded-[20px]" />)}</div>))}
             </div>
           ) : !board ? (
             <div className="flex h-full items-center justify-center" style={{ color: "var(--t-text-muted)" }}>Failed to load</div>
@@ -326,7 +326,7 @@ export default function DispatchPage() {
                 );
               })}
               {board.drivers.length === 0 && board.unassigned.length > 0 && (
-                <div className="flex w-56 shrink-0 flex-col items-center justify-center rounded-[18px] border border-dashed p-4"
+                <div className="flex w-56 shrink-0 flex-col items-center justify-center rounded-[20px] border border-dashed p-4"
                   style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)" }}>
                   <Truck className="h-8 w-8 mb-2" style={{ color: "var(--t-text-muted)", opacity: 0.15 }} />
                   <p className="text-xs text-center" style={{ color: "var(--t-text-muted)" }}>Add drivers in Settings &gt; Team</p>
@@ -373,7 +373,7 @@ export default function DispatchPage() {
 
       {/* Bottom Bar */}
       {!loading && board && totalJobs > 0 && !selectedJob && (
-        <div className="shrink-0 mt-3 flex items-center justify-between rounded-[18px] border px-5 py-3"
+        <div className="shrink-0 mt-3 flex items-center justify-between rounded-[20px] border px-5 py-3"
           style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)" }}>
           <div className="flex items-center gap-5 text-xs" style={{ color: "var(--t-text-muted)" }}>
             <span><span className="font-semibold" style={{ color: "var(--t-text-primary)" }}>{totalStops}</span> stops remaining</span>
@@ -454,7 +454,7 @@ function Column({ id, title, icon, count, isUnassignedHeader, progress, phone, j
   if (collapsed) {
     return (
       <div onClick={toggleCollapse}
-        className="flex w-[60px] shrink-0 cursor-pointer flex-col items-center rounded-[18px] border py-3 transition-all duration-150"
+        className="flex w-[60px] shrink-0 cursor-pointer flex-col items-center rounded-[20px] border py-3 transition-all duration-150"
         style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)" }}>
         <ChevDown className="h-3.5 w-3.5 mb-2" style={{ color: "var(--t-text-muted)" }} />
         <span className="rounded-full px-2 py-0.5 text-[10px] font-bold tabular-nums"
@@ -465,7 +465,7 @@ function Column({ id, title, icon, count, isUnassignedHeader, progress, phone, j
   }
 
   return (
-    <div className={`flex shrink-0 flex-col rounded-[18px] border transition-all duration-150 ${isUnassigned ? "min-w-[280px] w-[280px]" : "min-w-[300px] w-[300px]"}`}
+    <div className={`flex shrink-0 flex-col rounded-[20px] border transition-all duration-150 ${isUnassigned ? "min-w-[280px] w-[280px]" : "min-w-[300px] w-[300px]"}`}
       style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)" }}>
       {/* Header */}
       <div className="px-3 py-2.5 shrink-0" style={{ borderBottom: "1px solid var(--t-border)" }}>
@@ -698,7 +698,7 @@ function JobQuickViewContent({ job, detail, loading, board, date, onAssign, onRe
       </div>
 
       {/* Customer */}
-      <div className="rounded-[18px] border p-4" style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)" }}>
+      <div className="rounded-[20px] border p-4" style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)" }}>
         <p className="text-[13px] uppercase tracking-wider mb-2" style={{ color: "var(--t-text-muted)" }}>Customer</p>
         {cust ? (
           <div>
@@ -711,7 +711,7 @@ function JobQuickViewContent({ job, detail, loading, board, date, onAssign, onRe
 
       {/* Address */}
       {addr && (
-        <div className="rounded-[18px] border p-4" style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)" }}>
+        <div className="rounded-[20px] border p-4" style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)" }}>
           <p className="text-[13px] uppercase tracking-wider mb-2" style={{ color: "var(--t-text-muted)" }}>Service Address</p>
           <p className="text-sm" style={{ color: "var(--t-text-primary)" }}>{addr.street}</p>
           <p className="text-xs" style={{ color: "var(--t-text-muted)" }}>{[addr.city, addr.state, addr.zip].filter(Boolean).join(", ")}</p>
@@ -720,7 +720,7 @@ function JobQuickViewContent({ job, detail, loading, board, date, onAssign, onRe
       )}
 
       {/* Schedule */}
-      <div className="rounded-[18px] border p-4" style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)" }}>
+      <div className="rounded-[20px] border p-4" style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)" }}>
         <p className="text-[13px] uppercase tracking-wider mb-2" style={{ color: "var(--t-text-muted)" }}>Schedule</p>
         <div className="space-y-1.5 text-sm">
           {d.scheduled_date && <div className="flex justify-between"><span style={{ color: "var(--t-text-muted)" }}>Date</span><span className="font-medium" style={{ color: "var(--t-text-primary)" }}>{new Date(d.scheduled_date + "T00:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}</span></div>}
@@ -732,7 +732,7 @@ function JobQuickViewContent({ job, detail, loading, board, date, onAssign, onRe
       </div>
 
       {/* Assignment */}
-      <div className="rounded-[18px] border p-4" style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)" }}>
+      <div className="rounded-[20px] border p-4" style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)" }}>
         <p className="text-[13px] uppercase tracking-wider mb-2" style={{ color: "var(--t-text-muted)" }}>Assignment</p>
         <div className="space-y-1.5 text-sm">
           <div className="flex justify-between"><span style={{ color: "var(--t-text-muted)" }}>Driver</span><span style={{ color: job.assigned_driver ? "var(--t-text-primary)" : "var(--t-error)" }}>{job.assigned_driver ? `${job.assigned_driver.first_name} ${job.assigned_driver.last_name}` : "Unassigned"}</span></div>
@@ -758,7 +758,7 @@ function JobQuickViewContent({ job, detail, loading, board, date, onAssign, onRe
 
       {/* Price */}
       {d.total_price > 0 && (
-        <div className="rounded-[18px] border p-4" style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)" }}>
+        <div className="rounded-[20px] border p-4" style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)" }}>
           <div className="flex justify-between items-center">
             <p className="text-[13px] uppercase tracking-wider" style={{ color: "var(--t-text-muted)" }}>Total Price</p>
             <p className="text-lg font-bold tabular-nums" style={{ color: "var(--t-accent)" }}>${Number(d.total_price).toLocaleString()}</p>
@@ -776,7 +776,7 @@ function JobQuickViewContent({ job, detail, loading, board, date, onAssign, onRe
               <Calendar className="h-3.5 w-3.5 inline mr-1.5" />Reschedule Job
             </button>
           ) : (
-            <div className="rounded-[18px] border p-4 space-y-3" style={{ borderColor: "var(--t-border)", background: "var(--t-bg-card)" }}>
+            <div className="rounded-[20px] border p-4 space-y-3" style={{ borderColor: "var(--t-border)", background: "var(--t-bg-card)" }}>
               <p className="text-xs font-semibold" style={{ color: "#60a5fa" }}>Reschedule Job</p>
               <input type="date" value={newDate} onChange={e => setNewDate(e.target.value)}
                 className="w-full rounded-[10px] border px-3 py-2 text-sm outline-none transition-all duration-150"

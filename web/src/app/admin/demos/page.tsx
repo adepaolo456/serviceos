@@ -49,7 +49,7 @@ export default function AdminDemosPage() {
       <div>
         <div className="mb-8 h-8 w-48 animate-pulse rounded bg-[var(--t-bg-card)]" />
         {Array.from({ length: 3 }).map((_, i) => (
-          <div key={i} className="mb-3 h-16 animate-pulse rounded-[18px] bg-[var(--t-bg-card)] border border-[var(--t-border)]" />
+          <div key={i} className="mb-3 h-16 animate-pulse rounded-[20px] bg-[var(--t-bg-card)] border border-[var(--t-border)]" />
         ))}
       </div>
     );
@@ -58,11 +58,11 @@ export default function AdminDemosPage() {
   return (
     <div>
       <div className="mb-6">
-        <h1 className="text-[28px] font-bold tracking-[-1px] text-[var(--t-text-primary)]">Demo Requests</h1>
-        <p className="mt-1 text-sm text-[var(--t-text-muted)]">{demos.length} total requests</p>
+        <h1 className="text-[28px] font-bold tracking-[-1px]" style={{ color: "var(--t-frame-text)" }}>Demo Requests</h1>
+        <p className="mt-1 text-sm" style={{ color: "var(--t-frame-text-muted)" }}>{demos.length} total requests</p>
       </div>
 
-      <div className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] overflow-hidden">
+      <div className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>

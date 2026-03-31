@@ -195,7 +195,7 @@ export default function BookingPage() {
     return () => window.removeEventListener("keydown", handleKey);
   }, [step]);
 
-  const inputCls = "w-full rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-3 text-sm text-[var(--t-text-primary)] placeholder-[var(--t-text-muted)] outline-none focus:border-[var(--t-accent)] focus:ring-1 focus:ring-[var(--t-accent)] transition-colors";
+  const inputCls = "w-full rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-3 text-sm text-[var(--t-text-primary)] placeholder-[var(--t-text-muted)] outline-none focus:border-[var(--t-accent)] focus:ring-1 focus:ring-[var(--t-accent)] transition-colors";
   const labelCls = "block text-[13px] font-semibold uppercase tracking-wide text-[var(--t-text-muted)] mb-1.5";
 
   return (
@@ -204,18 +204,18 @@ export default function BookingPage() {
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
           {step < 5 && step > 1 && (
-            <button onClick={() => setStep(s => s - 1)} className="rounded-full border border-[var(--t-border)] bg-[var(--t-bg-card)] p-2 text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)] transition-colors active:scale-95">
+            <button onClick={() => setStep(s => s - 1)} className="rounded-full border border-[var(--t-frame-border)] bg-[rgba(255,255,255,0.06)] p-2 text-[var(--t-frame-text-muted)] hover:text-[var(--t-frame-text)] transition-colors active:scale-95">
               <ArrowLeft className="h-4 w-4" />
             </button>
           )}
           <div>
-            <h1 className="text-[28px] font-bold tracking-[-1px] text-[var(--t-text-primary)]">
+            <h1 className="text-[28px] font-bold tracking-[-1px] text-[var(--t-frame-text)]">
               {step === 5 ? "Booking Confirmed!" : "New Booking"}
             </h1>
-            {step < 5 && <p className="text-[13px] text-[var(--t-text-muted)] mt-0.5">Step {step} of 4</p>}
+            {step < 5 && <p className="text-[13px] text-[var(--t-frame-text-muted)] mt-0.5">Step {step} of 4</p>}
           </div>
         </div>
-        {step < 5 && <Link href="/" className="text-[13px] text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)] transition-colors">Cancel</Link>}
+        {step < 5 && <Link href="/" className="text-[13px] text-[var(--t-frame-text-muted)] hover:text-[var(--t-frame-text)] transition-colors">Cancel</Link>}
       </div>
 
       {/* Progress */}
@@ -238,16 +238,16 @@ export default function BookingPage() {
             <label className={labelCls}>Type</label>
             <div className="grid grid-cols-2 gap-2">
               <button onClick={() => setJobType("delivery")}
-                className={`rounded-[18px] py-3 text-sm font-medium transition-all active:scale-95 ${jobType === "delivery" ? "bg-[var(--t-accent-soft)] text-[var(--t-accent)] border border-[var(--t-accent)]" : "bg-[var(--t-bg-card)] text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)] border border-[var(--t-border)]"}`}>
+                className={`rounded-[20px] py-3 text-sm font-medium transition-all active:scale-95 ${jobType === "delivery" ? "bg-[var(--t-accent-soft)] text-[var(--t-accent)] border border-[var(--t-accent)]" : "bg-[var(--t-bg-card)] text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)] border border-[var(--t-border)]"}`}>
                 New Delivery
               </button>
               <button onClick={() => setJobType("exchange")}
-                className={`rounded-[18px] py-3 text-sm font-medium transition-all active:scale-95 ${jobType === "exchange" ? "bg-[var(--t-accent-soft)] text-[var(--t-accent)] border border-[var(--t-accent)]" : "bg-[var(--t-bg-card)] text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)] border border-[var(--t-border)]"}`}>
+                className={`rounded-[20px] py-3 text-sm font-medium transition-all active:scale-95 ${jobType === "exchange" ? "bg-[var(--t-accent-soft)] text-[var(--t-accent)] border border-[var(--t-accent)]" : "bg-[var(--t-bg-card)] text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)] border border-[var(--t-border)]"}`}>
                 Exchange
               </button>
             </div>
             {jobType === "exchange" && (
-              <p className="mt-2 text-[13px] text-[var(--t-text-muted)] rounded-[18px] bg-[var(--t-bg-card)] px-3 py-2 border border-[var(--t-border)]">
+              <p className="mt-2 text-[13px] text-[var(--t-text-muted)] rounded-[20px] bg-[var(--t-bg-card)] px-3 py-2 border border-[var(--t-border)]">
                 Exchange = Pickup existing dumpster + Deliver new one. Priced same as delivery.
               </p>
             )}
@@ -267,7 +267,7 @@ export default function BookingPage() {
               <div className="grid grid-cols-5 gap-1">
                 {["10yd", "15yd", "20yd", "30yd", "40yd"].map(s => (
                   <button key={s} onClick={() => setAssetSubtype(s)}
-                    className={`rounded-[18px] py-3 text-xs font-bold transition-all active:scale-95 ${assetSubtype === s ? "bg-[#22C55E] text-black" : "bg-[var(--t-bg-card)] text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)] border border-[var(--t-border)]"}`}>
+                    className={`rounded-[20px] py-3 text-xs font-bold transition-all active:scale-95 ${assetSubtype === s ? "bg-[#22C55E] text-black" : "bg-[var(--t-bg-card)] text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)] border border-[var(--t-border)]"}`}>
                     {s}
                   </button>
                 ))}
@@ -278,14 +278,14 @@ export default function BookingPage() {
           <AddressAutocomplete value={address} onChange={setAddress} label="Delivery Address" placeholder="Customer address or zip code..." />
 
           {quoting && (
-            <div className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6 text-center">
+            <div className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6 text-center">
               <div className="h-6 w-6 mx-auto animate-spin rounded-full border-2 border-[var(--t-accent)] border-t-transparent mb-2" />
               <p className="text-[13px] text-[var(--t-text-muted)]">Calculating price...</p>
             </div>
           )}
 
           {quote && !quoting && (
-            <div className="rounded-[18px] border border-[var(--t-accent)] bg-[var(--t-accent-soft)] p-6">
+            <div className="rounded-[20px] border border-[var(--t-accent)] bg-[var(--t-accent-soft)] p-6">
               <div className="text-center mb-4">
                 <p className="text-4xl font-bold text-[var(--t-accent)] tabular-nums">{fmtMoney(quote.breakdown.total)}</p>
                 <p className="text-sm text-[var(--t-text-muted)] mt-1">{rentalDays}-day rental, delivery included</p>
@@ -319,7 +319,7 @@ export default function BookingPage() {
           )}
 
           {availability && (
-            <div className={`rounded-[18px] px-4 py-3 text-sm flex items-center gap-2 border ${
+            <div className={`rounded-[20px] px-4 py-3 text-sm flex items-center gap-2 border ${
               availability.availableOnDate > 0 ? "bg-[var(--t-accent-soft)] border-[var(--t-accent)] text-[var(--t-accent)]"
               : availability.pickupsBeforeDate > 0 ? "bg-[var(--t-warning-soft)] border-[var(--t-warning)] text-[var(--t-warning)]"
               : "bg-[var(--t-error-soft)] border-[var(--t-error)] text-[var(--t-error)]"
@@ -353,7 +353,7 @@ export default function BookingPage() {
                 className={`${inputCls} pl-10`} placeholder="Search by phone or name..." autoFocus />
             </div>
             {customerResults.length > 0 && !customerId && (
-              <div className="absolute z-20 mt-1 w-full rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] shadow-xl overflow-hidden">
+              <div className="absolute z-20 mt-1 w-full rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] shadow-xl overflow-hidden">
                 {customerResults.map(c => (
                   <button key={c.id} onClick={() => selectCustomer(c)}
                     className="flex w-full items-center justify-between px-4 py-2.5 text-sm hover:bg-[var(--t-bg-card-hover)] transition-colors">
@@ -366,7 +366,7 @@ export default function BookingPage() {
           </div>
 
           {customerId && (
-            <div className="rounded-[18px] bg-[var(--t-accent-soft)] border border-[var(--t-accent)] px-4 py-3 flex items-center justify-between">
+            <div className="rounded-[20px] bg-[var(--t-accent-soft)] border border-[var(--t-accent)] px-4 py-3 flex items-center justify-between">
               <span className="text-sm text-[var(--t-accent)] font-medium">Existing customer: {firstName} {lastName}</span>
               <button onClick={() => { setCustomerId(null); setFirstName(""); setLastName(""); }} className="text-[13px] text-[var(--t-text-muted)] hover:text-[var(--t-error)]">Clear</button>
             </div>
@@ -383,7 +383,7 @@ export default function BookingPage() {
                 <label className={labelCls}>Type</label>
                 <div className="grid grid-cols-2 gap-2">
                   {(["residential", "commercial"] as const).map(t => (
-                    <button key={t} onClick={() => setCustType(t)} className={`rounded-[18px] py-2.5 text-xs font-medium capitalize transition-all ${custType === t ? "bg-[#22C55E] text-black" : "bg-[var(--t-bg-card)] text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)] border border-[var(--t-border)]"}`}>{t}</button>
+                    <button key={t} onClick={() => setCustType(t)} className={`rounded-[20px] py-2.5 text-xs font-medium capitalize transition-all ${custType === t ? "bg-[#22C55E] text-black" : "bg-[var(--t-bg-card)] text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)] border border-[var(--t-border)]"}`}>{t}</button>
                   ))}
                 </div>
               </div>
@@ -415,7 +415,7 @@ export default function BookingPage() {
             <div className="grid grid-cols-3 gap-2">
               {([["morning", "Morning", "8 AM - 12 PM"], ["afternoon", "Afternoon", "12 - 5 PM"], ["fullday", "Full Day", "8 AM - 5 PM"]] as const).map(([k, label, sub]) => (
                 <button key={k} onClick={() => setTimeWindow(k)}
-                  className={`rounded-[18px] p-4 text-center transition-all active:scale-95 ${timeWindow === k ? "bg-[var(--t-accent-soft)] border border-[var(--t-accent)]" : "bg-[var(--t-bg-card)] border border-[var(--t-border)]"}`}>
+                  className={`rounded-[20px] p-4 text-center transition-all active:scale-95 ${timeWindow === k ? "bg-[var(--t-accent-soft)] border border-[var(--t-accent)]" : "bg-[var(--t-bg-card)] border border-[var(--t-border)]"}`}>
                   <p className={`text-sm font-semibold ${timeWindow === k ? "text-[var(--t-accent)]" : "text-[var(--t-text-primary)]"}`}>{label}</p>
                   <p className="text-[11px] text-[var(--t-text-muted)] mt-0.5">{sub}</p>
                 </button>
@@ -428,7 +428,7 @@ export default function BookingPage() {
             <textarea value={instructions} onChange={e => setInstructions(e.target.value)} rows={2} className={`${inputCls} resize-none`} placeholder="Place in driveway, call before delivery..." />
           </div>
 
-          <div className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-4">
+          <div className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-4">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-[13px] text-[var(--t-text-muted)]">Pickup Date</p>
@@ -439,7 +439,7 @@ export default function BookingPage() {
                 setPickupDate(e.target.value);
                 const days = Math.round((new Date(e.target.value).getTime() - new Date(deliveryDate).getTime()) / 86400000);
                 if (days > 0) setRentalDays(days);
-              }} className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card-hover)] px-3 py-1.5 text-xs text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)]" />
+              }} className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card-hover)] px-3 py-1.5 text-xs text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)]" />
             </div>
           </div>
 
@@ -453,9 +453,9 @@ export default function BookingPage() {
       {/* ===== STEP 4: Confirm ===== */}
       {step === 4 && quote && (
         <div className="space-y-5">
-          {error && <div className="rounded-[18px] bg-[var(--t-error-soft)] px-4 py-3 text-sm text-[var(--t-error)]">{error}</div>}
+          {error && <div className="rounded-[20px] bg-[var(--t-error-soft)] px-4 py-3 text-sm text-[var(--t-error)]">{error}</div>}
 
-          <div className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5 space-y-3">
+          <div className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5 space-y-3">
             <h3 className="text-[13px] font-semibold uppercase tracking-wide text-[var(--t-text-muted)]">Order Summary</h3>
             <div className="flex justify-between text-sm"><span className="text-[var(--t-text-muted)]">Service</span><span className="text-[var(--t-text-primary)]">{assetSubtype} {serviceType.replace(/_/g, " ")}</span></div>
             <div className="flex justify-between text-sm"><span className="text-[var(--t-text-muted)]">Customer</span><span className="text-[var(--t-text-primary)]">{firstName} {lastName}</span></div>
@@ -472,13 +472,13 @@ export default function BookingPage() {
             <label className={labelCls}>Payment</label>
             <div className="grid grid-cols-2 gap-2">
               <button onClick={() => setPaymentMethod("invoice")}
-                className={`rounded-[18px] p-4 text-center transition-all ${paymentMethod === "invoice" ? "bg-[var(--t-accent-soft)] border border-[var(--t-accent)]" : "bg-[var(--t-bg-card)] border border-[var(--t-border)]"}`}>
+                className={`rounded-[20px] p-4 text-center transition-all ${paymentMethod === "invoice" ? "bg-[var(--t-accent-soft)] border border-[var(--t-accent)]" : "bg-[var(--t-bg-card)] border border-[var(--t-border)]"}`}>
                 <Package className={`mx-auto h-5 w-5 mb-1 ${paymentMethod === "invoice" ? "text-[var(--t-accent)]" : "text-[var(--t-text-muted)]"}`} />
                 <p className={`text-sm font-medium ${paymentMethod === "invoice" ? "text-[var(--t-accent)]" : "text-[var(--t-text-primary)]"}`}>Send Invoice</p>
                 <p className="text-[11px] text-[var(--t-text-muted)]">Email invoice to customer</p>
               </button>
               <button onClick={() => setPaymentMethod("card")}
-                className={`rounded-[18px] p-4 text-center transition-all ${paymentMethod === "card" ? "bg-[var(--t-accent-soft)] border border-[var(--t-accent)]" : "bg-[var(--t-bg-card)] border border-[var(--t-border)]"}`}>
+                className={`rounded-[20px] p-4 text-center transition-all ${paymentMethod === "card" ? "bg-[var(--t-accent-soft)] border border-[var(--t-accent)]" : "bg-[var(--t-bg-card)] border border-[var(--t-border)]"}`}>
                 <CreditCard className={`mx-auto h-5 w-5 mb-1 ${paymentMethod === "card" ? "text-[var(--t-accent)]" : "text-[var(--t-text-muted)]"}`} />
                 <p className={`text-sm font-medium ${paymentMethod === "card" ? "text-[var(--t-accent)]" : "text-[var(--t-text-primary)]"}`}>Charge Card</p>
                 <p className="text-[11px] text-[var(--t-text-muted)]">Collect payment now</p>
@@ -487,14 +487,14 @@ export default function BookingPage() {
           </div>
 
           {paymentMethod === "card" && (
-            <div className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-4 text-center text-[13px] text-[var(--t-text-muted)]">
+            <div className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-4 text-center text-[13px] text-[var(--t-text-muted)]">
               <CreditCard className="mx-auto h-6 w-6 text-[var(--t-text-muted)] opacity-30 mb-2" />
               Stripe card form will be integrated here
             </div>
           )}
 
           {quote.breakdown.requireDeposit && (
-            <div className="rounded-[18px] bg-[var(--t-warning-soft)] border border-[var(--t-warning)] p-3 text-[13px] text-[var(--t-warning)]">
+            <div className="rounded-[20px] bg-[var(--t-warning-soft)] border border-[var(--t-warning)] p-3 text-[13px] text-[var(--t-warning)]">
               Deposit due now: {fmtMoney(quote.breakdown.depositAmount)}. Remaining {fmtMoney(quote.breakdown.total - quote.breakdown.depositAmount)} due on pickup.
             </div>
           )}
@@ -517,10 +517,10 @@ export default function BookingPage() {
       {step === 5 && result && (
         <div className="text-center py-8">
           <CheckCircle2 className="mx-auto h-16 w-16 text-[var(--t-accent)] mb-4" />
-          <h2 className="text-[28px] font-bold tracking-[-1px] text-[var(--t-text-primary)]">Booking Confirmed!</h2>
+          <h2 className="text-[28px] font-bold tracking-[-1px] text-[var(--t-frame-text)]">Booking Confirmed!</h2>
           <p className="text-[var(--t-text-muted)] mt-2">Job #{result.deliveryJob.jobNumber} created</p>
 
-          <div className="mt-6 rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5 text-left max-w-sm mx-auto space-y-2 text-sm">
+          <div className="mt-6 rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5 text-left max-w-sm mx-auto space-y-2 text-sm">
             <div className="flex justify-between"><span className="text-[var(--t-text-muted)]">Delivery Job</span><span className="text-[var(--t-text-primary)] font-medium">{result.deliveryJob.jobNumber}</span></div>
             <div className="flex justify-between"><span className="text-[var(--t-text-muted)]">Pickup Job</span><span className="text-[var(--t-text-primary)] font-medium">{result.pickupJob.jobNumber}</span></div>
             <div className="flex justify-between"><span className="text-[var(--t-text-muted)]">Invoice</span><span className="text-[var(--t-text-primary)] font-medium">{result.invoice.invoiceNumber}</span></div>

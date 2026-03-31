@@ -18,7 +18,7 @@ interface ExpandableProps { title: string; icon: React.ReactNode; children: Reac
 function Expandable({ title, icon, children, defaultOpen = false }: ExpandableProps) {
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <div className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] overflow-hidden">
+    <div className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] overflow-hidden">
       <button onClick={() => setOpen(!open)} className="flex w-full items-center justify-between px-4 py-3.5 hover:bg-[var(--t-bg-card-hover)] transition-colors">
         <div className="flex items-center gap-2.5">
           {icon}
@@ -58,7 +58,7 @@ export default function VehicleDetailPage({ params }: { params: Promise<{ id: st
     api.get<Employee>(`/team/${id}`).then(setEmp).catch(() => {}).finally(() => setLoading(false));
   }, [id]);
 
-  if (loading) return <div className="space-y-4"><div className="h-8 w-48 skeleton rounded-[18px]" /><div className="h-48 skeleton rounded-[18px]" /></div>;
+  if (loading) return <div className="space-y-4"><div className="h-8 w-48 skeleton rounded-[20px]" /><div className="h-48 skeleton rounded-[20px]" /></div>;
   if (!emp || !emp.vehicleInfo) return (
     <div className="py-20 text-center">
       <CarFront className="mx-auto h-10 w-10 text-[var(--t-text-muted)] opacity-20 mb-2" />
@@ -74,13 +74,13 @@ export default function VehicleDetailPage({ params }: { params: Promise<{ id: st
 
   return (
     <div className="space-y-5">
-      <Link href="/vehicles" className="inline-flex items-center gap-1.5 text-[13px] text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)] transition-colors"><ArrowLeft className="h-3.5 w-3.5" /> Vehicles</Link>
+      <Link href="/vehicles" className="inline-flex items-center gap-1.5 text-[13px] text-[var(--t-frame-text-muted)] hover:text-[var(--t-frame-text)] transition-colors"><ArrowLeft className="h-3.5 w-3.5" /> Vehicles</Link>
 
       {/* Header */}
-      <div className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5">
+      <div className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5">
         <div className="flex items-start justify-between">
           <div className="flex items-start gap-4">
-            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-[18px] bg-[var(--t-bg-card-hover)]">
+            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-[20px] bg-[var(--t-bg-card-hover)]">
               <CarFront className="h-7 w-7 text-[var(--t-text-muted)]" />
             </div>
             <div>
@@ -187,7 +187,7 @@ export default function VehicleDetailPage({ params }: { params: Promise<{ id: st
       </Expandable>
 
       {/* Cost Summary */}
-      <div className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-4">
+      <div className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-4">
         <p className="text-[13px] font-semibold uppercase tracking-wide text-[var(--t-text-muted)] mb-3">Cost Summary</p>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           {[
@@ -221,7 +221,7 @@ function VehicleEditForm({ emp, onSuccess }: { emp: Employee; onSuccess: (e: Emp
   const [vin, setVin] = useState(v.vin || "");
   const [color, setColor] = useState(v.color || "");
   const [saving, setSaving] = useState(false);
-  const inputCls = "w-full rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-2.5 text-sm text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)]";
+  const inputCls = "w-full rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-2.5 text-sm text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)]";
   const labelCls = "block text-[13px] font-semibold uppercase tracking-wide text-[var(--t-text-muted)] mb-1";
 
   return (

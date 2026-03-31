@@ -69,15 +69,15 @@ export default function AdminLayout({
   return (
     <div className="min-h-screen bg-[var(--t-bg-primary)]">
       {/* Top navbar */}
-      <header className="sticky top-0 z-40 border-b border-[var(--t-border)] bg-[var(--t-bg-card)]">
+      <header className="sticky top-0 z-40" style={{ backgroundColor: "var(--t-frame-bg)", borderBottom: "1px solid var(--t-frame-border)" }}>
         <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-6">
           <div className="flex items-center gap-6">
             <div className="flex items-center gap-2.5">
               <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--t-accent)]">
                 <span className="text-sm font-bold text-black">S</span>
               </div>
-              <span className="text-base font-bold text-[var(--t-text-primary)]">
-                ServiceOS <span className="text-xs font-medium text-[var(--t-text-muted)] ml-1">Admin</span>
+              <span className="text-base font-bold" style={{ color: "var(--t-frame-text)" }}>
+                ServiceOS <span className="text-xs font-medium ml-1" style={{ color: "var(--t-frame-text-muted)" }}>Admin</span>
               </span>
             </div>
             <nav className="hidden sm:flex items-center gap-1">
@@ -92,8 +92,9 @@ export default function AdminLayout({
                     className={`flex items-center gap-2 rounded-full px-3 py-2 text-sm font-medium transition-colors ${
                       isActive
                         ? "text-[var(--t-accent)]"
-                        : "text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)]"
+                        : ""
                     }`}
+                    style={isActive ? {} : { color: "var(--t-frame-text-muted)" }}
                   >
                     <item.icon className="h-4 w-4" />
                     {item.name}
@@ -105,14 +106,16 @@ export default function AdminLayout({
           <div className="flex items-center gap-2">
             <Link
               href="/"
-              className="flex items-center gap-2 rounded-full border border-[var(--t-border)] bg-transparent px-3.5 py-2 text-sm font-medium text-[var(--t-text-primary)] transition-colors hover:bg-[var(--t-bg-card-hover)] active:scale-95"
+              className="flex items-center gap-2 rounded-full bg-transparent px-3.5 py-2 text-sm font-medium transition-colors active:scale-95"
+              style={{ border: "1px solid var(--t-frame-border)", color: "var(--t-frame-text)" }}
             >
               <ArrowLeftRight className="h-3.5 w-3.5" />
               Switch to Dashboard
             </Link>
             <button
               onClick={() => { api.clearToken(); window.location.href = "/login"; }}
-              className="flex items-center gap-1.5 rounded-full px-3 py-2 text-sm text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)] hover:bg-[var(--t-bg-card-hover)] transition-colors"
+              className="flex items-center gap-1.5 rounded-full px-3 py-2 text-sm transition-colors"
+              style={{ color: "var(--t-frame-text-muted)" }}
             >
               <LogOut className="h-3.5 w-3.5" />
             </button>
@@ -120,7 +123,7 @@ export default function AdminLayout({
         </div>
       </header>
 
-      <main className="mx-auto max-w-7xl px-6 py-8">
+      <main className="mx-auto max-w-7xl px-6 py-8" style={{ backgroundColor: "var(--t-bg-primary)" }}>
         <Breadcrumbs pathname={pathname} />
         {children}
       </main>

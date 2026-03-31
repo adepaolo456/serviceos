@@ -69,7 +69,7 @@
     var modal = document.createElement('div');
     modal.id = 'serviceos-widget-modal';
     modal.style.cssText = 'position:relative;width:90%;max-width:520px;height:85vh;max-height:800px;' +
-      'background:#000;border:1px solid #3A3A3A;border-radius:18px;overflow:hidden;' +
+      'background:#000;border:1px solid #3A3A3A;border-radius:20px;overflow:hidden;' +
       'box-shadow:0 25px 60px rgba(0,0,0,0.5);' +
       'animation:serviceos-scalein 0.2s ease;';
 

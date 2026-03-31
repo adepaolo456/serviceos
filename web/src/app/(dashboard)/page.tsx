@@ -240,13 +240,13 @@ export default function DashboardPage() {
           fontSize: 28,
           fontWeight: 700,
           letterSpacing: "-1px",
-          color: "var(--t-text-primary)",
+          color: "var(--t-frame-text)",
           lineHeight: 1.2,
           marginBottom: 4,
         }}>
           {getGreeting()}, {user?.firstName || "Anthony"}
         </h1>
-        <p style={{ fontSize: 14, color: "var(--t-text-muted)", marginBottom: 20 }}>
+        <p style={{ fontSize: 14, color: "var(--t-frame-text-muted)", marginBottom: 20 }}>
           {fmtLongDate(today())} &middot; {todayJobs.length} job{todayJobs.length !== 1 ? "s" : ""} today
         </p>
 
@@ -277,17 +277,17 @@ export default function DashboardPage() {
               alignItems: "center",
               gap: 6,
               backgroundColor: "transparent",
-              color: "var(--t-text-primary)",
+              color: "var(--t-frame-text)",
               fontSize: 14,
               fontWeight: 600,
               padding: "10px 20px",
               borderRadius: 24,
-              border: "1px solid var(--t-border)",
+              border: "1px solid var(--t-frame-border)",
               textDecoration: "none",
               transition: "all 0.15s ease",
             }}
           >
-            <UserPlus style={{ width: 16, height: 16, color: "var(--t-text-muted)" }} />
+            <UserPlus style={{ width: 16, height: 16, color: "var(--t-frame-text-muted)" }} />
             New Customer
           </Link>
           <Link
@@ -297,23 +297,23 @@ export default function DashboardPage() {
               alignItems: "center",
               gap: 6,
               backgroundColor: "transparent",
-              color: "var(--t-text-primary)",
+              color: "var(--t-frame-text)",
               fontSize: 14,
               fontWeight: 600,
               padding: "10px 20px",
               borderRadius: 24,
-              border: "1px solid var(--t-border)",
+              border: "1px solid var(--t-frame-border)",
               textDecoration: "none",
               transition: "all 0.15s ease",
             }}
           >
-            <Calculator style={{ width: 16, height: 16, color: "var(--t-text-muted)" }} />
+            <Calculator style={{ width: 16, height: 16, color: "var(--t-frame-text-muted)" }} />
             New Quote
           </Link>
 
           {/* Search */}
           <div style={{ position: "relative", flex: 1, maxWidth: 340, marginLeft: "auto" }}>
-            <Search style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", width: 16, height: 16, color: "var(--t-text-muted)" }} />
+            <Search style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", width: 16, height: 16, color: "var(--t-frame-text-muted)" }} />
             <input
               type="text"
               placeholder="Search customers, jobs, assets..."
@@ -323,12 +323,12 @@ export default function DashboardPage() {
               onBlur={() => setTimeout(() => setSearchOpen(false), 200)}
               style={{
                 width: "100%",
-                backgroundColor: "var(--t-bg-card)",
-                border: "1px solid var(--t-border)",
+                backgroundColor: "rgba(255,255,255,0.06)",
+                border: "1px solid rgba(255,255,255,0.08)",
                 borderRadius: 24,
                 padding: "10px 16px 10px 38px",
                 fontSize: 14,
-                color: "var(--t-text-primary)",
+                color: "var(--t-frame-text)",
                 outline: "none",
                 transition: "border-color 0.15s ease",
               }}
