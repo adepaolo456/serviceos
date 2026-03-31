@@ -79,6 +79,17 @@ export class AuthController {
     return this.authService.updateTenantProfile(tenantId, body);
   }
 
+  @Patch('location')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Update current user GPS location (driver app)' })
+  async updateLocation(
+    @CurrentUser('id') userId: string,
+    @Body() body: { latitude: number; longitude: number; statusText?: string },
+  ) {
+    await this.authService.updateLocation(userId, body);
+    return { ok: true };
+  }
+
   @Post('invite')
   @ApiBearerAuth()
   @UseGuards(RolesGuard)
