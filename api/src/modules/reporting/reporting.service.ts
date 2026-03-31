@@ -123,6 +123,88 @@ export class ReportingService {
     };
   }
 
+  async getDumpSlips(tenantId: string, startDate?: string, endDate?: string, dumpLocationId?: string, search?: string, status?: string) {
+    const now = new Date();
+    const day = now.getDay();
+    const diffToMonday = day === 0 ? 6 : day - 1;
+    const monday = new Date(now);
+    monday.setDate(now.getDate() - diffToMonday);
+    const start = startDate || monday.toISOString().split('T')[0];
+    const end = endDate || now.toISOString().split('T')[0];
+
+    const baseWhere = `t.tenant_id = $1 AND t.submitted_at >= $2 AND t.submitted_at <= $3`;
+    const params: any[] = [tenantId, start, end + 'T23:59:59'];
+    let extraWhere = '';
+    let paramIdx = 4;
+
+    if (dumpLocationId) { extraWhere += ` AND t.dump_location_id = $${paramIdx}`; params.push(dumpLocationId); paramIdx++; }
+    if (status) {
+      if (status === 'invoiced') { extraWhere += ` AND t.invoiced = true`; }
+      else { extraWhere += ` AND t.status = $${paramIdx}`; params.push(status); paramIdx++; }
+    }
+    if (search) { extraWhere += ` AND (t.ticket_number ILIKE $${paramIdx} OR CONCAT(c.first_name, ' ', c.last_name) ILIKE $${paramIdx})`; params.push(`%${search}%`); paramIdx++; }
+
+    const [summaryRows] = await this.ticketRepo.query(
+      `SELECT COUNT(*) as total_tickets, COALESCE(SUM(t.weight_tons),0) as total_weight, COALESCE(SUM(t.total_cost),0) as total_dump_cost, COALESCE(SUM(t.fuel_env_cost),0) as total_fuel_env, COALESCE(SUM(t.customer_charges),0) as total_customer_charges FROM dump_tickets t LEFT JOIN jobs j ON t.job_id = j.id LEFT JOIN customers c ON j.customer_id = c.id WHERE ${baseWhere}${extraWhere}`,
+      params,
+    );
+    const summary = summaryRows;
+
+    const byFacility = await this.ticketRepo.query(
+      `SELECT t.dump_location_id, t.dump_location_name, COUNT(*) as ticket_count, COALESCE(SUM(t.weight_tons),0) as total_weight, COALESCE(SUM(t.dump_tonnage_cost),0) as total_dump_cost, COALESCE(SUM(t.fuel_env_cost),0) as total_fuel_env, COALESCE(SUM(t.total_cost),0) as total_cost, COALESCE(SUM(t.customer_charges),0) as total_customer_charges FROM dump_tickets t LEFT JOIN jobs j ON t.job_id = j.id LEFT JOIN customers c ON j.customer_id = c.id WHERE ${baseWhere}${extraWhere} GROUP BY t.dump_location_id, t.dump_location_name ORDER BY t.dump_location_name`,
+      params,
+    );
+
+    const tickets = await this.ticketRepo.query(
+      `SELECT t.id, t.ticket_number, t.submitted_at, t.job_id, j.job_number, CONCAT(c.first_name, ' ', c.last_name) as customer_name, t.dump_location_name, t.waste_type, t.weight_tons, t.dump_tonnage_cost, t.fuel_env_cost, t.dump_surcharge_cost, t.total_cost, t.customer_tonnage_charge, t.customer_surcharge_charge, t.customer_charges, t.overage_items, t.status, t.invoiced, t.invoice_id FROM dump_tickets t LEFT JOIN jobs j ON t.job_id = j.id LEFT JOIN customers c ON j.customer_id = c.id WHERE ${baseWhere}${extraWhere} ORDER BY t.submitted_at DESC`,
+      params,
+    );
+
+    return {
+      summary: {
+        totalTickets: Number(summary.total_tickets),
+        totalWeightTons: Number(summary.total_weight),
+        totalDumpCost: Number(summary.total_dump_cost),
+        totalFuelEnvCost: Number(summary.total_fuel_env),
+        totalCustomerCharges: Number(summary.total_customer_charges),
+        totalMargin: Number(summary.total_customer_charges) - Number(summary.total_dump_cost),
+      },
+      byFacility: byFacility.map(f => ({
+        dumpLocationId: f.dump_location_id,
+        dumpLocationName: f.dump_location_name,
+        ticketCount: Number(f.ticket_count),
+        totalWeight: Number(f.total_weight),
+        totalDumpCost: Number(f.total_dump_cost),
+        totalFuelEnv: Number(f.total_fuel_env),
+        totalCost: Number(f.total_cost),
+        totalCustomerCharges: Number(f.total_customer_charges),
+      })),
+      tickets: tickets.map(t => ({
+        id: t.id,
+        ticketNumber: t.ticket_number,
+        submittedAt: t.submitted_at,
+        jobId: t.job_id,
+        jobNumber: t.job_number,
+        customerName: t.customer_name,
+        dumpLocationName: t.dump_location_name,
+        wasteType: t.waste_type,
+        weightTons: Number(t.weight_tons),
+        dumpTonnageCost: Number(t.dump_tonnage_cost),
+        fuelEnvCost: Number(t.fuel_env_cost),
+        dumpSurchargeCost: Number(t.dump_surcharge_cost),
+        totalDumpCost: Number(t.total_cost),
+        customerTonnageCharge: Number(t.customer_tonnage_charge),
+        customerSurchargeCharge: Number(t.customer_surcharge_charge),
+        totalCustomerCharge: Number(t.customer_charges),
+        overageItems: t.overage_items || [],
+        status: t.status,
+        invoiced: t.invoiced,
+        invoiceId: t.invoice_id,
+      })),
+      period: { start, end },
+    };
+  }
+
   async getProfit(tenantId: string, startDate?: string, endDate?: string) {
     const revenue = await this.getRevenue(tenantId, startDate, endDate);
     const costs = await this.getDumpCosts(tenantId, startDate, endDate);
