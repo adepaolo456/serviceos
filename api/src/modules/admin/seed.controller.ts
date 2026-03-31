@@ -231,6 +231,7 @@ export class SeedController {
     await this.jobRepo.query(`DELETE FROM automation_logs WHERE tenant_id = $1`, [tid]);
     await this.jobRepo.query(`UPDATE dump_tickets SET invoice_id = NULL WHERE tenant_id = $1`, [tid]);
     await this.jobRepo.query(`DELETE FROM dump_tickets WHERE tenant_id = $1`, [tid]);
+    await this.jobRepo.query(`DELETE FROM payments WHERE tenant_id = $1`, [tid]);
     await this.jobRepo.query(`DELETE FROM invoices WHERE tenant_id = $1`, [tid]);
     await this.jobRepo.query(`UPDATE jobs SET parent_job_id = NULL, linked_job_ids = '[]'::jsonb WHERE tenant_id = $1`, [tid]);
     await this.jobRepo.query(`UPDATE assets SET current_job_id = NULL WHERE tenant_id = $1`, [tid]);
