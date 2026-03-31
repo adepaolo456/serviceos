@@ -96,7 +96,7 @@ export class SeedController {
       { first_name: 'Mighty Dog', last_name: 'Roofing', email: 'office@mightydogroofing.com', phone: '5085552001', type: 'commercial', company_name: 'Mighty Dog Roofing', billing_address: { street: '500 Industrial Drive', city: 'Brockton', state: 'MA', zip: '02301' }, pricing_tier: 'commercial', exempt_extra_day_charges: true },
       { first_name: 'Best Brothers', last_name: 'Construction', email: 'dispatch@bestbrothers.com', phone: '5085552002', type: 'commercial', company_name: 'Best Brothers Construction', billing_address: { street: '23 Josephs Road', city: 'Brockton', state: 'MA', zip: '02301' }, pricing_tier: 'discount', discount_percentage: 10, exempt_extra_day_charges: true },
       { first_name: 'Casa Design', last_name: 'Build', email: 'info@casadesign.com', phone: '6178286150', type: 'commercial', company_name: 'Casa Design Build', billing_address: { street: '89 Tosca Drive', city: 'Stoughton', state: 'MA', zip: '02072' }, pricing_tier: 'commercial', exempt_extra_day_charges: true },
-      { first_name: 'South Shore', last_name: 'Renovations', email: 'jobs@southshorereno.com', phone: '5085552004', type: 'commercial', company_name: 'South Shore Renovations', billing_address: { street: '150 Washington Street', city: 'Hanover', state: 'MA', zip: '02339' }, pricing_tier: 'discount', discount_percentage: 15 },
+      { first_name: 'South Shore', last_name: 'Renovations', email: 'jobs@southshorereno.com', phone: '5085552004', type: 'commercial', company_name: 'South Shore Renovations', billing_address: { street: '150 Washington Street', city: 'Hanover', state: 'MA', zip: '02339' }, pricing_tier: 'discount', discount_percentage: 15, exempt_extra_day_charges: true },
     ];
     const custIds: Record<string, string> = {};
     for (const c of custData) {
@@ -104,6 +104,17 @@ export class SeedController {
       if (!cust) {
         cust = await this.customerRepo.save(this.customerRepo.create({ ...c, tenant_id: tid } as any));
         log.push(`Created customer: ${c.first_name} ${c.last_name}`);
+      } else {
+        // Update existing customer with seed values (pricing_tier, discount, exempt flags)
+        const updates: any = {};
+        if ((c as any).pricing_tier) updates.pricing_tier = (c as any).pricing_tier;
+        if ((c as any).discount_percentage != null) updates.discount_percentage = (c as any).discount_percentage;
+        if ((c as any).exempt_extra_day_charges != null) updates.exempt_extra_day_charges = (c as any).exempt_extra_day_charges;
+        if ((c as any).company_name) updates.company_name = (c as any).company_name;
+        if (Object.keys(updates).length > 0) {
+          await this.customerRepo.update(cust.id, updates);
+          log.push(`Updated customer: ${c.first_name} ${c.last_name}`);
+        }
       }
       custIds[c.email] = cust.id;
     }
@@ -208,6 +219,12 @@ export class SeedController {
     if (!tenant) return { error: 'Tenant not found' };
     const tid = tenant.id;
     const log: string[] = [];
+
+    // Clear existing seed data to allow re-seeding
+    await this.ticketRepo.delete({ tenant_id: tid });
+    await this.invoiceRepo.delete({ tenant_id: tid });
+    await this.jobRepo.delete({ tenant_id: tid });
+    log.push('Cleared existing jobs, invoices, and dump tickets');
 
     // Lookup helpers
     const findCust = async (email: string) => (await this.customerRepo.findOne({ where: { tenant_id: tid, email } }))?.id;

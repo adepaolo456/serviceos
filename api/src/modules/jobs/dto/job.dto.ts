@@ -120,6 +120,11 @@ export class CreateJobDto {
   @IsOptional()
   @IsString()
   source?: string;
+
+  @ApiPropertyOptional({ example: '20yd', description: 'Asset subtype for pricing lookup' })
+  @IsOptional()
+  @IsString()
+  assetSubtype?: string;
 }
 
 export class UpdateJobDto extends PartialType(CreateJobDto) {}
@@ -202,6 +207,7 @@ export class ChangeStatusDto {
     'in_progress',
     'completed',
     'cancelled',
+    'failed',
   ])
   status: string;
 
