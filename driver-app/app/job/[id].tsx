@@ -349,8 +349,9 @@ export default function JobDetailScreen() {
     <View style={s.container}>
       {/* HEADER */}
       <View style={s.header}>
-        <TouchableOpacity onPress={() => router.back()} style={s.backBtn}>
-          <Ionicons name="arrow-back" size={24} color="#fff" />
+        <TouchableOpacity onPress={() => { try { router.back(); } catch { router.replace('/(tabs)'); } }} style={s.backBtn} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+          <Ionicons name="arrow-back" size={22} color="#fff" />
+          <Text style={{ color: '#fff', fontSize: 14, fontWeight: '600', marginLeft: 6 }}>Back</Text>
         </TouchableOpacity>
         <View style={s.headerContent}>
           <View style={s.headerBadges}>
@@ -372,6 +373,21 @@ export default function JobDetailScreen() {
         contentContainerStyle={s.scrollContent}
         keyboardShouldPersistTaps="handled"
       >
+        {/* DUMPSTER CARD — first and most prominent */}
+        <View style={[s.card, { borderLeftWidth: 4, borderLeftColor: typeColor }]}>
+          <Text style={{ fontSize: 22, fontWeight: '800', color: colors.text, letterSpacing: -0.5 }}>
+            {sizeLabel ? `${sizeLabel.replace('yd', ' Yard')} Dumpster` : `${typeLabel}`}
+          </Text>
+          <Text style={{ fontSize: 16, fontWeight: '700', color: typeColor, marginTop: 4 }}>{typeLabel}</Text>
+          {job.asset?.identifier && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8 }}>
+              <View style={{ backgroundColor: 'rgba(34,197,94,0.08)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 }}>
+                <Text style={{ fontSize: 13, fontWeight: '700', color: '#22C55E' }}>{job.asset.identifier}</Text>
+              </View>
+            </View>
+          )}
+        </View>
+
         {/* CUSTOMER CARD */}
         {job.customer && (
           <View style={s.card}>
@@ -799,7 +815,7 @@ const makeStyles = (colors: ThemeColors) =>
       borderBottomWidth: 0.5,
       borderBottomColor: colors.frameBorder,
     },
-    backBtn: { width: 44, height: 44, justifyContent: 'center', alignItems: 'center', marginRight: 8 },
+    backBtn: { flexDirection: 'row', alignItems: 'center', height: 44, paddingHorizontal: 8, marginRight: 8 },
     headerContent: { flex: 1 },
     headerBadges: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 },
     headerTypeBadge: {
