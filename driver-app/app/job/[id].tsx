@@ -54,9 +54,15 @@ interface Job {
 }
 
 const TYPE_COLORS: Record<string, string> = {
-  delivery: '#3B82F6',
-  pickup: '#F97316',
-  exchange: '#8B5CF6',
+  delivery: '#22C55E',
+  pickup: '#F59E0B',
+  exchange: '#3B82F6',
+};
+const TYPE_LABELS: Record<string, string> = {
+  delivery: 'Delivery',
+  pickup: 'Pickup',
+  exchange: 'Exchange',
+  dump_run: 'Dump Run',
 };
 
 const STATUS_FLOW: Record<string, { next: string; label: string; icon: string }> = {
@@ -336,6 +342,24 @@ export default function JobDetailScreen() {
             <Ionicons name="camera" size={20} color={colors.accent} />
             <Text style={s.quickActionLabel}>Photo</Text>
           </TouchableOpacity>
+        </View>
+
+        {/* Dumpster Info Card */}
+        <View style={[s.card, { borderLeftWidth: 4, borderLeftColor: TYPE_COLORS[job.job_type] || '#71717A' }]}>
+          <Text style={{ fontSize: 11, fontWeight: '800', color: '#8A8A8A', letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 8 }}>DUMPSTER</Text>
+          <Text style={{ fontSize: 22, fontWeight: '800', color: colors.text, letterSpacing: -0.5 }}>
+            {job.asset?.subtype ? job.asset.subtype.replace('yd', ' Yard') + ' Dumpster' : (TYPE_LABELS[job.job_type] || job.job_type)}
+          </Text>
+          <Text style={{ fontSize: 16, fontWeight: '700', color: TYPE_COLORS[job.job_type] || '#71717A', marginTop: 4 }}>
+            {TYPE_LABELS[job.job_type] || job.job_type}
+          </Text>
+          {job.asset?.identifier && (
+            <View style={{ flexDirection: 'row', marginTop: 8 }}>
+              <View style={{ backgroundColor: 'rgba(34,197,94,0.08)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 }}>
+                <Text style={{ fontSize: 13, fontWeight: '700', color: '#22C55E' }}>{job.asset.identifier}</Text>
+              </View>
+            </View>
+          )}
         </View>
 
         {/* Status */}

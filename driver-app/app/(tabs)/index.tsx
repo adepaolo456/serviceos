@@ -154,6 +154,8 @@ export default function TodayScreen() {
           const isCompleted = j.status === 'completed';
           const isNextStop = !isCompleted && jobs.findIndex(j => j.status !== 'completed' && j.status !== 'cancelled') === index;
           const addr = j.service_address;
+          const typeColor = TYPE_COLORS[j.job_type] || '#71717A';
+          const sizeStr = j.asset?.subtype || '';
           return (
             <TouchableOpacity
               style={[
@@ -164,6 +166,8 @@ export default function TodayScreen() {
               onPress={() => router.push(`/job/${j.id}`)}
               activeOpacity={0.7}
             >
+              {/* Left color stripe */}
+              <View style={{ position: 'absolute', left: 0, top: 12, bottom: 12, width: 5, borderRadius: 3, backgroundColor: typeColor }} />
               {isNextStop && <View style={s.cardGreenEdge} />}
               <View style={s.cardRow}>
                 <View style={[s.stopCircle, isCompleted && s.stopCircleDone]}>
@@ -174,33 +178,20 @@ export default function TodayScreen() {
                   )}
                 </View>
                 <View style={s.cardContent}>
+                  {/* Dumpster size + type row */}
+                  <View style={{ flexDirection: 'row', alignItems: 'baseline', marginBottom: 4 }}>
+                    {sizeStr ? <Text style={{ fontSize: 20, fontWeight: '800', color: '#0A0A0A' }}>{sizeStr} </Text> : null}
+                    <Text style={{ fontSize: 20, fontWeight: '800', color: typeColor }}>{TYPE_LABELS[j.job_type] || j.job_type}</Text>
+                  </View>
+                  {/* Customer name */}
                   <View style={s.cardTop}>
                     <Text
                       style={[s.customerName, isCompleted && s.textFaded]}
-                      numberOfLines={1}
                     >
                       {j.customer
                         ? `${j.customer.first_name} ${j.customer.last_name}`
                         : j.job_number}
                     </Text>
-                    <View
-                      style={[
-                        s.typeBadge,
-                        {
-                          backgroundColor:
-                            (TYPE_COLORS[j.job_type] || '#71717A') + '14',
-                        },
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          s.typeText,
-                          { color: TYPE_COLORS[j.job_type] || '#71717A' },
-                        ]}
-                      >
-                        {TYPE_LABELS[j.job_type] || j.job_type}
-                      </Text>
-                    </View>
                   </View>
                   {addr && (
                     <Text
@@ -268,9 +259,9 @@ const makeStyles = (colors: ThemeColors) =>
     list: { paddingHorizontal: 20, paddingBottom: 20 },
     card: {
       backgroundColor: colors.surface,
-      borderRadius: 14,
-      padding: 14,
-      marginBottom: 8,
+      borderRadius: 20,
+      padding: 20,
+      marginBottom: 12,
       borderWidth: 1,
       borderColor: colors.border,
       overflow: 'hidden',
@@ -302,16 +293,16 @@ const makeStyles = (colors: ThemeColors) =>
     sizeBadgeText: { fontSize: 11, fontWeight: '700', color: colors.accent },
     cardRow: { flexDirection: 'row', alignItems: 'center' },
     stopCircle: {
-      width: 28,
-      height: 28,
-      borderRadius: 14,
+      width: 32,
+      height: 32,
+      borderRadius: 16,
       backgroundColor: colors.surfaceHover,
       justifyContent: 'center',
       alignItems: 'center',
       marginRight: 12,
     },
     stopCircleDone: { backgroundColor: colors.accent },
-    stopNum: { fontSize: 12, fontWeight: '700', color: colors.textSecondary },
+    stopNum: { fontSize: 13, fontWeight: '700', color: colors.textSecondary },
     cardContent: { flex: 1 },
     cardTop: {
       flexDirection: 'row',
@@ -320,7 +311,7 @@ const makeStyles = (colors: ThemeColors) =>
       marginBottom: 4,
     },
     customerName: {
-      fontSize: 14,
+      fontSize: 16,
       fontWeight: '600',
       color: colors.text,
       flex: 1,
