@@ -49,6 +49,9 @@ export class DumpLocation {
   @Column({ name: 'is_active', default: true })
   is_active!: boolean;
 
+  @Column({ name: 'fuel_env_surcharge_per_ton', type: 'decimal', precision: 10, scale: 2, default: 0 })
+  fuel_env_surcharge_per_ton!: number;
+
   @OneToMany(() => DumpLocationRate, r => r.dump_location, { cascade: true })
   rates!: DumpLocationRate[];
 
