@@ -364,13 +364,18 @@ export default function DispatchPage() {
               style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.08)", color: "var(--t-frame-text)" }} />
           </div>
           {/* Show hidden columns */}
-          {hiddenDrivers.length > 0 && (
+          {(hiddenDrivers.length > 0 || hiddenCols.has("unassigned")) && (
             <Dropdown trigger={
               <button className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium border"
                 style={{ borderColor: "rgba(255,255,255,0.12)", color: "var(--t-frame-text-muted)" }}>
-                <EyeOff className="h-3 w-3" /> {hiddenDrivers.length} hidden
+                <EyeOff className="h-3 w-3" /> {hiddenDrivers.length + (hiddenCols.has("unassigned") ? 1 : 0)} hidden
               </button>
             }>
+              {hiddenCols.has("unassigned") && (
+                <button onClick={() => showColumn("unassigned")} className="flex w-full items-center gap-2 px-3 py-2 text-xs whitespace-nowrap" style={{ color: "var(--t-text-primary)" }}>
+                  <Eye className="h-3 w-3" /> Unassigned
+                </button>
+              )}
               {hiddenDrivers.map(col => (
                 <button key={col.driver.id} onClick={() => showColumn(col.driver.id)}
                   className="flex w-full items-center gap-2 px-3 py-2 text-xs whitespace-nowrap" style={{ color: "var(--t-text-primary)" }}>
@@ -409,12 +414,15 @@ export default function DispatchPage() {
             </div>
           ) : showColumns ? (
             <div className="flex gap-3 overflow-x-auto pb-2 items-start h-full">
+              {!hiddenCols.has("unassigned") && (
               <ColumnCard columnId="unassigned" title="Unassigned" isUnassigned count={board.unassigned.length}
                 jobs={filterJobs(board.unassigned, filter, search)} drivers={board.drivers.map(d => d.driver)}
                 onAssign={async (jid, did) => { try { await api.patch(`/jobs/${jid}/assign`, { assignedDriverId: did }); toast("success", "Assigned"); await fetchBoard(true); } catch { toast("error", "Failed"); } }}
                 onQuickView={openQuickView} activeId={activeId}
                 onStatusChange={async (jid, s) => { try { await api.patch(`/jobs/${jid}/status`, { status: s, cancellationReason: s === "failed" ? "Dispatcher override" : undefined }); toast("success", `Status → ${s.replace(/_/g, " ")}`); await fetchBoard(true); } catch { toast("error", "Failed"); } }}
-                collapsed={collapsedCols.has("unassigned")} onToggleCollapse={() => toggleCollapse("unassigned")} />
+                collapsed={collapsedCols.has("unassigned")} onToggleCollapse={() => toggleCollapse("unassigned")}
+                onHide={() => hideColumn("unassigned")} />
+              )}
               {visibleDrivers.map((col, idx) => (
                 <ColumnCard key={col.driver.id} columnId={col.driver.id} title={`${col.driver.firstName} ${col.driver.lastName}`}
                   driver={col.driver} count={col.jobs.length}
@@ -576,7 +584,7 @@ function ColumnCard({ columnId, title, driver, isUnassigned, count, progress, jo
 
   return (
     <div ref={setNodeRef}
-      className="shrink-0 rounded-[20px] overflow-hidden transition-all duration-200"
+      className="shrink-0 rounded-[20px] transition-all duration-200"
       style={{
         width: 340, minWidth: 340,
         border: isOver && activeId ? "2px dashed var(--t-accent)" : "1px solid rgba(255,255,255,0.3)",
@@ -609,7 +617,7 @@ function ColumnCard({ columnId, title, driver, isUnassigned, count, progress, jo
             <p className="text-[15px] font-bold leading-tight" style={{ color: isUnassigned ? "#D97706" : "#0A0A0A" }}>{title}</p>
             {driver?.phone && <p className="text-[11px] mt-0.5" style={{ color: "#8A8A8A" }}>{formatPhone(driver.phone)}</p>}
           </div>
-          {!isUnassigned && (
+          {(
             <Dropdown trigger={
               <button className="shrink-0 p-1 rounded-lg transition-all" style={{ color: "#8A8A8A" }}
                 onMouseEnter={e => { e.currentTarget.style.background = "#F5F5F5"; }} onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}>
@@ -704,7 +712,7 @@ const JobTile = memo(function JobTile({ job, isUnassigned, drivers, onAssign, on
     <div ref={setNodeRef} {...attributes} {...listeners}
       style={{
         transform: CSS.Transform.toString(transform), transition,
-        opacity: isDragging ? 0.3 : isCompleted ? 0.45 : 1,
+        opacity: isDragging ? 0.3 : isCompleted ? 0.8 : 1,
         border: "1px solid #F0F0F0",
         boxShadow: isDragging ? "0 8px 24px rgba(0,0,0,0.15)" : "0 1px 4px rgba(0,0,0,0.04)",
         cursor: isDragging ? "grabbing" : "grab",
