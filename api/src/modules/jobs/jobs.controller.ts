@@ -56,6 +56,16 @@ export class JobsController {
     );
   }
 
+  // Static PATCH routes MUST come before :id parameterized routes
+  @Patch('bulk-reorder')
+  @ApiOperation({ summary: 'Bulk reorder jobs within a route' })
+  bulkReorder(
+    @TenantId() tenantId: string,
+    @Body() body: { jobIds: string[] },
+  ) {
+    return this.jobsService.bulkReorder(tenantId, body.jobIds);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get a job by ID' })
   findOne(
@@ -123,15 +133,6 @@ export class JobsController {
     @Body() body: { wasteType?: string; notes?: string },
   ) {
     return this.jobsService.stageAtYard(tenantId, id, body);
-  }
-
-  @Patch('bulk-reorder')
-  @ApiOperation({ summary: 'Bulk reorder jobs within a route' })
-  bulkReorder(
-    @TenantId() tenantId: string,
-    @Body() body: { jobIds: string[] },
-  ) {
-    return this.jobsService.bulkReorder(tenantId, body.jobIds);
   }
 
   @Post('dump-run')

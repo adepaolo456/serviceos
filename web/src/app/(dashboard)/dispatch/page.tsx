@@ -134,33 +134,79 @@ export default function DispatchPage() {
     setActiveId(null);
     const { active, over } = event;
     if (!over || !board) return;
+
     const activeJobId = active.id as string;
     const overId = over.id as string;
+    const columnIds = ["unassigned", ...board.drivers.map(d => d.driver.id)];
     const sourceCol = findColumnForJob(activeJobId);
-    let targetCol = overId;
-    if (!["unassigned", ...board.drivers.map(d => d.driver.id)].includes(overId)) {
-      targetCol = findColumnForJob(overId);
-    }
-    if (sourceCol === targetCol) {
-      const colJobs = targetCol === "unassigned" ? [...board.unassigned] : [...(board.drivers.find(d => d.driver.id === targetCol)?.jobs || [])];
+
+    // Determine target column: if overId is a column, use it; otherwise find which column that job belongs to
+    const targetCol = columnIds.includes(overId) ? overId : findColumnForJob(overId);
+    if (sourceCol === targetCol && !columnIds.includes(overId)) {
+      // ── Same column reorder ──
+      const getJobs = (col: string) => col === "unassigned" ? board.unassigned : (board.drivers.find(d => d.driver.id === col)?.jobs || []);
+      const colJobs = [...getJobs(sourceCol)];
       const oldIndex = colJobs.findIndex(j => j.id === activeJobId);
       const newIndex = colJobs.findIndex(j => j.id === overId);
       if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) return;
+
       const reordered = arrayMove(colJobs, oldIndex, newIndex);
+
+      // Optimistic update
       setBoard(prev => {
         if (!prev) return prev;
-        if (targetCol === "unassigned") return { ...prev, unassigned: reordered };
-        return { ...prev, drivers: prev.drivers.map(d => d.driver.id === targetCol ? { ...d, jobs: reordered } : d) };
+        if (sourceCol === "unassigned") return { ...prev, unassigned: reordered };
+        return { ...prev, drivers: prev.drivers.map(d => d.driver.id === sourceCol ? { ...d, jobs: reordered } : d) };
       });
-      try { await api.patch("/jobs/bulk-reorder", { jobIds: reordered.map(j => j.id) }); } catch { fetchBoard(true); }
-    } else {
+
+      toast("success", "Route updated");
+
+      try {
+        await api.patch("/jobs/bulk-reorder", { jobIds: reordered.map(j => j.id) });
+      } catch {
+        toast("error", "Failed to save order");
+        fetchBoard(true);
+      }
+    } else if (sourceCol !== targetCol) {
+      // ── Cross-column move ──
+      const newBoard = JSON.parse(JSON.stringify(board)) as DispatchBoard;
+
+      // Remove from source
+      const srcJobs = sourceCol === "unassigned" ? newBoard.unassigned : (newBoard.drivers.find(d => d.driver.id === sourceCol)?.jobs || []);
+      const srcIdx = srcJobs.findIndex((j: DispatchJob) => j.id === activeJobId);
+      if (srcIdx === -1) return;
+      const [movedJob] = srcJobs.splice(srcIdx, 1);
+
+      // Insert into target
+      const dstJobs = targetCol === "unassigned" ? newBoard.unassigned : (newBoard.drivers.find(d => d.driver.id === targetCol)?.jobs || []);
+      // If dropped on a specific job, insert at that position; otherwise append
+      if (!columnIds.includes(overId)) {
+        const dstIdx = dstJobs.findIndex((j: DispatchJob) => j.id === overId);
+        dstJobs.splice(dstIdx >= 0 ? dstIdx : dstJobs.length, 0, movedJob);
+      } else {
+        dstJobs.push(movedJob);
+      }
+
+      // Update counts
+      for (const d of newBoard.drivers) {
+        d.jobCount = d.jobs.length;
+      }
+
+      // Optimistic update
+      setBoard(newBoard);
+
       const targetDriverId = targetCol === "unassigned" ? null : targetCol;
+      const driverName = targetDriverId ? board.drivers.find(d => d.driver.id === targetDriverId)?.driver : null;
+      toast("success", targetDriverId ? `Moved to ${driverName?.firstName}'s route` : "Moved to Unassigned");
+
       try {
         await api.patch(`/jobs/${activeJobId}/assign`, { assignedDriverId: targetDriverId });
-        const dn = targetDriverId ? board.drivers.find(d => d.driver.id === targetDriverId)?.driver : null;
-        toast("success", targetDriverId ? `Moved to ${dn?.firstName}'s route` : "Moved to Unassigned");
-        await fetchBoard(true);
-      } catch (err) { toast("error", err instanceof Error ? err.message : "Failed"); fetchBoard(true); }
+        // Also persist the new route order in the destination column
+        await api.patch("/jobs/bulk-reorder", { jobIds: dstJobs.map((j: DispatchJob) => j.id) });
+      } catch (err) {
+        toast("error", err instanceof Error ? err.message : "Failed to move job");
+        fetchBoard(true);
+      }
     }
   };
 
