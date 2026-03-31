@@ -221,20 +221,21 @@ export class SeedController {
     const tid = tenant.id;
     const log: string[] = [];
 
-    // Clear existing seed data to allow re-seeding (order matters for FK constraints)
-    try {
-      await this.jobRepo.query(`DELETE FROM automation_logs WHERE tenant_id = $1`, [tid]);
-      await this.jobRepo.query(`DELETE FROM dump_tickets WHERE tenant_id = $1`, [tid]);
-      await this.jobRepo.query(`DELETE FROM invoices WHERE tenant_id = $1`, [tid]);
-      // Clear self-referencing FKs first, then delete jobs
-      await this.jobRepo.query(`UPDATE jobs SET parent_job_id = NULL, linked_job_ids = '[]'::jsonb WHERE tenant_id = $1`, [tid]);
-      // Clear asset references to jobs
-      await this.jobRepo.query(`UPDATE assets SET current_job_id = NULL WHERE tenant_id = $1`, [tid]);
-      await this.jobRepo.query(`DELETE FROM jobs WHERE tenant_id = $1`, [tid]);
-      log.push('Cleared existing jobs, invoices, dump tickets, and automation logs');
-    } catch (e: any) {
-      log.push(`Cleanup error (continuing): ${e.message}`);
-    }
+    // Clear existing seed data in correct FK order:
+    // 1. automation_logs (refs jobs)
+    // 2. dump_tickets (refs jobs + invoices)
+    // 3. invoices (refs jobs)
+    // 4. jobs self-refs (parent_job_id)
+    // 5. assets refs (current_job_id)
+    // 6. jobs
+    await this.jobRepo.query(`DELETE FROM automation_logs WHERE tenant_id = $1`, [tid]);
+    await this.jobRepo.query(`UPDATE dump_tickets SET invoice_id = NULL WHERE tenant_id = $1`, [tid]);
+    await this.jobRepo.query(`DELETE FROM dump_tickets WHERE tenant_id = $1`, [tid]);
+    await this.jobRepo.query(`DELETE FROM invoices WHERE tenant_id = $1`, [tid]);
+    await this.jobRepo.query(`UPDATE jobs SET parent_job_id = NULL, linked_job_ids = '[]'::jsonb WHERE tenant_id = $1`, [tid]);
+    await this.jobRepo.query(`UPDATE assets SET current_job_id = NULL WHERE tenant_id = $1`, [tid]);
+    await this.jobRepo.query(`DELETE FROM jobs WHERE tenant_id = $1`, [tid]);
+    log.push('Cleared existing jobs, invoices, dump tickets, and automation logs');
 
     // Lookup helpers
     const findCust = async (email: string) => (await this.customerRepo.findOne({ where: { tenant_id: tid, email } }))?.id;
