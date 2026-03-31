@@ -133,7 +133,15 @@ export default function DispatchPage() {
   const [hiddenCols, setHiddenCols] = useState<Set<string>>(new Set());
   const [showColumns, setShowColumns] = useState(true);
   const [columnOrder, setColumnOrder] = useState<string[]>([]);
+  const [dragColId, setDragColId] = useState<string | null>(null);
   const { toast } = useToast();
+
+  const makeColumnDrag = (colId: string) => ({
+    onDragStart: (e: React.DragEvent) => { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/column-id", colId); setDragColId(colId); (e.currentTarget as HTMLElement).style.opacity = "0.5"; },
+    onDragOver: (e: React.DragEvent) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; },
+    onDrop: (e: React.DragEvent) => { e.preventDefault(); const from = e.dataTransfer.getData("text/column-id"); if (from && from !== colId) { setColumnOrder(prev => { const arr = [...prev]; const fi = arr.indexOf(from); const ti = arr.indexOf(colId); if (fi >= 0 && ti >= 0) { arr.splice(fi, 1); arr.splice(ti, 0, from); } return arr; }); } setDragColId(null); },
+    onDragEnd: (e: React.DragEvent) => { (e.currentTarget as HTMLElement).style.opacity = "1"; setDragColId(null); },
+  });
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
@@ -401,8 +409,7 @@ export default function DispatchPage() {
                   onStatusChange={async (jid, s) => { try { await api.patch(`/jobs/${jid}/status`, { status: s, cancellationReason: s === "failed" ? "Dispatcher override" : undefined }); toast("success", `Status → ${s.replace(/_/g, " ")}`); await fetchBoard(true); } catch { toast("error", "Failed"); } }}
                   collapsed={collapsedCols.has(col.driver.id)} onToggleCollapse={() => toggleCollapse(col.driver.id)}
                   onHide={() => hideColumn(col.driver.id)}
-                  onMoveLeft={idx > 0 ? () => setColumnOrder(prev => { const arr = [...prev]; const i = arr.indexOf(col.driver.id); if (i > 0) [arr[i-1], arr[i]] = [arr[i], arr[i-1]]; return arr; }) : undefined}
-                  onMoveRight={idx < visibleDrivers.length - 1 ? () => setColumnOrder(prev => { const arr = [...prev]; const i = arr.indexOf(col.driver.id); if (i >= 0 && i < arr.length - 1) [arr[i], arr[i+1]] = [arr[i+1], arr[i]]; return arr; }) : undefined}
+                  onColumnDrag={makeColumnDrag(col.driver.id)}
                 />
               ))}
             </div>
@@ -532,7 +539,7 @@ function DispatchMap({ board, activeJobId }: { board: DispatchBoard | null; acti
    Column Card — white card with accordion collapse
    ═══════════════════════════════════════════════════ */
 
-function ColumnCard({ columnId, title, driver, isUnassigned, count, progress, jobs, drivers, onAssign, onUnassign, onQuickView, onStatusChange, activeId, collapsed, onToggleCollapse, onHide, onMoveLeft, onMoveRight }: {
+function ColumnCard({ columnId, title, driver, isUnassigned, count, progress, jobs, drivers, onAssign, onUnassign, onQuickView, onStatusChange, activeId, collapsed, onToggleCollapse, onHide, onColumnDrag }: {
   columnId: string; title: string; driver?: Driver; isUnassigned?: boolean;
   count: number; progress?: { completed: number; total: number };
   jobs: DispatchJob[]; drivers?: Driver[];
@@ -542,7 +549,7 @@ function ColumnCard({ columnId, title, driver, isUnassigned, count, progress, jo
   onStatusChange?: (jobId: string, newStatus: string) => void;
   activeId: string | null;
   collapsed: boolean; onToggleCollapse: () => void; onHide?: () => void;
-  onMoveLeft?: () => void; onMoveRight?: () => void;
+  onColumnDrag?: { onDragStart: (e: React.DragEvent) => void; onDragOver: (e: React.DragEvent) => void; onDrop: (e: React.DragEvent) => void; onDragEnd: (e: React.DragEvent) => void };
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: columnId });
   const completedCount = progress?.completed || 0;
@@ -564,7 +571,13 @@ function ColumnCard({ columnId, title, driver, isUnassigned, count, progress, jo
       }}>
 
       {/* ── Header — two rows for full name ── */}
-      <div className="px-4 pt-3.5 pb-3 shrink-0" style={{ borderBottom: "1px solid #F0F0F0" }}>
+      <div className="px-4 pt-3.5 pb-3 shrink-0"
+        draggable={!isUnassigned && !!onColumnDrag}
+        onDragStart={onColumnDrag?.onDragStart}
+        onDragOver={onColumnDrag?.onDragOver}
+        onDrop={onColumnDrag?.onDrop}
+        onDragEnd={onColumnDrag?.onDragEnd}
+        style={{ borderBottom: "1px solid #F0F0F0", cursor: !isUnassigned && onColumnDrag ? "grab" : "default" }}>
         {/* Row 1: Avatar + Full Name + Menu */}
         <div className="flex items-center gap-2.5">
           {isUnassigned ? (
@@ -591,8 +604,6 @@ function ColumnCard({ columnId, title, driver, isUnassigned, count, progress, jo
               <button onClick={onToggleCollapse} className="flex w-full items-center gap-2 px-3 py-2 text-xs" style={{ color: "var(--t-text-primary)" }}>
                 {collapsed ? <Eye className="h-3 w-3" /> : <ChevronUp className="h-3 w-3" />} {collapsed ? "Show All" : "Collapse"}
               </button>
-              {onMoveLeft && <button onClick={onMoveLeft} className="flex w-full items-center gap-2 px-3 py-2 text-xs" style={{ color: "var(--t-text-primary)" }}><ChevronLeft className="h-3 w-3" /> Move Left</button>}
-              {onMoveRight && <button onClick={onMoveRight} className="flex w-full items-center gap-2 px-3 py-2 text-xs" style={{ color: "var(--t-text-primary)" }}><ChevronRight className="h-3 w-3" /> Move Right</button>}
               <button className="flex w-full items-center gap-2 px-3 py-2 text-xs" style={{ color: "var(--t-text-primary)" }}><FileText className="h-3 w-3" /> Route Sheet</button>
               <button className="flex w-full items-center gap-2 px-3 py-2 text-xs" style={{ color: "var(--t-text-primary)" }}><Send className="h-3 w-3" /> Send Route</button>
             </Dropdown>
