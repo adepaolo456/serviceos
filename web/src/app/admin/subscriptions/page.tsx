@@ -59,7 +59,7 @@ export default function SubscriptionsPage() {
       <div>
         <div className="mb-8 h-8 w-48 animate-pulse rounded bg-[var(--t-bg-card)]" />
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          {[1, 2, 3].map((i) => <div key={i} className="h-28 animate-pulse rounded-[14px] bg-[var(--t-bg-card)] border border-[var(--t-border)]" />)}
+          {[1, 2, 3].map((i) => <div key={i} className="h-28 animate-pulse rounded-[18px] bg-[var(--t-bg-card)] border border-[var(--t-border)]" />)}
         </div>
       </div>
     );
@@ -76,7 +76,7 @@ export default function SubscriptionsPage() {
 
       {/* Top stats */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 mb-8">
-        <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5">
+        <div className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5">
           <div className="flex items-center gap-3 mb-3">
             <DollarSign className="h-4.5 w-4.5 text-[var(--t-text-muted)]" />
             <span className="text-xs font-medium text-[var(--t-text-muted)] uppercase tracking-wider">Monthly Revenue</span>
@@ -85,7 +85,7 @@ export default function SubscriptionsPage() {
         </div>
         <button
           onClick={() => subscribersRef.current?.scrollIntoView({ behavior: "smooth" })}
-          className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5 text-left cursor-pointer transition-colors hover:bg-[var(--t-bg-card-hover)]"
+          className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5 text-left cursor-pointer transition-colors hover:bg-[var(--t-bg-card-hover)]"
         >
           <div className="flex items-center gap-3 mb-3">
             <CreditCard className="h-4.5 w-4.5 text-[var(--t-text-muted)]" />
@@ -93,7 +93,7 @@ export default function SubscriptionsPage() {
           </div>
           <p className="text-3xl font-bold text-[var(--t-text-primary)] tabular-nums">{data?.totalActive ?? 0}</p>
         </button>
-        <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5">
+        <div className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5">
           <div className="flex items-center gap-3 mb-3">
             <TrendingUp className="h-4.5 w-4.5 text-[var(--t-text-muted)]" />
             <span className="text-xs font-medium text-[var(--t-text-muted)] uppercase tracking-wider">Avg Revenue/Tenant</span>
@@ -105,11 +105,11 @@ export default function SubscriptionsPage() {
       </div>
 
       {/* MRR by tier */}
-      <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6 mb-8">
+      <div className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6 mb-8">
         <h2 className="text-base font-semibold text-[var(--t-text-primary)] mb-5">MRR by Tier</h2>
         <div className="space-y-4">
           {(data?.tierBreakdown ?? []).map((t) => (
-            <Link key={t.tier} href={`/admin/tenants?tier=${t.tier}`} className="block rounded-[14px] p-2 -mx-2 transition-colors hover:bg-[var(--t-bg-card-hover)] cursor-pointer">
+            <Link key={t.tier} href={`/admin/tenants?tier=${t.tier}`} className="block rounded-[18px] p-2 -mx-2 transition-colors hover:bg-[var(--t-bg-card-hover)] cursor-pointer">
               <div className="flex items-center justify-between text-sm mb-1.5">
                 <span className={`font-medium capitalize ${tierColors[t.tier] || "text-[var(--t-text-muted)]"}`}>{t.tier}</span>
                 <div className="flex items-center gap-3">
@@ -129,7 +129,7 @@ export default function SubscriptionsPage() {
       </div>
 
       {/* Subscriber list */}
-      <div ref={subscribersRef} className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] overflow-hidden">
+      <div ref={subscribersRef} className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] overflow-hidden">
         <div className="px-5 py-4 border-b border-[var(--t-border)]">
           <h2 className="text-base font-semibold text-[var(--t-text-primary)]">Active Subscribers</h2>
         </div>

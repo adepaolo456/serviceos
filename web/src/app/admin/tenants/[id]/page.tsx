@@ -92,7 +92,7 @@ export default function TenantDetailPage({
     return (
       <div className="space-y-6">
         <div className="h-6 w-40 animate-pulse rounded bg-[var(--t-bg-card)]" />
-        <div className="h-64 animate-pulse rounded-[14px] bg-[var(--t-bg-card)] border border-[var(--t-border)]" />
+        <div className="h-64 animate-pulse rounded-[18px] bg-[var(--t-bg-card)] border border-[var(--t-border)]" />
       </div>
     );
   }
@@ -146,7 +146,7 @@ export default function TenantDetailPage({
         {/* Info cards */}
         <div className="space-y-6 lg:col-span-1">
           {/* Status */}
-          <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5">
+          <div className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5">
             <h2 className="text-sm font-semibold text-[var(--t-text-primary)] mb-4">Subscription</h2>
             <div className="space-y-3">
               <div className="flex items-center justify-between">
@@ -175,7 +175,7 @@ export default function TenantDetailPage({
           </div>
 
           {/* Change plan */}
-          <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5">
+          <div className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5">
             <h2 className="text-sm font-semibold text-[var(--t-text-primary)] mb-3">Change Plan</h2>
             <div className="grid grid-cols-2 gap-2">
               {TIERS.map((t) => (
@@ -196,7 +196,7 @@ export default function TenantDetailPage({
           </div>
 
           {/* Stats */}
-          <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5">
+          <div className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5">
             <h2 className="text-sm font-semibold text-[var(--t-text-primary)] mb-4">Usage</h2>
             <div className="grid grid-cols-3 gap-4 text-center">
               {[
@@ -204,7 +204,7 @@ export default function TenantDetailPage({
                 { label: "Customers", value: tenant.customerCount, icon: Users },
                 { label: "Assets", value: tenant.assetCount, icon: Package },
               ].map((s) => (
-                <div key={s.label} className="group relative rounded-[14px] p-2 cursor-default transition-colors hover:bg-[var(--t-bg-card-hover)]" title="Coming soon: drill into tenant data">
+                <div key={s.label} className="group relative rounded-[18px] p-2 cursor-default transition-colors hover:bg-[var(--t-bg-card-hover)]" title="Coming soon: drill into tenant data">
                   <s.icon className="mx-auto h-5 w-5 text-[var(--t-text-muted)] mb-1 group-hover:text-[var(--t-accent)] transition-colors" />
                   <p className="text-xl font-bold text-[var(--t-text-primary)] tabular-nums">{s.value}</p>
                   <p className="text-[11px] text-[var(--t-text-muted)]">{s.label}</p>
@@ -216,7 +216,7 @@ export default function TenantDetailPage({
 
         {/* Users table */}
         <div className="lg:col-span-2">
-          <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] overflow-hidden">
+          <div className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] overflow-hidden">
             <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--t-border)]">
               <h2 className="text-sm font-semibold text-[var(--t-text-primary)]">Users ({tenant.users.length})</h2>
             </div>

@@ -88,7 +88,7 @@ export default function SelectPlanPage() {
         {PLANS.map((plan) => (
           <div
             key={plan.key}
-            className={`relative rounded-[14px] border p-6 transition-all ${
+            className={`relative rounded-[18px] border p-6 transition-all ${
               plan.popular
                 ? "border-[var(--t-accent)] bg-[var(--t-accent-soft)]"
                 : "border-[var(--t-border)] bg-[var(--t-bg-card)] hover:bg-[var(--t-bg-card-hover)]"
@@ -99,7 +99,7 @@ export default function SelectPlanPage() {
                 Most Popular
               </span>
             )}
-            <div className="flex h-10 w-10 items-center justify-center rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-primary)] mb-4">
+            <div className="flex h-10 w-10 items-center justify-center rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-primary)] mb-4">
               <plan.icon className="h-5 w-5 text-[var(--t-accent)]" />
             </div>
             <h2 className="text-xl font-bold text-[var(--t-text-primary)]">{plan.name}</h2>

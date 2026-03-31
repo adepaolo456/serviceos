@@ -81,7 +81,7 @@ export default function TenantsPage() {
             placeholder="Search tenants..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] py-2.5 pl-10 pr-4 text-sm text-[var(--t-text-primary)] placeholder-[var(--t-text-muted)] outline-none focus:border-[var(--t-accent)] focus:ring-1 focus:ring-[var(--t-accent)]"
+            className="w-full rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] py-2.5 pl-10 pr-4 text-sm text-[var(--t-text-primary)] placeholder-[var(--t-text-muted)] outline-none focus:border-[var(--t-accent)] focus:ring-1 focus:ring-[var(--t-accent)]"
           />
         </div>
         <div className="flex gap-1">
@@ -101,7 +101,7 @@ export default function TenantsPage() {
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)]">
+      <div className="overflow-hidden rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)]">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>

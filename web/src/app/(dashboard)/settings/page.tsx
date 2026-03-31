@@ -37,7 +37,7 @@ const TABS = [
 
 type TabKey = (typeof TABS)[number]["key"];
 
-const inputCls = "w-full rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-3 text-[var(--t-text-primary)] focus:border-[var(--t-accent)] focus:ring-1 focus:ring-[var(--t-accent)] transition outline-none text-sm";
+const inputCls = "w-full rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-3 text-[var(--t-text-primary)] focus:border-[var(--t-accent)] focus:ring-1 focus:ring-[var(--t-accent)] transition outline-none text-sm";
 const labelCls = "text-[13px] font-semibold uppercase tracking-wide text-[var(--t-text-muted)] mb-1.5";
 
 export default function SettingsPage() {
@@ -113,10 +113,10 @@ function CompanyTab({ profile }: { profile: Profile | null }) {
 
   return (
     <div className="max-w-2xl space-y-8">
-      <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6">
+      <div className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6">
         <h2 className="text-base font-semibold text-[var(--t-text-primary)] mb-4">Company Logo</h2>
         <div className="flex items-center gap-6">
-          <div className="flex h-20 w-20 items-center justify-center rounded-[14px] border-2 border-dashed border-[var(--t-border)] bg-[var(--t-bg-card-hover)]">
+          <div className="flex h-20 w-20 items-center justify-center rounded-[18px] border-2 border-dashed border-[var(--t-border)] bg-[var(--t-bg-card-hover)]">
             <Upload className="h-6 w-6 text-[var(--t-text-muted)]" />
           </div>
           <div>
@@ -126,7 +126,7 @@ function CompanyTab({ profile }: { profile: Profile | null }) {
         </div>
       </div>
 
-      <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6">
+      <div className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6">
         <h2 className="text-base font-semibold text-[var(--t-text-primary)] mb-4">Company Details</h2>
         <div className="space-y-4">
           <div><label className={labelCls}>Company Name</label><input value={name} onChange={(e) => setName(e.target.value)} className={inputCls} /></div>
@@ -144,18 +144,18 @@ function CompanyTab({ profile }: { profile: Profile | null }) {
         </div>
       </div>
 
-      <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6">
+      <div className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6">
         <h2 className="text-base font-semibold text-[var(--t-text-primary)] mb-4">Yard / Office Address</h2>
         <AddressAutocomplete value={address} onChange={setAddress} placeholder="Search for your business address..." />
         {address.street && (
-          <div className="mt-3 rounded-[14px] bg-[var(--t-bg-card-hover)] p-3 text-[13px] text-[var(--t-text-muted)]">
+          <div className="mt-3 rounded-[18px] bg-[var(--t-bg-card-hover)] p-3 text-[13px] text-[var(--t-text-muted)]">
             <p className="text-[var(--t-text-primary)] font-medium">{address.street}</p>
             <p>{address.city}, {address.state} {address.zip}</p>
           </div>
         )}
       </div>
 
-      <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6">
+      <div className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6">
         <h2 className="text-base font-semibold text-[var(--t-text-primary)] mb-4">Service Radius</h2>
         <div className="flex items-center gap-4">
           <input type="range" min="5" max="200" value={radius} onChange={(e) => setRadius(e.target.value)} className="flex-1 accent-[#22C55E]" />
@@ -166,8 +166,8 @@ function CompanyTab({ profile }: { profile: Profile | null }) {
         </div>
       </div>
 
-      {saveStatus === "success" && <div className="rounded-[14px] bg-[var(--t-accent-soft)] px-4 py-3 text-sm text-[var(--t-accent)]">Settings saved successfully.</div>}
-      {saveStatus === "error" && <div className="rounded-[14px] bg-[var(--t-error-soft)] px-4 py-3 text-sm text-[var(--t-error)]">Failed to save settings.</div>}
+      {saveStatus === "success" && <div className="rounded-[18px] bg-[var(--t-accent-soft)] px-4 py-3 text-sm text-[var(--t-accent)]">Settings saved successfully.</div>}
+      {saveStatus === "error" && <div className="rounded-[18px] bg-[var(--t-error-soft)] px-4 py-3 text-sm text-[var(--t-error)]">Failed to save settings.</div>}
       <button onClick={handleSave} disabled={saving} className="rounded-full bg-[#22C55E] text-black font-semibold px-6 py-2.5 text-sm transition-opacity hover:opacity-90 disabled:opacity-50">
         {saving ? "Saving..." : "Save Changes"}
       </button>
@@ -197,7 +197,7 @@ function TeamTab() {
         </button>
       </div>
 
-      <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] overflow-hidden">
+      <div className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] overflow-hidden">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-[var(--t-border)]">
@@ -209,7 +209,7 @@ function TeamTab() {
           </thead>
           <tbody>
             {loading ? (
-              <>{[1, 2, 3].map((i) => (<tr key={i}><td colSpan={4} className="px-6 py-2"><div className="h-12 w-full skeleton rounded-[14px]" /></td></tr>))}</>
+              <>{[1, 2, 3].map((i) => (<tr key={i}><td colSpan={4} className="px-6 py-2"><div className="h-12 w-full skeleton rounded-[18px]" /></td></tr>))}</>
             ) : (
               members.map((m) => (
                 <tr key={m.id} className="border-b border-[var(--t-border)] last:border-0">
@@ -258,8 +258,8 @@ function InviteForm({ onSuccess }: { onSuccess: () => void }) {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
-      {error && <div className="rounded-[14px] bg-[var(--t-error-soft)] px-4 py-3 text-sm text-[var(--t-error)]">{error}</div>}
-      {success && <div className="rounded-[14px] bg-[var(--t-accent-soft)] px-4 py-3 text-sm text-[var(--t-accent)]">{success}</div>}
+      {error && <div className="rounded-[18px] bg-[var(--t-error-soft)] px-4 py-3 text-sm text-[var(--t-error)]">{error}</div>}
+      {success && <div className="rounded-[18px] bg-[var(--t-accent-soft)] px-4 py-3 text-sm text-[var(--t-accent)]">{success}</div>}
       <div className="grid grid-cols-2 gap-4">
         <div><label className={labelCls}>First Name</label><input value={firstName} onChange={(e) => setFirstName(e.target.value)} required className={inputCls} placeholder="Jane" /></div>
         <div><label className={labelCls}>Last Name</label><input value={lastName} onChange={(e) => setLastName(e.target.value)} required className={inputCls} placeholder="Smith" /></div>
@@ -309,7 +309,7 @@ function BillingTab({ profile }: { profile: Profile | null }) {
 
   return (
     <div className="max-w-4xl space-y-8">
-      <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6">
+      <div className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6">
         <div className="flex items-center justify-between">
           <div>
             <p className="text-[13px] font-semibold uppercase tracking-wide text-[var(--t-text-muted)] mb-1">Current Plan</p>
@@ -327,7 +327,7 @@ function BillingTab({ profile }: { profile: Profile | null }) {
         {TIERS.map((tier) => {
           const isCurrent = tier.key === currentTier;
           return (
-            <div key={tier.key} className={`relative rounded-[14px] border p-6 transition-colors ${isCurrent ? "bg-[var(--t-accent-soft)] border-[var(--t-accent)]" : "bg-[var(--t-bg-card)] border-[var(--t-border)] hover:bg-[var(--t-bg-card-hover)]"}`}>
+            <div key={tier.key} className={`relative rounded-[18px] border p-6 transition-colors ${isCurrent ? "bg-[var(--t-accent-soft)] border-[var(--t-accent)]" : "bg-[var(--t-bg-card)] border-[var(--t-border)] hover:bg-[var(--t-bg-card-hover)]"}`}>
               {"popular" in tier && tier.popular && (
                 <span className="absolute -top-2.5 right-4 rounded-full bg-[#22C55E] px-3 py-0.5 text-[10px] font-bold text-black">Popular</span>
               )}
@@ -361,7 +361,7 @@ function IntegrationsTab({ profile }: { profile: Profile | null }) {
 
   return (
     <div className="max-w-2xl space-y-6">
-      <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6">
+      <div className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
             <Globe className="h-5 w-5 text-[var(--t-accent)]" />
@@ -369,10 +369,10 @@ function IntegrationsTab({ profile }: { profile: Profile | null }) {
           </div>
           <span className="text-[11px] font-semibold text-[var(--t-accent)]">Connected</span>
         </div>
-        <div className="rounded-[14px] bg-[var(--t-bg-card-hover)] p-4">
+        <div className="rounded-[18px] bg-[var(--t-bg-card-hover)] p-4">
           <p className="text-[13px] text-[var(--t-text-muted)] mb-1">Tenant ID</p>
           <div className="flex items-center gap-2">
-            <code className="flex-1 rounded-[14px] bg-[var(--t-bg-card)] px-3 py-1.5 text-xs text-[var(--t-text-primary)] font-mono">{tenantId}</code>
+            <code className="flex-1 rounded-[18px] bg-[var(--t-bg-card)] px-3 py-1.5 text-xs text-[var(--t-text-primary)] font-mono">{tenantId}</code>
             <button onClick={() => copyToClipboard(tenantId, "tenant")} className="rounded-full p-1.5 text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)] transition-colors">
               {copied === "tenant" ? <Check className="h-3.5 w-3.5 text-[var(--t-accent)]" /> : <Copy className="h-3.5 w-3.5" />}
             </button>
@@ -380,10 +380,10 @@ function IntegrationsTab({ profile }: { profile: Profile | null }) {
         </div>
       </div>
 
-      <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6">
+      <div className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6">
         <div className="flex items-center gap-3 mb-4"><Key className="h-5 w-5 text-[var(--t-text-muted)]" /><div><p className="text-sm font-semibold text-[var(--t-text-primary)]">API Key</p><p className="text-[13px] text-[var(--t-text-muted)]">Use this key for API authentication</p></div></div>
         <div className="flex items-center gap-2">
-          <code className="flex-1 rounded-[14px] bg-[var(--t-bg-card-hover)] px-4 py-2.5 text-sm font-mono text-[var(--t-text-primary)]">{showKey ? apiKey : "sos_live_************************"}</code>
+          <code className="flex-1 rounded-[18px] bg-[var(--t-bg-card-hover)] px-4 py-2.5 text-sm font-mono text-[var(--t-text-primary)]">{showKey ? apiKey : "sos_live_************************"}</code>
           <button onClick={() => setShowKey(!showKey)} className="rounded-full border border-[var(--t-border)] p-2.5 text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)] transition-colors">
             {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
           </button>
@@ -393,17 +393,17 @@ function IntegrationsTab({ profile }: { profile: Profile | null }) {
         </div>
       </div>
 
-      <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6">
+      <div className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6">
         <div className="flex items-center gap-3 mb-4"><Webhook className="h-5 w-5 text-[var(--t-text-muted)]" /><div><p className="text-sm font-semibold text-[var(--t-text-primary)]">Webhook URL</p><p className="text-[13px] text-[var(--t-text-muted)]">Configure in your marketplace dashboard</p></div></div>
         <div className="flex items-center gap-2">
-          <code className="flex-1 rounded-[14px] bg-[var(--t-bg-card-hover)] px-4 py-2.5 text-sm font-mono text-[var(--t-text-primary)] truncate">{webhookUrl}</code>
+          <code className="flex-1 rounded-[18px] bg-[var(--t-bg-card-hover)] px-4 py-2.5 text-sm font-mono text-[var(--t-text-primary)] truncate">{webhookUrl}</code>
           <button onClick={() => copyToClipboard(webhookUrl, "webhook")} className="rounded-full border border-[var(--t-border)] p-2.5 text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)] transition-colors">
             {copied === "webhook" ? <Check className="h-4 w-4 text-[var(--t-accent)]" /> : <Copy className="h-4 w-4" />}
           </button>
         </div>
       </div>
 
-      <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6 opacity-60">
+      <div className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6 opacity-60">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3"><Zap className="h-5 w-5 text-[var(--t-warning)]" /><div><p className="text-sm font-semibold text-[var(--t-text-primary)]">Zapier</p><p className="text-[13px] text-[var(--t-text-muted)]">Connect with 5,000+ apps</p></div></div>
           <span className="text-[11px] font-semibold text-[var(--t-text-muted)]">Coming Soon</span>
@@ -433,19 +433,19 @@ function LocationsTab() {
 
   return (
     <div className="max-w-2xl space-y-6">
-      <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6">
+      <div className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6">
         <div className="flex items-center justify-between mb-4">
           <div><h2 className="text-base font-semibold text-[var(--t-text-primary)]">Yard Locations</h2><p className="text-[13px] text-[var(--t-text-muted)] mt-1">Primary yard used for distance pricing.</p></div>
           <button onClick={() => setAddOpen(true)} className="flex items-center gap-2 rounded-full bg-[#22C55E] px-4 py-2 text-sm font-semibold text-black transition-opacity hover:opacity-90"><Plus className="h-4 w-4" /> Add Yard</button>
         </div>
         {loading ? (
-          <div className="space-y-3">{[1,2].map(i => <div key={i} className="h-16 skeleton rounded-[14px]" />)}</div>
+          <div className="space-y-3">{[1,2].map(i => <div key={i} className="h-16 skeleton rounded-[18px]" />)}</div>
         ) : yards.length === 0 ? (
           <div className="py-8 text-center"><MapPin className="mx-auto h-10 w-10 text-[var(--t-text-muted)] opacity-20 mb-2" /><p className="text-sm text-[var(--t-text-muted)]">No yards configured</p></div>
         ) : (
           <div className="space-y-2">
             {yards.map(yard => (
-              <div key={yard.id} className="flex items-center gap-4 rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card-hover)] px-4 py-3">
+              <div key={yard.id} className="flex items-center gap-4 rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card-hover)] px-4 py-3">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <p className="text-sm font-medium text-[var(--t-text-primary)]">{yard.name}</p>
@@ -486,11 +486,11 @@ function AddYardForm({ onSuccess }: { onSuccess: () => void }) {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
-      {error && <div className="rounded-[14px] bg-[var(--t-error-soft)] px-4 py-3 text-sm text-[var(--t-error)]">{error}</div>}
+      {error && <div className="rounded-[18px] bg-[var(--t-error-soft)] px-4 py-3 text-sm text-[var(--t-error)]">{error}</div>}
       <div><label className={labelCls}>Yard Name</label><input value={name} onChange={e => setName(e.target.value)} required className={inputCls} placeholder="Main Yard" /></div>
       <AddressAutocomplete value={address} onChange={setAddress} label="Address" placeholder="Search for yard address..." />
       {address.street && (
-        <div className="rounded-[14px] bg-[var(--t-bg-card-hover)] p-3 text-[13px] text-[var(--t-text-muted)]">
+        <div className="rounded-[18px] bg-[var(--t-bg-card-hover)] p-3 text-[13px] text-[var(--t-text-muted)]">
           <p className="text-[var(--t-text-primary)] font-medium">{address.street}</p>
           <p>{address.city}, {address.state} {address.zip}</p>
         </div>
@@ -519,7 +519,7 @@ function NotificationsTab() {
   const toggle = (key: string) => setPrefs((p) => ({ ...p, [key]: !(p as any)[key] }));
   const set = (key: string, val: string) => setPrefs((p) => ({ ...p, [key]: val }));
 
-  const inp = "rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-3 py-1.5 text-sm text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)] transition-colors";
+  const inp = "rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-3 py-1.5 text-sm text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)] transition-colors";
 
   return (
     <div className="max-w-2xl space-y-4">
@@ -555,11 +555,11 @@ function NotificationsTab() {
         )}
       </NotifCard>
 
-      <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6 mt-6">
+      <div className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6 mt-6">
         <h3 className="text-sm font-semibold text-[var(--t-text-primary)] mb-2">SMS Settings</h3>
         <p className="text-[13px] text-[var(--t-text-muted)]">SMS requires Twilio integration. Coming soon.</p>
       </div>
-      <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6">
+      <div className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6">
         <h3 className="text-sm font-semibold text-[var(--t-text-primary)] mb-2">Email Settings</h3>
         <p className="text-[13px] text-[var(--t-text-muted)] mb-3">Emails sent via Resend. Configure in Integrations tab.</p>
         <div className="space-y-3">
@@ -573,7 +573,7 @@ function NotificationsTab() {
 
 function NotifCard({ title, desc, children }: { title: string; desc: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5">
+    <div className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5">
       <div className="mb-3"><p className="text-sm font-semibold text-[var(--t-text-primary)]">{title}</p><p className="text-[13px] text-[var(--t-text-muted)]">{desc}</p></div>
       <div className="flex items-center gap-4 flex-wrap">{children}</div>
     </div>
@@ -614,7 +614,7 @@ function AccountTab({ profile }: { profile: Profile | null }) {
 
   return (
     <div className="max-w-2xl space-y-6">
-      <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6">
+      <div className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6">
         <h3 className="text-sm font-semibold text-[var(--t-text-primary)] mb-4">Account Owner</h3>
         <div className="grid grid-cols-2 gap-4">
           <div><p className="text-[13px] text-[var(--t-text-muted)]">Name</p><p className="text-sm text-[var(--t-text-primary)] font-medium">{profile?.firstName} {profile?.lastName}</p></div>
@@ -622,10 +622,10 @@ function AccountTab({ profile }: { profile: Profile | null }) {
         </div>
       </div>
 
-      <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6">
+      <div className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6">
         <h3 className="text-sm font-semibold text-[var(--t-text-primary)] mb-4">Change Password</h3>
         <form onSubmit={handlePasswordChange} className="space-y-3">
-          {passwordError && <div className="rounded-[14px] bg-[var(--t-error-soft)] px-3 py-2 text-xs text-[var(--t-error)]">{passwordError}</div>}
+          {passwordError && <div className="rounded-[18px] bg-[var(--t-error-soft)] px-3 py-2 text-xs text-[var(--t-error)]">{passwordError}</div>}
           <div><label className={labelCls}>Current Password</label><input type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} className={inputCls} required /></div>
           <div><label className={labelCls}>New Password</label><input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className={inputCls} required /></div>
           <div><label className={labelCls}>Confirm New Password</label><input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className={inputCls} required /></div>
@@ -635,12 +635,12 @@ function AccountTab({ profile }: { profile: Profile | null }) {
         </form>
       </div>
 
-      <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6">
+      <div className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6">
         <div className="flex items-center justify-between"><div><h3 className="text-sm font-semibold text-[var(--t-text-primary)]">Two-Factor Authentication</h3><p className="text-[13px] text-[var(--t-text-muted)] mt-0.5">Add an extra layer of security</p></div><ToggleSwitch label="" checked={false} onChange={() => {}} /></div>
         <p className="text-[13px] text-[var(--t-text-muted)] mt-2">Coming soon</p>
       </div>
 
-      <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6">
+      <div className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6">
         <h3 className="text-sm font-semibold text-[var(--t-text-primary)] mb-4">API Access</h3>
         <div className="space-y-3">
           <div>
@@ -659,19 +659,19 @@ function AccountTab({ profile }: { profile: Profile | null }) {
         </div>
       </div>
 
-      <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6">
+      <div className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6">
         <h3 className="text-sm font-semibold text-[var(--t-text-primary)] mb-2">Data Export</h3>
         <p className="text-[13px] text-[var(--t-text-muted)] mb-3">Download a complete export of all your data</p>
         <button className="flex items-center gap-2 rounded-full border border-[var(--t-border)] px-4 py-2 text-sm font-medium text-[var(--t-text-primary)] hover:bg-[var(--t-bg-card-hover)] transition-colors"><Download className="h-4 w-4" /> Export All Data</button>
       </div>
 
-      <div className="rounded-[14px] border border-[var(--t-error)] bg-[var(--t-bg-card)] p-6">
+      <div className="rounded-[18px] border border-[var(--t-error)] bg-[var(--t-bg-card)] p-6">
         <h3 className="text-sm font-semibold text-[var(--t-error)] mb-2">Danger Zone</h3>
         <p className="text-[13px] text-[var(--t-text-muted)] mb-3">Permanently delete your account and all data. This cannot be undone.</p>
         {!deleteConfirm ? (
           <button onClick={() => setDeleteConfirm(true)} className="rounded-full border border-[var(--t-error)] px-4 py-2 text-sm font-medium text-[var(--t-error)] hover:opacity-80 transition-opacity">Delete Account</button>
         ) : (
-          <div className="rounded-[14px] bg-[var(--t-error-soft)] border border-[var(--t-error)] p-4 space-y-3">
+          <div className="rounded-[18px] bg-[var(--t-error-soft)] border border-[var(--t-error)] p-4 space-y-3">
             <p className="text-sm text-[var(--t-error)] font-medium flex items-center gap-2"><AlertTriangle className="h-4 w-4" /> Are you absolutely sure?</p>
             <p className="text-[13px] text-[var(--t-text-muted)]">This will permanently delete your company, all jobs, invoices, customers, and assets.</p>
             <div className="flex gap-2">
@@ -725,7 +725,7 @@ function WebsiteTab({ slug }: { slug: string }) {
 
   return (
     <div className="max-w-2xl space-y-6">
-      <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5">
+      <div className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-sm font-semibold text-[var(--t-text-primary)]">Your Website</h3>
           <label className="flex items-center gap-2">
@@ -736,7 +736,7 @@ function WebsiteTab({ slug }: { slug: string }) {
           </label>
         </div>
         <div className="flex items-center gap-2">
-          <code className="flex-1 rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-2.5 text-sm text-[var(--t-accent)] font-mono">{websiteUrl}</code>
+          <code className="flex-1 rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-2.5 text-sm text-[var(--t-accent)] font-mono">{websiteUrl}</code>
           <button onClick={() => copyText(`https://${websiteUrl}`)} className="rounded-full border border-[var(--t-border)] px-3 py-2.5 text-[13px] text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)] transition-colors">
             {copied ? <Check className="h-4 w-4 text-[var(--t-accent)]" /> : <Copy className="h-4 w-4" />}
           </button>
@@ -744,19 +744,19 @@ function WebsiteTab({ slug }: { slug: string }) {
         </div>
       </div>
 
-      <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5 space-y-4">
+      <div className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5 space-y-4">
         <h3 className="text-sm font-semibold text-[var(--t-text-primary)]">Branding</h3>
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className={labelCls}>Primary Color</label>
-            <div className="flex gap-2"><input type="color" value={config.websitePrimaryColor} onChange={e => setConfig(c => ({ ...c, websitePrimaryColor: e.target.value }))} className="h-10 w-10 rounded-[14px] border border-[var(--t-border)] bg-transparent cursor-pointer" /><input value={config.websitePrimaryColor} onChange={e => setConfig(c => ({ ...c, websitePrimaryColor: e.target.value }))} className={inputCls} /></div>
+            <div className="flex gap-2"><input type="color" value={config.websitePrimaryColor} onChange={e => setConfig(c => ({ ...c, websitePrimaryColor: e.target.value }))} className="h-10 w-10 rounded-[18px] border border-[var(--t-border)] bg-transparent cursor-pointer" /><input value={config.websitePrimaryColor} onChange={e => setConfig(c => ({ ...c, websitePrimaryColor: e.target.value }))} className={inputCls} /></div>
           </div>
           <div><label className={labelCls}>Logo URL</label><input value={config.websiteLogoUrl} onChange={e => setConfig(c => ({ ...c, websiteLogoUrl: e.target.value }))} className={inputCls} placeholder="https://..." /></div>
         </div>
         <div><label className={labelCls}>Hero Image URL</label><input value={config.websiteHeroImageUrl} onChange={e => setConfig(c => ({ ...c, websiteHeroImageUrl: e.target.value }))} className={inputCls} placeholder="https://..." /></div>
       </div>
 
-      <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5 space-y-4">
+      <div className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5 space-y-4">
         <h3 className="text-sm font-semibold text-[var(--t-text-primary)]">Content</h3>
         <div><label className={labelCls}>Headline</label><input value={config.websiteHeadline} onChange={e => setConfig(c => ({ ...c, websiteHeadline: e.target.value }))} className={inputCls} placeholder="Fast Dumpster Delivery in Your Area" maxLength={255} /></div>
         <div><label className={labelCls}>Description</label><textarea value={config.websiteDescription} onChange={e => setConfig(c => ({ ...c, websiteDescription: e.target.value }))} className={`${inputCls} resize-none`} rows={3} placeholder="Brief description..." /></div>
@@ -764,7 +764,7 @@ function WebsiteTab({ slug }: { slug: string }) {
         <div><label className={labelCls}>Service Area</label><textarea value={config.websiteServiceArea} onChange={e => setConfig(c => ({ ...c, websiteServiceArea: e.target.value }))} className={`${inputCls} resize-none`} rows={2} placeholder="e.g. Greater Brockton area..." /></div>
       </div>
 
-      <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5 space-y-4">
+      <div className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5 space-y-4">
         <h3 className="text-sm font-semibold text-[var(--t-text-primary)]">Contact Info</h3>
         <div className="grid grid-cols-2 gap-4">
           <div><label className={labelCls}>Phone</label><input value={config.websitePhone} onChange={e => setConfig(c => ({ ...c, websitePhone: e.target.value }))} className={inputCls} placeholder="(508) 555-1234" /></div>
@@ -772,7 +772,7 @@ function WebsiteTab({ slug }: { slug: string }) {
         </div>
       </div>
 
-      <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5 space-y-4">
+      <div className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5 space-y-4">
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-semibold text-[var(--t-text-primary)]">Embed Widget</h3>
           <label className="flex items-center gap-2">

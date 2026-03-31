@@ -47,7 +47,7 @@ export default function PortalInvoicesPage() {
     return (
       <div className="space-y-6">
         <button onClick={() => setDetail(null)} className="text-sm text-[var(--t-accent)] font-medium hover:underline">&larr; Back to invoices</button>
-        <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6">
+        <div className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6">
           <div className="flex flex-wrap items-start justify-between gap-3 mb-6">
             <div>
               <h2 className="text-lg font-bold text-[var(--t-text-primary)]">Invoice {detail.invoice_number}</h2>
@@ -96,7 +96,7 @@ export default function PortalInvoicesPage() {
           )}
 
           {detail.notes && (
-            <div className="mt-6 rounded-[14px] bg-[var(--t-bg-primary)] border border-[var(--t-border)] p-4">
+            <div className="mt-6 rounded-[18px] bg-[var(--t-bg-primary)] border border-[var(--t-border)] p-4">
               <p className="text-xs font-medium text-[var(--t-text-muted)] mb-1">Notes</p>
               <p className="text-sm text-[var(--t-text-primary)]">{detail.notes}</p>
             </div>
@@ -118,9 +118,9 @@ export default function PortalInvoicesPage() {
       </div>
 
       {loading ? (
-        <div className="space-y-3">{[1, 2, 3].map(i => <div key={i} className="h-20 rounded-[14px] bg-[var(--t-bg-card)] border border-[var(--t-border)] animate-pulse" />)}</div>
+        <div className="space-y-3">{[1, 2, 3].map(i => <div key={i} className="h-20 rounded-[18px] bg-[var(--t-bg-card)] border border-[var(--t-border)] animate-pulse" />)}</div>
       ) : invoices.length === 0 ? (
-        <div className="rounded-[14px] border border-dashed border-[var(--t-border)] bg-[var(--t-bg-card)] p-8 text-center">
+        <div className="rounded-[18px] border border-dashed border-[var(--t-border)] bg-[var(--t-bg-card)] p-8 text-center">
           <FileText className="mx-auto h-10 w-10 text-[var(--t-text-muted)]/30 mb-3" />
           <p className="text-sm font-medium text-[var(--t-text-muted)]">No invoices yet</p>
         </div>
@@ -128,7 +128,7 @@ export default function PortalInvoicesPage() {
         <div className="space-y-3">
           {invoices.map(inv => (
             <button key={inv.id} onClick={() => setDetail(inv)}
-              className="w-full text-left rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-4 hover:bg-[var(--t-bg-card-hover)] transition-colors">
+              className="w-full text-left rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-4 hover:bg-[var(--t-bg-card-hover)] transition-colors">
               <div className="flex items-center justify-between">
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-1">

@@ -95,7 +95,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
                 const active = pathname === item.href || (item.href !== "/portal" && pathname.startsWith(item.href));
                 return (
                   <Link key={item.name} href={item.href}
-                    className={`flex items-center gap-2.5 rounded-[14px] px-3 py-2.5 text-sm font-medium ${
+                    className={`flex items-center gap-2.5 rounded-[18px] px-3 py-2.5 text-sm font-medium ${
                       active ? "text-[var(--t-accent)]" : "text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)]"
                     }`}>
                     <item.icon className="h-4 w-4" />
@@ -104,7 +104,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
                 );
               })}
               <button onClick={handleLogout}
-                className="flex w-full items-center gap-2.5 rounded-[14px] px-3 py-2.5 text-sm font-medium text-[var(--t-error)] hover:bg-[var(--t-error-soft)]">
+                className="flex w-full items-center gap-2.5 rounded-[18px] px-3 py-2.5 text-sm font-medium text-[var(--t-error)] hover:bg-[var(--t-error-soft)]">
                 <LogOut className="h-4 w-4" />
                 Log out
               </button>

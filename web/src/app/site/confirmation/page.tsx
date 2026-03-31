@@ -20,7 +20,7 @@ function ConfirmationContent() {
       </div>
       <h1 className="text-[28px] font-bold text-[var(--t-text-primary)] tracking-[-1px]">Booking Confirmed!</h1>
       {jobNumber && <p className="mt-3 text-[var(--t-text-muted)]">Reference: <span className="font-semibold text-[var(--t-text-primary)]">{jobNumber}</span></p>}
-      <div className="mt-8 rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6 text-left">
+      <div className="mt-8 rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6 text-left">
         <h3 className="font-semibold text-[var(--t-text-primary)] mb-2">What happens next?</h3>
         <ul className="space-y-2 text-sm text-[var(--t-text-muted)]">
           <li>1. You&apos;ll receive a confirmation email shortly</li>

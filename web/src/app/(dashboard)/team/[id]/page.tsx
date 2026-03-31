@@ -89,7 +89,7 @@ export default function EmployeeDetailPage({ params }: { params: Promise<{ id: s
     load();
   }, [id]);
 
-  if (loading) return <div className="space-y-4"><div className="h-8 w-48 skeleton rounded-[14px]" /><div className="h-48 skeleton rounded-[14px]" /></div>;
+  if (loading) return <div className="space-y-4"><div className="h-8 w-48 skeleton rounded-[18px]" /><div className="h-48 skeleton rounded-[18px]" /></div>;
   if (!emp) return <div className="py-20 text-center text-[var(--t-text-muted)]">Not found</div>;
 
   const rate = Number(emp.payRate) || 0;
@@ -100,7 +100,7 @@ export default function EmployeeDetailPage({ params }: { params: Promise<{ id: s
       <Link href="/team" className="inline-flex items-center gap-1.5 text-[13px] text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)] transition-colors mb-4"><ArrowLeft className="h-3.5 w-3.5" /> Team</Link>
 
       {/* Header */}
-      <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5 mb-5">
+      <div className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5 mb-5">
         <div className="flex items-start justify-between">
           <div className="flex items-start gap-4">
             <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-[var(--t-bg-card-hover)] text-lg font-bold text-[var(--t-text-primary)]">{emp.firstName[0]}{emp.lastName[0]}</div>
@@ -182,7 +182,7 @@ export default function EmployeeDetailPage({ params }: { params: Promise<{ id: s
           {timesheet.entries.length === 0 ? (
             <div className="py-12 text-center"><Clock className="mx-auto h-8 w-8 text-[var(--t-text-muted)] opacity-20 mb-2" /><p className="text-[13px] text-[var(--t-text-muted)]">No entries this week</p></div>
           ) : (
-            <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] overflow-hidden">
+            <div className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] overflow-hidden">
               <table className="w-full text-sm"><thead><tr className="border-b border-[var(--t-border)]">
                 {["Date", "In", "Out", "Break", "Hours", "Status"].map(h => <th key={h} className="px-4 py-3 text-left text-[12px] font-semibold uppercase tracking-wide text-[var(--t-text-muted)]">{h}</th>)}
               </tr></thead><tbody>
@@ -217,7 +217,7 @@ export default function EmployeeDetailPage({ params }: { params: Promise<{ id: s
           {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((day, i) => {
             const jobs = i < 5 ? Math.floor(Math.random() * 4) : 0;
             return (
-              <div key={day} className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-3">
+              <div key={day} className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <span className="text-sm font-semibold text-[var(--t-text-primary)] w-10">{day}</span>
@@ -243,7 +243,7 @@ export default function EmployeeDetailPage({ params }: { params: Promise<{ id: s
             { label: "This Month", value: String(perf.monthJobs), sub: "jobs completed", icon: Calendar },
             { label: "Daily Avg", value: perf.avgPerDay.toFixed(1), sub: "jobs per day", icon: Truck },
           ].map(s => (
-            <div key={s.label} className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5 text-center">
+            <div key={s.label} className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5 text-center">
               <s.icon className="mx-auto h-5 w-5 text-[var(--t-accent)] mb-2" />
               <p className="text-[24px] font-bold text-[var(--t-text-primary)] tabular-nums">{s.value}</p>
               <p className="text-[13px] text-[var(--t-text-muted)] mt-0.5">{s.sub}</p>
@@ -256,7 +256,7 @@ export default function EmployeeDetailPage({ params }: { params: Promise<{ id: s
       {/* ===== NOTES ===== */}
       {tab === "notes" && (
         <div className="max-w-2xl space-y-4">
-          <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-4">
+          <div className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-4">
             <textarea placeholder="Add a note..." rows={3}
               className="w-full bg-transparent text-sm text-[var(--t-text-primary)] placeholder-[var(--t-text-muted)] outline-none resize-none" />
             <div className="flex justify-end mt-2">
@@ -329,11 +329,11 @@ function DriverRatesTab({ emp, onSave }: { emp: Employee; onSave: (e: Employee) 
     finally { setSaving(false); }
   };
 
-  const inputCls = "w-full rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-3 py-2 text-sm text-[var(--t-text-primary)] placeholder-[var(--t-text-muted)] outline-none focus:border-[var(--t-accent)] tabular-nums";
+  const inputCls = "w-full rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-3 py-2 text-sm text-[var(--t-text-primary)] placeholder-[var(--t-text-muted)] outline-none focus:border-[var(--t-accent)] tabular-nums";
 
   return (
     <div className="max-w-2xl space-y-5">
-      <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-4">
+      <div className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-4">
         <p className="text-[13px] font-semibold uppercase tracking-wide text-[var(--t-text-muted)] mb-3">Set All Rates</p>
         <div className="flex gap-2">
           <div className="relative flex-1">
@@ -344,7 +344,7 @@ function DriverRatesTab({ emp, onSave }: { emp: Employee; onSave: (e: Employee) 
         </div>
       </div>
 
-      <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-4">
+      <div className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-4">
         <p className="text-[13px] font-semibold uppercase tracking-wide text-[var(--t-text-muted)] mb-3">Per Job Type Rates</p>
         <div className="grid grid-cols-2 gap-3">
           {JOB_TYPES.map(jt => (
@@ -359,7 +359,7 @@ function DriverRatesTab({ emp, onSave }: { emp: Employee; onSave: (e: Employee) 
         </div>
       </div>
 
-      <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] overflow-hidden">
+      <div className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] overflow-hidden">
         <p className="text-[13px] font-semibold uppercase tracking-wide text-[var(--t-text-muted)] px-4 pt-4 pb-2">Size-Specific Overrides</p>
         {SIZES.map(size => (
           <div key={size} className="border-t border-[var(--t-border)]">
@@ -422,7 +422,7 @@ function ContactTab({ emp, onSave }: { emp: Employee; onSave: (e: Employee) => v
     finally { setSaving(false); }
   };
 
-  const inputCls = "w-full rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-3 py-2 text-sm text-[var(--t-text-primary)] placeholder-[var(--t-text-muted)] outline-none focus:border-[var(--t-accent)]";
+  const inputCls = "w-full rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-3 py-2 text-sm text-[var(--t-text-primary)] placeholder-[var(--t-text-muted)] outline-none focus:border-[var(--t-accent)]";
 
   return (
     <div className="max-w-lg space-y-5">
@@ -534,7 +534,7 @@ function AccessTab({ emp, onSave }: { emp: Employee; onSave: (e: Employee) => vo
 /* ===== Shared ===== */
 
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
-  return <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-4"><p className="text-[13px] font-semibold uppercase tracking-wide text-[var(--t-text-muted)] mb-3">{title}</p>{children}</div>;
+  return <div className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-4"><p className="text-[13px] font-semibold uppercase tracking-wide text-[var(--t-text-muted)] mb-3">{title}</p>{children}</div>;
 }
 
 function Row({ label, value }: { label: string; value: React.ReactNode }) {
@@ -559,7 +559,7 @@ function EditForm({ emp, onSuccess }: { emp: Employee; onSuccess: (e: Employee) 
   const [ecRel, setEcRel] = useState(emp.emergencyContact?.relationship || "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const inputCls = "w-full rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-2.5 text-sm text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)]";
+  const inputCls = "w-full rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-2.5 text-sm text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)]";
   const labelCls = "block text-[13px] font-semibold uppercase tracking-wide text-[var(--t-text-muted)] mb-1";
 
   return (
@@ -574,7 +574,7 @@ function EditForm({ emp, onSuccess }: { emp: Employee; onSuccess: (e: Employee) 
         }); onSuccess(u);
       } catch (err) { setError(err instanceof Error ? err.message : "Failed"); } finally { setSaving(false); }
     }} className="space-y-3">
-      {error && <div className="rounded-[14px] bg-[var(--t-error-soft)] px-4 py-3 text-sm text-[var(--t-error)]">{error}</div>}
+      {error && <div className="rounded-[18px] bg-[var(--t-error-soft)] px-4 py-3 text-sm text-[var(--t-error)]">{error}</div>}
       <div className="grid grid-cols-2 gap-3">
         <div><label className={labelCls}>First</label><input value={firstName} onChange={e => setFirstName(e.target.value)} className={inputCls} /></div>
         <div><label className={labelCls}>Last</label><input value={lastName} onChange={e => setLastName(e.target.value)} className={inputCls} /></div>

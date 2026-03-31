@@ -49,7 +49,7 @@ export default function AdminDemosPage() {
       <div>
         <div className="mb-8 h-8 w-48 animate-pulse rounded bg-[var(--t-bg-card)]" />
         {Array.from({ length: 3 }).map((_, i) => (
-          <div key={i} className="mb-3 h-16 animate-pulse rounded-[14px] bg-[var(--t-bg-card)] border border-[var(--t-border)]" />
+          <div key={i} className="mb-3 h-16 animate-pulse rounded-[18px] bg-[var(--t-bg-card)] border border-[var(--t-border)]" />
         ))}
       </div>
     );
@@ -62,7 +62,7 @@ export default function AdminDemosPage() {
         <p className="mt-1 text-sm text-[var(--t-text-muted)]">{demos.length} total requests</p>
       </div>
 
-      <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] overflow-hidden">
+      <div className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>

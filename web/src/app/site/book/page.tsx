@@ -162,7 +162,7 @@ function BookingWizardContent() {
   if (!tenant) return null;
 
   const inputClass =
-    "w-full rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-3 text-sm text-[var(--t-text-primary)] placeholder-[var(--t-text-muted)] outline-none transition-colors focus:border-[var(--t-accent)] focus:ring-1 focus:ring-[var(--t-accent)]";
+    "w-full rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-3 text-sm text-[var(--t-text-primary)] placeholder-[var(--t-text-muted)] outline-none transition-colors focus:border-[var(--t-accent)] focus:ring-1 focus:ring-[var(--t-accent)]";
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-8 sm:py-12">
@@ -227,7 +227,7 @@ function BookingWizardContent() {
               <button
                 key={s.id}
                 onClick={() => setSelectedServiceId(s.id)}
-                className={`rounded-[14px] border p-5 text-left transition-all ${
+                className={`rounded-[18px] border p-5 text-left transition-all ${
                   selectedServiceId === s.id
                     ? "border-[var(--t-accent)] bg-[var(--t-accent-soft)]"
                     : "border-[var(--t-border)] bg-[var(--t-bg-card)] hover:bg-[var(--t-bg-card-hover)]"
@@ -270,7 +270,7 @@ function BookingWizardContent() {
                   <button
                     key={tw.value}
                     onClick={() => setTimeWindow(tw.value)}
-                    className={`rounded-[14px] border p-3 text-center transition-colors ${
+                    className={`rounded-[18px] border p-3 text-center transition-colors ${
                       timeWindow === tw.value
                         ? "border-[var(--t-accent)] bg-[var(--t-accent-soft)]"
                         : "border-[var(--t-border)] bg-[var(--t-bg-card)] hover:bg-[var(--t-bg-card-hover)]"
@@ -359,24 +359,24 @@ function BookingWizardContent() {
           <p className="text-sm text-[var(--t-text-muted)] mb-6">Confirm everything looks right</p>
 
           <div className="space-y-4">
-            <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5">
+            <div className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5">
               <h3 className="text-xs font-semibold text-[var(--t-text-muted)] uppercase tracking-wider mb-3">Service</h3>
               <p className="font-semibold text-[var(--t-text-primary)]">{selectedService.name}</p>
               <p className="text-sm text-[var(--t-text-muted)]">{selectedType.replace(/_/g, " ")} &middot; {rentalDays} day rental</p>
             </div>
-            <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5">
+            <div className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5">
               <h3 className="text-xs font-semibold text-[var(--t-text-muted)] uppercase tracking-wider mb-3">Delivery</h3>
               <p className="font-semibold text-[var(--t-text-primary)]">{deliveryDate}</p>
               <p className="text-sm text-[var(--t-text-muted)]">{TIME_WINDOWS.find((tw) => tw.value === timeWindow)?.desc}</p>
               {address && <p className="text-sm text-[var(--t-text-muted)] mt-1">{address.formatted || `${address.street}, ${address.city}, ${address.state} ${address.zip}`}</p>}
               {placementNotes && <p className="text-sm text-[var(--t-text-muted)] mt-1 italic">{placementNotes}</p>}
             </div>
-            <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5">
+            <div className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5">
               <h3 className="text-xs font-semibold text-[var(--t-text-muted)] uppercase tracking-wider mb-3">Contact</h3>
               <p className="font-semibold text-[var(--t-text-primary)]">{customerName}</p>
               <p className="text-sm text-[var(--t-text-muted)]">{customerEmail} &middot; {customerPhone}</p>
             </div>
-            <div className="rounded-[14px] border border-[var(--t-accent)] bg-[var(--t-accent-soft)] p-5">
+            <div className="rounded-[18px] border border-[var(--t-accent)] bg-[var(--t-accent-soft)] p-5">
               <h3 className="text-xs font-semibold text-[var(--t-text-muted)] uppercase tracking-wider mb-3">Price Breakdown</h3>
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between"><span className="text-[var(--t-text-muted)]">Base price ({selectedService.rentalDays} days)</span><span className="font-medium text-[var(--t-text-primary)]">{formatCurrency(priceBreakdown.base)}</span></div>
@@ -397,7 +397,7 @@ function BookingWizardContent() {
             </div>
           </div>
 
-          {error && <p className="mt-4 rounded-[14px] bg-[var(--t-error-soft)] border border-[var(--t-error)] px-4 py-3 text-sm text-[var(--t-error)]">{error}</p>}
+          {error && <p className="mt-4 rounded-[18px] bg-[var(--t-error-soft)] border border-[var(--t-error)] px-4 py-3 text-sm text-[var(--t-error)]">{error}</p>}
         </div>
       )}
 
