@@ -54,6 +54,9 @@ export class Job {
   @Column({ name: 'service_type', nullable: true })
   service_type!: string;
 
+  @Column({ name: 'asset_subtype', nullable: true })
+  asset_subtype!: string;
+
   @Column({ default: 'normal' })
   priority!: string;
 

@@ -277,7 +277,7 @@ export class SeedController {
     const custDavid = await findCust('david.kim@email.com');
     const assetA = await findAsset('D-2001');
     const jobA: any = await this.jobRepo.save(makeJob({
-      customer_id: custDavid, job_type: 'delivery', service_type: 'dumpster_rental',
+      customer_id: custDavid, job_type: 'delivery', asset_subtype: '20yd', service_type: 'dumpster_rental',
       service_address: { street: '88 Summer Street', city: 'Stoughton', state: 'MA', zip: '02072' },
       scheduled_date: '2026-03-20', scheduled_window_start: '08:00', scheduled_window_end: '12:00',
       status: 'completed', completed_at: new Date('2026-03-20T10:30:00'),
@@ -293,7 +293,7 @@ export class SeedController {
     const custJen = await findCust('jen.walsh@email.com');
     const assetB = await findAsset('D-1505');
     const jobB: any = await this.jobRepo.save(makeJob({
-      customer_id: custJen, job_type: 'delivery', service_type: 'dumpster_rental',
+      customer_id: custJen, job_type: 'delivery', asset_subtype: '15yd', service_type: 'dumpster_rental',
       service_address: { street: '55 North Avenue', city: 'Rockland', state: 'MA', zip: '02370' },
       scheduled_date: '2026-03-15', status: 'completed', completed_at: new Date('2026-03-15T09:00:00'),
       assigned_driver_id: mike, asset_id: assetB, drop_off_asset_id: assetB,
@@ -304,7 +304,7 @@ export class SeedController {
 
     // JOB B2: Jennifer Walsh Pickup (clean, no overage)
     const jobB2: any = await this.jobRepo.save(makeJob({
-      customer_id: custJen, job_type: 'pickup', service_type: 'dumpster_rental',
+      customer_id: custJen, job_type: 'pickup', asset_subtype: '15yd', service_type: 'dumpster_rental',
       service_address: { street: '55 North Avenue', city: 'Rockland', state: 'MA', zip: '02370' },
       scheduled_date: '2026-03-25', status: 'completed', completed_at: new Date('2026-03-25T14:00:00'),
       assigned_driver_id: jake, asset_id: assetB, pick_up_asset_id: assetB,
@@ -321,7 +321,7 @@ export class SeedController {
     const custRobert = await findCust('robert.patel@email.com');
     const assetC = await findAsset('D-2002');
     const jobC: any = await this.jobRepo.save(makeJob({
-      customer_id: custRobert, job_type: 'delivery', service_type: 'dumpster_rental',
+      customer_id: custRobert, job_type: 'delivery', asset_subtype: '20yd', service_type: 'dumpster_rental',
       service_address: { street: '340 Bedford Street', city: 'Bridgewater', state: 'MA', zip: '02324' },
       scheduled_date: '2026-03-10', status: 'completed', completed_at: new Date('2026-03-10T11:00:00'),
       assigned_driver_id: mike, asset_id: assetC, drop_off_asset_id: assetC,
@@ -332,7 +332,7 @@ export class SeedController {
 
     // JOB C2: Robert Patel Pickup (overage)
     const jobC2: any = await this.jobRepo.save(makeJob({
-      customer_id: custRobert, job_type: 'pickup',
+      customer_id: custRobert, job_type: 'pickup', asset_subtype: '20yd',
       service_address: { street: '340 Bedford Street', city: 'Bridgewater', state: 'MA', zip: '02324' },
       scheduled_date: '2026-03-28', status: 'completed', completed_at: new Date('2026-03-28T15:00:00'),
       assigned_driver_id: jake, asset_id: assetC, pick_up_asset_id: assetC,
@@ -350,7 +350,7 @@ export class SeedController {
     const custSSR = await findCust('jobs@southshorereno.com');
     const assetD = await findAsset('D-1506');
     const jobD: any = await this.jobRepo.save(makeJob({
-      customer_id: custSSR, job_type: 'delivery', service_type: 'dumpster_rental',
+      customer_id: custSSR, job_type: 'delivery', asset_subtype: '15yd', service_type: 'dumpster_rental',
       service_address: { street: '150 Washington Street', city: 'Hanover', state: 'MA', zip: '02339' },
       scheduled_date: '2026-03-12', status: 'completed', completed_at: new Date('2026-03-12T08:30:00'),
       assigned_driver_id: jake, asset_id: assetD, drop_off_asset_id: assetD,
@@ -359,7 +359,7 @@ export class SeedController {
     await this.invoiceRepo.save(makeInv({ invoice_number: 'INV-2026-0013', customer_id: custSSR, job_id: jobD.id, status: 'paid', source: 'booking', invoice_type: 'rental', subtotal: 700, total: 595, amount_paid: 595, balance_due: 0, paid_at: new Date('2026-03-12'), payment_method: 'card', line_items: [{ description: '15yd Dumpster Rental — 14-day rental', quantity: 1, unitPrice: 700, amount: 700 }, { description: 'Customer discount (15%)', quantity: 1, unitPrice: -105, amount: -105 }] }));
 
     const jobD2: any = await this.jobRepo.save(makeJob({
-      customer_id: custSSR, job_type: 'pickup',
+      customer_id: custSSR, job_type: 'pickup', asset_subtype: '15yd',
       service_address: { street: '150 Washington Street', city: 'Hanover', state: 'MA', zip: '02339' },
       scheduled_date: '2026-03-22', status: 'completed', completed_at: new Date('2026-03-22T16:00:00'),
       assigned_driver_id: mike, asset_id: assetD, pick_up_asset_id: assetD,
@@ -377,7 +377,7 @@ export class SeedController {
     const assetE = await findAsset('D-2005');
     // Original delivery for Tom
     const jobE0: any = await this.jobRepo.save(makeJob({
-      customer_id: custTom, job_type: 'delivery', service_type: 'dumpster_rental',
+      customer_id: custTom, job_type: 'delivery', asset_subtype: '20yd', service_type: 'dumpster_rental',
       service_address: { street: '200 Centre Street', city: 'Abington', state: 'MA', zip: '02351' },
       scheduled_date: '2026-03-15', status: 'completed', completed_at: new Date('2026-03-15T14:00:00'),
       assigned_driver_id: jake, asset_id: assetE, drop_off_asset_id: assetE,
@@ -389,7 +389,7 @@ export class SeedController {
 
     // Failed pickup
     const jobE: any = await this.jobRepo.save(makeJob({
-      customer_id: custTom, job_type: 'pickup',
+      customer_id: custTom, job_type: 'pickup', asset_subtype: '20yd',
       service_address: { street: '200 Centre Street', city: 'Abington', state: 'MA', zip: '02351' },
       scheduled_date: '2026-03-27', status: 'failed', assigned_driver_id: mike, asset_id: assetE, pick_up_asset_id: assetE,
       parent_job_id: jobE0.id, is_failed_trip: true, failed_reason: 'Dumpster blocked — cannot access', failed_reason_code: 'dumpster_blocked', failed_at: new Date('2026-03-27T13:00:00'), cancelled_at: new Date('2026-03-27T13:00:00'),
@@ -398,7 +398,7 @@ export class SeedController {
 
     // Replacement pickup
     const jobE2: any = await this.jobRepo.save(makeJob({
-      customer_id: custTom, job_type: 'pickup',
+      customer_id: custTom, job_type: 'pickup', asset_subtype: '20yd',
       service_address: { street: '200 Centre Street', city: 'Abington', state: 'MA', zip: '02351' },
       scheduled_date: '2026-03-31', status: 'confirmed', assigned_driver_id: mike, asset_id: assetE, pick_up_asset_id: assetE,
       parent_job_id: jobE.id, source: 'rescheduled_from_failure', placement_notes: 'Auto-created from failed job. Original failure reason: Dumpster blocked',
@@ -417,7 +417,7 @@ export class SeedController {
     // F: John McCarthy 20yd Delivery today
     const assetF = await findAsset('D-2006');
     const jobF: any = await this.jobRepo.save(makeJob({
-      customer_id: custJohn, job_type: 'delivery', service_type: 'dumpster_rental',
+      customer_id: custJohn, job_type: 'delivery', asset_subtype: '20yd', service_type: 'dumpster_rental',
       service_address: { street: '45 Pearl Street', city: 'Brockton', state: 'MA', zip: '02301' },
       scheduled_date: '2026-03-30', scheduled_window_start: '08:00', scheduled_window_end: '12:00',
       status: 'confirmed', assigned_driver_id: mike, asset_id: assetF, drop_off_asset_id: assetF,
@@ -429,7 +429,7 @@ export class SeedController {
     // G: Maria Santos 15yd Delivery today
     const assetG = await findAsset('D-1507');
     const jobG: any = await this.jobRepo.save(makeJob({
-      customer_id: custMaria, job_type: 'delivery', service_type: 'dumpster_rental',
+      customer_id: custMaria, job_type: 'delivery', asset_subtype: '15yd', service_type: 'dumpster_rental',
       service_address: { street: '120 West Elm Street', city: 'East Bridgewater', state: 'MA', zip: '02333' },
       scheduled_date: '2026-03-30', scheduled_window_start: '08:00', scheduled_window_end: '12:00',
       status: 'confirmed', assigned_driver_id: mike, asset_id: assetG,
@@ -442,7 +442,7 @@ export class SeedController {
     const assetH = await findAsset('D-2003');
     if (assetH) await this.assetRepo.update(assetH, { status: 'deployed', current_location: { street: '500 Industrial Drive', city: 'Brockton', state: 'MA' } } as any);
     await this.jobRepo.save(makeJob({
-      customer_id: custMDR, job_type: 'pickup', service_type: 'dumpster_rental',
+      customer_id: custMDR, job_type: 'pickup', asset_subtype: '20yd', service_type: 'dumpster_rental',
       service_address: { street: '500 Industrial Drive', city: 'Brockton', state: 'MA', zip: '02301' },
       scheduled_date: '2026-03-30', scheduled_window_start: '08:00', scheduled_window_end: '12:00',
       status: 'confirmed', assigned_driver_id: jake, asset_id: assetH, pick_up_asset_id: assetH,
@@ -451,7 +451,7 @@ export class SeedController {
 
     // I: Best Brothers 10yd Delivery today (10% discount, unassigned)
     await this.jobRepo.save(makeJob({
-      customer_id: custBB, job_type: 'delivery', service_type: 'dumpster_rental',
+      customer_id: custBB, job_type: 'delivery', asset_subtype: '10yd', service_type: 'dumpster_rental',
       service_address: { street: '23 Josephs Road', city: 'Brockton', state: 'MA', zip: '02301' },
       scheduled_date: '2026-03-30', scheduled_window_start: '12:00', scheduled_window_end: '17:00',
       status: 'pending', base_price: 600, total_price: 540, discount_percentage: 10, discount_amount: 60,
@@ -464,7 +464,7 @@ export class SeedController {
     const assetJ2 = await findAsset('D-2004');
     if (assetJ2) await this.assetRepo.update(assetJ2, { status: 'deployed', current_location: { street: '78 Oak Street', city: 'Easton', state: 'MA' } } as any);
     await this.jobRepo.save(makeJob({
-      customer_id: custAmanda, job_type: 'exchange', service_type: 'dumpster_rental',
+      customer_id: custAmanda, job_type: 'exchange', asset_subtype: '20yd', service_type: 'dumpster_rental',
       service_address: { street: '78 Oak Street', city: 'Easton', state: 'MA', zip: '02356' },
       scheduled_date: '2026-03-30', scheduled_window_start: '12:00', scheduled_window_end: '17:00',
       status: 'confirmed', assigned_driver_id: jake, asset_id: assetJ2,
@@ -479,7 +479,7 @@ export class SeedController {
     const custCasa = await findCust('info@casadesign.com');
 
     await this.jobRepo.save(makeJob({
-      customer_id: custKaren, job_type: 'delivery', service_type: 'dumpster_rental',
+      customer_id: custKaren, job_type: 'delivery', asset_subtype: '15yd', service_type: 'dumpster_rental',
       service_address: { street: '15 Maple Drive', city: 'Whitman', state: 'MA', zip: '02382' },
       scheduled_date: '2026-03-31', scheduled_window_start: '08:00', scheduled_window_end: '12:00',
       status: 'pending', base_price: 700, total_price: 700,
@@ -488,7 +488,7 @@ export class SeedController {
     log.push('Job K: Karen O\'Brien 15yd Delivery tomorrow (pending, unassigned)');
 
     await this.jobRepo.save(makeJob({
-      customer_id: custCasa, job_type: 'delivery', service_type: 'dumpster_rental',
+      customer_id: custCasa, job_type: 'delivery', asset_subtype: '20yd', service_type: 'dumpster_rental',
       service_address: { street: '89 Tosca Drive', city: 'Stoughton', state: 'MA', zip: '02072' },
       scheduled_date: '2026-03-31', status: 'confirmed', assigned_driver_id: jake,
       base_price: 800, total_price: 800,
