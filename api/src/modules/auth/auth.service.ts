@@ -278,6 +278,19 @@ export class AuthService {
     };
   }
 
+  async getPreferences(userId: string) {
+    const user = await this.usersRepository.findOne({ where: { id: userId } });
+    return user?.permissions || {};
+  }
+
+  async updatePreferences(userId: string, data: Record<string, unknown>) {
+    const user = await this.usersRepository.findOne({ where: { id: userId } });
+    const current = (user?.permissions || {}) as Record<string, unknown>;
+    const merged = { ...current, ...data };
+    await this.usersRepository.update(userId, { permissions: merged } as any);
+    return merged;
+  }
+
   async clockIn(userId: string) {
     await this.usersRepository.update(userId, {
       is_clocked_in: true,

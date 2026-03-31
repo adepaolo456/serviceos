@@ -134,12 +134,28 @@ export default function DispatchPage() {
   const [showColumns, setShowColumns] = useState(true);
   const [columnOrder, setColumnOrder] = useState<string[]>([]);
   const [dragColId, setDragColId] = useState<string | null>(null);
+  const saveOrderTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { toast } = useToast();
+
+  // Load saved column order on mount
+  useEffect(() => {
+    api.get<Record<string, unknown>>("/auth/preferences").then(prefs => {
+      const saved = prefs?.dispatchColumnOrder;
+      if (Array.isArray(saved) && saved.length > 0) setColumnOrder(saved as string[]);
+    }).catch(() => {});
+  }, []);
+
+  const saveColumnOrder = (order: string[]) => {
+    if (saveOrderTimer.current) clearTimeout(saveOrderTimer.current);
+    saveOrderTimer.current = setTimeout(() => {
+      api.patch("/auth/preferences", { dispatchColumnOrder: order }).catch(() => {});
+    }, 500);
+  };
 
   const makeColumnDrag = (colId: string) => ({
     onDragStart: (e: React.DragEvent) => { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/column-id", colId); setDragColId(colId); (e.currentTarget as HTMLElement).style.opacity = "0.5"; },
     onDragOver: (e: React.DragEvent) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; },
-    onDrop: (e: React.DragEvent) => { e.preventDefault(); const from = e.dataTransfer.getData("text/column-id"); if (from && from !== colId) { setColumnOrder(prev => { const arr = [...prev]; const fi = arr.indexOf(from); const ti = arr.indexOf(colId); if (fi >= 0 && ti >= 0) { arr.splice(fi, 1); arr.splice(ti, 0, from); } return arr; }); } setDragColId(null); },
+    onDrop: (e: React.DragEvent) => { e.preventDefault(); const from = e.dataTransfer.getData("text/column-id"); if (from && from !== colId) { setColumnOrder(prev => { const arr = [...prev]; const fi = arr.indexOf(from); const ti = arr.indexOf(colId); if (fi >= 0 && ti >= 0) { arr.splice(fi, 1); arr.splice(ti, 0, from); } saveColumnOrder(arr); return arr; }); } setDragColId(null); },
     onDragEnd: (e: React.DragEvent) => { (e.currentTarget as HTMLElement).style.opacity = "1"; setDragColId(null); },
   });
 
