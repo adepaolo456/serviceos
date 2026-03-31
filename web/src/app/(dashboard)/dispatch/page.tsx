@@ -26,7 +26,7 @@ import Dropdown from "@/components/dropdown";
 /* ---- Types ---- */
 
 interface DispatchJob {
-  id: string; job_number: string; job_type: string; service_type: string;
+  id: string; job_number: string; job_type: string; service_type: string; asset_subtype?: string;
   status: string; priority: string; scheduled_window_start: string;
   scheduled_window_end: string; service_address: Record<string, string> | null;
   route_order: number | null; total_price: number;
@@ -702,12 +702,11 @@ const JobTile = memo(function JobTile({ job, isUnassigned, drivers, onAssign, on
   onStatusChange?: (jobId: string, newStatus: string) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: job.id });
-  const [expanded, setExpanded] = useState(false);
   const isCompleted = job.status === "completed";
   const tc = TYPE_CONFIG[job.job_type] || { label: job.job_type, letter: "?", stripe: "#8A8A8A" };
   const addr = job.service_address;
   const addrStr = addr ? [addr.street, addr.city].filter(Boolean).join(", ") : "";
-  const size = job.asset?.subtype || "";
+  const size = job.asset_subtype || job.asset?.subtype || "";
 
   return (
     <div ref={setNodeRef} {...attributes} {...listeners}
@@ -719,88 +718,46 @@ const JobTile = memo(function JobTile({ job, isUnassigned, drivers, onAssign, on
         cursor: isDragging ? "grabbing" : "grab",
         touchAction: "none",
       }}
-      className="group relative rounded-[14px] bg-white"
+      className="group relative rounded-[16px] bg-white"
+      onClick={onQuickView}
     >
-      {/* Left stripe */}
-      <div className="absolute left-0 top-2.5 bottom-2.5 w-[4px] rounded-full" style={{ background: tc.stripe }} />
+      {/* Green left accent bar */}
+      <div className="absolute left-0 top-3 bottom-3 w-[4px] rounded-full" style={{ background: "#22C55E" }} />
 
-      <div className="py-3 pl-4 pr-3">
-        {/* Row 1 */}
-        <div className="flex items-start gap-1.5">
-          {size && <span className="shrink-0 rounded-md px-2 py-0.5 text-[12px] font-bold leading-tight mt-px" style={{ background: "#F0F0F0", border: "1px solid #E0E0E0", color: "#0A0A0A" }}>{size}</span>}
-          <span className="flex h-[20px] w-[20px] shrink-0 items-center justify-center rounded-full text-[9px] font-bold text-white mt-px" style={{ background: tc.stripe }}>{tc.letter}</span>
-          <div className="flex-1 min-w-0">
-            <span className="text-[14px] font-semibold leading-snug cursor-pointer hover:underline" style={{ color: "#0A0A0A" }}
-              onClick={(e) => { e.stopPropagation(); onQuickView(); }}>
-              {job.customer ? `${job.customer.first_name} ${job.customer.last_name}` : job.job_number}
-            </span>
+      <div className="py-3.5 pl-5 pr-3 flex items-center gap-3">
+        {/* Content */}
+        <div className="flex-1 min-w-0">
+          {/* Line 1: Size + Type */}
+          <div className="flex items-baseline gap-1.5">
+            {size && <span className="text-[14px] font-extrabold" style={{ color: "#0A0A0A" }}>{size}</span>}
+            <span className="text-[14px] font-extrabold" style={{ color: "#22C55E" }}>{tc.label}</span>
+            {isCompleted && <CheckCircle2 className="h-3.5 w-3.5 ml-1" style={{ color: "#22C55E" }} />}
           </div>
-          <span className="text-[11px] font-semibold capitalize shrink-0 mt-0.5 ml-1" style={{
-            color: isCompleted ? "#16A34A" : job.status === "confirmed" ? "#22C55E" : job.status === "pending" ? "#D97706" : job.status === "en_route" ? "#3B82F6" : "#5C5C5C",
-          }}>
-            {isCompleted && <CheckCircle2 className="inline h-3 w-3 mr-0.5" />}
-            {job.status.replace(/_/g, " ")}
-          </span>
-          <button onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }} className="shrink-0 p-0.5 mt-0.5 cursor-pointer" style={{ color: "#bbb" }}>
-            {expanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-          </button>
-        </div>
-
-        {/* Row 2 */}
-        <div className="flex items-center justify-between mt-1.5">
-          {addrStr && <p className="flex items-center gap-1 text-[12px] truncate flex-1" style={{ color: "#5C5C5C" }}><MapPin className="h-3 w-3 shrink-0" style={{ color: "#bbb" }} />{addrStr}</p>}
+          {/* Line 2: Customer name */}
+          <p className="text-[13px] font-semibold mt-1 truncate" style={{ color: "#0A0A0A" }}>
+            {job.customer ? `${job.customer.first_name} ${job.customer.last_name}` : job.job_number}
+          </p>
+          {/* Line 3: Address */}
+          {addrStr && <p className="text-[12px] mt-0.5 truncate" style={{ color: "#5C5C5C" }}>{addrStr}</p>}
+          {/* Line 4: Time window */}
           {(job.scheduled_window_start || job.scheduled_window_end) && (
-            <p className="flex items-center gap-1 text-[11px] shrink-0 ml-2" style={{ color: "#8A8A8A" }}>
-              <Clock className="h-2.5 w-2.5" />{fmtTime(job.scheduled_window_start)}{job.scheduled_window_end ? `–${fmtTime(job.scheduled_window_end)}` : ""}
+            <p className="text-[11px] mt-0.5" style={{ color: "#8A8A8A" }}>
+              {fmtTime(job.scheduled_window_start)}{job.scheduled_window_end ? ` – ${fmtTime(job.scheduled_window_end)}` : ""}
             </p>
           )}
+          {/* Line 5: Badges */}
+          {(job.asset?.identifier || job.is_failed_trip || job.source === "rescheduled_from_failure" || job.is_overdue) && (
+            <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+              {job.asset?.identifier && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ background: "rgba(34,197,94,0.08)", color: "#22C55E" }}>{job.asset.identifier}</span>}
+              {job.is_failed_trip && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: "rgba(220,38,38,0.08)", color: "#DC2626" }}>FAILED</span>}
+              {job.source === "rescheduled_from_failure" && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: "rgba(217,119,6,0.08)", color: "#D97706" }}>FROM FAILED</span>}
+              {job.is_overdue && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: "rgba(220,38,38,0.08)", color: "#DC2626" }}>OVERDUE {job.extra_days}d</span>}
+            </div>
+          )}
         </div>
-
-        {/* Row 3: badges */}
-        {(job.asset?.identifier || job.is_failed_trip || job.source === "rescheduled_from_failure" || job.is_overdue || (isUnassigned && drivers && onAssign)) && (
-          <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-            {job.asset?.identifier && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ background: "rgba(34,197,94,0.08)", color: "#22C55E" }}>{job.asset.identifier}</span>}
-            {job.is_failed_trip && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: "rgba(220,38,38,0.08)", color: "#DC2626" }}>FAILED</span>}
-            {job.source === "rescheduled_from_failure" && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: "rgba(217,119,6,0.08)", color: "#D97706" }}>FROM FAILED</span>}
-            {job.is_overdue && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: "rgba(220,38,38,0.08)", color: "#DC2626" }}>OVERDUE {job.extra_days}d</span>}
-            {isUnassigned && drivers && onAssign && (
-              <div onClick={e => e.stopPropagation()} className="ml-auto">
-                <Dropdown trigger={<button className="flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold" style={{ background: "rgba(34,197,94,0.08)", borderColor: "#22C55E", color: "#22C55E" }}><UserPlus className="h-2.5 w-2.5" /> Assign</button>} align="right">
-                  {drivers.map(d => (
-                    <button key={d.id} onClick={() => onAssign(job.id, d.id)} className="flex w-full items-center gap-2 px-3 py-2 text-xs whitespace-nowrap" style={{ color: "var(--t-text-primary)" }}>
-                      <div className="flex h-5 w-5 items-center justify-center rounded-full text-[8px] font-bold" style={{ background: "var(--t-accent-soft)", color: "var(--t-accent)" }}>{d.firstName[0]}{d.lastName[0]}</div>
-                      {d.firstName} {d.lastName}
-                    </button>
-                  ))}
-                </Dropdown>
-              </div>
-            )}
-          </div>
-        )}
+        {/* Chevron */}
+        <ChevronRight className="h-4 w-4 shrink-0" style={{ color: "#ccc" }} />
       </div>
-
-      {/* Expanded */}
-      {expanded && (
-        <div className="px-4 py-3 space-y-2" onClick={e => e.stopPropagation()} style={{ cursor: "default", borderTop: "1px solid #F0F0F0" }}>
-          <div className="flex items-center gap-3 text-[11px]" style={{ color: "#5C5C5C" }}>
-            <span>{job.job_number}</span>
-            {job.asset?.identifier && <span className="font-semibold" style={{ color: "#22C55E" }}>{job.asset.identifier}</span>}
-          </div>
-          {job.placement_notes && <div className="rounded-lg px-2.5 py-1.5 text-[11px]" style={{ background: "#FFFBEB", color: "#92400E" }}>📌 {job.placement_notes}</div>}
-          {job.failed_reason && <div className="rounded-lg px-2.5 py-1.5 text-[11px]" style={{ background: "#FEF2F2", color: "#DC2626" }}>Failed: {job.failed_reason}</div>}
-          <div className="flex items-center gap-1.5 flex-wrap pt-1">
-            {addr && <button onClick={() => window.open(`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent([addr.street, addr.city, addr.state].filter(Boolean).join(", "))}`, "_blank")}
-              className="flex items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-medium" style={{ borderColor: "#E5E5E5", color: "#5C5C5C" }}><Navigation className="h-2.5 w-2.5" /> Navigate</button>}
-            {job.customer?.phone && <a href={`tel:${job.customer.phone}`} className="flex items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-medium" style={{ borderColor: "#E5E5E5", color: "#5C5C5C" }}><Phone className="h-2.5 w-2.5" /> Call</a>}
-            <button onClick={onQuickView} className="flex items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-medium" style={{ borderColor: "#E5E5E5", color: "#5C5C5C" }}><ExternalLink className="h-2.5 w-2.5" /> Details</button>
-            {!isUnassigned && onUnassign && <button onClick={() => onUnassign(job.id)} className="flex items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-semibold" style={{ background: "rgba(220,38,38,0.06)", borderColor: "#DC2626", color: "#DC2626" }}><X className="h-2.5 w-2.5" /> Unassign</button>}
-            {/* Status override — portal dropdown */}
-            {onStatusChange && (
-              <StatusDropdown jobId={job.id} currentStatus={job.status} onStatusChange={onStatusChange} />
-            )}
-          </div>
-        </div>
-      )}
     </div>
   );
 });
@@ -871,7 +828,7 @@ function StatusDropdown({ jobId, currentStatus, onStatusChange }: { jobId: strin
 
 function JobTileGhost({ job }: { job: DispatchJob }) {
   const tc = TYPE_CONFIG[job.job_type] || { label: job.job_type, letter: "?", stripe: "#8A8A8A" };
-  const size = job.asset?.subtype || "";
+  const size = job.asset_subtype || job.asset?.subtype || "";
   return (
     <div className="relative rounded-[14px] bg-white px-4 py-3" style={{ width: 310, border: "2px solid var(--t-accent)", boxShadow: "0 12px 32px rgba(0,0,0,0.2)" }}>
       <div className="absolute left-0 top-2.5 bottom-2.5 w-[4px] rounded-full" style={{ background: tc.stripe }} />
