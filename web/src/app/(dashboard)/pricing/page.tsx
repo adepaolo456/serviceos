@@ -6,6 +6,7 @@ import Link from "next/link";
 import { api } from "@/lib/api";
 import SlideOver from "@/components/slide-over";
 import { useToast } from "@/components/toast";
+import AddressAutocomplete from "@/components/address-autocomplete";
 
 interface PricingRule {
   id: string;
@@ -139,12 +140,101 @@ export default function PricingPage() {
         </button>
       </div>
 
-      {/* Compact pricing tiles — grid like dashboard KPIs */}
+      {/* ── QUICK QUOTE (top — most used) ── */}
+      <div className="mb-8">
+        <p className="text-[11px] font-extrabold uppercase tracking-[1.2px] mb-1" style={{ color: "var(--t-frame-text-muted)" }}>QUICK QUOTE</p>
+        <p className="text-[13px] mb-3" style={{ color: "var(--t-frame-text-muted)" }}>Instant quote for phone inquiries</p>
+
+        <div className="rounded-[20px] border p-5" style={{ background: "var(--t-bg-secondary)", borderColor: "var(--t-border)", boxShadow: "0 2px 12px var(--t-shadow)" }}>
+          {/* Size pills */}
+          <div className="mb-4">
+            <p className="text-[11px] font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--t-text-muted)" }}>Dumpster Size</p>
+            <div className="flex flex-wrap gap-1.5">
+              {rules.map((rule) => (
+                <button key={rule.id} onClick={() => setQuoteSize(rule.asset_subtype)}
+                  className="rounded-full px-3.5 py-1.5 text-[13px] font-bold border transition-all"
+                  style={{
+                    background: quoteSize === rule.asset_subtype ? "var(--t-accent)" : "var(--t-bg-secondary)",
+                    color: quoteSize === rule.asset_subtype ? "#000" : "var(--t-text-primary)",
+                    borderColor: quoteSize === rule.asset_subtype ? "var(--t-accent)" : "var(--t-border)",
+                  }}>
+                  {rule.asset_subtype} — ${Number(rule.base_price)}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Form fields */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+            <div>
+              <label className="block text-[11px] font-semibold uppercase tracking-wide mb-1" style={{ color: "var(--t-text-muted)" }}>Delivery Address</label>
+              <AddressAutocomplete
+                value={quoteAddress ? { street: quoteAddress } : undefined}
+                onChange={(addr) => setQuoteAddress(addr.formatted || [addr.street, addr.city, addr.state, addr.zip].filter(Boolean).join(", "))}
+                placeholder="Address or ZIP"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-semibold uppercase tracking-wide mb-1" style={{ color: "var(--t-text-muted)" }}>Customer Name</label>
+              <input value={quoteName} onChange={(e) => setQuoteName(e.target.value)} placeholder="Optional"
+                className="w-full rounded-[14px] border px-3.5 py-2 text-sm outline-none focus:border-[var(--t-accent)]"
+                style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)", color: "var(--t-text-primary)" }} />
+            </div>
+            <div>
+              <label className="block text-[11px] font-semibold uppercase tracking-wide mb-1" style={{ color: "var(--t-text-muted)" }}>Email</label>
+              <input value={quoteEmail} onChange={(e) => setQuoteEmail(e.target.value)} placeholder="For emailing quote" type="email"
+                className="w-full rounded-[14px] border px-3.5 py-2 text-sm outline-none focus:border-[var(--t-accent)]"
+                style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)", color: "var(--t-text-primary)" }} />
+            </div>
+            <div>
+              <label className="block text-[11px] font-semibold uppercase tracking-wide mb-1" style={{ color: "var(--t-text-muted)" }}>Phone</label>
+              <input value={quotePhone} onChange={(e) => setQuotePhone(e.target.value)} placeholder="Optional"
+                className="w-full rounded-[14px] border px-3.5 py-2 text-sm outline-none focus:border-[var(--t-accent)]"
+                style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)", color: "var(--t-text-primary)" }} />
+            </div>
+          </div>
+
+          {/* Quote result */}
+          {selectedRule && (
+            <div className="rounded-[20px] border-l-4 p-5 mb-4 animate-fade-in"
+              style={{ background: "var(--t-bg-card)", borderColor: "var(--t-accent)", borderTop: "1px solid var(--t-border)", borderRight: "1px solid var(--t-border)", borderBottom: "1px solid var(--t-border)" }}>
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-[15px] font-bold" style={{ color: "var(--t-text-primary)" }}>{selectedRule.asset_subtype?.replace("yd", " Yard")} Dumpster</p>
+                <p className="text-[24px] font-extrabold tracking-tight" style={{ color: "var(--t-accent)" }}>${Number(selectedRule.base_price).toLocaleString()}</p>
+              </div>
+              <div className="space-y-1.5 text-[13px]" style={{ color: "var(--t-text-muted)" }}>
+                <div className="flex justify-between"><span>Includes</span><span style={{ color: "var(--t-text-primary)" }}>{Number(selectedRule.included_tons)} tons · {selectedRule.rental_period_days} day rental</span></div>
+                <div className="flex justify-between"><span>Overage</span><span style={{ color: "var(--t-text-primary)" }}>${Number(selectedRule.overage_per_ton)}/ton after {Number(selectedRule.included_tons)} tons</span></div>
+                <div className="flex justify-between"><span>Extra days</span><span style={{ color: "var(--t-text-primary)" }}>${Number(selectedRule.extra_day_rate)}/day after {selectedRule.rental_period_days} days</span></div>
+                {quoteAddress && <div className="flex justify-between"><span>Delivery to</span><span style={{ color: "var(--t-text-primary)" }}>{quoteAddress}</span></div>}
+              </div>
+              <p className="text-[11px] mt-3" style={{ color: "var(--t-text-tertiary)" }}>Valid for 30 days from today</p>
+            </div>
+          )}
+
+          {/* Action buttons */}
+          {selectedRule && (
+            <div className="flex gap-3">
+              <Link href={`/book?size=${quoteSize}&address=${encodeURIComponent(quoteAddress)}&name=${encodeURIComponent(quoteName)}&email=${encodeURIComponent(quoteEmail)}&phone=${encodeURIComponent(quotePhone)}`}
+                className="flex-1 flex items-center justify-center gap-2 rounded-full py-2.5 text-[13px] font-bold"
+                style={{ background: "var(--t-accent)", color: "#000" }}>
+                <DollarSign className="h-4 w-4" /> Book Now
+              </Link>
+              <button onClick={sendQuote} disabled={!quoteEmail || quoteSending}
+                className="flex-1 flex items-center justify-center gap-2 rounded-full py-2.5 text-[13px] font-bold border disabled:opacity-50"
+                style={{ borderColor: "var(--t-border)", color: "var(--t-text-primary)", background: "transparent" }}>
+                <Mail className="h-4 w-4" /> {quoteSending ? "Sending..." : "Email Quote"}
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── PRICING RULES (bottom) ── */}
+      <p className="text-[11px] font-extrabold uppercase tracking-[1.2px] mb-3" style={{ color: "var(--t-frame-text-muted)" }}>PRICING RULES</p>
       {loading ? (
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3.5">
-          {[1, 2, 3, 4].map((i) => (
-            <div key={i} className="h-28 skeleton rounded-[20px]" />
-          ))}
+          {[1, 2, 3, 4].map((i) => <div key={i} className="h-28 skeleton rounded-[20px]" />)}
         </div>
       ) : (
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3.5">
@@ -229,242 +319,6 @@ export default function PricingPage() {
         </div>
       )}
 
-      {/* Quick Quote section */}
-      <div className="mt-10">
-        <p
-          className="text-[11px] font-extrabold uppercase tracking-[1.2px] mb-1"
-          style={{ color: "var(--t-frame-text-muted)" }}
-        >
-          QUICK QUOTE
-        </p>
-        <p
-          className="text-[14px] mb-4"
-          style={{ color: "var(--t-frame-text-muted)" }}
-        >
-          Generate an instant quote for phone inquiries
-        </p>
-
-        <div
-          className="rounded-[20px] border p-6"
-          style={{
-            background: "var(--t-bg-secondary)",
-            borderColor: "var(--t-border)",
-            boxShadow: "0 2px 12px var(--t-shadow)",
-          }}
-        >
-          {/* Size selector pills */}
-          <div className="mb-5">
-            <p
-              className="text-[12px] font-semibold uppercase tracking-wide mb-2"
-              style={{ color: "var(--t-text-muted)" }}
-            >
-              Dumpster Size
-            </p>
-            <div className="flex flex-wrap gap-2">
-              {rules.map((rule) => (
-                <button
-                  key={rule.id}
-                  onClick={() => setQuoteSize(rule.asset_subtype)}
-                  className="rounded-full px-4 py-2.5 text-[13px] font-bold transition-all duration-150 border"
-                  style={{
-                    background:
-                      quoteSize === rule.asset_subtype
-                        ? "var(--t-accent)"
-                        : "var(--t-bg-secondary)",
-                    color:
-                      quoteSize === rule.asset_subtype
-                        ? "#000"
-                        : "var(--t-text-primary)",
-                    borderColor:
-                      quoteSize === rule.asset_subtype
-                        ? "var(--t-accent)"
-                        : "var(--t-border)",
-                  }}
-                >
-                  {rule.asset_subtype} — ${Number(rule.base_price)}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Form fields in a grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-5">
-            <div>
-              <label
-                className="block text-[12px] font-semibold uppercase tracking-wide mb-1.5"
-                style={{ color: "var(--t-text-muted)" }}
-              >
-                Delivery Address
-              </label>
-              <input
-                value={quoteAddress}
-                onChange={(e) => setQuoteAddress(e.target.value)}
-                placeholder="Address or ZIP code"
-                className="w-full rounded-[14px] border px-4 py-2.5 text-sm outline-none transition-colors focus:border-[var(--t-accent)]"
-                style={{
-                  background: "var(--t-bg-card)",
-                  borderColor: "var(--t-border)",
-                  color: "var(--t-text-primary)",
-                }}
-              />
-            </div>
-            <div>
-              <label
-                className="block text-[12px] font-semibold uppercase tracking-wide mb-1.5"
-                style={{ color: "var(--t-text-muted)" }}
-              >
-                Customer Name
-              </label>
-              <input
-                value={quoteName}
-                onChange={(e) => setQuoteName(e.target.value)}
-                placeholder="Optional"
-                className="w-full rounded-[14px] border px-4 py-2.5 text-sm outline-none transition-colors focus:border-[var(--t-accent)]"
-                style={{
-                  background: "var(--t-bg-card)",
-                  borderColor: "var(--t-border)",
-                  color: "var(--t-text-primary)",
-                }}
-              />
-            </div>
-            <div>
-              <label
-                className="block text-[12px] font-semibold uppercase tracking-wide mb-1.5"
-                style={{ color: "var(--t-text-muted)" }}
-              >
-                Email
-              </label>
-              <input
-                value={quoteEmail}
-                onChange={(e) => setQuoteEmail(e.target.value)}
-                placeholder="For emailing the quote"
-                type="email"
-                className="w-full rounded-[14px] border px-4 py-2.5 text-sm outline-none transition-colors focus:border-[var(--t-accent)]"
-                style={{
-                  background: "var(--t-bg-card)",
-                  borderColor: "var(--t-border)",
-                  color: "var(--t-text-primary)",
-                }}
-              />
-            </div>
-            <div>
-              <label
-                className="block text-[12px] font-semibold uppercase tracking-wide mb-1.5"
-                style={{ color: "var(--t-text-muted)" }}
-              >
-                Phone
-              </label>
-              <input
-                value={quotePhone}
-                onChange={(e) => setQuotePhone(e.target.value)}
-                placeholder="Optional"
-                className="w-full rounded-[14px] border px-4 py-2.5 text-sm outline-none transition-colors focus:border-[var(--t-accent)]"
-                style={{
-                  background: "var(--t-bg-card)",
-                  borderColor: "var(--t-border)",
-                  color: "var(--t-text-primary)",
-                }}
-              />
-            </div>
-          </div>
-
-          {/* Quote result — appears when size selected */}
-          {selectedRule && (
-            <div
-              className="rounded-[20px] border-l-4 p-5 mb-5 animate-fade-in"
-              style={{
-                background: "var(--t-bg-card)",
-                borderColor: "var(--t-accent)",
-                borderTop: "1px solid var(--t-border)",
-                borderRight: "1px solid var(--t-border)",
-                borderBottom: "1px solid var(--t-border)",
-              }}
-            >
-              <div className="flex items-center justify-between mb-3">
-                <p
-                  className="text-[15px] font-bold"
-                  style={{ color: "var(--t-text-primary)" }}
-                >
-                  {selectedRule.asset_subtype?.replace("yd", " Yard")} Dumpster
-                </p>
-                <p
-                  className="text-[24px] font-extrabold tracking-tight"
-                  style={{ color: "var(--t-accent)" }}
-                >
-                  ${Number(selectedRule.base_price).toLocaleString()}
-                </p>
-              </div>
-              <div
-                className="space-y-1.5 text-[13px]"
-                style={{ color: "var(--t-text-muted)" }}
-              >
-                <div className="flex justify-between">
-                  <span>Includes</span>
-                  <span style={{ color: "var(--t-text-primary)" }}>
-                    {Number(selectedRule.included_tons)} tons ·{" "}
-                    {selectedRule.rental_period_days} day rental
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Overage</span>
-                  <span style={{ color: "var(--t-text-primary)" }}>
-                    ${Number(selectedRule.overage_per_ton)}/ton after{" "}
-                    {Number(selectedRule.included_tons)} tons
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Extra days</span>
-                  <span style={{ color: "var(--t-text-primary)" }}>
-                    ${Number(selectedRule.extra_day_rate)}/day after{" "}
-                    {selectedRule.rental_period_days} days
-                  </span>
-                </div>
-                {quoteAddress && (
-                  <div className="flex justify-between">
-                    <span>Delivery to</span>
-                    <span style={{ color: "var(--t-text-primary)" }}>
-                      {quoteAddress}
-                    </span>
-                  </div>
-                )}
-              </div>
-              <p
-                className="text-[11px] mt-3"
-                style={{ color: "var(--t-text-tertiary)" }}
-              >
-                Valid for 30 days from today
-              </p>
-            </div>
-          )}
-
-          {/* Action buttons */}
-          {selectedRule && (
-            <div className="flex gap-3">
-              <Link
-                href={`/book?size=${quoteSize}&address=${encodeURIComponent(quoteAddress)}&name=${encodeURIComponent(quoteName)}&email=${encodeURIComponent(quoteEmail)}&phone=${encodeURIComponent(quotePhone)}`}
-                className="flex-1 flex items-center justify-center gap-2 rounded-full py-3 text-[13px] font-bold transition-all duration-150"
-                style={{ background: "var(--t-accent)", color: "#000" }}
-              >
-                <DollarSign className="h-4 w-4" /> Book Now
-              </Link>
-              <button
-                onClick={sendQuote}
-                disabled={!quoteEmail || quoteSending}
-                className="flex-1 flex items-center justify-center gap-2 rounded-full py-3 text-[13px] font-bold border transition-all duration-150 disabled:opacity-50"
-                style={{
-                  borderColor: "var(--t-border)",
-                  color: "var(--t-text-primary)",
-                  background: "transparent",
-                }}
-              >
-                <Mail className="h-4 w-4" />{" "}
-                {quoteSending ? "Sending..." : "Email Quote"}
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
-
       {/* Edit Pricing SlideOver */}
       <SlideOver
         open={editOpen}
@@ -508,10 +362,6 @@ function PricingForm({
   const [extraDayRate, setExtraDayRate] = useState(
     rule ? String(Number(rule.extra_day_rate)) : ""
   );
-  const [failedTripFee, setFailedTripFee] = useState(
-    rule ? String(Number(rule.failed_trip_base_fee || 150)) : "150"
-  );
-
   const inputStyle = {
     background: "var(--t-bg-card)",
     borderColor: "var(--t-border)",
@@ -553,13 +403,6 @@ function PricingForm({
       set: setExtraDayRate,
       prefix: "$",
       suffix: "/day",
-    },
-    {
-      label: "Failed Trip Fee",
-      value: failedTripFee,
-      set: setFailedTripFee,
-      prefix: "$",
-      suffix: undefined,
     },
   ];
 
@@ -608,13 +451,12 @@ function PricingForm({
         <button
           onClick={() =>
             onSave({
-              base_price: Number(basePrice),
-              included_tons: Number(includedTons),
-              overage_per_ton: Number(overageRate),
-              rental_period_days: Number(rentalDays),
-              extra_day_rate: Number(extraDayRate),
-              failed_trip_base_fee: Number(failedTripFee),
-            })
+              basePrice: Number(basePrice),
+              includedTons: Number(includedTons),
+              overagePerTon: Number(overageRate),
+              rentalPeriodDays: Number(rentalDays),
+              extraDayRate: Number(extraDayRate),
+            } as any)
           }
           className="flex-1 rounded-full py-3 text-[13px] font-bold"
           style={{ background: "var(--t-accent)", color: "#000" }}
