@@ -95,8 +95,26 @@ export async function submitDumpSlip(jobId: string, data: {
   weightTons: number;
   surchargeItems?: Array<{ itemType: string; quantity: number }>;
 }): Promise<any> {
-  const res = await client.post(`/dump-locations/jobs/${jobId}/dump-slip`, data);
+  const res = await client.post(`/jobs/${jobId}/dump-slip`, data);
   return res.data;
+}
+
+// Update job fields (driver notes, asset, etc.)
+export async function updateJob(jobId: string, updates: Record<string, unknown>): Promise<any> {
+  const { data } = await client.patch(`/jobs/${jobId}`, updates);
+  return data;
+}
+
+// Search assets by identifier
+export async function searchAssets(identifier: string): Promise<any[]> {
+  const { data } = await client.get('/assets', { params: { search: identifier, limit: 5 } });
+  return data.data || data || [];
+}
+
+// Mark job as failed
+export async function failJob(jobId: string, reason: string): Promise<any> {
+  const { data } = await client.patch(`/jobs/${jobId}/status`, { status: 'failed', cancellationReason: reason });
+  return data;
 }
 
 export default client;

@@ -31,6 +31,8 @@ interface Job {
   asset: { identifier?: string; subtype?: string } | null;
   is_overdue?: boolean;
   extra_days?: number;
+  placement_notes?: string;
+  driver_notes?: string;
 }
 
 const TYPE_COLORS: Record<string, string> = {
@@ -43,16 +45,23 @@ const TYPE_LABELS: Record<string, string> = {
   pickup: 'Pickup',
   exchange: 'Exchange',
 };
-const STATUS_COLORS: Record<string, string> = {
-  pending: '#71717A',
-  confirmed: '#3B82F6',
-  dispatched: '#8B5CF6',
-  en_route: '#EAB308',
-  arrived: '#06B6D4',
-  in_progress: '#F97316',
-  completed: '#22C55E',
-  cancelled: '#F87171',
-};
+
+function getNextAction(status: string): { label: string; color: string } {
+  switch (status) {
+    case 'confirmed':
+    case 'dispatched':
+      return { label: 'On My Way →', color: '#22C55E' };
+    case 'en_route':
+      return { label: 'Arrived →', color: '#3B82F6' };
+    case 'arrived':
+    case 'in_progress':
+      return { label: 'Complete →', color: '#D97706' };
+    case 'completed':
+      return { label: '✓ Done', color: '#71717A' };
+    default:
+      return { label: status.replace(/_/g, ' '), color: '#71717A' };
+  }
+}
 
 function fmtTime(t: string | null) {
   if (!t) return '';
@@ -154,6 +163,8 @@ export default function TodayScreen() {
           const isCompleted = j.status === 'completed';
           const isNextStop = !isCompleted && jobs.findIndex(j => j.status !== 'completed' && j.status !== 'cancelled') === index;
           const addr = j.service_address;
+          const nextAction = getNextAction(j.status);
+          const hasNotes = !!(j.placement_notes || j.driver_notes);
           return (
             <TouchableOpacity
               style={[
@@ -168,7 +179,7 @@ export default function TodayScreen() {
               <View style={s.cardRow}>
                 <View style={[s.stopCircle, isCompleted && s.stopCircleDone]}>
                   {isCompleted ? (
-                    <Ionicons name="checkmark" size={14} color="#fff" />
+                    <Ionicons name="checkmark" size={16} color="#fff" />
                   ) : (
                     <Text style={s.stopNum}>{index + 1}</Text>
                   )}
@@ -183,32 +194,38 @@ export default function TodayScreen() {
                         ? `${j.customer.first_name} ${j.customer.last_name}`
                         : j.job_number}
                     </Text>
-                    <View
-                      style={[
-                        s.typeBadge,
-                        {
-                          backgroundColor:
-                            (TYPE_COLORS[j.job_type] || '#71717A') + '14',
-                        },
-                      ]}
-                    >
-                      <Text
+                    <View style={s.cardTopRight}>
+                      <View
                         style={[
-                          s.typeText,
-                          { color: TYPE_COLORS[j.job_type] || '#71717A' },
+                          s.typeBadge,
+                          {
+                            backgroundColor:
+                              (TYPE_COLORS[j.job_type] || '#71717A') + '14',
+                          },
                         ]}
                       >
-                        {TYPE_LABELS[j.job_type] || j.job_type}
-                      </Text>
+                        <View style={[s.typeDot, { backgroundColor: TYPE_COLORS[j.job_type] || '#71717A' }]} />
+                        <Text
+                          style={[
+                            s.typeText,
+                            { color: TYPE_COLORS[j.job_type] || '#71717A' },
+                          ]}
+                        >
+                          {TYPE_LABELS[j.job_type] || j.job_type}
+                        </Text>
+                      </View>
                     </View>
                   </View>
                   {addr && (
-                    <Text
-                      style={[s.address, isCompleted && s.textFaded]}
-                      numberOfLines={1}
-                    >
-                      {[addr.street, addr.city].filter(Boolean).join(', ')}
-                    </Text>
+                    <View style={s.addressRow}>
+                      <Text
+                        style={[s.address, isCompleted && s.textFaded]}
+                        numberOfLines={1}
+                      >
+                        {[addr.street, addr.city].filter(Boolean).join(', ')}
+                      </Text>
+                      {hasNotes && <Text style={s.notesIndicator}>📝</Text>}
+                    </View>
                   )}
                   <View style={s.cardMeta}>
                     {j.asset?.identifier && <View style={s.sizeBadge}><Text style={s.sizeBadgeText}>{j.asset.identifier}</Text></View>}
@@ -223,6 +240,9 @@ export default function TodayScreen() {
                     {j.is_overdue && (
                       <Text style={s.overdueBadge}>OVERDUE {j.extra_days}d</Text>
                     )}
+                    <Text style={[s.nextActionText, { color: nextAction.color }]}>
+                      {nextAction.label}
+                    </Text>
                   </View>
                 </View>
                 {j.service_address && !isCompleted && (
@@ -232,7 +252,7 @@ export default function TodayScreen() {
                     const q = [a.street, a.city, a.state].filter(Boolean).join(', ');
                     Linking.openURL(Platform.OS === 'ios' ? `maps://?daddr=${encodeURIComponent(q)}` : `google.navigation:q=${encodeURIComponent(q)}`);
                   }}>
-                    <Ionicons name="navigate" size={14} color={colors.accent} />
+                    <Ionicons name="navigate" size={18} color={colors.accent} />
                   </TouchableOpacity>
                 )}
                 <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
@@ -290,7 +310,8 @@ const makeStyles = (colors: ThemeColors) =>
     card: {
       backgroundColor: colors.surface,
       borderRadius: 14,
-      padding: 14,
+      paddingVertical: 18,
+      paddingHorizontal: 16,
       marginBottom: 8,
       borderWidth: 1,
       borderColor: colors.border,
@@ -323,16 +344,16 @@ const makeStyles = (colors: ThemeColors) =>
     sizeBadgeText: { fontSize: 11, fontWeight: '700', color: colors.accent },
     cardRow: { flexDirection: 'row', alignItems: 'center' },
     stopCircle: {
-      width: 28,
-      height: 28,
-      borderRadius: 14,
+      width: 32,
+      height: 32,
+      borderRadius: 16,
       backgroundColor: colors.surfaceHover,
       justifyContent: 'center',
       alignItems: 'center',
       marginRight: 12,
     },
     stopCircleDone: { backgroundColor: colors.accent },
-    stopNum: { fontSize: 12, fontWeight: '700', color: colors.textSecondary },
+    stopNum: { fontSize: 13, fontWeight: '700', color: colors.textSecondary },
     cardContent: { flex: 1 },
     cardTop: {
       flexDirection: 'row',
@@ -340,18 +361,30 @@ const makeStyles = (colors: ThemeColors) =>
       justifyContent: 'space-between',
       marginBottom: 4,
     },
+    cardTopRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
     customerName: {
-      fontSize: 14,
-      fontWeight: '600',
+      fontSize: 17,
+      fontWeight: '700',
       color: colors.text,
       flex: 1,
       marginRight: 8,
     },
-    typeBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 },
+    typeBadge: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 8,
+      paddingVertical: 2,
+      borderRadius: 6,
+      gap: 4,
+    },
+    typeDot: { width: 24, height: 24, borderRadius: 12 },
     typeText: { fontSize: 10, fontWeight: '700' },
-    address: { fontSize: 12, color: colors.textSecondary, marginBottom: 4 },
-    cardMeta: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
+    addressRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
+    address: { fontSize: 14, color: colors.textSecondary, flex: 1 },
+    notesIndicator: { fontSize: 12, marginLeft: 4, color: '#D97706' },
+    cardMeta: { flexDirection: 'row', gap: 8, flexWrap: 'wrap', alignItems: 'center' },
     metaText: { fontSize: 11, color: colors.textSecondary },
+    nextActionText: { fontSize: 12, fontWeight: '700' },
     overdueBadge: {
       fontSize: 10,
       fontWeight: '700',
@@ -362,7 +395,13 @@ const makeStyles = (colors: ThemeColors) =>
       borderRadius: 4,
     },
     textFaded: { color: colors.textSecondary },
-    cardNavBtn: { padding: 8, marginRight: 4 },
+    cardNavBtn: {
+      width: 48,
+      height: 48,
+      justifyContent: 'center',
+      alignItems: 'center',
+      marginLeft: 16,
+    },
     emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
     empty: { alignItems: 'center' },
     emptyTitle: { fontSize: 18, fontWeight: '600', color: colors.text, marginTop: 16 },
