@@ -45,6 +45,8 @@ import { AutomationLog } from './modules/automation/entities/automation-log.enti
 import { DumpLocationsModule } from './modules/dump-locations/dump-locations.module';
 import { ReportingModule } from './modules/reporting/reporting.module';
 import { StripeModule } from './modules/stripe/stripe.module';
+import { QuotesModule } from './modules/quotes/quotes.module';
+import { Quote } from './modules/quotes/quote.entity';
 import { DumpLocation, DumpLocationRate, DumpLocationSurcharge } from './modules/dump-locations/entities/dump-location.entity';
 import { DumpTicket } from './modules/dump-locations/entities/dump-ticket.entity';
 import { SubscriptionPlan } from './modules/subscriptions/entities/subscription-plan.entity';
@@ -86,6 +88,7 @@ import { SubscriptionPlan } from './modules/subscriptions/entities/subscription-
             DumpLocationSurcharge,
             DumpTicket,
             SubscriptionPlan,
+            Quote,
           ],
           synchronize: true,
           ssl: {
@@ -117,6 +120,7 @@ import { SubscriptionPlan } from './modules/subscriptions/entities/subscription-
     DumpLocationsModule,
     ReportingModule,
     StripeModule,
+    QuotesModule,
   ],
   controllers: [AppController],
   providers: [
