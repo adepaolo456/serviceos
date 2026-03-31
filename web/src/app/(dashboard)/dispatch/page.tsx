@@ -712,13 +712,14 @@ const JobTile = memo(function JobTile({ job, isUnassigned, drivers, onAssign, on
     <div ref={setNodeRef} {...attributes} {...listeners}
       style={{
         transform: CSS.Transform.toString(transform), transition,
-        opacity: isDragging ? 0.3 : isCompleted ? 0.8 : 1,
+        opacity: isDragging ? 0.3 : 1,
         border: "1px solid #F0F0F0",
         boxShadow: isDragging ? "0 8px 24px rgba(0,0,0,0.15)" : "0 1px 4px rgba(0,0,0,0.04)",
         cursor: isDragging ? "grabbing" : "grab",
         touchAction: "none",
+        backgroundColor: isCompleted ? "#F0F0F0" : "#FFFFFF",
       }}
-      className="group relative rounded-[16px] bg-white"
+      className="group relative rounded-[16px]"
       onClick={onQuickView}
     >
       {/* Green left accent bar */}
