@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, memo, useRef } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import {
   ChevronLeft, ChevronRight, Calendar, Clock, MapPin, UserPlus, Truck,
@@ -793,23 +794,9 @@ const JobTile = memo(function JobTile({ job, isUnassigned, drivers, onAssign, on
             {job.customer?.phone && <a href={`tel:${job.customer.phone}`} className="flex items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-medium" style={{ borderColor: "#E5E5E5", color: "#5C5C5C" }}><Phone className="h-2.5 w-2.5" /> Call</a>}
             <button onClick={onQuickView} className="flex items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-medium" style={{ borderColor: "#E5E5E5", color: "#5C5C5C" }}><ExternalLink className="h-2.5 w-2.5" /> Details</button>
             {!isUnassigned && onUnassign && <button onClick={() => onUnassign(job.id)} className="flex items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-semibold" style={{ background: "rgba(220,38,38,0.06)", borderColor: "#DC2626", color: "#DC2626" }}><X className="h-2.5 w-2.5" /> Unassign</button>}
-            {/* Status override dropdown */}
+            {/* Status override — portal dropdown */}
             {onStatusChange && (
-              <Dropdown trigger={
-                <button className="flex items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-medium ml-auto" style={{ borderColor: "#E5E5E5", color: "#5C5C5C" }}>
-                  Status: {job.status.replace(/_/g, " ")} ▾
-                </button>
-              } align="right">
-                {["pending", "confirmed", "en_route", "arrived", "in_progress", "completed", "failed", "cancelled"].map(s => (
-                  <button key={s} disabled={s === job.status}
-                    onClick={() => { if (confirm(`Change status from "${job.status.replace(/_/g, " ")}" to "${s.replace(/_/g, " ")}"?`)) onStatusChange(job.id, s); }}
-                    className="flex w-full items-center gap-2 px-3 py-2 text-xs whitespace-nowrap disabled:opacity-30"
-                    style={{ color: s === job.status ? "var(--t-text-muted)" : "var(--t-text-primary)" }}>
-                    <span className="w-2 h-2 rounded-full" style={{ background: s === "completed" ? "#22C55E" : s === "failed" || s === "cancelled" ? "#DC2626" : s === "pending" ? "#D97706" : "#3B82F6" }} />
-                    {s.replace(/_/g, " ")}
-                  </button>
-                ))}
-              </Dropdown>
+              <StatusDropdown jobId={job.id} currentStatus={job.status} onStatusChange={onStatusChange} />
             )}
           </div>
         </div>
@@ -821,6 +808,66 @@ const JobTile = memo(function JobTile({ job, isUnassigned, drivers, onAssign, on
 /* ═══════════════════════════════════════════════════
    Drag Ghost
    ═══════════════════════════════════════════════════ */
+
+/* ═══ Status Dropdown (portal-based to escape overflow) ═══ */
+
+const STATUSES = ["pending", "confirmed", "en_route", "arrived", "in_progress", "completed", "failed", "cancelled"];
+
+function StatusDropdown({ jobId, currentStatus, onStatusChange }: { jobId: string; currentStatus: string; onStatusChange: (jobId: string, s: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const close = () => setOpen(false);
+    const onScroll = () => setOpen(false);
+    window.addEventListener("mousedown", close);
+    window.addEventListener("scroll", onScroll, true);
+    return () => { window.removeEventListener("mousedown", close); window.removeEventListener("scroll", onScroll, true); };
+  }, [open]);
+
+  const handleOpen = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (btnRef.current) {
+      const r = btnRef.current.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - r.bottom;
+      setPos({
+        top: spaceBelow > 280 ? r.bottom + 4 : r.top - 280,
+        left: Math.min(r.left, window.innerWidth - 200),
+      });
+    }
+    setOpen(!open);
+  };
+
+  return (
+    <>
+      <button ref={btnRef} onClick={handleOpen}
+        className="flex items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-medium ml-auto"
+        style={{ borderColor: "#E5E5E5", color: "#5C5C5C" }}>
+        Status: {currentStatus.replace(/_/g, " ")} ▾
+      </button>
+      {open && pos && typeof document !== "undefined" && createPortal(
+        <div onMouseDown={e => e.stopPropagation()}
+          className="fixed rounded-[14px] border shadow-2xl animate-dropdown py-1"
+          style={{ top: pos.top, left: pos.left, zIndex: 9999, background: "var(--t-bg-secondary)", borderColor: "var(--t-border)", minWidth: 180, maxHeight: 280, overflowY: "auto" }}>
+          {STATUSES.map(s => (
+            <button key={s} disabled={s === currentStatus}
+              onClick={(e) => { e.stopPropagation(); setOpen(false); if (confirm(`Change status to "${s.replace(/_/g, " ")}"?`)) onStatusChange(jobId, s); }}
+              className="flex w-full items-center gap-2 px-3 py-2 text-xs whitespace-nowrap disabled:opacity-30 transition-colors"
+              style={{ color: s === currentStatus ? "var(--t-text-muted)" : "var(--t-text-primary)" }}
+              onMouseEnter={e => { if (s !== currentStatus) (e.currentTarget as HTMLElement).style.background = "var(--t-bg-card-hover)"; }}
+              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}>
+              <span className="w-2 h-2 rounded-full" style={{ background: s === "completed" ? "#22C55E" : s === "failed" || s === "cancelled" ? "#DC2626" : s === "pending" ? "#D97706" : "#3B82F6" }} />
+              {s.replace(/_/g, " ")}
+            </button>
+          ))}
+        </div>,
+        document.body
+      )}
+    </>
+  );
+}
 
 function JobTileGhost({ job }: { job: DispatchJob }) {
   const tc = TYPE_CONFIG[job.job_type] || { label: job.job_type, letter: "?", stripe: "#8A8A8A" };

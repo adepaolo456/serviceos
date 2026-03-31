@@ -57,7 +57,9 @@ class ApiClient {
     }
 
     if (res.status === 204) return {} as T;
-    return res.json() as Promise<T>;
+    const text = await res.text();
+    if (!text) return {} as T;
+    return JSON.parse(text) as T;
   }
 
   get<T>(endpoint: string) {
