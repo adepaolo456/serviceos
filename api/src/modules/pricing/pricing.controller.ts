@@ -58,31 +58,7 @@ export class PricingController {
     return this.pricingService.findAll(tenantId, query);
   }
 
-  @Get(':id')
-  @ApiOperation({ summary: 'Get a pricing rule by ID' })
-  findOne(
-    @TenantId() tenantId: string,
-    @Param('id', ParseUUIDPipe) id: string,
-  ) {
-    return this.pricingService.findOne(tenantId, id);
-  }
-
-  @Patch(':id')
-  @ApiOperation({ summary: 'Update a pricing rule' })
-  update(
-    @TenantId() tenantId: string,
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: UpdatePricingRuleDto,
-  ) {
-    return this.pricingService.update(tenantId, id, dto);
-  }
-
-  @Delete(':id')
-  @HttpCode(HttpStatus.NO_CONTENT)
-  @ApiOperation({ summary: 'Delete a pricing rule' })
-  remove(@TenantId() tenantId: string, @Param('id', ParseUUIDPipe) id: string) {
-    return this.pricingService.remove(tenantId, id);
-  }
+  // ── Static routes MUST come before :id parameterized routes ──
 
   @Get('pricing-templates')
   @ApiOperation({ summary: 'List pricing templates' })
@@ -175,5 +151,33 @@ export class PricingController {
       outsideServiceArea: maxZone > 0 && distRounded >= maxZone,
       maxServiceMiles: maxZone,
     };
+  }
+
+  // ── Parameterized :id routes MUST come LAST ──
+
+  @Get(':id')
+  @ApiOperation({ summary: 'Get a pricing rule by ID' })
+  findOne(
+    @TenantId() tenantId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.pricingService.findOne(tenantId, id);
+  }
+
+  @Patch(':id')
+  @ApiOperation({ summary: 'Update a pricing rule' })
+  update(
+    @TenantId() tenantId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdatePricingRuleDto,
+  ) {
+    return this.pricingService.update(tenantId, id, dto);
+  }
+
+  @Delete(':id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Delete a pricing rule' })
+  remove(@TenantId() tenantId: string, @Param('id', ParseUUIDPipe) id: string) {
+    return this.pricingService.remove(tenantId, id);
   }
 }
