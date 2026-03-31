@@ -268,14 +268,20 @@ export class JobsService {
     tenantId: string,
     id: string,
     dto: ChangeStatusDto,
+    userRole?: string,
   ): Promise<Job> {
     const job = await this.findOne(tenantId, id);
+    const isAdmin = ['owner', 'admin', 'dispatcher'].includes(userRole || '');
+    const previousStatus = job.status;
 
-    const allowed = VALID_TRANSITIONS[job.status];
-    if (!allowed || !allowed.includes(dto.status)) {
-      throw new BadRequestException(
-        `Cannot transition from '${job.status}' to '${dto.status}'`,
-      );
+    // Drivers must follow forward-only transitions; dispatchers/owners can override
+    if (!isAdmin) {
+      const allowed = VALID_TRANSITIONS[job.status];
+      if (!allowed || !allowed.includes(dto.status)) {
+        throw new BadRequestException(
+          `Cannot transition from '${job.status}' to '${dto.status}'`,
+        );
+      }
     }
 
     job.status = dto.status;
@@ -434,7 +440,22 @@ export class JobsService {
       }
     }
 
-    return this.jobsRepository.save(job);
+    const savedJob = await this.jobsRepository.save(job);
+
+    // Log admin status overrides (backward transitions)
+    if (isAdmin && previousStatus !== dto.status) {
+      try {
+        await this.logRepo.save(this.logRepo.create({
+          tenant_id: tenantId,
+          job_id: job.id,
+          type: 'status_override',
+          status: 'completed',
+          details: { from: previousStatus, to: dto.status, overriddenBy: userRole },
+        }));
+      } catch { /* best effort */ }
+    }
+
+    return savedJob;
   }
 
   async assignJob(
