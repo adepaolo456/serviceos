@@ -29,6 +29,7 @@ interface Job {
   job_number: string;
   job_type: string;
   service_type: string;
+  asset_subtype?: string;
   status: string;
   priority: string;
   scheduled_date: string;
@@ -48,6 +49,8 @@ interface Job {
   } | null;
   asset: { identifier?: string; subtype?: string; size?: string } | null;
   notes?: string;
+  placement_notes?: string;
+  driver_notes?: string;
   route_order: number | null;
   photos?: PhotoEntry[];
   signature_url?: string;
@@ -375,7 +378,7 @@ export default function JobDetailScreen() {
         <View style={[s.card, { borderLeftWidth: 4, borderLeftColor: TYPE_COLORS[job.job_type] || '#71717A' }]}>
           <Text style={{ fontSize: 11, fontWeight: '800', color: '#8A8A8A', letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 8 }}>DUMPSTER</Text>
           <Text style={{ fontSize: 22, fontWeight: '800', color: colors.text, letterSpacing: -0.5 }}>
-            {job.asset?.subtype ? job.asset.subtype.replace('yd', ' Yard') + ' Dumpster' : (TYPE_LABELS[job.job_type] || job.job_type)}
+            {(job.asset_subtype || job.asset?.subtype) ? (job.asset_subtype || job.asset?.subtype || '').replace('yd', ' Yard') + ' Dumpster' : (TYPE_LABELS[job.job_type] || job.job_type)}
           </Text>
           <Text style={{ fontSize: 16, fontWeight: '700', color: TYPE_COLORS[job.job_type] || '#71717A', marginTop: 4 }}>
             {TYPE_LABELS[job.job_type] || job.job_type}
@@ -436,6 +439,31 @@ export default function JobDetailScreen() {
               <Ionicons name="navigate" size={16} color="#fff" />
               <Text style={s.navigateBtnText}>Navigate</Text>
             </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Notes Card */}
+        {(job.placement_notes || job.notes || job.driver_notes) && (
+          <View style={[s.card, { backgroundColor: '#FFFBEB', borderLeftWidth: 4, borderLeftColor: '#F59E0B' }]}>
+            <Text style={{ fontSize: 11, fontWeight: '800', color: '#92400E', letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 8 }}>NOTES</Text>
+            {job.placement_notes ? (
+              <View style={{ marginBottom: 8 }}>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: '#92400E', marginBottom: 2 }}>Placement</Text>
+                <Text style={{ fontSize: 14, color: '#0A0A0A' }}>{job.placement_notes}</Text>
+              </View>
+            ) : null}
+            {job.notes ? (
+              <View style={{ marginBottom: 8 }}>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: '#92400E', marginBottom: 2 }}>Dispatcher</Text>
+                <Text style={{ fontSize: 14, color: '#0A0A0A' }}>{job.notes}</Text>
+              </View>
+            ) : null}
+            {job.driver_notes ? (
+              <View>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: '#92400E', marginBottom: 2 }}>Your Notes</Text>
+                <Text style={{ fontSize: 14, color: '#0A0A0A' }}>{job.driver_notes}</Text>
+              </View>
+            ) : null}
           </View>
         )}
 

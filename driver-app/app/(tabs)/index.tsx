@@ -21,6 +21,7 @@ interface Job {
   job_number: string;
   job_type: string;
   service_type: string;
+  asset_subtype?: string;
   status: string;
   priority: string;
   scheduled_window_start: string;
@@ -155,7 +156,7 @@ export default function TodayScreen() {
           const isNextStop = !isCompleted && jobs.findIndex(j => j.status !== 'completed' && j.status !== 'cancelled') === index;
           const addr = j.service_address;
           const typeColor = TYPE_COLORS[j.job_type] || '#71717A';
-          const sizeStr = j.asset?.subtype || '';
+          const sizeStr = j.asset_subtype || j.asset?.subtype || '';
           return (
             <TouchableOpacity
               style={[

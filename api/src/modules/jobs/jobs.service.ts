@@ -93,6 +93,7 @@ export class JobsService {
       assigned_driver_id: dto.assignedDriverId,
       job_type: dto.jobType,
       service_type: dto.serviceType,
+      asset_subtype: dto.assetSubtype || undefined,
       priority: dto.priority ?? 'normal',
       scheduled_date: dto.scheduledDate,
       scheduled_window_start: dto.scheduledWindowStart,
