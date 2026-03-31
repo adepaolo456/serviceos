@@ -5,11 +5,12 @@ import Link from "next/link";
 import {
   ChevronLeft, ChevronRight, Calendar, Clock, MapPin, UserPlus, Truck,
   Phone, Plus, Box, Search, CheckCircle2, RefreshCw, Zap, X, ExternalLink,
-  ChevronDown, ChevronUp, Navigation, Mail,
+  ChevronDown, ChevronUp, Navigation, Mail, MoreHorizontal, Eye, EyeOff,
+  FileText, Send,
 } from "lucide-react";
 import {
   DndContext, closestCenter, DragOverlay, useSensor, useSensors, PointerSensor,
-  DragStartEvent, DragEndEvent, DragOverEvent, useDroppable,
+  DragStartEvent, DragEndEvent, useDroppable,
 } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -36,22 +37,16 @@ interface DispatchJob {
 }
 
 interface Driver { id: string; firstName: string; lastName: string; phone: string; vehicleInfo?: { year?: string; make?: string; model?: string } | null; }
-
-interface DriverColumn {
-  driver: Driver;
-  route: { id: string; status: string; total_stops: number } | null;
-  jobs: DispatchJob[]; jobCount: number;
-}
-
+interface DriverColumn { driver: Driver; route: { id: string; status: string; total_stops: number } | null; jobs: DispatchJob[]; jobCount: number; }
 interface DispatchBoard { date: string; drivers: DriverColumn[]; unassigned: DispatchJob[]; }
 
 /* ---- Constants ---- */
 
-const TYPE_CONFIG: Record<string, { label: string; letter: string; color: string; stripe: string }> = {
-  delivery: { label: "Drop Off", letter: "D", color: "var(--t-accent)", stripe: "#22C55E" },
-  pickup: { label: "Pick Up", letter: "P", color: "var(--t-warning)", stripe: "#D97706" },
-  exchange: { label: "Exchange", letter: "E", color: "#a78bfa", stripe: "#a78bfa" },
-  dump_run: { label: "Dump Run", letter: "DR", color: "#F87171", stripe: "#DC2626" },
+const TYPE_CONFIG: Record<string, { label: string; letter: string; stripe: string }> = {
+  delivery: { label: "Drop Off", letter: "D", stripe: "#22C55E" },
+  pickup: { label: "Pick Up", letter: "P", stripe: "#D97706" },
+  exchange: { label: "Exchange", letter: "E", stripe: "#a78bfa" },
+  dump_run: { label: "Dump Run", letter: "DR", stripe: "#DC2626" },
 };
 
 const FILTER_TABS = [
@@ -94,9 +89,16 @@ export default function DispatchPage() {
   const [qvDetail, setQvDetail] = useState<any>(null);
   const [qvLoading, setQvLoading] = useState(false);
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [collapsedCols, setCollapsedCols] = useState<Set<string>>(new Set());
+  const [hiddenCols, setHiddenCols] = useState<Set<string>>(new Set());
   const { toast } = useToast();
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+
+  const toggleCollapse = (id: string) => setCollapsedCols(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const hideColumn = (id: string) => setHiddenCols(prev => new Set(prev).add(id));
+  const showColumn = (id: string) => setHiddenCols(prev => { const n = new Set(prev); n.delete(id); return n; });
+  const showAllColumns = () => setHiddenCols(new Set());
 
   const fetchBoard = useCallback(async (silent = false) => {
     if (!silent) setLoading(true); else setRefreshing(true);
@@ -119,9 +121,7 @@ export default function DispatchPage() {
     return () => window.removeEventListener("keydown", handler);
   }, []);
 
-  /* ---- All jobs flat ---- */
   const allJobs = board ? [...board.unassigned, ...board.drivers.flatMap(d => d.jobs)] : [];
-
   const findColumnForJob = (jobId: string): string => {
     if (!board) return "unassigned";
     if (board.unassigned.some(j => j.id === jobId)) return "unassigned";
@@ -129,104 +129,71 @@ export default function DispatchPage() {
     return "unassigned";
   };
 
-  /* ---- DnD handlers ---- */
   const handleDragStart = (event: DragStartEvent) => { setActiveId(event.active.id as string); };
-
   const handleDragEnd = async (event: DragEndEvent) => {
     setActiveId(null);
     const { active, over } = event;
     if (!over || !board) return;
-
     const activeJobId = active.id as string;
     const overId = over.id as string;
     const sourceCol = findColumnForJob(activeJobId);
-
-    // Determine target column: if dropped on a column droppable or a job in that column
     let targetCol = overId;
     if (!["unassigned", ...board.drivers.map(d => d.driver.id)].includes(overId)) {
-      // Dropped on a job card — find which column it belongs to
       targetCol = findColumnForJob(overId);
     }
-
     if (sourceCol === targetCol) {
-      // Reorder within the same column
-      const colJobs = targetCol === "unassigned"
-        ? [...board.unassigned]
-        : [...(board.drivers.find(d => d.driver.id === targetCol)?.jobs || [])];
-
+      const colJobs = targetCol === "unassigned" ? [...board.unassigned] : [...(board.drivers.find(d => d.driver.id === targetCol)?.jobs || [])];
       const oldIndex = colJobs.findIndex(j => j.id === activeJobId);
       const newIndex = colJobs.findIndex(j => j.id === overId);
       if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) return;
-
       const reordered = arrayMove(colJobs, oldIndex, newIndex);
-
-      // Optimistic update
       setBoard(prev => {
         if (!prev) return prev;
         if (targetCol === "unassigned") return { ...prev, unassigned: reordered };
         return { ...prev, drivers: prev.drivers.map(d => d.driver.id === targetCol ? { ...d, jobs: reordered } : d) };
       });
-
-      // Persist
-      try {
-        await api.patch("/jobs/bulk-reorder", { jobIds: reordered.map(j => j.id) });
-      } catch { fetchBoard(true); }
+      try { await api.patch("/jobs/bulk-reorder", { jobIds: reordered.map(j => j.id) }); } catch { fetchBoard(true); }
     } else {
-      // Move between columns
       const targetDriverId = targetCol === "unassigned" ? null : targetCol;
       try {
         await api.patch(`/jobs/${activeJobId}/assign`, { assignedDriverId: targetDriverId });
-        const driverName = targetDriverId ? board.drivers.find(d => d.driver.id === targetDriverId)?.driver : null;
-        toast("success", targetDriverId ? `Moved to ${driverName?.firstName}'s route` : "Moved to Unassigned");
+        const dn = targetDriverId ? board.drivers.find(d => d.driver.id === targetDriverId)?.driver : null;
+        toast("success", targetDriverId ? `Moved to ${dn?.firstName}'s route` : "Moved to Unassigned");
         await fetchBoard(true);
-      } catch (err) {
-        toast("error", err instanceof Error ? err.message : "Failed to move job");
-        fetchBoard(true);
-      }
+      } catch (err) { toast("error", err instanceof Error ? err.message : "Failed"); fetchBoard(true); }
     }
   };
 
-  /* ---- Computed ---- */
+  const openQuickView = (j: DispatchJob) => { setQuickViewJob(j); setQvLoading(true); setQvDetail(null); api.get(`/jobs/${j.id}`).then(setQvDetail).catch(() => {}).finally(() => setQvLoading(false)); };
+
   const totalJobs = board ? board.unassigned.length + board.drivers.reduce((s, d) => s + d.jobs.length, 0) : 0;
   const driverCount = board?.drivers.length || 0;
   const unassignedCount = board?.unassigned.length || 0;
   const completedJobs = allJobs.filter(j => j.status === "completed").length;
   const activeJob = activeId ? allJobs.find(j => j.id === activeId) : null;
+  const visibleDrivers = board?.drivers.filter(d => !hiddenCols.has(d.driver.id)) || [];
+  const hiddenDrivers = board?.drivers.filter(d => hiddenCols.has(d.driver.id)) || [];
 
   return (
     <div className="flex h-[calc(100vh-5rem)] flex-col">
-      {/* Top bar */}
+      {/* ── Top bar ── */}
       <div className="shrink-0 mb-3">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-1">
-              <button onClick={() => setDate(d => shiftDate(d, -1))}
-                className="p-2 rounded-[20px] border transition-all duration-150"
-                style={{ background: "rgba(255,255,255,0.06)", borderColor: "rgba(255,255,255,0.08)", color: "var(--t-frame-text-muted)" }}
-                onMouseEnter={e => { e.currentTarget.style.color = "var(--t-frame-text)"; }}
-                onMouseLeave={e => { e.currentTarget.style.color = "var(--t-frame-text-muted)"; }}>
+              <button onClick={() => setDate(d => shiftDate(d, -1))} className="p-2 rounded-[20px] border transition-all" style={{ background: "rgba(255,255,255,0.06)", borderColor: "rgba(255,255,255,0.08)", color: "var(--t-frame-text-muted)" }}>
                 <ChevronLeft className="h-4 w-4" />
               </button>
               <div className="relative">
                 <Calendar className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" style={{ color: "var(--t-frame-text-muted)" }} />
-                <input type="date" value={date} onChange={e => setDate(e.target.value)}
-                  className="rounded-[20px] py-2 pl-10 pr-3 text-sm font-medium outline-none w-52 transition-all duration-150"
-                  style={{ background: "rgba(255,255,255,0.06)", borderWidth: 1, borderStyle: "solid", borderColor: "rgba(255,255,255,0.08)", color: "var(--t-frame-text)" }} />
+                <input type="date" value={date} onChange={e => setDate(e.target.value)} className="rounded-[20px] py-2 pl-10 pr-3 text-sm font-medium outline-none w-52"
+                  style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.08)", color: "var(--t-frame-text)" }} />
               </div>
-              <button onClick={() => setDate(d => shiftDate(d, 1))}
-                className="p-2 rounded-[20px] border transition-all duration-150"
-                style={{ background: "rgba(255,255,255,0.06)", borderColor: "rgba(255,255,255,0.08)", color: "var(--t-frame-text-muted)" }}
-                onMouseEnter={e => { e.currentTarget.style.color = "var(--t-frame-text)"; }}
-                onMouseLeave={e => { e.currentTarget.style.color = "var(--t-frame-text-muted)"; }}>
+              <button onClick={() => setDate(d => shiftDate(d, 1))} className="p-2 rounded-[20px] border transition-all" style={{ background: "rgba(255,255,255,0.06)", borderColor: "rgba(255,255,255,0.08)", color: "var(--t-frame-text-muted)" }}>
                 <ChevronRight className="h-4 w-4" />
               </button>
-              <button onClick={() => setDate(today())}
-                className="ml-1 rounded-full px-3 py-2 text-xs font-medium transition-all duration-150 border"
-                style={{
-                  background: date === today() ? "var(--t-accent-soft)" : "rgba(255,255,255,0.06)",
-                  borderColor: date === today() ? "var(--t-accent)" : "rgba(255,255,255,0.08)",
-                  color: date === today() ? "var(--t-accent)" : "var(--t-frame-text-muted)",
-                }}>
+              <button onClick={() => setDate(today())} className="ml-1 rounded-full px-3 py-2 text-xs font-medium border"
+                style={{ background: date === today() ? "var(--t-accent-soft)" : "rgba(255,255,255,0.06)", borderColor: date === today() ? "var(--t-accent)" : "rgba(255,255,255,0.08)", color: date === today() ? "var(--t-accent)" : "var(--t-frame-text-muted)" }}>
                 Today
               </button>
             </div>
@@ -237,13 +204,11 @@ export default function DispatchPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={() => fetchBoard(true)} disabled={refreshing}
-              className="p-2 rounded-[20px] border transition-all duration-150 disabled:opacity-50"
+            <button onClick={() => fetchBoard(true)} disabled={refreshing} className="p-2 rounded-[20px] border disabled:opacity-50"
               style={{ background: "rgba(255,255,255,0.06)", borderColor: "rgba(255,255,255,0.08)", color: "var(--t-frame-text-muted)" }}>
               <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
             </button>
-            <button className="flex items-center gap-1.5 rounded-full px-3.5 py-2 text-xs font-semibold transition-all duration-150 active:scale-95"
-              style={{ background: "var(--t-accent)", color: "#000" }}>
+            <button className="flex items-center gap-1.5 rounded-full px-3.5 py-2 text-xs font-semibold active:scale-95" style={{ background: "var(--t-accent)", color: "#000" }}>
               <Zap className="h-3.5 w-3.5" /> Optimize Routes
             </button>
           </div>
@@ -251,12 +216,8 @@ export default function DispatchPage() {
         <div className="flex items-center gap-3 mt-3">
           <div className="flex gap-1">
             {FILTER_TABS.map(t => (
-              <button key={t.key} onClick={() => setFilter(t.key)}
-                className="rounded-full px-3 py-1.5 text-xs font-medium transition-all duration-150"
-                style={{
-                  background: filter === t.key ? "var(--t-accent-soft)" : "rgba(255,255,255,0.06)",
-                  color: filter === t.key ? "var(--t-accent)" : "var(--t-frame-text-muted)",
-                }}>
+              <button key={t.key} onClick={() => setFilter(t.key)} className="rounded-full px-3 py-1.5 text-xs font-medium"
+                style={{ background: filter === t.key ? "var(--t-accent-soft)" : "rgba(255,255,255,0.06)", color: filter === t.key ? "var(--t-accent)" : "var(--t-frame-text-muted)" }}>
                 {t.label}
               </button>
             ))}
@@ -264,125 +225,104 @@ export default function DispatchPage() {
           <div className="relative flex-1 max-w-xs">
             <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2" style={{ color: "var(--t-frame-text-muted)" }} />
             <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search jobs..."
-              className="w-full rounded-[20px] py-1.5 pl-9 pr-3 text-xs outline-none transition-all duration-150"
-              style={{ background: "rgba(255,255,255,0.06)", borderWidth: 1, borderStyle: "solid", borderColor: "rgba(255,255,255,0.08)", color: "var(--t-frame-text)" }} />
+              className="w-full rounded-[20px] py-1.5 pl-9 pr-3 text-xs outline-none"
+              style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.08)", color: "var(--t-frame-text)" }} />
           </div>
+          {/* Show hidden columns */}
+          {hiddenDrivers.length > 0 && (
+            <Dropdown trigger={
+              <button className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium border"
+                style={{ borderColor: "rgba(255,255,255,0.12)", color: "var(--t-frame-text-muted)" }}>
+                <EyeOff className="h-3 w-3" /> {hiddenDrivers.length} hidden
+              </button>
+            }>
+              {hiddenDrivers.map(col => (
+                <button key={col.driver.id} onClick={() => showColumn(col.driver.id)}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-xs whitespace-nowrap" style={{ color: "var(--t-text-primary)" }}>
+                  <Eye className="h-3 w-3" /> {col.driver.firstName} {col.driver.lastName}
+                </button>
+              ))}
+              <button onClick={showAllColumns} className="flex w-full items-center gap-2 px-3 py-2 text-xs font-semibold border-t whitespace-nowrap"
+                style={{ color: "var(--t-accent)", borderColor: "var(--t-border)" }}>
+                Show All
+              </button>
+            </Dropdown>
+          )}
         </div>
       </div>
 
-      {/* Board with DnD */}
-      <DndContext sensors={sensors} collisionDetection={closestCenter}
-        onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-        <div className="flex flex-1 gap-3 min-h-0">
-          <div className="flex-1 min-w-0 overflow-hidden">
-            {loading ? (
-              <div className="flex h-full gap-3 overflow-x-auto pb-2">
-                {[1,2,3,4].map(i => (<div key={i} className="w-[300px] shrink-0 space-y-2"><div className="h-20 skeleton rounded-t-[20px]" />{[1,2,3].map(j => <div key={j} className="h-24 skeleton rounded-[16px]" />)}</div>))}
-              </div>
-            ) : !board ? (
-              <div className="flex h-full items-center justify-center" style={{ color: "var(--t-frame-text-muted)" }}>Failed to load</div>
-            ) : totalJobs === 0 && board.drivers.length === 0 ? (
-              <div className="flex h-full flex-col items-center justify-center">
-                <Truck className="h-14 w-14 mb-3" style={{ color: "var(--t-frame-text-muted)", opacity: 0.15 }} />
-                <h2 className="text-base font-semibold" style={{ color: "var(--t-frame-text)" }}>No jobs for {fmtDate(date)}</h2>
-                <p className="mt-1 text-xs" style={{ color: "var(--t-frame-text-muted)" }}>Schedule some deliveries!</p>
-                <Link href="/" className="mt-3 flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-semibold active:scale-95 transition-all duration-150"
-                  style={{ background: "var(--t-accent)", color: "#000" }}>
-                  <Plus className="h-3.5 w-3.5" /> New Job
-                </Link>
-              </div>
-            ) : (
-              <div className="flex h-full gap-3 overflow-x-auto pb-2">
-                {/* Unassigned */}
-                <DriverColumnComponent
-                  columnId="unassigned" title="Unassigned" isUnassigned
-                  count={board.unassigned.length}
-                  jobs={filterJobs(board.unassigned, filter, search)}
-                  drivers={board.drivers.map(d => d.driver)}
-                  onAssign={async (jid, did) => {
-                    try { await api.patch(`/jobs/${jid}/assign`, { assignedDriverId: did }); toast("success", "Assigned"); await fetchBoard(true); }
-                    catch { toast("error", "Failed"); }
-                  }}
-                  onQuickView={(j) => { setQuickViewJob(j); setQvLoading(true); setQvDetail(null); api.get(`/jobs/${j.id}`).then(setQvDetail).catch(() => {}).finally(() => setQvLoading(false)); }}
-                  activeId={activeId}
-                />
-                {/* Driver columns */}
-                {board.drivers.map(col => (
-                  <DriverColumnComponent key={col.driver.id}
-                    columnId={col.driver.id} title={`${col.driver.firstName} ${col.driver.lastName}`}
-                    driver={col.driver}
-                    count={col.jobs.length}
-                    progress={{ completed: col.jobs.filter(j => j.status === "completed").length, total: col.jobs.length }}
-                    jobs={filterJobs(col.jobs, filter, search)}
-                    onUnassign={async (jid) => {
-                      try { await api.patch(`/jobs/${jid}/assign`, { assignedDriverId: null }); toast("success", "Unassigned"); await fetchBoard(true); }
-                      catch { toast("error", "Failed"); }
-                    }}
-                    onQuickView={(j) => { setQuickViewJob(j); setQvLoading(true); setQvDetail(null); api.get(`/jobs/${j.id}`).then(setQvDetail).catch(() => {}).finally(() => setQvLoading(false)); }}
-                    activeId={activeId}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
+      {/* ── Board ── */}
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+        <div className="flex-1 min-h-0 overflow-hidden">
+          {loading ? (
+            <div className="flex h-full gap-3 overflow-x-auto pb-2">
+              {[1,2,3,4].map(i => <div key={i} className="w-[330px] shrink-0"><div className="h-20 skeleton rounded-t-[20px]" /><div className="space-y-2 mt-2">{[1,2,3].map(j => <div key={j} className="h-24 skeleton rounded-[14px]" />)}</div></div>)}
+            </div>
+          ) : !board ? (
+            <div className="flex h-full items-center justify-center" style={{ color: "var(--t-frame-text-muted)" }}>Failed to load</div>
+          ) : totalJobs === 0 && board.drivers.length === 0 ? (
+            <div className="flex h-full flex-col items-center justify-center">
+              <Truck className="h-14 w-14 mb-3" style={{ color: "var(--t-frame-text-muted)", opacity: 0.15 }} />
+              <h2 className="text-base font-semibold" style={{ color: "var(--t-frame-text)" }}>No jobs for {fmtDate(date)}</h2>
+              <p className="mt-1 text-xs" style={{ color: "var(--t-frame-text-muted)" }}>Schedule some deliveries!</p>
+              <Link href="/" className="mt-3 flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-semibold active:scale-95" style={{ background: "var(--t-accent)", color: "#000" }}>
+                <Plus className="h-3.5 w-3.5" /> New Job
+              </Link>
+            </div>
+          ) : (
+            <div className="flex h-full gap-3 overflow-x-auto pb-2">
+              <ColumnCard columnId="unassigned" title="Unassigned" isUnassigned count={board.unassigned.length}
+                jobs={filterJobs(board.unassigned, filter, search)} drivers={board.drivers.map(d => d.driver)}
+                onAssign={async (jid, did) => { try { await api.patch(`/jobs/${jid}/assign`, { assignedDriverId: did }); toast("success", "Assigned"); await fetchBoard(true); } catch { toast("error", "Failed"); } }}
+                onQuickView={openQuickView} activeId={activeId}
+                collapsed={collapsedCols.has("unassigned")} onToggleCollapse={() => toggleCollapse("unassigned")} />
+              {visibleDrivers.map(col => (
+                <ColumnCard key={col.driver.id} columnId={col.driver.id} title={`${col.driver.firstName} ${col.driver.lastName}`}
+                  driver={col.driver} count={col.jobs.length}
+                  progress={{ completed: col.jobs.filter(j => j.status === "completed").length, total: col.jobs.length }}
+                  jobs={filterJobs(col.jobs, filter, search)}
+                  onUnassign={async (jid) => { try { await api.patch(`/jobs/${jid}/assign`, { assignedDriverId: null }); toast("success", "Unassigned"); await fetchBoard(true); } catch { toast("error", "Failed"); } }}
+                  onQuickView={openQuickView} activeId={activeId}
+                  collapsed={collapsedCols.has(col.driver.id)} onToggleCollapse={() => toggleCollapse(col.driver.id)}
+                  onHide={() => hideColumn(col.driver.id)} />
+              ))}
+            </div>
+          )}
         </div>
-
-        {/* Drag overlay */}
-        <DragOverlay>
-          {activeJob ? <JobTileOverlay job={activeJob} /> : null}
-        </DragOverlay>
+        <DragOverlay>{activeJob ? <JobTileGhost job={activeJob} /> : null}</DragOverlay>
       </DndContext>
 
-      {/* Bottom Bar */}
+      {/* ── Bottom bar ── */}
       {!loading && board && totalJobs > 0 && (
-        <div className="shrink-0 mt-3 flex items-center justify-between px-5 py-3"
-          style={{ borderTop: "1px solid var(--t-frame-border)" }}>
+        <div className="shrink-0 mt-3 flex items-center justify-between px-5 py-3" style={{ borderTop: "1px solid var(--t-frame-border)" }}>
           <div className="flex items-center gap-5 text-xs" style={{ color: "var(--t-frame-text-muted)" }}>
             <span><span className="font-semibold" style={{ color: "var(--t-frame-text)" }}>{totalJobs - completedJobs}</span> stops remaining</span>
             <span><span className="font-semibold" style={{ color: "var(--t-frame-text)" }}>{completedJobs}</span> completed</span>
             <span><span className="font-semibold" style={{ color: "var(--t-frame-text)" }}>{driverCount}</span> active drivers</span>
           </div>
           <div className="flex items-center gap-2">
-            <button className="rounded-full border px-3 py-1.5 text-xs font-medium transition-all duration-150"
-              style={{ borderColor: "var(--t-frame-border)", color: "var(--t-frame-text-muted)", background: "transparent" }}>
-              Print Route Sheets
-            </button>
-            <button className="rounded-full border px-3 py-1.5 text-xs font-semibold transition-all duration-150"
-              style={{ background: "var(--t-accent-soft)", borderColor: "var(--t-accent)", color: "var(--t-accent)" }}>
-              Send Routes to Drivers
-            </button>
+            <button className="rounded-full border px-3 py-1.5 text-xs font-medium" style={{ borderColor: "var(--t-frame-border)", color: "var(--t-frame-text-muted)" }}>Print Route Sheets</button>
+            <button className="rounded-full border px-3 py-1.5 text-xs font-semibold" style={{ background: "var(--t-accent-soft)", borderColor: "var(--t-accent)", color: "var(--t-accent)" }}>Send Routes to Drivers</button>
           </div>
         </div>
       )}
 
-      {/* QuickView Panel */}
+      {/* ── QuickView ── */}
       <QuickView isOpen={!!quickViewJob} onClose={() => { setQuickViewJob(null); setQvDetail(null); }}
         title={quickViewJob ? `${quickViewJob.asset?.subtype || ""} ${TYPE_CONFIG[quickViewJob.job_type]?.label || quickViewJob.job_type}`.trim() : ""}
         subtitle={quickViewJob?.job_number}
-        actions={quickViewJob ? <Link href={`/jobs/${quickViewJob.id}`} className="rounded-full px-3 py-1.5 text-xs font-medium transition-all duration-150" style={{ background: "var(--t-bg-card-hover)", color: "var(--t-text-primary)" }}><ExternalLink className="h-3 w-3 inline mr-1" />Full Detail</Link> : undefined}
+        actions={quickViewJob ? <Link href={`/jobs/${quickViewJob.id}`} className="rounded-full px-3 py-1.5 text-xs font-medium" style={{ background: "var(--t-bg-card-hover)", color: "var(--t-text-primary)" }}><ExternalLink className="h-3 w-3 inline mr-1" />Full Detail</Link> : undefined}
         footer={quickViewJob ? (
           <div className="flex gap-2">
-            {quickViewJob.customer?.phone && (
-              <a href={`tel:${quickViewJob.customer.phone}`}
-                className="flex-1 flex items-center justify-center gap-1.5 rounded-full py-2.5 text-xs font-semibold"
-                style={{ background: "var(--t-accent)", color: "#000" }}>
-                <Phone className="h-3.5 w-3.5" /> Call Customer
-              </a>
-            )}
-            {quickViewJob.service_address && (
-              <button onClick={() => { const a = quickViewJob.service_address!; const q = [a.street, a.city, a.state].filter(Boolean).join(", "); window.open(`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(q)}`, "_blank"); }}
-                className="flex-1 flex items-center justify-center gap-1.5 rounded-full py-2.5 text-xs font-semibold border"
-                style={{ background: "transparent", borderColor: "var(--t-border)", color: "var(--t-text-primary)" }}>
-                <Navigation className="h-3.5 w-3.5" /> Navigate
-              </button>
-            )}
+            {quickViewJob.customer?.phone && <a href={`tel:${quickViewJob.customer.phone}`} className="flex-1 flex items-center justify-center gap-1.5 rounded-full py-2.5 text-xs font-semibold" style={{ background: "var(--t-accent)", color: "#000" }}><Phone className="h-3.5 w-3.5" /> Call</a>}
+            {quickViewJob.service_address && <button onClick={() => { const a = quickViewJob.service_address!; window.open(`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent([a.street, a.city, a.state].filter(Boolean).join(", "))}`, "_blank"); }}
+              className="flex-1 flex items-center justify-center gap-1.5 rounded-full py-2.5 text-xs font-semibold border" style={{ borderColor: "var(--t-border)", color: "var(--t-text-primary)" }}><Navigation className="h-3.5 w-3.5" /> Navigate</button>}
           </div>
         ) : undefined}
       >
         {quickViewJob && qvLoading ? <QuickViewSkeleton /> : quickViewJob && qvDetail ? (
-          <JobQuickViewContent job={quickViewJob} detail={qvDetail} board={board} onAssign={async (jid, did) => {
-            try { await api.patch(`/jobs/${jid}/assign`, { assignedDriverId: did }); toast("success", "Reassigned"); await fetchBoard(true); }
-            catch { toast("error", "Failed"); }
+          <QVContent job={quickViewJob} detail={qvDetail} board={board} onAssign={async (jid, did) => {
+            try { await api.patch(`/jobs/${jid}/assign`, { assignedDriverId: did }); toast("success", "Reassigned"); await fetchBoard(true); } catch { toast("error", "Failed"); }
           }} onRefresh={() => fetchBoard(true)} toast={toast} />
         ) : null}
       </QuickView>
@@ -390,9 +330,11 @@ export default function DispatchPage() {
   );
 }
 
-/* ======== Driver Column ======== */
+/* ═══════════════════════════════════════════════════
+   Column Card — white card with accordion collapse
+   ═══════════════════════════════════════════════════ */
 
-function DriverColumnComponent({ columnId, title, driver, isUnassigned, count, progress, jobs, drivers, onAssign, onUnassign, onQuickView, activeId }: {
+function ColumnCard({ columnId, title, driver, isUnassigned, count, progress, jobs, drivers, onAssign, onUnassign, onQuickView, activeId, collapsed, onToggleCollapse, onHide }: {
   columnId: string; title: string; driver?: Driver; isUnassigned?: boolean;
   count: number; progress?: { completed: number; total: number };
   jobs: DispatchJob[]; drivers?: Driver[];
@@ -400,27 +342,11 @@ function DriverColumnComponent({ columnId, title, driver, isUnassigned, count, p
   onUnassign?: (jobId: string) => void;
   onQuickView: (job: DispatchJob) => void;
   activeId: string | null;
+  collapsed: boolean; onToggleCollapse: () => void; onHide?: () => void;
 }) {
-  const storageKey = `dispatch-col-${columnId}`;
-  const [collapsed, setCollapsed] = useState(() => typeof window !== "undefined" && localStorage.getItem(storageKey) === "1");
-  const toggleCollapse = () => { const n = !collapsed; setCollapsed(n); localStorage.setItem(storageKey, n ? "1" : "0"); };
-
   const { setNodeRef, isOver } = useDroppable({ id: columnId });
-
-  const vehicleStr = driver?.vehicleInfo ? [driver.vehicleInfo.year, driver.vehicleInfo.make, driver.vehicleInfo.model].filter(Boolean).join(" ") : null;
-
-  if (collapsed) {
-    return (
-      <div onClick={toggleCollapse}
-        className="flex w-[56px] shrink-0 cursor-pointer flex-col items-center rounded-[20px] py-3 transition-all duration-150 hover:opacity-80"
-        style={{ background: "#FFFFFF", border: "1px solid #E5E5E5", boxShadow: "0 2px 8px rgba(0,0,0,0.06)" }}>
-        <ChevronDown className="h-3.5 w-3.5 mb-2" style={{ color: "#8A8A8A" }} />
-        <span className="rounded-full px-2 py-0.5 text-[10px] font-bold tabular-nums"
-          style={{ background: "#F0F0F0", color: "#0A0A0A" }}>{count}</span>
-        <p className="mt-2 text-[9px] font-medium" style={{ writingMode: "vertical-lr", color: "#5C5C5C" }}>{title}</p>
-      </div>
-    );
-  }
+  const completedCount = progress?.completed || 0;
+  const totalCount = progress?.total || count;
 
   return (
     <div ref={setNodeRef}
@@ -429,71 +355,98 @@ function DriverColumnComponent({ columnId, title, driver, isUnassigned, count, p
         width: 330, minWidth: 330,
         border: isOver && activeId ? "2px dashed var(--t-accent)" : "1px solid #E5E5E5",
         background: "#FFFFFF",
-        boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
+        boxShadow: "0 2px 12px rgba(0,0,0,0.08)",
       }}>
-      {/* Header — white with light border */}
-      <div className="px-3.5 py-3 shrink-0" style={{ background: isUnassigned ? "#FFFBEB" : "#FFFFFF", borderBottom: "1px solid #E5E5E5" }}>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2.5 min-w-0">
-            {isUnassigned ? (
-              <div className="flex h-8 w-8 items-center justify-center rounded-full shrink-0"
-                style={{ background: "rgba(217,119,6,0.1)", color: "#D97706" }}>
-                <UserPlus className="h-4 w-4" />
-              </div>
-            ) : (
-              <div className="flex h-8 w-8 items-center justify-center rounded-full text-[11px] font-bold shrink-0"
-                style={{ background: "var(--t-accent-soft)", color: "var(--t-accent)" }}>
-                {title.split(" ").map(n => n[0]).join("")}
-              </div>
-            )}
-            <div className="min-w-0">
-              <p className="text-sm font-bold truncate" style={{ color: isUnassigned ? "#D97706" : "#0A0A0A" }}>{title}</p>
-              {vehicleStr && <p className="text-[10px] truncate" style={{ color: "#8A8A8A" }}>{vehicleStr}</p>}
-              {driver?.phone && <p className="text-[10px]" style={{ color: "#5C5C5C" }}><Phone className="inline h-2.5 w-2.5 mr-0.5" />{formatPhone(driver.phone)}</p>}
-            </div>
+
+      {/* ── Header ── */}
+      <div className="px-4 py-3.5 shrink-0 flex items-center gap-3" style={{ borderBottom: collapsed ? "none" : "1px solid #F0F0F0" }}>
+        {/* Avatar */}
+        {isUnassigned ? (
+          <div className="flex h-9 w-9 items-center justify-center rounded-full shrink-0" style={{ background: "rgba(217,119,6,0.1)", color: "#D97706" }}>
+            <UserPlus className="h-4 w-4" />
           </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <span className="rounded-full px-2.5 py-1 text-[10px] font-bold tabular-nums"
-              style={{ background: "#F0F0F0", color: "#5C5C5C" }}>{count}</span>
-            <button onClick={toggleCollapse} className="p-1 transition-all duration-150" style={{ color: "#8A8A8A" }}>
-              <ChevronUp className="h-3.5 w-3.5" />
-            </button>
+        ) : (
+          <div className="flex h-9 w-9 items-center justify-center rounded-full text-[11px] font-bold shrink-0" style={{ background: "var(--t-accent-soft)", color: "var(--t-accent)" }}>
+            {title.split(" ").map(n => n[0]).join("")}
           </div>
+        )}
+
+        {/* Name + phone */}
+        <div className="flex-1 min-w-0">
+          <p className="text-[15px] font-bold truncate" style={{ color: isUnassigned ? "#D97706" : "#0A0A0A" }}>{title}</p>
+          {driver?.phone && <p className="text-[11px]" style={{ color: "#8A8A8A" }}>{formatPhone(driver.phone)}</p>}
         </div>
+
+        {/* Count pill */}
+        <span className="rounded-full px-2.5 py-1 text-[11px] font-bold tabular-nums shrink-0"
+          style={{ background: "#F0F0F0", color: "#5C5C5C" }}>
+          {completedCount > 0 ? `${completedCount}/${totalCount}` : `${count}`}
+        </span>
+
+        {/* Progress bar (thin, inline) */}
         {progress && progress.total > 0 && (
-          <div className="mt-2.5 flex items-center gap-2">
-            <div className="h-1.5 flex-1 rounded-full overflow-hidden" style={{ background: "#F0F0F0" }}>
-              <div className="h-full rounded-full transition-all duration-300" style={{ width: `${(progress.completed / progress.total) * 100}%`, background: "var(--t-accent)" }} />
-            </div>
-            <span className="text-[10px] tabular-nums font-medium" style={{ color: "#8A8A8A" }}>{progress.completed}/{progress.total}</span>
+          <div className="w-12 h-1.5 rounded-full overflow-hidden shrink-0" style={{ background: "#F0F0F0" }}>
+            <div className="h-full rounded-full" style={{ width: `${(progress.completed / progress.total) * 100}%`, background: "var(--t-accent)", transition: "width 0.3s ease" }} />
           </div>
+        )}
+
+        {/* Collapse chevron */}
+        <button onClick={onToggleCollapse} className="shrink-0 p-1 rounded-lg transition-all" style={{ color: "#8A8A8A" }}
+          onMouseEnter={e => { e.currentTarget.style.background = "#F5F5F5"; }} onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}>
+          <ChevronDown className="h-4 w-4 transition-transform duration-200" style={{ transform: collapsed ? "rotate(0deg)" : "rotate(180deg)" }} />
+        </button>
+
+        {/* Three-dot menu (driver columns only) */}
+        {!isUnassigned && (
+          <Dropdown trigger={
+            <button className="shrink-0 p-1 rounded-lg transition-all" style={{ color: "#8A8A8A" }}
+              onMouseEnter={e => { e.currentTarget.style.background = "#F5F5F5"; }} onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}>
+              <MoreHorizontal className="h-4 w-4" />
+            </button>
+          } align="right">
+            {onHide && <button onClick={onHide} className="flex w-full items-center gap-2 px-3 py-2 text-xs" style={{ color: "var(--t-text-primary)" }}><EyeOff className="h-3 w-3" /> Hide Column</button>}
+            <button onClick={onToggleCollapse} className="flex w-full items-center gap-2 px-3 py-2 text-xs" style={{ color: "var(--t-text-primary)" }}>
+              {collapsed ? <ChevronDown className="h-3 w-3" /> : <ChevronUp className="h-3 w-3" />} {collapsed ? "Expand" : "Collapse"}
+            </button>
+            <button className="flex w-full items-center gap-2 px-3 py-2 text-xs" style={{ color: "var(--t-text-primary)" }}><FileText className="h-3 w-3" /> Route Sheet</button>
+            <button className="flex w-full items-center gap-2 px-3 py-2 text-xs" style={{ color: "var(--t-text-primary)" }}><Send className="h-3 w-3" /> Send Route</button>
+          </Dropdown>
         )}
       </div>
 
-      {/* Job cards area — light gray body with white cards */}
-      <SortableContext items={jobs.map(j => j.id)} strategy={verticalListSortingStrategy}>
-        <div className="flex-1 overflow-y-auto p-2 space-y-2 max-h-[calc(100vh-300px)]" style={{ minHeight: 120, paddingBottom: 8, background: "#F5F5F5" }}>
-          {jobs.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-10">
-              {isUnassigned
-                ? <><CheckCircle2 className="h-6 w-6 mb-1.5" style={{ color: "var(--t-accent)", opacity: 0.4 }} /><p className="text-[10px]" style={{ color: "var(--t-accent)" }}>All jobs assigned</p></>
-                : <><Box className="h-6 w-6 mb-1.5" style={{ color: "#8A8A8A", opacity: 0.15 }} /><p className="text-[10px]" style={{ color: "#8A8A8A" }}>No jobs</p></>}
-            </div>
-          ) : jobs.map(job => (
-            <SortableJobTile key={job.id} job={job}
-              isUnassigned={!!isUnassigned} drivers={drivers}
-              onAssign={onAssign} onUnassign={onUnassign}
-              onQuickView={() => onQuickView(job)} />
-          ))}
-        </div>
-      </SortableContext>
+      {/* ── Job cards area (accordion body) ── */}
+      <div style={{
+        maxHeight: collapsed ? 0 : 2000,
+        opacity: collapsed ? 0 : 1,
+        padding: collapsed ? "0 10px" : 10,
+        overflow: collapsed ? "hidden" : "auto",
+        transition: "max-height 0.25s ease, opacity 0.2s ease, padding 0.25s ease",
+        background: "#FAFAFA",
+      }}>
+        <SortableContext items={jobs.map(j => j.id)} strategy={verticalListSortingStrategy}>
+          <div className="space-y-2" style={{ minHeight: collapsed ? 0 : 80 }}>
+            {jobs.length === 0 && !collapsed ? (
+              <div className="flex flex-col items-center justify-center py-8">
+                {isUnassigned
+                  ? <><CheckCircle2 className="h-5 w-5 mb-1" style={{ color: "var(--t-accent)", opacity: 0.4 }} /><p className="text-[11px]" style={{ color: "var(--t-accent)" }}>All assigned</p></>
+                  : <><Box className="h-5 w-5 mb-1" style={{ color: "#ccc" }} /><p className="text-[11px]" style={{ color: "#999" }}>No jobs</p></>}
+              </div>
+            ) : jobs.map(job => (
+              <JobTile key={job.id} job={job} isUnassigned={!!isUnassigned} drivers={drivers}
+                onAssign={onAssign} onUnassign={onUnassign} onQuickView={() => onQuickView(job)} />
+            ))}
+          </div>
+        </SortableContext>
+      </div>
     </div>
   );
 }
 
-/* ======== Sortable Job Tile ======== */
+/* ═══════════════════════════════════════════════════
+   Job Tile — white card, entire tile draggable
+   ═══════════════════════════════════════════════════ */
 
-const SortableJobTile = memo(function SortableJobTile({ job, isUnassigned, drivers, onAssign, onUnassign, onQuickView }: {
+const JobTile = memo(function JobTile({ job, isUnassigned, drivers, onAssign, onUnassign, onQuickView }: {
   job: DispatchJob; isUnassigned: boolean; drivers?: Driver[];
   onAssign?: (jobId: string, driverId: string | null) => void;
   onUnassign?: (jobId: string) => void;
@@ -502,7 +455,7 @@ const SortableJobTile = memo(function SortableJobTile({ job, isUnassigned, drive
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: job.id });
   const [expanded, setExpanded] = useState(false);
   const isCompleted = job.status === "completed";
-  const tc = TYPE_CONFIG[job.job_type] || { label: job.job_type, letter: "?", color: "var(--t-text-muted)", stripe: "#8A8A8A" };
+  const tc = TYPE_CONFIG[job.job_type] || { label: job.job_type, letter: "?", stripe: "#8A8A8A" };
   const addr = job.service_address;
   const addrStr = addr ? [addr.street, addr.city].filter(Boolean).join(", ") : "";
   const size = job.asset?.subtype || "";
@@ -510,66 +463,43 @@ const SortableJobTile = memo(function SortableJobTile({ job, isUnassigned, drive
   return (
     <div ref={setNodeRef} {...attributes} {...listeners}
       style={{
-        transform: CSS.Transform.toString(transform),
-        transition,
+        transform: CSS.Transform.toString(transform), transition,
         opacity: isDragging ? 0.3 : isCompleted ? 0.45 : 1,
-        border: "1px solid #E8E8E8",
-        boxShadow: isDragging ? "0 8px 24px rgba(0,0,0,0.15)" : "0 1px 4px rgba(0,0,0,0.06)",
+        border: "1px solid #F0F0F0",
+        boxShadow: isDragging ? "0 8px 24px rgba(0,0,0,0.15)" : "0 1px 4px rgba(0,0,0,0.04)",
         cursor: isDragging ? "grabbing" : "grab",
         touchAction: "none",
       }}
-      className="group relative rounded-[14px] bg-white transition-all duration-150"
+      className="group relative rounded-[14px] bg-white"
     >
-      {/* Left color stripe */}
+      {/* Left stripe */}
       <div className="absolute left-0 top-2.5 bottom-2.5 w-[4px] rounded-full" style={{ background: tc.stripe }} />
 
-      <div className="py-3 pl-4 pr-3.5" style={{ borderBottom: expanded ? "1px solid #F0F0F0" : "none" }}>
-        {/* Row 1: Size + Type + Customer name + Status + Chevron */}
+      <div className="py-3 pl-4 pr-3">
+        {/* Row 1 */}
         <div className="flex items-start gap-1.5">
-          {/* Size badge */}
-          {size && (
-            <span className="shrink-0 rounded-md px-2 py-0.5 text-[12px] font-bold leading-tight mt-px"
-              style={{ background: "#F0F0F0", border: "1px solid #E0E0E0", color: "#0A0A0A" }}>
-              {size}
-            </span>
-          )}
-
-          {/* Type circle */}
-          <span className="flex h-[20px] w-[20px] shrink-0 items-center justify-center rounded-full text-[9px] font-bold text-white mt-px"
-            style={{ background: tc.stripe }}>
-            {tc.letter}
-          </span>
-
-          {/* Customer name — click to open QuickView */}
+          {size && <span className="shrink-0 rounded-md px-2 py-0.5 text-[12px] font-bold leading-tight mt-px" style={{ background: "#F0F0F0", border: "1px solid #E0E0E0", color: "#0A0A0A" }}>{size}</span>}
+          <span className="flex h-[20px] w-[20px] shrink-0 items-center justify-center rounded-full text-[9px] font-bold text-white mt-px" style={{ background: tc.stripe }}>{tc.letter}</span>
           <div className="flex-1 min-w-0">
             <span className="text-[14px] font-semibold leading-snug cursor-pointer hover:underline" style={{ color: "#0A0A0A" }}
               onClick={(e) => { e.stopPropagation(); onQuickView(); }}>
               {job.customer ? `${job.customer.first_name} ${job.customer.last_name}` : job.job_number}
             </span>
           </div>
-
-          {/* Status badge */}
-          <span className="text-[10px] font-semibold capitalize shrink-0 mt-0.5 ml-1" style={{
+          <span className="text-[11px] font-semibold capitalize shrink-0 mt-0.5 ml-1" style={{
             color: isCompleted ? "#16A34A" : job.status === "confirmed" ? "#22C55E" : job.status === "pending" ? "#D97706" : job.status === "en_route" ? "#3B82F6" : "#5C5C5C",
           }}>
             {isCompleted && <CheckCircle2 className="inline h-3 w-3 mr-0.5" />}
             {job.status.replace(/_/g, " ")}
           </span>
-
-          {/* Expand chevron */}
-          <button onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }}
-            className="shrink-0 p-0.5 mt-0.5 cursor-pointer" style={{ color: "#bbb" }}>
+          <button onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }} className="shrink-0 p-0.5 mt-0.5 cursor-pointer" style={{ color: "#bbb" }}>
             {expanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
           </button>
         </div>
 
-        {/* Row 2: Address + Time window */}
+        {/* Row 2 */}
         <div className="flex items-center justify-between mt-1.5">
-          {addrStr && (
-            <p className="flex items-center gap-1 text-[12px] truncate flex-1" style={{ color: "#5C5C5C" }}>
-              <MapPin className="h-3 w-3 shrink-0" style={{ color: "#999" }} />{addrStr}
-            </p>
-          )}
+          {addrStr && <p className="flex items-center gap-1 text-[12px] truncate flex-1" style={{ color: "#5C5C5C" }}><MapPin className="h-3 w-3 shrink-0" style={{ color: "#bbb" }} />{addrStr}</p>}
           {(job.scheduled_window_start || job.scheduled_window_end) && (
             <p className="flex items-center gap-1 text-[11px] shrink-0 ml-2" style={{ color: "#8A8A8A" }}>
               <Clock className="h-2.5 w-2.5" />{fmtTime(job.scheduled_window_start)}{job.scheduled_window_end ? `–${fmtTime(job.scheduled_window_end)}` : ""}
@@ -577,79 +507,44 @@ const SortableJobTile = memo(function SortableJobTile({ job, isUnassigned, drive
           )}
         </div>
 
-        {/* Row 3: Badges (asset, failed, overdue) */}
-        <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-          {job.asset?.identifier && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ background: "rgba(34,197,94,0.08)", color: "#22C55E" }}>{job.asset.identifier}</span>}
-          {job.is_failed_trip && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: "rgba(220,38,38,0.08)", color: "#DC2626" }}>FAILED</span>}
-          {job.source === "rescheduled_from_failure" && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: "rgba(217,119,6,0.08)", color: "#D97706" }}>FROM FAILED</span>}
-          {job.is_overdue && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: "rgba(220,38,38,0.08)", color: "#DC2626" }}>OVERDUE {job.extra_days}d</span>}
-          {isUnassigned && drivers && onAssign && (
-            <div onClick={e => e.stopPropagation()} className="ml-auto">
-              <Dropdown trigger={
-                <button className="flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold"
-                  style={{ background: "rgba(34,197,94,0.08)", borderColor: "#22C55E", color: "#22C55E" }}>
-                  <UserPlus className="h-2.5 w-2.5" /> Assign
-                </button>
-              } align="right">
-                {drivers.map(d => (
-                  <button key={d.id} onClick={() => onAssign(job.id, d.id)}
-                    className="flex w-full items-center gap-2 px-3 py-2 text-xs whitespace-nowrap"
-                    style={{ color: "var(--t-text-primary)" }}>
-                    <div className="flex h-5 w-5 items-center justify-center rounded-full text-[8px] font-bold"
-                      style={{ background: "var(--t-accent-soft)", color: "var(--t-accent)" }}>{d.firstName[0]}{d.lastName[0]}</div>
-                    {d.firstName} {d.lastName}
-                  </button>
-                ))}
-              </Dropdown>
-            </div>
-          )}
-        </div>
+        {/* Row 3: badges */}
+        {(job.asset?.identifier || job.is_failed_trip || job.source === "rescheduled_from_failure" || job.is_overdue || (isUnassigned && drivers && onAssign)) && (
+          <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+            {job.asset?.identifier && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ background: "rgba(34,197,94,0.08)", color: "#22C55E" }}>{job.asset.identifier}</span>}
+            {job.is_failed_trip && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: "rgba(220,38,38,0.08)", color: "#DC2626" }}>FAILED</span>}
+            {job.source === "rescheduled_from_failure" && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: "rgba(217,119,6,0.08)", color: "#D97706" }}>FROM FAILED</span>}
+            {job.is_overdue && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: "rgba(220,38,38,0.08)", color: "#DC2626" }}>OVERDUE {job.extra_days}d</span>}
+            {isUnassigned && drivers && onAssign && (
+              <div onClick={e => e.stopPropagation()} className="ml-auto">
+                <Dropdown trigger={<button className="flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold" style={{ background: "rgba(34,197,94,0.08)", borderColor: "#22C55E", color: "#22C55E" }}><UserPlus className="h-2.5 w-2.5" /> Assign</button>} align="right">
+                  {drivers.map(d => (
+                    <button key={d.id} onClick={() => onAssign(job.id, d.id)} className="flex w-full items-center gap-2 px-3 py-2 text-xs whitespace-nowrap" style={{ color: "var(--t-text-primary)" }}>
+                      <div className="flex h-5 w-5 items-center justify-center rounded-full text-[8px] font-bold" style={{ background: "var(--t-accent-soft)", color: "var(--t-accent)" }}>{d.firstName[0]}{d.lastName[0]}</div>
+                      {d.firstName} {d.lastName}
+                    </button>
+                  ))}
+                </Dropdown>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
-      {/* Expanded details */}
+      {/* Expanded */}
       {expanded && (
-        <div className="px-4 py-3 space-y-2" onClick={(e) => e.stopPropagation()} style={{ cursor: "default" }}>
+        <div className="px-4 py-3 space-y-2" onClick={e => e.stopPropagation()} style={{ cursor: "default", borderTop: "1px solid #F0F0F0" }}>
           <div className="flex items-center gap-3 text-[11px]" style={{ color: "#5C5C5C" }}>
             <span>{job.job_number}</span>
             {job.asset?.identifier && <span className="font-semibold" style={{ color: "#22C55E" }}>{job.asset.identifier}</span>}
           </div>
-          {job.placement_notes && (
-            <div className="rounded-lg px-2.5 py-1.5 text-[11px]" style={{ background: "#FFFBEB", color: "#92400E" }}>
-              📌 {job.placement_notes}
-            </div>
-          )}
-          {job.failed_reason && (
-            <div className="rounded-lg px-2.5 py-1.5 text-[11px]" style={{ background: "#FEF2F2", color: "#DC2626" }}>
-              Failed: {job.failed_reason}
-            </div>
-          )}
+          {job.placement_notes && <div className="rounded-lg px-2.5 py-1.5 text-[11px]" style={{ background: "#FFFBEB", color: "#92400E" }}>📌 {job.placement_notes}</div>}
+          {job.failed_reason && <div className="rounded-lg px-2.5 py-1.5 text-[11px]" style={{ background: "#FEF2F2", color: "#DC2626" }}>Failed: {job.failed_reason}</div>}
           <div className="flex items-center gap-1.5 flex-wrap pt-1">
-            {addr && (
-              <button onClick={() => { const q = [addr.street, addr.city, addr.state].filter(Boolean).join(", "); window.open(`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(q)}`, "_blank"); }}
-                className="flex items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-medium"
-                style={{ borderColor: "#E5E5E5", color: "#5C5C5C" }}>
-                <Navigation className="h-2.5 w-2.5" /> Navigate
-              </button>
-            )}
-            {job.customer?.phone && (
-              <a href={`tel:${job.customer.phone}`}
-                className="flex items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-medium"
-                style={{ borderColor: "#E5E5E5", color: "#5C5C5C" }}>
-                <Phone className="h-2.5 w-2.5" /> Call
-              </a>
-            )}
-            <button onClick={onQuickView}
-              className="flex items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-medium"
-              style={{ borderColor: "#E5E5E5", color: "#5C5C5C" }}>
-              <ExternalLink className="h-2.5 w-2.5" /> Details
-            </button>
-            {!isUnassigned && onUnassign && (
-              <button onClick={(e) => { e.stopPropagation(); onUnassign(job.id); }}
-                className="flex items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-semibold ml-auto"
-                style={{ background: "rgba(220,38,38,0.06)", borderColor: "#DC2626", color: "#DC2626" }}>
-                <X className="h-2.5 w-2.5" /> Unassign
-              </button>
-            )}
+            {addr && <button onClick={() => window.open(`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent([addr.street, addr.city, addr.state].filter(Boolean).join(", "))}`, "_blank")}
+              className="flex items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-medium" style={{ borderColor: "#E5E5E5", color: "#5C5C5C" }}><Navigation className="h-2.5 w-2.5" /> Navigate</button>}
+            {job.customer?.phone && <a href={`tel:${job.customer.phone}`} className="flex items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-medium" style={{ borderColor: "#E5E5E5", color: "#5C5C5C" }}><Phone className="h-2.5 w-2.5" /> Call</a>}
+            <button onClick={onQuickView} className="flex items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-medium" style={{ borderColor: "#E5E5E5", color: "#5C5C5C" }}><ExternalLink className="h-2.5 w-2.5" /> Details</button>
+            {!isUnassigned && onUnassign && <button onClick={() => onUnassign(job.id)} className="flex items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-semibold ml-auto" style={{ background: "rgba(220,38,38,0.06)", borderColor: "#DC2626", color: "#DC2626" }}><X className="h-2.5 w-2.5" /> Unassign</button>}
           </div>
         </div>
       )}
@@ -657,10 +552,12 @@ const SortableJobTile = memo(function SortableJobTile({ job, isUnassigned, drive
   );
 });
 
-/* ======== Drag overlay (ghost card) ======== */
+/* ═══════════════════════════════════════════════════
+   Drag Ghost
+   ═══════════════════════════════════════════════════ */
 
-function JobTileOverlay({ job }: { job: DispatchJob }) {
-  const tc = TYPE_CONFIG[job.job_type] || { label: job.job_type, letter: "?", color: "var(--t-text-muted)", stripe: "#8A8A8A" };
+function JobTileGhost({ job }: { job: DispatchJob }) {
+  const tc = TYPE_CONFIG[job.job_type] || { label: job.job_type, letter: "?", stripe: "#8A8A8A" };
   const size = job.asset?.subtype || "";
   return (
     <div className="relative rounded-[14px] bg-white px-4 py-3" style={{ width: 310, border: "2px solid var(--t-accent)", boxShadow: "0 12px 32px rgba(0,0,0,0.2)" }}>
@@ -668,19 +565,18 @@ function JobTileOverlay({ job }: { job: DispatchJob }) {
       <div className="flex items-center gap-2 pl-2">
         {size && <span className="rounded-md px-2 py-0.5 text-[12px] font-bold" style={{ background: "#F0F0F0", border: "1px solid #E0E0E0", color: "#0A0A0A" }}>{size}</span>}
         <span className="flex h-[20px] w-[20px] items-center justify-center rounded-full text-[9px] font-bold text-white" style={{ background: tc.stripe }}>{tc.letter}</span>
-        <span className="text-[14px] font-semibold" style={{ color: "#0A0A0A" }}>
-          {job.customer ? `${job.customer.first_name} ${job.customer.last_name}` : job.job_number}
-        </span>
+        <span className="text-[14px] font-semibold" style={{ color: "#0A0A0A" }}>{job.customer ? `${job.customer.first_name} ${job.customer.last_name}` : job.job_number}</span>
       </div>
     </div>
   );
 }
 
-/* ======== QuickView Content ======== */
+/* ═══════════════════════════════════════════════════
+   QuickView Content
+   ═══════════════════════════════════════════════════ */
 
-function JobQuickViewContent({ job, detail, board, onAssign, onRefresh, toast }: {
-  job: DispatchJob; detail: any;
-  board: DispatchBoard | null;
+function QVContent({ job, detail, board, onAssign, onRefresh, toast }: {
+  job: DispatchJob; detail: any; board: DispatchBoard | null;
   onAssign: (jobId: string, driverId: string | null) => Promise<void>;
   onRefresh: () => Promise<void>;
   toast: (type: "success" | "error" | "warning", msg: string) => void;
@@ -689,54 +585,43 @@ function JobQuickViewContent({ job, detail, board, onAssign, onRefresh, toast }:
   const [newDate, setNewDate] = useState(detail?.scheduled_date || "");
   const [reason, setReason] = useState("");
   const [rescheduling, setRescheduling] = useState(false);
-
-  const tc = TYPE_CONFIG[job.job_type] || { label: job.job_type, letter: "?", color: "var(--t-text-muted)", stripe: "#8A8A8A" };
+  const tc = TYPE_CONFIG[job.job_type] || { label: job.job_type, letter: "?", stripe: "#8A8A8A" };
   const isCompleted = job.status === "completed";
   const d = detail || job;
   const addr = d.service_address;
   const cust = d.customer;
 
   const handleReschedule = async () => {
-    if (!newDate) return;
-    setRescheduling(true);
-    try {
-      await api.patch(`/jobs/${job.id}/reschedule`, { scheduledDate: newDate, reason, source: "dispatcher" });
-      toast("success", `Moved to ${new Date(newDate).toLocaleDateString()}`);
-      setRescheduleOpen(false);
-      await onRefresh();
-    } catch { toast("error", "Failed to reschedule"); }
-    finally { setRescheduling(false); }
+    if (!newDate) return; setRescheduling(true);
+    try { await api.patch(`/jobs/${job.id}/reschedule`, { scheduledDate: newDate, reason, source: "dispatcher" }); toast("success", `Moved to ${new Date(newDate).toLocaleDateString()}`); setRescheduleOpen(false); await onRefresh(); }
+    catch { toast("error", "Failed"); } finally { setRescheduling(false); }
   };
 
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2 flex-wrap">
-        <span className="text-xs font-medium" style={{ color: tc.color }}>{tc.label}</span>
+        <span className="text-xs font-medium" style={{ color: tc.stripe }}>{tc.label}</span>
         <span className="text-xs font-medium capitalize" style={{ color: isCompleted ? "var(--t-accent)" : "var(--t-warning)" }}>{job.status.replace(/_/g, " ")}</span>
-        {job.priority === "high" && <span className="text-xs font-bold" style={{ color: "var(--t-error)" }}>High Priority</span>}
-        {d.asset?.identifier && <span className="text-xs font-bold" style={{ color: "var(--t-accent)" }}>{d.asset.identifier}</span>}
         {d.asset?.subtype && <span className="rounded-md px-2 py-0.5 text-[11px] font-bold" style={{ background: "#F0F0F0", border: "1px solid #E0E0E0", color: "#0A0A0A" }}>{d.asset.subtype}</span>}
+        {d.asset?.identifier && <span className="text-xs font-bold" style={{ color: "var(--t-accent)" }}>{d.asset.identifier}</span>}
       </div>
-
       {cust && (
-        <div className="rounded-[20px] border p-4" style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)" }}>
+        <div className="rounded-[20px] border p-4" style={{ borderColor: "var(--t-border)" }}>
           <p className="text-[11px] uppercase tracking-wider mb-2" style={{ color: "var(--t-text-muted)" }}>Customer</p>
           <Link href={`/customers/${cust.id}`} className="text-sm font-semibold" style={{ color: "var(--t-text-primary)" }}>{cust.first_name} {cust.last_name}</Link>
           {cust.phone && <a href={`tel:${cust.phone}`} className="flex items-center gap-1.5 mt-2 text-xs" style={{ color: "var(--t-accent)" }}><Phone className="h-3 w-3" />{formatPhone(cust.phone)}</a>}
           {cust.email && <a href={`mailto:${cust.email}`} className="flex items-center gap-1.5 mt-1 text-xs" style={{ color: "var(--t-text-muted)" }}><Mail className="h-3 w-3" />{cust.email}</a>}
         </div>
       )}
-
       {addr && (
-        <div className="rounded-[20px] border p-4" style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)" }}>
+        <div className="rounded-[20px] border p-4" style={{ borderColor: "var(--t-border)" }}>
           <p className="text-[11px] uppercase tracking-wider mb-2" style={{ color: "var(--t-text-muted)" }}>Service Address</p>
           <p className="text-sm" style={{ color: "var(--t-text-primary)" }}>{addr.street}</p>
           <p className="text-xs" style={{ color: "var(--t-text-muted)" }}>{[addr.city, addr.state, addr.zip].filter(Boolean).join(", ")}</p>
           {d.placement_notes && <p className="text-xs mt-2 italic" style={{ color: "var(--t-text-muted)" }}>"{d.placement_notes}"</p>}
         </div>
       )}
-
-      <div className="rounded-[20px] border p-4" style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)" }}>
+      <div className="rounded-[20px] border p-4" style={{ borderColor: "var(--t-border)" }}>
         <p className="text-[11px] uppercase tracking-wider mb-2" style={{ color: "var(--t-text-muted)" }}>Schedule</p>
         <div className="space-y-1.5 text-sm">
           {d.scheduled_date && <div className="flex justify-between"><span style={{ color: "var(--t-text-muted)" }}>Date</span><span className="font-medium" style={{ color: "var(--t-text-primary)" }}>{new Date(d.scheduled_date + "T00:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}</span></div>}
@@ -744,9 +629,8 @@ function JobQuickViewContent({ job, detail, board, onAssign, onRefresh, toast }:
           {d.rental_days && <div className="flex justify-between"><span style={{ color: "var(--t-text-muted)" }}>Rental</span><span style={{ color: "var(--t-text-primary)" }}>{d.rental_days} days</span></div>}
         </div>
       </div>
-
       {board && (
-        <div className="rounded-[20px] border p-4" style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)" }}>
+        <div className="rounded-[20px] border p-4" style={{ borderColor: "var(--t-border)" }}>
           <p className="text-[11px] uppercase tracking-wider mb-2" style={{ color: "var(--t-text-muted)" }}>Assignment</p>
           <div className="space-y-1.5 text-sm">
             <div className="flex justify-between"><span style={{ color: "var(--t-text-muted)" }}>Driver</span><span style={{ color: job.assigned_driver ? "var(--t-text-primary)" : "var(--t-error)" }}>{job.assigned_driver ? `${job.assigned_driver.first_name} ${job.assigned_driver.last_name}` : "Unassigned"}</span></div>
@@ -756,11 +640,8 @@ function JobQuickViewContent({ job, detail, board, onAssign, onRefresh, toast }:
             <Dropdown trigger={<button className="text-xs font-medium" style={{ color: "var(--t-accent)" }}>{job.assigned_driver ? "Reassign" : "Assign Driver"}</button>}>
               <button onClick={() => onAssign(job.id, null)} className="flex w-full items-center gap-2 px-3 py-2 text-xs" style={{ color: "var(--t-error)" }}>Unassign</button>
               {board.drivers.map(col => (
-                <button key={col.driver.id} onClick={() => onAssign(job.id, col.driver.id)}
-                  className="flex w-full items-center gap-2 px-3 py-2 text-xs whitespace-nowrap"
-                  style={{ color: "var(--t-text-primary)" }}>
-                  <div className="flex h-5 w-5 items-center justify-center rounded-full text-[8px] font-bold"
-                    style={{ background: "var(--t-accent-soft)", color: "var(--t-accent)" }}>{col.driver.firstName[0]}{col.driver.lastName[0]}</div>
+                <button key={col.driver.id} onClick={() => onAssign(job.id, col.driver.id)} className="flex w-full items-center gap-2 px-3 py-2 text-xs whitespace-nowrap" style={{ color: "var(--t-text-primary)" }}>
+                  <div className="flex h-5 w-5 items-center justify-center rounded-full text-[8px] font-bold" style={{ background: "var(--t-accent-soft)", color: "var(--t-accent)" }}>{col.driver.firstName[0]}{col.driver.lastName[0]}</div>
                   {col.driver.firstName} {col.driver.lastName}
                 </button>
               ))}
@@ -768,50 +649,33 @@ function JobQuickViewContent({ job, detail, board, onAssign, onRefresh, toast }:
           </div>
         </div>
       )}
-
       {d.total_price > 0 && (
-        <div className="rounded-[20px] border p-4" style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)" }}>
+        <div className="rounded-[20px] border p-4" style={{ borderColor: "var(--t-border)" }}>
           <div className="flex justify-between items-center">
             <p className="text-[11px] uppercase tracking-wider" style={{ color: "var(--t-text-muted)" }}>Total</p>
             <p className="text-lg font-bold tabular-nums" style={{ color: "var(--t-accent)" }}>${Number(d.total_price).toLocaleString()}</p>
           </div>
         </div>
       )}
-
       {!isCompleted && job.status !== "cancelled" && (
         <>
           {!rescheduleOpen ? (
-            <button onClick={() => { setRescheduleOpen(true); setNewDate(d.scheduled_date || ""); }}
-              className="w-full rounded-full border py-2.5 text-xs font-semibold"
-              style={{ borderColor: "var(--t-border)", color: "#3B82F6" }}>
+            <button onClick={() => { setRescheduleOpen(true); setNewDate(d.scheduled_date || ""); }} className="w-full rounded-full border py-2.5 text-xs font-semibold" style={{ borderColor: "var(--t-border)", color: "#3B82F6" }}>
               <Calendar className="h-3.5 w-3.5 inline mr-1.5" />Reschedule
             </button>
           ) : (
-            <div className="rounded-[20px] border p-4 space-y-3" style={{ borderColor: "var(--t-border)", background: "var(--t-bg-card)" }}>
+            <div className="rounded-[20px] border p-4 space-y-3" style={{ borderColor: "var(--t-border)" }}>
               <p className="text-xs font-semibold" style={{ color: "#3B82F6" }}>Reschedule Job</p>
-              <input type="date" value={newDate} onChange={e => setNewDate(e.target.value)}
-                className="w-full rounded-[10px] border px-3 py-2 text-sm outline-none"
-                style={{ borderColor: "var(--t-border)", color: "var(--t-text-primary)" }} />
-              <input value={reason} onChange={e => setReason(e.target.value)} placeholder="Reason (optional)"
-                className="w-full rounded-[10px] border px-3 py-2 text-sm outline-none"
-                style={{ borderColor: "var(--t-border)", color: "var(--t-text-primary)" }} />
+              <input type="date" value={newDate} onChange={e => setNewDate(e.target.value)} className="w-full rounded-[10px] border px-3 py-2 text-sm outline-none" style={{ borderColor: "var(--t-border)", color: "var(--t-text-primary)" }} />
+              <input value={reason} onChange={e => setReason(e.target.value)} placeholder="Reason (optional)" className="w-full rounded-[10px] border px-3 py-2 text-sm outline-none" style={{ borderColor: "var(--t-border)", color: "var(--t-text-primary)" }} />
               <div className="flex gap-2">
-                <button onClick={handleReschedule} disabled={!newDate || rescheduling}
-                  className="flex-1 rounded-full py-2 text-xs font-semibold disabled:opacity-50"
-                  style={{ background: "#3B82F6", color: "#fff" }}>{rescheduling ? "Moving..." : "Confirm"}</button>
-                <button onClick={() => setRescheduleOpen(false)}
-                  className="rounded-full px-4 py-2 text-xs"
-                  style={{ background: "var(--t-bg-card-hover)", color: "var(--t-text-muted)" }}>Cancel</button>
+                <button onClick={handleReschedule} disabled={!newDate || rescheduling} className="flex-1 rounded-full py-2 text-xs font-semibold disabled:opacity-50" style={{ background: "#3B82F6", color: "#fff" }}>{rescheduling ? "Moving..." : "Confirm"}</button>
+                <button onClick={() => setRescheduleOpen(false)} className="rounded-full px-4 py-2 text-xs" style={{ background: "var(--t-bg-card-hover)", color: "var(--t-text-muted)" }}>Cancel</button>
               </div>
             </div>
           )}
-          <button onClick={async () => {
-            if (!confirm("Cancel this job?")) return;
-            try { await api.patch(`/jobs/${job.id}/status`, { status: "cancelled" }); toast("success", "Cancelled"); await onRefresh(); } catch { toast("error", "Failed"); }
-          }} className="w-full rounded-full border py-2 text-xs font-medium"
-            style={{ borderColor: "var(--t-error)", color: "var(--t-error)" }}>
-            Cancel Job
-          </button>
+          <button onClick={async () => { if (!confirm("Cancel this job?")) return; try { await api.patch(`/jobs/${job.id}/status`, { status: "cancelled" }); toast("success", "Cancelled"); await onRefresh(); } catch { toast("error", "Failed"); } }}
+            className="w-full rounded-full border py-2 text-xs font-medium" style={{ borderColor: "var(--t-error)", color: "var(--t-error)" }}>Cancel Job</button>
         </>
       )}
     </div>
