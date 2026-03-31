@@ -79,7 +79,7 @@ export default function DumpSlipScreen() {
         weightTons: parseFloat(weightTons),
         surchargeItems: surcharges.map(s => ({ itemType: s.itemType, quantity: s.quantity })),
       });
-      Alert.alert('Success', 'Dump slip submitted', [{ text: 'OK', onPress: () => router.back() }]);
+      Alert.alert('Dump Slip Submitted', 'Dump complete', [{ text: 'OK', onPress: () => router.replace('/(tabs)' as any) }]);
     } catch (err: any) {
       Alert.alert('Error', err.message || 'Failed to submit');
     } finally {
@@ -250,7 +250,7 @@ export default function DumpSlipScreen() {
                     const result = await ImagePicker.launchCameraAsync({ quality: 0.7 });
                     if (!result.canceled && result.assets?.[0]) setDumpSlipPhoto(result.assets[0].uri);
                   }} style={{ backgroundColor: '#22C55E', borderRadius: 14, padding: 16, alignItems: 'center' }}>
-                    <Text style={{ fontSize: 15, fontWeight: '700', color: '#fff' }}>📸 Take Photo of Dump Slip</Text>
+                    <Text style={{ fontSize: 15, fontWeight: '700', color: '#fff' }}>Take Photo of Dump Slip</Text>
                   </TouchableOpacity>
                   <Text style={{ fontSize: 12, color: '#DC2626', textAlign: 'center' }}>Photo required before submitting</Text>
                 </>

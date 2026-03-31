@@ -70,12 +70,12 @@ const TYPE_LABELS: Record<string, string> = {
 
 // Simplified 3-step flow: On My Way → Arrived (+ dumpster confirm) → Complete
 const STATUS_FLOW: Record<string, { next: string; label: string; icon: string; color: string }> = {
-  pending: { next: 'en_route', label: '🚛 On My Way', icon: 'navigate', color: '#22C55E' },
-  confirmed: { next: 'en_route', label: '🚛 On My Way', icon: 'navigate', color: '#22C55E' },
-  dispatched: { next: 'en_route', label: '🚛 On My Way', icon: 'navigate', color: '#22C55E' },
-  en_route: { next: 'arrived', label: '📍 Arrived', icon: 'location', color: '#3B82F6' },
-  arrived: { next: 'completed', label: '✅ Complete Job', icon: 'checkmark-done', color: '#D97706' },
-  in_progress: { next: 'completed', label: '✅ Complete Job', icon: 'checkmark-done', color: '#D97706' },
+  pending: { next: 'en_route', label: 'On My Way', icon: 'navigate', color: '#22C55E' },
+  confirmed: { next: 'en_route', label: 'On My Way', icon: 'navigate', color: '#22C55E' },
+  dispatched: { next: 'en_route', label: 'On My Way', icon: 'navigate', color: '#22C55E' },
+  en_route: { next: 'arrived', label: 'Arrived', icon: 'location', color: '#22C55E' },
+  arrived: { next: 'completed', label: 'Complete Job', icon: 'checkmark-done', color: '#22C55E' },
+  in_progress: { next: 'completed', label: 'Complete Job', icon: 'checkmark-done', color: '#22C55E' },
 };
 
 const PHOTO_TYPES = ['Before', 'After', 'Damage', 'Dump Slip'];
@@ -561,7 +561,7 @@ export default function JobDetailScreen() {
           {/* Show "Complete Job" only after dumpster confirmed on arrived status */}
           {(job.status === 'arrived' || job.status === 'in_progress') && !dumpsterConfirmed ? (
             <TouchableOpacity
-              style={[s.actionBtn, { backgroundColor: '#3B82F6' }]}
+              style={[s.actionBtn, { backgroundColor: '#22C55E' }]}
               onPress={() => { setDumpsterPin(job.asset?.identifier || ''); setShowDumpsterModal(true); }}
             >
               <Ionicons name="cube" size={20} color="#fff" />
@@ -637,33 +637,24 @@ export default function JobDetailScreen() {
         </View>
       </Modal>
 
-      {/* Where to Next? Modal (after completing pickup/exchange) */}
+      {/* Where to Next? */}
       <Modal visible={showWhereNext} transparent animationType="slide">
         <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.5)' }}>
           <View style={{ backgroundColor: colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40 }}>
-            <Text style={{ fontSize: 20, fontWeight: '800', color: colors.text, marginBottom: 4 }}>Where to next?</Text>
-            <Text style={{ fontSize: 14, color: colors.textSecondary, marginBottom: 20 }}>You have a full dumpster on the truck</Text>
+            <Text style={{ fontSize: 20, fontWeight: '800', color: '#0A0A0A', marginBottom: 20 }}>Where to next?</Text>
             <TouchableOpacity onPress={() => {
               setShowWhereNext(false);
               router.push({ pathname: '/job/dump-slip', params: { jobId: job.id, customerName: `${job.customer?.first_name || ''} ${job.customer?.last_name || ''}`.trim() } });
-            }} style={{ backgroundColor: '#22C55E', borderRadius: 16, padding: 18, marginBottom: 10, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-              <Text style={{ fontSize: 24 }}>🏭</Text>
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 16, fontWeight: '700', color: '#000' }}>Go to Dump</Text>
-                <Text style={{ fontSize: 12, color: 'rgba(0,0,0,0.6)' }}>Drop off the load at a dump facility</Text>
-              </View>
+            }} style={{ backgroundColor: '#22C55E', borderRadius: 14, padding: 16, marginBottom: 10, alignItems: 'center' }}>
+              <Text style={{ fontSize: 16, fontWeight: '700', color: '#fff' }}>Go to Dump</Text>
             </TouchableOpacity>
-            <TouchableOpacity onPress={() => { setShowWhereNext(false); Alert.alert('Return to Yard', 'Bring the dumpster back to the yard', [{ text: 'OK', onPress: () => router.back() }]); }}
-              style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 16, padding: 18, marginBottom: 10, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-              <Text style={{ fontSize: 24 }}>🏠</Text>
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 16, fontWeight: '700', color: colors.text }}>Return to Yard</Text>
-                <Text style={{ fontSize: 12, color: colors.textSecondary }}>Stage the dumpster at the yard</Text>
-              </View>
+            <TouchableOpacity onPress={() => { setShowWhereNext(false); router.replace('/(tabs)' as any); }}
+              style={{ borderWidth: 1, borderColor: '#E5E5E5', borderRadius: 14, padding: 16, marginBottom: 10, alignItems: 'center' }}>
+              <Text style={{ fontSize: 16, fontWeight: '700', color: '#0A0A0A' }}>Return to Yard</Text>
             </TouchableOpacity>
-            <TouchableOpacity onPress={() => { setShowWhereNext(false); router.back(); }}
-              style={{ alignItems: 'center', paddingVertical: 14 }}>
-              <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textSecondary }}>➡️ Skip — Go to Next Job</Text>
+            <TouchableOpacity onPress={() => { setShowWhereNext(false); router.replace('/(tabs)' as any); }}
+              style={{ alignItems: 'center', paddingVertical: 12 }}>
+              <Text style={{ fontSize: 14, fontWeight: '600', color: '#8A8A8A' }}>Skip — Next Job</Text>
             </TouchableOpacity>
           </View>
         </View>
