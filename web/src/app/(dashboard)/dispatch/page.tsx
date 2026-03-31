@@ -132,6 +132,7 @@ export default function DispatchPage() {
   const [collapsedCols, setCollapsedCols] = useState<Set<string>>(new Set());
   const [hiddenCols, setHiddenCols] = useState<Set<string>>(new Set());
   const [showColumns, setShowColumns] = useState(true);
+  const [columnOrder, setColumnOrder] = useState<string[]>([]);
   const { toast } = useToast();
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
@@ -258,7 +259,25 @@ export default function DispatchPage() {
   const unassignedCount = board?.unassigned.length || 0;
   const completedJobs = allJobs.filter(j => j.status === "completed").length;
   const activeJob = activeId ? allJobs.find(j => j.id === activeId) : null;
-  const visibleDrivers = board?.drivers.filter(d => !hiddenCols.has(d.driver.id)) || [];
+  // Sync column order when board loads
+  useEffect(() => {
+    if (board?.drivers) {
+      setColumnOrder(prev => {
+        const ids = board.drivers.map(d => d.driver.id);
+        // Keep existing order for known IDs, append new ones
+        const ordered = prev.filter(id => ids.includes(id));
+        ids.forEach(id => { if (!ordered.includes(id)) ordered.push(id); });
+        return ordered;
+      });
+    }
+  }, [board?.drivers]);
+
+  const orderedDrivers = board?.drivers
+    ? columnOrder
+        .map(id => board.drivers.find(d => d.driver.id === id))
+        .filter((d): d is DriverColumn => !!d && !hiddenCols.has(d.driver.id))
+    : [];
+  const visibleDrivers = orderedDrivers.length > 0 ? orderedDrivers : (board?.drivers.filter(d => !hiddenCols.has(d.driver.id)) || []);
   const hiddenDrivers = board?.drivers.filter(d => hiddenCols.has(d.driver.id)) || [];
 
   return (
@@ -372,7 +391,7 @@ export default function DispatchPage() {
                 onQuickView={openQuickView} activeId={activeId}
                 onStatusChange={async (jid, s) => { try { await api.patch(`/jobs/${jid}/status`, { status: s, cancellationReason: s === "failed" ? "Dispatcher override" : undefined }); toast("success", `Status → ${s.replace(/_/g, " ")}`); await fetchBoard(true); } catch { toast("error", "Failed"); } }}
                 collapsed={collapsedCols.has("unassigned")} onToggleCollapse={() => toggleCollapse("unassigned")} />
-              {visibleDrivers.map(col => (
+              {visibleDrivers.map((col, idx) => (
                 <ColumnCard key={col.driver.id} columnId={col.driver.id} title={`${col.driver.firstName} ${col.driver.lastName}`}
                   driver={col.driver} count={col.jobs.length}
                   progress={{ completed: col.jobs.filter(j => j.status === "completed").length, total: col.jobs.length }}
@@ -381,7 +400,10 @@ export default function DispatchPage() {
                   onQuickView={openQuickView} activeId={activeId}
                   onStatusChange={async (jid, s) => { try { await api.patch(`/jobs/${jid}/status`, { status: s, cancellationReason: s === "failed" ? "Dispatcher override" : undefined }); toast("success", `Status → ${s.replace(/_/g, " ")}`); await fetchBoard(true); } catch { toast("error", "Failed"); } }}
                   collapsed={collapsedCols.has(col.driver.id)} onToggleCollapse={() => toggleCollapse(col.driver.id)}
-                  onHide={() => hideColumn(col.driver.id)} />
+                  onHide={() => hideColumn(col.driver.id)}
+                  onMoveLeft={idx > 0 ? () => setColumnOrder(prev => { const arr = [...prev]; const i = arr.indexOf(col.driver.id); if (i > 0) [arr[i-1], arr[i]] = [arr[i], arr[i-1]]; return arr; }) : undefined}
+                  onMoveRight={idx < visibleDrivers.length - 1 ? () => setColumnOrder(prev => { const arr = [...prev]; const i = arr.indexOf(col.driver.id); if (i >= 0 && i < arr.length - 1) [arr[i], arr[i+1]] = [arr[i+1], arr[i]]; return arr; }) : undefined}
+                />
               ))}
             </div>
           ) : null}
@@ -510,7 +532,7 @@ function DispatchMap({ board, activeJobId }: { board: DispatchBoard | null; acti
    Column Card — white card with accordion collapse
    ═══════════════════════════════════════════════════ */
 
-function ColumnCard({ columnId, title, driver, isUnassigned, count, progress, jobs, drivers, onAssign, onUnassign, onQuickView, onStatusChange, activeId, collapsed, onToggleCollapse, onHide }: {
+function ColumnCard({ columnId, title, driver, isUnassigned, count, progress, jobs, drivers, onAssign, onUnassign, onQuickView, onStatusChange, activeId, collapsed, onToggleCollapse, onHide, onMoveLeft, onMoveRight }: {
   columnId: string; title: string; driver?: Driver; isUnassigned?: boolean;
   count: number; progress?: { completed: number; total: number };
   jobs: DispatchJob[]; drivers?: Driver[];
@@ -520,6 +542,7 @@ function ColumnCard({ columnId, title, driver, isUnassigned, count, progress, jo
   onStatusChange?: (jobId: string, newStatus: string) => void;
   activeId: string | null;
   collapsed: boolean; onToggleCollapse: () => void; onHide?: () => void;
+  onMoveLeft?: () => void; onMoveRight?: () => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: columnId });
   const completedCount = progress?.completed || 0;
@@ -568,6 +591,8 @@ function ColumnCard({ columnId, title, driver, isUnassigned, count, progress, jo
               <button onClick={onToggleCollapse} className="flex w-full items-center gap-2 px-3 py-2 text-xs" style={{ color: "var(--t-text-primary)" }}>
                 {collapsed ? <Eye className="h-3 w-3" /> : <ChevronUp className="h-3 w-3" />} {collapsed ? "Show All" : "Collapse"}
               </button>
+              {onMoveLeft && <button onClick={onMoveLeft} className="flex w-full items-center gap-2 px-3 py-2 text-xs" style={{ color: "var(--t-text-primary)" }}><ChevronLeft className="h-3 w-3" /> Move Left</button>}
+              {onMoveRight && <button onClick={onMoveRight} className="flex w-full items-center gap-2 px-3 py-2 text-xs" style={{ color: "var(--t-text-primary)" }}><ChevronRight className="h-3 w-3" /> Move Right</button>}
               <button className="flex w-full items-center gap-2 px-3 py-2 text-xs" style={{ color: "var(--t-text-primary)" }}><FileText className="h-3 w-3" /> Route Sheet</button>
               <button className="flex w-full items-center gap-2 px-3 py-2 text-xs" style={{ color: "var(--t-text-primary)" }}><Send className="h-3 w-3" /> Send Route</button>
             </Dropdown>
