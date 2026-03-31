@@ -1,5 +1,14 @@
 import { useState, useEffect, useCallback } from 'react';
-import { View, Text, FlatList, TouchableOpacity, StyleSheet, RefreshControl } from 'react-native';
+import {
+  View,
+  Text,
+  FlatList,
+  TouchableOpacity,
+  StyleSheet,
+  RefreshControl,
+  Platform,
+  Linking,
+} from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { format } from 'date-fns';
@@ -22,31 +31,28 @@ interface Job {
   asset: { identifier?: string; subtype?: string } | null;
   is_overdue?: boolean;
   extra_days?: number;
-  placement_notes?: string;
-  driver_notes?: string;
 }
 
 const TYPE_COLORS: Record<string, string> = {
-  delivery: '#22C55E',
-  pickup: '#F59E0B',
-  exchange: '#3B82F6',
+  delivery: '#3B82F6',
+  pickup: '#F97316',
+  exchange: '#8B5CF6',
 };
 const TYPE_LABELS: Record<string, string> = {
   delivery: 'Delivery',
   pickup: 'Pickup',
   exchange: 'Exchange',
-  dump_run: 'Dump Run',
 };
-
-function getNextAction(status: string): { label: string; color: string } {
-  switch (status) {
-    case 'confirmed': case 'dispatched': return { label: 'On My Way →', color: '#22C55E' };
-    case 'en_route': return { label: 'Arrived →', color: '#3B82F6' };
-    case 'arrived': case 'in_progress': return { label: 'Complete →', color: '#D97706' };
-    case 'completed': return { label: '✓ Done', color: '#9CA3AF' };
-    default: return { label: status.replace(/_/g, ' '), color: '#9CA3AF' };
-  }
-}
+const STATUS_COLORS: Record<string, string> = {
+  pending: '#71717A',
+  confirmed: '#3B82F6',
+  dispatched: '#8B5CF6',
+  en_route: '#EAB308',
+  arrived: '#06B6D4',
+  in_progress: '#F97316',
+  completed: '#22C55E',
+  cancelled: '#F87171',
+};
 
 function fmtTime(t: string | null) {
   if (!t) return '';
@@ -72,25 +78,36 @@ export default function TodayScreen() {
         (a: Job, b: Job) => (a.route_order || 99) - (b.route_order || 99)
       );
       setJobs(sorted);
-    } catch {} finally { setLoading(false); }
+    } catch {
+      /* ignore */
+    } finally {
+      setLoading(false);
+    }
   }, [user, today]);
 
-  useEffect(() => { fetchJobs(); }, [fetchJobs]);
+  useEffect(() => {
+    fetchJobs();
+  }, [fetchJobs]);
 
   const completed = jobs.filter((j) => j.status === 'completed').length;
+  const s = makeStyles(colors);
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.background }}>
-      {/* Header */}
-      <View style={{ paddingHorizontal: 20, paddingTop: 60, paddingBottom: 12 }}>
-        <Text style={{ fontSize: 28, fontWeight: '800', color: colors.frameText, letterSpacing: -0.5 }}>Today's Route</Text>
-        <Text style={{ fontSize: 14, color: colors.frameTextMuted, marginTop: 2 }}>{format(new Date(), 'EEEE, MMMM d')}</Text>
+    <View style={s.container}>
+      <View style={s.header}>
+        <Text style={s.headerTitle}>Today's Route</Text>
+        <Text style={s.headerDate}>{format(new Date(), 'EEEE, MMMM d')}</Text>
         <TouchableOpacity
-          onPress={async () => { try { if (isClockedIn) await doClockOut(); else await doClockIn(); } catch {} }}
+          onPress={async () => {
+            try {
+              if (isClockedIn) await doClockOut();
+              else await doClockIn();
+            } catch {}
+          }}
           style={{
-            backgroundColor: isClockedIn ? 'rgba(220,38,38,0.1)' : 'rgba(34,197,94,0.1)',
+            backgroundColor: isClockedIn ? colors.errorSoft : colors.accentSoft,
             paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20,
-            alignSelf: 'flex-start', marginTop: 10,
+            alignSelf: 'flex-start', marginTop: 8,
           }}>
           <Text style={{ color: isClockedIn ? colors.error : colors.accent, fontSize: 13, fontWeight: '700' }}>
             {isClockedIn ? '⏹ Clock Out' : '▶ Clock In'}
@@ -98,105 +115,118 @@ export default function TodayScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Progress */}
       {jobs.length > 0 && (
-        <View style={{ marginHorizontal: 20, marginBottom: 14, backgroundColor: colors.surface, borderRadius: 16, padding: 14, borderWidth: 1, borderColor: colors.border }}>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
-            <Text style={{ fontSize: 13, fontWeight: '600', color: colors.text }}>{completed} of {jobs.length} stops</Text>
-            <Text style={{ fontSize: 13, fontWeight: '700', color: colors.accent }}>{Math.round((completed / jobs.length) * 100)}%</Text>
+        <View style={s.progressCard}>
+          <View style={s.progressRow}>
+            <Text style={s.progressText}>
+              {completed} of {jobs.length} stops
+            </Text>
+            <Text style={s.progressPercent}>
+              {Math.round((completed / jobs.length) * 100)}%
+            </Text>
           </View>
-          <View style={{ height: 4, backgroundColor: colors.border, borderRadius: 2, overflow: 'hidden' }}>
-            <View style={{ height: 4, backgroundColor: colors.accent, borderRadius: 2, width: `${(completed / jobs.length) * 100}%` as any }} />
+          <View style={s.progressBar}>
+            <View
+              style={[
+                s.progressFill,
+                { width: `${(completed / jobs.length) * 100}%` },
+              ]}
+            />
           </View>
         </View>
       )}
 
-      {/* Job tiles */}
       <FlatList
         data={jobs}
         keyExtractor={(j) => j.id}
-        refreshControl={<RefreshControl refreshing={loading} onRefresh={fetchJobs} tintColor={colors.accent} />}
-        contentContainerStyle={jobs.length === 0 ? { flex: 1, justifyContent: 'center', alignItems: 'center' } : { paddingHorizontal: 20, paddingBottom: 20 }}
+        refreshControl={
+          <RefreshControl refreshing={loading} onRefresh={fetchJobs} tintColor={colors.accent} />
+        }
+        contentContainerStyle={jobs.length === 0 ? s.emptyContainer : s.list}
         ListEmptyComponent={
-          <View style={{ alignItems: 'center' }}>
+          <View style={s.empty}>
             <Ionicons name="sunny" size={48} color={colors.textTertiary} />
-            <Text style={{ fontSize: 18, fontWeight: '600', color: colors.frameText, marginTop: 16 }}>No jobs today</Text>
-            <Text style={{ fontSize: 14, color: colors.frameTextMuted, marginTop: 4 }}>Enjoy your day off!</Text>
+            <Text style={s.emptyTitle}>No jobs today</Text>
+            <Text style={s.emptyText}>Enjoy your day off!</Text>
           </View>
         }
         renderItem={({ item: j, index }) => {
-          const isDone = j.status === 'completed';
-          const isNext = !isDone && jobs.findIndex(x => x.status !== 'completed' && x.status !== 'cancelled') === index;
-          const action = getNextAction(j.status);
-          const hasNotes = !!(j.placement_notes || j.driver_notes);
-          const typeColor = TYPE_COLORS[j.job_type] || '#9CA3AF';
-          const typeLabel = TYPE_LABELS[j.job_type] || j.job_type;
-          const size = j.asset?.subtype || '';
-
+          const isCompleted = j.status === 'completed';
+          const isNextStop = !isCompleted && jobs.findIndex(j => j.status !== 'completed' && j.status !== 'cancelled') === index;
+          const addr = j.service_address;
           return (
             <TouchableOpacity
+              style={[
+                s.card,
+                isNextStop && s.cardNextStop,
+                isCompleted && s.cardCompleted,
+              ]}
               onPress={() => router.push(`/job/${j.id}`)}
               activeOpacity={0.7}
-              style={{
-                backgroundColor: '#FFFFFF',
-                borderRadius: 20,
-                padding: 20,
-                marginBottom: 12,
-                borderWidth: isNext ? 2 : 1,
-                borderColor: isNext ? '#22C55E' : '#E5E5E5',
-                opacity: isDone ? 0.45 : 1,
-                shadowColor: isNext ? '#22C55E' : '#000',
-                shadowOpacity: isNext ? 0.15 : 0.06,
-                shadowRadius: isNext ? 16 : 8,
-                shadowOffset: { width: 0, height: isNext ? 4 : 2 },
-                overflow: 'hidden',
-              }}
             >
-              {/* Left color stripe */}
-              <View style={{ position: 'absolute', left: 0, top: 10, bottom: 10, width: 5, borderRadius: 3, backgroundColor: typeColor }} />
-
-              {/* ROW 1: Size + Type (biggest text) */}
-              <View style={{ flexDirection: 'row', alignItems: 'baseline', paddingLeft: 8 }}>
-                <Text style={{ fontSize: 22, fontWeight: '800', color: '#0A0A0A', letterSpacing: -0.5 }}>
-                  {size ? `${size} ` : ''}{' '}
-                </Text>
-                <Text style={{ fontSize: 22, fontWeight: '800', color: typeColor }}>
-                  {typeLabel}
-                </Text>
-              </View>
-
-              {/* ROW 2: Customer name */}
-              <Text style={{ fontSize: 17, fontWeight: '600', color: '#0A0A0A', marginTop: 8, paddingLeft: 8 }}>
-                {j.customer ? `${j.customer.first_name} ${j.customer.last_name}` : j.job_number}
-              </Text>
-
-              {/* ROW 3: Status / next action */}
-              <Text style={{ fontSize: 14, fontWeight: '600', color: action.color, marginTop: 6, paddingLeft: 8 }}>
-                {isDone && <Ionicons name="checkmark-circle" size={14} color="#22C55E" />}
-                {' '}{action.label}
-              </Text>
-
-              {/* ROW 4: Optional badges */}
-              {(j.asset?.identifier || hasNotes || j.scheduled_window_start || j.is_overdue) && (
-                <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginTop: 8, paddingLeft: 8 }}>
-                  {j.asset?.identifier && (
-                    <View style={{ backgroundColor: 'rgba(34,197,94,0.08)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 }}>
-                      <Text style={{ fontSize: 11, fontWeight: '700', color: '#22C55E' }}>{j.asset.identifier}</Text>
-                    </View>
-                  )}
-                  {hasNotes && <Text style={{ fontSize: 12, color: '#D97706' }}>📝</Text>}
-                  {j.scheduled_window_start && (
-                    <Text style={{ fontSize: 12, color: '#8A8A8A' }}>
-                      {fmtTime(j.scheduled_window_start)}{j.scheduled_window_end ? `–${fmtTime(j.scheduled_window_end)}` : ''}
-                    </Text>
-                  )}
-                  {j.is_overdue && (
-                    <View style={{ backgroundColor: 'rgba(220,38,38,0.08)', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
-                      <Text style={{ fontSize: 10, fontWeight: '700', color: '#DC2626' }}>OVERDUE {j.extra_days}d</Text>
-                    </View>
+              {isNextStop && <View style={s.cardGreenEdge} />}
+              <View style={s.cardRow}>
+                <View style={[s.stopCircle, isCompleted && s.stopCircleDone]}>
+                  {isCompleted ? (
+                    <Ionicons name="checkmark" size={14} color="#fff" />
+                  ) : (
+                    <Text style={s.stopNum}>{index + 1}</Text>
                   )}
                 </View>
-              )}
+                <View style={s.cardContent}>
+                  <View style={s.cardTop}>
+                    <Text
+                      style={[s.customerName, isCompleted && s.textFaded]}
+                      numberOfLines={1}
+                    >
+                      {j.customer
+                        ? `${j.customer.first_name} ${j.customer.last_name}`
+                        : j.job_number}
+                    </Text>
+                    <View
+                      style={[
+                        s.typeBadge,
+                        {
+                          backgroundColor:
+                            (TYPE_COLORS[j.job_type] || '#71717A') + '14',
+                        },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          s.typeText,
+                          { color: TYPE_COLORS[j.job_type] || '#71717A' },
+                        ]}
+                      >
+                        {TYPE_LABELS[j.job_type] || j.job_type}
+                      </Text>
+                    </View>
+                  </View>
+                  {addr && (
+                    <Text
+                      style={[s.address, isCompleted && s.textFaded]}
+                      numberOfLines={1}
+                    >
+                      {[addr.street, addr.city].filter(Boolean).join(', ')}
+                    </Text>
+                  )}
+                  <View style={s.cardMeta}>
+                    {j.asset?.identifier && <View style={s.sizeBadge}><Text style={s.sizeBadgeText}>{j.asset.identifier}</Text></View>}
+                    {j.scheduled_window_start && (
+                      <Text style={s.metaText}>
+                        {fmtTime(j.scheduled_window_start)}
+                        {j.scheduled_window_end
+                          ? ` - ${fmtTime(j.scheduled_window_end)}`
+                          : ''}
+                      </Text>
+                    )}
+                    {j.is_overdue && (
+                      <Text style={s.overdueBadge}>OVERDUE {j.extra_days}d</Text>
+                    )}
+                  </View>
+                </View>
+                <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
+              </View>
             </TouchableOpacity>
           );
         }}
@@ -204,3 +234,116 @@ export default function TodayScreen() {
     </View>
   );
 }
+
+const makeStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
+    container: { flex: 1, backgroundColor: colors.background },
+    header: { paddingHorizontal: 20, paddingTop: 60, paddingBottom: 12 },
+    headerTitle: { fontSize: 28, fontWeight: '700', color: colors.text, letterSpacing: -0.5 },
+    headerDate: { fontSize: 14, color: colors.textSecondary, marginTop: 2 },
+    progressCard: {
+      marginHorizontal: 20,
+      marginBottom: 12,
+      backgroundColor: colors.surface,
+      borderRadius: 14,
+      padding: 14,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    progressRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 10,
+    },
+    progressText: { fontSize: 13, fontWeight: '600', color: colors.text },
+    progressPercent: { fontSize: 13, fontWeight: '700', color: colors.accent },
+    progressBar: {
+      height: 3,
+      backgroundColor: colors.border,
+      borderRadius: 1.5,
+      overflow: 'hidden',
+    },
+    progressFill: { height: 3, backgroundColor: colors.accent, borderRadius: 1.5 },
+    list: { paddingHorizontal: 20, paddingBottom: 20 },
+    card: {
+      backgroundColor: colors.surface,
+      borderRadius: 14,
+      padding: 14,
+      marginBottom: 8,
+      borderWidth: 1,
+      borderColor: colors.border,
+      overflow: 'hidden',
+    },
+    cardCompleted: { opacity: 0.45 },
+    cardNextStop: { borderColor: colors.accent },
+    cardGreenEdge: {
+      position: 'absolute',
+      left: 0,
+      top: 0,
+      bottom: 0,
+      width: 3,
+      backgroundColor: colors.accent,
+      borderTopLeftRadius: 14,
+      borderBottomLeftRadius: 14,
+    },
+    inlineNav: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 6,
+      marginTop: 10,
+      backgroundColor: colors.accent,
+      borderRadius: 10,
+      paddingVertical: 8,
+    },
+    inlineNavText: { fontSize: 13, fontWeight: '600', color: '#fff' },
+    sizeBadge: { backgroundColor: colors.accentSoft, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 },
+    sizeBadgeText: { fontSize: 11, fontWeight: '700', color: colors.accent },
+    cardRow: { flexDirection: 'row', alignItems: 'center' },
+    stopCircle: {
+      width: 28,
+      height: 28,
+      borderRadius: 14,
+      backgroundColor: colors.surfaceHover,
+      justifyContent: 'center',
+      alignItems: 'center',
+      marginRight: 12,
+    },
+    stopCircleDone: { backgroundColor: colors.accent },
+    stopNum: { fontSize: 12, fontWeight: '700', color: colors.textSecondary },
+    cardContent: { flex: 1 },
+    cardTop: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginBottom: 4,
+    },
+    customerName: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: colors.text,
+      flex: 1,
+      marginRight: 8,
+    },
+    typeBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 },
+    typeText: { fontSize: 10, fontWeight: '700' },
+    address: { fontSize: 12, color: colors.textSecondary, marginBottom: 4 },
+    cardMeta: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
+    metaText: { fontSize: 11, color: colors.textSecondary },
+    overdueBadge: {
+      fontSize: 10,
+      fontWeight: '700',
+      color: colors.error,
+      backgroundColor: colors.errorSoft,
+      paddingHorizontal: 6,
+      paddingVertical: 1,
+      borderRadius: 4,
+    },
+    textFaded: { color: colors.textSecondary },
+    cardNavBtn: { padding: 8, marginRight: 4 },
+    emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+    empty: { alignItems: 'center' },
+    emptyTitle: { fontSize: 18, fontWeight: '600', color: colors.text, marginTop: 16 },
+    emptyText: { fontSize: 14, color: colors.textSecondary, marginTop: 4 },
+  });
