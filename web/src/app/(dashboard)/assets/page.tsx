@@ -127,9 +127,9 @@ const TYPE_PREFIX: Record<string, string> = {
 
 function statusColor(s: string): string {
   if (s === "available") return "color: #22C55E";
-  if (s === "on_site" || s === "deployed") return "color: #F59E0B";
-  if (s === "reserved") return "color: #F59E0B";
-  if (s === "maintenance") return "color: #EF4444";
+  if (s === "on_site" || s === "deployed") return "color: #FCD34D";
+  if (s === "reserved") return "color: #FCD34D";
+  if (s === "maintenance") return "color: #F87171";
   if (s === "in_transit") return "color: #A855F7";
   if (s === "retired") return "color: var(--t-text-muted)";
   return "color: var(--t-text-muted)";
@@ -137,17 +137,17 @@ function statusColor(s: string): string {
 
 function statusTextClass(s: string): string {
   if (s === "available") return "text-[#22C55E]";
-  if (s === "on_site" || s === "deployed") return "text-[#F59E0B]";
-  if (s === "reserved") return "text-[#F59E0B]";
-  if (s === "maintenance") return "text-[#EF4444]";
+  if (s === "on_site" || s === "deployed") return "text-[#FCD34D]";
+  if (s === "reserved") return "text-[#FCD34D]";
+  if (s === "maintenance") return "text-[#F87171]";
   if (s === "in_transit") return "text-[#A855F7]";
   return "text-[var(--t-text-muted)]";
 }
 
 function conditionTextClass(c: string): string {
   if (c === "new" || c === "good") return "text-[#22C55E]";
-  if (c === "fair") return "text-[#F59E0B]";
-  if (c === "poor") return "text-[#EF4444]";
+  if (c === "fair") return "text-[#FCD34D]";
+  if (c === "poor") return "text-[#F87171]";
   return "text-[var(--t-text-muted)]";
 }
 
@@ -398,9 +398,9 @@ export default function AssetsPage() {
         <div className="grid grid-cols-4 gap-4 mb-8">
           {[
             { label: "AVAILABLE", value: quickStats.available, color: "#22C55E" },
-            { label: "DEPLOYED", value: quickStats.deployed, color: "#F59E0B" },
-            { label: "STAGED", value: quickStats.staged, color: "#F59E0B" },
-            { label: "MAINTENANCE", value: quickStats.maintenanceCount, color: "#EF4444" },
+            { label: "DEPLOYED", value: quickStats.deployed, color: "#FCD34D" },
+            { label: "STAGED", value: quickStats.staged, color: "#FCD34D" },
+            { label: "MAINTENANCE", value: quickStats.maintenanceCount, color: "#F87171" },
           ].map((kpi) => (
             <div
               key={kpi.label}
@@ -781,12 +781,12 @@ function ListView({ assets, onSelect, onQuickStatus, getBasePrice }: { assets: A
                         </button>
                       )}
                       {asset.status !== "on_site" && (
-                        <button onClick={() => onQuickStatus(asset.id, "on_site")} className="flex w-full items-center gap-2 px-4 py-2 text-sm transition-colors" style={{ color: "#F59E0B" }}>
+                        <button onClick={() => onQuickStatus(asset.id, "on_site")} className="flex w-full items-center gap-2 px-4 py-2 text-sm transition-colors" style={{ color: "#FCD34D" }}>
                           <Truck className="h-3.5 w-3.5" /> Mark Deployed
                         </button>
                       )}
                       {asset.status !== "maintenance" && (
-                        <button onClick={() => onQuickStatus(asset.id, "maintenance")} className="flex w-full items-center gap-2 px-4 py-2 text-sm transition-colors" style={{ color: "#EF4444" }}>
+                        <button onClick={() => onQuickStatus(asset.id, "maintenance")} className="flex w-full items-center gap-2 px-4 py-2 text-sm transition-colors" style={{ color: "#F87171" }}>
                           <Wrench className="h-3.5 w-3.5" /> Schedule Maintenance
                         </button>
                       )}
@@ -866,7 +866,7 @@ function GridView({ assets, onSelect, onQuickStatus }: { assets: Asset[]; onSele
               {asset.status !== "maintenance" && (
                 <button
                   onClick={() => onQuickStatus(asset.id, "maintenance")}
-                  style={{ borderRadius: 4, padding: "2px 6px", fontSize: 9, fontWeight: 500, color: "#EF4444", transition: "opacity 0.15s ease" }}
+                  style={{ borderRadius: 4, padding: "2px 6px", fontSize: 9, fontWeight: 500, color: "#F87171", transition: "opacity 0.15s ease" }}
                 >
                   Maint
                 </button>
@@ -912,7 +912,7 @@ function AssetDetail({ asset, onStatusChange, onUpdated }: { asset: Asset; onSta
                 style={{
                   padding: "6px 14px", borderRadius: 24, fontSize: 12, fontWeight: 500,
                   border: "1px solid var(--t-border)", background: "transparent",
-                  color: s === "available" ? "#22C55E" : s === "on_site" ? "#F59E0B" : "#EF4444",
+                  color: s === "available" ? "#22C55E" : s === "on_site" ? "#FCD34D" : "#F87171",
                   transition: "all 0.15s ease", cursor: "pointer",
                 }}
               >

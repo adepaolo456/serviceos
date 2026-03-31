@@ -80,9 +80,9 @@ export default function PortalProfilePage() {
     }
   };
 
-  if (loading) return <div className="space-y-4">{[1, 2, 3].map(i => <div key={i} className="h-20 rounded-[14px] bg-[var(--t-bg-card)] border border-[var(--t-border)] animate-pulse" />)}</div>;
+  if (loading) return <div className="space-y-4">{[1, 2, 3].map(i => <div key={i} className="h-20 rounded-[18px] bg-[var(--t-bg-card)] border border-[var(--t-border)] animate-pulse" />)}</div>;
 
-  const inputCls = "w-full rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-2.5 text-sm text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)] focus:ring-1 focus:ring-[var(--t-accent)]";
+  const inputCls = "w-full rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-2.5 text-sm text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)] focus:ring-1 focus:ring-[var(--t-accent)]";
   const labelCls = "block text-sm font-medium text-[var(--t-text-primary)] mb-1.5";
 
   return (
@@ -101,7 +101,7 @@ export default function PortalProfilePage() {
       </div>
 
       {tab === "info" && (
-        <form onSubmit={handleSave} className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6 space-y-5">
+        <form onSubmit={handleSave} className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6 space-y-5">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className={labelCls}>First Name</label>
@@ -115,7 +115,7 @@ export default function PortalProfilePage() {
           <div>
             <label className={labelCls}>Email</label>
             <input value={profile?.email || ""} disabled
-              className="w-full rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-primary)] px-4 py-2.5 text-sm text-[var(--t-text-muted)] cursor-not-allowed" />
+              className="w-full rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-primary)] px-4 py-2.5 text-sm text-[var(--t-text-muted)] cursor-not-allowed" />
           </div>
           <div>
             <label className={labelCls}>Phone</label>
@@ -131,7 +131,7 @@ export default function PortalProfilePage() {
               <label className="block text-sm font-medium text-[var(--t-text-primary)] mb-2">Service Addresses</label>
               <div className="space-y-2">
                 {profile.service_addresses.map((addr, i) => (
-                  <div key={i} className="flex items-center gap-2 rounded-[14px] bg-[var(--t-bg-primary)] border border-[var(--t-border)] px-4 py-2.5 text-sm text-[var(--t-text-primary)]">
+                  <div key={i} className="flex items-center gap-2 rounded-[18px] bg-[var(--t-bg-primary)] border border-[var(--t-border)] px-4 py-2.5 text-sm text-[var(--t-text-primary)]">
                     <MapPin className="h-4 w-4 text-[var(--t-text-muted)] shrink-0" />
                     {addr.formatted || addr.street || "—"}
                   </div>
@@ -151,9 +151,9 @@ export default function PortalProfilePage() {
       )}
 
       {tab === "password" && (
-        <form onSubmit={handlePasswordChange} className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6 space-y-5 max-w-md">
-          {pwError && <div className="rounded-[14px] bg-[var(--t-error-soft)] px-4 py-3 text-sm text-[var(--t-error)]">{pwError}</div>}
-          {pwSuccess && <div className="rounded-[14px] bg-[var(--t-accent-soft)] px-4 py-3 text-sm text-[var(--t-accent)] flex items-center gap-2"><CheckCircle2 className="h-4 w-4" /> Password updated successfully</div>}
+        <form onSubmit={handlePasswordChange} className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6 space-y-5 max-w-md">
+          {pwError && <div className="rounded-[18px] bg-[var(--t-error-soft)] px-4 py-3 text-sm text-[var(--t-error)]">{pwError}</div>}
+          {pwSuccess && <div className="rounded-[18px] bg-[var(--t-accent-soft)] px-4 py-3 text-sm text-[var(--t-accent)] flex items-center gap-2"><CheckCircle2 className="h-4 w-4" /> Password updated successfully</div>}
           <div>
             <label className={labelCls}>Current Password</label>
             <input type="password" value={currentPw} onChange={(e) => setCurrentPw(e.target.value)} required className={inputCls} />
@@ -171,7 +171,7 @@ export default function PortalProfilePage() {
       )}
 
       {tab === "notifications" && (
-        <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6 space-y-4">
+        <div className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6 space-y-4">
           <p className="text-sm text-[var(--t-text-muted)]">Choose how you&apos;d like to be notified.</p>
           {["Delivery updates", "Pickup reminders", "Invoice notifications", "Payment confirmations"].map(label => (
             <div key={label} className="flex items-center justify-between py-2 border-b border-[var(--t-border)]/50 last:border-b-0">

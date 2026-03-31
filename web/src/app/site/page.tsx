@@ -71,7 +71,7 @@ export default function SiteHomePage() {
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
               {allServices.map((s, i) => (
-                <div key={i} className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6 hover:bg-[var(--t-bg-card-hover)] transition-all group">
+                <div key={i} className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6 hover:bg-[var(--t-bg-card-hover)] transition-all group">
                   <div className="mb-4">
                     <span className="text-xs font-semibold text-[var(--t-text-muted)] uppercase tracking-wider">{s.subtype || s.name}</span>
                   </div>
@@ -104,7 +104,7 @@ export default function SiteHomePage() {
               { icon: Truck, title: "We Deliver", desc: "We drop it off and pick it up when you're done" },
             ].map((step, i) => (
               <div key={i} className="text-center">
-                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] mb-4">
+                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] mb-4">
                   <step.icon className="h-6 w-6 text-[var(--t-accent)]" />
                 </div>
                 <div className="flex h-7 w-7 mx-auto items-center justify-center rounded-full text-xs font-bold bg-[var(--t-accent)] text-black mb-3">{i + 1}</div>
@@ -138,7 +138,7 @@ export default function SiteHomePage() {
             </div>
           </div>
           {tenant.about && (
-            <div className="mt-12 rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-8">
+            <div className="mt-12 rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-8">
               <h3 className="text-lg font-semibold text-[var(--t-text-primary)] mb-3">About {tenant.name}</h3>
               <p className="text-[var(--t-text-muted)] leading-relaxed">{tenant.about}</p>
             </div>

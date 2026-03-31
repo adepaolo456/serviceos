@@ -63,7 +63,7 @@ export default function PortalLoginPage() {
         </div>
 
         {magicSent ? (
-          <div className="rounded-[14px] bg-[var(--t-accent-soft)] border border-[var(--t-accent)]/20 p-6 text-center">
+          <div className="rounded-[18px] bg-[var(--t-accent-soft)] border border-[var(--t-accent)]/20 p-6 text-center">
             <Mail className="mx-auto h-8 w-8 text-[var(--t-accent)] mb-3" />
             <p className="text-sm font-medium text-[var(--t-text-primary)]">Check your email</p>
             <p className="text-xs text-[var(--t-text-muted)] mt-1">We sent a login link to {email}</p>
@@ -75,7 +75,7 @@ export default function PortalLoginPage() {
           <>
             <form onSubmit={handleSubmit} className="space-y-4">
               {error && (
-                <div className="rounded-[14px] bg-[var(--t-error-soft)] px-4 py-3 text-sm text-[var(--t-error)]">{error}</div>
+                <div className="rounded-[18px] bg-[var(--t-error-soft)] px-4 py-3 text-sm text-[var(--t-error)]">{error}</div>
               )}
 
               <div>
@@ -83,7 +83,7 @@ export default function PortalLoginPage() {
                 <div className="relative">
                   <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--t-text-muted)]" />
                   <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required placeholder="you@email.com"
-                    className="w-full rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] pl-10 pr-4 py-2.5 text-sm text-[var(--t-text-primary)] placeholder-[var(--t-text-muted)] outline-none focus:border-[var(--t-accent)] focus:ring-1 focus:ring-[var(--t-accent)]" />
+                    className="w-full rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] pl-10 pr-4 py-2.5 text-sm text-[var(--t-text-primary)] placeholder-[var(--t-text-muted)] outline-none focus:border-[var(--t-accent)] focus:ring-1 focus:ring-[var(--t-accent)]" />
                 </div>
               </div>
 
@@ -94,7 +94,7 @@ export default function PortalLoginPage() {
                   <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required
                     placeholder={mode === "register" ? "Choose a password (8+ characters)" : "Your password"}
                     minLength={mode === "register" ? 8 : undefined}
-                    className="w-full rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] pl-10 pr-4 py-2.5 text-sm text-[var(--t-text-primary)] placeholder-[var(--t-text-muted)] outline-none focus:border-[var(--t-accent)] focus:ring-1 focus:ring-[var(--t-accent)]" />
+                    className="w-full rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] pl-10 pr-4 py-2.5 text-sm text-[var(--t-text-primary)] placeholder-[var(--t-text-muted)] outline-none focus:border-[var(--t-accent)] focus:ring-1 focus:ring-[var(--t-accent)]" />
                 </div>
               </div>
 

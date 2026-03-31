@@ -129,7 +129,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
   };
 
   if (loading) {
-    return <div className="space-y-4"><div className="h-8 w-48 rounded bg-[var(--t-bg-card)] animate-pulse" /><div className="h-40 rounded-[14px] bg-[var(--t-bg-card)] animate-pulse" /><div className="h-64 rounded-[14px] bg-[var(--t-bg-card)] animate-pulse" /></div>;
+    return <div className="space-y-4"><div className="h-8 w-48 rounded bg-[var(--t-bg-card)] animate-pulse" /><div className="h-40 rounded-[18px] bg-[var(--t-bg-card)] animate-pulse" /><div className="h-64 rounded-[18px] bg-[var(--t-bg-card)] animate-pulse" /></div>;
   }
   if (!customer) return <div className="py-20 text-center text-[var(--t-text-muted)]">Not found</div>;
 
@@ -147,10 +147,10 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
       </Link>
 
       {/* ===== HEADER ===== */}
-      <div className="rounded-[14px] bg-[var(--t-bg-card)] border border-[var(--t-border)] p-5 mb-5">
+      <div className="rounded-[18px] bg-[var(--t-bg-card)] border border-[var(--t-border)] p-5 mb-5">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex items-start gap-4">
-            <div className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-[14px] text-lg font-bold ${customer.type === "commercial" ? "bg-purple-500/15 text-purple-400" : "bg-blue-500/15 text-blue-400"}`}>
+            <div className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-[18px] text-lg font-bold ${customer.type === "commercial" ? "bg-purple-500/15 text-purple-400" : "bg-blue-500/15 text-blue-400"}`}>
               {customer.first_name[0]}{customer.last_name[0]}
             </div>
             <div>
@@ -234,7 +234,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
                 { label: "Active", value: activeJobs.length },
                 { label: "Last Job", value: daysSinceLastJob !== null ? `${daysSinceLastJob}d` : "—" },
               ].map(s => (
-                <div key={s.label} className="rounded-[14px] bg-[var(--t-bg-card)] border border-[var(--t-border)] p-3 text-center">
+                <div key={s.label} className="rounded-[18px] bg-[var(--t-bg-card)] border border-[var(--t-border)] p-3 text-center">
                   <p className="text-base font-bold text-[var(--t-text-primary)] tabular-nums">{s.value}</p>
                   <p className="text-[9px] text-[var(--t-text-muted)]">{s.label}</p>
                 </div>
@@ -242,11 +242,11 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
             </div>
             {/* Active Rentals */}
             {activeJobs.length > 0 && (
-              <div className="rounded-[14px] border border-[var(--t-border)] p-4">
+              <div className="rounded-[18px] border border-[var(--t-border)] p-4">
                 <p className="text-xs text-yellow-500 uppercase tracking-wider font-semibold mb-2">Active Rentals ({activeJobs.length})</p>
                 <div className="space-y-1.5">
                   {activeJobs.map(j => (
-                    <Link key={j.id} href={`/jobs/${j.id}`} className="flex items-center justify-between rounded-[14px] bg-[var(--t-bg-card)] border border-[var(--t-border)] px-3 py-2 hover:bg-[var(--t-bg-card-hover)] transition-colors">
+                    <Link key={j.id} href={`/jobs/${j.id}`} className="flex items-center justify-between rounded-[18px] bg-[var(--t-bg-card)] border border-[var(--t-border)] px-3 py-2 hover:bg-[var(--t-bg-card-hover)] transition-colors">
                       <div className="flex items-center gap-2">
                         <span className="text-xs font-medium text-[var(--t-text-primary)]">{j.job_number}</span>
                         {j.asset && <span className="text-[10px] text-[var(--t-text-muted)]">{j.asset.identifier}</span>}
@@ -316,7 +316,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
 
       {/* ===== JOBS TAB ===== */}
       {tab === "jobs" && (
-        <div className="rounded-[14px] bg-[var(--t-bg-card)] border border-[var(--t-border)] overflow-hidden">
+        <div className="rounded-[18px] bg-[var(--t-bg-card)] border border-[var(--t-border)] overflow-hidden">
           <div className="table-scroll">
             <table className="w-full text-sm">
               <thead><tr className="border-b border-[var(--t-border)]">
@@ -344,7 +344,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
 
       {/* ===== INVOICES TAB ===== */}
       {tab === "invoices" && (
-        <div className="rounded-[14px] bg-[var(--t-bg-card)] border border-[var(--t-border)] overflow-hidden">
+        <div className="rounded-[18px] bg-[var(--t-bg-card)] border border-[var(--t-border)] overflow-hidden">
           <div className="table-scroll">
             <table className="w-full text-sm">
               <thead><tr className="border-b border-[var(--t-border)]">
@@ -376,7 +376,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
           {/* Add note */}
           <div className="flex gap-2">
             <input value={newNote} onChange={e => setNewNote(e.target.value)} onKeyDown={e => e.key === "Enter" && addNote()}
-              className="flex-1 rounded-[14px] bg-[var(--t-bg-card)] border border-[var(--t-border)] px-4 py-2.5 text-sm text-[var(--t-text-primary)] placeholder-[var(--t-text-muted)] outline-none focus:border-[var(--t-accent)]"
+              className="flex-1 rounded-[18px] bg-[var(--t-bg-card)] border border-[var(--t-border)] px-4 py-2.5 text-sm text-[var(--t-text-primary)] placeholder-[var(--t-text-muted)] outline-none focus:border-[var(--t-accent)]"
               placeholder="Add a note..." />
             <button onClick={addNote} disabled={addingNote || !newNote.trim()}
               className="rounded-full bg-[var(--t-accent)] px-4 py-2.5 text-sm font-semibold text-black hover:opacity-90 disabled:opacity-40 transition-opacity">
@@ -389,7 +389,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
           ) : (
             <div className="space-y-2">
               {notes.map(n => (
-                <div key={n.id} className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-3">
+                <div key={n.id} className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-3">
                   <p className="text-sm text-[var(--t-text-primary)]">{n.content}</p>
                   <div className="flex items-center gap-2 mt-2 text-[10px] text-[var(--t-text-muted)]">
                     <span>{n.author_name || "System"}</span>
@@ -416,7 +416,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
 
 function Card({ title, action, children }: { title: string; action?: React.ReactNode; children: React.ReactNode }) {
   return (
-    <div className="rounded-[14px] bg-[var(--t-bg-card)] border border-[var(--t-border)] p-4">
+    <div className="rounded-[18px] bg-[var(--t-bg-card)] border border-[var(--t-border)] p-4">
       <div className="flex items-center justify-between mb-3">
         <p className="text-xs text-[var(--t-text-muted)] uppercase tracking-wider font-semibold">{title}</p>
         {action}
@@ -442,7 +442,7 @@ function EditForm({ customer, onSuccess }: { customer: Customer; onSuccess: (c: 
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
 
-  const inputCls = "w-full bg-[var(--t-bg-card)] border border-[var(--t-border)] rounded-[14px] px-4 py-3 text-sm text-[var(--t-text-primary)] placeholder-[var(--t-text-muted)] outline-none focus:border-[var(--t-accent)] focus:ring-1 focus:ring-[var(--t-accent)]";
+  const inputCls = "w-full bg-[var(--t-bg-card)] border border-[var(--t-border)] rounded-[18px] px-4 py-3 text-sm text-[var(--t-text-primary)] placeholder-[var(--t-text-muted)] outline-none focus:border-[var(--t-accent)] focus:ring-1 focus:ring-[var(--t-accent)]";
 
   return (
     <form onSubmit={async (e: FormEvent) => {
@@ -451,7 +451,7 @@ function EditForm({ customer, onSuccess }: { customer: Customer; onSuccess: (c: 
       catch (err) { setError(err instanceof Error ? err.message : "Failed"); }
       finally { setSaving(false); }
     }} className="space-y-4">
-      {error && <div className="rounded-[14px] bg-[var(--t-error-soft)] px-4 py-3 text-sm text-[var(--t-error)]">{error}</div>}
+      {error && <div className="rounded-[18px] bg-[var(--t-error-soft)] px-4 py-3 text-sm text-[var(--t-error)]">{error}</div>}
       <div className="grid grid-cols-2 gap-3">
         <input value={firstName} onChange={e => setFirstName(e.target.value)} required className={inputCls} placeholder="First" />
         <input value={lastName} onChange={e => setLastName(e.target.value)} required className={inputCls} placeholder="Last" />

@@ -43,7 +43,7 @@ const STATUS_COLORS: Record<string, string> = {
   arrived: '#06B6D4',
   in_progress: '#F97316',
   completed: '#22C55E',
-  cancelled: '#EF4444',
+  cancelled: '#F87171',
 };
 
 function fmtTime(t: string | null) {

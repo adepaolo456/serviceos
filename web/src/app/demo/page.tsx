@@ -40,7 +40,7 @@ export default function DemoPage() {
     }
   };
 
-  const inputClass = "w-full rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-3 text-sm text-[var(--t-text-primary)] placeholder-[var(--t-text-muted)] outline-none transition-colors focus:border-[var(--t-accent)] focus:ring-1 focus:ring-[var(--t-accent)]";
+  const inputClass = "w-full rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-3 text-sm text-[var(--t-text-primary)] placeholder-[var(--t-text-muted)] outline-none transition-colors focus:border-[var(--t-accent)] focus:ring-1 focus:ring-[var(--t-accent)]";
 
   if (submitted) {
     return (
@@ -74,7 +74,7 @@ export default function DemoPage() {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          {error && <div className="rounded-[14px] bg-[var(--t-error-soft)] border border-[var(--t-error)] px-4 py-3 text-sm text-[var(--t-error)]">{error}</div>}
+          {error && <div className="rounded-[18px] bg-[var(--t-error-soft)] border border-[var(--t-error)] px-4 py-3 text-sm text-[var(--t-error)]">{error}</div>}
 
           <div className="grid grid-cols-2 gap-3">
             <input value={name} onChange={(e) => setName(e.target.value)} required className={inputClass} placeholder="Your name" />

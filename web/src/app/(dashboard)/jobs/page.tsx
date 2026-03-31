@@ -81,10 +81,10 @@ const STATUS_LABELS: Record<string, string> = {
 function statusTextClass(s: string): string {
   if (s === "completed") return "text-[#22C55E]";
   if (s === "confirmed") return "text-[#22C55E]";
-  if (s === "overdue" || s === "cancelled") return "text-[#EF4444]";
-  if (s === "pending") return "text-[#F59E0B]";
-  if (s === "dispatched") return "text-[#F59E0B]";
-  if (s === "en_route") return "text-[#F59E0B]";
+  if (s === "overdue" || s === "cancelled") return "text-[#F87171]";
+  if (s === "pending") return "text-[#FCD34D]";
+  if (s === "dispatched") return "text-[#FCD34D]";
+  if (s === "en_route") return "text-[#FCD34D]";
   if (s === "in_progress") return "text-[#3B82F6]";
   return "text-[var(--t-text-muted)]";
 }
@@ -490,7 +490,7 @@ export default function JobsPage() {
                             {job.assigned_driver.first_name} {job.assigned_driver.last_name}
                           </span>
                         ) : (
-                          <span style={{ fontSize: 11, fontWeight: 600, color: "#F59E0B" }}>Unassigned</span>
+                          <span style={{ fontSize: 11, fontWeight: 600, color: "#FCD34D" }}>Unassigned</span>
                         )}
                       </td>
 
@@ -505,7 +505,7 @@ export default function JobsPage() {
                           </p>
                         )}
                         {job.rescheduled_by_customer && (
-                          <p style={{ fontSize: 10, fontWeight: 500, color: "#F59E0B", marginTop: 2 }}>
+                          <p style={{ fontSize: 10, fontWeight: 500, color: "#FCD34D", marginTop: 2 }}>
                             Rescheduled by customer
                           </p>
                         )}
@@ -713,7 +713,7 @@ function NewJobForm({ onSuccess }: { onSuccess: () => void }) {
 
       <div>
         <label style={lbl}>Dumpster Size</label>
-        <div className="flex gap-1 rounded-[14px] p-1" style={{ background: "var(--t-bg-card)" }}>
+        <div className="flex gap-1 rounded-[18px] p-1" style={{ background: "var(--t-bg-card)" }}>
           {["10yd", "15yd", "20yd", "30yd", "40yd"].map((s) => (
             <button
               key={s}

@@ -158,7 +158,7 @@ function fmtNum(n: number | undefined | null): string {
 
 function KPI({ label, value, sub, color }: { label: string; value: string; sub?: string; color?: string }) {
   return (
-    <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-4">
+    <div className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-4">
       <p className="text-[13px] font-semibold uppercase tracking-wide text-[var(--t-text-muted)]">{label}</p>
       <p className={`text-[24px] font-bold mt-1 tabular-nums ${color || "text-[var(--t-text-primary)]"}`}>{value}</p>
       {sub && <p className="text-[13px] text-[var(--t-text-muted)] mt-0.5">{sub}</p>}
@@ -167,7 +167,7 @@ function KPI({ label, value, sub, color }: { label: string; value: string; sub?:
 }
 
 function Skeleton({ className = "" }: { className?: string }) {
-  return <div className={`skeleton rounded-[14px] animate-pulse ${className}`} />;
+  return <div className={`skeleton rounded-[18px] animate-pulse ${className}`} />;
 }
 
 function KPIGrid({ children }: { children: React.ReactNode }) {
@@ -233,13 +233,13 @@ function RevenueTab({ data, loading }: { data: RevenueData | null; loading: bool
         <KPI label="Overdue" value={formatCurrency(data.overdue)} color="text-[var(--t-error)]" />
       </KPIGrid>
       {data.revenueBySource?.length > 0 && (
-        <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5">
+        <div className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5">
           <h3 className="text-sm font-semibold text-[var(--t-text-primary)] mb-4">Revenue by Source</h3>
           <DataTable headers={["Source", "Amount"]} rows={data.revenueBySource.map((r) => [r.source, formatCurrency(r.amount)])} />
         </div>
       )}
       {data.revenueBySize?.length > 0 && (
-        <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5">
+        <div className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5">
           <h3 className="text-sm font-semibold text-[var(--t-text-primary)] mb-4">Revenue by Size</h3>
           <DataTable headers={["Size", "Jobs", "Amount"]} rows={data.revenueBySize.map((r) => [r.size, fmtNum(r.count), formatCurrency(r.amount)])} />
         </div>
@@ -260,13 +260,13 @@ function DumpCostsTab({ data, loading }: { data: DumpCostsData | null; loading: 
         <KPI label="Margin %" value={fmtPct(data.marginPercent)} color="text-[var(--t-accent)]" />
       </KPIGrid>
       {data.costsByFacility?.length > 0 && (
-        <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5">
+        <div className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5">
           <h3 className="text-sm font-semibold text-[var(--t-text-primary)] mb-4">Costs by Facility</h3>
           <DataTable headers={["Facility", "Loads", "Cost"]} rows={data.costsByFacility.map((r) => [r.facility, fmtNum(r.loads), formatCurrency(r.cost)])} />
         </div>
       )}
       {data.costsByWasteType?.length > 0 && (
-        <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5">
+        <div className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5">
           <h3 className="text-sm font-semibold text-[var(--t-text-primary)] mb-4">Costs by Waste Type</h3>
           <DataTable headers={["Waste Type", "Loads", "Cost"]} rows={data.costsByWasteType.map((r) => [r.wasteType, fmtNum(r.loads), formatCurrency(r.cost)])} />
         </div>
@@ -298,7 +298,7 @@ function DriversTab({ data, loading }: { data: DriversData | null; loading: bool
         <KPI label="Total Completed" value={fmtNum(data.totalCompleted)} color="text-[var(--t-accent)]" />
       </div>
       {data.drivers?.length > 0 && (
-        <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5">
+        <div className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5">
           <h3 className="text-sm font-semibold text-[var(--t-text-primary)] mb-4">Driver Stats</h3>
           <DataTable headers={["Name", "Jobs", "Completed", "Failed", "Deliveries", "Pickups"]} rows={data.drivers.map((d) => [d.name, fmtNum(d.totalJobs), fmtNum(d.completed), fmtNum(d.failed), fmtNum(d.deliveries), fmtNum(d.pickups)])} />
         </div>
@@ -319,7 +319,7 @@ function AssetsTab({ data, loading }: { data: AssetsData | null; loading: boolea
         <KPI label="Staged" value={fmtNum(data.staged)} color="text-[var(--t-warning)]" />
       </KPIGrid>
       {data.bySize?.length > 0 && (
-        <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5">
+        <div className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5">
           <h3 className="text-sm font-semibold text-[var(--t-text-primary)] mb-4">Assets by Size</h3>
           <DataTable headers={["Size", "Total", "Available", "Deployed", "Staged"]} rows={data.bySize.map((r) => [r.size, fmtNum(r.total), fmtNum(r.available), fmtNum(r.deployed), fmtNum(r.staged)])} />
         </div>
@@ -341,7 +341,7 @@ function CustomersTab({ data, loading }: { data: CustomersData | null; loading: 
         ))}
       </KPIGrid>
       {data.topCustomers?.length > 0 && (
-        <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5">
+        <div className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5">
           <h3 className="text-sm font-semibold text-[var(--t-text-primary)] mb-4">Top Customers</h3>
           <DataTable headers={["Name", "Type", "Jobs", "Total Spend"]} rows={data.topCustomers.map((c) => [c.name, c.type, fmtNum(c.jobCount), formatCurrency(c.totalSpend)])} />
         </div>
@@ -360,13 +360,13 @@ function ReceivablesTab({ data, loading }: { data: ReceivablesData | null; loadi
         <KPI label="Overdue" value={formatCurrency(data.totalOverdue)} color="text-[var(--t-error)]" />
       </div>
       {data.aging?.length > 0 && (
-        <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5">
+        <div className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5">
           <h3 className="text-sm font-semibold text-[var(--t-text-primary)] mb-4">Aging Summary</h3>
           <DataTable headers={["Bucket", "Invoices", "Amount"]} rows={data.aging.map((a) => [a.label, fmtNum(a.count), formatCurrency(a.amount)])} />
         </div>
       )}
       {data.overdueInvoices?.length > 0 && (
-        <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5">
+        <div className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5">
           <h3 className="text-sm font-semibold text-[var(--t-text-primary)] mb-4">Overdue Invoices</h3>
           <DataTable headers={["Customer", "Amount", "Due Date", "Days Overdue"]} rows={data.overdueInvoices.map((inv) => [inv.customer, formatCurrency(inv.amount), inv.dueDate, fmtNum(inv.daysOverdue)])} />
         </div>
@@ -482,10 +482,10 @@ export default function AnalyticsPage() {
           {/* Date inputs */}
           <div className="flex items-center gap-2">
             <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)}
-              className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-2.5 py-1.5 text-xs text-[var(--t-text-primary)] focus:outline-none focus:border-[var(--t-accent)]" />
+              className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-2.5 py-1.5 text-xs text-[var(--t-text-primary)] focus:outline-none focus:border-[var(--t-accent)]" />
             <span className="text-xs text-[var(--t-text-muted)]">to</span>
             <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)}
-              className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-2.5 py-1.5 text-xs text-[var(--t-text-primary)] focus:outline-none focus:border-[var(--t-accent)]" />
+              className="rounded-[18px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-2.5 py-1.5 text-xs text-[var(--t-text-primary)] focus:outline-none focus:border-[var(--t-accent)]" />
           </div>
 
           {/* Export */}
