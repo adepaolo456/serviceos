@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ScrollView, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, ScrollView, Alert, ActivityIndicator, Image } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAppTheme } from '../../constants/theme';
@@ -45,6 +46,7 @@ export default function DumpSlipScreen() {
   const [wasteType, setWasteType] = useState('');
   const [weightTons, setWeightTons] = useState('');
   const [surcharges, setSurcharges] = useState<SurchargeEntry[]>([]);
+  const [dumpSlipPhoto, setDumpSlipPhoto] = useState<string | null>(null);
 
   useEffect(() => {
     getDumpLocations().then(setLocations).catch(() => {}).finally(() => setLoading(false));
@@ -224,6 +226,36 @@ export default function DumpSlipScreen() {
                 </>
               )}
             </View>
+
+            {/* Dump Slip Photo — REQUIRED */}
+            <View style={{ backgroundColor: colors.surface, borderRadius: 16, padding: 16, gap: 12 }}>
+              <Text style={{ fontSize: 11, fontWeight: '800', color: '#8A8A8A', letterSpacing: 1.2, textTransform: 'uppercase' }}>DUMP SLIP PHOTO</Text>
+              {dumpSlipPhoto ? (
+                <>
+                  <Image source={{ uri: dumpSlipPhoto }} style={{ width: '100%', height: 200, borderRadius: 14 }} resizeMode="cover" />
+                  <TouchableOpacity onPress={async () => {
+                    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+                    if (status !== 'granted') { Alert.alert('Camera permission needed'); return; }
+                    const result = await ImagePicker.launchCameraAsync({ quality: 0.7 });
+                    if (!result.canceled && result.assets?.[0]) setDumpSlipPhoto(result.assets[0].uri);
+                  }}>
+                    <Text style={{ fontSize: 13, fontWeight: '600', color: colors.accent, textAlign: 'center' }}>Retake Photo</Text>
+                  </TouchableOpacity>
+                </>
+              ) : (
+                <>
+                  <TouchableOpacity onPress={async () => {
+                    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+                    if (status !== 'granted') { Alert.alert('Camera permission needed'); return; }
+                    const result = await ImagePicker.launchCameraAsync({ quality: 0.7 });
+                    if (!result.canceled && result.assets?.[0]) setDumpSlipPhoto(result.assets[0].uri);
+                  }} style={{ backgroundColor: '#22C55E', borderRadius: 14, padding: 16, alignItems: 'center' }}>
+                    <Text style={{ fontSize: 15, fontWeight: '700', color: '#fff' }}>📸 Take Photo of Dump Slip</Text>
+                  </TouchableOpacity>
+                  <Text style={{ fontSize: 12, color: '#DC2626', textAlign: 'center' }}>Photo required before submitting</Text>
+                </>
+              )}
+            </View>
           </View>
         )}
       </ScrollView>
@@ -247,8 +279,8 @@ export default function DumpSlipScreen() {
               <Text style={{ fontSize: 15, fontWeight: '700', color: '#000' }}>Next</Text>
             </TouchableOpacity>
           ) : (
-            <TouchableOpacity onPress={handleSubmit} disabled={submitting}
-              style={{ flex: 1, paddingVertical: 16, borderRadius: 20, backgroundColor: colors.accent, alignItems: 'center', opacity: submitting ? 0.5 : 1 }}>
+            <TouchableOpacity onPress={handleSubmit} disabled={submitting || !dumpSlipPhoto}
+              style={{ flex: 1, paddingVertical: 16, borderRadius: 20, backgroundColor: colors.accent, alignItems: 'center', opacity: (submitting || !dumpSlipPhoto) ? 0.5 : 1 }}>
               {submitting ? <ActivityIndicator color="#000" /> : <Text style={{ fontSize: 15, fontWeight: '700', color: '#000' }}>Submit Dump Slip</Text>}
             </TouchableOpacity>
           )}
