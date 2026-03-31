@@ -65,13 +65,14 @@ const TYPE_LABELS: Record<string, string> = {
   dump_run: 'Dump Run',
 };
 
-const STATUS_FLOW: Record<string, { next: string; label: string; icon: string }> = {
-  pending: { next: 'confirmed', label: 'Confirm Job', icon: 'checkmark-circle' },
-  confirmed: { next: 'dispatched', label: 'Start Route', icon: 'navigate' },
-  dispatched: { next: 'en_route', label: 'On My Way', icon: 'navigate' },
-  en_route: { next: 'arrived', label: 'Mark Arrived', icon: 'location' },
-  arrived: { next: 'in_progress', label: 'Start Work', icon: 'hammer' },
-  in_progress: { next: 'completed', label: 'Complete Job', icon: 'checkmark-done' },
+// Simplified 3-step flow: On My Way → Arrived (+ dumpster confirm) → Complete
+const STATUS_FLOW: Record<string, { next: string; label: string; icon: string; color: string }> = {
+  pending: { next: 'en_route', label: '🚛 On My Way', icon: 'navigate', color: '#22C55E' },
+  confirmed: { next: 'en_route', label: '🚛 On My Way', icon: 'navigate', color: '#22C55E' },
+  dispatched: { next: 'en_route', label: '🚛 On My Way', icon: 'navigate', color: '#22C55E' },
+  en_route: { next: 'arrived', label: '📍 Arrived', icon: 'location', color: '#3B82F6' },
+  arrived: { next: 'completed', label: '✅ Complete Job', icon: 'checkmark-done', color: '#D97706' },
+  in_progress: { next: 'completed', label: '✅ Complete Job', icon: 'checkmark-done', color: '#D97706' },
 };
 
 const PHOTO_TYPES = ['Before', 'After', 'Damage', 'Dump Slip'];
@@ -92,6 +93,10 @@ export default function JobDetailScreen() {
   const [updating, setUpdating] = useState(false);
   const [photos, setPhotos] = useState<PhotoEntry[]>([]);
   const [signed, setSigned] = useState(false);
+  const [showDumpsterModal, setShowDumpsterModal] = useState(false);
+  const [dumpsterPin, setDumpsterPin] = useState('');
+  const [dumpsterConfirmed, setDumpsterConfirmed] = useState(false);
+  const [showWhereNext, setShowWhereNext] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -117,36 +122,58 @@ export default function JobDetailScreen() {
     const transition = STATUS_FLOW[job.status];
     if (!transition) return;
 
-    Alert.alert(
-      transition.label,
-      `Update job status to "${transition.next.replace(/_/g, ' ')}"?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Confirm',
-          onPress: async () => {
-            setUpdating(true);
-            try {
-              const updated = await updateJobStatus(job.id, transition.next);
-              const newStatus = updated.status || transition.next;
-              setJob((prev) => (prev ? { ...prev, status: newStatus } : prev));
-              if (newStatus === 'en_route' && job.service_address) {
-                const a = job.service_address;
-                const q = [a.street, a.city, a.state, a.zip].filter(Boolean).join(', ');
-                const url = Platform.OS === 'ios'
-                  ? `maps://?daddr=${encodeURIComponent(q)}`
-                  : `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(q)}`;
-                Linking.openURL(url).catch(() => {});
-              }
-            } catch (err) {
-              Alert.alert('Error', (err as any)?.response?.data?.message || (err as any)?.message || 'Failed to update status');
-            } finally {
-              setUpdating(false);
-            }
-          },
-        },
-      ]
-    );
+    // For "Complete Job" on arrived status — require dumpster confirmation first
+    if ((job.status === 'arrived' || job.status === 'in_progress') && !dumpsterConfirmed) {
+      setDumpsterPin(job.asset?.identifier || '');
+      setShowDumpsterModal(true);
+      return;
+    }
+
+    setUpdating(true);
+    try {
+      const updated = await updateJobStatus(job.id, transition.next);
+      const newStatus = updated.status || transition.next;
+      setJob((prev) => (prev ? { ...prev, status: newStatus } : prev));
+
+      // Step 1 complete: auto-open Google Maps
+      if (newStatus === 'en_route' && job.service_address) {
+        const a = job.service_address;
+        const q = [a.street, a.city, a.state, a.zip].filter(Boolean).join(', ');
+        const url = Platform.OS === 'ios'
+          ? `maps://?daddr=${encodeURIComponent(q)}`
+          : `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(q)}`;
+        Linking.openURL(url).catch(() => {});
+      }
+
+      // Step 2 complete: show dumpster confirmation
+      if (newStatus === 'arrived') {
+        setDumpsterPin(job.asset?.identifier || '');
+        setShowDumpsterModal(true);
+      }
+
+      // Step 3 complete: post-completion routing
+      if (newStatus === 'completed') {
+        if (job.job_type === 'delivery') {
+          Alert.alert('Job Complete! ✓', 'Take a photo of the placed dumpster?', [
+            { text: 'Camera', onPress: captureFromCamera },
+            { text: 'Skip', style: 'cancel', onPress: () => router.back() },
+          ]);
+        } else {
+          // Pickup or exchange — where to next?
+          setShowWhereNext(true);
+        }
+      }
+    } catch (err) {
+      Alert.alert('Error', (err as any)?.response?.data?.message || (err as any)?.message || 'Failed to update status');
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  const handleDumpsterConfirm = () => {
+    if (!dumpsterPin.trim()) { Alert.alert('Required', 'Enter the dumpster number'); return; }
+    setDumpsterConfirmed(true);
+    setShowDumpsterModal(false);
   };
 
   const openMaps = () => {
@@ -500,27 +527,31 @@ export default function JobDetailScreen() {
         )}
       </ScrollView>
 
-      {/* Action Button */}
-      {transition && (
+      {/* Action Button — 3-step flow */}
+      {transition && job.status !== 'completed' && (
         <View style={s.actionBar}>
-          <TouchableOpacity
-            style={[s.actionBtn, updating && s.actionBtnDisabled]}
-            onPress={handleStatusUpdate}
-            disabled={updating}
-          >
-            {updating ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <>
-                <Ionicons
-                  name={transition.icon as any}
-                  size={20}
-                  color="#fff"
-                />
+          {/* Show "Complete Job" only after dumpster confirmed on arrived status */}
+          {(job.status === 'arrived' || job.status === 'in_progress') && !dumpsterConfirmed ? (
+            <TouchableOpacity
+              style={[s.actionBtn, { backgroundColor: '#3B82F6' }]}
+              onPress={() => { setDumpsterPin(job.asset?.identifier || ''); setShowDumpsterModal(true); }}
+            >
+              <Ionicons name="cube" size={20} color="#fff" />
+              <Text style={s.actionBtnText}>Confirm Dumpster</Text>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              style={[s.actionBtn, { backgroundColor: transition.color }, updating && s.actionBtnDisabled]}
+              onPress={handleStatusUpdate}
+              disabled={updating}
+            >
+              {updating ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
                 <Text style={s.actionBtnText}>{transition.label}</Text>
-              </>
-            )}
-          </TouchableOpacity>
+              )}
+            </TouchableOpacity>
+          )}
         </View>
       )}
 
@@ -530,7 +561,7 @@ export default function JobDetailScreen() {
             <Ionicons name="checkmark-circle" size={20} color={colors.accent} />
             <Text style={s.completedText}>Job Completed</Text>
           </View>
-          {job.job_type === 'pickup' && (
+          {(job.job_type === 'pickup' || job.job_type === 'exchange') && (
             <TouchableOpacity
               style={[s.actionBtn, { marginTop: 10, backgroundColor: '#F97316' }]}
               onPress={() => router.push({ pathname: '/job/dump-slip', params: { jobId: job.id, customerName: `${job.customer?.first_name || ''} ${job.customer?.last_name || ''}`.trim() } })}
@@ -541,6 +572,74 @@ export default function JobDetailScreen() {
           )}
         </View>
       )}
+
+      {/* Dumpster Confirmation Modal */}
+      <Modal visible={showDumpsterModal} transparent animationType="slide">
+        <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.5)' }}>
+          <View style={{ backgroundColor: colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40 }}>
+            <Text style={{ fontSize: 18, fontWeight: '800', color: colors.text, marginBottom: 4 }}>
+              {job.job_type === 'delivery' ? 'Confirm Drop-Off' : job.job_type === 'exchange' ? 'Confirm Exchange' : 'Confirm Pickup'}
+            </Text>
+            <Text style={{ fontSize: 14, color: colors.textSecondary, marginBottom: 16 }}>
+              {job.job_type === 'delivery' ? 'Enter the dumpster number you are dropping off' : 'Enter the dumpster number you are picking up'}
+            </Text>
+            <View style={{ backgroundColor: colors.surfaceHover, borderRadius: 14, padding: 14, borderWidth: 1, borderColor: colors.border, marginBottom: 20 }}>
+              <Text style={{ fontSize: 11, fontWeight: '600', color: colors.textSecondary, marginBottom: 4 }}>DUMPSTER NUMBER</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <Text style={{ fontSize: 24, fontWeight: '800', color: colors.text, flex: 1 }}>{dumpsterPin || '—'}</Text>
+                <TouchableOpacity onPress={() => {
+                  Alert.prompt ? Alert.prompt('Dumpster #', 'Enter identifier (e.g. D-2005)', (text: string) => setDumpsterPin(text), 'plain-text', dumpsterPin) :
+                  Alert.alert('Enter Dumpster #', 'Type the identifier on the Expo keyboard below', [{ text: 'OK' }]);
+                }}>
+                  <Ionicons name="pencil" size={20} color={colors.accent} />
+                </TouchableOpacity>
+              </View>
+            </View>
+            <View style={{ flexDirection: 'row', gap: 12 }}>
+              <TouchableOpacity onPress={() => setShowDumpsterModal(false)}
+                style={{ flex: 1, paddingVertical: 16, borderRadius: 20, borderWidth: 1, borderColor: colors.border, alignItems: 'center' }}>
+                <Text style={{ fontSize: 15, fontWeight: '600', color: colors.text }}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={handleDumpsterConfirm}
+                style={{ flex: 1, paddingVertical: 16, borderRadius: 20, backgroundColor: colors.accent, alignItems: 'center' }}>
+                <Text style={{ fontSize: 15, fontWeight: '700', color: '#000' }}>Confirm</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Where to Next? Modal (after completing pickup/exchange) */}
+      <Modal visible={showWhereNext} transparent animationType="slide">
+        <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.5)' }}>
+          <View style={{ backgroundColor: colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40 }}>
+            <Text style={{ fontSize: 20, fontWeight: '800', color: colors.text, marginBottom: 4 }}>Where to next?</Text>
+            <Text style={{ fontSize: 14, color: colors.textSecondary, marginBottom: 20 }}>You have a full dumpster on the truck</Text>
+            <TouchableOpacity onPress={() => {
+              setShowWhereNext(false);
+              router.push({ pathname: '/job/dump-slip', params: { jobId: job.id, customerName: `${job.customer?.first_name || ''} ${job.customer?.last_name || ''}`.trim() } });
+            }} style={{ backgroundColor: '#22C55E', borderRadius: 16, padding: 18, marginBottom: 10, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <Text style={{ fontSize: 24 }}>🏭</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 16, fontWeight: '700', color: '#000' }}>Go to Dump</Text>
+                <Text style={{ fontSize: 12, color: 'rgba(0,0,0,0.6)' }}>Drop off the load at a dump facility</Text>
+              </View>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => { setShowWhereNext(false); Alert.alert('Return to Yard', 'Bring the dumpster back to the yard', [{ text: 'OK', onPress: () => router.back() }]); }}
+              style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 16, padding: 18, marginBottom: 10, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <Text style={{ fontSize: 24 }}>🏠</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 16, fontWeight: '700', color: colors.text }}>Return to Yard</Text>
+                <Text style={{ fontSize: 12, color: colors.textSecondary }}>Stage the dumpster at the yard</Text>
+              </View>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => { setShowWhereNext(false); router.back(); }}
+              style={{ alignItems: 'center', paddingVertical: 14 }}>
+              <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textSecondary }}>➡️ Skip — Go to Next Job</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
