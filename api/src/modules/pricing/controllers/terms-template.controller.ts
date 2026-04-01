@@ -7,6 +7,7 @@ import {
   Body,
   Param,
   ParseUUIDPipe,
+  NotFoundException,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -14,6 +15,8 @@ import { Repository } from 'typeorm';
 import { TenantId } from '../../../common/decorators';
 import { TermsTemplate } from '../entities/terms-template.entity';
 import { CreateTermsTemplateDto } from '../dto/create-terms-template.dto';
+import { UpdateTermsTemplateDto } from '../dto/update-terms-template.dto';
+import { PriceResolutionService } from '../services/price-resolution.service';
 
 @ApiTags('Terms Templates')
 @ApiBearerAuth()
@@ -22,13 +25,14 @@ export class TermsTemplateController {
   constructor(
     @InjectRepository(TermsTemplate)
     private repo: Repository<TermsTemplate>,
+    private priceResolution: PriceResolutionService,
   ) {}
 
   @Get()
   findAll(@TenantId() tenantId: string) {
     return this.repo.find({
       where: { tenant_id: tenantId },
-      order: { name: 'ASC' },
+      order: { is_default: 'DESC', name: 'ASC' },
     });
   }
 
@@ -46,31 +50,50 @@ export class TermsTemplateController {
 
   @Put(':id')
   async update(
+    @TenantId() tenantId: string,
     @Param('id', ParseUUIDPipe) id: string,
-    @Body() body: Partial<CreateTermsTemplateDto>,
+    @Body() dto: UpdateTermsTemplateDto,
   ) {
-    await this.repo.update(id, body as any);
-    return this.repo.findOneBy({ id });
+    const existing = await this.repo.findOne({
+      where: { id, tenant_id: tenantId },
+    });
+    if (!existing) throw new NotFoundException(`Terms template ${id} not found`);
+    Object.assign(existing, dto);
+    return this.repo.save(existing);
   }
 
   @Delete(':id')
-  async remove(@Param('id', ParseUUIDPipe) id: string) {
+  async remove(
+    @TenantId() tenantId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    const existing = await this.repo.findOne({
+      where: { id, tenant_id: tenantId },
+    });
+    if (!existing) throw new NotFoundException(`Terms template ${id} not found`);
     await this.repo.delete(id);
     return { deleted: true };
   }
 
   @Post(':id/render')
   async render(
+    @TenantId() tenantId: string,
     @Param('id', ParseUUIDPipe) id: string,
-    @Body() data: Record<string, any>,
+    @Body() body: { customer_id?: string; dumpster_size?: string; [key: string]: any },
   ) {
-    const template = await this.repo.findOneBy({ id });
-    if (!template) return { rendered: '' };
-
-    let text = template.template_body;
-    for (const [key, value] of Object.entries(data)) {
-      text = text.replace(new RegExp(`\\{\\{${key}\\}\\}`, 'g'), String(value));
+    // If customer_id and dumpster_size provided, auto-resolve pricing
+    if (body.customer_id && body.dumpster_size) {
+      const resolved = await this.priceResolution.resolvePrice(
+        tenantId,
+        body.customer_id,
+        body.dumpster_size,
+      );
+      const rendered = await this.priceResolution.renderTermsTemplate(id, resolved);
+      return { rendered_text: rendered };
     }
-    return { rendered: text };
+
+    // Otherwise use raw data from body
+    const rendered = await this.priceResolution.renderTermsTemplate(id, body);
+    return { rendered_text: rendered };
   }
 }
