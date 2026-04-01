@@ -8,9 +8,10 @@ interface SlideOverProps {
   onClose: () => void;
   title: string;
   children: ReactNode;
+  headerActions?: ReactNode;
 }
 
-export default function SlideOver({ open, onClose, title, children }: SlideOverProps) {
+export default function SlideOver({ open, onClose, title, children, headerActions }: SlideOverProps) {
   useEffect(() => {
     if (open) document.body.style.overflow = "hidden";
     else document.body.style.overflow = "";
@@ -40,6 +41,8 @@ export default function SlideOver({ open, onClose, title, children }: SlideOverP
           <h2 className="text-[15px] font-semibold" style={{ color: "var(--t-text-primary)" }}>
             {title}
           </h2>
+          <div className="flex items-center gap-2">
+          {headerActions}
           <button
             onClick={onClose}
             className="rounded-lg p-1.5 transition-colors duration-150"
@@ -49,6 +52,7 @@ export default function SlideOver({ open, onClose, title, children }: SlideOverP
           >
             <X className="h-5 w-5" />
           </button>
+          </div>
         </div>
         <div className="h-[calc(100vh-3.5rem)] overflow-y-auto p-6">
           {children}
