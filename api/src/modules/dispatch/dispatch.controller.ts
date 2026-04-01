@@ -62,4 +62,22 @@ export class DispatchController {
   ) {
     return this.dispatchService.reorderRoute(tenantId, id, dto);
   }
+
+  @Post('dispatch/optimize')
+  @ApiOperation({ summary: 'Optimize route order for a driver on a date' })
+  optimize(
+    @TenantId() tenantId: string,
+    @Body() body: { driverId: string; date: string },
+  ) {
+    return this.dispatchService.optimizeRoute(tenantId, body.driverId, body.date);
+  }
+
+  @Post('dispatch/send-routes')
+  @ApiOperation({ summary: 'Dispatch routes to drivers' })
+  sendRoutes(
+    @TenantId() tenantId: string,
+    @Body() body: { driverIds: string[]; date: string },
+  ) {
+    return this.dispatchService.sendRoutes(tenantId, body.driverIds, body.date);
+  }
 }

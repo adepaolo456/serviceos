@@ -10,6 +10,7 @@ import { Asset } from '../assets/entities/asset.entity';
 import { PricingRule } from '../pricing/entities/pricing-rule.entity';
 import { AutomationLog } from '../automation/entities/automation-log.entity';
 import { Customer } from '../customers/entities/customer.entity';
+import { Route } from '../dispatch/entities/route.entity';
 import { BillingService } from '../billing/billing.service';
 import {
   CreateJobDto,
@@ -40,6 +41,8 @@ export class JobsService {
     private logRepo: Repository<AutomationLog>,
     @InjectRepository(Customer)
     private customerRepo: Repository<Customer>,
+    @InjectRepository(Route)
+    private routeRepo: Repository<Route>,
     private billingService: BillingService,
   ) {}
 
@@ -426,6 +429,11 @@ export class JobsService {
     // Auto-update asset status based on the new job status
     await this.updateAssetOnJobStatus(savedJob, dto.status);
 
+    // Check if all jobs on this driver's route are done
+    if (['completed', 'cancelled', 'failed'].includes(dto.status) && savedJob.assigned_driver_id && savedJob.scheduled_date) {
+      await this.checkRouteCompletion(tenantId, savedJob.assigned_driver_id, savedJob.scheduled_date);
+    }
+
     // Log admin status overrides (backward transitions)
     if (isAdmin && previousStatus !== dto.status) {
       try {
@@ -755,6 +763,24 @@ export class JobsService {
       { id, tenant_id: tenantId },
       { status: 'cancelled', cancelled_at: new Date() },
     );
+  }
+
+  private async checkRouteCompletion(tenantId: string, driverId: string, date: string): Promise<void> {
+    const jobs = await this.jobsRepository.find({
+      where: { tenant_id: tenantId, assigned_driver_id: driverId, scheduled_date: date },
+    });
+    if (jobs.length === 0) return;
+    const allDone = jobs.every(j => ['completed', 'cancelled', 'failed'].includes(j.status));
+    if (!allDone) return;
+
+    const route = await this.routeRepo.findOne({
+      where: { tenant_id: tenantId, driver_id: driverId, route_date: date },
+    });
+    if (route && route.status !== 'completed') {
+      route.status = 'completed';
+      route.actual_end_time = new Date();
+      await this.routeRepo.save(route);
+    }
   }
 
   async bulkReorder(tenantId: string, jobIds: string[]): Promise<void> {

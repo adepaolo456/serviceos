@@ -4,6 +4,7 @@ import { Repository, In, IsNull } from 'typeorm';
 import { Route } from './entities/route.entity';
 import { Job } from '../jobs/entities/job.entity';
 import { User } from '../auth/entities/user.entity';
+import { JobsService } from '../jobs/jobs.service';
 import { CreateRouteDto, ReorderDto } from './dto/dispatch.dto';
 
 @Injectable()
@@ -15,6 +16,7 @@ export class DispatchService {
     private jobsRepository: Repository<Job>,
     @InjectRepository(User)
     private usersRepository: Repository<User>,
+    private jobsService: JobsService,
   ) {}
 
   async getDispatchBoard(tenantId: string, date: string) {
@@ -141,5 +143,120 @@ export class DispatchService {
       relations: ['customer', 'asset'],
       order: { scheduled_date: 'ASC', created_at: 'DESC' },
     });
+  }
+
+  async optimizeRoute(tenantId: string, driverId: string, date: string) {
+    const jobs = await this.jobsRepository
+      .createQueryBuilder('j')
+      .where('j.tenant_id = :tenantId', { tenantId })
+      .andWhere('j.assigned_driver_id = :driverId', { driverId })
+      .andWhere('j.scheduled_date = :date', { date })
+      .andWhere('j.status NOT IN (:...excluded)', { excluded: ['completed', 'cancelled'] })
+      .getMany();
+
+    if (jobs.length <= 1) return { jobs, message: 'Nothing to optimize' };
+
+    // Nearest-neighbor ordering using service_address lat/lng
+    const hasCoords = jobs.every(j => j.service_address?.lat && j.service_address?.lng);
+    let ordered: Job[];
+
+    if (hasCoords) {
+      const remaining = [...jobs];
+      ordered = [remaining.shift()!];
+      while (remaining.length > 0) {
+        const last = ordered[ordered.length - 1];
+        const lastLat = Number(last.service_address?.lat);
+        const lastLng = Number(last.service_address?.lng);
+        let closest = 0;
+        let closestDist = Infinity;
+        for (let i = 0; i < remaining.length; i++) {
+          const lat = Number(remaining[i].service_address?.lat);
+          const lng = Number(remaining[i].service_address?.lng);
+          const dist = (lat - lastLat) ** 2 + (lng - lastLng) ** 2;
+          if (dist < closestDist) { closestDist = dist; closest = i; }
+        }
+        ordered.push(remaining.splice(closest, 1)[0]);
+      }
+    } else {
+      // Fallback: sort by scheduled window start
+      ordered = [...jobs].sort((a, b) =>
+        (a.scheduled_window_start || '').localeCompare(b.scheduled_window_start || ''),
+      );
+    }
+
+    // Update route_order
+    await Promise.all(
+      ordered.map((job, i) =>
+        this.jobsRepository.update({ id: job.id, tenant_id: tenantId }, { route_order: i + 1 }),
+      ),
+    );
+
+    // Update route total_stops if route exists
+    const route = await this.routesRepository.findOne({
+      where: { tenant_id: tenantId, driver_id: driverId, route_date: date },
+    });
+    if (route) {
+      route.total_stops = ordered.length;
+      await this.routesRepository.save(route);
+    }
+
+    return { jobs: ordered.map((j, i) => ({ ...j, route_order: i + 1 })), optimized: hasCoords };
+  }
+
+  async sendRoutes(tenantId: string, driverIds: string[], date: string) {
+    let jobsDispatched = 0;
+
+    for (const driverId of driverIds) {
+      const jobs = await this.jobsRepository.find({
+        where: {
+          tenant_id: tenantId,
+          assigned_driver_id: driverId,
+          scheduled_date: date,
+          status: 'confirmed',
+        },
+      });
+
+      for (const job of jobs) {
+        try {
+          await this.jobsService.changeStatus(tenantId, job.id, { status: 'dispatched' } as any, 'dispatcher');
+          jobsDispatched++;
+        } catch { /* skip jobs that can't transition */ }
+      }
+
+      // Set actual_start_time on route if exists
+      const route = await this.routesRepository.findOne({
+        where: { tenant_id: tenantId, driver_id: driverId, route_date: date },
+      });
+      if (route && !route.actual_start_time) {
+        route.actual_start_time = new Date();
+        route.status = 'active';
+        await this.routesRepository.save(route);
+      }
+    }
+
+    return { message: 'Routes sent', jobsDispatched };
+  }
+
+  async checkRouteCompletion(tenantId: string, driverId: string, date: string): Promise<void> {
+    const jobs = await this.jobsRepository.find({
+      where: {
+        tenant_id: tenantId,
+        assigned_driver_id: driverId,
+        scheduled_date: date,
+      },
+    });
+
+    if (jobs.length === 0) return;
+    const allDone = jobs.every(j => ['completed', 'cancelled', 'failed'].includes(j.status));
+    if (!allDone) return;
+
+    const route = await this.routesRepository.findOne({
+      where: { tenant_id: tenantId, driver_id: driverId, route_date: date },
+    });
+    if (route && route.status !== 'completed') {
+      route.status = 'completed';
+      route.actual_end_time = new Date();
+      await this.routesRepository.save(route);
+    }
   }
 }
