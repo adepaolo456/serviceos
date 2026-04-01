@@ -1,27 +1,27 @@
 import { Injectable, Logger } from '@nestjs/common';
-import * as Twilio from 'twilio';
 
 @Injectable()
 export class TwilioService {
   private readonly logger = new Logger(TwilioService.name);
-  private client: Twilio.Twilio | null = null;
+  private accountSid: string;
+  private authToken: string;
   private fromNumber: string;
 
   constructor() {
-    const sid = process.env.TWILIO_ACCOUNT_SID;
-    const token = process.env.TWILIO_AUTH_TOKEN;
+    this.accountSid = process.env.TWILIO_ACCOUNT_SID || '';
+    this.authToken = process.env.TWILIO_AUTH_TOKEN || '';
     this.fromNumber = process.env.TWILIO_PHONE_NUMBER || '';
+  }
 
-    if (sid && token && sid !== 'placeholder') {
-      this.client = Twilio.default(sid, token);
-    }
+  private get configured(): boolean {
+    return !!(this.accountSid && this.authToken && this.fromNumber);
   }
 
   async sendSms(
     to: string,
     body: string,
   ): Promise<{ success: boolean; sid?: string; error?: string }> {
-    if (!this.client) {
+    if (!this.configured) {
       this.logger.warn('Twilio not configured — SMS not sent');
       return { success: false, error: 'Twilio not configured' };
     }
@@ -33,13 +33,33 @@ export class TwilioService {
     }
 
     try {
-      const message = await this.client.messages.create({
-        body,
-        from: this.fromNumber,
-        to: phone,
+      const url = `https://api.twilio.com/2010-04-01/Accounts/${this.accountSid}/Messages.json`;
+      const auth = Buffer.from(`${this.accountSid}:${this.authToken}`).toString('base64');
+
+      const params = new URLSearchParams({
+        To: phone,
+        From: this.fromNumber,
+        Body: body,
       });
-      this.logger.log(`SMS sent to ${phone}: ${message.sid}`);
-      return { success: true, sid: message.sid };
+
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          Authorization: `Basic ${auth}`,
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: params.toString(),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        this.logger.error(`SMS failed to ${phone}: ${data.message || res.statusText}`);
+        return { success: false, error: data.message || `HTTP ${res.status}` };
+      }
+
+      this.logger.log(`SMS sent to ${phone}: ${data.sid}`);
+      return { success: true, sid: data.sid };
     } catch (err: any) {
       this.logger.error(`SMS failed to ${phone}: ${err.message}`);
       return { success: false, error: err.message };
