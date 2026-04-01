@@ -49,6 +49,9 @@ import { ClientSurchargeOverride } from './modules/pricing/entities/client-surch
 import { TermsTemplate } from './modules/pricing/entities/terms-template.entity';
 import { Route } from './modules/dispatch/entities/route.entity';
 import { Notification } from './modules/notifications/entities/notification.entity';
+import { NotificationPreference } from './modules/notifications/entities/notification-preference.entity';
+import { ClientNotificationOverride } from './modules/notifications/entities/client-notification-override.entity';
+import { ScheduledNotification } from './modules/notifications/entities/scheduled-notification.entity';
 import { MarketplaceBooking } from './modules/marketplace/entities/marketplace-booking.entity';
 import { AutomationModule } from './modules/automation/automation.module';
 import { DriverModule } from './modules/driver/driver.module';
@@ -102,6 +105,9 @@ import { MapboxModule } from './modules/mapbox/mapbox.module';
             TermsTemplate,
             Route,
             Notification,
+            NotificationPreference,
+            ClientNotificationOverride,
+            ScheduledNotification,
             MarketplaceBooking,
             DemoRequest,
             Yard,
