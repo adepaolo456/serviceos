@@ -63,7 +63,9 @@ export class InvoiceService {
     if ((!dto.line_items || dto.line_items.length === 0) && job) {
       const size = job.asset_subtype;
       if (size) {
-        resolvedPrice = await this.priceResolution.resolvePrice(tenantId, dto.customer_id, size);
+        try {
+          resolvedPrice = await this.priceResolution.resolvePrice(tenantId, dto.customer_id, size);
+        } catch { /* no pricing rule for this size — skip auto-pricing */ }
       }
     }
 
