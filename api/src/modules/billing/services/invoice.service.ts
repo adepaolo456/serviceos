@@ -10,15 +10,16 @@ import { InvoiceLineItem } from '../entities/invoice-line-item.entity';
 import { InvoiceRevision } from '../entities/invoice-revision.entity';
 import { Payment } from '../entities/payment.entity';
 import { CreditMemo } from '../entities/credit-memo.entity';
-import { BillingIssue } from '../entities/billing-issue.entity';
 import { JobCost } from '../entities/job-cost.entity';
 import { Job } from '../../jobs/entities/job.entity';
+import { Customer } from '../../customers/entities/customer.entity';
 import { PriceResolutionService, ResolvedPrice } from '../../pricing/services/price-resolution.service';
 import { CreateInvoiceDto } from '../dto/create-invoice.dto';
 import { UpdateInvoiceDto } from '../dto/update-invoice.dto';
 import { CreateLineItemDto } from '../dto/create-line-item.dto';
 import { UpdateLineItemDto } from '../dto/update-line-item.dto';
 import { ApplyPaymentDto } from '../dto/apply-payment.dto';
+import { VoidInvoiceDto } from '../dto/void-invoice.dto';
 import { FindPriceDto } from '../dto/find-price.dto';
 import { ListInvoicesQueryDto } from '../dto/list-invoices-query.dto';
 
@@ -35,54 +36,81 @@ export class InvoiceService {
     private paymentRepo: Repository<Payment>,
     @InjectRepository(CreditMemo)
     private creditMemoRepo: Repository<CreditMemo>,
-    @InjectRepository(BillingIssue)
-    private billingIssueRepo: Repository<BillingIssue>,
     @InjectRepository(JobCost)
     private jobCostRepo: Repository<JobCost>,
     @InjectRepository(Job)
     private jobRepo: Repository<Job>,
+    @InjectRepository(Customer)
+    private customerRepo: Repository<Customer>,
     private priceResolution: PriceResolutionService,
     private dataSource: DataSource,
   ) {}
 
-  async createInvoice(tenantId: string, userId: string, dto: CreateInvoiceDto): Promise<Invoice> {
-    // 1. Get next invoice number
-    const result = await this.dataSource.query(
+  // ─────────────────────────────────────────────────────────
+  // CREATE
+  // ─────────────────────────────────────────────────────────
+
+  async createInvoice(
+    tenantId: string,
+    userId: string,
+    dto: CreateInvoiceDto,
+  ): Promise<Invoice> {
+    // 1. Next invoice number
+    const numResult = await this.dataSource.query(
       `SELECT next_invoice_number($1) as num`,
       [tenantId],
     );
-    const invoiceNumber = result[0].num;
+    const invoiceNumber: number = numResult[0].num;
 
-    // 2. Resolve pricing if no line_items provided
-    let resolvedPrice: ResolvedPrice | null = null;
+    // 2. Look up customer for defaults
+    const customer = await this.customerRepo.findOne({
+      where: { id: dto.customer_id, tenant_id: tenantId },
+    });
+    if (!customer) throw new NotFoundException(`Customer ${dto.customer_id} not found`);
+
+    const customerType = dto.customer_type || customer.type || 'residential';
+    const billingAddress = dto.billing_address || customer.billing_address;
+
+    // 3. Load job if provided
     let job: Job | null = null;
+    let dumpsterSize: string | null = null;
     if (dto.job_id) {
-      job = await this.jobRepo.findOne({ where: { id: dto.job_id, tenant_id: tenantId } });
+      job = await this.jobRepo.findOne({
+        where: { id: dto.job_id, tenant_id: tenantId },
+      });
+      if (job) dumpsterSize = job.asset_subtype;
     }
 
-    if ((!dto.line_items || dto.line_items.length === 0) && job) {
-      const size = job.asset_subtype;
-      if (size) {
-        try {
-          resolvedPrice = await this.priceResolution.resolvePrice(tenantId, dto.customer_id, size);
-        } catch { /* no pricing rule for this size — skip auto-pricing */ }
+    // 4. Resolve pricing
+    let resolvedPrice: ResolvedPrice | null = null;
+    if (dumpsterSize) {
+      try {
+        resolvedPrice = await this.priceResolution.resolvePrice(
+          tenantId,
+          dto.customer_id,
+          dumpsterSize,
+        );
+      } catch {
+        /* no pricing rule for this size — skip auto-pricing */
       }
     }
 
-    // 3. Create invoice record
+    // 5. Create invoice entity
     const today = new Date().toISOString().split('T')[0];
-    const dueDate = dto.due_date || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    const dueDate =
+      dto.due_date ||
+      new Date(Date.now() + 30 * 86_400_000).toISOString().split('T')[0];
 
     const invoice = this.invoiceRepo.create({
       tenant_id: tenantId,
       invoice_number: invoiceNumber,
       customer_id: dto.customer_id,
-      customer_type: dto.customer_type || 'residential',
-      billing_address: dto.billing_address,
-      service_address: dto.service_address,
+      customer_type: customerType,
+      billing_address: billingAddress,
+      service_address: dto.service_address || job?.service_address,
       invoice_date: dto.invoice_date || today,
       due_date: dueDate,
-      service_date: dto.service_date,
+      service_date: dto.service_date || job?.scheduled_date,
       job_id: dto.job_id || null,
       rental_chain_id: dto.rental_chain_id || null,
       project_name: dto.project_name,
@@ -93,122 +121,182 @@ export class InvoiceService {
       created_by: userId,
       updated_by: userId,
     });
+    const saved = await this.invoiceRepo.save(invoice);
 
-    const savedInvoice = await this.invoiceRepo.save(invoice);
-
-    // 4. Create line items
+    // 7. Create line items from dto
     if (dto.line_items && dto.line_items.length > 0) {
       for (let i = 0; i < dto.line_items.length; i++) {
-        await this.createLineItemFromDto(savedInvoice.id, dto.line_items[i], i);
+        await this.buildAndSaveLineItem(saved.id, dto.line_items[i], i);
       }
     } else if (resolvedPrice) {
-      // 5. Auto-create rental line item
-      const customerType = dto.customer_type || 'residential';
-      const size = job?.asset_subtype || 'dumpster';
-      await this.createLineItemFromDto(savedInvoice.id, {
+      // 8. Auto-create rental line item
+      const label =
+        `${dumpsterSize} Dumpster — ${customerType.charAt(0).toUpperCase() + customerType.slice(1)}`;
+      await this.buildAndSaveLineItem(saved.id, {
         line_type: 'rental',
-        name: `${size} Dumpster - ${customerType}`,
+        name: label,
         quantity: 1,
         unit_rate: resolvedPrice.base_price,
+        source: resolvedPrice.tier_used,
+        source_id: resolvedPrice.pricing_rule_id,
       }, 0);
     }
 
-    // 6. Recalculate totals
-    await this.recalculateTotals(savedInvoice);
+    // 9. Recalculate totals
+    await this.recalculateTotals(saved);
 
-    // 7. Generate summary of work
-    await this.generateSummaryOfWork(savedInvoice, resolvedPrice);
+    // 10. Generate summary of work
+    await this.generateSummaryOfWork(saved, resolvedPrice);
 
-    // 8. Create initial revision
-    const freshInvoice = await this.findOneInvoice(tenantId, savedInvoice.id);
-    await this.createRevision(freshInvoice, null, userId, 'Invoice created');
+    // 11. Render terms template
+    const templateId = dto.terms_template_id;
+    if (templateId && resolvedPrice) {
+      try {
+        const rendered = await this.priceResolution.renderTermsTemplate(
+          templateId,
+          resolvedPrice,
+        );
+        saved.terms_text = rendered;
+        await this.invoiceRepo.update(saved.id, { terms_text: rendered });
+      } catch { /* template render failed — non-fatal */ }
+    }
 
-    return freshInvoice;
+    // 12. Initial revision
+    const fresh = await this.findOne(tenantId, saved.id);
+    await this.createRevision(fresh, null, userId, 'Invoice created');
+
+    // 13. Return with all relations
+    return fresh;
   }
 
-  async updateInvoice(tenantId: string, userId: string, invoiceId: string, dto: UpdateInvoiceDto): Promise<Invoice> {
-    const invoice = await this.findOneInvoice(tenantId, invoiceId);
+  // ─────────────────────────────────────────────────────────
+  // UPDATE
+  // ─────────────────────────────────────────────────────────
+
+  async updateInvoice(
+    tenantId: string,
+    userId: string,
+    invoiceId: string,
+    dto: UpdateInvoiceDto,
+  ): Promise<Invoice> {
+    const invoice = await this.findOne(tenantId, invoiceId);
     const oldSnapshot = this.snapshotInvoice(invoice);
 
-    // Apply updates
-    if (dto.customer_id !== undefined) invoice.customer_id = dto.customer_id;
-    if (dto.customer_type !== undefined) invoice.customer_type = dto.customer_type;
-    if (dto.billing_address !== undefined) invoice.billing_address = dto.billing_address;
-    if (dto.service_address !== undefined) invoice.service_address = dto.service_address;
-    if (dto.invoice_date !== undefined) invoice.invoice_date = dto.invoice_date;
-    if (dto.due_date !== undefined) invoice.due_date = dto.due_date;
-    if (dto.service_date !== undefined) invoice.service_date = dto.service_date;
-    if (dto.job_id !== undefined) invoice.job_id = dto.job_id;
-    if (dto.rental_chain_id !== undefined) invoice.rental_chain_id = dto.rental_chain_id;
-    if (dto.project_name !== undefined) invoice.project_name = dto.project_name;
-    if (dto.po_number !== undefined) invoice.po_number = dto.po_number;
-    if (dto.terms_template_id !== undefined) invoice.terms_template_id = dto.terms_template_id;
-    if (dto.status !== undefined) invoice.status = dto.status;
-    if (dto.summary_of_work !== undefined) invoice.summary_of_work = dto.summary_of_work;
-    if (dto.terms_text !== undefined) invoice.terms_text = dto.terms_text;
+    // Apply scalar fields
+    const scalarFields: (keyof UpdateInvoiceDto)[] = [
+      'customer_id', 'customer_type', 'billing_address', 'service_address',
+      'invoice_date', 'due_date', 'service_date', 'job_id', 'rental_chain_id',
+      'project_name', 'po_number', 'terms_template_id', 'status',
+      'summary_of_work', 'terms_text',
+    ];
+    for (const field of scalarFields) {
+      if (dto[field] !== undefined) {
+        (invoice as any)[field] = dto[field];
+      }
+    }
+    invoice.updated_by = userId;
 
     // Replace line items if provided
     if (dto.line_items !== undefined) {
       await this.lineItemRepo.delete({ invoice_id: invoiceId });
       for (let i = 0; i < dto.line_items.length; i++) {
-        await this.createLineItemFromDto(invoiceId, dto.line_items[i], i);
+        await this.buildAndSaveLineItem(invoiceId, dto.line_items[i], i);
       }
     }
 
-    invoice.updated_by = userId;
     await this.invoiceRepo.save(invoice);
 
     // Recalculate
     await this.recalculateTotals(invoice);
 
-    // Increment revision
+    // Regenerate summary if job/service context changed
+    if (
+      dto.service_date !== undefined ||
+      dto.job_id !== undefined ||
+      dto.customer_id !== undefined
+    ) {
+      await this.generateSummaryOfWork(invoice, null);
+    }
+
+    // Revision
     invoice.revision += 1;
     await this.invoiceRepo.save(invoice);
 
-    // Create revision
-    const updated = await this.findOneInvoice(tenantId, invoiceId);
-    await this.createRevision(updated, oldSnapshot, userId, 'Invoice updated');
+    const updated = await this.findOne(tenantId, invoiceId);
+    const changeSummary = this.buildChangeSummary(oldSnapshot, updated);
+    await this.createRevision(updated, oldSnapshot, userId, changeSummary);
 
     return updated;
   }
 
-  async voidInvoice(tenantId: string, userId: string, invoiceId: string, reason: string) {
-    const invoice = await this.findOneInvoice(tenantId, invoiceId);
+  // ─────────────────────────────────────────────────────────
+  // VOID
+  // ─────────────────────────────────────────────────────────
+
+  async voidInvoice(
+    tenantId: string,
+    userId: string,
+    invoiceId: string,
+    dto: VoidInvoiceDto,
+  ) {
+    const invoice = await this.findOne(tenantId, invoiceId);
+
+    if (invoice.status === 'voided') {
+      throw new BadRequestException('Invoice is already voided');
+    }
 
     invoice.status = 'voided';
     invoice.voided_at = new Date();
     invoice.updated_by = userId;
     await this.invoiceRepo.save(invoice);
 
-    // Create credit memo
+    // Credit memo
     const memoResult = await this.dataSource.query(
       `SELECT COALESCE(MAX(memo_number), 0) + 1 as num FROM credit_memos WHERE tenant_id = $1`,
       [tenantId],
     );
-    const memoNumber = memoResult[0].num;
 
     const creditMemo = this.creditMemoRepo.create({
       tenant_id: tenantId,
-      memo_number: memoNumber,
+      memo_number: memoResult[0].num,
       original_invoice_id: invoiceId,
       customer_id: invoice.customer_id,
       amount: Number(invoice.total),
-      reason,
+      reason: dto.reason,
       created_by: userId,
     });
     const savedMemo = await this.creditMemoRepo.save(creditMemo);
 
-    // Create revision
+    // Revision
     invoice.revision += 1;
     await this.invoiceRepo.save(invoice);
-    await this.createRevision(invoice, null, userId, `Invoice voided: ${reason}`);
+    await this.createRevision(
+      invoice,
+      null,
+      userId,
+      `Invoice voided: ${dto.reason}`,
+    );
 
     return { invoice, creditMemo: savedMemo };
   }
 
-  async applyPayment(tenantId: string, userId: string, invoiceId: string, dto: ApplyPaymentDto) {
-    const invoice = await this.findOneInvoice(tenantId, invoiceId);
+  // ─────────────────────────────────────────────────────────
+  // APPLY PAYMENT
+  // ─────────────────────────────────────────────────────────
 
+  async applyPayment(
+    tenantId: string,
+    userId: string,
+    invoiceId: string,
+    dto: ApplyPaymentDto,
+  ) {
+    const invoice = await this.findOne(tenantId, invoiceId);
+
+    if (invoice.status === 'voided') {
+      throw new BadRequestException('Cannot apply payment to voided invoice');
+    }
+
+    // Create payment record
     const payment = this.paymentRepo.create({
       tenant_id: tenantId,
       invoice_id: invoiceId,
@@ -217,13 +305,19 @@ export class InvoiceService {
       stripe_payment_intent_id: dto.stripe_payment_intent_id,
       reference_number: dto.reference_number,
       notes: dto.notes,
+      status: 'completed',
       applied_by: userId,
     });
     const savedPayment = await this.paymentRepo.save(payment);
 
-    // Update invoice
-    invoice.amount_paid = Math.round((Number(invoice.amount_paid) + dto.amount) * 100) / 100;
-    invoice.balance_due = Math.round((Number(invoice.total) - Number(invoice.amount_paid)) * 100) / 100;
+    // Update invoice totals
+    invoice.amount_paid =
+      Math.round((Number(invoice.amount_paid) + Number(dto.amount)) * 100) /
+      100;
+    invoice.balance_due =
+      Math.round(
+        (Number(invoice.total) - Number(invoice.amount_paid)) * 100,
+      ) / 100;
     if (invoice.balance_due < 0) invoice.balance_due = 0;
 
     if (invoice.balance_due <= 0) {
@@ -236,103 +330,249 @@ export class InvoiceService {
     invoice.updated_by = userId;
     await this.invoiceRepo.save(invoice);
 
-    // Create revision
+    // Revision
     invoice.revision += 1;
     await this.invoiceRepo.save(invoice);
-    await this.createRevision(invoice, null, userId, `Payment of $${dto.amount} applied via ${dto.payment_method}`);
+    await this.createRevision(
+      invoice,
+      null,
+      userId,
+      `Payment of $${dto.amount} applied via ${dto.payment_method}`,
+    );
 
     return { invoice, payment: savedPayment };
   }
 
-  async addLineItem(tenantId: string, invoiceId: string, dto: CreateLineItemDto) {
-    await this.findOneInvoice(tenantId, invoiceId);
+  // ─────────────────────────────────────────────────────────
+  // LINE ITEM CRUD
+  // ─────────────────────────────────────────────────────────
+
+  async addLineItem(
+    tenantId: string,
+    userId: string,
+    invoiceId: string,
+    dto: CreateLineItemDto,
+  ): Promise<InvoiceLineItem> {
+    const invoice = await this.findOne(tenantId, invoiceId);
 
     const maxResult = await this.lineItemRepo
       .createQueryBuilder('li')
       .select('COALESCE(MAX(li.sort_order), -1)', 'max')
       .where('li.invoice_id = :invoiceId', { invoiceId })
       .getRawOne();
-    const sortOrder = (maxResult?.max ?? -1) + 1;
+    const sortOrder = (Number(maxResult?.max) || 0) + 1;
 
-    const lineItem = await this.createLineItemFromDto(invoiceId, dto, sortOrder);
+    const lineItem = await this.buildAndSaveLineItem(invoiceId, dto, sortOrder);
 
-    const invoice = await this.findOneInvoice(tenantId, invoiceId);
     await this.recalculateTotals(invoice);
 
     invoice.revision += 1;
+    invoice.updated_by = userId;
     await this.invoiceRepo.save(invoice);
-    await this.createRevision(invoice, null, null, `Line item added: ${dto.name}`);
+    await this.createRevision(
+      await this.findOne(tenantId, invoiceId),
+      null,
+      userId,
+      `Added line item: ${dto.name}`,
+    );
 
     return lineItem;
   }
 
-  async updateLineItem(tenantId: string, invoiceId: string, lineItemId: string, dto: UpdateLineItemDto) {
-    await this.findOneInvoice(tenantId, invoiceId);
+  async updateLineItem(
+    tenantId: string,
+    userId: string,
+    invoiceId: string,
+    lineItemId: string,
+    dto: UpdateLineItemDto,
+  ): Promise<InvoiceLineItem> {
+    const invoice = await this.findOne(tenantId, invoiceId);
 
     const lineItem = await this.lineItemRepo.findOne({
       where: { id: lineItemId, invoice_id: invoiceId },
     });
-    if (!lineItem) throw new NotFoundException(`Line item ${lineItemId} not found`);
+    if (!lineItem) {
+      throw new NotFoundException(`Line item ${lineItemId} not found`);
+    }
 
-    if (dto.line_type !== undefined) lineItem.line_type = dto.line_type;
-    if (dto.name !== undefined) lineItem.name = dto.name;
-    if (dto.description !== undefined) lineItem.description = dto.description;
-    if (dto.quantity !== undefined) lineItem.quantity = dto.quantity;
-    if (dto.unit_rate !== undefined) lineItem.unit_rate = dto.unit_rate;
-    if (dto.is_taxable !== undefined) lineItem.is_taxable = dto.is_taxable;
-    if (dto.tax_rate !== undefined) lineItem.tax_rate = dto.tax_rate;
-    if (dto.discount_amount !== undefined) lineItem.discount_amount = dto.discount_amount;
-    if (dto.discount_type !== undefined) lineItem.discount_type = dto.discount_type;
-    if (dto.service_date !== undefined) lineItem.service_date = dto.service_date;
-    if (dto.service_address !== undefined) lineItem.service_address = dto.service_address;
+    // Apply updates
+    const fields: (keyof UpdateLineItemDto)[] = [
+      'line_type', 'name', 'description', 'quantity', 'unit_rate',
+      'is_taxable', 'tax_rate', 'discount_amount', 'discount_type',
+      'service_date', 'service_address', 'source', 'source_id',
+    ];
+    for (const f of fields) {
+      if (dto[f] !== undefined) (lineItem as any)[f] = dto[f];
+    }
 
     this.calculateLineItem(lineItem);
     await this.lineItemRepo.save(lineItem);
 
-    const invoice = await this.findOneInvoice(tenantId, invoiceId);
     await this.recalculateTotals(invoice);
 
     invoice.revision += 1;
+    invoice.updated_by = userId;
     await this.invoiceRepo.save(invoice);
-    await this.createRevision(invoice, null, null, `Line item updated: ${lineItem.name}`);
+    await this.createRevision(
+      await this.findOne(tenantId, invoiceId),
+      null,
+      userId,
+      `Updated line item: ${lineItem.name}`,
+    );
 
     return lineItem;
   }
 
-  async removeLineItem(tenantId: string, invoiceId: string, lineItemId: string) {
-    await this.findOneInvoice(tenantId, invoiceId);
+  async removeLineItem(
+    tenantId: string,
+    userId: string,
+    invoiceId: string,
+    lineItemId: string,
+  ): Promise<void> {
+    const invoice = await this.findOne(tenantId, invoiceId);
+
+    const lineItem = await this.lineItemRepo.findOne({
+      where: { id: lineItemId, invoice_id: invoiceId },
+    });
+    if (!lineItem) {
+      throw new NotFoundException(`Line item ${lineItemId} not found`);
+    }
+    const removedName = lineItem.name;
+
     await this.lineItemRepo.delete({ id: lineItemId, invoice_id: invoiceId });
 
-    const invoice = await this.findOneInvoice(tenantId, invoiceId);
     await this.recalculateTotals(invoice);
 
     invoice.revision += 1;
+    invoice.updated_by = userId;
     await this.invoiceRepo.save(invoice);
-    await this.createRevision(invoice, null, null, 'Line item removed');
+    await this.createRevision(
+      await this.findOne(tenantId, invoiceId),
+      null,
+      userId,
+      `Removed line item: ${removedName}`,
+    );
   }
 
-  async findPrice(tenantId: string, dto: FindPriceDto) {
-    return this.priceResolution.resolvePrice(tenantId, dto.customer_id, dto.dumpster_size);
+  // ─────────────────────────────────────────────────────────
+  // QUERIES
+  // ─────────────────────────────────────────────────────────
+
+  async findAll(
+    tenantId: string,
+    query: ListInvoicesQueryDto,
+  ) {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 25;
+    const skip = (page - 1) * limit;
+
+    const qb = this.invoiceRepo
+      .createQueryBuilder('i')
+      .leftJoinAndSelect('i.customer', 'customer')
+      .leftJoinAndSelect('i.job', 'job')
+      .leftJoinAndSelect('i.line_items', 'li')
+      .where('i.tenant_id = :tenantId', { tenantId });
+
+    if (query.status) {
+      qb.andWhere('i.status = :status', { status: query.status });
+    }
+    if (query.customerId) {
+      qb.andWhere('i.customer_id = :customerId', {
+        customerId: query.customerId,
+      });
+    }
+    if (query.dateFrom) {
+      qb.andWhere('i.invoice_date >= :dateFrom', { dateFrom: query.dateFrom });
+    }
+    if (query.dateTo) {
+      qb.andWhere('i.invoice_date <= :dateTo', { dateTo: query.dateTo });
+    }
+    if (query.search) {
+      qb.andWhere(
+        `(CAST(i.invoice_number AS TEXT) ILIKE :search
+          OR customer.first_name ILIKE :search
+          OR customer.last_name ILIKE :search
+          OR customer.company_name ILIKE :search)`,
+        { search: `%${query.search}%` },
+      );
+    }
+
+    qb.orderBy('i.invoice_number', 'DESC')
+      .addOrderBy('li.sort_order', 'ASC')
+      .skip(skip)
+      .take(limit);
+
+    const [data, total] = await qb.getManyAndCount();
+
+    return {
+      data,
+      meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
+    };
   }
 
-  async duplicateInvoice(tenantId: string, userId: string, invoiceId: string): Promise<Invoice> {
-    const original = await this.findOneInvoice(tenantId, invoiceId);
+  async findOne(tenantId: string, invoiceId: string): Promise<Invoice> {
+    const invoice = await this.invoiceRepo.findOne({
+      where: { id: invoiceId, tenant_id: tenantId },
+      relations: ['customer', 'job', 'line_items', 'payments'],
+    });
+    if (!invoice) throw new NotFoundException(`Invoice ${invoiceId} not found`);
 
-    const result = await this.dataSource.query(
+    // Load 5 most recent revisions separately for efficiency
+    invoice.revisions = await this.revisionRepo.find({
+      where: { invoice_id: invoiceId },
+      order: { revision_number: 'DESC' },
+      take: 5,
+    });
+
+    // Sort line items by sort_order
+    if (invoice.line_items) {
+      invoice.line_items.sort((a, b) => a.sort_order - b.sort_order);
+    }
+    // Sort payments by applied_at desc
+    if (invoice.payments) {
+      invoice.payments.sort(
+        (a, b) =>
+          new Date(b.applied_at).getTime() - new Date(a.applied_at).getTime(),
+      );
+    }
+
+    return invoice;
+  }
+
+  async sendInvoice(tenantId: string, invoiceId: string, method: string) {
+    const invoice = await this.findOne(tenantId, invoiceId);
+    invoice.status = 'sent';
+    invoice.sent_at = new Date();
+    invoice.sent_method = method || 'email';
+    await this.invoiceRepo.save(invoice);
+    return this.findOne(tenantId, invoiceId);
+  }
+
+  async duplicateInvoice(
+    tenantId: string,
+    userId: string,
+    invoiceId: string,
+  ): Promise<Invoice> {
+    const original = await this.findOne(tenantId, invoiceId);
+
+    const numResult = await this.dataSource.query(
       `SELECT next_invoice_number($1) as num`,
       [tenantId],
     );
-    const invoiceNumber = result[0].num;
 
-    const newInvoice = this.invoiceRepo.create({
+    const dup = this.invoiceRepo.create({
       tenant_id: tenantId,
-      invoice_number: invoiceNumber,
+      invoice_number: numResult[0].num,
+      revision: 1,
+      status: 'draft',
       customer_id: original.customer_id,
       customer_type: original.customer_type,
       billing_address: original.billing_address,
       service_address: original.service_address,
       invoice_date: new Date().toISOString().split('T')[0],
-      due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+      due_date: new Date(Date.now() + 30 * 86_400_000)
+        .toISOString()
+        .split('T')[0],
       service_date: original.service_date,
       job_id: original.job_id,
       rental_chain_id: original.rental_chain_id,
@@ -345,40 +585,50 @@ export class InvoiceService {
       summary_of_work: original.summary_of_work,
       created_by: userId,
       updated_by: userId,
-      status: 'draft',
     });
-    const saved = await this.invoiceRepo.save(newInvoice);
+    const saved = await this.invoiceRepo.save(dup);
 
     // Clone line items
     if (original.line_items) {
       for (const li of original.line_items) {
-        const clone = this.lineItemRepo.create({
-          invoice_id: saved.id,
-          sort_order: li.sort_order,
-          line_type: li.line_type,
-          name: li.name,
-          description: li.description,
-          quantity: li.quantity,
-          unit_rate: li.unit_rate,
-          amount: li.amount,
-          discount_amount: li.discount_amount,
-          discount_type: li.discount_type,
-          net_amount: li.net_amount,
-          is_taxable: li.is_taxable,
-          tax_rate: li.tax_rate,
-          tax_amount: li.tax_amount,
-          service_date: li.service_date,
-          service_address: li.service_address,
-          source: li.source,
-          source_id: li.source_id,
-          cogs: li.cogs,
-        });
-        await this.lineItemRepo.save(clone);
+        await this.lineItemRepo.save(
+          this.lineItemRepo.create({
+            invoice_id: saved.id,
+            sort_order: li.sort_order,
+            line_type: li.line_type,
+            name: li.name,
+            description: li.description,
+            quantity: li.quantity,
+            unit_rate: li.unit_rate,
+            amount: li.amount,
+            discount_amount: li.discount_amount,
+            discount_type: li.discount_type,
+            net_amount: li.net_amount,
+            is_taxable: li.is_taxable,
+            tax_rate: li.tax_rate,
+            tax_amount: li.tax_amount,
+            service_date: li.service_date,
+            service_address: li.service_address,
+            source: li.source,
+            source_id: li.source_id,
+            cogs: li.cogs,
+          }),
+        );
       }
     }
 
     await this.recalculateTotals(saved);
-    return this.findOneInvoice(tenantId, saved.id);
+
+    // Initial revision on the duplicate
+    const fresh = await this.findOne(tenantId, saved.id);
+    await this.createRevision(
+      fresh,
+      null,
+      userId,
+      `Duplicated from invoice #${original.invoice_number}`,
+    );
+
+    return fresh;
   }
 
   async getRevisions(invoiceId: string) {
@@ -388,73 +638,30 @@ export class InvoiceService {
     });
   }
 
-  async findAllInvoices(tenantId: string, query: ListInvoicesQueryDto) {
-    const page = query.page ?? 1;
-    const limit = query.limit ?? 20;
-    const skip = (page - 1) * limit;
-
-    const qb = this.invoiceRepo
-      .createQueryBuilder('i')
-      .leftJoinAndSelect('i.customer', 'customer')
-      .leftJoinAndSelect('i.job', 'job')
-      .leftJoinAndSelect('i.line_items', 'line_items')
-      .where('i.tenant_id = :tenantId', { tenantId });
-
-    if (query.status) {
-      qb.andWhere('i.status = :status', { status: query.status });
-    }
-    if (query.customerId) {
-      qb.andWhere('i.customer_id = :customerId', { customerId: query.customerId });
-    }
-    if (query.dateFrom) {
-      qb.andWhere('i.created_at >= :dateFrom', { dateFrom: query.dateFrom });
-    }
-    if (query.dateTo) {
-      qb.andWhere('i.created_at <= :dateTo', { dateTo: `${query.dateTo} 23:59:59` });
-    }
-    if (query.search) {
-      qb.andWhere(
-        `(CAST(i.invoice_number AS TEXT) ILIKE :search OR customer.first_name ILIKE :search OR customer.last_name ILIKE :search OR customer.company_name ILIKE :search)`,
-        { search: `%${query.search}%` },
-      );
-    }
-
-    qb.orderBy('i.created_at', 'DESC').skip(skip).take(limit);
-    const [data, total] = await qb.getManyAndCount();
-
-    return {
-      data,
-      meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
-    };
+  async findPrice(tenantId: string, dto: FindPriceDto) {
+    return this.priceResolution.resolvePrice(
+      tenantId,
+      dto.customer_id,
+      dto.dumpster_size,
+    );
   }
 
-  async findOneInvoice(tenantId: string, id: string): Promise<Invoice> {
-    const invoice = await this.invoiceRepo.findOne({
-      where: { id, tenant_id: tenantId },
-      relations: ['customer', 'job', 'line_items', 'payments', 'revisions'],
-    });
-    if (!invoice) throw new NotFoundException(`Invoice ${id} not found`);
-    return invoice;
-  }
+  // ─────────────────────────────────────────────────────────
+  // PRIVATE: LINE ITEM MATH
+  // ─────────────────────────────────────────────────────────
 
-  async sendInvoice(tenantId: string, invoiceId: string, method: string) {
-    const invoice = await this.findOneInvoice(tenantId, invoiceId);
-    invoice.status = 'sent';
-    invoice.sent_at = new Date();
-    invoice.sent_method = method || 'email';
-    return this.invoiceRepo.save(invoice);
-  }
-
-  // ─── Private Helpers ───
-
-  private async createLineItemFromDto(invoiceId: string, dto: CreateLineItemDto, sortOrder: number): Promise<InvoiceLineItem> {
-    const lineItem = this.lineItemRepo.create({
+  private async buildAndSaveLineItem(
+    invoiceId: string,
+    dto: CreateLineItemDto,
+    sortOrder: number,
+  ): Promise<InvoiceLineItem> {
+    const li = this.lineItemRepo.create({
       invoice_id: invoiceId,
       sort_order: sortOrder,
       line_type: dto.line_type,
       name: dto.name,
       description: dto.description,
-      quantity: dto.quantity,
+      quantity: dto.quantity ?? 1,
       unit_rate: dto.unit_rate,
       is_taxable: dto.is_taxable ?? false,
       tax_rate: dto.tax_rate ?? 0,
@@ -465,79 +672,129 @@ export class InvoiceService {
       source: dto.source,
       source_id: dto.source_id,
     });
-    this.calculateLineItem(lineItem);
-    return this.lineItemRepo.save(lineItem);
+    this.calculateLineItem(li);
+    return this.lineItemRepo.save(li);
   }
 
-  private calculateLineItem(li: InvoiceLineItem) {
-    li.amount = Math.round(Number(li.quantity) * Number(li.unit_rate) * 100) / 100;
-    li.net_amount = Math.round((li.amount - Number(li.discount_amount || 0)) * 100) / 100;
+  private calculateLineItem(li: InvoiceLineItem): void {
+    const qty = Number(li.quantity);
+    const rate = Number(li.unit_rate);
+    li.amount = Math.round(qty * rate * 100) / 100;
+
+    let discountAmt = Number(li.discount_amount || 0);
+    if (li.discount_type === 'percent' && discountAmt > 0) {
+      discountAmt = Math.round(li.amount * (discountAmt / 100) * 100) / 100;
+      li.discount_amount = discountAmt;
+    }
+
+    li.net_amount = Math.round((li.amount - discountAmt) * 100) / 100;
     li.tax_amount = li.is_taxable
       ? Math.round(li.net_amount * Number(li.tax_rate || 0) * 100) / 100
       : 0;
   }
 
-  private async recalculateTotals(invoice: Invoice) {
-    const lineItems = await this.lineItemRepo.find({ where: { invoice_id: invoice.id } });
+  // ─────────────────────────────────────────────────────────
+  // PRIVATE: RECALCULATE TOTALS
+  // ─────────────────────────────────────────────────────────
 
-    const subtotal = lineItems.reduce((sum, li) => sum + Number(li.net_amount), 0);
-    const taxAmount = lineItems.reduce((sum, li) => sum + Number(li.tax_amount), 0);
+  private async recalculateTotals(invoice: Invoice): Promise<void> {
+    // Fresh query — never trust stale relations
+    const lineItems = await this.lineItemRepo.find({
+      where: { invoice_id: invoice.id },
+    });
+
+    const subtotal = lineItems.reduce(
+      (sum, li) => sum + Number(li.net_amount),
+      0,
+    );
+    const taxAmount = lineItems.reduce(
+      (sum, li) => sum + Number(li.tax_amount),
+      0,
+    );
     const total = Math.round((subtotal + taxAmount) * 100) / 100;
-    const balanceDue = Math.max(0, Math.round((total - Number(invoice.amount_paid)) * 100) / 100);
+    const balanceDue = Math.max(
+      0,
+      Math.round((total - Number(invoice.amount_paid)) * 100) / 100,
+    );
 
     // COGS
-    const jobCosts = await this.jobCostRepo.find({ where: { invoice_id: invoice.id } });
-    const totalCogs = jobCosts.reduce((sum, jc) => sum + Number(jc.amount), 0);
+    const jobCosts = await this.jobCostRepo.find({
+      where: { invoice_id: invoice.id },
+    });
+    const totalCogs = jobCosts.reduce(
+      (sum, jc) => sum + Number(jc.amount),
+      0,
+    );
     const profit = Math.round((total - totalCogs) * 100) / 100;
 
-    await this.invoiceRepo.update(invoice.id, {
+    const updates = {
       subtotal: Math.round(subtotal * 100) / 100,
       tax_amount: Math.round(taxAmount * 100) / 100,
       total,
       balance_due: balanceDue,
       total_cogs: Math.round(totalCogs * 100) / 100,
       profit,
-    });
+    };
 
-    // Update in-memory
-    invoice.subtotal = Math.round(subtotal * 100) / 100;
-    invoice.tax_amount = Math.round(taxAmount * 100) / 100;
-    invoice.total = total;
-    invoice.balance_due = balanceDue;
-    invoice.total_cogs = Math.round(totalCogs * 100) / 100;
-    invoice.profit = profit;
+    await this.invoiceRepo.update(invoice.id, updates);
+
+    // Sync in-memory object
+    Object.assign(invoice, updates);
   }
 
-  private async generateSummaryOfWork(invoice: Invoice, pricingData: ResolvedPrice | null) {
-    let summary = '';
-    const serviceDate = invoice.service_date || invoice.invoice_date;
+  // ─────────────────────────────────────────────────────────
+  // PRIVATE: GENERATE SUMMARY OF WORK
+  // ─────────────────────────────────────────────────────────
 
-    if (invoice.job_id) {
-      const job = await this.jobRepo.findOne({ where: { id: invoice.job_id } });
-      if (job) {
+  private async generateSummaryOfWork(
+    invoice: Invoice,
+    pricingData: ResolvedPrice | null,
+  ): Promise<void> {
+    const serviceDate = invoice.service_date || invoice.invoice_date;
+    let summary: string;
+
+    if (!invoice.job_id) {
+      summary = `Service scheduled for ${serviceDate}.`;
+    } else {
+      const job = await this.jobRepo.findOne({
+        where: { id: invoice.job_id },
+      });
+
+      if (!job) {
+        summary = `Service scheduled for ${serviceDate}.`;
+      } else {
         const size = job.asset_subtype || 'dumpster';
         const rentalDays = pricingData?.rental_days || job.rental_days || 14;
-        const weightAllowance = pricingData?.weight_allowance_tons || 0;
+        const weight = pricingData?.weight_allowance_tons || 0;
         const overagePerTon = pricingData?.overage_per_ton || 0;
         const dailyRate = pricingData?.daily_overage_rate || 0;
+        const jt = job.job_type;
 
-        if (job.job_type === 'delivery' || job.job_type === 'drop_off') {
-          summary = `Your ${size} dumpster rental is scheduled for delivery on ${serviceDate}. This rental includes a ${rentalDays} day rental period with a weight allowance of ${weightAllowance} tons. If you exceed your weight allowance, you will be charged at a rate of $${overagePerTon} per ton. Daily overage after ${rentalDays} days: $${dailyRate}/day.`;
-        } else if (job.job_type === 'exchange') {
-          summary = `Your ${size} dumpster is scheduled for exchange on ${serviceDate}. Weight allowance: ${weightAllowance} tons at $${overagePerTon}/ton overage.`;
-        } else if (job.job_type === 'pickup' || job.job_type === 'pick_up') {
+        if (jt === 'delivery' || jt === 'drop_off') {
+          summary =
+            `Your ${size} dumpster rental is scheduled for delivery on ${serviceDate}. ` +
+            `This rental includes a ${rentalDays} day rental period with a weight allowance of ${weight} tons. ` +
+            `If you exceed your weight allowance, you will be charged at a rate of $${overagePerTon} per ton. ` +
+            `Daily overage after ${rentalDays} days: $${dailyRate}/day.`;
+        } else if (jt === 'exchange') {
+          summary =
+            `Your ${size} dumpster is scheduled for exchange on ${serviceDate}. ` +
+            `Weight allowance: ${weight} tons at $${overagePerTon}/ton overage.`;
+        } else if (jt === 'pickup' || jt === 'pick_up') {
           summary = `Your ${size} dumpster pickup is scheduled for ${serviceDate}.`;
         } else {
           summary = `Service scheduled for ${serviceDate}.`;
         }
       }
-    } else {
-      summary = `Service scheduled for ${serviceDate}.`;
     }
 
     invoice.summary_of_work = summary;
     await this.invoiceRepo.update(invoice.id, { summary_of_work: summary });
   }
+
+  // ─────────────────────────────────────────────────────────
+  // PRIVATE: SNAPSHOTS & REVISIONS
+  // ─────────────────────────────────────────────────────────
 
   private snapshotInvoice(invoice: Invoice): Record<string, any> {
     return {
@@ -549,21 +806,28 @@ export class InvoiceService {
       invoice_date: invoice.invoice_date,
       due_date: invoice.due_date,
       service_date: invoice.service_date,
-      subtotal: invoice.subtotal,
-      tax_amount: invoice.tax_amount,
-      total: invoice.total,
-      amount_paid: invoice.amount_paid,
-      balance_due: invoice.balance_due,
+      subtotal: Number(invoice.subtotal),
+      tax_amount: Number(invoice.tax_amount),
+      total: Number(invoice.total),
+      amount_paid: Number(invoice.amount_paid),
+      balance_due: Number(invoice.balance_due),
+      total_cogs: Number(invoice.total_cogs),
+      profit: Number(invoice.profit),
       summary_of_work: invoice.summary_of_work,
       terms_text: invoice.terms_text,
       project_name: invoice.project_name,
       po_number: invoice.po_number,
-      line_items: invoice.line_items?.map(li => ({
+      pricing_tier_used: invoice.pricing_tier_used,
+      line_items: (invoice.line_items || []).map((li) => ({
         id: li.id,
+        line_type: li.line_type,
         name: li.name,
-        quantity: li.quantity,
-        unit_rate: li.unit_rate,
-        net_amount: li.net_amount,
+        quantity: Number(li.quantity),
+        unit_rate: Number(li.unit_rate),
+        amount: Number(li.amount),
+        discount_amount: Number(li.discount_amount),
+        net_amount: Number(li.net_amount),
+        tax_amount: Number(li.tax_amount),
       })),
     };
   }
@@ -573,9 +837,9 @@ export class InvoiceService {
     oldSnapshot: Record<string, any> | null,
     userId: string | null,
     changeSummary: string,
-  ) {
+  ): Promise<void> {
     const currentSnapshot = this.snapshotInvoice(invoice);
-    const changes: Record<string, any> = {};
+    const changes: Record<string, { from: any; to: any }> = {};
 
     if (oldSnapshot) {
       for (const key of Object.keys(currentSnapshot)) {
@@ -587,14 +851,48 @@ export class InvoiceService {
       }
     }
 
-    const revision = this.revisionRepo.create({
-      invoice_id: invoice.id,
-      revision_number: invoice.revision,
-      snapshot: currentSnapshot,
-      changes,
-      change_summary: changeSummary,
-      changed_by: userId,
-    });
-    await this.revisionRepo.save(revision);
+    await this.revisionRepo.save(
+      this.revisionRepo.create({
+        invoice_id: invoice.id,
+        revision_number: invoice.revision,
+        snapshot: currentSnapshot,
+        changes,
+        change_summary: changeSummary,
+        changed_by: userId,
+      }),
+    );
+  }
+
+  private buildChangeSummary(
+    oldSnap: Record<string, any>,
+    invoice: Invoice,
+  ): string {
+    const newSnap = this.snapshotInvoice(invoice);
+    const parts: string[] = [];
+
+    if (oldSnap.status !== newSnap.status) {
+      parts.push(`Status changed from ${oldSnap.status} to ${newSnap.status}`);
+    }
+
+    const oldCount = (oldSnap.line_items || []).length;
+    const newCount = (newSnap.line_items || []).length;
+    if (oldCount !== newCount) {
+      const diff = newCount - oldCount;
+      parts.push(
+        diff > 0
+          ? `Added ${diff} line item${diff > 1 ? 's' : ''}`
+          : `Removed ${Math.abs(diff)} line item${Math.abs(diff) > 1 ? 's' : ''}`,
+      );
+    }
+
+    if (oldSnap.total !== newSnap.total) {
+      parts.push(`Total changed from $${oldSnap.total} to $${newSnap.total}`);
+    }
+
+    if (oldSnap.due_date !== newSnap.due_date) {
+      parts.push(`Due date changed to ${newSnap.due_date}`);
+    }
+
+    return parts.length > 0 ? parts.join('; ') : 'Invoice updated';
   }
 }

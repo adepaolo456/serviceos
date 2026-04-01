@@ -38,7 +38,7 @@ export class InvoiceController {
 
   @Get()
   findAll(@TenantId() tenantId: string, @Query() query: ListInvoicesQueryDto) {
-    return this.invoiceService.findAllInvoices(tenantId, query);
+    return this.invoiceService.findAll(tenantId, query);
   }
 
   @Get(':id')
@@ -46,7 +46,7 @@ export class InvoiceController {
     @TenantId() tenantId: string,
     @Param('id', ParseUUIDPipe) id: string,
   ) {
-    return this.invoiceService.findOneInvoice(tenantId, id);
+    return this.invoiceService.findOne(tenantId, id);
   }
 
   @Put(':id')
@@ -60,13 +60,13 @@ export class InvoiceController {
   }
 
   @Post(':id/void')
-  void(
+  voidInvoice(
     @TenantId() tenantId: string,
     @CurrentUser('id') userId: string,
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: VoidInvoiceDto,
   ) {
-    return this.invoiceService.voidInvoice(tenantId, userId, id, dto.reason);
+    return this.invoiceService.voidInvoice(tenantId, userId, id, dto);
   }
 
   @Post(':id/send')
@@ -95,29 +95,32 @@ export class InvoiceController {
   @Post(':id/line-items')
   addLineItem(
     @TenantId() tenantId: string,
+    @CurrentUser('id') userId: string,
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: CreateLineItemDto,
   ) {
-    return this.invoiceService.addLineItem(tenantId, id, dto);
+    return this.invoiceService.addLineItem(tenantId, userId, id, dto);
   }
 
   @Put(':id/line-items/:lineItemId')
   updateLineItem(
     @TenantId() tenantId: string,
+    @CurrentUser('id') userId: string,
     @Param('id', ParseUUIDPipe) id: string,
     @Param('lineItemId', ParseUUIDPipe) lineItemId: string,
     @Body() dto: UpdateLineItemDto,
   ) {
-    return this.invoiceService.updateLineItem(tenantId, id, lineItemId, dto);
+    return this.invoiceService.updateLineItem(tenantId, userId, id, lineItemId, dto);
   }
 
   @Delete(':id/line-items/:lineItemId')
   removeLineItem(
     @TenantId() tenantId: string,
+    @CurrentUser('id') userId: string,
     @Param('id', ParseUUIDPipe) id: string,
     @Param('lineItemId', ParseUUIDPipe) lineItemId: string,
   ) {
-    return this.invoiceService.removeLineItem(tenantId, id, lineItemId);
+    return this.invoiceService.removeLineItem(tenantId, userId, id, lineItemId);
   }
 
   @Post(':id/payments')
