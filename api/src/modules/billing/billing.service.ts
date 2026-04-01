@@ -4,7 +4,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, EntityManager } from 'typeorm';
 import { Invoice } from './entities/invoice.entity';
 import { Payment } from './entities/payment.entity';
 import { Job } from '../jobs/entities/job.entity';
@@ -321,6 +321,66 @@ export class BillingService {
         totalPages: Math.ceil(total / limit),
       },
     };
+  }
+
+  /**
+   * Internal invoice creation for automated flows (job creation, failed trips,
+   * pickup completion, exchanges, public bookings). Accepts source/type metadata
+   * and an optional EntityManager for transactional use.
+   */
+  async createInternalInvoice(
+    tenantId: string,
+    params: {
+      customerId: string;
+      jobId?: string;
+      source: string;
+      invoiceType: string;
+      status?: string;
+      lineItems: Array<{ description: string; quantity: number; unitPrice: number; amount: number }>;
+      paymentMethod?: string;
+      notes?: string;
+      discountAmount?: number;
+      dueDate?: string;
+    },
+    manager?: EntityManager,
+  ): Promise<Invoice> {
+    const repo = manager ? manager.getRepository(Invoice) : this.invoicesRepository;
+    const invoiceNumber = await this.generateInvoiceNumber(tenantId);
+
+    const subtotal = params.lineItems.reduce((s, li) => s + li.amount, 0);
+    const discount = params.discountAmount ?? 0;
+    const total = Math.round((subtotal - discount) * 100) / 100;
+    const isPaid = params.status === 'paid';
+    const now = new Date();
+
+    const invoice = repo.create({
+      tenant_id: tenantId,
+      invoice_number: invoiceNumber,
+      customer_id: params.customerId,
+      job_id: params.jobId || null,
+      status: params.status || 'draft',
+      source: params.source,
+      invoice_type: params.invoiceType,
+      payment_method: params.paymentMethod,
+      due_date: params.dueDate || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+      subtotal,
+      discount_amount: discount,
+      total,
+      amount_paid: isPaid ? total : 0,
+      balance_due: isPaid ? 0 : total,
+      line_items: params.lineItems,
+      notes: params.notes,
+      paid_at: isPaid ? now : null,
+    } as Partial<Invoice>);
+
+    return repo.save(invoice);
+  }
+
+  async hasInvoice(tenantId: string, jobId: string, source: string): Promise<boolean> {
+    const count = await this.invoicesRepository.count({
+      where: { tenant_id: tenantId, job_id: jobId, source },
+    });
+    return count > 0;
   }
 
   private async generateInvoiceNumber(tenantId: string): Promise<string> {

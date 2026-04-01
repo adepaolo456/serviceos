@@ -6,7 +6,7 @@ import { PricingRule } from '../pricing/entities/pricing-rule.entity';
 import { Asset } from '../assets/entities/asset.entity';
 import { Job } from '../jobs/entities/job.entity';
 import { Customer } from '../customers/entities/customer.entity';
-import { Invoice } from '../billing/entities/invoice.entity';
+import { BillingService } from '../billing/billing.service';
 import { CreatePublicBookingDto } from './dto/public-booking.dto';
 
 @Injectable()
@@ -17,7 +17,7 @@ export class PublicService {
     @InjectRepository(Asset) private assetRepo: Repository<Asset>,
     @InjectRepository(Job) private jobRepo: Repository<Job>,
     @InjectRepository(Customer) private customerRepo: Repository<Customer>,
-    @InjectRepository(Invoice) private invoiceRepo: Repository<Invoice>,
+    private billingService: BillingService,
     private dataSource: DataSource,
   ) {}
 
@@ -200,7 +200,6 @@ export class PublicService {
     try {
       const customerRepo = queryRunner.manager.getRepository(Customer);
       const jobRepoTx = queryRunner.manager.getRepository(Job);
-      const invoiceRepoTx = queryRunner.manager.getRepository(Invoice);
 
       // Find or create customer
       let customer: Customer | null = null;
@@ -256,32 +255,23 @@ export class PublicService {
       const saved = await jobRepoTx.save(job);
 
       // Create POS invoice (paid at booking)
-      const invNumber = `INV-${dateStr}-${Math.floor(Math.random() * 9000) + 1000}`;
       const lineItems = [
         { description: `${assetSubtype || 'Dumpster'} Rental — ${rentalDays} day rental`, quantity: 1, unitPrice: basePrice, amount: basePrice },
       ];
       if (deliveryFee > 0) {
         lineItems.push({ description: 'Delivery Fee', quantity: 1, unitPrice: deliveryFee, amount: deliveryFee });
       }
-      const invoice = invoiceRepoTx.create({
-        tenant_id: t.id,
-        invoice_number: invNumber,
-        customer_id: customer.id,
-        job_id: saved.id,
-        status: 'paid',
+      const savedInvoice = await this.billingService.createInternalInvoice(t.id, {
+        customerId: customer.id,
+        jobId: saved.id,
         source: 'booking',
-        invoice_type: 'rental',
-        payment_method: 'card',
-        due_date: new Date().toISOString().split('T')[0],
-        subtotal: totalPrice,
-        total: totalPrice,
-        amount_paid: totalPrice,
-        balance_due: 0,
-        line_items: lineItems,
+        invoiceType: 'rental',
+        status: 'paid',
+        paymentMethod: 'card',
+        lineItems,
+        dueDate: new Date().toISOString().split('T')[0],
         notes: 'Paid at time of booking',
-        paid_at: new Date(),
-      } as Partial<Invoice>);
-      const savedInvoice = await invoiceRepoTx.save(invoice);
+      }, queryRunner.manager);
 
       await queryRunner.commitTransaction();
 

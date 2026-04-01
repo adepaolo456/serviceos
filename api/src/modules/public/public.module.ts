@@ -7,10 +7,10 @@ import { PricingRule } from '../pricing/entities/pricing-rule.entity';
 import { Asset } from '../assets/entities/asset.entity';
 import { Job } from '../jobs/entities/job.entity';
 import { Customer } from '../customers/entities/customer.entity';
-import { Invoice } from '../billing/entities/invoice.entity';
+import { BillingModule } from '../billing/billing.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Tenant, PricingRule, Asset, Job, Customer, Invoice])],
+  imports: [TypeOrmModule.forFeature([Tenant, PricingRule, Asset, Job, Customer]), BillingModule],
   controllers: [PublicController],
   providers: [PublicService],
 })

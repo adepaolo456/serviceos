@@ -7,10 +7,10 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import { Job } from './entities/job.entity';
 import { Asset } from '../assets/entities/asset.entity';
-import { Invoice } from '../billing/entities/invoice.entity';
 import { PricingRule } from '../pricing/entities/pricing-rule.entity';
 import { AutomationLog } from '../automation/entities/automation-log.entity';
 import { Customer } from '../customers/entities/customer.entity';
+import { BillingService } from '../billing/billing.service';
 import {
   CreateJobDto,
   UpdateJobDto,
@@ -34,14 +34,13 @@ export class JobsService {
     private jobsRepository: Repository<Job>,
     @InjectRepository(Asset)
     private assetRepo: Repository<Asset>,
-    @InjectRepository(Invoice)
-    private invoiceRepo: Repository<Invoice>,
     @InjectRepository(PricingRule)
     private pricingRepo: Repository<PricingRule>,
     @InjectRepository(AutomationLog)
     private logRepo: Repository<AutomationLog>,
     @InjectRepository(Customer)
     private customerRepo: Repository<Customer>,
+    private billingService: BillingService,
   ) {}
 
   async create(tenantId: string, dto: CreateJobDto): Promise<Job> {
@@ -124,19 +123,11 @@ export class JobsService {
     // Auto-create POS invoice for delivery jobs with a price
     const price = Number(savedJob.total_price) || 0;
     if (savedJob.job_type === 'delivery' && price > 0) {
-      const existingInvoice = await this.invoiceRepo.findOne({
-        where: { tenant_id: tenantId, job_id: savedJob.id, source: 'booking' },
-      });
-      if (!existingInvoice) {
+      const exists = await this.billingService.hasInvoice(tenantId, savedJob.id, 'booking');
+      if (!exists) {
         const bp = Number(savedJob.base_price) || price;
         const disc = Number(savedJob.discount_amount) || 0;
         const discPct = Number(savedJob.discount_percentage) || 0;
-        const now = new Date();
-        const invSeq = await this.invoiceRepo
-          .createQueryBuilder('i')
-          .where('i.tenant_id = :tenantId', { tenantId })
-          .getCount();
-        const invNumber = `INV-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}-${String(invSeq + 1).padStart(3, '0')}`;
 
         const lineItems: Array<{ description: string; quantity: number; unitPrice: number; amount: number }> = [
           { description: `${dto.assetSubtype || ''} Dumpster Rental`.trim(), quantity: 1, unitPrice: bp, amount: bp },
@@ -145,24 +136,17 @@ export class JobsService {
           lineItems.push({ description: `Customer discount (${discPct}%)`, quantity: 1, unitPrice: -disc, amount: -disc });
         }
 
-        await this.invoiceRepo.save(this.invoiceRepo.create({
-          tenant_id: tenantId,
-          invoice_number: invNumber,
-          customer_id: savedJob.customer_id,
-          job_id: savedJob.id,
-          status: 'paid',
+        await this.billingService.createInternalInvoice(tenantId, {
+          customerId: savedJob.customer_id,
+          jobId: savedJob.id,
           source: 'booking',
-          invoice_type: 'rental',
-          subtotal: bp,
-          total: price,
-          amount_paid: price,
-          balance_due: 0,
-          discount_amount: disc,
-          paid_at: now,
-          payment_method: 'card',
-          line_items: lineItems,
+          invoiceType: 'rental',
+          status: 'paid',
+          paymentMethod: 'card',
+          lineItems,
+          discountAmount: disc,
           notes: 'Paid at time of booking',
-        } as Partial<Invoice>));
+        });
       }
     }
 
@@ -373,24 +357,15 @@ export class JobsService {
       });
       const baseFee = pricingRule ? Number(pricingRule.failed_trip_base_fee) || 150 : 150;
 
-      const invNumber = `INV-${now.getFullYear()}-${String(Math.floor(Math.random() * 9999)).padStart(4, '0')}`;
-      const failureInvoice = this.invoiceRepo.create({
-        tenant_id: tenantId,
-        invoice_number: invNumber,
-        customer_id: job.customer_id,
-        job_id: job.id,
-        status: 'sent',
+      const savedInvoice = await this.billingService.createInternalInvoice(tenantId, {
+        customerId: job.customer_id,
+        jobId: job.id,
         source: 'failed_trip',
-        invoice_type: 'failure_charge',
-        subtotal: baseFee,
-        total: baseFee,
-        amount_paid: 0,
-        balance_due: baseFee,
-        line_items: [{ description: 'Failed pickup/delivery charge', quantity: 1, unitPrice: baseFee, amount: baseFee }],
-        due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        invoiceType: 'failure_charge',
+        status: 'sent',
+        lineItems: [{ description: 'Failed pickup/delivery charge', quantity: 1, unitPrice: baseFee, amount: baseFee }],
         notes: `Driver arrived but job could not be completed. Reason: ${job.failed_reason || 'Not specified'}`,
-      } as Partial<Invoice>);
-      const savedInvoice = await this.invoiceRepo.save(failureInvoice);
+      });
 
       // Log
       await this.logRepo.save(this.logRepo.create({
@@ -426,25 +401,22 @@ export class JobsService {
         // Uninvoiced dump ticket charges — check the root job's dump data
         const custCharges = Number(rootJob.customer_additional_charges) || 0;
         if (custCharges > 0) {
-          const existingInvoice = await this.jobsRepository.query(
-            `SELECT id FROM invoices WHERE job_id = $1 AND source = 'dump_slip' LIMIT 1`,
-            [rootJob.id],
-          );
-          if (!existingInvoice || existingInvoice.length === 0) {
+          const hasDumpSlip = await this.billingService.hasInvoice(tenantId, rootJob.id, 'dump_slip');
+          if (!hasDumpSlip) {
             lineItems.push({ description: `Disposal & overage charges`, quantity: 1, unitPrice: custCharges, amount: custCharges });
           }
         }
 
         if (lineItems.length > 0) {
-          const total = lineItems.reduce((s, li) => s + li.amount, 0);
-          const invNumber = `INV-${now.getFullYear()}-${String(Math.floor(Math.random() * 9999)).padStart(4, '0')}`;
-          await this.jobsRepository.query(
-            `INSERT INTO invoices (id, tenant_id, invoice_number, customer_id, job_id, status, source, invoice_type, subtotal, total, amount_paid, balance_due, line_items, due_date, notes, created_at, updated_at)
-             VALUES (gen_random_uuid(), $1, $2, $3, $4, 'sent', 'pickup_completion', 'final_charges', $5, $5, 0, $5, $6, $7, $8, NOW(), NOW())`,
-            [tenantId, invNumber, rootJob.customer_id, rootJob.id, total, JSON.stringify(lineItems),
-             new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-             `Final charges for rental #${rootJob.job_number}`],
-          );
+          await this.billingService.createInternalInvoice(tenantId, {
+            customerId: rootJob.customer_id,
+            jobId: rootJob.id,
+            source: 'pickup_completion',
+            invoiceType: 'final_charges',
+            status: 'sent',
+            lineItems,
+            notes: `Final charges for rental #${rootJob.job_number}`,
+          });
         }
       }
     }
@@ -727,15 +699,15 @@ export class JobsService {
       // Auto-create exchange invoice
       const exchangeFee = Number((body as any).exchangeFee || 0) || Number(job.base_price || 0);
       if (exchangeFee > 0) {
-        const invNumber = `INV-${new Date().getFullYear()}-${String(Math.floor(Math.random() * 9999)).padStart(4, '0')}`;
-        await this.jobsRepository.query(
-          `INSERT INTO invoices (id, tenant_id, invoice_number, customer_id, job_id, status, source, invoice_type, subtotal, total, amount_paid, balance_due, line_items, due_date, notes, created_at, updated_at)
-           VALUES (gen_random_uuid(), $1, $2, $3, $4, 'sent', 'exchange', 'exchange', $5, $5, 0, $5, $6, $7, $8, NOW(), NOW())`,
-          [tenantId, invNumber, parent.customer_id, jobs[jobs.length - 1].id, exchangeFee,
-           JSON.stringify([{ description: `Dumpster Exchange`, quantity: 1, unitPrice: exchangeFee, amount: exchangeFee }]),
-           new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-           `Exchange scheduled from job #${parent.job_number}`],
-        );
+        await this.billingService.createInternalInvoice(tenantId, {
+          customerId: parent.customer_id,
+          jobId: jobs[jobs.length - 1].id,
+          source: 'exchange',
+          invoiceType: 'exchange',
+          status: 'sent',
+          lineItems: [{ description: 'Dumpster Exchange', quantity: 1, unitPrice: exchangeFee, amount: exchangeFee }],
+          notes: `Exchange scheduled from job #${parent.job_number}`,
+        });
       }
     } else if (body.type === 'dump_and_return') {
       const pickupJob = this.jobsRepository.create({ ...baseJob, job_number: `JOB-${dateStr}-${seq}`, job_type: 'pickup', asset_id: parent.asset_id });
