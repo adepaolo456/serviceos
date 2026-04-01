@@ -6,7 +6,6 @@ import { useRouter } from "next/navigation";
 import {
   Plus,
   UserPlus,
-  Calculator,
   Search,
   Clock,
   MapPin,
@@ -289,26 +288,6 @@ export default function DashboardPage() {
           >
             <UserPlus style={{ width: 16, height: 16, color: "var(--t-frame-text-muted)" }} />
             New Customer
-          </Link>
-          <Link
-            href="/pricing"
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 6,
-              backgroundColor: "transparent",
-              color: "var(--t-frame-text)",
-              fontSize: 14,
-              fontWeight: 600,
-              padding: "10px 20px",
-              borderRadius: 24,
-              border: "1px solid var(--t-frame-border)",
-              textDecoration: "none",
-              transition: "all 0.15s ease",
-            }}
-          >
-            <Calculator style={{ width: 16, height: 16, color: "var(--t-frame-text-muted)" }} />
-            New Quote
           </Link>
 
           {/* Search */}

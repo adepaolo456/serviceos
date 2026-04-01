@@ -250,9 +250,11 @@ export class PricingService {
     if (exchangeDiscount > 0) {
       subtotal = Math.round(subtotal * (1 - exchangeDiscount / 100) * 100) / 100;
     }
-    const taxRate = Number(rule.tax_rate);
-    const tax = Math.round(subtotal * taxRate * 100) / 100;
-    const total = Math.round((subtotal + tax) * 100) / 100;
+    // Tax is handled at invoice level, not at quoting/booking time.
+    // Per-rule tax_rate is informational only; do not bake into quoted total.
+    const taxRate = 0;
+    const tax = 0;
+    const total = Math.round(subtotal * 100) / 100;
 
     const requireDeposit = rule.require_deposit;
     const depositAmount = requireDeposit ? Number(rule.deposit_amount) : 0;
