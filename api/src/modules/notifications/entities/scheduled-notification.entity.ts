@@ -14,7 +14,7 @@ export class ScheduledNotification {
   @JoinColumn({ name: 'tenant_id' })
   tenant!: Tenant;
 
-  @Column({ name: 'notification_type' })
+  @Column({ name: 'notification_type', length: 50 })
   notification_type!: string;
 
   @Column({ name: 'customer_id' })
