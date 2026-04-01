@@ -37,9 +37,12 @@ export class BillingIssueDetectorService {
     const lineItems = invoice.line_items || [];
 
     // Resolve pricing if we have a job with a size
-    let resolvedPrice = job?.asset_subtype
-      ? await this.priceResolution.resolvePrice(tenantId, invoice.customer_id, job.asset_subtype)
-      : null;
+    let resolvedPrice: any = null;
+    if (job?.asset_subtype) {
+      try {
+        resolvedPrice = await this.priceResolution.resolvePrice(tenantId, invoice.customer_id, job.asset_subtype);
+      } catch { /* no pricing rule found — skip price-dependent checks */ }
+    }
 
     // 1. OVERDUE DAYS — check rental chain
     if (invoice.rental_chain_id) {
