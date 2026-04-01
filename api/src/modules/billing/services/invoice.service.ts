@@ -652,11 +652,29 @@ export class InvoiceService {
   }
 
   async findPrice(tenantId: string, dto: FindPriceDto) {
-    return this.priceResolution.resolvePrice(
+    const pricing = await this.priceResolution.resolvePrice(
       tenantId,
       dto.customer_id,
       dto.dumpster_size,
     );
+
+    // Resolve delivery zone if address available
+    const addr = dto.service_address;
+    const addrString = addr
+      ? [addr.street, addr.city, addr.state, addr.zip].filter(Boolean).join(', ')
+      : undefined;
+
+    try {
+      const zone = await this.priceResolution.resolveDeliveryZone(
+        tenantId,
+        addr?.lat ? Number(addr.lat) : undefined,
+        addr?.lng ? Number(addr.lng) : undefined,
+        addrString,
+      );
+      if (zone) pricing.delivery_zone = zone;
+    } catch { /* delivery zone resolution is optional */ }
+
+    return pricing;
   }
 
   // ─────────────────────────────────────────────────────────
