@@ -1049,10 +1049,6 @@ function OverviewTab({ asset, deployed }: { asset: Asset; deployed: ReturnType<t
         <h4 style={{ fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--t-text-muted)" }}>Specifications</h4>
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <p style={{ fontSize: 12, color: "var(--t-text-muted)" }}>Daily Rate</p>
-            <p style={{ fontSize: 14, fontWeight: 500, color: "var(--t-text-primary)" }}>{asset.daily_rate > 0 ? `${fmtMoney(asset.daily_rate)}/day` : "Not set"}</p>
-          </div>
-          <div>
             <p style={{ fontSize: 12, color: "var(--t-text-muted)" }}>Condition</p>
             <p style={{ fontSize: 14, fontWeight: 500, color: "var(--t-text-primary)", textTransform: "capitalize" }}>{asset.condition || "\u2014"}</p>
           </div>
