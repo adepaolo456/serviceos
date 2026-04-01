@@ -464,15 +464,15 @@ export default function DispatchPage() {
         <div className="flex-1 min-h-0 overflow-hidden relative">
           <DispatchMap board={board} activeJobId={activeId} />
           <div style={{ position: "relative", zIndex: 10, height: "100%", pointerEvents: "none" }}>
-            <div style={{ pointerEvents: "auto", height: "100%" }}>
+            <div style={{ height: "100%", pointerEvents: "none" }}>
           {loading ? (
-            <div className="flex h-full gap-3 overflow-x-auto pb-2">
+            <div className="flex h-full gap-3 overflow-x-auto pb-2" style={{ pointerEvents: "auto" }}>
               {[1,2,3,4].map(i => <div key={i} className="w-[330px] shrink-0"><div className="h-20 skeleton rounded-t-[20px]" /><div className="space-y-2 mt-2">{[1,2,3].map(j => <div key={j} className="h-24 skeleton rounded-[14px]" />)}</div></div>)}
             </div>
           ) : !board ? (
-            <div className="flex h-full items-center justify-center" style={{ color: "var(--t-frame-text-muted)" }}>Failed to load</div>
+            <div className="flex h-full items-center justify-center" style={{ color: "var(--t-frame-text-muted)", pointerEvents: "auto" }}>Failed to load</div>
           ) : totalJobs === 0 && board.drivers.length === 0 ? (
-            <div className="flex h-full flex-col items-center justify-center">
+            <div className="flex h-full flex-col items-center justify-center" style={{ pointerEvents: "auto" }}>
               <Truck className="h-14 w-14 mb-3" style={{ color: "var(--t-frame-text-muted)", opacity: 0.15 }} />
               <h2 className="text-base font-semibold" style={{ color: "var(--t-frame-text)" }}>No jobs for {fmtDate(date)}</h2>
               <p className="mt-1 text-xs" style={{ color: "var(--t-frame-text-muted)" }}>Schedule some deliveries!</p>
@@ -481,7 +481,7 @@ export default function DispatchPage() {
               </Link>
             </div>
           ) : showColumns ? (
-            <div className="flex gap-3 overflow-x-auto pb-2 items-start h-full">
+            <div className="flex gap-3 overflow-x-auto pb-2 items-start h-full" style={{ pointerEvents: "auto" }}>
               {!hiddenCols.has("unassigned") && (
               <ColumnCard columnId="unassigned" title="Unassigned" isUnassigned count={board.unassigned.length}
                 jobs={filterJobs(board.unassigned, filter, search)} drivers={board.drivers.map(d => d.driver)}
@@ -669,7 +669,7 @@ function DispatchMap({ board, activeJobId }: { board: DispatchBoard | null; acti
     );
   }
 
-  return <div ref={mapContainer} style={{ position: "absolute", inset: 0, zIndex: 0 }} />;
+  return <div ref={mapContainer} style={{ position: "absolute", inset: 0, zIndex: 0 }} className="dispatch-map-container" />;
 }
 
 /* ═══════════════════════════════════════════════════
