@@ -142,6 +142,9 @@ export class Invoice {
   @Column({ name: 'stripe_refund_id', nullable: true })
   stripe_refund_id!: string;
 
+  @Column({ name: 'credit_amount', type: 'decimal', precision: 10, scale: 2, default: 0 })
+  credit_amount!: number;
+
   @Column({ name: 'viewed_at', type: 'timestamptz', nullable: true })
   viewed_at!: Date;
 
