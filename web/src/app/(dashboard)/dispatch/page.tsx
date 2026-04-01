@@ -630,6 +630,16 @@ function DispatchMap({ board, activeJobId }: { board: DispatchBoard | null; acti
     markersRef.current.forEach(m => m.remove());
     markersRef.current = [];
 
+    // Find driver name for each job
+    const driverMap = new Map<string, string>();
+    if (board.drivers) {
+      for (const col of board.drivers) {
+        for (const j of col.jobs) {
+          driverMap.set(j.id, `${col.driver.firstName} ${col.driver.lastName}`);
+        }
+      }
+    }
+
     const allJobs = [...board.unassigned, ...board.drivers.flatMap(d => d.jobs)];
     for (const job of allJobs) {
       const coords = getJobCoords(job);
@@ -639,9 +649,24 @@ function DispatchMap({ board, activeJobId }: { board: DispatchBoard | null; acti
       const el = document.createElement("div");
       el.style.cssText = `width:${isActive ? 40 : 32}px;height:${isActive ? 40 : 32}px;border-radius:50%;background:${tc.stripe};border:2px solid #fff;display:flex;align-items:center;justify-content:center;font-size:${isActive ? 14 : 11}px;font-weight:bold;color:#fff;cursor:pointer;transition:all 0.2s;box-shadow:0 2px 8px rgba(0,0,0,0.3);`;
       el.textContent = tc.letter;
-      const popup = new mapboxgl.Popup({ offset: 15 }).setHTML(
-        `<div style="font-family:system-ui;padding:4px"><strong>${job.customer ? `${job.customer.first_name} ${job.customer.last_name}` : job.job_number}</strong><br><span style="font-size:12px;color:#666">${job.service_address?.street || ""}, ${job.service_address?.city || ""}</span><br><span style="font-size:11px;color:${tc.stripe};font-weight:600">${job.asset?.subtype || ""} ${TYPE_CONFIG[job.job_type]?.label || job.job_type}</span></div>`
-      );
+
+      const custName = job.customer ? `${job.customer.first_name} ${job.customer.last_name}` : job.job_number;
+      const addrStr = [job.service_address?.street, job.service_address?.city].filter(Boolean).join(", ") || "No address";
+      const typeStr = `${job.asset?.subtype || ""} ${tc.label || job.job_type}`.trim();
+      const driverName = driverMap.get(job.id) || "Unassigned";
+      const statusStr = (job.status || "pending").replace(/_/g, " ");
+
+      const popupHtml = `<div style="font-family:-apple-system,system-ui,sans-serif;padding:6px 2px;min-width:180px">
+        <div style="font-size:14px;font-weight:700;color:#fff;margin-bottom:4px">${custName}</div>
+        <div style="font-size:12px;color:#999;margin-bottom:8px">${addrStr}</div>
+        <div style="display:flex;justify-content:space-between;font-size:11px;padding:2px 0"><span style="color:#888">Type</span><span style="color:${tc.stripe};font-weight:600">${typeStr}</span></div>
+        <div style="display:flex;justify-content:space-between;font-size:11px;padding:2px 0"><span style="color:#888">Status</span><span style="color:#fff;text-transform:capitalize">${statusStr}</span></div>
+        <div style="display:flex;justify-content:space-between;font-size:11px;padding:2px 0"><span style="color:#888">Driver</span><span style="color:#fff">${driverName}</span></div>
+        <div style="display:flex;justify-content:space-between;font-size:11px;padding:2px 0"><span style="color:#888">Job</span><span style="color:#fff">${job.job_number}</span></div>
+        <a href="/jobs/${job.id}" style="display:inline-block;margin-top:8px;font-size:12px;color:#22C55E;text-decoration:none;font-weight:600">View Job →</a>
+      </div>`;
+
+      const popup = new mapboxgl.Popup({ offset: 15, closeButton: false, maxWidth: "260px" }).setHTML(popupHtml);
       const marker = new mapboxgl.Marker(el).setLngLat(coords).setPopup(popup).addTo(map.current!);
       markersRef.current.push(marker);
     }
@@ -651,7 +676,9 @@ function DispatchMap({ board, activeJobId }: { board: DispatchBoard | null; acti
       const el = document.createElement("div");
       el.style.cssText = "width:26px;height:26px;border-radius:50%;background:#8B5CF6;border:2px solid #fff;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:bold;color:#fff;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,0.3);";
       el.textContent = "♻";
-      const popup = new mapboxgl.Popup({ offset: 10 }).setHTML(`<strong>${name}</strong>`);
+      const popup = new mapboxgl.Popup({ offset: 10, closeButton: false }).setHTML(
+        `<div style="font-family:-apple-system,system-ui,sans-serif;padding:4px 2px"><div style="font-size:13px;font-weight:600;color:#fff">${name}</div><div style="font-size:11px;color:#8B5CF6;margin-top:2px">Dump Facility</div></div>`
+      );
       const marker = new mapboxgl.Marker(el).setLngLat(coords).setPopup(popup).addTo(map.current!);
       markersRef.current.push(marker);
     }
@@ -669,7 +696,39 @@ function DispatchMap({ board, activeJobId }: { board: DispatchBoard | null; acti
     );
   }
 
-  return <div ref={mapContainer} style={{ position: "absolute", inset: 0, zIndex: 0 }} className="dispatch-map-container" />;
+  return (
+    <>
+      <style>{`
+        .dispatch-map-container .mapboxgl-popup-content {
+          background: #212121 !important;
+          border-radius: 14px !important;
+          padding: 10px 14px !important;
+          box-shadow: 0 8px 30px rgba(0,0,0,0.5) !important;
+          border: 1px solid #333 !important;
+        }
+        .dispatch-map-container .mapboxgl-popup-tip {
+          border-top-color: #212121 !important;
+        }
+        .dispatch-map-container .mapboxgl-popup-anchor-bottom .mapboxgl-popup-tip {
+          border-top-color: #212121 !important;
+        }
+        .dispatch-map-container .mapboxgl-popup-anchor-top .mapboxgl-popup-tip {
+          border-bottom-color: #212121 !important;
+        }
+        .dispatch-map-container .mapboxgl-popup-anchor-left .mapboxgl-popup-tip {
+          border-right-color: #212121 !important;
+        }
+        .dispatch-map-container .mapboxgl-popup-anchor-right .mapboxgl-popup-tip {
+          border-left-color: #212121 !important;
+        }
+        .dispatch-map-container .mapboxgl-popup-close-button {
+          color: #888 !important;
+          font-size: 18px !important;
+        }
+      `}</style>
+      <div ref={mapContainer} style={{ position: "absolute", inset: 0, zIndex: 0 }} className="dispatch-map-container" />
+    </>
+  );
 }
 
 /* ═══════════════════════════════════════════════════
