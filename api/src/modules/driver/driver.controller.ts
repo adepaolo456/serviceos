@@ -68,63 +68,36 @@ export class DriverController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() body: { status: string; signatureUrl?: string; dropOffAssetPin?: string; pickUpAssetPin?: string; dropOffAssetId?: string; pickUpAssetId?: string; reason?: string },
   ) {
+    // Verify the job is assigned to this driver
     const job = await this.jobRepo.findOne({
       where: { id, tenant_id: tenantId, assigned_driver_id: userId },
     });
     if (!job) throw new NotFoundException('Job not found or not assigned to you');
 
-    const now = new Date();
-    const updates: Record<string, unknown> = { status: body.status };
+    // Save driver-specific fields before the status transition
+    const extras: Record<string, unknown> = {};
+    if (body.dropOffAssetPin) extras.drop_off_asset_pin = body.dropOffAssetPin;
+    if (body.pickUpAssetPin) extras.pick_up_asset_pin = body.pickUpAssetPin;
+    if (body.dropOffAssetId) extras.drop_off_asset_id = body.dropOffAssetId;
+    if (body.pickUpAssetId) extras.pick_up_asset_id = body.pickUpAssetId;
+    if (body.signatureUrl) extras.signature_url = body.signatureUrl;
 
-    switch (body.status) {
-      case 'en_route': updates.en_route_at = now; break;
-      case 'arrived': updates.arrived_at = now; break;
-      case 'in_progress':
-        if (!job.rental_start_date) {
-          updates.rental_start_date = now.toISOString().split('T')[0];
-          if (job.rental_days) {
-            const end = new Date(now);
-            end.setDate(end.getDate() + (job.rental_days || 7));
-            updates.rental_end_date = end.toISOString().split('T')[0];
-          }
-        }
-        break;
-      case 'completed': updates.completed_at = now; break;
+    if (Object.keys(extras).length > 0) {
+      await this.jobRepo.update({ id, tenant_id: tenantId }, extras);
     }
 
-    if (body.dropOffAssetPin) updates.drop_off_asset_pin = body.dropOffAssetPin;
-    if (body.pickUpAssetPin) updates.pick_up_asset_pin = body.pickUpAssetPin;
-    if (body.dropOffAssetId) updates.drop_off_asset_id = body.dropOffAssetId;
-    if (body.pickUpAssetId) updates.pick_up_asset_id = body.pickUpAssetId;
-
-    // For failed status, delegate to the main jobs service (creates replacement job + invoice)
-    if (body.status === 'failed') {
-      return this.jobsService.changeStatus(tenantId, id, {
-        status: 'failed',
-        cancellationReason: body.reason || 'No reason provided',
-      } as any);
-    }
-
-    await this.jobRepo.update({ id, tenant_id: tenantId }, updates);
+    // Delegate all status transition logic to JobsService
+    const updated = await this.jobsService.changeStatus(tenantId, id, {
+      status: body.status,
+      cancellationReason: body.reason,
+    } as any, 'driver');
 
     // Log on-my-way notification when status changes to en_route
-    if (body.status === 'en_route') {
-      const jobWithCustomer = await this.jobRepo.findOne({
-        where: { id },
-        relations: ['customer'],
-      });
-      if (jobWithCustomer?.customer) {
-        // In the future, send actual SMS/email here
-        console.log(`[driver] On-my-way notification: ${jobWithCustomer.customer.first_name} ${jobWithCustomer.customer.last_name} — driver ${userId} en route to job ${id}`);
-      }
+    if (body.status === 'en_route' && updated.customer) {
+      console.log(`[driver] On-my-way notification: ${updated.customer.first_name} ${updated.customer.last_name} — driver ${userId} en route to job ${id}`);
     }
 
-    // Handle signature on completion
-    if (body.signatureUrl) {
-      await this.jobRepo.update({ id, tenant_id: tenantId }, { signature_url: body.signatureUrl });
-    }
-
-    return this.jobRepo.findOne({ where: { id }, relations: ['customer', 'asset'] });
+    return updated;
   }
 
   @Patch('jobs/:id/photos')
