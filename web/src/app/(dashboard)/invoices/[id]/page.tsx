@@ -46,7 +46,19 @@ interface Invoice {
   paid_at: string;
   created_at: string;
   customer: { id: string; first_name: string; last_name: string; email: string } | null;
-  job: { id: string; job_number: string } | null;
+  job: { id: string; job_number: string; asset_subtype?: string; service_type?: string; rental_days?: number; base_price?: number; total_price?: number; extra_day_rate?: number; asset?: { id: string; identifier: string; subtype?: string } } | null;
+}
+
+interface PricingRule {
+  id: string;
+  name: string;
+  asset_subtype: string;
+  base_price: number;
+  delivery_fee: number;
+  rental_period_days: number;
+  extra_day_rate: number;
+  included_tons: number;
+  overage_per_ton: number;
 }
 
 interface Payment {
@@ -101,6 +113,8 @@ export default function InvoiceDetailPage({
   const [history, setHistory] = useState<any[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [newAssetSubtype, setNewAssetSubtype] = useState<string | null>(null);
+  const [pricingRules, setPricingRules] = useState<PricingRule[]>([]);
+  const [addMenuOpen, setAddMenuOpen] = useState(false);
   const { toast } = useToast();
 
   const fetchData = async () => {
@@ -124,9 +138,18 @@ export default function InvoiceDetailPage({
     catch { /* */ } finally { setHistoryLoading(false); }
   };
 
+  // Close add menu on click outside
+  useEffect(() => {
+    if (!addMenuOpen) return;
+    const close = () => setAddMenuOpen(false);
+    window.addEventListener("click", close);
+    return () => window.removeEventListener("click", close);
+  }, [addMenuOpen]);
+
   useEffect(() => {
     fetchData();
     fetchHistory();
+    api.get<{ data: PricingRule[] }>("/pricing").then(r => setPricingRules(r.data || [])).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
@@ -172,9 +195,48 @@ export default function InvoiceDetailPage({
 
   const cancelEditing = () => { setEditing(false); setNewAssetSubtype(null); };
 
+  const currentSubtype = invoice?.job?.asset_subtype || invoice?.job?.asset?.subtype || null;
+  const currentRule = pricingRules.find(r => r.asset_subtype === currentSubtype);
+
   const handleSizeChange = (size: string) => {
-    if (!confirm(`Changing dumpster size to ${size} will update pricing, job details, and asset assignment. Continue?`)) return;
+    if (!size || size === currentSubtype) { setNewAssetSubtype(null); return; }
+    if (!confirm(`Changing from ${currentSubtype || "current"} to ${size} will update pricing, job details, and asset assignment. Continue?`)) return;
+    const rule = pricingRules.find(r => r.asset_subtype === size);
+    if (!rule) return;
     setNewAssetSubtype(size);
+    // Immediately update line items with new pricing
+    const items: { description: string; quantity: number; unitPrice: number }[] = [
+      { description: `${size} Dumpster Rental`, quantity: 1, unitPrice: Number(rule.base_price) },
+    ];
+    if (Number(rule.delivery_fee) > 0) {
+      items.push({ description: "Delivery Fee", quantity: 1, unitPrice: Number(rule.delivery_fee) });
+    }
+    setEditItems(items);
+  };
+
+  const addPredefinedItem = (type: string) => {
+    const rule = newAssetSubtype ? pricingRules.find(r => r.asset_subtype === newAssetSubtype) : currentRule;
+    setAddMenuOpen(false);
+    switch (type) {
+      case "rental":
+        setEditItems(prev => [...prev, { description: `${rule?.asset_subtype || ""} Dumpster Rental`, quantity: 1, unitPrice: Number(rule?.base_price || 0) }]);
+        break;
+      case "delivery":
+        setEditItems(prev => [...prev, { description: "Delivery Fee", quantity: 1, unitPrice: Number(rule?.delivery_fee || 0) }]);
+        break;
+      case "extra_days":
+        setEditItems(prev => [...prev, { description: "Extra Day Charges", quantity: 1, unitPrice: Number(rule?.extra_day_rate || 0) }]);
+        break;
+      case "overage":
+        setEditItems(prev => [...prev, { description: "Weight Overage", quantity: 1, unitPrice: Number(rule?.overage_per_ton || 0) }]);
+        break;
+      case "discount":
+        setEditItems(prev => [...prev, { description: "Discount", quantity: 1, unitPrice: 0 }]);
+        break;
+      case "custom":
+        setEditItems(prev => [...prev, { description: "", quantity: 1, unitPrice: 0 }]);
+        break;
+    }
   };
 
   const saveEditing = async () => {
@@ -215,9 +277,10 @@ export default function InvoiceDetailPage({
   const addEditItem = () => setEditItems(prev => [...prev, { description: "", quantity: 1, unitPrice: 0 }]);
   const removeEditItem = (i: number) => setEditItems(prev => prev.filter((_, idx) => idx !== i));
 
-  // Computed totals for edit mode
-  const editSubtotal = editItems.reduce((s, li) => s + li.quantity * li.unitPrice, 0);
-  const editDiscountNum = Number(editDiscount) || 0;
+  // Computed totals for edit mode — negative unitPrice items are discounts
+  const editSubtotal = editItems.filter(li => li.unitPrice >= 0).reduce((s, li) => s + li.quantity * li.unitPrice, 0);
+  const editDiscountsFromItems = Math.abs(editItems.filter(li => li.unitPrice < 0).reduce((s, li) => s + li.quantity * li.unitPrice, 0));
+  const editDiscountNum = (Number(editDiscount) || 0) + editDiscountsFromItems;
   const editTotal = Math.round((editSubtotal - editDiscountNum) * 100) / 100;
   const editBalanceDue = Math.round((editTotal - Number(invoice?.amount_paid || 0)) * 100) / 100;
 
@@ -410,57 +473,95 @@ export default function InvoiceDetailPage({
 
           {/* Line items */}
           <div className={`rounded-[20px] bg-[var(--t-bg-card)] border overflow-hidden ${editing && !isPaid ? "border-[var(--t-accent)]/30" : "border-[var(--t-border)]"}`}>
-            <div className="px-6 py-4 border-b border-[var(--t-border)] flex items-center justify-between">
-              <h2 className="text-base font-semibold text-[var(--t-text-primary)]">Line Items</h2>
+            <div className="px-6 py-4 border-b border-[var(--t-border)]">
+              <div className="flex items-center justify-between">
+                <h2 className="text-base font-semibold text-[var(--t-text-primary)]">Line Items</h2>
+                {!editing && currentSubtype && (
+                  <span className="text-xs font-medium text-[var(--t-text-muted)]">{currentSubtype} Dumpster</span>
+                )}
+              </div>
               {editing && !isPaid && invoice.job && (
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-[var(--t-text-muted)]">Change size:</span>
-                  <select value={newAssetSubtype || ""} onChange={e => e.target.value ? handleSizeChange(e.target.value) : setNewAssetSubtype(null)}
-                    className="rounded-[10px] border border-[var(--t-border)] bg-transparent px-2 py-1 text-xs text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)]">
-                    <option value="">Current size</option>
-                    {["10yd", "15yd", "20yd", "30yd", "40yd"].map(s => <option key={s} value={s}>{s}</option>)}
+                <div className="mt-3 flex items-center gap-3 flex-wrap">
+                  <span className="text-xs text-[var(--t-text-muted)]">Dumpster Size:</span>
+                  <select value={newAssetSubtype || currentSubtype || ""} onChange={e => handleSizeChange(e.target.value)}
+                    className="rounded-[12px] border border-[var(--t-border)] bg-transparent px-3 py-1.5 text-sm text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)]">
+                    {pricingRules.filter(r => r.asset_subtype).map(r => (
+                      <option key={r.id} value={r.asset_subtype}>{r.asset_subtype} — {fmt(r.base_price)}</option>
+                    ))}
                   </select>
-                  {newAssetSubtype && <span className="text-xs font-medium text-[var(--t-accent)]">→ {newAssetSubtype}</span>}
+                  {newAssetSubtype && newAssetSubtype !== currentSubtype && (
+                    <span className="text-xs font-medium px-2 py-1 rounded-full bg-[var(--t-accent-soft)] text-[var(--t-accent)]">
+                      {currentSubtype} → {newAssetSubtype}
+                      {currentRule && (() => { const newR = pricingRules.find(r => r.asset_subtype === newAssetSubtype); if (!newR) return ""; const diff = Number(newR.base_price) - Number(currentRule.base_price); return diff > 0 ? ` (+${fmt(diff)})` : diff < 0 ? ` (${fmt(diff)})` : ""; })()}
+                    </span>
+                  )}
                 </div>
               )}
             </div>
-            <table className="w-full text-sm">
+            <table className="w-full text-sm table-fixed">
               <thead>
                 <tr className="border-b border-[var(--t-border)]">
-                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-[var(--t-text-muted)]">Description</th>
-                  <th className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-[var(--t-text-muted)]">Qty</th>
-                  <th className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-[var(--t-text-muted)]">Unit Price</th>
-                  <th className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-[var(--t-text-muted)]">Amount</th>
-                  {editing && !isPaid && <th className="px-3 py-3 w-10"></th>}
+                  <th className="w-[50%] px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-[var(--t-text-muted)]">Description</th>
+                  <th className="w-[10%] px-3 py-3 text-right text-xs font-medium uppercase tracking-wider text-[var(--t-text-muted)]">Qty</th>
+                  <th className="w-[15%] px-3 py-3 text-right text-xs font-medium uppercase tracking-wider text-[var(--t-text-muted)]">Unit Price</th>
+                  <th className="w-[15%] px-3 py-3 text-right text-xs font-medium uppercase tracking-wider text-[var(--t-text-muted)]">Amount</th>
+                  {editing && !isPaid && <th className="w-[10%] px-3 py-3"></th>}
                 </tr>
               </thead>
               <tbody>
                 {editing && !isPaid ? (
                   <>
-                    {editItems.map((item, i) => (
-                      <tr key={i} className="border-b border-[var(--t-border)] last:border-0">
-                        <td className="px-6 py-2"><input value={item.description} onChange={e => updateEditItem(i, "description", e.target.value)} className={inp} /></td>
-                        <td className="px-6 py-2 w-20"><input type="number" value={item.quantity} onChange={e => updateEditItem(i, "quantity", e.target.value)} className={`${inp} text-right`} /></td>
-                        <td className="px-6 py-2 w-28"><input type="number" step="0.01" value={item.unitPrice} onChange={e => updateEditItem(i, "unitPrice", e.target.value)} className={`${inp} text-right`} /></td>
-                        <td className="px-6 py-2 text-right font-medium text-[var(--t-text-primary)] tabular-nums">{fmt(item.quantity * item.unitPrice)}</td>
-                        <td className="px-3 py-2">{editItems.length > 1 && <button onClick={() => removeEditItem(i)} className="p-1 text-[var(--t-error)]"><Trash2 className="h-3.5 w-3.5" /></button>}</td>
-                      </tr>
-                    ))}
+                    {editItems.map((item, i) => {
+                      const amt = item.quantity * item.unitPrice;
+                      const isNeg = item.unitPrice < 0;
+                      return (
+                        <tr key={i} className="border-b border-[var(--t-border)] last:border-0">
+                          <td className="px-6 py-2.5"><input value={item.description} onChange={e => updateEditItem(i, "description", e.target.value)} className={`${inp} w-full`} placeholder="Description" /></td>
+                          <td className="px-3 py-2.5"><input type="number" value={item.quantity} onChange={e => updateEditItem(i, "quantity", e.target.value)} className={`${inp} w-full text-right`} /></td>
+                          <td className="px-3 py-2.5"><input type="number" step="0.01" value={item.unitPrice} onChange={e => updateEditItem(i, "unitPrice", e.target.value)} className={`${inp} w-full text-right`} /></td>
+                          <td className={`px-3 py-2.5 text-right font-medium tabular-nums ${isNeg ? "text-[var(--t-error)]" : "text-[var(--t-text-primary)]"}`}>{fmt(amt)}</td>
+                          <td className="px-3 py-2.5 text-center"><button onClick={() => removeEditItem(i)} className="p-1.5 rounded-lg hover:bg-[var(--t-bg-card-hover)] text-[var(--t-text-muted)] hover:text-[var(--t-error)] transition-colors"><Trash2 className="h-3.5 w-3.5" /></button></td>
+                        </tr>
+                      );
+                    })}
                     <tr>
-                      <td colSpan={5} className="px-6 py-3">
-                        <button onClick={addEditItem} className="flex items-center gap-1 text-xs font-medium text-[var(--t-accent)] hover:opacity-80"><Plus className="h-3 w-3" /> Add Line Item</button>
+                      <td colSpan={5} className="px-6 py-3 relative">
+                        <button onClick={() => setAddMenuOpen(!addMenuOpen)} className="flex items-center gap-1.5 text-xs font-medium text-[var(--t-accent)] hover:opacity-80">
+                          <Plus className="h-3.5 w-3.5" /> Add Line Item
+                        </button>
+                        {addMenuOpen && (
+                          <div className="absolute left-6 top-10 z-20 rounded-xl border border-[var(--t-border)] bg-[var(--t-bg-card)] shadow-xl py-1 min-w-[200px]">
+                            {[
+                              { key: "rental", label: "Dumpster Rental", sub: currentRule ? fmt(currentRule.base_price) : "" },
+                              { key: "delivery", label: "Delivery Fee", sub: currentRule ? fmt(currentRule.delivery_fee) : "" },
+                              { key: "extra_days", label: "Extra Day Charges", sub: currentRule ? `${fmt(currentRule.extra_day_rate)}/day` : "" },
+                              { key: "overage", label: "Weight Overage", sub: currentRule ? `${fmt(currentRule.overage_per_ton)}/ton` : "" },
+                              { key: "discount", label: "Discount (credit)", sub: "negative amount" },
+                              { key: "custom", label: "Custom Charge", sub: "blank row" },
+                            ].map(opt => (
+                              <button key={opt.key} onClick={() => addPredefinedItem(opt.key)}
+                                className="flex w-full items-center justify-between px-4 py-2.5 text-sm hover:bg-[var(--t-bg-card-hover)] transition-colors">
+                                <span className="text-[var(--t-text-primary)]">{opt.label}</span>
+                                {opt.sub && <span className="text-xs text-[var(--t-text-muted)]">{opt.sub}</span>}
+                              </button>
+                            ))}
+                          </div>
+                        )}
                       </td>
                     </tr>
                   </>
                 ) : (
-                  invoice.line_items.map((item, i) => (
-                    <tr key={i} className="border-b border-[var(--t-border)] last:border-0">
-                      <td className="px-6 py-3.5 text-[var(--t-text-primary)]">{item.description}</td>
-                      <td className="px-6 py-3.5 text-right text-[var(--t-text-primary)]">{item.quantity}</td>
-                      <td className="px-6 py-3.5 text-right text-[var(--t-text-primary)] tabular-nums">{fmt(item.unitPrice)}</td>
-                      <td className="px-6 py-3.5 text-right font-medium text-[var(--t-text-primary)] tabular-nums">{fmt(item.amount)}</td>
-                    </tr>
-                  ))
+                  invoice.line_items.map((item, i) => {
+                    const isNeg = item.amount < 0;
+                    return (
+                      <tr key={i} className="border-b border-[var(--t-border)] last:border-0">
+                        <td className="px-6 py-3.5 text-[var(--t-text-primary)]">{item.description}</td>
+                        <td className="px-3 py-3.5 text-right text-[var(--t-text-primary)]">{item.quantity}</td>
+                        <td className={`px-3 py-3.5 text-right tabular-nums ${isNeg ? "text-[var(--t-error)]" : "text-[var(--t-text-primary)]"}`}>{fmt(item.unitPrice)}</td>
+                        <td className={`px-3 py-3.5 text-right font-medium tabular-nums ${isNeg ? "text-[var(--t-error)]" : "text-[var(--t-text-primary)]"}`}>{fmt(item.amount)}</td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>
@@ -577,11 +678,12 @@ export default function InvoiceDetailPage({
                 <span>{fmt(editing && !isPaid ? editSubtotal : invoice.subtotal)}</span>
               </div>
               {editing && !isPaid ? (
-                <div className="flex items-center justify-between">
-                  <span className="text-[var(--t-text-muted)] text-sm">Discount</span>
-                  <input type="number" step="0.01" value={editDiscount} onChange={e => setEditDiscount(e.target.value)}
-                    className="w-24 rounded-[10px] border border-[var(--t-border)] bg-transparent px-2 py-1 text-right text-sm text-[var(--t-error)] outline-none focus:border-[var(--t-accent)]" placeholder="0" />
-                </div>
+                editDiscountNum > 0 ? (
+                  <div className="flex justify-between text-[var(--t-text-primary)]">
+                    <span className="text-[var(--t-text-muted)]">Discounts</span>
+                    <span className="text-[var(--t-error)]">-{fmt(editDiscountNum)}</span>
+                  </div>
+                ) : null
               ) : Number(invoice.discount_amount) > 0 ? (
                 <div className="flex justify-between text-[var(--t-text-primary)]">
                   <span className="text-[var(--t-text-muted)]">Discount</span>
