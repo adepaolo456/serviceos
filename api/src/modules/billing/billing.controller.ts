@@ -17,7 +17,7 @@ import {
   CreatePaymentDto,
   ListPaymentsQueryDto,
 } from './dto/billing.dto';
-import { TenantId } from '../../common/decorators';
+import { TenantId, CurrentUser } from '../../common/decorators';
 
 @ApiTags('Invoices')
 @ApiBearerAuth()
@@ -62,6 +62,27 @@ export class InvoicesController {
     @Param('id', ParseUUIDPipe) id: string,
   ) {
     return this.billingService.findOneInvoice(tenantId, id);
+  }
+
+  @Get(':id/history')
+  @ApiOperation({ summary: 'Get invoice audit history' })
+  getHistory(
+    @TenantId() tenantId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.billingService.getInvoiceHistory(tenantId, id);
+  }
+
+  @Patch(':id/edit')
+  @ApiOperation({ summary: 'Edit invoice with audit trail' })
+  edit(
+    @TenantId() tenantId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: Record<string, unknown>,
+    @CurrentUser('id') userId: string,
+    @CurrentUser('email') userEmail: string,
+  ) {
+    return this.billingService.editInvoice(tenantId, id, body, userId, userEmail);
   }
 
   @Patch(':id')
