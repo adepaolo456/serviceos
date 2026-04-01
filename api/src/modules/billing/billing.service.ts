@@ -122,7 +122,7 @@ export class BillingService {
   async findOneInvoice(tenantId: string, id: string): Promise<Invoice> {
     const invoice = await this.invoicesRepository.findOne({
       where: { id, tenant_id: tenantId },
-      relations: ['customer', 'job'],
+      relations: ['customer', 'job', 'job.asset'],
     });
     if (!invoice) {
       throw new NotFoundException(`Invoice ${id} not found`);
