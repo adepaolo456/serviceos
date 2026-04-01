@@ -7,16 +7,16 @@ import { FileText, CreditCard, CheckCircle2, AlertTriangle, Clock } from "lucide
 
 interface Invoice {
   id: string;
-  invoice_number: string;
+  invoice_number: number;
   status: string;
   due_date: string;
   total: number;
   amount_paid: number;
   balance_due: number;
-  line_items: { description: string; quantity: number; unitPrice: number; amount: number }[];
+  line_items: { name: string; quantity: number; unit_rate: number; net_amount: number }[];
   created_at: string;
   paid_at: string | null;
-  notes: string | null;
+  summary_of_work: string | null;
 }
 
 interface Payment {
@@ -79,7 +79,7 @@ export default function PortalInvoicesPage() {
         <div className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6">
           <div className="flex flex-wrap items-start justify-between gap-3 mb-6">
             <div>
-              <h2 className="text-lg font-bold text-[var(--t-text-primary)]">Invoice {detail.invoice_number}</h2>
+              <h2 className="text-lg font-bold text-[var(--t-text-primary)]">Invoice #{detail.invoice_number}</h2>
               <p className="text-sm text-[var(--t-text-muted)]">Issued {new Date(detail.created_at).toLocaleDateString()}</p>
             </div>
             {invoiceStatusText(detail.status, detail.due_date)}
@@ -98,10 +98,10 @@ export default function PortalInvoicesPage() {
             <tbody>
               {detail.line_items.map((item, i) => (
                 <tr key={i} className="border-b border-[var(--t-border)]/50">
-                  <td className="py-2.5 text-[var(--t-text-primary)]">{item.description}</td>
+                  <td className="py-2.5 text-[var(--t-text-primary)]">{item.name}</td>
                   <td className="py-2.5 text-right text-[var(--t-text-muted)]">{item.quantity}</td>
-                  <td className="py-2.5 text-right text-[var(--t-text-muted)]">{formatCurrency(item.unitPrice)}</td>
-                  <td className="py-2.5 text-right font-medium text-[var(--t-text-primary)]">{formatCurrency(item.amount)}</td>
+                  <td className="py-2.5 text-right text-[var(--t-text-muted)]">{formatCurrency(Number(item.unit_rate))}</td>
+                  <td className="py-2.5 text-right font-medium text-[var(--t-text-primary)]">{formatCurrency(Number(item.net_amount))}</td>
                 </tr>
               ))}
             </tbody>
@@ -124,10 +124,10 @@ export default function PortalInvoicesPage() {
             </div>
           )}
 
-          {detail.notes && (
+          {detail.summary_of_work && (
             <div className="mt-6 rounded-[20px] bg-[var(--t-bg-primary)] border border-[var(--t-border)] p-4">
-              <p className="text-xs font-medium text-[var(--t-text-muted)] mb-1">Notes</p>
-              <p className="text-sm text-[var(--t-text-primary)]">{detail.notes}</p>
+              <p className="text-xs font-medium text-[var(--t-text-muted)] mb-1">Summary of Work</p>
+              <p className="text-sm text-[var(--t-text-primary)]">{detail.summary_of_work}</p>
             </div>
           )}
 
@@ -183,7 +183,7 @@ export default function PortalInvoicesPage() {
               <div className="flex items-center justify-between">
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-1">
-                    <p className="text-sm font-semibold text-[var(--t-text-primary)]">{inv.invoice_number}</p>
+                    <p className="text-sm font-semibold text-[var(--t-text-primary)]">#{inv.invoice_number}</p>
                     {invoiceStatusText(inv.status, inv.due_date)}
                   </div>
                   <div className="flex flex-wrap gap-x-4 text-xs text-[var(--t-text-muted)]">

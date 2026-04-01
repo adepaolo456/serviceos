@@ -20,6 +20,23 @@ import { useToast } from "@/components/toast";
 import { api } from "@/lib/api";
 import SlideOver from "@/components/slide-over";
 
+interface ApiLineItem {
+  id: string;
+  line_type: string;
+  name: string;
+  description?: string;
+  quantity: number;
+  unit_rate: number;
+  amount: number;
+  discount_amount: number;
+  net_amount: number;
+  is_taxable: boolean;
+  tax_rate: number;
+  tax_amount: number;
+  sort_order: number;
+}
+
+/* Adaptor so the existing edit form still works with description/unitPrice */
 interface LineItem {
   description: string;
   quantity: number;
@@ -29,24 +46,31 @@ interface LineItem {
 
 interface Invoice {
   id: string;
-  invoice_number: string;
+  invoice_number: number;
+  revision: number;
   status: string;
+  customer_type: string;
+  invoice_date: string;
   due_date: string;
+  service_date: string;
   subtotal: number;
-  tax_rate: number;
   tax_amount: number;
-  discount_amount: number;
   total: number;
   amount_paid: number;
   balance_due: number;
-  credit_amount: number;
-  line_items: LineItem[];
-  notes: string;
+  total_cogs: number;
+  profit: number;
+  summary_of_work: string;
+  line_items: ApiLineItem[];
+  notes?: string;
   sent_at: string;
   paid_at: string;
+  voided_at: string;
   created_at: string;
-  customer: { id: string; first_name: string; last_name: string; email: string } | null;
+  customer: { id: string; first_name: string; last_name: string; email: string; company_name?: string } | null;
   job: { id: string; job_number: string; asset_subtype?: string; service_type?: string; rental_days?: number; base_price?: number; total_price?: number; extra_day_rate?: number; asset?: { id: string; identifier: string; subtype?: string } } | null;
+  payments?: Array<{ id: string; amount: number; payment_method: string; applied_at: string; notes?: string }>;
+  revisions?: Array<{ id: string; revision_number: number; change_summary: string; changed_at: string }>;
 }
 
 interface PricingRule {
@@ -188,10 +212,10 @@ export default function InvoiceDetailPage({
 
   const startEditing = () => {
     if (!invoice) return;
-    setEditItems(invoice.line_items.map(li => ({ description: li.description, quantity: li.quantity, unitPrice: li.unitPrice })));
+    setEditItems(invoice.line_items.map(li => ({ description: li.name, quantity: Number(li.quantity), unitPrice: Number(li.unit_rate) })));
     setEditDueDate(invoice.due_date || "");
-    setEditDiscount(String(invoice.discount_amount || ""));
-    setEditNotes(invoice.notes || "");
+    setEditDiscount("0");
+    setEditNotes(invoice.summary_of_work || "");
     setNewAssetSubtype(null);
     setEditing(true);
   };
@@ -382,7 +406,7 @@ export default function InvoiceDetailPage({
         <div>
           <div className="flex items-center gap-3 mb-1">
             <h1 className="text-[28px] font-bold tracking-[-1px] text-[var(--t-frame-text)]">
-              {invoice.invoice_number}
+              #{invoice.invoice_number}
             </h1>
             <span
               className={`text-xs font-medium capitalize ${STATUS_TEXT[invoice.status] || ""}`}
@@ -575,13 +599,13 @@ export default function InvoiceDetailPage({
                   </>
                 ) : (
                   invoice.line_items.map((item, i) => {
-                    const isNeg = item.amount < 0;
+                    const isNeg = Number(item.net_amount) < 0;
                     return (
-                      <tr key={i} className="border-b border-[var(--t-border)] last:border-0">
-                        <td className="px-6 py-3.5 text-[var(--t-text-primary)]">{item.description}</td>
+                      <tr key={item.id || i} className="border-b border-[var(--t-border)] last:border-0">
+                        <td className="px-6 py-3.5 text-[var(--t-text-primary)]">{item.name}</td>
                         <td className="px-3 py-3.5 text-right text-[var(--t-text-primary)]">{item.quantity}</td>
-                        <td className={`px-3 py-3.5 text-right tabular-nums ${isNeg ? "text-[var(--t-error)]" : "text-[var(--t-text-primary)]"}`}>{fmt(item.unitPrice)}</td>
-                        <td className={`px-3 py-3.5 text-right font-medium tabular-nums ${isNeg ? "text-[var(--t-error)]" : "text-[var(--t-text-primary)]"}`}>{fmt(item.amount)}</td>
+                        <td className={`px-3 py-3.5 text-right tabular-nums ${isNeg ? "text-[var(--t-error)]" : "text-[var(--t-text-primary)]"}`}>{fmt(Number(item.unit_rate))}</td>
+                        <td className={`px-3 py-3.5 text-right font-medium tabular-nums ${isNeg ? "text-[var(--t-error)]" : "text-[var(--t-text-primary)]"}`}>{fmt(Number(item.net_amount))}</td>
                       </tr>
                     );
                   })
@@ -707,15 +731,10 @@ export default function InvoiceDetailPage({
                     <span className="text-[var(--t-error)]">-{fmt(editDiscountNum)}</span>
                   </div>
                 ) : null
-              ) : Number(invoice.discount_amount) > 0 ? (
-                <div className="flex justify-between text-[var(--t-text-primary)]">
-                  <span className="text-[var(--t-text-muted)]">Discount</span>
-                  <span className="text-[var(--t-error)]">-{fmt(invoice.discount_amount)}</span>
-                </div>
               ) : null}
               {Number(invoice.tax_amount) > 0 && (
                 <div className="flex justify-between text-[var(--t-text-primary)]">
-                  <span className="text-[var(--t-text-muted)]">Tax ({(Number(invoice.tax_rate) * 100).toFixed(2)}%)</span>
+                  <span className="text-[var(--t-text-muted)]">Tax</span>
                   <span>{fmt(invoice.tax_amount)}</span>
                 </div>
               )}
@@ -727,10 +746,10 @@ export default function InvoiceDetailPage({
                 <span className="text-[var(--t-text-muted)]">Paid</span>
                 <span className="text-[var(--t-accent)]">{fmt(invoice.amount_paid)}</span>
               </div>
-              {Number(invoice.credit_amount) > 0 && (
+              {Number(invoice.profit) !== 0 && (
                 <div className="flex justify-between text-[var(--t-text-primary)]">
-                  <span className="text-[var(--t-text-muted)]">Credit</span>
-                  <span className="text-emerald-400">-{fmt(invoice.credit_amount)}</span>
+                  <span className="text-[var(--t-text-muted)]">Profit</span>
+                  <span className={Number(invoice.profit) > 0 ? "text-emerald-400" : "text-[var(--t-error)]"}>{fmt(invoice.profit)}</span>
                 </div>
               )}
               {(() => {
@@ -752,8 +771,8 @@ export default function InvoiceDetailPage({
               <textarea value={editNotes} onChange={e => setEditNotes(e.target.value)} rows={3}
                 className="w-full rounded-[14px] border border-[var(--t-border)] bg-transparent px-3 py-2 text-sm text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)] resize-none"
                 placeholder="Invoice notes..." />
-            ) : invoice.notes ? (
-              <p className="text-sm text-[var(--t-text-primary)] whitespace-pre-wrap">{invoice.notes}</p>
+            ) : invoice.summary_of_work ? (
+              <p className="text-sm text-[var(--t-text-primary)] whitespace-pre-wrap">{invoice.summary_of_work}</p>
             ) : (
               <p className="text-sm text-[var(--t-text-muted)]">No notes</p>
             )}
