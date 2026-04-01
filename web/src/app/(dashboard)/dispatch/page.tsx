@@ -136,6 +136,9 @@ export default function DispatchPage() {
   const [columnOrder, setColumnOrder] = useState<string[]>([]);
   const [optimizing, setOptimizing] = useState(false);
   const [sendingRoutes, setSendingRoutes] = useState(false);
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; job: DispatchJob } | null>(null);
+  const [rescheduleJob, setRescheduleJob] = useState<DispatchJob | null>(null);
+  const [rescheduleDate, setRescheduleDate] = useState("");
   const [dragColId, setDragColId] = useState<string | null>(null);
   const saveOrderTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { toast } = useToast();
@@ -207,10 +210,35 @@ export default function DispatchPage() {
     finally { setSendingRoutes(false); }
   };
 
+  const handleContextMenu = (e: React.MouseEvent, job: DispatchJob) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setCtxMenu({ x: e.clientX, y: e.clientY, job });
+  };
+
+  const handleReschedule = async () => {
+    if (!rescheduleJob || !rescheduleDate) return;
+    try {
+      await api.patch(`/jobs/${rescheduleJob.id}/reschedule`, { scheduledDate: rescheduleDate, reason: "Rescheduled from dispatch board" });
+      toast("success", `${rescheduleJob.job_number} moved to ${rescheduleDate}`);
+      setRescheduleJob(null);
+      setRescheduleDate("");
+      await fetchBoard(true);
+    } catch { toast("error", "Failed to reschedule"); }
+  };
+
+  const handleUnassign = async (job: DispatchJob) => {
+    try {
+      await api.patch(`/jobs/${job.id}/assign`, { assignedDriverId: null });
+      toast("success", `${job.job_number} unassigned`);
+      await fetchBoard(true);
+    } catch { toast("error", "Failed to unassign"); }
+  };
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-      if (e.key === "Escape") setQuickViewJob(null);
+      if (e.key === "Escape") { setQuickViewJob(null); setCtxMenu(null); setRescheduleJob(null); }
       else if (e.key === "ArrowLeft") setDate(d => shiftDate(d, -1));
       else if (e.key === "ArrowRight") setDate(d => shiftDate(d, 1));
       else if (e.key === "t" || e.key === "T") setDate(today());
@@ -218,6 +246,14 @@ export default function DispatchPage() {
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, []);
+
+  // Close context menu on click outside
+  useEffect(() => {
+    if (!ctxMenu) return;
+    const close = () => setCtxMenu(null);
+    window.addEventListener("click", close);
+    return () => window.removeEventListener("click", close);
+  }, [ctxMenu]);
 
   const allJobs = board ? [...board.unassigned, ...board.drivers.flatMap(d => d.jobs)] : [];
   const findColumnForJob = (jobId: string): string => {
@@ -450,7 +486,7 @@ export default function DispatchPage() {
               <ColumnCard columnId="unassigned" title="Unassigned" isUnassigned count={board.unassigned.length}
                 jobs={filterJobs(board.unassigned, filter, search)} drivers={board.drivers.map(d => d.driver)}
                 onAssign={async (jid, did) => { try { await api.patch(`/jobs/${jid}/assign`, { assignedDriverId: did }); toast("success", "Assigned"); await fetchBoard(true); } catch { toast("error", "Failed"); } }}
-                onQuickView={openQuickView} activeId={activeId}
+                onQuickView={openQuickView} onCtxMenu={handleContextMenu} activeId={activeId}
                 onStatusChange={async (jid, s) => { try { await api.patch(`/jobs/${jid}/status`, { status: s, cancellationReason: s === "failed" ? "Dispatcher override" : undefined }); toast("success", `Status → ${s.replace(/_/g, " ")}`); await fetchBoard(true); } catch { toast("error", "Failed"); } }}
                 collapsed={collapsedCols.has("unassigned")} onToggleCollapse={() => toggleCollapse("unassigned")}
                 onHide={() => hideColumn("unassigned")} />
@@ -461,7 +497,7 @@ export default function DispatchPage() {
                   progress={{ completed: col.jobs.filter(j => j.status === "completed").length, total: col.jobs.length }}
                   jobs={filterJobs(col.jobs, filter, search)}
                   onUnassign={async (jid) => { try { await api.patch(`/jobs/${jid}/assign`, { assignedDriverId: null }); toast("success", "Unassigned"); await fetchBoard(true); } catch { toast("error", "Failed"); } }}
-                  onQuickView={openQuickView} activeId={activeId}
+                  onQuickView={openQuickView} onCtxMenu={handleContextMenu} activeId={activeId}
                   onStatusChange={async (jid, s) => { try { await api.patch(`/jobs/${jid}/status`, { status: s, cancellationReason: s === "failed" ? "Dispatcher override" : undefined }); toast("success", `Status → ${s.replace(/_/g, " ")}`); await fetchBoard(true); } catch { toast("error", "Failed"); } }}
                   collapsed={collapsedCols.has(col.driver.id)} onToggleCollapse={() => toggleCollapse(col.driver.id)}
                   onHide={() => hideColumn(col.driver.id)}
@@ -489,6 +525,51 @@ export default function DispatchPage() {
             <button onClick={handleSendRoutes} disabled={sendingRoutes} className="rounded-full border px-3 py-1.5 text-xs font-semibold disabled:opacity-50" style={{ background: "var(--t-accent-soft)", borderColor: "var(--t-accent)", color: "var(--t-accent)" }}>{sendingRoutes ? "Sending…" : "Send Routes to Drivers"}</button>
           </div>
         </div>
+      )}
+
+      {/* ── Context Menu ── */}
+      {ctxMenu && createPortal(
+        <div className="fixed z-[9999] rounded-xl border py-1 shadow-xl" style={{ left: ctxMenu.x, top: ctxMenu.y, background: "#1A1A1A", borderColor: "rgba(255,255,255,0.1)", minWidth: 180 }}
+          onClick={e => e.stopPropagation()}>
+          <button className="flex w-full items-center gap-2 px-4 py-2.5 text-xs hover:bg-white/5" style={{ color: "#E5E5E5" }}
+            onClick={() => { setRescheduleJob(ctxMenu.job); setRescheduleDate(""); setCtxMenu(null); }}>
+            <Calendar className="h-3.5 w-3.5" /> Reschedule
+          </button>
+          {ctxMenu.job.assigned_driver && (
+            <button className="flex w-full items-center gap-2 px-4 py-2.5 text-xs hover:bg-white/5" style={{ color: "#E5E5E5" }}
+              onClick={() => { handleUnassign(ctxMenu.job); setCtxMenu(null); }}>
+              <UserPlus className="h-3.5 w-3.5" /> Unassign Driver
+            </button>
+          )}
+          <Link href={`/jobs/${ctxMenu.job.id}`} className="flex w-full items-center gap-2 px-4 py-2.5 text-xs hover:bg-white/5" style={{ color: "#E5E5E5" }}
+            onClick={() => setCtxMenu(null)}>
+            <ExternalLink className="h-3.5 w-3.5" /> View Details
+          </Link>
+        </div>,
+        document.body,
+      )}
+
+      {/* ── Reschedule Modal ── */}
+      {rescheduleJob && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50" onClick={() => setRescheduleJob(null)}>
+          <div className="rounded-2xl border p-6 w-80" style={{ background: "#1A1A1A", borderColor: "rgba(255,255,255,0.1)" }}
+            onClick={e => e.stopPropagation()}>
+            <h3 className="text-sm font-semibold mb-1" style={{ color: "#E5E5E5" }}>Reschedule {rescheduleJob.job_number}</h3>
+            <p className="text-xs mb-4" style={{ color: "#8A8A8A" }}>
+              {rescheduleJob.customer ? `${rescheduleJob.customer.first_name} ${rescheduleJob.customer.last_name}` : ""}
+            </p>
+            <input type="date" value={rescheduleDate} onChange={e => setRescheduleDate(e.target.value)}
+              className="w-full rounded-lg border px-3 py-2 text-sm mb-4 outline-none"
+              style={{ background: "rgba(255,255,255,0.06)", borderColor: "rgba(255,255,255,0.12)", color: "#E5E5E5" }} />
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setRescheduleJob(null)} className="rounded-full px-4 py-2 text-xs font-medium"
+                style={{ color: "#8A8A8A" }}>Cancel</button>
+              <button onClick={handleReschedule} disabled={!rescheduleDate} className="rounded-full px-4 py-2 text-xs font-semibold disabled:opacity-40"
+                style={{ background: "var(--t-accent)", color: "#000" }}>Move Job</button>
+            </div>
+          </div>
+        </div>,
+        document.body,
       )}
 
       {/* ── QuickView ── */}
@@ -595,7 +676,7 @@ function DispatchMap({ board, activeJobId }: { board: DispatchBoard | null; acti
    Column Card — white card with accordion collapse
    ═══════════════════════════════════════════════════ */
 
-function ColumnCard({ columnId, title, driver, isUnassigned, count, progress, jobs, drivers, onAssign, onUnassign, onQuickView, onStatusChange, activeId, collapsed, onToggleCollapse, onHide, onColumnDrag }: {
+function ColumnCard({ columnId, title, driver, isUnassigned, count, progress, jobs, drivers, onAssign, onUnassign, onQuickView, onStatusChange, onCtxMenu, activeId, collapsed, onToggleCollapse, onHide, onColumnDrag }: {
   columnId: string; title: string; driver?: Driver; isUnassigned?: boolean;
   count: number; progress?: { completed: number; total: number };
   jobs: DispatchJob[]; drivers?: Driver[];
@@ -603,6 +684,7 @@ function ColumnCard({ columnId, title, driver, isUnassigned, count, progress, jo
   onUnassign?: (jobId: string) => void;
   onQuickView: (job: DispatchJob) => void;
   onStatusChange?: (jobId: string, newStatus: string) => void;
+  onCtxMenu?: (e: React.MouseEvent, job: DispatchJob) => void;
   activeId: string | null;
   collapsed: boolean; onToggleCollapse: () => void; onHide?: () => void;
   onColumnDrag?: { onDragStart: (e: React.DragEvent) => void; onDragOver: (e: React.DragEvent) => void; onDrop: (e: React.DragEvent) => void; onDragEnd: (e: React.DragEvent) => void };
@@ -703,7 +785,7 @@ function ColumnCard({ columnId, title, driver, isUnassigned, count, progress, jo
               {jobs.map(job => (
                 <JobTile key={job.id} job={job} isUnassigned={!!isUnassigned} drivers={drivers}
                   onAssign={onAssign} onUnassign={onUnassign} onQuickView={() => onQuickView(job)}
-                  onStatusChange={onStatusChange} />
+                  onStatusChange={onStatusChange} onCtxMenu={onCtxMenu} />
               ))}
             </div>
           )}
@@ -725,12 +807,13 @@ function ColumnCard({ columnId, title, driver, isUnassigned, count, progress, jo
    Job Tile — white card, entire tile draggable
    ═══════════════════════════════════════════════════ */
 
-const JobTile = memo(function JobTile({ job, isUnassigned, drivers, onAssign, onUnassign, onQuickView, onStatusChange }: {
+const JobTile = memo(function JobTile({ job, isUnassigned, drivers, onAssign, onUnassign, onQuickView, onStatusChange, onCtxMenu }: {
   job: DispatchJob; isUnassigned: boolean; drivers?: Driver[];
   onAssign?: (jobId: string, driverId: string | null) => void;
   onUnassign?: (jobId: string) => void;
   onQuickView: () => void;
   onStatusChange?: (jobId: string, newStatus: string) => void;
+  onCtxMenu?: (e: React.MouseEvent, job: DispatchJob) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: job.id });
   const isCompleted = job.status === "completed";
@@ -752,6 +835,7 @@ const JobTile = memo(function JobTile({ job, isUnassigned, drivers, onAssign, on
       }}
       className="group relative rounded-[16px]"
       onClick={onQuickView}
+      onContextMenu={onCtxMenu ? (e) => onCtxMenu(e, job) : undefined}
     >
       {/* Green left accent bar */}
       <div className="absolute left-0 top-3 bottom-3 w-[4px] rounded-full" style={{ background: "#22C55E" }} />
