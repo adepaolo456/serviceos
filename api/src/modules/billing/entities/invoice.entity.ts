@@ -149,7 +149,7 @@ export class Invoice {
   @Column({ name: 'updated_by', type: 'uuid', nullable: true })
   updated_by!: string;
 
-  @OneToMany(() => InvoiceLineItem, (li) => li.invoice, { cascade: true })
+  @OneToMany(() => InvoiceLineItem, (li) => li.invoice)
   line_items!: InvoiceLineItem[];
 
   @OneToMany(() => Payment, (p) => p.invoice)

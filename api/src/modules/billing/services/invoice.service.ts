@@ -194,7 +194,11 @@ export class InvoiceService {
         (invoice as any)[field] = dto[field];
       }
     }
-    invoice.updated_by = userId;
+    // Build update payload from changed fields
+    const updatePayload: Record<string, any> = { updated_by: userId };
+    for (const field of scalarFields) {
+      if (dto[field] !== undefined) updatePayload[field] = dto[field];
+    }
 
     // Replace line items if provided
     if (dto.line_items !== undefined) {
@@ -204,10 +208,11 @@ export class InvoiceService {
       }
     }
 
-    await this.invoiceRepo.save(invoice);
+    await this.invoiceRepo.update(invoiceId, updatePayload);
 
     // Recalculate
-    await this.recalculateTotals(invoice);
+    const refreshed = await this.findOne(tenantId, invoiceId);
+    await this.recalculateTotals(refreshed);
 
     // Regenerate summary if job/service context changed
     if (
@@ -215,12 +220,11 @@ export class InvoiceService {
       dto.job_id !== undefined ||
       dto.customer_id !== undefined
     ) {
-      await this.generateSummaryOfWork(invoice, null);
+      await this.generateSummaryOfWork(refreshed, null);
     }
 
     // Revision
-    invoice.revision += 1;
-    await this.invoiceRepo.save(invoice);
+    await this.invoiceRepo.update(invoiceId, { revision: refreshed.revision + 1 });
 
     const updated = await this.findOne(tenantId, invoiceId);
     const changeSummary = this.buildChangeSummary(oldSnapshot, updated);
@@ -245,10 +249,11 @@ export class InvoiceService {
       throw new BadRequestException('Invoice is already voided');
     }
 
-    invoice.status = 'voided';
-    invoice.voided_at = new Date();
-    invoice.updated_by = userId;
-    await this.invoiceRepo.save(invoice);
+    await this.invoiceRepo.update(invoiceId, {
+      status: 'voided',
+      voided_at: new Date(),
+      updated_by: userId,
+    });
 
     // Credit memo
     const memoResult = await this.dataSource.query(
@@ -268,16 +273,16 @@ export class InvoiceService {
     const savedMemo = await this.creditMemoRepo.save(creditMemo);
 
     // Revision
-    invoice.revision += 1;
-    await this.invoiceRepo.save(invoice);
+    await this.invoiceRepo.update(invoiceId, { revision: invoice.revision + 1 });
+    const voidedInvoice = await this.findOne(tenantId, invoiceId);
     await this.createRevision(
-      invoice,
+      voidedInvoice,
       null,
       userId,
       `Invoice voided: ${dto.reason}`,
     );
 
-    return { invoice, creditMemo: savedMemo };
+    return { invoice: voidedInvoice, creditMemo: savedMemo };
   }
 
   // ─────────────────────────────────────────────────────────
@@ -310,37 +315,42 @@ export class InvoiceService {
     });
     const savedPayment = await this.paymentRepo.save(payment);
 
-    // Update invoice totals
-    invoice.amount_paid =
-      Math.round((Number(invoice.amount_paid) + Number(dto.amount)) * 100) /
-      100;
-    invoice.balance_due =
-      Math.round(
-        (Number(invoice.total) - Number(invoice.amount_paid)) * 100,
-      ) / 100;
-    if (invoice.balance_due < 0) invoice.balance_due = 0;
+    // Update invoice totals — use update() to avoid cascade issues
+    const newAmountPaid =
+      Math.round((Number(invoice.amount_paid) + Number(dto.amount)) * 100) / 100;
+    let newBalanceDue =
+      Math.round((Number(invoice.total) - newAmountPaid) * 100) / 100;
+    if (newBalanceDue < 0) newBalanceDue = 0;
 
-    if (invoice.balance_due <= 0) {
-      invoice.status = 'paid';
-      invoice.paid_at = new Date();
-    } else if (Number(invoice.amount_paid) > 0) {
-      invoice.status = 'partial';
+    let newStatus = invoice.status;
+    let paidAt = invoice.paid_at;
+    if (newBalanceDue <= 0) {
+      newStatus = 'paid';
+      paidAt = new Date();
+    } else if (newAmountPaid > 0) {
+      newStatus = 'partial';
     }
 
-    invoice.updated_by = userId;
-    await this.invoiceRepo.save(invoice);
+    const newRevision = invoice.revision + 1;
+    await this.invoiceRepo.update(invoiceId, {
+      amount_paid: newAmountPaid,
+      balance_due: newBalanceDue,
+      status: newStatus,
+      paid_at: paidAt,
+      updated_by: userId,
+      revision: newRevision,
+    });
 
-    // Revision
-    invoice.revision += 1;
-    await this.invoiceRepo.save(invoice);
+    // Refresh for revision snapshot
+    const updated = await this.findOne(tenantId, invoiceId);
     await this.createRevision(
-      invoice,
+      updated,
       null,
       userId,
       `Payment of $${dto.amount} applied via ${dto.payment_method}`,
     );
 
-    return { invoice, payment: savedPayment };
+    return { invoice: updated, payment: savedPayment };
   }
 
   // ─────────────────────────────────────────────────────────
@@ -366,9 +376,10 @@ export class InvoiceService {
 
     await this.recalculateTotals(invoice);
 
-    invoice.revision += 1;
-    invoice.updated_by = userId;
-    await this.invoiceRepo.save(invoice);
+    await this.invoiceRepo.update(invoiceId, {
+      revision: invoice.revision + 1,
+      updated_by: userId,
+    });
     await this.createRevision(
       await this.findOne(tenantId, invoiceId),
       null,
@@ -410,9 +421,10 @@ export class InvoiceService {
 
     await this.recalculateTotals(invoice);
 
-    invoice.revision += 1;
-    invoice.updated_by = userId;
-    await this.invoiceRepo.save(invoice);
+    await this.invoiceRepo.update(invoiceId, {
+      revision: invoice.revision + 1,
+      updated_by: userId,
+    });
     await this.createRevision(
       await this.findOne(tenantId, invoiceId),
       null,
@@ -443,9 +455,10 @@ export class InvoiceService {
 
     await this.recalculateTotals(invoice);
 
-    invoice.revision += 1;
-    invoice.updated_by = userId;
-    await this.invoiceRepo.save(invoice);
+    await this.invoiceRepo.update(invoiceId, {
+      revision: invoice.revision + 1,
+      updated_by: userId,
+    });
     await this.createRevision(
       await this.findOne(tenantId, invoiceId),
       null,
