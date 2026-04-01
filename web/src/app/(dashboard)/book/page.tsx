@@ -19,6 +19,9 @@ interface PriceQuote {
     deliveryFee: number; pickupFee: number; extraDayRate: number;
     extraDayCharges: number; includedDays: number; rentalDays: number;
     distanceSurcharge: number; requireDeposit: boolean; depositAmount: number; jobFee: number;
+    distanceMiles?: number; includedMiles?: number; excessMiles?: number; perMileCharge?: number;
+    includedTons?: number; overagePerTon?: number; subtotal?: number;
+    exchangeDiscount?: number; isExchange?: boolean;
   };
 }
 
@@ -296,10 +299,26 @@ export default function BookingPage() {
                   <div className="flex justify-between"><span className="text-[var(--t-text-muted)]">Delivery fee</span><span className="text-[var(--t-text-primary)] tabular-nums">{fmtMoney(quote.breakdown.deliveryFee || quote.breakdown.jobFee)}</span></div>
                 )}
                 {quote.breakdown.distanceSurcharge > 0 && (
-                  <div className="flex justify-between"><span className="text-[var(--t-text-muted)]">Distance surcharge</span><span className="text-[var(--t-text-primary)] tabular-nums">{fmtMoney(quote.breakdown.distanceSurcharge)}</span></div>
+                  <div className="flex justify-between">
+                    <span className="text-[var(--t-text-muted)]">Distance surcharge{quote.breakdown.distanceMiles != null ? ` (${quote.breakdown.distanceMiles} mi)` : ""}</span>
+                    <span className="text-[var(--t-text-primary)] tabular-nums">{fmtMoney(quote.breakdown.distanceSurcharge)}</span>
+                  </div>
+                )}
+                {quote.breakdown.distanceSurcharge === 0 && quote.breakdown.distanceMiles != null && (
+                  <div className="flex justify-between"><span className="text-[var(--t-text-muted)]">Delivery zone</span><span className="text-[var(--t-accent)] tabular-nums">{quote.breakdown.distanceMiles} mi (Free)</span></div>
                 )}
                 {quote.breakdown.extraDayCharges > 0 && (
                   <div className="flex justify-between"><span className="text-[var(--t-warning)]">Extra days (+{rentalDays - quote.breakdown.includedDays})</span><span className="text-[var(--t-warning)] tabular-nums">+{fmtMoney(quote.breakdown.extraDayCharges)}</span></div>
+                )}
+                <div className="flex justify-between"><span className="text-[var(--t-text-muted)]">Includes</span><span className="text-[var(--t-text-primary)] tabular-nums">{quote.breakdown.includedTons ?? 0} tons · {quote.breakdown.includedDays} day rental</span></div>
+                {(quote.breakdown.overagePerTon ?? 0) > 0 && (
+                  <div className="flex justify-between"><span className="text-[var(--t-text-muted)]">Overage</span><span className="text-[var(--t-text-primary)] tabular-nums">{fmtMoney(quote.breakdown.overagePerTon!)}/ton after {quote.breakdown.includedTons} tons</span></div>
+                )}
+                {(quote.breakdown.extraDayRate ?? 0) > 0 && (
+                  <div className="flex justify-between"><span className="text-[var(--t-text-muted)]">Extra days</span><span className="text-[var(--t-text-primary)] tabular-nums">{fmtMoney(quote.breakdown.extraDayRate)}/day after {quote.breakdown.includedDays} days</span></div>
+                )}
+                {address.street && (
+                  <div className="flex justify-between"><span className="text-[var(--t-text-muted)]">Delivery to</span><span className="text-[var(--t-text-primary)] truncate ml-4">{address.street}, {address.city}</span></div>
                 )}
                 {quote.breakdown.tax > 0 && (
                   <div className="flex justify-between"><span className="text-[var(--t-text-muted)]">Tax</span><span className="text-[var(--t-text-primary)] tabular-nums">{fmtMoney(quote.breakdown.tax)}</span></div>
