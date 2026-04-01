@@ -1,12 +1,13 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In } from 'typeorm';
+import { Repository, In, DataSource } from 'typeorm';
 import { Tenant } from '../tenants/entities/tenant.entity';
 import { PricingRule } from '../pricing/entities/pricing-rule.entity';
 import { Asset } from '../assets/entities/asset.entity';
 import { Job } from '../jobs/entities/job.entity';
 import { Customer } from '../customers/entities/customer.entity';
 import { Invoice } from '../billing/entities/invoice.entity';
+import { CreatePublicBookingDto } from './dto/public-booking.dto';
 
 @Injectable()
 export class PublicService {
@@ -17,6 +18,7 @@ export class PublicService {
     @InjectRepository(Job) private jobRepo: Repository<Job>,
     @InjectRepository(Customer) private customerRepo: Repository<Customer>,
     @InjectRepository(Invoice) private invoiceRepo: Repository<Invoice>,
+    private dataSource: DataSource,
   ) {}
 
   private async findTenant(slug: string): Promise<Tenant> {
@@ -53,7 +55,7 @@ export class PublicService {
 
     // Group by service_type
     const grouped: Record<string, Array<{
-      name: string; subtype: string; basePrice: number;
+      id: string; name: string; subtype: string; basePrice: number;
       rentalDays: number; extraDayRate: number; deliveryFee: number;
       depositAmount: number; depositRequired: boolean;
     }>> = {};
@@ -62,6 +64,7 @@ export class PublicService {
       const key = r.service_type;
       if (!grouped[key]) grouped[key] = [];
       grouped[key].push({
+        id: r.id,
         name: r.name,
         subtype: r.asset_subtype,
         basePrice: Number(r.base_price),
@@ -103,141 +106,192 @@ export class PublicService {
     };
   }
 
-  async createBooking(slug: string, body: Record<string, unknown>) {
+  async createBooking(slug: string, body: CreatePublicBookingDto) {
     const t = await this.findTenant(slug);
 
-    const email = body.customerEmail as string | undefined;
-    const phone = body.customerPhone as string | undefined;
-    const name = (body.customerName as string) || '';
-    const [firstName, ...lastParts] = name.split(' ');
-    const lastName = lastParts.join(' ') || firstName;
+    // --- Field mapping: accept both frontend and legacy field names ---
+    const scheduledDate = body.deliveryDate || body.scheduledDate;
+    if (!scheduledDate) {
+      throw new BadRequestException('A delivery date (deliveryDate or scheduledDate) is required');
+    }
 
-    // Find or create customer
-    let customer: Customer | null = null;
-    if (email) {
-      customer = await this.customerRepo.findOne({ where: { tenant_id: t.id, email } });
+    // Resolve address: frontend sends `address` object, legacy sends `serviceAddress`
+    const addressObj = body.address;
+    let serviceAddress: Record<string, any> | undefined;
+    if (body.serviceAddress) {
+      serviceAddress = typeof body.serviceAddress === 'string'
+        ? { street: body.serviceAddress }
+        : body.serviceAddress;
+    } else if (addressObj) {
+      serviceAddress = {
+        street: addressObj.street,
+        city: addressObj.city,
+        state: addressObj.state,
+        zip: addressObj.zip,
+        lat: addressObj.lat,
+        lng: addressObj.lng,
+        formatted: `${addressObj.street}, ${addressObj.city}, ${addressObj.state} ${addressObj.zip}`,
+      };
     }
-    if (!customer && phone) {
-      customer = await this.customerRepo.findOne({ where: { tenant_id: t.id, phone } });
-    }
-    if (!customer) {
-      customer = this.customerRepo.create({
-        tenant_id: t.id,
-        first_name: firstName,
-        last_name: lastName,
-        email: email || undefined,
-        phone: phone || undefined,
-        type: 'residential',
-        lead_source: (body.source as string) || 'website',
+
+    // Resolve service: frontend sends `serviceId` (pricing rule UUID), legacy sends assetSubtype + serviceType
+    let assetSubtype: string | undefined = body.assetSubtype;
+    let serviceType: string = body.serviceType || 'dumpster_rental';
+    let rule: PricingRule | null = null;
+
+    if (body.serviceId) {
+      rule = await this.pricingRepo.findOne({
+        where: { id: body.serviceId, tenant_id: t.id, is_active: true },
       });
-      customer = await this.customerRepo.save(customer);
+      if (!rule) {
+        throw new BadRequestException('Invalid serviceId — pricing rule not found');
+      }
+      assetSubtype = rule.asset_subtype;
+      serviceType = rule.service_type;
+    } else if (assetSubtype) {
+      rule = await this.pricingRepo.findOne({
+        where: { tenant_id: t.id, service_type: serviceType, asset_subtype: assetSubtype, is_active: true },
+      });
     }
 
-    // Find pricing rule
-    const assetSubtype = body.assetSubtype as string;
-    const serviceType = (body.serviceType as string) || 'dumpster_rental';
-    const rentalDays = (body.rentalDays as number) || 7;
-
-    const rule = await this.pricingRepo.findOne({
-      where: { tenant_id: t.id, service_type: serviceType, asset_subtype: assetSubtype, is_active: true },
-    });
-
+    const rentalDays = body.rentalDays || 7;
     const basePrice = rule ? Number(rule.base_price) : 0;
     const deliveryFee = rule ? Number(rule.delivery_fee) : 0;
     const extraDays = rule ? Math.max(0, rentalDays - rule.rental_period_days) : 0;
     const extraDayCost = rule ? extraDays * Number(rule.extra_day_rate) : 0;
     const totalPrice = basePrice + deliveryFee + extraDayCost;
 
-    // Generate job number
-    const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-    const seq = Math.floor(Math.random() * 9000) + 1000;
-    const jobNumber = `JOB-${dateStr}-${seq}`;
+    const email = body.customerEmail;
+    const phone = body.customerPhone;
+    const name = body.customerName || '';
+    const [firstName, ...lastParts] = name.split(' ');
+    const lastName = lastParts.join(' ') || firstName;
 
     // Parse time window
-    const timeWindow = body.timeWindow as string;
+    const timeWindow = body.timeWindow;
     let windowStart = '08:00';
     let windowEnd = '17:00';
     if (timeWindow === 'morning') { windowStart = '08:00'; windowEnd = '12:00'; }
     else if (timeWindow === 'afternoon') { windowStart = '12:00'; windowEnd = '17:00'; }
 
-    const job = this.jobRepo.create({
-      tenant_id: t.id,
-      job_number: jobNumber,
-      customer_id: customer.id,
-      job_type: 'delivery',
-      service_type: serviceType,
-      priority: 'normal',
-      scheduled_date: body.scheduledDate as string,
-      scheduled_window_start: windowStart,
-      scheduled_window_end: windowEnd,
-      service_address: typeof body.serviceAddress === 'string'
-        ? { street: body.serviceAddress }
-        : (body.serviceAddress as Record<string, any>) || undefined,
-      placement_notes: body.placementNotes as string,
-      rental_days: rentalDays,
-      rental_start_date: body.scheduledDate as string,
-      base_price: basePrice,
-      total_price: totalPrice,
-      status: 'pending',
-      source: (body.source as string) || 'website',
-    });
+    // --- Transaction: customer + job + invoice ---
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
 
-    // Calculate rental end date
-    if (body.scheduledDate) {
-      const start = new Date(body.scheduledDate as string);
-      start.setDate(start.getDate() + rentalDays);
-      job.rental_end_date = start.toISOString().split('T')[0];
+    try {
+      const customerRepo = queryRunner.manager.getRepository(Customer);
+      const jobRepoTx = queryRunner.manager.getRepository(Job);
+      const invoiceRepoTx = queryRunner.manager.getRepository(Invoice);
+
+      // Find or create customer
+      let customer: Customer | null = null;
+      if (email) {
+        customer = await customerRepo.findOne({ where: { tenant_id: t.id, email } });
+      }
+      if (!customer && phone) {
+        customer = await customerRepo.findOne({ where: { tenant_id: t.id, phone } });
+      }
+      if (!customer) {
+        customer = customerRepo.create({
+          tenant_id: t.id,
+          first_name: firstName,
+          last_name: lastName,
+          email: email || undefined,
+          phone: phone || undefined,
+          type: 'residential',
+          lead_source: body.source || 'website',
+        });
+        customer = await customerRepo.save(customer);
+      }
+
+      // Generate job number
+      const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+      const seq = Math.floor(Math.random() * 9000) + 1000;
+      const jobNumber = `JOB-${dateStr}-${seq}`;
+
+      const job = jobRepoTx.create({
+        tenant_id: t.id,
+        job_number: jobNumber,
+        customer_id: customer.id,
+        job_type: 'delivery',
+        service_type: serviceType,
+        priority: 'normal',
+        scheduled_date: scheduledDate,
+        scheduled_window_start: windowStart,
+        scheduled_window_end: windowEnd,
+        service_address: serviceAddress,
+        placement_notes: body.placementNotes,
+        rental_days: rentalDays,
+        rental_start_date: scheduledDate,
+        base_price: basePrice,
+        total_price: totalPrice,
+        status: 'pending',
+        source: body.source || 'website',
+      });
+
+      // Calculate rental end date
+      const startDate = new Date(scheduledDate);
+      startDate.setDate(startDate.getDate() + rentalDays);
+      job.rental_end_date = startDate.toISOString().split('T')[0];
+
+      const saved = await jobRepoTx.save(job);
+
+      // Create POS invoice (paid at booking)
+      const invNumber = `INV-${dateStr}-${Math.floor(Math.random() * 9000) + 1000}`;
+      const lineItems = [
+        { description: `${assetSubtype || 'Dumpster'} Rental — ${rentalDays} day rental`, quantity: 1, unitPrice: basePrice, amount: basePrice },
+      ];
+      if (deliveryFee > 0) {
+        lineItems.push({ description: 'Delivery Fee', quantity: 1, unitPrice: deliveryFee, amount: deliveryFee });
+      }
+      const invoice = invoiceRepoTx.create({
+        tenant_id: t.id,
+        invoice_number: invNumber,
+        customer_id: customer.id,
+        job_id: saved.id,
+        status: 'paid',
+        source: 'booking',
+        invoice_type: 'rental',
+        payment_method: 'card',
+        due_date: new Date().toISOString().split('T')[0],
+        subtotal: totalPrice,
+        total: totalPrice,
+        amount_paid: totalPrice,
+        balance_due: 0,
+        line_items: lineItems,
+        notes: 'Paid at time of booking',
+        paid_at: new Date(),
+      } as Partial<Invoice>);
+      const savedInvoice = await invoiceRepoTx.save(invoice);
+
+      await queryRunner.commitTransaction();
+
+      return {
+        jobNumber: saved.job_number,
+        jobId: saved.id,
+        invoiceNumber: savedInvoice.invoice_number,
+        status: saved.status,
+        scheduledDate: saved.scheduled_date,
+        pricing: {
+          basePrice,
+          deliveryFee,
+          extraDays,
+          extraDayCost,
+          totalPrice,
+        },
+        customer: {
+          id: customer.id,
+          name: `${customer.first_name} ${customer.last_name}`,
+          email: customer.email,
+        },
+      };
+    } catch (err) {
+      await queryRunner.rollbackTransaction();
+      throw err;
+    } finally {
+      await queryRunner.release();
     }
-
-    const saved = await this.jobRepo.save(job);
-
-    // Create POS invoice (paid at booking)
-    const invNumber = `INV-${dateStr}-${Math.floor(Math.random() * 9000) + 1000}`;
-    const lineItems = [
-      { description: `${assetSubtype || 'Dumpster'} Rental — ${rentalDays} day rental`, quantity: 1, unitPrice: basePrice, amount: basePrice },
-    ];
-    if (deliveryFee > 0) {
-      lineItems.push({ description: 'Delivery Fee', quantity: 1, unitPrice: deliveryFee, amount: deliveryFee });
-    }
-    const invoice = this.invoiceRepo.create({
-      tenant_id: t.id,
-      invoice_number: invNumber,
-      customer_id: customer.id,
-      job_id: saved.id,
-      status: 'paid',
-      source: 'booking',
-      invoice_type: 'rental',
-      payment_method: 'card',
-      due_date: new Date().toISOString().split('T')[0],
-      subtotal: totalPrice,
-      total: totalPrice,
-      amount_paid: totalPrice,
-      balance_due: 0,
-      line_items: lineItems,
-      notes: 'Paid at time of booking',
-      paid_at: new Date(),
-    } as Partial<Invoice>);
-    const savedInvoice = await this.invoiceRepo.save(invoice);
-
-    return {
-      jobNumber: saved.job_number,
-      jobId: saved.id,
-      invoiceNumber: savedInvoice.invoice_number,
-      status: saved.status,
-      scheduledDate: saved.scheduled_date,
-      pricing: {
-        basePrice,
-        deliveryFee,
-        extraDays,
-        extraDayCost,
-        totalPrice,
-      },
-      customer: {
-        id: customer.id,
-        name: `${customer.first_name} ${customer.last_name}`,
-        email: customer.email,
-      },
-    };
   }
 
   async getWidgetConfig(slug: string, origin: string) {
