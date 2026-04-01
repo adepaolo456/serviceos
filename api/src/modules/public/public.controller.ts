@@ -2,6 +2,7 @@ import { Controller, Get, Post, Param, Query, Body, Headers, NotFoundException, 
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { Public } from '../../common/decorators';
 import { PublicService } from './public.service';
+import { CreatePublicBookingDto } from './dto/public-booking.dto';
 
 @ApiTags('Public')
 @Controller('public/tenant')
@@ -36,7 +37,7 @@ export class PublicController {
   @ApiOperation({ summary: 'Create a booking from website or widget' })
   createBooking(
     @Param('slug') slug: string,
-    @Body() body: Record<string, unknown>,
+    @Body() body: CreatePublicBookingDto,
   ) {
     return this.publicService.createBooking(slug, body);
   }
