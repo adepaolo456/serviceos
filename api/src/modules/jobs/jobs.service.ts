@@ -12,6 +12,7 @@ import { AutomationLog } from '../automation/entities/automation-log.entity';
 import { Customer } from '../customers/entities/customer.entity';
 import { Route } from '../dispatch/entities/route.entity';
 import { BillingService } from '../billing/billing.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import {
   CreateJobDto,
   UpdateJobDto,
@@ -44,6 +45,7 @@ export class JobsService {
     @InjectRepository(Route)
     private routeRepo: Repository<Route>,
     private billingService: BillingService,
+    private notificationsService: NotificationsService,
   ) {}
 
   async create(tenantId: string, dto: CreateJobDto): Promise<Job> {
@@ -432,6 +434,39 @@ export class JobsService {
     // Check if all jobs on this driver's route are done
     if (['completed', 'cancelled', 'failed'].includes(dto.status) && savedJob.assigned_driver_id && savedJob.scheduled_date) {
       await this.checkRouteCompletion(tenantId, savedJob.assigned_driver_id, savedJob.scheduled_date);
+    }
+
+    // Queue customer notifications for key status changes
+    if (job.customer_id && job.customer) {
+      const customerName = `${job.customer.first_name} ${job.customer.last_name}`;
+      const recipient = job.customer.phone || job.customer.email || '';
+      const channel = job.customer.phone ? 'sms' : 'email';
+
+      try {
+        if (dto.status === 'confirmed' && recipient) {
+          await this.notificationsService.send(tenantId, {
+            channel, type: 'booking_confirmation', recipient,
+            subject: `Booking Confirmed - Job #${job.job_number}`,
+            body: `Hi ${customerName}, your ${job.service_type || job.job_type} is confirmed for ${job.scheduled_date}. Job #${job.job_number}.`,
+            jobId: job.id, customerId: job.customer_id,
+          });
+        } else if (dto.status === 'en_route' && recipient) {
+          const window = [job.scheduled_window_start, job.scheduled_window_end].filter(Boolean).join(' – ');
+          await this.notificationsService.send(tenantId, {
+            channel, type: 'on_the_way', recipient,
+            subject: `Driver On The Way - Job #${job.job_number}`,
+            body: `Hi ${customerName}, your driver is on the way!${window ? ` Estimated arrival: ${window}.` : ''} Job #${job.job_number}.`,
+            jobId: job.id, customerId: job.customer_id,
+          });
+        } else if (dto.status === 'completed' && recipient) {
+          await this.notificationsService.send(tenantId, {
+            channel, type: 'booking_confirmation', recipient,
+            subject: `Service Completed - Job #${job.job_number}`,
+            body: `Hi ${customerName}, your ${job.service_type || job.job_type} has been completed. Thank you!`,
+            jobId: job.id, customerId: job.customer_id,
+          });
+        }
+      } catch { /* best effort — don't block status transition */ }
     }
 
     // Log admin status overrides (backward transitions)

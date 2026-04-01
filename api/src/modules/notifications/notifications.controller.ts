@@ -19,6 +19,13 @@ export class NotificationsController {
     return this.notificationsService.send(tenantId, dto);
   }
 
+  @Post('process')
+  @ApiOperation({ summary: 'Process queued notifications (manual trigger)' })
+  async process(@TenantId() tenantId: string) {
+    const count = await this.notificationsService.processQueuedNotifications(tenantId);
+    return { message: `${count} notification(s) processed`, count };
+  }
+
   @Get('templates')
   @ApiOperation({ summary: 'Get notification templates with placeholders' })
   getTemplates() {
