@@ -31,6 +31,15 @@ export class InvoicesController {
     return this.billingService.createInvoice(tenantId, dto);
   }
 
+  @Post('mark-overdue')
+  @ApiOperation({ summary: 'Mark overdue invoices (manual trigger)' })
+  markOverdue(@TenantId() tenantId: string) {
+    return this.billingService.markOverdueInvoices(tenantId).then(count => ({
+      message: `${count} invoice(s) marked overdue`,
+      count,
+    }));
+  }
+
   @Post('from-job/:jobId')
   @ApiOperation({ summary: 'Auto-generate invoice from a completed job' })
   createFromJob(

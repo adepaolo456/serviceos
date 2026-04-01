@@ -124,6 +124,12 @@ export class PortalService {
     });
     if (!invoice) throw new NotFoundException('Invoice not found');
 
+    // Track first view
+    if (!invoice.viewed_at) {
+      await this.invoiceRepo.update(invoiceId, { viewed_at: new Date() });
+      invoice.viewed_at = new Date();
+    }
+
     const payments = await this.paymentRepo.find({
       where: { invoice_id: invoiceId } as any,
       order: { created_at: 'DESC' },
