@@ -220,6 +220,12 @@ function VehicleEditForm({ emp, onSuccess }: { emp: Employee; onSuccess: (e: Emp
   const [plate, setPlate] = useState(v.plate || "");
   const [vin, setVin] = useState(v.vin || "");
   const [color, setColor] = useState(v.color || "");
+  const [fuelType, setFuelType] = useState(v.fuelType || "");
+  const [grossWeight, setGrossWeight] = useState(v.grossWeight || "");
+  const [mpg, setMpg] = useState(v.mpg || "");
+  const [costPerMile, setCostPerMile] = useState(v.costPerMile || "");
+  const [carryCapacity, setCarryCapacity] = useState(v.carryCapacity || "");
+  const [inServiceDate, setInServiceDate] = useState(v.inServiceDate || "");
   const [saving, setSaving] = useState(false);
   const inputCls = "w-full rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-2.5 text-sm text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)]";
   const labelCls = "block text-[13px] font-semibold uppercase tracking-wide text-[var(--t-text-muted)] mb-1";
@@ -229,19 +235,46 @@ function VehicleEditForm({ emp, onSuccess }: { emp: Employee; onSuccess: (e: Emp
       e.preventDefault(); setSaving(true);
       try {
         const u = await api.patch<Employee>(`/team/${emp.id}`, {
-          vehicleInfo: { ...emp.vehicleInfo, make, model, year, plate, vin, color },
+          vehicleInfo: { ...emp.vehicleInfo, make, model, year, plate, vin, color, fuelType, grossWeight, mpg, costPerMile, carryCapacity, inServiceDate },
         });
         onSuccess(u);
       } catch {} finally { setSaving(false); }
     }} className="space-y-3">
+      <p className="text-xs font-semibold uppercase tracking-wide text-[var(--t-text-muted)]">Vehicle Info</p>
       <div className="grid grid-cols-2 gap-3">
         <div><label className={labelCls}>Year</label><input value={year} onChange={e => setYear(e.target.value)} className={inputCls} placeholder="2024" /></div>
         <div><label className={labelCls}>Make</label><input value={make} onChange={e => setMake(e.target.value)} className={inputCls} placeholder="Ford" /></div>
       </div>
       <div><label className={labelCls}>Model</label><input value={model} onChange={e => setModel(e.target.value)} className={inputCls} placeholder="F-550" /></div>
-      <div><label className={labelCls}>License Plate</label><input value={plate} onChange={e => setPlate(e.target.value)} className={inputCls} placeholder="ABC-1234" /></div>
+      <div className="grid grid-cols-2 gap-3">
+        <div><label className={labelCls}>License Plate</label><input value={plate} onChange={e => setPlate(e.target.value)} className={inputCls} placeholder="ABC-1234" /></div>
+        <div><label className={labelCls}>Color</label><input value={color} onChange={e => setColor(e.target.value)} className={inputCls} placeholder="White" /></div>
+      </div>
       <div><label className={labelCls}>VIN</label><input value={vin} onChange={e => setVin(e.target.value)} className={inputCls} placeholder="1HGCM..." /></div>
-      <div><label className={labelCls}>Color</label><input value={color} onChange={e => setColor(e.target.value)} className={inputCls} placeholder="White" /></div>
+
+      <div className="border-t border-[var(--t-border)] pt-3 mt-1">
+        <p className="text-xs font-semibold uppercase tracking-wide text-[var(--t-text-muted)] mb-3">Specifications</p>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className={labelCls}>Fuel Type</label>
+          <select value={fuelType} onChange={e => setFuelType(e.target.value)} className={inputCls}>
+            <option value="">Select...</option>
+            <option value="Diesel">Diesel</option>
+            <option value="Gas">Gas</option>
+            <option value="Electric">Electric</option>
+            <option value="Hybrid">Hybrid</option>
+          </select>
+        </div>
+        <div><label className={labelCls}>Gross Weight (lbs)</label><input value={grossWeight} onChange={e => setGrossWeight(e.target.value)} className={inputCls} placeholder="19,500" /></div>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div><label className={labelCls}>MPG</label><input value={mpg} onChange={e => setMpg(e.target.value)} className={inputCls} placeholder="12" /></div>
+        <div><label className={labelCls}>Cost Per Mile ($)</label><input value={costPerMile} onChange={e => setCostPerMile(e.target.value)} className={inputCls} placeholder="0.85" /></div>
+      </div>
+      <div><label className={labelCls}>Carry Capacity</label><input value={carryCapacity} onChange={e => setCarryCapacity(e.target.value)} className={inputCls} placeholder="10yd, 15yd, 20yd, 30yd" /></div>
+      <div><label className={labelCls}>In-Service Date</label><input type="date" value={inServiceDate} onChange={e => setInServiceDate(e.target.value)} className={inputCls} /></div>
+
       <button type="submit" disabled={saving} className="w-full rounded-full bg-[#22C55E] py-3 text-sm font-semibold text-black transition-opacity hover:opacity-90 disabled:opacity-50">
         {saving ? "Saving..." : "Save Vehicle"}
       </button>
