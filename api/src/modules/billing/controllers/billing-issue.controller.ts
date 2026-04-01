@@ -20,7 +20,13 @@ export class BillingIssueController {
   @Get()
   findAll(
     @TenantId() tenantId: string,
-    @Query() query: { status?: string; issueType?: string; page?: string; limit?: string },
+    @Query()
+    query: {
+      status?: string;
+      issueType?: string;
+      page?: string;
+      limit?: string;
+    },
   ) {
     return this.detector.findAll(tenantId, {
       status: query.status,
@@ -37,18 +43,20 @@ export class BillingIssueController {
 
   @Put(':id/resolve')
   resolve(
+    @TenantId() tenantId: string,
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser('id') userId: string,
   ) {
-    return this.detector.resolveIssue(id, userId);
+    return this.detector.resolveIssue(tenantId, id, userId);
   }
 
   @Put(':id/dismiss')
   dismiss(
+    @TenantId() tenantId: string,
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser('id') userId: string,
   ) {
-    return this.detector.dismissIssue(id, userId);
+    return this.detector.dismissIssue(tenantId, id, userId);
   }
 
   @Post('detect')
