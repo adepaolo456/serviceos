@@ -225,56 +225,6 @@ h1, h2, h3, h4, h5, h6 {
   -webkit-overflow-scrolling: touch;
 }
 
-/* ===== Google Maps ===== */
-
-.gm-err-container,
-.gm-err-title,
-.gm-err-message,
-.gm-err-autocomplete,
-.dismissButton,
-.gm-style iframe + div,
-div[style*="background-color: white"][style*="position: absolute"][style*="z-index"] {
-  display: none !important;
-}
-
-/* Google Places Autocomplete — theme-aware */
-.pac-container {
-  background-color: var(--t-bg-secondary) !important;
-  border: 1px solid var(--t-border) !important;
-  border-radius: 12px !important;
-  box-shadow: 0 20px 40px var(--t-shadow) !important;
-  margin-top: 4px !important;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
-  z-index: 9999 !important;
-}
-
-.pac-container::after { display: none !important; }
-
-.pac-item {
-  background-color: var(--t-bg-secondary) !important;
-  border-top: 1px solid var(--t-border) !important;
-  padding: 10px 14px !important;
-  cursor: pointer !important;
-  line-height: 1.4 !important;
-}
-
-.pac-item:first-child { border-top: none !important; }
-.pac-item:hover, .pac-item-selected { background-color: var(--t-bg-card-hover) !important; }
-
-.pac-item-query {
-  color: var(--t-text-primary) !important;
-  font-size: 14px !important;
-  font-weight: 500 !important;
-}
-
-.pac-item span:not(.pac-item-query) {
-  color: var(--t-text-muted) !important;
-  font-size: 12px !important;
-}
-
-.pac-icon, .pac-icon-marker { display: none !important; }
-.pac-matched { color: #22C55E !important; font-weight: 600 !important; }
-
 /* ===== White Cards on Dark Frame — auto-contrast ===== */
 
 /* Card containers: white bg, dark text, shadow, 20px radius */
