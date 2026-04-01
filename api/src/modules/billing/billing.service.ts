@@ -173,7 +173,30 @@ export class BillingService {
     }
     invoice.status = 'sent';
     invoice.sent_at = new Date();
-    return this.invoicesRepository.save(invoice);
+    const saved = await this.invoicesRepository.save(invoice);
+
+    // TODO: Replace with Resend email integration
+    const customer = await this.invoicesRepository
+      .createQueryBuilder('i')
+      .leftJoinAndSelect('i.customer', 'c')
+      .where('i.id = :id', { id })
+      .getOne();
+    console.log('TODO: Send invoice email to', customer?.customer?.email);
+
+    return saved;
+  }
+
+  async markOverdueInvoices(tenantId: string): Promise<number> {
+    const today = new Date().toISOString().split('T')[0];
+    const result = await this.invoicesRepository
+      .createQueryBuilder()
+      .update()
+      .set({ status: 'overdue' })
+      .where('tenant_id = :tenantId', { tenantId })
+      .andWhere('status = :status', { status: 'sent' })
+      .andWhere('due_date < :today', { today })
+      .execute();
+    return result.affected || 0;
   }
 
   async createFromJob(tenantId: string, jobId: string): Promise<Invoice> {
