@@ -113,6 +113,14 @@ export class JobsService {
 
     const savedJob = await this.jobsRepository.save(job);
 
+    // Reserve asset if one was assigned at creation
+    if (savedJob.asset_id) {
+      await this.assetRepo.update(savedJob.asset_id, {
+        status: 'reserved',
+        current_job_id: savedJob.id,
+      } as any);
+    }
+
     // Auto-create POS invoice for delivery jobs with a price
     const price = Number(savedJob.total_price) || 0;
     if (savedJob.job_type === 'delivery' && price > 0) {
@@ -470,7 +478,24 @@ export class JobsService {
     const updates: Record<string, unknown> = {};
 
     if ('assetId' in body) {
-      updates.asset_id = body.assetId || null;
+      const newAssetId = (body.assetId as string) || null;
+      updates.asset_id = newAssetId;
+
+      // Release old asset if switching or unassigning
+      if (job.asset_id && job.asset_id !== newAssetId) {
+        await this.assetRepo.update(job.asset_id, {
+          status: 'available',
+          current_job_id: null,
+        } as any);
+      }
+
+      // Reserve new asset
+      if (newAssetId && newAssetId !== job.asset_id) {
+        await this.assetRepo.update(newAssetId, {
+          status: 'reserved',
+          current_job_id: id,
+        } as any);
+      }
     }
 
     if ('assignedDriverId' in body) {
