@@ -3,10 +3,13 @@ import {
   Get,
   Post,
   Patch,
+  Delete,
   Body,
   Param,
   Query,
   ParseUUIDPipe,
+  NotFoundException,
+  BadRequestException,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JobsService } from './jobs.service';
@@ -134,6 +137,24 @@ export class JobsController {
     @Body() body: { wasteType?: string; notes?: string },
   ) {
     return this.jobsService.stageAtYard(tenantId, id, body);
+  }
+
+  @Delete(':id')
+  @ApiOperation({ summary: 'Soft-delete (cancel) a job' })
+  async deleteJob(
+    @TenantId() tenantId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    const job = await this.jobsService.findOne(tenantId, id);
+    if (!job) throw new NotFoundException('Job not found');
+    if (['completed', 'in_progress', 'en_route', 'arrived'].includes(job.status)) {
+      throw new BadRequestException('Cannot delete a job that is in progress or completed');
+    }
+    if (job.asset_id) {
+      await this.jobsService.updateAssetStatus(job.asset_id, 'available');
+    }
+    await this.jobsService.softDelete(tenantId, id);
+    return { message: 'Job deleted successfully' };
   }
 
   @Post('dump-run')
