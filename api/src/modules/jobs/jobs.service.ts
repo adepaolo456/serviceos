@@ -12,7 +12,10 @@ import { AutomationLog } from '../automation/entities/automation-log.entity';
 import { Customer } from '../customers/entities/customer.entity';
 import { Route } from '../dispatch/entities/route.entity';
 import { BillingService } from '../billing/billing.service';
+import { BillingIssueDetectorService } from '../billing/services/billing-issue-detector.service';
+import { RentalChainsService } from '../rental-chains/rental-chains.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { Invoice } from '../billing/entities/invoice.entity';
 import {
   CreateJobDto,
   UpdateJobDto,
@@ -45,6 +48,8 @@ export class JobsService {
     @InjectRepository(Route)
     private routeRepo: Repository<Route>,
     private billingService: BillingService,
+    private billingIssueDetector: BillingIssueDetectorService,
+    private rentalChainsService: RentalChainsService,
     private notificationsService: NotificationsService,
   ) {}
 
@@ -427,6 +432,29 @@ export class JobsService {
     }
 
     const savedJob = await this.jobsRepository.save(job);
+
+    // Billing issue detection on job completion
+    if (dto.status === 'completed') {
+      try {
+        const linkedInvoice = await this.jobsRepository.manager
+          .getRepository(Invoice)
+          .findOne({ where: { job_id: savedJob.id, tenant_id: tenantId } });
+        if (linkedInvoice) {
+          await this.billingIssueDetector.detectAllForInvoice(tenantId, linkedInvoice.id);
+        } else {
+          await this.billingIssueDetector.detectMissingInvoice(tenantId, savedJob.id);
+        }
+      } catch { /* billing issue detection is best-effort */ }
+    }
+
+    // Rental chain reaction on job type change
+    if (previousStatus !== dto.status && (dto as any).jobType && (dto as any).previousJobType) {
+      try {
+        await this.rentalChainsService.handleTypeChange(
+          tenantId, savedJob.id, (dto as any).previousJobType, (dto as any).jobType,
+        );
+      } catch { /* chain reaction is best-effort */ }
+    }
 
     // Auto-update asset status based on the new job status
     await this.updateAssetOnJobStatus(savedJob, dto.status);

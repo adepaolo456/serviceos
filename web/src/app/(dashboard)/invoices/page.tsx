@@ -22,19 +22,47 @@ import { useToast } from "@/components/toast";
 
 /* --- Types --- */
 
+interface InvoiceLineItem {
+  id: string;
+  line_type: string;
+  name: string;
+  description?: string;
+  quantity: number;
+  unit_rate: number;
+  amount: number;
+  discount_amount: number;
+  net_amount: number;
+  is_taxable: boolean;
+  tax_rate: number;
+  tax_amount: number;
+  sort_order: number;
+}
+
 interface Invoice {
   id: string;
-  invoice_number: string;
+  invoice_number: number;
+  revision: number;
   status: string;
+  customer_type: string;
+  invoice_date: string;
   due_date: string;
+  service_date: string;
   subtotal: number;
+  tax_amount: number;
   total: number;
   amount_paid: number;
   balance_due: number;
-  line_items: LineItem[];
-  notes: string;
+  total_cogs: number;
+  profit: number;
+  summary_of_work: string;
+  project_name: string;
+  po_number: string;
+  sent_at: string;
+  paid_at: string;
+  voided_at: string;
   created_at: string;
-  customer: { id: string; first_name: string; last_name: string } | null;
+  line_items: InvoiceLineItem[];
+  customer: { id: string; first_name: string; last_name: string; company_name?: string } | null;
   job: { id: string; job_number: string } | null;
 }
 
@@ -43,6 +71,7 @@ interface InvoicesResponse {
   meta: { total: number; page: number; limit: number; totalPages: number };
 }
 
+/* Legacy line item shape for the create form */
 interface LineItem {
   description: string;
   quantity: number;
@@ -55,18 +84,22 @@ interface JobOption { id: string; job_number: string; status: string; total_pric
 
 /* --- Constants --- */
 
-const TABS = ["all", "paid", "sent", "draft", "overdue", "void"] as const;
+const TABS = ["all", "paid", "sent", "partial", "draft", "overdue", "voided"] as const;
 
 const STATUS_COLOR: Record<string, string> = {
-  draft:   "var(--t-text-muted)",
-  sent:    "var(--t-warning)",
-  paid:    "var(--t-accent)",
-  overdue: "var(--t-error)",
-  void:    "var(--t-text-muted)",
+  draft:     "var(--t-text-muted)",
+  sent:      "var(--t-warning)",
+  delivered: "var(--t-info, #3b82f6)",
+  read:      "var(--t-info, #3b82f6)",
+  partial:   "var(--t-warning)",
+  paid:      "var(--t-accent)",
+  overdue:   "var(--t-error)",
+  voided:    "var(--t-text-muted)",
+  void:      "var(--t-text-muted)",
 };
 
 const TAB_LABELS: Record<string, string> = {
-  all: "All", draft: "Draft", sent: "Pending", paid: "Paid", overdue: "Overdue", void: "Void",
+  all: "All", draft: "Draft", sent: "Pending", partial: "Partial", paid: "Paid", overdue: "Overdue", voided: "Voided",
 };
 
 const DATE_RANGES = [
@@ -209,7 +242,7 @@ export default function InvoicesPage() {
       const q = searchQuery.toLowerCase();
       result = result.filter((inv) => {
         const name = inv.customer ? `${inv.customer.first_name} ${inv.customer.last_name}`.toLowerCase() : "";
-        return inv.invoice_number.toLowerCase().includes(q) || name.includes(q);
+        return String(inv.invoice_number).includes(q) || name.includes(q);
       });
     }
     result.sort((a, b) => {
@@ -384,7 +417,7 @@ export default function InvoicesPage() {
             const customerName = inv.customer ? `${inv.customer.first_name} ${inv.customer.last_name}` : "No customer";
             const isOverdue = inv.status === "overdue";
             const days = daysUntil(inv.due_date);
-            const lineDesc = inv.line_items?.length > 0 ? inv.line_items[0].description : "";
+            const lineDesc = inv.line_items?.length > 0 ? inv.line_items[0].name : "";
 
             return (
               <button
@@ -402,7 +435,7 @@ export default function InvoicesPage() {
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-semibold truncate" style={{ color: "var(--t-text-primary)" }}>{customerName}</p>
                   <p className="text-xs mt-0.5 truncate" style={{ color: "var(--t-text-muted)" }}>
-                    {inv.invoice_number}
+                    #{inv.invoice_number}
                     {lineDesc && <span> · {lineDesc}</span>}
                   </p>
                 </div>
@@ -601,11 +634,14 @@ function CreateInvoiceForm({ onSuccess }: { onSuccess: () => void }) {
     setError(""); setSaving(true);
     try {
       const invoice = await api.post<{ id: string }>("/invoices", {
-        customerId,
-        dueDate: dueDate || undefined,
-        taxRate: Number(taxRate) || undefined,
-        lineItems: lineItems.filter((l) => l.description),
-        notes: notes || undefined,
+        customer_id: customerId,
+        due_date: dueDate || undefined,
+        line_items: lineItems.filter((l) => l.description).map((l) => ({
+          line_type: "custom",
+          name: l.description,
+          quantity: l.quantity,
+          unit_rate: l.unitPrice,
+        })),
       });
       if (saveMode === "send" && invoice?.id) {
         try { await api.post(`/invoices/${invoice.id}/send`); } catch { /* send might fail, invoice still created */ }

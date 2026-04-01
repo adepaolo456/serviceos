@@ -45,6 +45,6 @@ import { PricingModule } from '../pricing/pricing.module';
   ],
   controllers: [InvoiceController, BillingIssueController, PaymentsController, BookingsController],
   providers: [InvoiceService, BillingIssueDetectorService, BillingService],
-  exports: [InvoiceService, BillingService],
+  exports: [InvoiceService, BillingService, BillingIssueDetectorService],
 })
 export class BillingModule {}

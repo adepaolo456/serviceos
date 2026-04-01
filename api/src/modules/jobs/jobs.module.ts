@@ -7,12 +7,18 @@ import { AutomationLog } from '../automation/entities/automation-log.entity';
 import { Customer } from '../customers/entities/customer.entity';
 import { Route } from '../dispatch/entities/route.entity';
 import { BillingModule } from '../billing/billing.module';
+import { RentalChainsModule } from '../rental-chains/rental-chains.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { JobsService } from './jobs.service';
 import { JobsController } from './jobs.controller';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Job, Asset, PricingRule, AutomationLog, Customer, Route]), BillingModule, NotificationsModule],
+  imports: [
+    TypeOrmModule.forFeature([Job, Asset, PricingRule, AutomationLog, Customer, Route]),
+    BillingModule,
+    RentalChainsModule,
+    NotificationsModule,
+  ],
   controllers: [JobsController],
   providers: [JobsService],
   exports: [JobsService],
