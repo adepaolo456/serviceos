@@ -6,6 +6,17 @@ import { ClientPricingOverride } from '../entities/client-pricing-override.entit
 import { SurchargeTemplate } from '../entities/surcharge-template.entity';
 import { ClientSurchargeOverride } from '../entities/client-surcharge-override.entity';
 import { TermsTemplate } from '../entities/terms-template.entity';
+import { DeliveryZone } from '../entities/delivery-zone.entity';
+import { Tenant } from '../../tenants/entities/tenant.entity';
+import { MapboxService } from '../../mapbox/mapbox.service';
+
+export interface DeliveryZoneInfo {
+  zone_name: string;
+  distance_miles: number;
+  duration_minutes: number;
+  surcharge: number;
+  outside_service_area: boolean;
+}
 
 export interface ResolvedPrice {
   base_price: number;
@@ -16,6 +27,7 @@ export interface ResolvedPrice {
   tier_used: 'global' | 'client';
   pricing_rule_id: string;
   override_id: string | null;
+  delivery_zone?: DeliveryZoneInfo;
 }
 
 export interface ResolvedSurcharge {
@@ -37,6 +49,11 @@ export class PriceResolutionService {
     private clientSurchargeRepo: Repository<ClientSurchargeOverride>,
     @InjectRepository(TermsTemplate)
     private termsTemplateRepo: Repository<TermsTemplate>,
+    @InjectRepository(DeliveryZone)
+    private deliveryZoneRepo: Repository<DeliveryZone>,
+    @InjectRepository(Tenant)
+    private tenantRepo: Repository<Tenant>,
+    private mapbox: MapboxService,
   ) {}
 
   /**
@@ -186,5 +203,70 @@ export class PriceResolutionService {
     }
 
     return text;
+  }
+
+  /**
+   * Resolve delivery zone surcharge based on driving distance from yard.
+   */
+  async resolveDeliveryZone(
+    tenantId: string,
+    customerLat?: number | null,
+    customerLng?: number | null,
+    customerAddress?: string,
+  ): Promise<DeliveryZoneInfo | null> {
+    // Get yard coordinates
+    const tenant = await this.tenantRepo.findOne({ where: { id: tenantId } });
+    if (!tenant?.yard_latitude || !tenant?.yard_longitude) return null;
+
+    const yardLat = Number(tenant.yard_latitude);
+    const yardLng = Number(tenant.yard_longitude);
+
+    // Get customer coordinates — geocode if needed
+    let destLat = customerLat ? Number(customerLat) : null;
+    let destLng = customerLng ? Number(customerLng) : null;
+
+    if ((!destLat || !destLng) && customerAddress) {
+      const geo = await this.mapbox.geocodeAddress(customerAddress);
+      if (geo) {
+        destLat = geo.lat;
+        destLng = geo.lng;
+      }
+    }
+
+    if (!destLat || !destLng) return null;
+
+    // Calculate drive distance (with haversine fallback)
+    const drive = await this.mapbox.calculateDriveDistance(
+      yardLat,
+      yardLng,
+      destLat,
+      destLng,
+    );
+    if (!drive) return null;
+
+    // Match to delivery zone
+    const zones = await this.deliveryZoneRepo.find({
+      where: { tenant_id: tenantId, is_active: true },
+      order: { sort_order: 'ASC' },
+    });
+
+    let matched: DeliveryZone | null = null;
+    let maxMiles = 0;
+    for (const z of zones) {
+      const min = Number(z.min_miles);
+      const max = Number(z.max_miles);
+      if (max > maxMiles) maxMiles = max;
+      if (drive.distance_miles >= min && drive.distance_miles < max) {
+        matched = z;
+      }
+    }
+
+    return {
+      zone_name: matched?.zone_name || 'Outside Service Area',
+      distance_miles: drive.distance_miles,
+      duration_minutes: drive.duration_minutes,
+      surcharge: matched ? Number(matched.surcharge) : 0,
+      outside_service_area: !matched && drive.distance_miles > maxMiles,
+    };
   }
 }
