@@ -76,6 +76,7 @@ export default function Sidebar() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [user, setUser] = useState<UserProfile | null>(null);
   const [hoveredItem, setHoveredItem] = useState<string | null>(null);
+  const [billingIssueCount, setBillingIssueCount] = useState(0);
   const { theme, cycleTheme } = useTheme();
   const { collapsed, toggleCollapsed } = useSidebar();
 
@@ -83,6 +84,10 @@ export default function Sidebar() {
     api
       .get<UserProfile>("/auth/profile")
       .then((p) => setUser(p))
+      .catch(() => {});
+    api
+      .get<{ total: number }>("/billing-issues/summary")
+      .then((s) => setBillingIssueCount(s.total || 0))
       .catch(() => {});
   }, []);
 
@@ -129,6 +134,11 @@ export default function Sidebar() {
                 >
                   <item.icon className="h-[18px] w-[18px] shrink-0" style={{ color: isActive ? "var(--t-accent)" : "var(--t-frame-text-muted)" }} />
                   {item.name}
+                  {item.name === "Invoices" && billingIssueCount > 0 && (
+                    <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-bold text-white" style={{ background: "var(--t-error)" }}>
+                      {billingIssueCount}
+                    </span>
+                  )}
                 </Link>
               </li>
             );
