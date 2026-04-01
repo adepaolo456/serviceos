@@ -451,6 +451,9 @@ export class JobsService {
 
     const savedJob = await this.jobsRepository.save(job);
 
+    // Auto-update asset status based on the new job status
+    await this.updateAssetOnJobStatus(savedJob, dto.status);
+
     // Log admin status overrides (backward transitions)
     if (isAdmin && previousStatus !== dto.status) {
       try {
@@ -465,6 +468,87 @@ export class JobsService {
     }
 
     return savedJob;
+  }
+
+  private async updateAssetOnJobStatus(job: Job, newStatus: string): Promise<void> {
+    if (!job.asset_id) return;
+
+    switch (newStatus) {
+      case 'confirmed':
+      case 'dispatched':
+        await this.assetRepo.update(job.asset_id, {
+          status: 'reserved',
+          current_job_id: job.id,
+        } as any);
+        break;
+
+      case 'en_route':
+        await this.assetRepo.update(job.asset_id, {
+          status: 'in_transit',
+          current_job_id: job.id,
+          current_location_type: 'in_transit',
+        } as any);
+        break;
+
+      case 'arrived':
+      case 'in_progress':
+        // Still in transit / work happening, no asset status change needed
+        break;
+
+      case 'completed':
+        await this.handleCompletedAsset(job);
+        break;
+
+      case 'cancelled':
+      case 'failed':
+        await this.assetRepo.update(job.asset_id, {
+          status: 'available',
+          current_job_id: null,
+          current_location_type: 'yard',
+        } as any);
+        break;
+    }
+  }
+
+  private async handleCompletedAsset(job: Job): Promise<void> {
+    const jobType = job.job_type;
+
+    if (jobType === 'delivery' || jobType === 'drop_off') {
+      await this.assetRepo.update(job.asset_id, {
+        status: 'on_site',
+        current_job_id: job.id,
+        current_location_type: 'customer_site',
+      } as any);
+    } else if (jobType === 'pickup' || jobType === 'removal') {
+      await this.assetRepo.update(job.asset_id, {
+        status: 'available',
+        current_job_id: null,
+        current_location_type: 'yard',
+        needs_dump: true,
+      } as any);
+    } else if (jobType === 'exchange') {
+      // Old asset (main asset_id) returns to yard
+      await this.assetRepo.update(job.asset_id, {
+        status: 'available',
+        current_job_id: null,
+        current_location_type: 'yard',
+      } as any);
+      // New asset (drop_off_asset_id) goes to customer site
+      if (job.drop_off_asset_id) {
+        await this.assetRepo.update(job.drop_off_asset_id, {
+          status: 'on_site',
+          current_job_id: job.id,
+          current_location_type: 'customer_site',
+        } as any);
+      }
+    } else if (jobType === 'dump_run' || jobType === 'dump_and_return') {
+      await this.assetRepo.update(job.asset_id, {
+        status: 'available',
+        current_job_id: null,
+        current_location_type: 'yard',
+        needs_dump: false,
+      } as any);
+    }
   }
 
   async assignJob(
