@@ -134,6 +134,8 @@ export default function DispatchPage() {
   const [hiddenCols, setHiddenCols] = useState<Set<string>>(new Set());
   const [showColumns, setShowColumns] = useState(true);
   const [columnOrder, setColumnOrder] = useState<string[]>([]);
+  const [optimizing, setOptimizing] = useState(false);
+  const [sendingRoutes, setSendingRoutes] = useState(false);
   const [dragColId, setDragColId] = useState<string | null>(null);
   const saveOrderTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { toast } = useToast();
@@ -175,6 +177,35 @@ export default function DispatchPage() {
 
   useEffect(() => { fetchBoard(); }, [fetchBoard]);
   useEffect(() => { const i = setInterval(() => fetchBoard(true), 30000); return () => clearInterval(i); }, [fetchBoard]);
+
+  const handleOptimize = async () => {
+    if (!board) return;
+    setOptimizing(true);
+    try {
+      let optimized = 0;
+      for (const col of board.drivers) {
+        if (col.jobs.length > 1) {
+          await api.post("/dispatch/optimize", { driverId: col.driver.id, date });
+          optimized++;
+        }
+      }
+      await fetchBoard(true);
+      toast("success", optimized > 0 ? `Optimized ${optimized} route(s)` : "No routes to optimize");
+    } catch { toast("error", "Failed to optimize routes"); }
+    finally { setOptimizing(false); }
+  };
+
+  const handleSendRoutes = async () => {
+    if (!board) return;
+    setSendingRoutes(true);
+    try {
+      const driverIds = board.drivers.filter(d => d.jobs.length > 0).map(d => d.driver.id);
+      const result = await api.post<{ message: string; jobsDispatched: number }>("/dispatch/send-routes", { driverIds, date });
+      await fetchBoard(true);
+      toast("success", `${result.jobsDispatched} job(s) dispatched to drivers`);
+    } catch { toast("error", "Failed to send routes"); }
+    finally { setSendingRoutes(false); }
+  };
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -344,8 +375,8 @@ export default function DispatchPage() {
               {showColumns ? <MapIcon className="h-3.5 w-3.5" /> : <LayoutDashboard className="h-3.5 w-3.5" />}
               {showColumns ? "Map View" : "Show Columns"}
             </button>
-            <button className="flex items-center gap-1.5 rounded-full px-3.5 py-2 text-xs font-semibold active:scale-95" style={{ background: "var(--t-accent)", color: "#000" }}>
-              <Zap className="h-3.5 w-3.5" /> Optimize Routes
+            <button onClick={handleOptimize} disabled={optimizing} className="flex items-center gap-1.5 rounded-full px-3.5 py-2 text-xs font-semibold active:scale-95 disabled:opacity-50" style={{ background: "var(--t-accent)", color: "#000" }}>
+              <Zap className={`h-3.5 w-3.5 ${optimizing ? "animate-spin" : ""}`} /> {optimizing ? "Optimizing…" : "Optimize Routes"}
             </button>
           </div>
         </div>
@@ -455,7 +486,7 @@ export default function DispatchPage() {
           </div>
           <div className="flex items-center gap-2">
             <button className="rounded-full border px-3 py-1.5 text-xs font-medium" style={{ borderColor: "var(--t-frame-border)", color: "var(--t-frame-text-muted)" }}>Print Route Sheets</button>
-            <button className="rounded-full border px-3 py-1.5 text-xs font-semibold" style={{ background: "var(--t-accent-soft)", borderColor: "var(--t-accent)", color: "var(--t-accent)" }}>Send Routes to Drivers</button>
+            <button onClick={handleSendRoutes} disabled={sendingRoutes} className="rounded-full border px-3 py-1.5 text-xs font-semibold disabled:opacity-50" style={{ background: "var(--t-accent-soft)", borderColor: "var(--t-accent)", color: "var(--t-accent)" }}>{sendingRoutes ? "Sending…" : "Send Routes to Drivers"}</button>
           </div>
         </div>
       )}
