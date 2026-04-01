@@ -661,7 +661,7 @@ function DispatchMap({ board, activeJobId }: { board: DispatchBoard | null; acti
     // Fallback dark grid background
     return (
       <div style={{ position: "absolute", inset: 0, background: "var(--t-bg-primary)", zIndex: 0 }}>
-        <div style={{ position: "absolute", inset: 0, backgroundImage: "radial-gradient(circle, #1a1a1a 1px, transparent 1px)", backgroundSize: "30px 30px", opacity: 0.5 }} />
+        <div style={{ position: "absolute", inset: 0, backgroundImage: "radial-gradient(circle, var(--t-border) 1px, transparent 1px)", backgroundSize: "30px 30px", opacity: 0.5 }} />
         <div style={{ position: "absolute", top: 16, left: "50%", transform: "translateX(-50%)", background: "rgba(217,119,6,0.15)", border: "1px solid rgba(217,119,6,0.3)", borderRadius: 12, padding: "8px 16px", fontSize: 12, color: "#D97706", zIndex: 5 }}>
           Add Mapbox token in Settings to enable the live dispatch map
         </div>
@@ -701,11 +701,9 @@ function ColumnCard({ columnId, title, driver, isUnassigned, count, progress, jo
       className="shrink-0 rounded-[20px] transition-all duration-200"
       style={{
         width: 340, minWidth: 340,
-        border: isOver && activeId ? "2px dashed var(--t-accent)" : "1px solid rgba(255,255,255,0.3)",
-        background: "rgba(255,255,255,0.92)",
-        backdropFilter: "blur(16px)",
-        WebkitBackdropFilter: "blur(16px)",
-        boxShadow: "0 8px 32px rgba(0,0,0,0.25)",
+        border: isOver && activeId ? "2px dashed var(--t-accent)" : "1px solid var(--t-border)",
+        background: "var(--t-bg-secondary)",
+        boxShadow: "0 8px 32px var(--t-shadow)",
       }}>
 
       {/* ── Header — two rows for full name ── */}
@@ -715,7 +713,7 @@ function ColumnCard({ columnId, title, driver, isUnassigned, count, progress, jo
         onDragOver={onColumnDrag?.onDragOver}
         onDrop={onColumnDrag?.onDrop}
         onDragEnd={onColumnDrag?.onDragEnd}
-        style={{ borderBottom: "1px solid #F0F0F0", cursor: !isUnassigned && onColumnDrag ? "grab" : "default" }}>
+        style={{ borderBottom: "1px solid var(--t-border)", cursor: !isUnassigned && onColumnDrag ? "grab" : "default" }}>
         {/* Row 1: Avatar + Full Name + Menu */}
         <div className="flex items-center gap-2.5">
           {isUnassigned ? (
@@ -728,13 +726,13 @@ function ColumnCard({ columnId, title, driver, isUnassigned, count, progress, jo
             </div>
           )}
           <div className="flex-1 min-w-0">
-            <p className="text-[15px] font-bold leading-tight" style={{ color: isUnassigned ? "#D97706" : "#0A0A0A" }}>{title}</p>
+            <p className="text-[15px] font-bold leading-tight" style={{ color: isUnassigned ? "#D97706" : "var(--t-text-primary)" }}>{title}</p>
             {driver?.phone && <p className="text-[11px] mt-0.5" style={{ color: "#8A8A8A" }}>{formatPhone(driver.phone)}</p>}
           </div>
           {(
             <Dropdown trigger={
               <button className="shrink-0 p-1 rounded-lg transition-all" style={{ color: "#8A8A8A" }}
-                onMouseEnter={e => { e.currentTarget.style.background = "#F5F5F5"; }} onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}>
+                onMouseEnter={e => { e.currentTarget.style.background = "var(--t-bg-card-hover)"; }} onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}>
                 <MoreHorizontal className="h-4 w-4" />
               </button>
             } align="right">
@@ -750,16 +748,16 @@ function ColumnCard({ columnId, title, driver, isUnassigned, count, progress, jo
         {/* Row 2: Count + Progress + Chevron */}
         <div className="flex items-center gap-2 mt-2">
           <span className="rounded-full px-2.5 py-0.5 text-[11px] font-bold tabular-nums"
-            style={{ background: "#F0F0F0", color: "#5C5C5C" }}>
+            style={{ background: "var(--t-bg-card-hover)", color: "var(--t-text-muted)" }}>
             {completedCount > 0 ? `${completedCount}/${totalCount}` : count === 1 ? "1 stop" : `${count} stops`}
           </span>
           {progress && progress.total > 0 && (
-            <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: "#F0F0F0" }}>
+            <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: "var(--t-bg-card-hover)" }}>
               <div className="h-full rounded-full" style={{ width: `${(progress.completed / progress.total) * 100}%`, background: "var(--t-accent)", transition: "width 0.3s ease" }} />
             </div>
           )}
           <button onClick={onToggleCollapse} className="shrink-0 p-1 rounded-lg transition-all ml-auto" style={{ color: "#8A8A8A" }}
-            onMouseEnter={e => { e.currentTarget.style.background = "#F5F5F5"; }} onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}>
+            onMouseEnter={e => { e.currentTarget.style.background = "var(--t-bg-card-hover)"; }} onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}>
             <ChevronDown className="h-4 w-4 transition-transform duration-200" style={{ transform: collapsed ? "rotate(0deg)" : "rotate(180deg)" }} />
           </button>
         </div>
@@ -771,7 +769,7 @@ function ColumnCard({ columnId, title, driver, isUnassigned, count, progress, jo
           maxHeight: collapsed ? 120 : 2000,
           overflow: "hidden",
           transition: "max-height 0.25s ease",
-          background: "rgba(245,245,245,0.95)",
+          background: "var(--t-bg-card)",
           padding: jobs.length > 0 ? 10 : 0,
         }}>
           {jobs.length === 0 ? (
@@ -795,7 +793,7 @@ function ColumnCard({ columnId, title, driver, isUnassigned, count, progress, jo
       {/* "+N more" indicator when collapsed */}
       {collapsed && hiddenCount > 0 && (
         <div className="text-center py-1.5 cursor-pointer" onClick={onToggleCollapse}
-          style={{ background: "#FAFAFA", borderTop: "1px solid #F0F0F0", transition: "opacity 0.2s ease" }}>
+          style={{ background: "var(--t-bg-card-hover)", borderTop: "1px solid var(--t-border)", transition: "opacity 0.2s ease" }}>
           <span className="text-[11px] font-medium" style={{ color: "#8A8A8A" }}>+{hiddenCount} more stop{hiddenCount > 1 ? "s" : ""}</span>
         </div>
       )}
@@ -827,11 +825,11 @@ const JobTile = memo(function JobTile({ job, isUnassigned, drivers, onAssign, on
       style={{
         transform: CSS.Transform.toString(transform), transition,
         opacity: isDragging ? 0.3 : 1,
-        border: "1px solid #F0F0F0",
+        border: "1px solid var(--t-border)",
         boxShadow: isDragging ? "0 8px 24px rgba(0,0,0,0.15)" : "0 1px 4px rgba(0,0,0,0.04)",
         cursor: isDragging ? "grabbing" : "grab",
         touchAction: "none",
-        backgroundColor: isCompleted ? "#F0F0F0" : "#FFFFFF",
+        backgroundColor: isCompleted ? "var(--t-bg-card-hover)" : "var(--t-bg-card)",
       }}
       className="group relative rounded-[16px]"
       onClick={onQuickView}
@@ -845,16 +843,16 @@ const JobTile = memo(function JobTile({ job, isUnassigned, drivers, onAssign, on
         <div className="flex-1 min-w-0">
           {/* Line 1: Size + Type */}
           <div className="flex items-baseline gap-1.5">
-            {size && <span className="text-[14px] font-extrabold" style={{ color: "#0A0A0A" }}>{size}</span>}
+            {size && <span className="text-[14px] font-extrabold" style={{ color: "var(--t-text-primary)" }}>{size}</span>}
             <span className="text-[14px] font-extrabold" style={{ color: "#22C55E" }}>{tc.label}</span>
             {isCompleted && <CheckCircle2 className="h-3.5 w-3.5 ml-1" style={{ color: "#22C55E" }} />}
           </div>
           {/* Line 2: Customer name */}
-          <p className="text-[13px] font-semibold mt-1 truncate" style={{ color: "#0A0A0A" }}>
+          <p className="text-[13px] font-semibold mt-1 truncate" style={{ color: "var(--t-text-primary)" }}>
             {job.customer ? `${job.customer.first_name} ${job.customer.last_name}` : job.job_number}
           </p>
           {/* Line 3: Address */}
-          {addrStr && <p className="text-[12px] mt-0.5 truncate" style={{ color: "#5C5C5C" }}>{addrStr}</p>}
+          {addrStr && <p className="text-[12px] mt-0.5 truncate" style={{ color: "var(--t-text-muted)" }}>{addrStr}</p>}
           {/* Line 4: Time window */}
           {(job.scheduled_window_start || job.scheduled_window_end) && (
             <p className="text-[11px] mt-0.5" style={{ color: "#8A8A8A" }}>
@@ -917,7 +915,7 @@ function StatusDropdown({ jobId, currentStatus, onStatusChange }: { jobId: strin
     <>
       <button ref={btnRef} onClick={handleOpen}
         className="flex items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-medium ml-auto"
-        style={{ borderColor: "#E5E5E5", color: "#5C5C5C" }}>
+        style={{ borderColor: "var(--t-border)", color: "var(--t-text-muted)" }}>
         Status: {currentStatus.replace(/_/g, " ")} ▾
       </button>
       {open && pos && typeof document !== "undefined" && createPortal(
