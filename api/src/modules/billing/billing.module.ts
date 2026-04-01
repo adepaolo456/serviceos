@@ -9,9 +9,10 @@ import { BookingsController } from './bookings.controller';
 import { Customer } from '../customers/entities/customer.entity';
 import { Asset } from '../assets/entities/asset.entity';
 import { Tenant } from '../tenants/entities/tenant.entity';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Invoice, Payment, Job, Customer, Asset, Tenant])],
+  imports: [TypeOrmModule.forFeature([Invoice, Payment, Job, Customer, Asset, Tenant]), NotificationsModule],
   controllers: [InvoicesController, PaymentsController, BookingsController],
   providers: [BillingService],
   exports: [BillingService],

@@ -74,6 +74,43 @@ export class NotificationsService {
     };
   }
 
+  async processQueuedNotifications(tenantId: string): Promise<number> {
+    const queued = await this.notificationsRepository.find({
+      where: { tenant_id: tenantId, status: 'queued' },
+      order: { created_at: 'ASC' },
+      take: 100,
+    });
+
+    let processed = 0;
+    for (const n of queued) {
+      try {
+        switch (n.channel) {
+          case 'sms':
+            // TODO: Replace with Twilio
+            console.log(`[SMS] To: ${n.recipient}, Message: ${n.body}`);
+            break;
+          case 'email':
+            // TODO: Replace with Resend
+            console.log(`[EMAIL] To: ${n.recipient}, Subject: ${n.subject}, Body: ${n.body}`);
+            break;
+          case 'push':
+            // TODO: Replace with push notification service
+            console.log(`[PUSH] To: ${n.recipient}, Message: ${n.body}`);
+            break;
+        }
+        n.status = 'delivered';
+        n.sent_at = new Date();
+      } catch (err) {
+        n.status = 'failed';
+        n.error_message = err instanceof Error ? err.message : String(err);
+      }
+      await this.notificationsRepository.save(n);
+      processed++;
+    }
+
+    return processed;
+  }
+
   getTemplates() {
     return [
       {

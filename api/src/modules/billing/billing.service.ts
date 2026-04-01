@@ -8,6 +8,7 @@ import { Repository, EntityManager } from 'typeorm';
 import { Invoice } from './entities/invoice.entity';
 import { Payment } from './entities/payment.entity';
 import { Job } from '../jobs/entities/job.entity';
+import { NotificationsService } from '../notifications/notifications.service';
 import {
   CreateInvoiceDto,
   UpdateInvoiceDto,
@@ -25,6 +26,7 @@ export class BillingService {
     private paymentsRepository: Repository<Payment>,
     @InjectRepository(Job)
     private jobsRepository: Repository<Job>,
+    private notificationsService: NotificationsService,
   ) {}
 
   async createInvoice(
@@ -175,13 +177,25 @@ export class BillingService {
     invoice.sent_at = new Date();
     const saved = await this.invoicesRepository.save(invoice);
 
-    // TODO: Replace with Resend email integration
-    const customer = await this.invoicesRepository
-      .createQueryBuilder('i')
-      .leftJoinAndSelect('i.customer', 'c')
-      .where('i.id = :id', { id })
-      .getOne();
-    console.log('TODO: Send invoice email to', customer?.customer?.email);
+    // Queue invoice sent notification
+    try {
+      const invoiceWithCustomer = await this.invoicesRepository.findOne({
+        where: { id },
+        relations: ['customer'],
+      });
+      const cust = invoiceWithCustomer?.customer;
+      if (cust?.email) {
+        await this.notificationsService.send(tenantId, {
+          channel: 'email',
+          type: 'invoice_sent',
+          recipient: cust.email,
+          subject: `Invoice ${saved.invoice_number} - $${saved.total}`,
+          body: `Hi ${cust.first_name} ${cust.last_name},\n\nInvoice ${saved.invoice_number} for $${saved.total} has been sent. Due by ${saved.due_date}.\n\nThank you for your business!`,
+          customerId: cust.id,
+          jobId: saved.job_id,
+        });
+      }
+    } catch { /* best effort */ }
 
     return saved;
   }
