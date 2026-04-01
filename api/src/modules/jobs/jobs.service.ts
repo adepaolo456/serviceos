@@ -661,6 +661,17 @@ export class JobsService {
     return this.findOne(tenantId, jobId);
   }
 
+  async updateAssetStatus(assetId: string, status: string): Promise<void> {
+    await this.assetRepo.update(assetId, { status, current_job_id: null } as any);
+  }
+
+  async softDelete(tenantId: string, id: string): Promise<void> {
+    await this.jobsRepository.update(
+      { id, tenant_id: tenantId },
+      { status: 'cancelled', cancelled_at: new Date() },
+    );
+  }
+
   async bulkReorder(tenantId: string, jobIds: string[]): Promise<void> {
     for (let i = 0; i < jobIds.length; i++) {
       await this.jobsRepository.update(
