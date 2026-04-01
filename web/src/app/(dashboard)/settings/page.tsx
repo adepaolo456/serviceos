@@ -44,9 +44,9 @@ export default function SettingsPage() {
   const [tab, setTab] = useState<TabKey>("company");
   const [profile, setProfile] = useState<Profile | null>(null);
 
-  useEffect(() => {
-    api.get<Profile>("/auth/profile").then(setProfile).catch(() => {});
-  }, []);
+  const fetchProfile = () => api.get<Profile>("/auth/profile").then(setProfile).catch(() => {});
+
+  useEffect(() => { fetchProfile(); }, []);
 
   return (
     <div>
@@ -71,7 +71,7 @@ export default function SettingsPage() {
         })}
       </div>
 
-      {tab === "company" && <CompanyTab profile={profile} />}
+      {tab === "company" && <CompanyTab profile={profile} onSaved={fetchProfile} />}
       {tab === "locations" && <LocationsTab />}
       {tab === "team" && <TeamTab />}
       {tab === "billing" && <BillingTab profile={profile} />}
@@ -85,7 +85,7 @@ export default function SettingsPage() {
 
 /* ── Company ── */
 
-function CompanyTab({ profile }: { profile: Profile | null }) {
+function CompanyTab({ profile, onSaved }: { profile: Profile | null; onSaved: () => void }) {
   const [name, setName] = useState("");
   const [businessType, setBusinessType] = useState("");
   const [address, setAddress] = useState<AddressValue>({ street: "", city: "", state: "", zip: "", lat: null, lng: null });
@@ -107,6 +107,7 @@ function CompanyTab({ profile }: { profile: Profile | null }) {
     try {
       await api.patch("/auth/profile", { companyName: name, businessType, address: { street: address.street, city: address.city, state: address.state, zip: address.zip }, serviceRadius: Number(radius) });
       setSaveStatus("success"); setTimeout(() => setSaveStatus("idle"), 3000);
+      onSaved();
     } catch { setSaveStatus("error"); setTimeout(() => setSaveStatus("idle"), 3000); }
     finally { setSaving(false); }
   };
