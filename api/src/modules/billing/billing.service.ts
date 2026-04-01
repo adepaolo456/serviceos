@@ -4,10 +4,12 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, EntityManager } from 'typeorm';
+import { Repository, EntityManager, DataSource, In } from 'typeorm';
 import { Invoice } from './entities/invoice.entity';
 import { Payment } from './entities/payment.entity';
 import { Job } from '../jobs/entities/job.entity';
+import { Asset } from '../assets/entities/asset.entity';
+import { PricingRule } from '../pricing/entities/pricing-rule.entity';
 import { AutomationLog } from '../automation/entities/automation-log.entity';
 import { NotificationsService } from '../notifications/notifications.service';
 import {
@@ -29,6 +31,11 @@ export class BillingService {
     private jobsRepository: Repository<Job>,
     @InjectRepository(AutomationLog)
     private logRepo: Repository<AutomationLog>,
+    @InjectRepository(Asset)
+    private assetRepo: Repository<Asset>,
+    @InjectRepository(PricingRule)
+    private pricingRepo: Repository<PricingRule>,
+    private dataSource: DataSource,
     private notificationsService: NotificationsService,
   ) {}
 
@@ -289,7 +296,141 @@ export class BillingService {
       } catch { /* best effort */ }
     }
 
+    // Size change cascade
+    const newSubtype = body.newAssetSubtype as string | undefined;
+    if (newSubtype && !isPaid && saved.job_id) {
+      try {
+        const cascadeResult = await this.cascadeSizeChange(tenantId, saved, newSubtype, userId, userName);
+        return { ...saved, cascade: cascadeResult } as any;
+      } catch { /* best effort — invoice edit itself already saved */ }
+    }
+
     return saved;
+  }
+
+  private async cascadeSizeChange(
+    tenantId: string,
+    invoice: Invoice,
+    newSubtype: string,
+    userId?: string,
+    userName?: string,
+  ) {
+    const oldTotal = Number(invoice.total);
+
+    // Look up new pricing rule
+    const rule = await this.pricingRepo.findOne({
+      where: { tenant_id: tenantId, asset_subtype: newSubtype, is_active: true },
+    });
+    if (!rule) throw new BadRequestException(`No pricing rule found for ${newSubtype}`);
+
+    const newBasePrice = Number(rule.base_price);
+    const newDeliveryFee = Number(rule.delivery_fee) || 0;
+    const rentalDays = Number(rule.rental_period_days) || 7;
+    const newTotal = newBasePrice + newDeliveryFee;
+    const difference = newTotal - oldTotal;
+
+    // Update invoice line items and totals
+    const lineItems = [
+      { description: `${newSubtype} Dumpster Rental`, quantity: 1, unitPrice: newBasePrice, amount: newBasePrice },
+    ];
+    if (newDeliveryFee > 0) {
+      lineItems.push({ description: 'Delivery Fee', quantity: 1, unitPrice: newDeliveryFee, amount: newDeliveryFee });
+    }
+    invoice.line_items = lineItems;
+    invoice.subtotal = newTotal;
+    invoice.total = Math.round((newTotal - Number(invoice.discount_amount || 0)) * 100) / 100;
+    invoice.balance_due = Math.round((invoice.total - Number(invoice.amount_paid)) * 100) / 100;
+
+    if (invoice.balance_due < 0) {
+      invoice.credit_amount = Math.abs(invoice.balance_due);
+      invoice.balance_due = 0;
+    } else {
+      invoice.credit_amount = 0;
+    }
+
+    await this.invoicesRepository.save(invoice);
+
+    // Update the linked job
+    let assetWarning: string | null = null;
+    const job = await this.jobsRepository.findOne({ where: { id: invoice.job_id, tenant_id: tenantId } });
+    if (job) {
+      const oldSubtype = job.asset_subtype;
+      job.asset_subtype = newSubtype;
+      job.base_price = newBasePrice;
+      job.total_price = newTotal;
+      job.rental_days = rentalDays;
+      job.extra_day_rate = Number(rule.extra_day_rate) || 0;
+      await this.jobsRepository.save(job);
+
+      // Asset swap if needed
+      if (job.asset_id && oldSubtype !== newSubtype) {
+        // Release old asset
+        await this.assetRepo.update(job.asset_id, {
+          status: 'available', current_job_id: null, current_location_type: 'yard',
+        } as any);
+
+        // Find available asset of new subtype
+        const available = await this.assetRepo
+          .createQueryBuilder('a')
+          .where('a.tenant_id = :tenantId', { tenantId })
+          .andWhere('a.subtype = :subtype', { subtype: newSubtype })
+          .andWhere('a.status NOT IN (:...excluded)', { excluded: ['reserved', 'deployed', 'on_site', 'in_transit'] })
+          .andWhere('a.current_job_id IS NULL')
+          .orderBy('a.created_at', 'DESC')
+          .getOne();
+
+        if (available) {
+          await this.assetRepo.update(available.id, {
+            status: 'reserved', current_job_id: job.id,
+          } as any);
+          await this.jobsRepository.update(job.id, { asset_id: available.id });
+
+          await this.logRepo.save(this.logRepo.create({
+            tenant_id: tenantId, job_id: job.id, type: 'asset_swap', status: 'completed',
+            details: { old_asset_id: job.asset_id, new_asset_id: available.id, old_subtype: oldSubtype, new_subtype: newSubtype, reason: 'invoice_size_change' },
+          }));
+        } else {
+          await this.jobsRepository.update(job.id, { asset_id: null } as any);
+          assetWarning = `No ${newSubtype} assets available — asset needs manual assignment`;
+        }
+      }
+
+      // Update linked pickup job
+      const pickupJobs = await this.jobsRepository.find({
+        where: { tenant_id: tenantId, parent_job_id: job.id, job_type: 'pickup' },
+      });
+      for (const pickup of pickupJobs) {
+        pickup.asset_subtype = newSubtype;
+        pickup.base_price = newBasePrice;
+        pickup.total_price = newTotal;
+        if (job.asset_id) pickup.asset_id = job.asset_id;
+        await this.jobsRepository.save(pickup);
+      }
+
+      // Log the cascade
+      await this.logRepo.save(this.logRepo.create({
+        tenant_id: tenantId, job_id: job.id, type: 'size_change_cascade', status: 'completed',
+        details: {
+          entity_type: 'invoice', entity_id: invoice.id,
+          old_subtype: oldSubtype, new_subtype: newSubtype,
+          old_total: oldTotal, new_total: newTotal, difference,
+          credit: invoice.credit_amount || 0,
+          pickup_jobs_updated: pickupJobs.length,
+          asset_warning: assetWarning,
+          user_id: userId, user_name: userName,
+        },
+      }));
+    }
+
+    return {
+      upgrade: difference > 0,
+      downgrade: difference < 0,
+      difference: Math.abs(difference),
+      newTotal: invoice.total,
+      newBalanceDue: invoice.balance_due,
+      credit: Number(invoice.credit_amount) || 0,
+      assetWarning,
+    };
   }
 
   async getInvoiceHistory(tenantId: string, id: string) {

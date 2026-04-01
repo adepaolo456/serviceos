@@ -39,6 +39,7 @@ interface Invoice {
   total: number;
   amount_paid: number;
   balance_due: number;
+  credit_amount: number;
   line_items: LineItem[];
   notes: string;
   sent_at: string;
@@ -99,6 +100,7 @@ export default function InvoiceDetailPage({
   const [editNotes, setEditNotes] = useState("");
   const [history, setHistory] = useState<any[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [newAssetSubtype, setNewAssetSubtype] = useState<string | null>(null);
   const { toast } = useToast();
 
   const fetchData = async () => {
@@ -164,10 +166,16 @@ export default function InvoiceDetailPage({
     setEditDueDate(invoice.due_date || "");
     setEditDiscount(String(invoice.discount_amount || ""));
     setEditNotes(invoice.notes || "");
+    setNewAssetSubtype(null);
     setEditing(true);
   };
 
-  const cancelEditing = () => setEditing(false);
+  const cancelEditing = () => { setEditing(false); setNewAssetSubtype(null); };
+
+  const handleSizeChange = (size: string) => {
+    if (!confirm(`Changing dumpster size to ${size} will update pricing, job details, and asset assignment. Continue?`)) return;
+    setNewAssetSubtype(size);
+  };
 
   const saveEditing = async () => {
     if (!invoice) return;
@@ -179,9 +187,22 @@ export default function InvoiceDetailPage({
         body.dueDate = editDueDate;
         body.discountAmount = Number(editDiscount) || 0;
       }
-      await api.patch(`/invoices/${invoice.id}/edit`, body);
+      if (newAssetSubtype) body.newAssetSubtype = newAssetSubtype;
+      const result = await api.patch<any>(`/invoices/${invoice.id}/edit`, body);
       setEditing(false);
-      toast("success", "Invoice updated");
+      setNewAssetSubtype(null);
+      if (result?.cascade) {
+        const c = result.cascade;
+        const msg = c.upgrade
+          ? `Upgraded to ${newAssetSubtype} — Price increased by ${fmt(c.difference)}. New balance: ${fmt(c.newBalanceDue)}`
+          : c.downgrade
+            ? `Downgraded to ${newAssetSubtype} — ${fmt(c.credit)} credit applied`
+            : "Invoice updated";
+        toast("success", msg);
+        if (c.assetWarning) toast("error", c.assetWarning);
+      } else {
+        toast("success", "Invoice updated");
+      }
       await fetchData();
       await fetchHistory();
     } catch { toast("error", "Failed to save"); }
@@ -389,8 +410,19 @@ export default function InvoiceDetailPage({
 
           {/* Line items */}
           <div className={`rounded-[20px] bg-[var(--t-bg-card)] border overflow-hidden ${editing && !isPaid ? "border-[var(--t-accent)]/30" : "border-[var(--t-border)]"}`}>
-            <div className="px-6 py-4 border-b border-[var(--t-border)]">
+            <div className="px-6 py-4 border-b border-[var(--t-border)] flex items-center justify-between">
               <h2 className="text-base font-semibold text-[var(--t-text-primary)]">Line Items</h2>
+              {editing && !isPaid && invoice.job && (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-[var(--t-text-muted)]">Change size:</span>
+                  <select value={newAssetSubtype || ""} onChange={e => e.target.value ? handleSizeChange(e.target.value) : setNewAssetSubtype(null)}
+                    className="rounded-[10px] border border-[var(--t-border)] bg-transparent px-2 py-1 text-xs text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)]">
+                    <option value="">Current size</option>
+                    {["10yd", "15yd", "20yd", "30yd", "40yd"].map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                  {newAssetSubtype && <span className="text-xs font-medium text-[var(--t-accent)]">→ {newAssetSubtype}</span>}
+                </div>
+              )}
             </div>
             <table className="w-full text-sm">
               <thead>
@@ -570,6 +602,12 @@ export default function InvoiceDetailPage({
                 <span className="text-[var(--t-text-muted)]">Paid</span>
                 <span className="text-[var(--t-accent)]">{fmt(invoice.amount_paid)}</span>
               </div>
+              {Number(invoice.credit_amount) > 0 && (
+                <div className="flex justify-between text-[var(--t-text-primary)]">
+                  <span className="text-[var(--t-text-muted)]">Credit</span>
+                  <span className="text-emerald-400">-{fmt(invoice.credit_amount)}</span>
+                </div>
+              )}
               {(() => {
                 const bd = editing && !isPaid ? editBalanceDue : Number(invoice.balance_due);
                 return (
