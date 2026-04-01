@@ -24,6 +24,8 @@ import {
   RefreshCw,
   ExternalLink,
   Settings,
+  Pencil,
+  Trash2,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
@@ -224,6 +226,7 @@ export default function AssetsPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [pricingRules, setPricingRules] = useState<PricingRule[]>([]);
   const [bulkRateOpen, setBulkRateOpen] = useState<string | null>(null);
+  const [editAsset, setEditAsset] = useState<Asset | null>(null);
   const { toast } = useToast();
   const router = useRouter();
 
@@ -319,6 +322,16 @@ export default function AssetsPage() {
     } catch {
       toast("error", "Failed to update status");
     }
+  };
+
+  const deleteAsset = async (asset: Asset) => {
+    if (!confirm(`Are you sure you want to delete asset ${asset.identifier}? This cannot be undone.`)) return;
+    try {
+      await api.delete(`/assets/${asset.id}`);
+      toast("success", `${asset.identifier} deleted`);
+      setDetailAsset(null);
+      fetchAssets();
+    } catch { toast("error", "Failed to delete asset"); }
   };
 
   const bulkMaintenance = async (size: string) => {
@@ -650,7 +663,7 @@ export default function AssetsPage() {
           )}
         </div>
       ) : viewMode === "list" ? (
-        <ListView assets={filteredAssets} onSelect={setDetailAsset} onQuickStatus={quickStatus} getBasePrice={getBasePrice} />
+        <ListView assets={filteredAssets} onSelect={setDetailAsset} onQuickStatus={quickStatus} onEdit={setEditAsset} onDelete={deleteAsset} />
       ) : (
         <GridView assets={filteredAssets} onSelect={setDetailAsset} onQuickStatus={quickStatus} />
       )}
@@ -671,7 +684,13 @@ export default function AssetsPage() {
       </SlideOver>
 
       {/* Detail Slide-Over */}
-      <SlideOver open={!!detailAsset} onClose={() => setDetailAsset(null)} title={detailAsset?.identifier || "Asset Details"}>
+      <SlideOver open={!!detailAsset} onClose={() => setDetailAsset(null)} title={detailAsset?.identifier || "Asset Details"}
+        headerActions={detailAsset ? (
+          <button onClick={() => { setEditAsset(detailAsset); }} className="rounded-full p-2 transition-colors" style={{ color: "var(--t-text-muted)", border: "1px solid var(--t-border)" }}>
+            <Pencil className="h-3.5 w-3.5" />
+          </button>
+        ) : undefined}
+      >
         {detailAsset && (
           <AssetDetail
             asset={detailAsset}
@@ -680,14 +699,22 @@ export default function AssetsPage() {
           />
         )}
       </SlideOver>
+
+      {/* Edit Asset Modal */}
+      {editAsset && (
+        <EditAssetModal
+          asset={editAsset}
+          onClose={() => setEditAsset(null)}
+          onSaved={() => { setEditAsset(null); setDetailAsset(null); fetchAssets(); toast("success", "Asset updated"); }}
+        />
+      )}
     </div>
   );
 }
 
 /* ─── List View ─── */
 
-function ListView({ assets, onSelect, onQuickStatus, getBasePrice }: { assets: Asset[]; onSelect: (a: Asset) => void; onQuickStatus: (id: string, status: string) => void; getBasePrice: (size: string) => number | null }) {
-  const router = useRouter();
+function ListView({ assets, onSelect, onQuickStatus, onEdit, onDelete }: { assets: Asset[]; onSelect: (a: Asset) => void; onQuickStatus: (id: string, status: string) => void; onEdit: (a: Asset) => void; onDelete: (a: Asset) => void }) {
   return (
     <div style={{ borderRadius: 14, border: "1px solid var(--t-border)", background: "var(--t-bg-card)", overflow: "hidden" }}>
       <div className="table-scroll">
@@ -699,7 +726,6 @@ function ListView({ assets, onSelect, onQuickStatus, getBasePrice }: { assets: A
               <th style={{ padding: "12px 16px", textAlign: "left", fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--t-text-muted)" }}>Status</th>
               <th style={{ padding: "12px 16px", textAlign: "left", fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--t-text-muted)" }}>Location</th>
               <th style={{ padding: "12px 16px", textAlign: "left", fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--t-text-muted)" }}>Days Out</th>
-              <th style={{ padding: "12px 16px", textAlign: "left", fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--t-text-muted)" }}>Base Price</th>
               <th style={{ padding: "12px 16px", textAlign: "left", fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--t-text-muted)" }}>Condition</th>
               <th style={{ padding: "12px 8px" }}></th>
             </tr>
@@ -737,24 +763,8 @@ function ListView({ assets, onSelect, onQuickStatus, getBasePrice }: { assets: A
                         {deployed.daysDeployed}d {deployed.isOverdue && <span style={{ fontSize: 10, color: "var(--t-error)", fontWeight: 700 }}>OVERDUE</span>}
                       </span>
                     ) : (
-                      <span style={{ color: "var(--t-text-muted)", fontSize: 13 }}>\u2014</span>
+                      <span style={{ color: "var(--t-text-muted)", fontSize: 13 }}>—</span>
                     )}
-                  </td>
-                  <td style={{ padding: "12px 16px" }} onClick={(e) => e.stopPropagation()}>
-                    {(() => {
-                      const basePrice = getBasePrice(asset.subtype);
-                      const display = basePrice !== null ? fmtMoney(basePrice) : (asset.daily_rate > 0 ? fmtMoney(asset.daily_rate) : "\u2014");
-                      return (
-                        <button
-                          onClick={() => router.push(`/pricing?size=${asset.subtype}`)}
-                          className="tabular-nums transition-colors"
-                          title="Base rental price from pricing rules. Edit in Pricing."
-                          style={{ fontSize: 13, color: "var(--t-text-primary)" }}
-                        >
-                          {display}{basePrice !== null || asset.daily_rate > 0 ? "/day" : ""}
-                        </button>
-                      );
-                    })()}
                   </td>
                   <td style={{ padding: "12px 16px" }}>
                     {asset.condition && (
@@ -772,6 +782,9 @@ function ListView({ assets, onSelect, onQuickStatus, getBasePrice }: { assets: A
                       }
                       align="right"
                     >
+                      <button onClick={() => onEdit(asset)} className="flex w-full items-center gap-2 px-4 py-2 text-sm transition-colors" style={{ color: "var(--t-text-primary)" }}>
+                        <Pencil className="h-3.5 w-3.5" /> Edit
+                      </button>
                       <button onClick={() => onSelect(asset)} className="flex w-full items-center gap-2 px-4 py-2 text-sm transition-colors" style={{ color: "var(--t-text-primary)" }}>
                         <Eye className="h-3.5 w-3.5" /> View Details
                       </button>
@@ -788,6 +801,11 @@ function ListView({ assets, onSelect, onQuickStatus, getBasePrice }: { assets: A
                       {asset.status !== "maintenance" && (
                         <button onClick={() => onQuickStatus(asset.id, "maintenance")} className="flex w-full items-center gap-2 px-4 py-2 text-sm transition-colors" style={{ color: "#F87171" }}>
                           <Wrench className="h-3.5 w-3.5" /> Schedule Maintenance
+                        </button>
+                      )}
+                      {(asset.status === "available" || asset.status === "maintenance") && (
+                        <button onClick={() => onDelete(asset)} className="flex w-full items-center gap-2 px-4 py-2 text-sm transition-colors" style={{ color: "var(--t-error)" }}>
+                          <Trash2 className="h-3.5 w-3.5" /> Delete
                         </button>
                       )}
                     </Dropdown>
@@ -1285,6 +1303,92 @@ function BulkRateEditor({ size, assets, onClose, onSaved }: { size: string; asse
             Cancel
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Edit Asset Modal ─── */
+
+function EditAssetModal({ asset, onClose, onSaved }: { asset: Asset; onClose: () => void; onSaved: () => void }) {
+  const [identifier, setIdentifier] = useState(asset.identifier);
+  const [subtype, setSubtype] = useState(asset.subtype);
+  const [status, setStatus] = useState(asset.status);
+  const [condition, setCondition] = useState(asset.condition || "good");
+  const [weightCapacity, setWeightCapacity] = useState(asset.weight_capacity ? String(asset.weight_capacity) : "");
+  const [notes, setNotes] = useState(asset.notes || "");
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = async (e: FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      await api.patch(`/assets/${asset.id}`, {
+        identifier, subtype, status, condition,
+        weightCapacity: weightCapacity ? Number(weightCapacity) : undefined,
+        notes: notes || undefined,
+      });
+      onSaved();
+    } catch { setSaving(false); }
+  };
+
+  const inp: React.CSSProperties = {
+    width: "100%", borderRadius: 14, border: "1px solid var(--t-border)",
+    background: "var(--t-bg-card)", padding: "10px 16px",
+    fontSize: 14, color: "var(--t-text-primary)", outline: "none",
+  };
+  const lbl: React.CSSProperties = { display: "block", fontSize: 13, fontWeight: 500, color: "var(--t-text-muted)", marginBottom: 6 };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative w-full max-w-md animate-fade-in" style={{ borderRadius: 14, border: "1px solid var(--t-border)", background: "var(--t-bg-primary)", padding: 24, boxShadow: "0 25px 50px -12px rgba(0,0,0,0.5)" }}>
+        <h3 style={{ fontSize: 18, fontWeight: 600, color: "var(--t-text-primary)" }} className="mb-1">Edit Asset</h3>
+        <p style={{ fontSize: 14, color: "var(--t-text-muted)" }} className="mb-4">{asset.identifier}</p>
+        <form onSubmit={handleSave} className="space-y-3">
+          <div>
+            <label style={lbl}>Identifier</label>
+            <input value={identifier} onChange={e => setIdentifier(e.target.value)} style={inp} required />
+          </div>
+          <div>
+            <label style={lbl}>Size / Subtype</label>
+            <select value={subtype} onChange={e => setSubtype(e.target.value)} style={{ ...inp, appearance: "none" as const }}>
+              {SIZES.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={lbl}>Status</label>
+            <select value={status} onChange={e => setStatus(e.target.value)} style={{ ...inp, appearance: "none" as const }}>
+              <option value="available">Available</option>
+              <option value="maintenance">Maintenance</option>
+              <option value="retired">Retired</option>
+            </select>
+          </div>
+          <div>
+            <label style={lbl}>Condition</label>
+            <select value={condition} onChange={e => setCondition(e.target.value)} style={{ ...inp, appearance: "none" as const }}>
+              <option value="good">Good</option>
+              <option value="fair">Fair</option>
+              <option value="poor">Poor</option>
+            </select>
+          </div>
+          <div>
+            <label style={lbl}>Weight Capacity (tons)</label>
+            <input type="number" step="0.01" value={weightCapacity} onChange={e => setWeightCapacity(e.target.value)} style={inp} placeholder="4" />
+          </div>
+          <div>
+            <label style={lbl}>Notes</label>
+            <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} style={{ ...inp, resize: "none" as const }} placeholder="Any notes..." />
+          </div>
+          <div className="flex gap-2 pt-2">
+            <button type="submit" disabled={saving || !identifier} style={{ flex: 1, background: "#22C55E", color: "#000", fontWeight: 600, fontSize: 14, padding: "10px 20px", borderRadius: 24, border: "none", cursor: "pointer", transition: "opacity 0.15s ease", opacity: saving || !identifier ? 0.5 : 1 }}>
+              {saving ? "Saving..." : "Save Changes"}
+            </button>
+            <button type="button" onClick={onClose} style={{ padding: "10px 20px", borderRadius: 24, fontSize: 14, border: "1px solid var(--t-border)", background: "transparent", color: "var(--t-text-muted)", cursor: "pointer" }}>
+              Cancel
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );
