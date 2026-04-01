@@ -113,14 +113,16 @@ export class AssetsService {
   }
 
   async findAvailable(tenantId: string, assetType: string): Promise<Asset[]> {
-    return this.assetsRepository.find({
-      where: {
-        tenant_id: tenantId,
-        asset_type: assetType,
-        status: 'available',
-      },
-      order: { created_at: 'DESC' },
-    });
+    return this.assetsRepository
+      .createQueryBuilder('a')
+      .where('a.tenant_id = :tenantId', { tenantId })
+      .andWhere('a.asset_type = :assetType', { assetType })
+      .andWhere('a.status NOT IN (:...excluded)', {
+        excluded: ['reserved', 'deployed', 'on_site', 'in_transit'],
+      })
+      .andWhere('a.current_job_id IS NULL')
+      .orderBy('a.created_at', 'DESC')
+      .getMany();
   }
 
   async getUtilizationStats(

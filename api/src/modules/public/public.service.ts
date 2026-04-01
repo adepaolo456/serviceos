@@ -174,6 +174,24 @@ export class PublicService {
     if (timeWindow === 'morning') { windowStart = '08:00'; windowEnd = '12:00'; }
     else if (timeWindow === 'afternoon') { windowStart = '12:00'; windowEnd = '17:00'; }
 
+    // Check asset availability before proceeding
+    if (assetSubtype) {
+      const availableCount = await this.assetRepo
+        .createQueryBuilder('a')
+        .where('a.tenant_id = :tid', { tid: t.id })
+        .andWhere('a.subtype = :subtype', { subtype: assetSubtype })
+        .andWhere('a.status NOT IN (:...excluded)', {
+          excluded: ['reserved', 'deployed', 'on_site', 'in_transit'],
+        })
+        .andWhere('a.current_job_id IS NULL')
+        .getCount();
+      if (availableCount === 0) {
+        throw new BadRequestException(
+          `No ${assetSubtype} units available for the requested date. Please try a different date or size.`,
+        );
+      }
+    }
+
     // --- Transaction: customer + job + invoice ---
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
