@@ -224,9 +224,10 @@ export default function AssetsPage() {
   const [detailAsset, setDetailAsset] = useState<Asset | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
   const [refreshing, setRefreshing] = useState(false);
-  const [pricingRules, setPricingRules] = useState<PricingRule[]>([]);
-  const [bulkRateOpen, setBulkRateOpen] = useState<string | null>(null);
   const [editAsset, setEditAsset] = useState<Asset | null>(null);
+  const [bulkMode, setBulkMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkEditOpen, setBulkEditOpen] = useState(false);
   const { toast } = useToast();
   const router = useRouter();
 
@@ -243,24 +244,12 @@ export default function AssetsPage() {
     }
   }, []);
 
-  const fetchPricing = useCallback(async () => {
-    try {
-      const res = await api.get<{ data: PricingRule[] }>("/pricing");
-      setPricingRules(res.data || []);
-    } catch { /* silent */ }
-  }, []);
-
-  useEffect(() => { fetchAssets(); fetchPricing(); }, [fetchAssets, fetchPricing]);
+  useEffect(() => { fetchAssets(); }, [fetchAssets]);
 
   useEffect(() => {
     const interval = setInterval(() => fetchAssets(true), 30000);
     return () => clearInterval(interval);
   }, [fetchAssets]);
-
-  const getBasePrice = useCallback((size: string): number | null => {
-    const rule = pricingRules.find((r) => r.container_size === size);
-    return rule ? Number(rule.base_price) : null;
-  }, [pricingRules]);
 
   const sizeGroups: SizeGroup[] = useMemo(() => {
     return SIZES.map((size) => {
@@ -332,6 +321,28 @@ export default function AssetsPage() {
       setDetailAsset(null);
       fetchAssets();
     } catch { toast("error", "Failed to delete asset"); }
+  };
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === filteredAssets.length) setSelectedIds(new Set());
+    else setSelectedIds(new Set(filteredAssets.map(a => a.id)));
+  };
+
+  const cancelBulk = () => { setBulkMode(false); setSelectedIds(new Set()); };
+
+  const bulkDelete = async () => {
+    const count = selectedIds.size;
+    if (!confirm(`Delete ${count} selected asset(s)? This cannot be undone.`)) return;
+    try {
+      await Promise.all([...selectedIds].map(id => api.delete(`/assets/${id}`)));
+      toast("success", `${count} asset(s) deleted`);
+      cancelBulk();
+      fetchAssets();
+    } catch { toast("error", "Failed to delete some assets"); }
   };
 
   const bulkMaintenance = async (size: string) => {
@@ -514,53 +525,29 @@ export default function AssetsPage() {
         <div className="mb-6 flex items-center justify-between flex-wrap gap-3">
           <div />
           <div className="flex gap-2">
-            <Dropdown
-              trigger={
-                <button
-                  style={{
-                    display: "inline-flex", alignItems: "center", gap: 6,
-                    padding: "6px 12px", borderRadius: 24, fontSize: 12, fontWeight: 500,
-                    border: "1px solid var(--t-border)", color: "var(--t-text-muted)",
-                    background: "transparent", transition: "all 0.15s ease", cursor: "pointer",
-                  }}
-                >
-                  <Settings className="h-3 w-3" /> Quick Edit
-                </button>
-              }
-              align="right"
-            >
-              <button
-                onClick={() => setBulkRateOpen(selectedSize)}
-                className="flex w-full items-center gap-2 px-4 py-2 text-sm transition-colors"
-                style={{ color: "var(--t-text-primary)" }}
-              >
-                <DollarSign className="h-3.5 w-3.5" /> Edit Daily Rate (all {selectedSize})
-              </button>
-              <button
-                onClick={() => router.push(`/pricing?size=${selectedSize}`)}
-                className="flex w-full items-center gap-2 px-4 py-2 text-sm transition-colors"
-                style={{ color: "var(--t-text-primary)" }}
-              >
-                <ExternalLink className="h-3.5 w-3.5" /> Edit Pricing Rule
-              </button>
-              <button
-                onClick={() => { setCreatePrefilledSize(selectedSize); setCreateOpen(true); }}
-                className="flex w-full items-center gap-2 px-4 py-2 text-sm transition-colors"
-                style={{ color: "#22C55E" }}
-              >
-                <Plus className="h-3.5 w-3.5" /> Add More {selectedSize}
-              </button>
-            </Dropdown>
             <button
-              onClick={() => bulkMaintenance(selectedSize)}
+              onClick={() => { setBulkMode(!bulkMode); setSelectedIds(new Set()); }}
               style={{
                 display: "inline-flex", alignItems: "center", gap: 6,
                 padding: "6px 12px", borderRadius: 24, fontSize: 12, fontWeight: 500,
-                border: "1px solid var(--t-border)", color: "var(--t-text-muted)",
+                border: bulkMode ? "1px solid #22C55E" : "1px solid var(--t-border)",
+                color: bulkMode ? "#22C55E" : "var(--t-text-muted)",
+                background: bulkMode ? "var(--t-accent-soft)" : "transparent",
+                transition: "all 0.15s ease", cursor: "pointer",
+              }}
+            >
+              <Settings className="h-3 w-3" /> {bulkMode ? "Exit Bulk Edit" : "Bulk Edit"}
+            </button>
+            <button
+              onClick={() => { setCreatePrefilledSize(selectedSize); setCreateOpen(true); }}
+              style={{
+                display: "inline-flex", alignItems: "center", gap: 6,
+                padding: "6px 12px", borderRadius: 24, fontSize: 12, fontWeight: 500,
+                border: "1px solid var(--t-border)", color: "#22C55E",
                 background: "transparent", transition: "all 0.15s ease", cursor: "pointer",
               }}
             >
-              <Wrench className="h-3 w-3" /> All Maintenance
+              <Plus className="h-3 w-3" /> Add More {selectedSize}
             </button>
             <button
               onClick={() => exportCSV(filteredAssets)}
@@ -617,17 +604,32 @@ export default function AssetsPage() {
             </button>
           </div>
           {!selectedSize && (
-            <button
-              onClick={() => exportCSV(filteredAssets)}
-              style={{
-                display: "inline-flex", alignItems: "center", gap: 6,
-                padding: "8px 14px", borderRadius: 24, fontSize: 12, fontWeight: 500,
-                border: "1px solid var(--t-border)", color: "var(--t-text-muted)",
-                background: "transparent", transition: "all 0.15s ease", cursor: "pointer",
-              }}
-            >
-              <Download className="h-3.5 w-3.5" /> Export
-            </button>
+            <>
+              <button
+                onClick={() => { setBulkMode(!bulkMode); setSelectedIds(new Set()); }}
+                style={{
+                  display: "inline-flex", alignItems: "center", gap: 6,
+                  padding: "8px 14px", borderRadius: 24, fontSize: 12, fontWeight: 500,
+                  border: bulkMode ? "1px solid #22C55E" : "1px solid var(--t-border)",
+                  color: bulkMode ? "#22C55E" : "var(--t-text-muted)",
+                  background: bulkMode ? "var(--t-accent-soft)" : "transparent",
+                  transition: "all 0.15s ease", cursor: "pointer",
+                }}
+              >
+                <Settings className="h-3.5 w-3.5" /> {bulkMode ? "Exit Bulk Edit" : "Bulk Edit"}
+              </button>
+              <button
+                onClick={() => exportCSV(filteredAssets)}
+                style={{
+                  display: "inline-flex", alignItems: "center", gap: 6,
+                  padding: "8px 14px", borderRadius: 24, fontSize: 12, fontWeight: 500,
+                  border: "1px solid var(--t-border)", color: "var(--t-text-muted)",
+                  background: "transparent", transition: "all 0.15s ease", cursor: "pointer",
+                }}
+              >
+                <Download className="h-3.5 w-3.5" /> Export
+              </button>
+            </>
           )}
         </div>
       )}
@@ -663,18 +665,46 @@ export default function AssetsPage() {
           )}
         </div>
       ) : viewMode === "list" ? (
-        <ListView assets={filteredAssets} onSelect={setDetailAsset} onQuickStatus={quickStatus} onEdit={setEditAsset} onDelete={deleteAsset} />
+        <ListView assets={filteredAssets} onSelect={setDetailAsset} onQuickStatus={quickStatus} onEdit={setEditAsset} onDelete={deleteAsset}
+          bulkMode={bulkMode} selectedIds={selectedIds} onToggleSelect={toggleSelect} onToggleSelectAll={toggleSelectAll} />
       ) : (
         <GridView assets={filteredAssets} onSelect={setDetailAsset} onQuickStatus={quickStatus} />
       )}
 
-      {/* Bulk Rate Edit Modal */}
-      {bulkRateOpen && (
-        <BulkRateEditor
-          size={bulkRateOpen}
-          assets={assets.filter((a) => a.subtype === bulkRateOpen)}
-          onClose={() => setBulkRateOpen(null)}
-          onSaved={() => { setBulkRateOpen(null); fetchAssets(true); toast("success", `Daily rates updated for all ${bulkRateOpen} dumpsters`); }}
+      {/* Bulk Edit Floating Bar */}
+      {bulkMode && selectedIds.size > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3 px-5 py-3 shadow-2xl"
+          style={{ borderRadius: 24, border: "1px solid var(--t-border)", background: "var(--t-bg-card)" }}>
+          <span className="text-sm font-semibold" style={{ color: "var(--t-text-primary)" }}>{selectedIds.size} selected</span>
+          <button onClick={() => setBulkEditOpen(true)}
+            style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: 24, fontSize: 13, fontWeight: 600, background: "#22C55E", color: "#000", border: "none", cursor: "pointer" }}>
+            <Pencil className="h-3.5 w-3.5" /> Edit Selected
+          </button>
+          <button onClick={bulkDelete}
+            style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: 24, fontSize: 13, fontWeight: 600, border: "1px solid var(--t-error)", color: "var(--t-error)", background: "transparent", cursor: "pointer" }}>
+            <Trash2 className="h-3.5 w-3.5" /> Delete Selected
+          </button>
+          <button onClick={cancelBulk}
+            style={{ padding: "8px 16px", borderRadius: 24, fontSize: 13, border: "1px solid var(--t-border)", color: "var(--t-text-muted)", background: "transparent", cursor: "pointer" }}>
+            Cancel
+          </button>
+        </div>
+      )}
+
+      {/* Bulk Edit Modal */}
+      {bulkEditOpen && (
+        <BulkEditModal
+          count={selectedIds.size}
+          onClose={() => setBulkEditOpen(false)}
+          onSaved={async (updates) => {
+            try {
+              await Promise.all([...selectedIds].map(id => api.patch(`/assets/${id}`, updates)));
+              toast("success", `Updated ${selectedIds.size} asset(s)`);
+              setBulkEditOpen(false);
+              cancelBulk();
+              fetchAssets();
+            } catch { toast("error", "Failed to update some assets"); }
+          }}
         />
       )}
 
@@ -714,13 +744,22 @@ export default function AssetsPage() {
 
 /* ─── List View ─── */
 
-function ListView({ assets, onSelect, onQuickStatus, onEdit, onDelete }: { assets: Asset[]; onSelect: (a: Asset) => void; onQuickStatus: (id: string, status: string) => void; onEdit: (a: Asset) => void; onDelete: (a: Asset) => void }) {
+function ListView({ assets, onSelect, onQuickStatus, onEdit, onDelete, bulkMode, selectedIds, onToggleSelect, onToggleSelectAll }: {
+  assets: Asset[]; onSelect: (a: Asset) => void; onQuickStatus: (id: string, status: string) => void; onEdit: (a: Asset) => void; onDelete: (a: Asset) => void;
+  bulkMode?: boolean; selectedIds?: Set<string>; onToggleSelect?: (id: string) => void; onToggleSelectAll?: () => void;
+}) {
   return (
     <div style={{ borderRadius: 14, border: "1px solid var(--t-border)", background: "var(--t-bg-card)", overflow: "hidden" }}>
       <div className="table-scroll">
         <table className="w-full text-sm">
           <thead>
             <tr style={{ borderBottom: "1px solid var(--t-border)" }}>
+              {bulkMode && (
+                <th style={{ padding: "12px 8px 12px 16px", width: 36 }}>
+                  <input type="checkbox" checked={selectedIds?.size === assets.length && assets.length > 0} onChange={onToggleSelectAll}
+                    className="h-4 w-4 rounded accent-[#22C55E]" />
+                </th>
+              )}
               <th style={{ padding: "12px 16px", textAlign: "left", fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--t-text-muted)" }}>Identifier</th>
               <th style={{ padding: "12px 16px", textAlign: "left", fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--t-text-muted)" }}>Size</th>
               <th style={{ padding: "12px 16px", textAlign: "left", fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--t-text-muted)" }}>Status</th>
@@ -743,6 +782,12 @@ function ListView({ assets, onSelect, onQuickStatus, onEdit, onDelete }: { asset
                   onMouseOver={(e) => (e.currentTarget.style.background = "var(--t-bg-card-hover)")}
                   onMouseOut={(e) => (e.currentTarget.style.background = "transparent")}
                 >
+                  {bulkMode && (
+                    <td style={{ padding: "12px 8px 12px 16px", width: 36 }} onClick={e => e.stopPropagation()}>
+                      <input type="checkbox" checked={selectedIds?.has(asset.id) || false} onChange={() => onToggleSelect?.(asset.id)}
+                        className="h-4 w-4 rounded accent-[#22C55E]" />
+                    </td>
+                  )}
                   <td style={{ padding: "12px 16px", fontWeight: 600, color: "var(--t-text-primary)" }}>{asset.identifier}</td>
                   <td style={{ padding: "12px 16px", fontSize: 13, color: "var(--t-text-muted)" }}>{asset.subtype}</td>
                   <td style={{ padding: "12px 16px" }}>
@@ -1233,73 +1278,65 @@ function MaintenanceTab({ asset, onUpdated }: { asset: Asset; onUpdated: () => v
   );
 }
 
-/* ─── Bulk Rate Editor ─── */
 
-function BulkRateEditor({ size, assets, onClose, onSaved }: { size: string; assets: Asset[]; onClose: () => void; onSaved: () => void }) {
-  const [rate, setRate] = useState(assets.length > 0 ? String(assets[0].daily_rate || "") : "");
-  const [saving, setSaving] = useState(false);
+/* ─── Bulk Edit Modal ─── */
 
-  const handleSave = async () => {
-    if (!rate) return;
-    setSaving(true);
-    try {
-      await Promise.all(assets.map((a) => api.patch(`/assets/${a.id}`, { dailyRate: Number(rate) })));
-      onSaved();
-    } catch {
-      setSaving(false);
-    }
+function BulkEditModal({ count, onClose, onSaved }: { count: number; onClose: () => void; onSaved: (updates: Record<string, unknown>) => void }) {
+  const [status, setStatus] = useState("");
+  const [condition, setCondition] = useState("");
+  const [notes, setNotes] = useState("");
+
+  const handleSave = () => {
+    const updates: Record<string, unknown> = {};
+    if (status) updates.status = status;
+    if (condition) updates.condition = condition;
+    if (notes) updates.notes = notes;
+    if (Object.keys(updates).length === 0) { onClose(); return; }
+    onSaved(updates);
   };
+
+  const inp: React.CSSProperties = {
+    width: "100%", borderRadius: 14, border: "1px solid var(--t-border)",
+    background: "var(--t-bg-card)", padding: "10px 16px",
+    fontSize: 14, color: "var(--t-text-primary)", outline: "none",
+  };
+  const lbl: React.CSSProperties = { display: "block", fontSize: 13, fontWeight: 500, color: "var(--t-text-muted)", marginBottom: 6 };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-      <div
-        className="relative w-full max-w-sm animate-fade-in"
-        style={{
-          borderRadius: 14, border: "1px solid var(--t-border)",
-          background: "var(--t-bg-primary)", padding: 24,
-          boxShadow: "0 25px 50px -12px rgba(0,0,0,0.5)",
-        }}
-      >
-        <h3 style={{ fontSize: 18, fontWeight: 600, color: "var(--t-text-primary)" }} className="mb-1">Edit Daily Rate</h3>
-        <p style={{ fontSize: 14, color: "var(--t-text-muted)" }} className="mb-4">Update rate for all {assets.length} &times; {size} dumpsters</p>
-        <div className="mb-4">
-          <label style={{ display: "block", fontSize: 13, fontWeight: 500, color: "var(--t-text-muted)", marginBottom: 6 }}>Daily Rate ($)</label>
-          <input
-            type="number"
-            step="0.01"
-            value={rate}
-            onChange={(e) => setRate(e.target.value)}
-            style={{
-              width: "100%", borderRadius: 14, border: "1px solid var(--t-border)",
-              background: "var(--t-bg-card)", padding: "10px 16px",
-              fontSize: 14, color: "var(--t-text-primary)", outline: "none",
-            }}
-            placeholder="57.14"
-            autoFocus
-          />
+      <div className="relative w-full max-w-sm animate-fade-in" style={{ borderRadius: 14, border: "1px solid var(--t-border)", background: "var(--t-bg-primary)", padding: 24, boxShadow: "0 25px 50px -12px rgba(0,0,0,0.5)" }}>
+        <h3 style={{ fontSize: 18, fontWeight: 600, color: "var(--t-text-primary)" }} className="mb-1">Bulk Edit</h3>
+        <p style={{ fontSize: 14, color: "var(--t-text-muted)" }} className="mb-4">Update {count} selected asset(s). Only filled fields will be changed.</p>
+        <div className="space-y-3">
+          <div>
+            <label style={lbl}>Status</label>
+            <select value={status} onChange={e => setStatus(e.target.value)} style={{ ...inp, appearance: "none" as const }}>
+              <option value="">— No change —</option>
+              <option value="available">Available</option>
+              <option value="maintenance">Maintenance</option>
+              <option value="retired">Retired</option>
+            </select>
+          </div>
+          <div>
+            <label style={lbl}>Condition</label>
+            <select value={condition} onChange={e => setCondition(e.target.value)} style={{ ...inp, appearance: "none" as const }}>
+              <option value="">— No change —</option>
+              <option value="good">Good</option>
+              <option value="fair">Fair</option>
+              <option value="poor">Poor</option>
+            </select>
+          </div>
+          <div>
+            <label style={lbl}>Notes</label>
+            <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} style={{ ...inp, resize: "none" as const }} placeholder="Leave blank to keep existing notes" />
+          </div>
         </div>
-        <div className="flex gap-2">
-          <button
-            onClick={handleSave}
-            disabled={saving || !rate}
-            style={{
-              flex: 1, background: "#22C55E", color: "#000", fontWeight: 600, fontSize: 14,
-              padding: "10px 20px", borderRadius: 24, border: "none",
-              cursor: "pointer", transition: "opacity 0.15s ease",
-              opacity: saving || !rate ? 0.5 : 1,
-            }}
-          >
-            {saving ? "Saving..." : "Update All"}
+        <div className="flex gap-2 mt-4">
+          <button onClick={handleSave} style={{ flex: 1, background: "#22C55E", color: "#000", fontWeight: 600, fontSize: 14, padding: "10px 20px", borderRadius: 24, border: "none", cursor: "pointer" }}>
+            Update {count} Asset(s)
           </button>
-          <button
-            onClick={onClose}
-            style={{
-              padding: "10px 20px", borderRadius: 24, fontSize: 14,
-              border: "1px solid var(--t-border)", background: "transparent",
-              color: "var(--t-text-muted)", cursor: "pointer", transition: "all 0.15s ease",
-            }}
-          >
+          <button onClick={onClose} style={{ padding: "10px 20px", borderRadius: 24, fontSize: 14, border: "1px solid var(--t-border)", background: "transparent", color: "var(--t-text-muted)", cursor: "pointer" }}>
             Cancel
           </button>
         </div>
