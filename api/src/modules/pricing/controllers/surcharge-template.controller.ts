@@ -7,6 +7,7 @@ import {
   Body,
   Param,
   ParseUUIDPipe,
+  NotFoundException,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -14,6 +15,7 @@ import { Repository } from 'typeorm';
 import { TenantId } from '../../../common/decorators';
 import { SurchargeTemplate } from '../entities/surcharge-template.entity';
 import { CreateSurchargeTemplateDto } from '../dto/create-surcharge-template.dto';
+import { UpdateSurchargeTemplateDto } from '../dto/update-surcharge-template.dto';
 
 @ApiTags('Surcharge Templates')
 @ApiBearerAuth()
@@ -45,16 +47,29 @@ export class SurchargeTemplateController {
 
   @Put(':id')
   async update(
+    @TenantId() tenantId: string,
     @Param('id', ParseUUIDPipe) id: string,
-    @Body() body: Partial<CreateSurchargeTemplateDto>,
+    @Body() dto: UpdateSurchargeTemplateDto,
   ) {
-    await this.repo.update(id, body as any);
-    return this.repo.findOneBy({ id });
+    const existing = await this.repo.findOne({
+      where: { id, tenant_id: tenantId },
+    });
+    if (!existing) throw new NotFoundException(`Surcharge template ${id} not found`);
+    Object.assign(existing, dto);
+    return this.repo.save(existing);
   }
 
   @Delete(':id')
-  async remove(@Param('id', ParseUUIDPipe) id: string) {
-    await this.repo.update(id, { is_active: false });
+  async remove(
+    @TenantId() tenantId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    const existing = await this.repo.findOne({
+      where: { id, tenant_id: tenantId },
+    });
+    if (!existing) throw new NotFoundException(`Surcharge template ${id} not found`);
+    existing.is_active = false;
+    await this.repo.save(existing);
     return { deleted: true };
   }
 }
