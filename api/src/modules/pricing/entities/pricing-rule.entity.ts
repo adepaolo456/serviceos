@@ -159,6 +159,12 @@ export class PricingRule {
   @Column({ name: 'is_active', default: true })
   is_active!: boolean;
 
+  @Column({ name: 'effective_date', type: 'date', nullable: true })
+  effective_date!: string;
+
+  @Column({ name: 'effective_until', type: 'date', nullable: true })
+  effective_until!: string;
+
   @CreateDateColumn({ name: 'created_at' })
   created_at!: Date;
 
