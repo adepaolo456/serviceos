@@ -1053,10 +1053,6 @@ function OverviewTab({ asset, deployed }: { asset: Asset; deployed: ReturnType<t
             <p style={{ fontSize: 14, fontWeight: 500, color: "var(--t-text-primary)" }}>{asset.daily_rate > 0 ? `${fmtMoney(asset.daily_rate)}/day` : "Not set"}</p>
           </div>
           <div>
-            <p style={{ fontSize: 12, color: "var(--t-text-muted)" }}>Weight Capacity</p>
-            <p style={{ fontSize: 14, fontWeight: 500, color: "var(--t-text-primary)" }}>{asset.weight_capacity ? `${Number(asset.weight_capacity).toLocaleString()} tons` : "Not set"}</p>
-          </div>
-          <div>
             <p style={{ fontSize: 12, color: "var(--t-text-muted)" }}>Condition</p>
             <p style={{ fontSize: 14, fontWeight: 500, color: "var(--t-text-primary)", textTransform: "capitalize" }}>{asset.condition || "\u2014"}</p>
           </div>
@@ -1352,7 +1348,6 @@ function EditAssetModal({ asset, onClose, onSaved }: { asset: Asset; onClose: ()
   const [subtype, setSubtype] = useState(asset.subtype);
   const [status, setStatus] = useState(asset.status);
   const [condition, setCondition] = useState(asset.condition || "good");
-  const [weightCapacity, setWeightCapacity] = useState(asset.weight_capacity ? String(asset.weight_capacity) : "");
   const [notes, setNotes] = useState(asset.notes || "");
   const [saving, setSaving] = useState(false);
 
@@ -1362,7 +1357,6 @@ function EditAssetModal({ asset, onClose, onSaved }: { asset: Asset; onClose: ()
     try {
       await api.patch(`/assets/${asset.id}`, {
         identifier, subtype, status, condition,
-        weightCapacity: weightCapacity ? Number(weightCapacity) : undefined,
         notes: notes || undefined,
       });
       onSaved();
@@ -1408,10 +1402,6 @@ function EditAssetModal({ asset, onClose, onSaved }: { asset: Asset; onClose: ()
               <option value="fair">Fair</option>
               <option value="poor">Poor</option>
             </select>
-          </div>
-          <div>
-            <label style={lbl}>Weight Capacity (tons)</label>
-            <input type="number" step="0.01" value={weightCapacity} onChange={e => setWeightCapacity(e.target.value)} style={inp} placeholder="4" />
           </div>
           <div>
             <label style={lbl}>Notes</label>
