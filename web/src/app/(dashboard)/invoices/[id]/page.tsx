@@ -52,6 +52,7 @@ interface Invoice {
 interface PricingRule {
   id: string;
   name: string;
+  service_type: string;
   asset_subtype: string;
   base_price: number;
   delivery_fee: number;
@@ -59,6 +60,8 @@ interface PricingRule {
   extra_day_rate: number;
   included_tons: number;
   overage_per_ton: number;
+  included_miles: number;
+  per_mile_charge: number;
 }
 
 interface Payment {
@@ -138,12 +141,12 @@ export default function InvoiceDetailPage({
     catch { /* */ } finally { setHistoryLoading(false); }
   };
 
-  // Close add menu on click outside
+  // Close add menu on click outside (delayed to avoid same-tick close)
   useEffect(() => {
     if (!addMenuOpen) return;
     const close = () => setAddMenuOpen(false);
-    window.addEventListener("click", close);
-    return () => window.removeEventListener("click", close);
+    const timer = setTimeout(() => window.addEventListener("click", close), 0);
+    return () => { clearTimeout(timer); window.removeEventListener("click", close); };
   }, [addMenuOpen]);
 
   useEffect(() => {
@@ -197,6 +200,18 @@ export default function InvoiceDetailPage({
 
   const currentSubtype = invoice?.job?.asset_subtype || invoice?.job?.asset?.subtype || null;
   const currentRule = pricingRules.find(r => r.asset_subtype === currentSubtype);
+  const activeRule = newAssetSubtype ? pricingRules.find(r => r.asset_subtype === newAssetSubtype) : currentRule;
+
+  const buildRentalDesc = (rule: PricingRule) => {
+    const parts = [`${rule.asset_subtype} Dumpster Rental`];
+    const details: string[] = [];
+    if (rule.rental_period_days) details.push(`${rule.rental_period_days} day rental`);
+    if (Number(rule.included_tons) > 0) details.push(`${rule.included_tons} tons included`);
+    if (Number(rule.extra_day_rate) > 0) details.push(`${fmt(rule.extra_day_rate)}/day extra`);
+    if (Number(rule.overage_per_ton) > 0) details.push(`${fmt(rule.overage_per_ton)}/ton overage`);
+    if (details.length) parts.push(details.join(", "));
+    return parts.join(" — ");
+  };
 
   const handleSizeChange = (size: string) => {
     if (!size || size === currentSubtype) { setNewAssetSubtype(null); return; }
@@ -204,35 +219,42 @@ export default function InvoiceDetailPage({
     const rule = pricingRules.find(r => r.asset_subtype === size);
     if (!rule) return;
     setNewAssetSubtype(size);
-    // Immediately update line items with new pricing
+    // Replace auto-generated lines, keep manual ones (custom charges, discounts)
+    const manualItems = editItems.filter(li =>
+      !li.description.includes("Dumpster Rental") && !li.description.includes("Delivery") &&
+      li.description !== "" && li.unitPrice !== 0
+    );
     const items: { description: string; quantity: number; unitPrice: number }[] = [
-      { description: `${size} Dumpster Rental`, quantity: 1, unitPrice: Number(rule.base_price) },
+      { description: buildRentalDesc(rule), quantity: 1, unitPrice: Number(rule.base_price) },
     ];
     if (Number(rule.delivery_fee) > 0) {
       items.push({ description: "Delivery Fee", quantity: 1, unitPrice: Number(rule.delivery_fee) });
     }
-    setEditItems(items);
+    setEditItems([...items, ...manualItems]);
   };
 
   const addPredefinedItem = (type: string) => {
-    const rule = newAssetSubtype ? pricingRules.find(r => r.asset_subtype === newAssetSubtype) : currentRule;
+    const rule = activeRule;
     setAddMenuOpen(false);
     switch (type) {
       case "rental":
-        setEditItems(prev => [...prev, { description: `${rule?.asset_subtype || ""} Dumpster Rental`, quantity: 1, unitPrice: Number(rule?.base_price || 0) }]);
+        setEditItems(prev => [...prev, { description: rule ? buildRentalDesc(rule) : "Dumpster Rental", quantity: 1, unitPrice: Number(rule?.base_price || 0) }]);
         break;
       case "delivery":
         setEditItems(prev => [...prev, { description: "Delivery Fee", quantity: 1, unitPrice: Number(rule?.delivery_fee || 0) }]);
         break;
       case "extra_days":
-        setEditItems(prev => [...prev, { description: "Extra Day Charges", quantity: 1, unitPrice: Number(rule?.extra_day_rate || 0) }]);
+        setEditItems(prev => [...prev, { description: `Extra days @ ${fmt(rule?.extra_day_rate || 0)}/day`, quantity: 1, unitPrice: Number(rule?.extra_day_rate || 0) }]);
         break;
       case "overage":
-        setEditItems(prev => [...prev, { description: "Weight Overage", quantity: 1, unitPrice: Number(rule?.overage_per_ton || 0) }]);
+        setEditItems(prev => [...prev, { description: `Weight overage @ ${fmt(rule?.overage_per_ton || 0)}/ton`, quantity: 1, unitPrice: Number(rule?.overage_per_ton || 0) }]);
         break;
-      case "discount":
-        setEditItems(prev => [...prev, { description: "Discount", quantity: 1, unitPrice: 0 }]);
+      case "discount": {
+        const amt = prompt("Discount amount (enter as positive number):");
+        if (!amt) return;
+        setEditItems(prev => [...prev, { description: "Discount", quantity: 1, unitPrice: -Math.abs(Number(amt)) }]);
         break;
+      }
       case "custom":
         setEditItems(prev => [...prev, { description: "", quantity: 1, unitPrice: 0 }]);
         break;
@@ -526,17 +548,18 @@ export default function InvoiceDetailPage({
                     })}
                     <tr>
                       <td colSpan={5} className="px-6 py-3 relative">
-                        <button onClick={() => setAddMenuOpen(!addMenuOpen)} className="flex items-center gap-1.5 text-xs font-medium text-[var(--t-accent)] hover:opacity-80">
+                        <button onClick={e => { e.stopPropagation(); setAddMenuOpen(!addMenuOpen); }} className="flex items-center gap-1.5 text-xs font-medium text-[var(--t-accent)] hover:opacity-80">
                           <Plus className="h-3.5 w-3.5" /> Add Line Item
                         </button>
                         {addMenuOpen && (
-                          <div className="absolute left-6 top-10 z-20 rounded-xl border border-[var(--t-border)] bg-[var(--t-bg-card)] shadow-xl py-1 min-w-[200px]">
+                          <div className="absolute left-6 bottom-full mb-1 z-20 rounded-xl border border-[var(--t-border)] bg-[var(--t-bg-card)] shadow-xl py-1 min-w-[240px]"
+                            onClick={e => e.stopPropagation()}>
                             {[
-                              { key: "rental", label: "Dumpster Rental", sub: currentRule ? fmt(currentRule.base_price) : "" },
-                              { key: "delivery", label: "Delivery Fee", sub: currentRule ? fmt(currentRule.delivery_fee) : "" },
-                              { key: "extra_days", label: "Extra Day Charges", sub: currentRule ? `${fmt(currentRule.extra_day_rate)}/day` : "" },
-                              { key: "overage", label: "Weight Overage", sub: currentRule ? `${fmt(currentRule.overage_per_ton)}/ton` : "" },
-                              { key: "discount", label: "Discount (credit)", sub: "negative amount" },
+                              { key: "rental", label: "Dumpster Rental", sub: activeRule ? fmt(activeRule.base_price) : "" },
+                              { key: "delivery", label: "Delivery Fee", sub: activeRule ? fmt(activeRule.delivery_fee) : "" },
+                              { key: "extra_days", label: "Extra Day Charges", sub: activeRule ? `${fmt(activeRule.extra_day_rate)}/day` : "" },
+                              { key: "overage", label: "Weight Overage", sub: activeRule ? `${fmt(activeRule.overage_per_ton)}/ton` : "" },
+                              { key: "discount", label: "Discount (credit)", sub: "enter amount" },
                               { key: "custom", label: "Custom Charge", sub: "blank row" },
                             ].map(opt => (
                               <button key={opt.key} onClick={() => addPredefinedItem(opt.key)}
