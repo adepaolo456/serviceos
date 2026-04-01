@@ -77,41 +77,32 @@ export default function AddressAutocomplete({
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Fetch suggestions
-  const fetchSuggestions = useCallback(
-    async (query: string) => {
-      if (!MAPBOX_TOKEN || query.length < 3) {
+  // Fetch suggestions from Mapbox Geocoding v6
+  const fetchSuggestions = useCallback(async (query: string) => {
+    if (!MAPBOX_TOKEN || query.length < 3) {
+      setSuggestions([]);
+      setOpen(false);
+      return;
+    }
+    setLoading(true);
+    try {
+      const url = `https://api.mapbox.com/search/geocode/v6/forward?q=${encodeURIComponent(query)}&access_token=${MAPBOX_TOKEN}&country=US&types=address&limit=5&proximity=${PROXIMITY}&language=en`;
+      const res = await fetch(url);
+      if (!res.ok) {
         setSuggestions([]);
-        setOpen(false);
         return;
       }
-      setLoading(true);
-      try {
-        const params = new URLSearchParams({
-          q: query,
-          access_token: MAPBOX_TOKEN,
-          country: "US",
-          types: "address",
-          limit: "5",
-          proximity: PROXIMITY,
-          language: "en",
-        });
-        const res = await fetch(
-          `https://api.mapbox.com/search/geocode/v6/forward?${params}`,
-        );
-        const data = await res.json();
-        const features: MapboxFeature[] = data.features || [];
-        setSuggestions(features);
-        setOpen(features.length > 0);
-        setHighlightIdx(-1);
-      } catch {
-        setSuggestions([]);
-      } finally {
-        setLoading(false);
-      }
-    },
-    [],
-  );
+      const data = await res.json();
+      const features: MapboxFeature[] = data.features || [];
+      setSuggestions(features);
+      setOpen(features.length > 0);
+      setHighlightIdx(-1);
+    } catch {
+      setSuggestions([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   // Debounced input handler
   const handleInputChange = (text: string) => {
@@ -212,7 +203,7 @@ export default function AddressAutocomplete({
         {/* Suggestions dropdown */}
         {open && suggestions.length > 0 && (
           <div
-            className="absolute left-0 right-0 z-50 mt-1 overflow-hidden rounded-[14px] border shadow-xl"
+            className="absolute left-0 right-0 z-[9999] mt-1 overflow-hidden rounded-[14px] border shadow-xl"
             style={{
               background: "var(--t-bg-secondary)",
               borderColor: "var(--t-border)",
@@ -276,7 +267,7 @@ export default function AddressAutocomplete({
         {/* No results */}
         {open && suggestions.length === 0 && inputValue.length >= 3 && !loading && (
           <div
-            className="absolute left-0 right-0 z-50 mt-1 rounded-[14px] border px-4 py-3 text-sm"
+            className="absolute left-0 right-0 z-[9999] mt-1 rounded-[14px] border px-4 py-3 text-sm"
             style={{
               background: "var(--t-bg-secondary)",
               borderColor: "var(--t-border)",
