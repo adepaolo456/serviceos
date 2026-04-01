@@ -80,6 +80,13 @@ class ApiClient {
     });
   }
 
+  put<T>(endpoint: string, data?: unknown) {
+    return this.request<T>(endpoint, {
+      method: "PUT",
+      body: data ? JSON.stringify(data) : undefined,
+    });
+  }
+
   delete<T>(endpoint: string) {
     return this.request<T>(endpoint, { method: "DELETE" });
   }
