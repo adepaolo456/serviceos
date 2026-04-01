@@ -5,6 +5,7 @@ import Stripe from 'stripe';
 import { Tenant } from '../tenants/entities/tenant.entity';
 import { Customer } from '../customers/entities/customer.entity';
 import { Invoice } from '../billing/entities/invoice.entity';
+import { Payment } from '../billing/entities/payment.entity';
 import { AutomationLog } from '../automation/entities/automation-log.entity';
 import { SubscriptionPlan } from '../subscriptions/entities/subscription-plan.entity';
 
@@ -16,13 +17,12 @@ export class StripeService {
     @InjectRepository(Tenant) private tenantRepo: Repository<Tenant>,
     @InjectRepository(Customer) private customerRepo: Repository<Customer>,
     @InjectRepository(Invoice) private invoiceRepo: Repository<Invoice>,
+    @InjectRepository(Payment) private paymentRepo: Repository<Payment>,
     @InjectRepository(AutomationLog) private logRepo: Repository<AutomationLog>,
     @InjectRepository(SubscriptionPlan) private planRepo: Repository<SubscriptionPlan>,
   ) {
     this.stripe = new Stripe(process.env.STRIPE_SECRET_KEY || 'sk_test_placeholder', { apiVersion: '2024-12-18.acacia' as any });
   }
-
-  // --- Connect Onboarding ---
 
   async onboardConnect(tenantId: string) {
     const tenant = await this.tenantRepo.findOne({ where: { id: tenantId } });
@@ -32,7 +32,7 @@ export class StripeService {
     if (!accountId) {
       const account = await this.stripe.accounts.create({
         type: 'standard',
-        email: undefined, // will be filled during onboarding
+        email: undefined,
         metadata: { tenantId, tenantName: tenant.name },
       });
       accountId = account.id;
@@ -69,8 +69,6 @@ export class StripeService {
     }
   }
 
-  // --- Customer Management ---
-
   async getOrCreateStripeCustomer(tenantId: string, customerId: string): Promise<string> {
     const customer = await this.customerRepo.findOne({ where: { id: customerId } });
     if (!customer) throw new NotFoundException('Customer not found');
@@ -89,8 +87,6 @@ export class StripeService {
     return stripeCustomer.id;
   }
 
-  // --- Setup Intent (save card for later) ---
-
   async createSetupIntent(tenantId: string, customerId: string) {
     const stripeCustomerId = await this.getOrCreateStripeCustomer(tenantId, customerId);
     const tenant = await this.tenantRepo.findOne({ where: { id: tenantId } });
@@ -104,8 +100,6 @@ export class StripeService {
     return { clientSecret: intent.client_secret, setupIntentId: intent.id };
   }
 
-  // --- Charge Invoice ---
-
   async chargeInvoice(tenantId: string, invoiceId: string) {
     const invoice = await this.invoiceRepo.findOne({ where: { id: invoiceId, tenant_id: tenantId } });
     if (!invoice) throw new NotFoundException('Invoice not found');
@@ -113,7 +107,7 @@ export class StripeService {
 
     const stripeCustomerId = await this.getOrCreateStripeCustomer(tenantId, invoice.customer_id);
     const tenant = await this.tenantRepo.findOne({ where: { id: tenantId } });
-    const amount = Math.round(Number(invoice.balance_due) * 100); // cents
+    const amount = Math.round(Number(invoice.balance_due) * 100);
 
     if (amount <= 0) throw new BadRequestException('No balance due');
 
@@ -142,15 +136,23 @@ export class StripeService {
         } : {}),
       }, tenant?.stripe_connect_id ? { stripeAccount: tenant.stripe_connect_id } : undefined);
 
+      // Update invoice
       await this.invoiceRepo.update(invoiceId, {
         status: 'paid',
         amount_paid: invoice.total,
         balance_due: 0,
         paid_at: new Date(),
-        stripe_payment_intent_id: pi.id,
-        stripe_charge_id: pi.latest_charge as string,
+      });
+
+      // Create payment record
+      await this.paymentRepo.save(this.paymentRepo.create({
+        tenant_id: tenantId,
+        invoice_id: invoiceId,
+        amount: Number(invoice.balance_due),
         payment_method: `card_${paymentMethods.data[0].card?.last4 || '****'}`,
-      } as any);
+        stripe_payment_intent_id: pi.id,
+        status: 'completed',
+      }));
 
       await this.logRepo.save(this.logRepo.create({
         tenant_id: tenantId, job_id: invoice.job_id, type: 'payment_collected', status: 'success',
@@ -167,29 +169,38 @@ export class StripeService {
     }
   }
 
-  // --- Refund ---
-
   async refundInvoice(tenantId: string, invoiceId: string, amount?: number) {
     const invoice = await this.invoiceRepo.findOne({ where: { id: invoiceId, tenant_id: tenantId } });
     if (!invoice) throw new NotFoundException('Invoice not found');
-    if (!invoice.stripe_payment_intent_id) throw new BadRequestException('No payment to refund');
+
+    // Find the payment with stripe_payment_intent_id
+    const payment = await this.paymentRepo.findOne({
+      where: { invoice_id: invoiceId },
+      order: { applied_at: 'DESC' },
+    });
+    if (!payment?.stripe_payment_intent_id) throw new BadRequestException('No payment to refund');
 
     const tenant = await this.tenantRepo.findOne({ where: { id: tenantId } });
-    const refundAmount = amount ? Math.round(amount * 100) : undefined; // full refund if not specified
+    const refundAmount = amount ? Math.round(amount * 100) : undefined;
 
     const refund = await this.stripe.refunds.create({
-      payment_intent: invoice.stripe_payment_intent_id,
+      payment_intent: payment.stripe_payment_intent_id,
       ...(refundAmount ? { amount: refundAmount } : {}),
       metadata: { invoiceId, tenantId },
     }, tenant?.stripe_connect_id ? { stripeAccount: tenant.stripe_connect_id } : undefined);
 
     const refundedAmount = refund.amount / 100;
+
+    // Update payment
+    payment.refunded_amount = Math.round((Number(payment.refunded_amount || 0) + refundedAmount) * 100) / 100;
+    await this.paymentRepo.save(payment);
+
+    // Update invoice
     await this.invoiceRepo.update(invoiceId, {
-      stripe_refund_id: refund.id,
       amount_paid: Number(invoice.amount_paid) - refundedAmount,
       balance_due: Number(invoice.balance_due) + refundedAmount,
-      status: refundedAmount >= Number(invoice.total) ? 'void' : 'sent',
-    } as any);
+      status: refundedAmount >= Number(invoice.total) ? 'voided' : 'sent',
+    });
 
     await this.logRepo.save(this.logRepo.create({
       tenant_id: tenantId, job_id: invoice.job_id, type: 'refund_processed', status: 'success',
@@ -198,8 +209,6 @@ export class StripeService {
 
     return { success: true, refundId: refund.id, refundedAmount };
   }
-
-  // --- Webhook ---
 
   async handleWebhook(payload: Buffer, signature: string) {
     const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
@@ -217,14 +226,19 @@ export class StripeService {
       case 'payment_intent.succeeded': {
         const pi = event.data.object as Stripe.PaymentIntent;
         if (pi.metadata.invoiceId) {
-          await this.invoiceRepo.update(pi.metadata.invoiceId, { status: 'paid', paid_at: new Date(), stripe_payment_intent_id: pi.id } as any);
+          await this.invoiceRepo.update(pi.metadata.invoiceId, {
+            status: 'paid',
+            paid_at: new Date(),
+          });
         }
         break;
       }
       case 'payment_intent.payment_failed': {
         const pi = event.data.object as Stripe.PaymentIntent;
         if (pi.metadata.invoiceId) {
-          await this.invoiceRepo.update(pi.metadata.invoiceId, { notes: `Payment failed: ${pi.last_payment_error?.message || 'Unknown error'}` } as any);
+          await this.invoiceRepo.update(pi.metadata.invoiceId, {
+            summary_of_work: `Payment failed: ${pi.last_payment_error?.message || 'Unknown error'}`,
+          });
         }
         break;
       }
@@ -239,8 +253,6 @@ export class StripeService {
 
     return { received: true };
   }
-
-  // --- Subscription ---
 
   async getPlans() {
     return this.planRepo.find({ where: { is_active: true }, order: { price_per_driver_monthly: 'ASC' } });
@@ -276,7 +288,6 @@ export class StripeService {
     const priceId = billingCycle === 'annual' ? plan.stripe_price_id_annual : plan.stripe_price_id_monthly;
     const quantity = Math.max(tenant.peak_driver_count, 1);
 
-    // Get or create Stripe Customer for the tenant (for subscription billing)
     let stripeCustomerId = tenant.stripe_customer_id;
     if (!stripeCustomerId) {
       const customer = await this.stripe.customers.create({
@@ -288,7 +299,6 @@ export class StripeService {
     }
 
     if (priceId) {
-      // Create Stripe subscription
       const subscription = await this.stripe.subscriptions.create({
         customer: stripeCustomerId,
         items: [{ price: priceId, quantity }],
@@ -303,7 +313,6 @@ export class StripeService {
         enabled_modules: plan.enabled_modules,
       });
     } else {
-      // No Stripe price configured yet — just update the tier
       await this.tenantRepo.update(tenantId, {
         subscription_tier: tier,
         subscription_status: 'active',
@@ -339,8 +348,6 @@ export class StripeService {
     return { url: session.url };
   }
 
-  // --- Driver Count Management ---
-
   async updateDriverCount(tenantId: string, increment: boolean) {
     const tenant = await this.tenantRepo.findOne({ where: { id: tenantId } });
     if (!tenant) return;
@@ -351,11 +358,9 @@ export class StripeService {
 
     const updates: Record<string, unknown> = { billable_driver_count: newCount };
 
-    // Peak only goes UP
     if (increment && newCount > (tenant.peak_driver_count || 0)) {
       updates.peak_driver_count = newCount;
 
-      // Update Stripe subscription quantity if active
       if (tenant.stripe_subscription_id) {
         try {
           const sub = await this.stripe.subscriptions.retrieve(tenant.stripe_subscription_id);
@@ -368,8 +373,6 @@ export class StripeService {
 
     await this.tenantRepo.update(tenantId, updates);
   }
-
-  // --- Seed Plans ---
 
   async seedPlans() {
     const plans = [

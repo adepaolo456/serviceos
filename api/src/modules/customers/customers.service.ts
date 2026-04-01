@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Customer } from './entities/customer.entity';
+import { Invoice } from '../billing/entities/invoice.entity';
 import {
   CreateCustomerDto,
   UpdateCustomerDto,
@@ -13,6 +14,8 @@ export class CustomersService {
   constructor(
     @InjectRepository(Customer)
     private customersRepository: Repository<Customer>,
+    @InjectRepository(Invoice)
+    private invoiceRepository: Repository<Invoice>,
   ) {}
 
   private generateAccountId(): string {
@@ -123,5 +126,22 @@ export class CustomersService {
   async remove(tenantId: string, id: string): Promise<void> {
     const customer = await this.findOne(tenantId, id);
     await this.customersRepository.remove(customer);
+  }
+
+  async getCustomerBalance(tenantId: string, customerId: string) {
+    const result = await this.invoiceRepository
+      .createQueryBuilder('i')
+      .select('COALESCE(SUM(i.balance_due), 0)', 'balance')
+      .addSelect('COUNT(*)::int', 'unpaid_count')
+      .where('i.customer_id = :customerId', { customerId })
+      .andWhere('i.tenant_id = :tenantId', { tenantId })
+      .andWhere('i.status NOT IN (:...excluded)', { excluded: ['voided', 'draft'] })
+      .andWhere('i.balance_due > 0')
+      .getRawOne();
+
+    return {
+      balance: Number(result?.balance ?? 0),
+      unpaid_count: Number(result?.unpaid_count ?? 0),
+    };
   }
 }

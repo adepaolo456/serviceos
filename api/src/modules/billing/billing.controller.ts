@@ -10,97 +10,7 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { BillingService } from './billing.service';
-import {
-  CreateInvoiceDto,
-  UpdateInvoiceDto,
-  ListInvoicesQueryDto,
-  CreatePaymentDto,
-  ListPaymentsQueryDto,
-} from './dto/billing.dto';
 import { TenantId, CurrentUser } from '../../common/decorators';
-
-@ApiTags('Invoices')
-@ApiBearerAuth()
-@Controller('invoices')
-export class InvoicesController {
-  constructor(private readonly billingService: BillingService) {}
-
-  @Post()
-  @ApiOperation({ summary: 'Create an invoice' })
-  create(@TenantId() tenantId: string, @Body() dto: CreateInvoiceDto) {
-    return this.billingService.createInvoice(tenantId, dto);
-  }
-
-  @Post('mark-overdue')
-  @ApiOperation({ summary: 'Mark overdue invoices (manual trigger)' })
-  markOverdue(@TenantId() tenantId: string) {
-    return this.billingService.markOverdueInvoices(tenantId).then(count => ({
-      message: `${count} invoice(s) marked overdue`,
-      count,
-    }));
-  }
-
-  @Post('from-job/:jobId')
-  @ApiOperation({ summary: 'Auto-generate invoice from a completed job' })
-  createFromJob(
-    @TenantId() tenantId: string,
-    @Param('jobId', ParseUUIDPipe) jobId: string,
-  ) {
-    return this.billingService.createFromJob(tenantId, jobId);
-  }
-
-  @Get()
-  @ApiOperation({ summary: 'List invoices with filters' })
-  findAll(@TenantId() tenantId: string, @Query() query: ListInvoicesQueryDto) {
-    return this.billingService.findAllInvoices(tenantId, query);
-  }
-
-  @Get(':id')
-  @ApiOperation({ summary: 'Get an invoice by ID' })
-  findOne(
-    @TenantId() tenantId: string,
-    @Param('id', ParseUUIDPipe) id: string,
-  ) {
-    return this.billingService.findOneInvoice(tenantId, id);
-  }
-
-  @Get(':id/history')
-  @ApiOperation({ summary: 'Get invoice audit history' })
-  getHistory(
-    @TenantId() tenantId: string,
-    @Param('id', ParseUUIDPipe) id: string,
-  ) {
-    return this.billingService.getInvoiceHistory(tenantId, id);
-  }
-
-  @Patch(':id/edit')
-  @ApiOperation({ summary: 'Edit invoice with audit trail' })
-  edit(
-    @TenantId() tenantId: string,
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() body: Record<string, unknown>,
-    @CurrentUser('id') userId: string,
-    @CurrentUser('email') userEmail: string,
-  ) {
-    return this.billingService.editInvoice(tenantId, id, body, userId, userEmail);
-  }
-
-  @Patch(':id')
-  @ApiOperation({ summary: 'Update an invoice' })
-  update(
-    @TenantId() tenantId: string,
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: UpdateInvoiceDto,
-  ) {
-    return this.billingService.updateInvoice(tenantId, id, dto);
-  }
-
-  @Post(':id/send')
-  @ApiOperation({ summary: 'Mark invoice as sent' })
-  send(@TenantId() tenantId: string, @Param('id', ParseUUIDPipe) id: string) {
-    return this.billingService.sendInvoice(tenantId, id);
-  }
-}
 
 @ApiTags('Payments')
 @ApiBearerAuth()
@@ -110,13 +20,18 @@ export class PaymentsController {
 
   @Post()
   @ApiOperation({ summary: 'Record a payment' })
-  create(@TenantId() tenantId: string, @Body() dto: CreatePaymentDto) {
+  create(@TenantId() tenantId: string, @Body() dto: { invoiceId: string; amount: number; paymentMethod: string; status?: string; notes?: string }) {
     return this.billingService.createPayment(tenantId, dto);
   }
 
   @Get()
   @ApiOperation({ summary: 'List payments' })
-  findAll(@TenantId() tenantId: string, @Query() query: ListPaymentsQueryDto) {
-    return this.billingService.findAllPayments(tenantId, query);
+  findAll(@TenantId() tenantId: string, @Query() query: { invoiceId?: string; customerId?: string; page?: string; limit?: string }) {
+    return this.billingService.findAllPayments(tenantId, {
+      invoiceId: query.invoiceId,
+      customerId: query.customerId,
+      page: query.page ? parseInt(query.page) : undefined,
+      limit: query.limit ? parseInt(query.limit) : undefined,
+    });
   }
 }
