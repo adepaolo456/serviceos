@@ -73,6 +73,7 @@ const TABS = [
   { key: "billing", label: "Billing", icon: CreditCard },
   { key: "jobs", label: "Jobs", icon: Briefcase },
   { key: "invoices", label: "Invoices", icon: FileText },
+  { key: "pricing", label: "Pricing", icon: DollarSign },
   { key: "notes", label: "Notes", icon: MessageSquare },
 ] as const;
 
@@ -370,6 +371,11 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
         </div>
       )}
 
+      {/* ===== PRICING TAB ===== */}
+      {tab === "pricing" && customer && (
+        <CustomerPricingTab customerId={customer.id} customerName={`${customer.first_name} ${customer.last_name}`} />
+      )}
+
       {/* ===== NOTES TAB ===== */}
       {tab === "notes" && (
         <div className="max-w-2xl space-y-4">
@@ -464,5 +470,162 @@ function EditForm({ customer, onSuccess }: { customer: Customer; onSuccess: (c: 
         {saving ? "Saving..." : "Save"}
       </button>
     </form>
+  );
+}
+
+/* ---- Customer Pricing Tab ---- */
+
+interface PricingOverride {
+  id: string;
+  pricing_rule_id: string;
+  base_price: number | null;
+  weight_allowance_tons: number | null;
+  overage_per_ton: number | null;
+  daily_overage_rate: number | null;
+  rental_days: number | null;
+  effective_from: string;
+  effective_to: string | null;
+  pricing_rule?: { id: string; name: string; asset_subtype: string; base_price: number; included_tons: number; overage_per_ton: number; extra_day_rate: number; rental_period_days: number };
+}
+
+interface SurchargeOverride {
+  id: string;
+  surcharge_template_id: string;
+  amount: number;
+  available_for_billing: boolean;
+  surcharge_template?: { id: string; name: string; default_amount: number };
+}
+
+function CustomerPricingTab({ customerId, customerName }: { customerId: string; customerName: string }) {
+  const [overrides, setOverrides] = useState<PricingOverride[]>([]);
+  const [surcharges, setSurcharges] = useState<SurchargeOverride[]>([]);
+  const [allTemplates, setAllTemplates] = useState<Array<{ id: string; name: string; default_amount: number }>>([]);
+  const [loading, setLoading] = useState(true);
+  const { toast } = useToast();
+
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+      const [ov, sc, tpl] = await Promise.all([
+        api.get<PricingOverride[]>(`/customers/${customerId}/pricing-overrides`),
+        api.get<SurchargeOverride[]>(`/customers/${customerId}/surcharge-overrides`),
+        api.get<Array<{ id: string; name: string; default_amount: number }>>("/surcharge-templates"),
+      ]);
+      setOverrides(Array.isArray(ov) ? ov : []);
+      setSurcharges(Array.isArray(sc) ? sc : []);
+      setAllTemplates(Array.isArray(tpl) ? tpl : []);
+    } catch { /* */ } finally { setLoading(false); }
+  };
+
+  useEffect(() => { fetchData(); }, [customerId]);
+
+  const fmt = (n: number | null | undefined) => n != null ? formatCurrency(n) : null;
+
+  if (loading) {
+    return <div className="space-y-4">{Array.from({ length: 3 }).map((_, i) => <div key={i} className="h-20 animate-pulse rounded-[20px]" style={{ background: "var(--t-bg-card)" }} />)}</div>;
+  }
+
+  return (
+    <div className="space-y-8 max-w-3xl">
+      {/* Pricing Overrides */}
+      <div>
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="text-sm font-semibold" style={{ color: "var(--t-text-primary)" }}>Custom Pricing</h3>
+            <p className="text-xs mt-0.5" style={{ color: "var(--t-text-muted)" }}>Override global pricing rules for {customerName}</p>
+          </div>
+        </div>
+        {overrides.length === 0 ? (
+          <div className="rounded-[20px] border p-6 text-center" style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)" }}>
+            <p className="text-sm" style={{ color: "var(--t-text-muted)" }}>Using global pricing — no custom overrides</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {overrides.map(o => {
+              const rule = o.pricing_rule;
+              return (
+                <div key={o.id} className="rounded-[20px] border p-4" style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)" }}>
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="text-sm font-semibold" style={{ color: "var(--t-text-primary)" }}>
+                      {rule?.asset_subtype || "Custom"} Dumpster
+                    </h4>
+                    <button onClick={async () => { await api.delete(`/customers/${customerId}/pricing-overrides/${o.id}`); toast("success", "Override removed"); fetchData(); }}
+                      className="text-xs text-[var(--t-error)] hover:underline">Remove</button>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-xs">
+                    {[
+                      { label: "Base Price", val: o.base_price, global: rule?.base_price },
+                      { label: "Weight Allow.", val: o.weight_allowance_tons, global: rule?.included_tons, suffix: " tons" },
+                      { label: "Overage/Ton", val: o.overage_per_ton, global: rule?.overage_per_ton },
+                      { label: "Daily Rate", val: o.daily_overage_rate, global: rule?.extra_day_rate },
+                      { label: "Rental Days", val: o.rental_days, global: rule?.rental_period_days, suffix: " days" },
+                    ].map(f => (
+                      <div key={f.label}>
+                        <p className="font-medium mb-0.5" style={{ color: "var(--t-text-muted)" }}>{f.label}</p>
+                        {f.val != null ? (
+                          <p className="font-semibold" style={{ color: "var(--t-accent)" }}>
+                            {f.suffix ? `${f.val}${f.suffix}` : fmt(f.val)}
+                          </p>
+                        ) : (
+                          <p style={{ color: "var(--t-text-muted)" }}>
+                            {f.global != null ? (f.suffix ? `${f.global}${f.suffix}` : fmt(f.global)) : "—"} <span className="text-[10px]">(global)</span>
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Surcharge Overrides */}
+      <div>
+        <div className="mb-4">
+          <h3 className="text-sm font-semibold" style={{ color: "var(--t-text-primary)" }}>Surcharge Amounts</h3>
+          <p className="text-xs mt-0.5" style={{ color: "var(--t-text-muted)" }}>Override default surcharge amounts for this customer</p>
+        </div>
+        <div className="rounded-[20px] border overflow-hidden" style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)" }}>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-[var(--t-border)]">
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider" style={{ color: "var(--t-text-muted)" }}>Surcharge</th>
+                <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider" style={{ color: "var(--t-text-muted)" }}>Default</th>
+                <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider" style={{ color: "var(--t-text-muted)" }}>Client Rate</th>
+                <th className="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider" style={{ color: "var(--t-text-muted)" }}>Active</th>
+              </tr>
+            </thead>
+            <tbody>
+              {allTemplates.map(tpl => {
+                const override = surcharges.find(s => s.surcharge_template_id === tpl.id);
+                return (
+                  <tr key={tpl.id} className="border-b border-[var(--t-border)] last:border-0">
+                    <td className="px-4 py-3" style={{ color: "var(--t-text-primary)" }}>{tpl.name}</td>
+                    <td className="px-4 py-3 text-right tabular-nums" style={{ color: "var(--t-text-muted)" }}>{formatCurrency(tpl.default_amount)}</td>
+                    <td className="px-4 py-3 text-right tabular-nums font-medium" style={{ color: override ? "var(--t-accent)" : "var(--t-text-muted)" }}>
+                      {override ? formatCurrency(Number(override.amount)) : "—"}
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      {override ? (
+                        <span className="text-[10px] font-medium px-2 py-0.5 rounded-full" style={{
+                          background: override.available_for_billing ? "var(--t-accent-soft)" : "var(--t-bg-elevated)",
+                          color: override.available_for_billing ? "var(--t-accent)" : "var(--t-text-muted)",
+                        }}>
+                          {override.available_for_billing ? "Yes" : "No"}
+                        </span>
+                      ) : (
+                        <span className="text-xs" style={{ color: "var(--t-text-muted)" }}>—</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
   );
 }

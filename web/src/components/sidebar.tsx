@@ -20,6 +20,7 @@ import {
   Store,
   CarFront,
   Trash2,
+  AlertTriangle,
   Sun,
   Moon,
   ChevronLeft,
@@ -45,6 +46,7 @@ const navigation = [
   { name: "Dispatch", href: "/dispatch", icon: Truck },
   { name: "Dump Sites", href: "/dump-locations", icon: Trash2, module: "dump_locations" },
   { name: "Invoices", href: "/invoices", icon: FileText },
+  { name: "Billing Issues", href: "/billing-issues", icon: AlertTriangle },
   { name: "Pricing", href: "/pricing", icon: DollarSign },
   { name: "Team", href: "/team", icon: Users },
   { name: "Vehicles", href: "/vehicles", icon: CarFront },
@@ -134,7 +136,7 @@ export default function Sidebar() {
                 >
                   <item.icon className="h-[18px] w-[18px] shrink-0" style={{ color: isActive ? "var(--t-accent)" : "var(--t-frame-text-muted)" }} />
                   {item.name}
-                  {item.name === "Invoices" && billingIssueCount > 0 && (
+                  {(item.name === "Invoices" || item.name === "Billing Issues") && billingIssueCount > 0 && (
                     <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-bold text-white" style={{ background: "var(--t-error)" }}>
                       {billingIssueCount}
                     </span>

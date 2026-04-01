@@ -167,6 +167,18 @@ export default function PricingPage() {
         </button>
       </div>
 
+      {/* Quick links */}
+      <div className="flex gap-3 mb-6">
+        <Link href="/pricing/surcharges" className="flex items-center gap-2 rounded-[16px] border px-4 py-2.5 text-sm font-medium transition-colors hover:bg-[var(--t-bg-card-hover)]"
+          style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)", color: "var(--t-text-primary)" }}>
+          <DollarSign className="h-4 w-4" style={{ color: "var(--t-accent)" }} /> Surcharge Templates
+        </Link>
+        <Link href="/pricing/terms" className="flex items-center gap-2 rounded-[16px] border px-4 py-2.5 text-sm font-medium transition-colors hover:bg-[var(--t-bg-card-hover)]"
+          style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)", color: "var(--t-text-primary)" }}>
+          <Mail className="h-4 w-4" style={{ color: "var(--t-accent)" }} /> Terms &amp; Conditions
+        </Link>
+      </div>
+
       {/* ── QUICK QUOTE (top — most used) ── */}
       <div className="mb-8">
         <p className="text-[11px] font-extrabold uppercase tracking-[1.2px] mb-1" style={{ color: "var(--t-frame-text-muted)" }}>QUICK QUOTE</p>
