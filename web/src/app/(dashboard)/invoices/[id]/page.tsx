@@ -15,6 +15,7 @@ import {
   Plus,
   Trash2,
   Clock,
+  Copy,
 } from "lucide-react";
 import { useToast } from "@/components/toast";
 import { api } from "@/lib/api";
@@ -94,8 +95,8 @@ interface Payment {
   payment_method: string;
   status: string;
   notes: string;
-  processed_at: string;
-  created_at: string;
+  reference_number: string;
+  applied_at: string;
 }
 
 interface PaymentsResponse {
@@ -106,8 +107,12 @@ interface PaymentsResponse {
 const STATUS_TEXT: Record<string, string> = {
   draft: "text-[var(--t-text-muted)]",
   sent: "text-blue-400",
+  delivered: "text-blue-400",
+  read: "text-teal-400",
+  partial: "text-amber-400",
   paid: "text-[var(--t-accent)]",
   overdue: "text-[var(--t-error)]",
+  voided: "text-[var(--t-text-muted)]",
   void: "text-[var(--t-text-muted)]",
 };
 
@@ -146,12 +151,9 @@ export default function InvoiceDetailPage({
 
   const fetchData = async () => {
     try {
-      const [inv, pay] = await Promise.all([
-        api.get<Invoice>(`/invoices/${id}`),
-        api.get<PaymentsResponse>(`/payments?invoiceId=${id}&limit=50`),
-      ]);
+      const inv = await api.get<Invoice>(`/invoices/${id}`);
       setInvoice(inv);
-      setPayments(pay.data);
+      setPayments((inv.payments as Payment[]) || []);
     } catch {
       /* handled */
     } finally {
@@ -161,7 +163,7 @@ export default function InvoiceDetailPage({
 
   const fetchHistory = async () => {
     setHistoryLoading(true);
-    try { setHistory(await api.get<any[]>(`/invoices/${id}/history`)); }
+    try { setHistory(await api.get<any[]>(`/invoices/${id}/revisions`)); }
     catch { /* */ } finally { setHistoryLoading(false); }
   };
 
@@ -195,20 +197,37 @@ export default function InvoiceDetailPage({
 
   const handleVoid = async () => {
     if (!invoice || actionLoading) return;
-    if (!confirm("Void this invoice? This cannot be undone.")) return;
+    const reason = prompt(`Void Invoice #${invoice.invoice_number}?\n\nThis will create a credit memo for ${fmt(invoice.total)} and cannot be undone.\n\nEnter reason:`);
+    if (!reason) return;
     setActionLoading(true);
     try {
-      await api.patch(`/invoices/${id}`, { status: "void" });
+      await api.post(`/invoices/${id}/void`, { reason });
+      toast("success", "Invoice voided — credit memo created");
       await fetchData();
     } catch {
-      /* */
+      toast("error", "Failed to void invoice");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleDuplicate = async () => {
+    if (!invoice || actionLoading) return;
+    if (!confirm(`Create a copy of Invoice #${invoice.invoice_number} as a new draft?`)) return;
+    setActionLoading(true);
+    try {
+      const dup = await api.post<{ id: string }>(`/invoices/${id}/duplicate`);
+      toast("success", "Invoice duplicated");
+      if (dup?.id) window.location.href = `/invoices/${dup.id}`;
+    } catch {
+      toast("error", "Failed to duplicate");
     } finally {
       setActionLoading(false);
     }
   };
 
   const isPaid = invoice?.status === "paid";
-  const isVoid = invoice?.status === "void";
+  const isVoid = invoice?.status === "voided" || invoice?.status === "void";
 
   const startEditing = () => {
     if (!invoice) return;
@@ -388,8 +407,8 @@ export default function InvoiceDetailPage({
   }
 
   const canSend = invoice.status === "draft";
-  const canPay = ["sent", "overdue"].includes(invoice.status);
-  const canVoid = ["draft", "sent"].includes(invoice.status);
+  const canPay = ["sent", "delivered", "read", "partial", "overdue"].includes(invoice.status);
+  const canVoid = !["paid", "voided", "void"].includes(invoice.status);
 
   return (
     <div>
@@ -413,6 +432,9 @@ export default function InvoiceDetailPage({
             >
               {invoice.status}
             </span>
+            {invoice.revision > 1 && (
+              <span className="text-xs text-[var(--t-text-muted)]">Rev {invoice.revision}</span>
+            )}
           </div>
           <p className="text-sm text-[var(--t-frame-text-muted)]">
             Created {new Date(invoice.created_at).toLocaleDateString()}
@@ -454,6 +476,10 @@ export default function InvoiceDetailPage({
                   <Pencil className="h-4 w-4" /> {isPaid ? "Edit Notes" : "Edit"}
                 </button>
               )}
+              <button onClick={handleDuplicate} disabled={actionLoading}
+                className="flex items-center gap-2 px-4 py-2 rounded-full border border-[var(--t-border)] text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)] transition-colors disabled:opacity-50">
+                <Copy className="h-4 w-4" /> Duplicate
+              </button>
               {canVoid && (
                 <button onClick={handleVoid} disabled={actionLoading}
                   className="flex items-center gap-2 rounded-full border border-[var(--t-error)]/20 bg-transparent px-4 py-2 text-sm font-medium text-[var(--t-error)] transition-colors hover:bg-[var(--t-error-soft)] disabled:opacity-50">
@@ -650,7 +676,7 @@ export default function InvoiceDetailPage({
                       className="border-b border-[var(--t-border)] last:border-0"
                     >
                       <td className="px-6 py-3.5 text-[var(--t-text-primary)]">
-                        {new Date(p.created_at).toLocaleDateString()}
+                        {new Date(p.applied_at).toLocaleDateString()}
                       </td>
                       <td className="px-6 py-3.5 text-[var(--t-text-primary)] capitalize">
                         {p.payment_method}
@@ -684,21 +710,16 @@ export default function InvoiceDetailPage({
               <div className="px-6 py-8 text-center text-sm text-[var(--t-text-muted)]">No history entries</div>
             ) : (
               <div className="divide-y divide-[var(--t-border)]">
-                {history.map((entry) => {
-                  const d = entry.details || {};
-                  const who = d.user_name || d.user_email || d.overriddenBy || "System";
-                  const when = new Date(entry.created_at).toLocaleString();
-                  let what = entry.type.replace(/_/g, " ");
-                  if (d.changes) {
-                    const keys = Object.keys(d.changes);
-                    what = `edited ${keys.join(", ")}`;
-                  }
+                {history.map((entry: any) => {
+                  const when = new Date(entry.changed_at || entry.created_at).toLocaleString();
+                  const summary = entry.change_summary || `Revision ${entry.revision_number}`;
                   return (
                     <div key={entry.id} className="px-6 py-3 flex items-start gap-3">
                       <Clock className="h-3.5 w-3.5 mt-0.5 shrink-0 text-[var(--t-text-muted)]" />
                       <div className="min-w-0">
                         <p className="text-sm text-[var(--t-text-primary)]">
-                          <span className="font-medium">{who}</span> {what}
+                          <span className="font-medium">Rev {entry.revision_number}</span>{" "}
+                          {summary}
                         </p>
                         <p className="text-xs text-[var(--t-text-muted)]">{when}</p>
                       </div>
@@ -822,11 +843,9 @@ function RecordPaymentForm({
     setError("");
     setSaving(true);
     try {
-      await api.post("/payments", {
-        invoiceId,
+      await api.post(`/invoices/${invoiceId}/payments`, {
         amount: Number(amount),
-        paymentMethod: method,
-        status: "succeeded",
+        payment_method: method,
         notes: notes || undefined,
       });
       onSuccess();
