@@ -94,6 +94,18 @@ export class DumpLocationRate {
 
   @Column({ name: 'is_active', default: true })
   is_active!: boolean;
+
+  @Column({ name: 'effective_date', type: 'date', nullable: true })
+  effective_date!: string;
+
+  @Column({ name: 'effective_until', type: 'date', nullable: true })
+  effective_until!: string;
+
+  @CreateDateColumn({ name: 'created_at' })
+  created_at!: Date;
+
+  @UpdateDateColumn({ name: 'updated_at' })
+  updated_at!: Date;
 }
 
 @Entity('dump_location_surcharges')
@@ -128,4 +140,16 @@ export class DumpLocationSurcharge {
 
   @Column({ name: 'sort_order', type: 'int', default: 0 })
   sort_order!: number;
+
+  @Column({ name: 'effective_date', type: 'date', nullable: true })
+  effective_date!: string;
+
+  @Column({ name: 'effective_until', type: 'date', nullable: true })
+  effective_until!: string;
+
+  @CreateDateColumn({ name: 'created_at' })
+  created_at!: Date;
+
+  @UpdateDateColumn({ name: 'updated_at' })
+  updated_at!: Date;
 }

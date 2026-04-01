@@ -33,12 +33,18 @@ export class DumpLocationsService {
 
   /* ───── Dump Locations CRUD ───── */
 
-  findAll(tenantId: string) {
-    return this.locRepo.find({
+  async findAll(tenantId: string) {
+    const locations = await this.locRepo.find({
       where: { tenant_id: tenantId, is_active: true },
       relations: ['rates', 'surcharges'],
       order: { name: 'ASC' },
     });
+    const today = new Date().toISOString().split('T')[0];
+    for (const loc of locations) {
+      loc.rates = (loc.rates || []).filter(r => r.is_active && (!r.effective_until || r.effective_until >= today));
+      loc.surcharges = (loc.surcharges || []).filter(s => s.is_active && (!s.effective_until || s.effective_until >= today));
+    }
+    return locations;
   }
 
   async findOne(tenantId: string, id: string) {
@@ -47,6 +53,9 @@ export class DumpLocationsService {
       relations: ['rates', 'surcharges'],
     });
     if (!loc) throw new NotFoundException('Dump location not found');
+    const today = new Date().toISOString().split('T')[0];
+    loc.rates = (loc.rates || []).filter(r => r.is_active && (!r.effective_until || r.effective_until >= today));
+    loc.surcharges = (loc.surcharges || []).filter(s => s.is_active && (!s.effective_until || s.effective_until >= today));
     return loc;
   }
 
@@ -84,11 +93,14 @@ export class DumpLocationsService {
 
   async getRates(tenantId: string, locationId: string) {
     await this.findOne(tenantId, locationId);
-    return this.rateRepo.find({ where: { dump_location_id: locationId, is_active: true } });
+    const today = new Date().toISOString().split('T')[0];
+    const rates = await this.rateRepo.find({ where: { dump_location_id: locationId, is_active: true } });
+    return rates.filter(r => !r.effective_until || r.effective_until >= today);
   }
 
   async addRate(tenantId: string, locationId: string, body: Record<string, unknown>) {
     await this.findOne(tenantId, locationId);
+    const today = new Date().toISOString().split('T')[0];
     const rate = this.rateRepo.create({
       dump_location_id: locationId,
       waste_type: (body.wasteType || body.waste_type) as string,
@@ -96,20 +108,38 @@ export class DumpLocationsService {
       rate_per_ton: Number(body.ratePerTon ?? body.rate_per_ton ?? 0),
       minimum_charge: body.minimumCharge != null ? Number(body.minimumCharge) : body.minimum_charge != null ? Number(body.minimum_charge) : null,
       rate_type: ((body.rateType || body.rate_type) as string) || 'per_ton',
+      effective_date: today,
     } as Partial<DumpLocationRate>);
     return this.rateRepo.save(rate);
   }
 
   async updateRate(rateId: string, body: Record<string, unknown>) {
-    const rate = await this.rateRepo.findOneBy({ id: rateId });
-    if (!rate) throw new NotFoundException('Rate not found');
-    Object.assign(rate, body);
-    return this.rateRepo.save(rate);
+    const old = await this.rateRepo.findOneBy({ id: rateId });
+    if (!old) throw new NotFoundException('Rate not found');
+    const today = new Date().toISOString().split('T')[0];
+
+    // Archive old rate
+    old.effective_until = today;
+    await this.rateRepo.save(old);
+
+    // Create new versioned rate
+    const newRate = this.rateRepo.create({
+      dump_location_id: old.dump_location_id,
+      waste_type: (body.wasteType || body.waste_type || old.waste_type) as string,
+      waste_type_label: (body.wasteTypeLabel || body.waste_type_label || old.waste_type_label) as string,
+      rate_per_ton: Number(body.ratePerTon ?? body.rate_per_ton ?? old.rate_per_ton),
+      minimum_charge: body.minimumCharge != null ? Number(body.minimumCharge) : body.minimum_charge != null ? Number(body.minimum_charge) : old.minimum_charge,
+      rate_type: old.rate_type,
+      effective_date: today,
+    } as Partial<DumpLocationRate>);
+    return this.rateRepo.save(newRate);
   }
 
   async removeRate(rateId: string) {
     const rate = await this.rateRepo.findOneBy({ id: rateId });
     if (!rate) throw new NotFoundException('Rate not found');
+    const today = new Date().toISOString().split('T')[0];
+    rate.effective_until = today;
     rate.is_active = false;
     return this.rateRepo.save(rate);
   }
@@ -118,14 +148,17 @@ export class DumpLocationsService {
 
   async getSurcharges(tenantId: string, locationId: string) {
     await this.findOne(tenantId, locationId);
-    return this.surRepo.find({
+    const today = new Date().toISOString().split('T')[0];
+    const surcharges = await this.surRepo.find({
       where: { dump_location_id: locationId, is_active: true },
       order: { sort_order: 'ASC' },
     });
+    return surcharges.filter(s => !s.effective_until || s.effective_until >= today);
   }
 
   async addSurcharge(tenantId: string, locationId: string, body: Record<string, unknown>) {
     await this.findOne(tenantId, locationId);
+    const today = new Date().toISOString().split('T')[0];
     const sur = this.surRepo.create({
       dump_location_id: locationId,
       item_type: (body.itemType || body.item_type) as string,
@@ -134,20 +167,39 @@ export class DumpLocationsService {
       customer_charge: Number(body.customerCharge ?? body.customer_charge ?? 0),
       charge_type: ((body.chargeType || body.charge_type) as string) || 'flat',
       sort_order: Number(body.sortOrder ?? body.sort_order ?? 0),
+      effective_date: today,
     } as Partial<DumpLocationSurcharge>);
     return this.surRepo.save(sur);
   }
 
   async updateSurcharge(surchargeId: string, body: Record<string, unknown>) {
-    const sur = await this.surRepo.findOneBy({ id: surchargeId });
-    if (!sur) throw new NotFoundException('Surcharge not found');
-    Object.assign(sur, body);
-    return this.surRepo.save(sur);
+    const old = await this.surRepo.findOneBy({ id: surchargeId });
+    if (!old) throw new NotFoundException('Surcharge not found');
+    const today = new Date().toISOString().split('T')[0];
+
+    // Archive old surcharge
+    old.effective_until = today;
+    await this.surRepo.save(old);
+
+    // Create new versioned surcharge
+    const newSur = this.surRepo.create({
+      dump_location_id: old.dump_location_id,
+      item_type: (body.itemType || body.item_type || old.item_type) as string,
+      label: (body.label || old.label) as string,
+      dump_charge: Number(body.dumpCharge ?? body.dump_charge ?? old.dump_charge),
+      customer_charge: Number(body.customerCharge ?? body.customer_charge ?? old.customer_charge),
+      charge_type: old.charge_type,
+      sort_order: old.sort_order,
+      effective_date: today,
+    } as Partial<DumpLocationSurcharge>);
+    return this.surRepo.save(newSur);
   }
 
   async removeSurcharge(surchargeId: string) {
     const sur = await this.surRepo.findOneBy({ id: surchargeId });
     if (!sur) throw new NotFoundException('Surcharge not found');
+    const today = new Date().toISOString().split('T')[0];
+    sur.effective_until = today;
     sur.is_active = false;
     return this.surRepo.save(sur);
   }
