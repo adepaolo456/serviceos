@@ -193,6 +193,17 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
     } catch { toast("error", "Failed to delete"); }
   };
 
+  const scheduleNext = async (type: string) => {
+    const scheduledDate = prompt(`Scheduled date for ${type.replace(/_/g, " ")} (YYYY-MM-DD):`);
+    if (!scheduledDate) return;
+    setActionLoading(true);
+    try {
+      await api.post(`/jobs/${id}/schedule-next`, { type, scheduledDate });
+      toast("success", `${type.replace(/_/g, " ")} scheduled for ${scheduledDate}`);
+      await fetchJob();
+    } catch { toast("error", "Failed to schedule"); } finally { setActionLoading(false); }
+  };
+
   if (loading) {
     return (
       <div className="py-10">
@@ -273,6 +284,20 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
             <button onClick={deleteJob} className="flex w-full items-center gap-2 px-4 py-2 text-sm text-[var(--t-error)] hover:bg-[var(--t-bg-card-hover)] transition-colors">
               <Trash2 className="h-3.5 w-3.5" /> Delete Job
             </button>
+            {job.status === "completed" && (job.job_type === "delivery" || job.job_type === "drop_off") && (
+              <>
+                <div className="my-1 border-t border-[var(--t-border)]" />
+                <button onClick={() => scheduleNext("pickup")} disabled={actionLoading} className="flex w-full items-center gap-2 px-4 py-2 text-sm text-[var(--t-text-primary)] hover:bg-[var(--t-bg-card-hover)] transition-colors">
+                  <ArrowRight className="h-3.5 w-3.5" /> Schedule Pickup
+                </button>
+                <button onClick={() => scheduleNext("exchange")} disabled={actionLoading} className="flex w-full items-center gap-2 px-4 py-2 text-sm text-[var(--t-text-primary)] hover:bg-[var(--t-bg-card-hover)] transition-colors">
+                  <ArrowRight className="h-3.5 w-3.5" /> Schedule Exchange
+                </button>
+                <button onClick={() => scheduleNext("dump_and_return")} disabled={actionLoading} className="flex w-full items-center gap-2 px-4 py-2 text-sm text-[var(--t-text-primary)] hover:bg-[var(--t-bg-card-hover)] transition-colors">
+                  <ArrowRight className="h-3.5 w-3.5" /> Schedule Dump & Return
+                </button>
+              </>
+            )}
           </Dropdown>
         </div>
       </div>
