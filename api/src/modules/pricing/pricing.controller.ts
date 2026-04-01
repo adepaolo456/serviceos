@@ -175,9 +175,9 @@ export class PricingController {
   }
 
   @Delete(':id')
-  @HttpCode(HttpStatus.NO_CONTENT)
-  @ApiOperation({ summary: 'Delete a pricing rule' })
-  remove(@TenantId() tenantId: string, @Param('id', ParseUUIDPipe) id: string) {
-    return this.pricingService.remove(tenantId, id);
+  @ApiOperation({ summary: 'Delete a pricing rule (soft)' })
+  async remove(@TenantId() tenantId: string, @Param('id', ParseUUIDPipe) id: string) {
+    await this.pricingService.remove(tenantId, id);
+    return { message: 'Pricing rule deleted' };
   }
 }

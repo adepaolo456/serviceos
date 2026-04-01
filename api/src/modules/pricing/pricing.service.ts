@@ -58,10 +58,13 @@ export class PricingService {
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
     const skip = (page - 1) * limit;
+    const today = new Date().toISOString().split('T')[0];
 
     const qb = this.pricingRulesRepository
       .createQueryBuilder('p')
-      .where('p.tenant_id = :tenantId', { tenantId });
+      .where('p.tenant_id = :tenantId', { tenantId })
+      .andWhere('p.is_active = true')
+      .andWhere('(p.effective_until IS NULL OR p.effective_until >= :today)', { today });
 
     if (query.serviceType) {
       qb.andWhere('p.service_type = :serviceType', {
@@ -108,41 +111,50 @@ export class PricingService {
     id: string,
     dto: UpdatePricingRuleDto,
   ): Promise<PricingRule> {
-    const rule = await this.findOne(tenantId, id);
+    const old = await this.findOne(tenantId, id);
+    const today = new Date().toISOString().split('T')[0];
 
-    if (dto.name !== undefined) rule.name = dto.name;
-    if (dto.serviceType !== undefined) rule.service_type = dto.serviceType;
-    if (dto.assetSubtype !== undefined) rule.asset_subtype = dto.assetSubtype;
-    if (dto.customerType !== undefined) rule.customer_type = dto.customerType;
-    if (dto.basePrice !== undefined) rule.base_price = dto.basePrice;
-    if (dto.rentalPeriodDays !== undefined)
-      rule.rental_period_days = dto.rentalPeriodDays;
-    if (dto.extraDayRate !== undefined) rule.extra_day_rate = dto.extraDayRate;
-    if (dto.includedMiles !== undefined)
-      rule.included_miles = dto.includedMiles;
-    if (dto.perMileCharge !== undefined)
-      rule.per_mile_charge = dto.perMileCharge;
-    if (dto.maxServiceMiles !== undefined)
-      rule.max_service_miles = dto.maxServiceMiles;
-    if (dto.includedTons !== undefined) rule.included_tons = dto.includedTons;
-    if (dto.overagePerTon !== undefined)
-      rule.overage_per_ton = dto.overagePerTon;
-    if (dto.deliveryFee !== undefined) rule.delivery_fee = dto.deliveryFee;
-    if (dto.pickupFee !== undefined) rule.pickup_fee = dto.pickupFee;
-    if (dto.exchangeFee !== undefined) rule.exchange_fee = dto.exchangeFee;
-    if (dto.requireDeposit !== undefined)
-      rule.require_deposit = dto.requireDeposit;
-    if (dto.depositAmount !== undefined)
-      rule.deposit_amount = dto.depositAmount;
-    if (dto.taxRate !== undefined) rule.tax_rate = dto.taxRate;
-    if (dto.isActive !== undefined) rule.is_active = dto.isActive;
+    // Archive old version
+    old.effective_until = today;
+    await this.pricingRulesRepository.save(old);
 
-    return this.pricingRulesRepository.save(rule);
+    // Create new versioned rule
+    const newRule = this.pricingRulesRepository.create({
+      tenant_id: tenantId,
+      name: dto.name ?? old.name,
+      service_type: dto.serviceType ?? old.service_type,
+      asset_subtype: dto.assetSubtype ?? old.asset_subtype,
+      customer_type: dto.customerType ?? old.customer_type,
+      base_price: dto.basePrice ?? old.base_price,
+      rental_period_days: dto.rentalPeriodDays ?? old.rental_period_days,
+      extra_day_rate: dto.extraDayRate ?? old.extra_day_rate,
+      included_miles: dto.includedMiles ?? old.included_miles,
+      per_mile_charge: dto.perMileCharge ?? old.per_mile_charge,
+      max_service_miles: dto.maxServiceMiles ?? old.max_service_miles,
+      included_tons: dto.includedTons ?? old.included_tons,
+      overage_per_ton: dto.overagePerTon ?? old.overage_per_ton,
+      delivery_fee: dto.deliveryFee ?? old.delivery_fee,
+      pickup_fee: dto.pickupFee ?? old.pickup_fee,
+      exchange_fee: dto.exchangeFee ?? old.exchange_fee,
+      require_deposit: dto.requireDeposit ?? old.require_deposit,
+      deposit_amount: dto.depositAmount ?? old.deposit_amount,
+      tax_rate: dto.taxRate ?? old.tax_rate,
+      failed_trip_base_fee: old.failed_trip_base_fee,
+      min_rental_days: old.min_rental_days,
+      max_rental_days: old.max_rental_days,
+      is_active: dto.isActive ?? true,
+      effective_date: today,
+    } as Partial<PricingRule>);
+
+    return this.pricingRulesRepository.save(newRule);
   }
 
   async remove(tenantId: string, id: string): Promise<void> {
     const rule = await this.findOne(tenantId, id);
-    await this.pricingRulesRepository.remove(rule);
+    const today = new Date().toISOString().split('T')[0];
+    rule.effective_until = today;
+    rule.is_active = false;
+    await this.pricingRulesRepository.save(rule);
   }
 
   async calculate(tenantId: string, dto: CalculatePriceDto) {

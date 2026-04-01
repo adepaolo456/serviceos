@@ -290,58 +290,50 @@ export default function PricingPage() {
       ) : (
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3.5">
           {rules.map((rule) => (
-            <button
+            <div
               key={rule.id}
-              onClick={() => {
-                setEditRule(rule);
-                setEditOpen(true);
-              }}
-              className="text-left rounded-[20px] border p-5 transition-all duration-150 cursor-pointer hover:-translate-y-0.5"
+              className="group relative text-left rounded-[20px] border p-5 transition-all duration-150 cursor-pointer hover:-translate-y-0.5"
               style={{
                 background: "var(--t-bg-secondary)",
                 borderColor: "var(--t-border)",
                 boxShadow: "0 2px 12px var(--t-shadow)",
               }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.boxShadow =
-                  "0 6px 20px rgba(0,0,0,0.12)";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.boxShadow =
-                  "0 2px 12px var(--t-shadow)";
-              }}
+              onMouseEnter={(e) => { e.currentTarget.style.boxShadow = "0 6px 20px rgba(0,0,0,0.12)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.boxShadow = "0 2px 12px var(--t-shadow)"; }}
+              onClick={() => { setEditRule(rule); setEditOpen(true); }}
             >
-              <p
-                className="text-[11px] font-extrabold uppercase tracking-[1.2px]"
-                style={{ color: "var(--t-text-tertiary)" }}
-              >
+              {/* Edit/Delete icons */}
+              <div className="absolute top-3 right-3 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
+                <button onClick={() => { setEditRule(rule); setEditOpen(true); }}
+                  className="p-1.5 rounded-lg transition-colors" style={{ color: "var(--t-text-muted)" }}
+                  onMouseEnter={e => { e.currentTarget.style.color = "var(--t-accent)"; }}
+                  onMouseLeave={e => { e.currentTarget.style.color = "var(--t-text-muted)"; }}>
+                  <Pencil className="h-3.5 w-3.5" />
+                </button>
+                <button onClick={async () => {
+                    if (!confirm(`Delete ${rule.asset_subtype || rule.name} pricing rule? Existing invoices will keep their original pricing.`)) return;
+                    try { await api.delete(`/pricing/${rule.id}`); toast("success", "Pricing rule deleted"); fetchRules(); }
+                    catch { toast("error", "Failed to delete"); }
+                  }}
+                  className="p-1.5 rounded-lg transition-colors" style={{ color: "var(--t-text-muted)" }}
+                  onMouseEnter={e => { e.currentTarget.style.color = "var(--t-error)"; }}
+                  onMouseLeave={e => { e.currentTarget.style.color = "var(--t-text-muted)"; }}>
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
+              <p className="text-[11px] font-extrabold uppercase tracking-[1.2px]" style={{ color: "var(--t-text-tertiary)" }}>
                 {rule.asset_subtype?.replace("yd", " Yard") || rule.name}
               </p>
-              <p
-                className="text-[28px] font-extrabold tracking-tight mt-1"
-                style={{
-                  color: "var(--t-text-primary)",
-                  letterSpacing: "-1px",
-                }}
-              >
+              <p className="text-[28px] font-extrabold tracking-tight mt-1" style={{ color: "var(--t-text-primary)", letterSpacing: "-1px" }}>
                 ${Number(rule.base_price).toLocaleString()}
               </p>
-              <p
-                className="text-[12px] mt-1.5"
-                style={{ color: "var(--t-text-muted)" }}
-              >
-                {Number(rule.included_tons)} ton
-                {Number(rule.included_tons) !== 1 ? "s" : ""} ·{" "}
-                {rule.rental_period_days} days · $
-                {Number(rule.extra_day_rate)}/day
+              <p className="text-[12px] mt-1.5" style={{ color: "var(--t-text-muted)" }}>
+                {Number(rule.included_tons)} ton{Number(rule.included_tons) !== 1 ? "s" : ""} · {rule.rental_period_days} days · ${Number(rule.extra_day_rate)}/day
               </p>
-              <p
-                className="text-[11px] mt-1 font-semibold"
-                style={{ color: "var(--t-accent)" }}
-              >
+              <p className="text-[11px] mt-1 font-semibold" style={{ color: "var(--t-accent)" }}>
                 ${Number(rule.overage_per_ton)}/ton overage
               </p>
-            </button>
+            </div>
           ))}
           {/* Add new size card */}
           <button
