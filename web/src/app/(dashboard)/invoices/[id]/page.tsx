@@ -11,7 +11,12 @@ import {
   FileText,
   Calendar,
   User,
+  Pencil,
+  Plus,
+  Trash2,
+  Clock,
 } from "lucide-react";
+import { useToast } from "@/components/toast";
 import { api } from "@/lib/api";
 import SlideOver from "@/components/slide-over";
 
@@ -87,6 +92,10 @@ export default function InvoiceDetailPage({
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [paymentPanel, setPaymentPanel] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [history, setHistory] = useState<any[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const { toast } = useToast();
 
   const fetchData = async () => {
     try {
@@ -103,8 +112,15 @@ export default function InvoiceDetailPage({
     }
   };
 
+  const fetchHistory = async () => {
+    setHistoryLoading(true);
+    try { setHistory(await api.get<any[]>(`/invoices/${id}/history`)); }
+    catch { /* */ } finally { setHistoryLoading(false); }
+  };
+
   useEffect(() => {
     fetchData();
+    fetchHistory();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
@@ -243,6 +259,15 @@ export default function InvoiceDetailPage({
             >
               <CreditCard className="h-4 w-4" />
               Record Payment
+            </button>
+          )}
+          {invoice.status !== "void" && (
+            <button
+              onClick={() => setEditOpen(true)}
+              className="flex items-center gap-2 rounded-full border border-[var(--t-border)] bg-transparent px-4 py-2 text-sm font-medium text-[var(--t-text-primary)] transition-colors hover:bg-[var(--t-bg-card-hover)]"
+            >
+              <Pencil className="h-4 w-4" />
+              {invoice.status === "paid" ? "Edit Notes" : "Edit"}
             </button>
           )}
           {canVoid && (
@@ -413,6 +438,43 @@ export default function InvoiceDetailPage({
               </table>
             )}
           </div>
+          {/* Audit History */}
+          <div className="rounded-[20px] bg-[var(--t-bg-card)] border border-[var(--t-border)] overflow-hidden">
+            <div className="px-6 py-4 border-b border-[var(--t-border)]">
+              <h2 className="text-base font-semibold text-[var(--t-text-primary)]">
+                History
+              </h2>
+            </div>
+            {historyLoading ? (
+              <div className="px-6 py-8 text-center text-sm text-[var(--t-text-muted)]">Loading...</div>
+            ) : history.length === 0 ? (
+              <div className="px-6 py-8 text-center text-sm text-[var(--t-text-muted)]">No history entries</div>
+            ) : (
+              <div className="divide-y divide-[var(--t-border)]">
+                {history.map((entry) => {
+                  const d = entry.details || {};
+                  const who = d.user_name || d.user_email || d.overriddenBy || "System";
+                  const when = new Date(entry.created_at).toLocaleString();
+                  let what = entry.type.replace(/_/g, " ");
+                  if (d.changes) {
+                    const keys = Object.keys(d.changes);
+                    what = `edited ${keys.join(", ")}`;
+                  }
+                  return (
+                    <div key={entry.id} className="px-6 py-3 flex items-start gap-3">
+                      <Clock className="h-3.5 w-3.5 mt-0.5 shrink-0 text-[var(--t-text-muted)]" />
+                      <div className="min-w-0">
+                        <p className="text-sm text-[var(--t-text-primary)]">
+                          <span className="font-medium">{who}</span> {what}
+                        </p>
+                        <p className="text-xs text-[var(--t-text-muted)]">{when}</p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Sidebar totals */}
@@ -486,6 +548,115 @@ export default function InvoiceDetailPage({
           }}
         />
       </SlideOver>
+
+      {/* Edit Invoice Modal */}
+      {editOpen && invoice && (
+        <EditInvoiceModal
+          invoice={invoice}
+          onClose={() => setEditOpen(false)}
+          onSaved={() => { setEditOpen(false); fetchData(); fetchHistory(); toast("success", "Invoice updated"); }}
+        />
+      )}
+    </div>
+  );
+}
+
+/* ---------- Edit Invoice Modal ---------- */
+
+function EditInvoiceModal({ invoice, onClose, onSaved }: { invoice: Invoice; onClose: () => void; onSaved: () => void }) {
+  const isPaid = invoice.status === "paid";
+  const [items, setItems] = useState(invoice.line_items.map(li => ({ description: li.description, quantity: li.quantity, unitPrice: li.unitPrice })));
+  const [dueDate, setDueDate] = useState(invoice.due_date || "");
+  const [discount, setDiscount] = useState(String(invoice.discount_amount || ""));
+  const [notes, setNotes] = useState(invoice.notes || "");
+  const [saving, setSaving] = useState(false);
+
+  const subtotal = items.reduce((s, li) => s + li.quantity * li.unitPrice, 0);
+  const discountNum = Number(discount) || 0;
+  const total = Math.round((subtotal - discountNum) * 100) / 100;
+  const balanceDue = Math.round((total - Number(invoice.amount_paid)) * 100) / 100;
+
+  const updateItem = (i: number, field: string, value: string) => {
+    setItems(prev => prev.map((li, idx) => idx === i ? { ...li, [field]: field === "description" ? value : Number(value) || 0 } : li));
+  };
+  const addItem = () => setItems(prev => [...prev, { description: "", quantity: 1, unitPrice: 0 }]);
+  const removeItem = (i: number) => setItems(prev => prev.filter((_, idx) => idx !== i));
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const body: Record<string, unknown> = { notes };
+      if (!isPaid) {
+        body.lineItems = items;
+        body.dueDate = dueDate;
+        body.discountAmount = discountNum;
+      }
+      await api.patch(`/invoices/${invoice.id}/edit`, body);
+      onSaved();
+    } catch { setSaving(false); }
+  };
+
+  const inp = "w-full rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-3 py-2 text-sm text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)]";
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative w-full max-w-lg max-h-[85vh] overflow-y-auto animate-fade-in" style={{ borderRadius: 20, border: "1px solid var(--t-border)", background: "var(--t-bg-primary)", padding: 24, boxShadow: "0 25px 50px -12px rgba(0,0,0,0.5)" }}>
+        <h3 className="text-lg font-semibold text-[var(--t-text-primary)] mb-1">{isPaid ? "Edit Notes" : "Edit Invoice"}</h3>
+        <p className="text-sm text-[var(--t-text-muted)] mb-5">{invoice.invoice_number}</p>
+
+        {!isPaid && (
+          <>
+            <label className="block text-xs font-medium text-[var(--t-text-muted)] uppercase tracking-wider mb-2">Line Items</label>
+            <div className="space-y-2 mb-4">
+              {items.map((li, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <input value={li.description} onChange={e => updateItem(i, "description", e.target.value)} className={`${inp} flex-1`} placeholder="Description" />
+                  <input type="number" value={li.quantity} onChange={e => updateItem(i, "quantity", e.target.value)} className={`${inp} w-16`} placeholder="Qty" />
+                  <input type="number" step="0.01" value={li.unitPrice} onChange={e => updateItem(i, "unitPrice", e.target.value)} className={`${inp} w-24`} placeholder="Price" />
+                  <span className="w-20 text-right text-sm font-medium text-[var(--t-text-primary)] tabular-nums">{fmt(li.quantity * li.unitPrice)}</span>
+                  {items.length > 1 && <button onClick={() => removeItem(i)} className="p-1 text-[var(--t-error)]"><Trash2 className="h-3.5 w-3.5" /></button>}
+                </div>
+              ))}
+              <button onClick={addItem} className="flex items-center gap-1 text-xs font-medium text-[var(--t-accent)] hover:opacity-80">
+                <Plus className="h-3 w-3" /> Add Line Item
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 mb-4">
+              <div>
+                <label className="block text-xs font-medium text-[var(--t-text-muted)] mb-1">Due Date</label>
+                <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} className={inp} />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-[var(--t-text-muted)] mb-1">Discount ($)</label>
+                <input type="number" step="0.01" value={discount} onChange={e => setDiscount(e.target.value)} className={inp} placeholder="0" />
+              </div>
+            </div>
+
+            <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-3 mb-4 text-sm tabular-nums space-y-1">
+              <div className="flex justify-between"><span className="text-[var(--t-text-muted)]">Subtotal</span><span className="text-[var(--t-text-primary)]">{fmt(subtotal)}</span></div>
+              {discountNum > 0 && <div className="flex justify-between"><span className="text-[var(--t-text-muted)]">Discount</span><span className="text-[var(--t-error)]">-{fmt(discountNum)}</span></div>}
+              <div className="flex justify-between font-semibold border-t border-[var(--t-border)] pt-1"><span className="text-[var(--t-text-primary)]">Total</span><span>{fmt(total)}</span></div>
+              <div className="flex justify-between"><span className="text-[var(--t-text-muted)]">Balance Due</span><span className={balanceDue <= 0 ? "text-emerald-400" : "text-[var(--t-text-primary)]"}>{balanceDue <= 0 ? "PAID" : fmt(balanceDue)}</span></div>
+            </div>
+          </>
+        )}
+
+        <div className="mb-4">
+          <label className="block text-xs font-medium text-[var(--t-text-muted)] mb-1">Notes</label>
+          <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} className={`${inp} resize-none`} placeholder="Invoice notes..." />
+        </div>
+
+        <div className="flex gap-2">
+          <button onClick={handleSave} disabled={saving} className="flex-1 rounded-full bg-[var(--t-accent)] py-2.5 text-sm font-semibold text-black transition-opacity hover:opacity-90 disabled:opacity-50">
+            {saving ? "Saving..." : "Save Changes"}
+          </button>
+          <button onClick={onClose} className="rounded-full border border-[var(--t-border)] px-6 py-2.5 text-sm text-[var(--t-text-muted)] transition-colors hover:text-[var(--t-text-primary)]">
+            Cancel
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

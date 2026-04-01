@@ -8,6 +8,7 @@ import { Repository, EntityManager } from 'typeorm';
 import { Invoice } from './entities/invoice.entity';
 import { Payment } from './entities/payment.entity';
 import { Job } from '../jobs/entities/job.entity';
+import { AutomationLog } from '../automation/entities/automation-log.entity';
 import { NotificationsService } from '../notifications/notifications.service';
 import {
   CreateInvoiceDto,
@@ -26,6 +27,8 @@ export class BillingService {
     private paymentsRepository: Repository<Payment>,
     @InjectRepository(Job)
     private jobsRepository: Repository<Job>,
+    @InjectRepository(AutomationLog)
+    private logRepo: Repository<AutomationLog>,
     private notificationsService: NotificationsService,
   ) {}
 
@@ -198,6 +201,114 @@ export class BillingService {
     } catch { /* best effort */ }
 
     return saved;
+  }
+
+  async editInvoice(
+    tenantId: string,
+    id: string,
+    body: Record<string, unknown>,
+    userId?: string,
+    userName?: string,
+  ): Promise<Invoice> {
+    const invoice = await this.findOneInvoice(tenantId, id);
+
+    if (invoice.status === 'void') {
+      throw new BadRequestException('Cannot edit a voided invoice');
+    }
+
+    const changes: Record<string, { from: unknown; to: unknown }> = {};
+    const isPaid = invoice.status === 'paid';
+
+    // Paid invoices: only notes editable
+    if (body.notes !== undefined) {
+      if (invoice.notes !== body.notes) {
+        changes.notes = { from: invoice.notes, to: body.notes };
+        invoice.notes = body.notes as string;
+      }
+    }
+
+    if (!isPaid) {
+      if (body.lineItems !== undefined) {
+        const newItems = body.lineItems as Array<{ description: string; quantity: number; unitPrice: number }>;
+        changes.line_items = { from: invoice.line_items, to: newItems };
+        invoice.line_items = newItems.map(li => ({
+          description: li.description,
+          quantity: li.quantity,
+          unitPrice: li.unitPrice,
+          amount: Math.round(li.quantity * li.unitPrice * 100) / 100,
+        }));
+      }
+
+      if (body.dueDate !== undefined && body.dueDate !== invoice.due_date) {
+        changes.due_date = { from: invoice.due_date, to: body.dueDate };
+        invoice.due_date = body.dueDate as string;
+      }
+
+      if (body.discountAmount !== undefined) {
+        const newDisc = Number(body.discountAmount);
+        if (newDisc !== Number(invoice.discount_amount)) {
+          changes.discount_amount = { from: invoice.discount_amount, to: newDisc };
+          invoice.discount_amount = newDisc;
+        }
+      }
+    }
+
+    // Recalculate totals if line items or discount changed
+    if (changes.line_items || changes.discount_amount) {
+      const subtotal = invoice.line_items.reduce((s, li) => s + li.amount, 0);
+      const discount = Number(invoice.discount_amount) || 0;
+      const taxRate = Number(invoice.tax_rate) || 0;
+      const taxAmount = Math.round((subtotal - discount) * taxRate * 100) / 100;
+      const total = Math.round((subtotal - discount + taxAmount) * 100) / 100;
+
+      invoice.subtotal = subtotal;
+      invoice.tax_amount = taxAmount;
+      invoice.total = total;
+      invoice.balance_due = Math.round((total - Number(invoice.amount_paid)) * 100) / 100;
+    }
+
+    const saved = await this.invoicesRepository.save(invoice);
+
+    // Audit log
+    if (Object.keys(changes).length > 0) {
+      try {
+        await this.logRepo.save(this.logRepo.create({
+          tenant_id: tenantId,
+          type: 'invoice_edited',
+          status: 'completed',
+          details: {
+            entity_type: 'invoice',
+            entity_id: id,
+            invoice_number: invoice.invoice_number,
+            action: 'edited',
+            user_id: userId,
+            user_name: userName,
+            changes,
+          },
+        }));
+      } catch { /* best effort */ }
+    }
+
+    return saved;
+  }
+
+  async getInvoiceHistory(tenantId: string, id: string) {
+    await this.findOneInvoice(tenantId, id);
+
+    const logs = await this.logRepo.find({
+      where: { tenant_id: tenantId },
+      order: { created_at: 'DESC' },
+    });
+
+    // Filter to logs related to this invoice
+    return logs.filter(log => {
+      const details = log.details as Record<string, unknown> || {};
+      return (
+        (details.entity_type === 'invoice' && details.entity_id === id) ||
+        (details.invoiceId === id) ||
+        (log.job_id && details.invoice_number)
+      );
+    }).slice(0, 50);
   }
 
   async markOverdueInvoices(tenantId: string): Promise<number> {
