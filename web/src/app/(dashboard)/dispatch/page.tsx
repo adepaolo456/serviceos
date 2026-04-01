@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
+import { useTheme } from "@/components/theme-provider";
 import {
   DndContext, closestCenter, DragOverlay, useSensor, useSensors, PointerSensor,
   DragStartEvent, DragEndEvent, useDroppable,
@@ -603,13 +604,18 @@ function DispatchMap({ board, activeJobId }: { board: DispatchBoard | null; acti
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
   const markersRef = useRef<mapboxgl.Marker[]>([]);
+  const { theme } = useTheme();
+
+  const mapStyle = theme === "light"
+    ? "mapbox://styles/mapbox/light-v11"
+    : "mapbox://styles/mapbox/dark-v11";
 
   useEffect(() => {
     if (!HAS_MAP || !mapContainer.current || map.current) return;
     mapboxgl.accessToken = MAPBOX_TOKEN;
     map.current = new mapboxgl.Map({
       container: mapContainer.current,
-      style: "mapbox://styles/mapbox/dark-v11",
+      style: mapStyle,
       center: YARD_COORDS,
       zoom: 11,
     });
@@ -622,6 +628,12 @@ function DispatchMap({ board, activeJobId }: { board: DispatchBoard | null; acti
 
     return () => { map.current?.remove(); map.current = null; };
   }, []);
+
+  // Switch map style on theme change
+  useEffect(() => {
+    if (!map.current) return;
+    map.current.setStyle(mapStyle);
+  }, [mapStyle]);
 
   // Update job pins when board changes
   useEffect(() => {
@@ -656,13 +668,16 @@ function DispatchMap({ board, activeJobId }: { board: DispatchBoard | null; acti
       const driverName = driverMap.get(job.id) || "Unassigned";
       const statusStr = (job.status || "pending").replace(/_/g, " ");
 
+      const textColor = theme === "light" ? "#0a0a0a" : "#fff";
+      const mutedColor = theme === "light" ? "#666" : "#888";
+      const subColor = theme === "light" ? "#888" : "#999";
       const popupHtml = `<div style="font-family:-apple-system,system-ui,sans-serif;padding:6px 2px;min-width:180px">
-        <div style="font-size:14px;font-weight:700;color:#fff;margin-bottom:4px">${custName}</div>
-        <div style="font-size:12px;color:#999;margin-bottom:8px">${addrStr}</div>
-        <div style="display:flex;justify-content:space-between;font-size:11px;padding:2px 0"><span style="color:#888">Type</span><span style="color:${tc.stripe};font-weight:600">${typeStr}</span></div>
-        <div style="display:flex;justify-content:space-between;font-size:11px;padding:2px 0"><span style="color:#888">Status</span><span style="color:#fff;text-transform:capitalize">${statusStr}</span></div>
-        <div style="display:flex;justify-content:space-between;font-size:11px;padding:2px 0"><span style="color:#888">Driver</span><span style="color:#fff">${driverName}</span></div>
-        <div style="display:flex;justify-content:space-between;font-size:11px;padding:2px 0"><span style="color:#888">Job</span><span style="color:#fff">${job.job_number}</span></div>
+        <div style="font-size:14px;font-weight:700;color:${textColor};margin-bottom:4px">${custName}</div>
+        <div style="font-size:12px;color:${subColor};margin-bottom:8px">${addrStr}</div>
+        <div style="display:flex;justify-content:space-between;font-size:11px;padding:2px 0"><span style="color:${mutedColor}">Type</span><span style="color:${tc.stripe};font-weight:600">${typeStr}</span></div>
+        <div style="display:flex;justify-content:space-between;font-size:11px;padding:2px 0"><span style="color:${mutedColor}">Status</span><span style="color:${textColor};text-transform:capitalize">${statusStr}</span></div>
+        <div style="display:flex;justify-content:space-between;font-size:11px;padding:2px 0"><span style="color:${mutedColor}">Driver</span><span style="color:${textColor}">${driverName}</span></div>
+        <div style="display:flex;justify-content:space-between;font-size:11px;padding:2px 0"><span style="color:${mutedColor}">Job</span><span style="color:${textColor}">${job.job_number}</span></div>
         <a href="/jobs/${job.id}" style="display:inline-block;margin-top:8px;font-size:12px;color:#22C55E;text-decoration:none;font-weight:600">View Job →</a>
       </div>`;
 
@@ -677,7 +692,7 @@ function DispatchMap({ board, activeJobId }: { board: DispatchBoard | null; acti
       el.style.cssText = "width:26px;height:26px;border-radius:50%;background:#8B5CF6;border:2px solid #fff;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:bold;color:#fff;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,0.3);";
       el.textContent = "♻";
       const popup = new mapboxgl.Popup({ offset: 10, closeButton: false }).setHTML(
-        `<div style="font-family:-apple-system,system-ui,sans-serif;padding:4px 2px"><div style="font-size:13px;font-weight:600;color:#fff">${name}</div><div style="font-size:11px;color:#8B5CF6;margin-top:2px">Dump Facility</div></div>`
+        `<div style="font-family:-apple-system,system-ui,sans-serif;padding:4px 2px"><div style="font-size:13px;font-weight:600;color:${theme === "light" ? "#0a0a0a" : "#fff"}">${name}</div><div style="font-size:11px;color:#8B5CF6;margin-top:2px">Dump Facility</div></div>`
       );
       const marker = new mapboxgl.Marker(el).setLngLat(coords).setPopup(popup).addTo(map.current!);
       markersRef.current.push(marker);
@@ -696,30 +711,34 @@ function DispatchMap({ board, activeJobId }: { board: DispatchBoard | null; acti
     );
   }
 
+  const popupBg = theme === "light" ? "#ffffff" : "#212121";
+  const popupBorder = theme === "light" ? "#e5e5e5" : "#333";
+  const popupShadow = theme === "light" ? "rgba(0,0,0,0.15)" : "rgba(0,0,0,0.5)";
+
   return (
     <>
       <style>{`
         .dispatch-map-container .mapboxgl-popup-content {
-          background: #212121 !important;
+          background: ${popupBg} !important;
           border-radius: 14px !important;
           padding: 10px 14px !important;
-          box-shadow: 0 8px 30px rgba(0,0,0,0.5) !important;
-          border: 1px solid #333 !important;
+          box-shadow: 0 8px 30px ${popupShadow} !important;
+          border: 1px solid ${popupBorder} !important;
         }
         .dispatch-map-container .mapboxgl-popup-tip {
-          border-top-color: #212121 !important;
+          border-top-color: ${popupBg} !important;
         }
         .dispatch-map-container .mapboxgl-popup-anchor-bottom .mapboxgl-popup-tip {
-          border-top-color: #212121 !important;
+          border-top-color: ${popupBg} !important;
         }
         .dispatch-map-container .mapboxgl-popup-anchor-top .mapboxgl-popup-tip {
-          border-bottom-color: #212121 !important;
+          border-bottom-color: ${popupBg} !important;
         }
         .dispatch-map-container .mapboxgl-popup-anchor-left .mapboxgl-popup-tip {
-          border-right-color: #212121 !important;
+          border-right-color: ${popupBg} !important;
         }
         .dispatch-map-container .mapboxgl-popup-anchor-right .mapboxgl-popup-tip {
-          border-left-color: #212121 !important;
+          border-left-color: ${popupBg} !important;
         }
         .dispatch-map-container .mapboxgl-popup-close-button {
           color: #888 !important;
