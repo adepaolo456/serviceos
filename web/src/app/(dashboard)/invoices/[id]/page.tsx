@@ -264,7 +264,7 @@ export default function InvoiceDetailPage({
           {invoice.status !== "void" && (
             <button
               onClick={() => setEditOpen(true)}
-              className="flex items-center gap-2 rounded-full border border-[var(--t-border)] bg-transparent px-4 py-2 text-sm font-medium text-[var(--t-text-primary)] transition-colors hover:bg-[var(--t-bg-card-hover)]"
+              className="flex items-center gap-2 px-5 py-2.5 rounded-full border border-[var(--t-border)] text-white hover:bg-[var(--t-bg-card-hover)] transition-colors"
             >
               <Pencil className="h-4 w-4" />
               {invoice.status === "paid" ? "Edit Notes" : "Edit"}
