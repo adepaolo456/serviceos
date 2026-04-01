@@ -7,6 +7,7 @@ import { Job } from '../jobs/entities/job.entity';
 import { PricingRule } from '../pricing/entities/pricing-rule.entity';
 import { AutomationLog } from '../automation/entities/automation-log.entity';
 import { Invoice } from '../billing/entities/invoice.entity';
+import { InvoiceLineItem } from '../billing/entities/invoice-line-item.entity';
 
 function haversineDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 3959; // miles
@@ -29,6 +30,7 @@ export class DumpLocationsService {
     @InjectRepository(AutomationLog) private readonly logRepo: Repository<AutomationLog>,
     @InjectRepository(DumpTicket) private readonly ticketRepo: Repository<DumpTicket>,
     @InjectRepository(Invoice) private readonly invoiceRepo: Repository<Invoice>,
+    @InjectRepository(InvoiceLineItem) private readonly lineItemRepo: Repository<InvoiceLineItem>,
   ) {}
 
   /* ───── Dump Locations CRUD ───── */
@@ -321,16 +323,34 @@ export class DumpLocationsService {
         lineItems.push({ description: `${item.label} (qty: ${item.quantity}) @ $${item.chargePerUnit}/each`, quantity: item.quantity, unitPrice: item.chargePerUnit, amount: item.total });
       }
 
-      const invNumber = `INV-${new Date().toISOString().slice(0,10).replace(/-/g,'')}-${Math.floor(Math.random()*9000)+1000}`;
+      const invNumResult = await this.invoiceRepo.query(
+        `SELECT next_invoice_number($1) as num`, [tenantId],
+      );
+      const invNum = invNumResult[0].num;
+      const today = new Date().toISOString().split('T')[0];
       const invoice = this.invoiceRepo.create({
-        tenant_id: tenantId, invoice_number: invNumber, customer_id: job.customer_id,
-        job_id: jobId, status: 'draft',
+        tenant_id: tenantId, invoice_number: invNum, customer_id: job.customer_id,
+        job_id: jobId, status: 'draft', invoice_date: today,
         due_date: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0],
         subtotal: customerCharges, total: customerCharges, balance_due: customerCharges,
-        line_items: lineItems,
-        notes: `Auto-generated from dump ticket #${ticketNumber} at ${location.name}`,
-      });
+        summary_of_work: `Auto-generated from dump ticket #${ticketNumber} at ${location.name}`,
+      } as Partial<Invoice>);
       const savedInvoice = await this.invoiceRepo.save(invoice);
+
+      // Create line items
+      for (let idx = 0; idx < lineItems.length; idx++) {
+        const li = lineItems[idx];
+        await this.lineItemRepo.save(this.lineItemRepo.create({
+          invoice_id: savedInvoice.id,
+          sort_order: idx,
+          line_type: 'overage',
+          name: li.description,
+          quantity: li.quantity,
+          unit_rate: li.unitPrice,
+          amount: li.amount,
+          net_amount: li.amount,
+        }));
+      }
       invoiceId = savedInvoice.id;
 
       // Mark this ticket as invoiced

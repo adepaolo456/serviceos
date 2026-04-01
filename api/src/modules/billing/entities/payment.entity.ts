@@ -2,13 +2,11 @@ import {
   Entity,
   PrimaryGeneratedColumn,
   Column,
-  CreateDateColumn,
   ManyToOne,
   JoinColumn,
 } from 'typeorm';
 import { Tenant } from '../../tenants/entities/tenant.entity';
 import { Invoice } from './invoice.entity';
-import { Customer } from '../../customers/entities/customer.entity';
 
 @Entity('payments')
 export class Payment {
@@ -25,16 +23,9 @@ export class Payment {
   @Column({ name: 'invoice_id' })
   invoice_id!: string;
 
-  @ManyToOne(() => Invoice)
+  @ManyToOne(() => Invoice, (inv) => inv.payments)
   @JoinColumn({ name: 'invoice_id' })
   invoice!: Invoice;
-
-  @Column({ name: 'customer_id' })
-  customer_id!: string;
-
-  @ManyToOne(() => Customer)
-  @JoinColumn({ name: 'customer_id' })
-  customer!: Customer;
 
   @Column({ type: 'decimal', precision: 10, scale: 2 })
   amount!: number;
@@ -42,15 +33,24 @@ export class Payment {
   @Column({ name: 'payment_method' })
   payment_method!: string;
 
-  @Column({ default: 'pending' })
-  status!: string;
+  @Column({ name: 'stripe_payment_intent_id', nullable: true })
+  stripe_payment_intent_id!: string;
+
+  @Column({ name: 'reference_number', nullable: true })
+  reference_number!: string;
 
   @Column({ type: 'text', nullable: true })
   notes!: string;
 
-  @Column({ name: 'processed_at', type: 'timestamptz', nullable: true })
-  processed_at!: Date;
+  @Column({ default: 'completed' })
+  status!: string;
 
-  @CreateDateColumn({ name: 'created_at' })
-  created_at!: Date;
+  @Column({ name: 'refunded_amount', type: 'decimal', precision: 10, scale: 2, default: 0 })
+  refunded_amount!: number;
+
+  @Column({ name: 'applied_at', type: 'timestamptz', default: () => 'NOW()' })
+  applied_at!: Date;
+
+  @Column({ name: 'applied_by', type: 'uuid', nullable: true })
+  applied_by!: string;
 }

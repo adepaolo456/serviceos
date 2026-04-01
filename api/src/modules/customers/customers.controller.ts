@@ -57,6 +57,15 @@ export class CustomersController {
     return this.customersService.update(tenantId, id, dto);
   }
 
+  @Get(':id/balance')
+  @ApiOperation({ summary: 'Get customer balance' })
+  getBalance(
+    @TenantId() tenantId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.customersService.getCustomerBalance(tenantId, id);
+  }
+
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Delete a customer' })

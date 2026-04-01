@@ -7,6 +7,7 @@ import { Customer } from '../customers/entities/customer.entity';
 import { Asset } from '../assets/entities/asset.entity';
 import { Job } from '../jobs/entities/job.entity';
 import { Invoice } from '../billing/entities/invoice.entity';
+import { InvoiceLineItem } from '../billing/entities/invoice-line-item.entity';
 import { User } from '../auth/entities/user.entity';
 import { DumpLocation, DumpLocationRate, DumpLocationSurcharge } from '../dump-locations/entities/dump-location.entity';
 import { DumpTicket } from '../dump-locations/entities/dump-ticket.entity';
@@ -21,6 +22,7 @@ export class SeedController {
     @InjectRepository(Asset) private assetRepo: Repository<Asset>,
     @InjectRepository(Job) private jobRepo: Repository<Job>,
     @InjectRepository(Invoice) private invoiceRepo: Repository<Invoice>,
+    @InjectRepository(InvoiceLineItem) private lineItemRepo: Repository<InvoiceLineItem>,
     @InjectRepository(User) private userRepo: Repository<User>,
     @InjectRepository(DumpLocation) private dumpLocRepo: Repository<DumpLocation>,
     @InjectRepository(DumpLocationRate) private rateRepo: Repository<DumpLocationRate>,
@@ -271,7 +273,30 @@ export class SeedController {
     const jake = await findDriver('jake@rentthisdumpster.com');
 
     const makeJob = (p: any) => this.jobRepo.create({ tenant_id: tid, job_number: `JOB-${Date.now().toString(36).slice(-4)}-${Math.floor(Math.random()*9000)+1000}`, priority: 'normal', source: 'manual', ...p } as any);
-    const makeInv = (p: any) => this.invoiceRepo.create({ tenant_id: tid, ...p } as any);
+    let invSeq = 0;
+    const saveInv = async (p: any) => {
+      invSeq++;
+      const { source, invoice_type, payment_method, line_items, notes, invoice_number, ...rest } = p;
+      const today = new Date().toISOString().split('T')[0];
+      const inv = this.invoiceRepo.create({
+        tenant_id: tid, invoice_number: invSeq, invoice_date: today,
+        due_date: rest.due_date || today,
+        summary_of_work: notes || (source ? source + ' - ' + (invoice_type || 'service') : undefined),
+        ...rest,
+      } as any);
+      const saved: any = await this.invoiceRepo.save(inv);
+      if (line_items) {
+        for (let idx = 0; idx < line_items.length; idx++) {
+          const li = line_items[idx];
+          await this.lineItemRepo.save(this.lineItemRepo.create({
+            invoice_id: saved.id, sort_order: idx, line_type: invoice_type || 'service',
+            name: li.description, quantity: li.quantity, unit_rate: li.unitPrice,
+            amount: li.amount, net_amount: li.amount,
+          }));
+        }
+      }
+      return saved;
+    };
 
     // --- JOB A: David Kim 20yd Delivery (completed, deployed) ---
     const custDavid = await findCust('david.kim@email.com');
@@ -286,7 +311,7 @@ export class SeedController {
       base_price: 800, total_price: 800,
     }));
     if (assetA) await this.assetRepo.update(assetA, { status: 'deployed', current_location: { street: '88 Summer Street', city: 'Stoughton', state: 'MA' }, current_job_id: jobA.id } as any);
-    await this.invoiceRepo.save(makeInv({ invoice_number: 'INV-2026-0010', customer_id: custDavid, job_id: jobA.id, status: 'paid', source: 'booking', invoice_type: 'rental', subtotal: 800, total: 800, amount_paid: 800, balance_due: 0, paid_at: new Date('2026-03-20'), payment_method: 'card', line_items: [{ description: '20yd Dumpster Rental — 14-day rental', quantity: 1, unitPrice: 800, amount: 800 }], notes: 'Paid at time of booking' }));
+    await saveInv({ invoice_number: 'INV-2026-0010', customer_id: custDavid, job_id: jobA.id, status: 'paid', source: 'booking', invoice_type: 'rental', subtotal: 800, total: 800, amount_paid: 800, balance_due: 0, paid_at: new Date('2026-03-20'), payment_method: 'card', line_items: [{ description: '20yd Dumpster Rental — 14-day rental', quantity: 1, unitPrice: 800, amount: 800 }], notes: 'Paid at time of booking' });
     log.push('Job A: David Kim 20yd Delivery (completed, deployed)');
 
     // --- JOB B: Jennifer Walsh 15yd Delivery (completed) ---
@@ -300,7 +325,7 @@ export class SeedController {
       rental_days: 14, rental_start_date: '2026-03-15', rental_end_date: '2026-03-29',
       base_price: 700, total_price: 700,
     }));
-    await this.invoiceRepo.save(makeInv({ invoice_number: 'INV-2026-0011', customer_id: custJen, job_id: jobB.id, status: 'paid', source: 'booking', invoice_type: 'rental', subtotal: 700, total: 700, amount_paid: 700, balance_due: 0, paid_at: new Date('2026-03-15'), payment_method: 'card', line_items: [{ description: '15yd Dumpster Rental — 14-day rental', quantity: 1, unitPrice: 700, amount: 700 }] }));
+    await saveInv({ invoice_number: 'INV-2026-0011', customer_id: custJen, job_id: jobB.id, status: 'paid', source: 'booking', invoice_type: 'rental', subtotal: 700, total: 700, amount_paid: 700, balance_due: 0, paid_at: new Date('2026-03-15'), payment_method: 'card', line_items: [{ description: '15yd Dumpster Rental — 14-day rental', quantity: 1, unitPrice: 700, amount: 700 }] });
 
     // JOB B2: Jennifer Walsh Pickup (clean, no overage)
     const jobB2: any = await this.jobRepo.save(makeJob({
@@ -328,7 +353,7 @@ export class SeedController {
       rental_days: 14, rental_start_date: '2026-03-10', rental_end_date: '2026-03-24',
       base_price: 800, total_price: 800,
     }));
-    await this.invoiceRepo.save(makeInv({ invoice_number: 'INV-2026-0012', customer_id: custRobert, job_id: jobC.id, status: 'paid', source: 'booking', invoice_type: 'rental', subtotal: 800, total: 800, amount_paid: 800, balance_due: 0, paid_at: new Date('2026-03-10'), payment_method: 'card', line_items: [{ description: '20yd Dumpster Rental — 14-day rental', quantity: 1, unitPrice: 800, amount: 800 }] }));
+    await saveInv({ invoice_number: 'INV-2026-0012', customer_id: custRobert, job_id: jobC.id, status: 'paid', source: 'booking', invoice_type: 'rental', subtotal: 800, total: 800, amount_paid: 800, balance_due: 0, paid_at: new Date('2026-03-10'), payment_method: 'card', line_items: [{ description: '20yd Dumpster Rental — 14-day rental', quantity: 1, unitPrice: 800, amount: 800 }] });
 
     // JOB C2: Robert Patel Pickup (overage)
     const jobC2: any = await this.jobRepo.save(makeJob({
@@ -341,7 +366,7 @@ export class SeedController {
     if (assetC) await this.assetRepo.update(assetC, { status: 'available', current_location: null, current_job_id: null } as any);
     await this.jobRepo.update(jobC.id, { linked_job_ids: [jobC2.id] });
     // Overage invoice
-    const invC: any = await this.invoiceRepo.save(makeInv({ invoice_number: 'INV-2026-0030', customer_id: custRobert, job_id: jobC.id, status: 'sent', source: 'dump_slip', invoice_type: 'overage', subtotal: 422, total: 422, amount_paid: 0, balance_due: 422, due_date: '2026-04-27', line_items: [{ description: 'Weight overage: 1.2 tons over 3 ton allowance @ $185/ton', quantity: 1, unitPrice: 222, amount: 222 }, { description: 'Mattress (qty: 2) @ $100/each', quantity: 2, unitPrice: 100, amount: 200 }], notes: 'Additional charges from dump slip #T-89234 at Brockton Transfer Station' }));
+    const invC: any = await saveInv({ invoice_number: 'INV-2026-0030', customer_id: custRobert, job_id: jobC.id, status: 'sent', source: 'dump_slip', invoice_type: 'overage', subtotal: 422, total: 422, amount_paid: 0, balance_due: 422, due_date: '2026-04-27', line_items: [{ description: 'Weight overage: 1.2 tons over 3 ton allowance @ $185/ton', quantity: 1, unitPrice: 222, amount: 222 }, { description: 'Mattress (qty: 2) @ $100/each', quantity: 2, unitPrice: 100, amount: 200 }], notes: 'Additional charges from dump slip #T-89234 at Brockton Transfer Station' });
     const dumpBT = await findDump('Brockton Transfer Station');
     await this.ticketRepo.save(this.ticketRepo.create({ job_id: jobC2.id, tenant_id: tid, dump_location_id: dumpBT, dump_location_name: 'Brockton Transfer Station', ticket_number: 'T-89234', waste_type: 'cnd', weight_tons: 4.2, base_cost: 688.80, dump_tonnage_cost: 688.80, fuel_env_cost: 17.14, overage_items: [{ type: 'mattress', label: 'Mattress', quantity: 2, chargePerUnit: 100, total: 200 }], overage_charges: 200, dump_surcharge_cost: 200, total_cost: 905.94, customer_charges: 422, customer_tonnage_charge: 222, customer_surcharge_charge: 200, profit_margin: -483.94, submitted_by: jake, submitted_at: new Date('2026-03-28T15:30:00'), status: 'reviewed', invoiced: true, invoice_id: invC.id } as any));
     log.push('Job C: Robert Patel 20yd Delivery+Pickup (4.2t overage, $422 invoice)');
@@ -356,7 +381,7 @@ export class SeedController {
       assigned_driver_id: jake, asset_id: assetD, drop_off_asset_id: assetD,
       rental_days: 14, base_price: 700, total_price: 595, discount_percentage: 15, discount_amount: 105,
     }));
-    await this.invoiceRepo.save(makeInv({ invoice_number: 'INV-2026-0013', customer_id: custSSR, job_id: jobD.id, status: 'paid', source: 'booking', invoice_type: 'rental', subtotal: 700, total: 595, amount_paid: 595, balance_due: 0, paid_at: new Date('2026-03-12'), payment_method: 'card', line_items: [{ description: '15yd Dumpster Rental — 14-day rental', quantity: 1, unitPrice: 700, amount: 700 }, { description: 'Customer discount (15%)', quantity: 1, unitPrice: -105, amount: -105 }] }));
+    await saveInv({ invoice_number: 'INV-2026-0013', customer_id: custSSR, job_id: jobD.id, status: 'paid', source: 'booking', invoice_type: 'rental', subtotal: 700, total: 595, amount_paid: 595, balance_due: 0, paid_at: new Date('2026-03-12'), payment_method: 'card', line_items: [{ description: '15yd Dumpster Rental — 14-day rental', quantity: 1, unitPrice: 700, amount: 700 }, { description: 'Customer discount (15%)', quantity: 1, unitPrice: -105, amount: -105 }] });
 
     const jobD2: any = await this.jobRepo.save(makeJob({
       customer_id: custSSR, job_type: 'pickup', asset_subtype: '15yd',
@@ -368,7 +393,7 @@ export class SeedController {
     if (assetD) await this.assetRepo.update(assetD, { status: 'available', current_location: null, current_job_id: null } as any);
     await this.jobRepo.update(jobD.id, { linked_job_ids: [jobD2.id] });
     const dumpST = await findDump('Stoughton Transfer Station');
-    const invD: any = await this.invoiceRepo.save(makeInv({ invoice_number: 'INV-2026-0031', customer_id: custSSR, job_id: jobD.id, status: 'sent', source: 'dump_slip', invoice_type: 'overage', subtotal: 75, total: 75, amount_paid: 0, balance_due: 75, due_date: '2026-04-21', line_items: [{ description: 'Weight overage: 0.5 tons over 2 ton allowance @ $150/ton', quantity: 1, unitPrice: 75, amount: 75 }] }));
+    const invD: any = await saveInv({ invoice_number: 'INV-2026-0031', customer_id: custSSR, job_id: jobD.id, status: 'sent', source: 'dump_slip', invoice_type: 'overage', subtotal: 75, total: 75, amount_paid: 0, balance_due: 75, due_date: '2026-04-21', line_items: [{ description: 'Weight overage: 0.5 tons over 2 ton allowance @ $150/ton', quantity: 1, unitPrice: 75, amount: 75 }] });
     await this.ticketRepo.save(this.ticketRepo.create({ job_id: jobD2.id, tenant_id: tid, dump_location_id: dumpST, dump_location_name: 'Stoughton Transfer Station', ticket_number: 'T-45821', waste_type: 'msw', weight_tons: 2.5, base_cost: 375, dump_tonnage_cost: 375, fuel_env_cost: 10.20, overage_items: [], overage_charges: 0, dump_surcharge_cost: 0, total_cost: 385.20, customer_charges: 75, customer_tonnage_charge: 75, customer_surcharge_charge: 0, profit_margin: -310.20, submitted_by: mike, submitted_at: new Date('2026-03-22T16:30:00'), status: 'reviewed', invoiced: true, invoice_id: invD.id } as any));
     log.push('Job D: South Shore Renovations 15yd (15% off, 0.5t MSW overage, $75 invoice)');
 
@@ -384,7 +409,7 @@ export class SeedController {
       rental_days: 14, rental_start_date: '2026-03-15', rental_end_date: '2026-03-29',
       base_price: 800, total_price: 800,
     }));
-    await this.invoiceRepo.save(makeInv({ invoice_number: 'INV-2026-0014', customer_id: custTom, job_id: jobE0.id, status: 'paid', source: 'booking', invoice_type: 'rental', subtotal: 800, total: 800, amount_paid: 800, balance_due: 0, paid_at: new Date('2026-03-15'), payment_method: 'card', line_items: [{ description: '20yd Dumpster Rental — 14-day rental', quantity: 1, unitPrice: 800, amount: 800 }] }));
+    await saveInv({ invoice_number: 'INV-2026-0014', customer_id: custTom, job_id: jobE0.id, status: 'paid', source: 'booking', invoice_type: 'rental', subtotal: 800, total: 800, amount_paid: 800, balance_due: 0, paid_at: new Date('2026-03-15'), payment_method: 'card', line_items: [{ description: '20yd Dumpster Rental — 14-day rental', quantity: 1, unitPrice: 800, amount: 800 }] });
     if (assetE) await this.assetRepo.update(assetE, { status: 'deployed', current_location: { street: '200 Centre Street', city: 'Abington', state: 'MA' }, current_job_id: jobE0.id } as any);
 
     // Failed pickup
@@ -394,7 +419,7 @@ export class SeedController {
       scheduled_date: '2026-03-27', status: 'failed', assigned_driver_id: mike, asset_id: assetE, pick_up_asset_id: assetE,
       parent_job_id: jobE0.id, is_failed_trip: true, failed_reason: 'Dumpster blocked — cannot access', failed_reason_code: 'dumpster_blocked', failed_at: new Date('2026-03-27T13:00:00'), cancelled_at: new Date('2026-03-27T13:00:00'),
     }));
-    await this.invoiceRepo.save(makeInv({ invoice_number: 'INV-2026-0032', customer_id: custTom, job_id: jobE.id, status: 'sent', source: 'failed_trip', invoice_type: 'failure_charge', subtotal: 150, total: 150, amount_paid: 0, balance_due: 150, due_date: '2026-04-26', line_items: [{ description: 'Failed pickup charge — Dumpster blocked', quantity: 1, unitPrice: 150, amount: 150 }], notes: 'Driver arrived but job could not be completed. Reason: Dumpster blocked — cannot access' }));
+    await saveInv({ invoice_number: 'INV-2026-0032', customer_id: custTom, job_id: jobE.id, status: 'sent', source: 'failed_trip', invoice_type: 'failure_charge', subtotal: 150, total: 150, amount_paid: 0, balance_due: 150, due_date: '2026-04-26', line_items: [{ description: 'Failed pickup charge — Dumpster blocked', quantity: 1, unitPrice: 150, amount: 150 }], notes: 'Driver arrived but job could not be completed. Reason: Dumpster blocked — cannot access' });
 
     // Replacement pickup
     const jobE2: any = await this.jobRepo.save(makeJob({
@@ -423,7 +448,7 @@ export class SeedController {
       status: 'confirmed', assigned_driver_id: mike, asset_id: assetF, drop_off_asset_id: assetF,
       rental_days: 14, base_price: 800, total_price: 800,
     }));
-    await this.invoiceRepo.save(makeInv({ invoice_number: 'INV-2026-0020', customer_id: custJohn, job_id: jobF.id, status: 'paid', source: 'booking', invoice_type: 'rental', subtotal: 800, total: 800, amount_paid: 800, balance_due: 0, paid_at: new Date('2026-03-30'), payment_method: 'card', line_items: [{ description: '20yd Dumpster Rental', quantity: 1, unitPrice: 800, amount: 800 }] }));
+    await saveInv({ invoice_number: 'INV-2026-0020', customer_id: custJohn, job_id: jobF.id, status: 'paid', source: 'booking', invoice_type: 'rental', subtotal: 800, total: 800, amount_paid: 800, balance_due: 0, paid_at: new Date('2026-03-30'), payment_method: 'card', line_items: [{ description: '20yd Dumpster Rental', quantity: 1, unitPrice: 800, amount: 800 }] });
     log.push('Job F: John McCarthy 20yd Delivery today (confirmed, Mike)');
 
     // G: Maria Santos 15yd Delivery today
@@ -435,7 +460,7 @@ export class SeedController {
       status: 'confirmed', assigned_driver_id: mike, asset_id: assetG,
       rental_days: 14, base_price: 700, total_price: 700,
     }));
-    await this.invoiceRepo.save(makeInv({ invoice_number: 'INV-2026-0021', customer_id: custMaria, job_id: jobG.id, status: 'paid', source: 'booking', invoice_type: 'rental', subtotal: 700, total: 700, amount_paid: 700, balance_due: 0, paid_at: new Date('2026-03-30'), payment_method: 'card', line_items: [{ description: '15yd Dumpster Rental', quantity: 1, unitPrice: 700, amount: 700 }] }));
+    await saveInv({ invoice_number: 'INV-2026-0021', customer_id: custMaria, job_id: jobG.id, status: 'paid', source: 'booking', invoice_type: 'rental', subtotal: 700, total: 700, amount_paid: 700, balance_due: 0, paid_at: new Date('2026-03-30'), payment_method: 'card', line_items: [{ description: '15yd Dumpster Rental', quantity: 1, unitPrice: 700, amount: 700 }] });
     log.push('Job G: Maria Santos 15yd Delivery today (confirmed, Mike)');
 
     // H: Mighty Dog Roofing 20yd Pickup today
@@ -456,7 +481,7 @@ export class SeedController {
       scheduled_date: '2026-03-30', scheduled_window_start: '12:00', scheduled_window_end: '17:00',
       status: 'pending', base_price: 600, total_price: 540, discount_percentage: 10, discount_amount: 60,
     }));
-    await this.invoiceRepo.save(makeInv({ invoice_number: 'INV-2026-0022', customer_id: custBB, status: 'paid', source: 'booking', invoice_type: 'rental', subtotal: 600, total: 540, amount_paid: 540, balance_due: 0, paid_at: new Date('2026-03-30'), payment_method: 'card', line_items: [{ description: '10yd Dumpster Rental', quantity: 1, unitPrice: 600, amount: 600 }, { description: 'Customer discount (10%)', quantity: 1, unitPrice: -60, amount: -60 }] }));
+    await saveInv({ invoice_number: 'INV-2026-0022', customer_id: custBB, status: 'paid', source: 'booking', invoice_type: 'rental', subtotal: 600, total: 540, amount_paid: 540, balance_due: 0, paid_at: new Date('2026-03-30'), payment_method: 'card', line_items: [{ description: '10yd Dumpster Rental', quantity: 1, unitPrice: 600, amount: 600 }, { description: 'Customer discount (10%)', quantity: 1, unitPrice: -60, amount: -60 }] });
     log.push('Job I: Best Brothers 10yd Delivery today (pending, unassigned, 10% off)');
 
     // J: Amanda Cruz 20yd Exchange today
@@ -471,7 +496,7 @@ export class SeedController {
       drop_off_asset_id: assetJ1, pick_up_asset_id: assetJ2,
       base_price: 800, total_price: 800,
     }));
-    await this.invoiceRepo.save(makeInv({ invoice_number: 'INV-2026-0023', customer_id: custAmanda, status: 'paid', source: 'booking', invoice_type: 'rental', subtotal: 800, total: 800, amount_paid: 800, balance_due: 0, paid_at: new Date('2026-03-30'), payment_method: 'card', line_items: [{ description: '20yd Dumpster Exchange', quantity: 1, unitPrice: 800, amount: 800 }] }));
+    await saveInv({ invoice_number: 'INV-2026-0023', customer_id: custAmanda, status: 'paid', source: 'booking', invoice_type: 'rental', subtotal: 800, total: 800, amount_paid: 800, balance_due: 0, paid_at: new Date('2026-03-30'), payment_method: 'card', line_items: [{ description: '20yd Dumpster Exchange', quantity: 1, unitPrice: 800, amount: 800 }] });
     log.push('Job J: Amanda Cruz 20yd Exchange today (confirmed, Jake)');
 
     // --- TOMORROW'S JOBS (March 31) ---
@@ -484,7 +509,7 @@ export class SeedController {
       scheduled_date: '2026-03-31', scheduled_window_start: '08:00', scheduled_window_end: '12:00',
       status: 'pending', base_price: 700, total_price: 700,
     }));
-    await this.invoiceRepo.save(makeInv({ invoice_number: 'INV-2026-0024', customer_id: custKaren, status: 'paid', source: 'booking', invoice_type: 'rental', subtotal: 700, total: 700, amount_paid: 700, balance_due: 0, paid_at: new Date('2026-03-31'), payment_method: 'card', line_items: [{ description: '15yd Dumpster Rental', quantity: 1, unitPrice: 700, amount: 700 }] }));
+    await saveInv({ invoice_number: 'INV-2026-0024', customer_id: custKaren, status: 'paid', source: 'booking', invoice_type: 'rental', subtotal: 700, total: 700, amount_paid: 700, balance_due: 0, paid_at: new Date('2026-03-31'), payment_method: 'card', line_items: [{ description: '15yd Dumpster Rental', quantity: 1, unitPrice: 700, amount: 700 }] });
     log.push('Job K: Karen O\'Brien 15yd Delivery tomorrow (pending, unassigned)');
 
     await this.jobRepo.save(makeJob({
@@ -493,7 +518,7 @@ export class SeedController {
       scheduled_date: '2026-03-31', status: 'confirmed', assigned_driver_id: jake,
       base_price: 800, total_price: 800,
     }));
-    await this.invoiceRepo.save(makeInv({ invoice_number: 'INV-2026-0025', customer_id: custCasa, status: 'paid', source: 'booking', invoice_type: 'rental', subtotal: 800, total: 800, amount_paid: 800, balance_due: 0, paid_at: new Date('2026-03-31'), payment_method: 'card', line_items: [{ description: '20yd Dumpster Rental', quantity: 1, unitPrice: 800, amount: 800 }] }));
+    await saveInv({ invoice_number: 'INV-2026-0025', customer_id: custCasa, status: 'paid', source: 'booking', invoice_type: 'rental', subtotal: 800, total: 800, amount_paid: 800, balance_due: 0, paid_at: new Date('2026-03-31'), payment_method: 'card', line_items: [{ description: '20yd Dumpster Rental', quantity: 1, unitPrice: 800, amount: 800 }] });
     log.push('Job L: Casa Design Build 20yd Delivery tomorrow (confirmed, Jake)');
 
     // --- VERIFICATION ---

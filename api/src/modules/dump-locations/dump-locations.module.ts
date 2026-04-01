@@ -8,9 +8,10 @@ import { Job } from '../jobs/entities/job.entity';
 import { PricingRule } from '../pricing/entities/pricing-rule.entity';
 import { AutomationLog } from '../automation/entities/automation-log.entity';
 import { Invoice } from '../billing/entities/invoice.entity';
+import { InvoiceLineItem } from '../billing/entities/invoice-line-item.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([DumpLocation, DumpLocationRate, DumpLocationSurcharge, DumpTicket, Job, PricingRule, AutomationLog, Invoice])],
+  imports: [TypeOrmModule.forFeature([DumpLocation, DumpLocationRate, DumpLocationSurcharge, DumpTicket, Job, PricingRule, AutomationLog, Invoice, InvoiceLineItem])],
   controllers: [DumpLocationsController],
   providers: [DumpLocationsService],
 })

@@ -1,22 +1,50 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Invoice } from './entities/invoice.entity';
+import { InvoiceLineItem } from './entities/invoice-line-item.entity';
+import { InvoiceRevision } from './entities/invoice-revision.entity';
 import { Payment } from './entities/payment.entity';
+import { CreditMemo } from './entities/credit-memo.entity';
+import { BillingIssue } from './entities/billing-issue.entity';
+import { JobCost } from './entities/job-cost.entity';
 import { Job } from '../jobs/entities/job.entity';
-import { BillingService } from './billing.service';
-import { InvoicesController, PaymentsController } from './billing.controller';
-import { BookingsController } from './bookings.controller';
 import { Customer } from '../customers/entities/customer.entity';
 import { Asset } from '../assets/entities/asset.entity';
 import { Tenant } from '../tenants/entities/tenant.entity';
 import { AutomationLog } from '../automation/entities/automation-log.entity';
 import { PricingRule } from '../pricing/entities/pricing-rule.entity';
+import { InvoiceService } from './services/invoice.service';
+import { BillingIssueDetectorService } from './services/billing-issue-detector.service';
+import { InvoiceController } from './controllers/invoice.controller';
+import { BillingIssueController } from './controllers/billing-issue.controller';
+import { BookingsController } from './bookings.controller';
+import { BillingService } from './billing.service';
+import { PaymentsController } from './billing.controller';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { PricingModule } from '../pricing/pricing.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Invoice, Payment, Job, Customer, Asset, Tenant, AutomationLog, PricingRule]), NotificationsModule],
-  controllers: [InvoicesController, PaymentsController, BookingsController],
-  providers: [BillingService],
-  exports: [BillingService],
+  imports: [
+    TypeOrmModule.forFeature([
+      Invoice,
+      InvoiceLineItem,
+      InvoiceRevision,
+      Payment,
+      CreditMemo,
+      BillingIssue,
+      JobCost,
+      Job,
+      Customer,
+      Asset,
+      Tenant,
+      AutomationLog,
+      PricingRule,
+    ]),
+    NotificationsModule,
+    PricingModule,
+  ],
+  controllers: [InvoiceController, BillingIssueController, PaymentsController, BookingsController],
+  providers: [InvoiceService, BillingIssueDetectorService, BillingService],
+  exports: [InvoiceService, BillingService],
 })
 export class BillingModule {}

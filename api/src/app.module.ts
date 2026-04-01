@@ -35,7 +35,18 @@ import { Job } from './modules/jobs/entities/job.entity';
 import { PricingRule } from './modules/pricing/entities/pricing-rule.entity';
 import { PricingTemplate } from './modules/pricing/entities/pricing-template.entity';
 import { Invoice } from './modules/billing/entities/invoice.entity';
+import { InvoiceLineItem } from './modules/billing/entities/invoice-line-item.entity';
+import { InvoiceRevision } from './modules/billing/entities/invoice-revision.entity';
 import { Payment } from './modules/billing/entities/payment.entity';
+import { CreditMemo } from './modules/billing/entities/credit-memo.entity';
+import { BillingIssue } from './modules/billing/entities/billing-issue.entity';
+import { JobCost } from './modules/billing/entities/job-cost.entity';
+import { RentalChain } from './modules/rental-chains/entities/rental-chain.entity';
+import { TaskChainLink } from './modules/rental-chains/entities/task-chain-link.entity';
+import { ClientPricingOverride } from './modules/pricing/entities/client-pricing-override.entity';
+import { SurchargeTemplate } from './modules/pricing/entities/surcharge-template.entity';
+import { ClientSurchargeOverride } from './modules/pricing/entities/client-surcharge-override.entity';
+import { TermsTemplate } from './modules/pricing/entities/terms-template.entity';
 import { Route } from './modules/dispatch/entities/route.entity';
 import { Notification } from './modules/notifications/entities/notification.entity';
 import { MarketplaceBooking } from './modules/marketplace/entities/marketplace-booking.entity';
@@ -51,6 +62,7 @@ import { DeliveryZone } from './modules/pricing/entities/delivery-zone.entity';
 import { DumpLocation, DumpLocationRate, DumpLocationSurcharge } from './modules/dump-locations/entities/dump-location.entity';
 import { DumpTicket } from './modules/dump-locations/entities/dump-ticket.entity';
 import { SubscriptionPlan } from './modules/subscriptions/entities/subscription-plan.entity';
+import { RentalChainsModule } from './modules/rental-chains/rental-chains.module';
 
 @Module({
   imports: [
@@ -75,7 +87,18 @@ import { SubscriptionPlan } from './modules/subscriptions/entities/subscription-
             PricingRule,
             PricingTemplate,
             Invoice,
+            InvoiceLineItem,
+            InvoiceRevision,
             Payment,
+            CreditMemo,
+            BillingIssue,
+            JobCost,
+            RentalChain,
+            TaskChainLink,
+            ClientPricingOverride,
+            SurchargeTemplate,
+            ClientSurchargeOverride,
+            TermsTemplate,
             Route,
             Notification,
             MarketplaceBooking,
@@ -123,6 +146,7 @@ import { SubscriptionPlan } from './modules/subscriptions/entities/subscription-
     ReportingModule,
     StripeModule,
     QuotesModule,
+    RentalChainsModule,
   ],
   controllers: [AppController],
   providers: [

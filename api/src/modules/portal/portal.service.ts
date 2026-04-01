@@ -96,7 +96,6 @@ export class PortalService {
   async magicLink(email: string) {
     const customer = await this.customerRepo.findOne({ where: { email, is_active: true } });
     if (!customer) throw new NotFoundException('No account found for this email');
-    // Placeholder — in production, send email with a signed magic link
     return { message: 'If an account exists, a login link has been sent to your email.' };
   }
 
@@ -112,6 +111,7 @@ export class PortalService {
   async getInvoices(customerId: string, tenantId: string) {
     const invoices = await this.invoiceRepo.find({
       where: { customer_id: customerId, tenant_id: tenantId },
+      relations: ['line_items'],
       order: { created_at: 'DESC' },
     });
     return invoices;
@@ -120,19 +120,19 @@ export class PortalService {
   async getInvoiceDetail(customerId: string, tenantId: string, invoiceId: string) {
     const invoice = await this.invoiceRepo.findOne({
       where: { id: invoiceId, customer_id: customerId, tenant_id: tenantId },
-      relations: ['job'],
+      relations: ['job', 'line_items'],
     });
     if (!invoice) throw new NotFoundException('Invoice not found');
 
     // Track first view
-    if (!invoice.viewed_at) {
-      await this.invoiceRepo.update(invoiceId, { viewed_at: new Date() });
-      invoice.viewed_at = new Date();
+    if (!invoice.read_at) {
+      await this.invoiceRepo.update(invoiceId, { read_at: new Date() });
+      invoice.read_at = new Date();
     }
 
     const payments = await this.paymentRepo.find({
-      where: { invoice_id: invoiceId } as any,
-      order: { created_at: 'DESC' },
+      where: { invoice_id: invoiceId },
+      order: { applied_at: 'DESC' },
     });
 
     return { invoice, payments };
@@ -142,7 +142,6 @@ export class PortalService {
     const customer = await this.customerRepo.findOne({ where: { id: customerId } });
     if (!customer) throw new NotFoundException('Customer not found');
 
-    // Generate job number
     const date = new Date();
     const dateStr = date.toISOString().slice(0, 10).replace(/-/g, '');
     const seq = Math.floor(Math.random() * 9000) + 1000;
@@ -180,11 +179,7 @@ export class PortalService {
     const end = new Date(newEndDate);
     const days = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
 
-    await this.jobRepo.update(jobId, {
-      rental_end_date: newEndDate,
-      rental_days: days,
-    });
-
+    await this.jobRepo.update(jobId, { rental_end_date: newEndDate, rental_days: days });
     return { message: 'Rental extended', newEndDate, rentalDays: days };
   }
 
@@ -194,7 +189,6 @@ export class PortalService {
     });
     if (!job) throw new NotFoundException('Rental not found');
 
-    // Create a pickup job
     const date = new Date();
     const dateStr = date.toISOString().slice(0, 10).replace(/-/g, '');
     const seq = Math.floor(Math.random() * 9000) + 1000;
@@ -274,18 +268,15 @@ export class PortalService {
     });
     if (!job) throw new NotFoundException('Job not found');
 
-    // Only allow rescheduling pending/confirmed jobs
     if (!['pending', 'confirmed'].includes(job.status)) {
       throw new BadRequestException('This job cannot be rescheduled. Please call us for changes.');
     }
 
-    // Must be a future date
     const newDate = new Date(body.scheduledDate);
     if (newDate <= new Date()) {
       throw new BadRequestException('Please select a future date.');
     }
 
-    // 24-hour cutoff
     if (job.scheduled_date) {
       const scheduled = new Date(job.scheduled_date);
       const hoursUntil = (scheduled.getTime() - Date.now()) / (1000 * 60 * 60);
@@ -303,7 +294,6 @@ export class PortalService {
       rescheduled_reason: body.reason || null,
     };
 
-    // Recalculate rental end date
     if (job.rental_days) {
       const end = new Date(body.scheduledDate);
       end.setDate(end.getDate() + job.rental_days);
@@ -315,7 +305,6 @@ export class PortalService {
 
     await this.jobRepo.update(jobId, updates);
 
-    // Update linked pickup
     const pickupJob = await this.jobRepo.findOne({
       where: { tenant_id: tenantId, customer_id: customerId, job_type: 'pickup', status: In(['pending', 'confirmed']) },
     });

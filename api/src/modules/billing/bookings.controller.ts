@@ -7,7 +7,9 @@ import { Customer } from '../customers/entities/customer.entity';
 import { Job } from '../jobs/entities/job.entity';
 import { Asset } from '../assets/entities/asset.entity';
 import { Invoice } from './entities/invoice.entity';
+import { InvoiceLineItem } from './entities/invoice-line-item.entity';
 import { Tenant } from '../tenants/entities/tenant.entity';
+import { DataSource } from 'typeorm';
 
 @ApiTags('Bookings')
 @ApiBearerAuth()
@@ -18,7 +20,9 @@ export class BookingsController {
     @InjectRepository(Job) private jobsRepo: Repository<Job>,
     @InjectRepository(Asset) private assetsRepo: Repository<Asset>,
     @InjectRepository(Invoice) private invoicesRepo: Repository<Invoice>,
+    @InjectRepository(InvoiceLineItem) private lineItemRepo: Repository<InvoiceLineItem>,
     @InjectRepository(Tenant) private tenantsRepo: Repository<Tenant>,
+    private dataSource: DataSource,
   ) {}
 
   @Post('complete')
@@ -26,7 +30,6 @@ export class BookingsController {
     @Req() req: Request,
     @Body()
     body: {
-      // Customer
       customerId?: string;
       customer?: {
         firstName: string;
@@ -37,24 +40,20 @@ export class BookingsController {
         companyName?: string;
         billingAddress?: Record<string, unknown>;
       };
-      // Service
       serviceType: string;
       assetSubtype: string;
       serviceAddress: Record<string, unknown>;
-      // Schedule
       deliveryDate: string;
       pickupDate: string;
       rentalDays: number;
       scheduledWindowStart?: string;
       scheduledWindowEnd?: string;
       placementNotes?: string;
-      // Pricing
       basePrice: number;
       deliveryFee: number;
       taxAmount: number;
       totalPrice: number;
       depositAmount?: number;
-      // Payment
       paymentMethod: 'card' | 'invoice';
       stripeToken?: string;
     },
@@ -92,19 +91,16 @@ export class BookingsController {
     let jobStatus = 'pending';
 
     try {
-      // Check if an asset is available NOW
       const availableAsset = await this.assetsRepo.findOne({
         where: { tenant_id: tenantId, subtype: body.assetSubtype, status: 'available' },
       });
 
       if (availableAsset) {
-        // Asset available now — auto-approve + assign + reserve
         autoApproved = true;
         jobStatus = 'confirmed';
         assignedAsset = { id: availableAsset.id, identifier: availableAsset.identifier };
         await this.assetsRepo.update(availableAsset.id, { status: 'reserved' });
       } else {
-        // Check if a pickup is scheduled before delivery date that would free one up
         const pickupCount = await this.jobsRepo
           .createQueryBuilder('j')
           .where('j.tenant_id = :tenantId', { tenantId })
@@ -121,9 +117,9 @@ export class BookingsController {
           assetWarning = `No ${body.assetSubtype} dumpsters projected available for ${body.deliveryDate}. Job needs manual approval.`;
         }
       }
-    } catch { /* non-fatal — default to pending */ }
+    } catch { /* non-fatal */ }
 
-    // 3b. Create delivery job with auto-approved status
+    // 3b. Create delivery job
     const deliveryJob = this.jobsRepo.create({
       tenant_id: tenantId,
       customer_id: customerId,
@@ -163,54 +159,65 @@ export class BookingsController {
     const savedPickup = await this.jobsRepo.save(pickupJob);
 
     // 5. Generate invoice
-    const invNumber = `INV-${dateStr}-${rand}`;
+    const invoiceNumber = await this.dataSource.query(
+      `SELECT next_invoice_number($1) as num`, [tenantId],
+    );
+    const invNum = invoiceNumber[0].num;
+    const isPaid = body.paymentMethod === 'card';
+    const today = new Date().toISOString().split('T')[0];
+
     const invoice = this.invoicesRepo.create({
       tenant_id: tenantId,
       customer_id: customerId,
       job_id: savedDelivery.id,
-      invoice_number: invNumber,
-      status: body.paymentMethod === 'card' ? 'paid' : 'sent',
-      source: 'booking',
-      invoice_type: 'rental',
-      payment_method: body.paymentMethod || 'card',
+      invoice_number: invNum,
+      status: isPaid ? 'paid' : 'sent',
+      customer_type: 'residential',
+      invoice_date: today,
+      due_date: body.deliveryDate,
+      service_date: body.deliveryDate,
       subtotal: body.basePrice + body.deliveryFee,
-      tax_rate: body.taxAmount > 0 ? body.taxAmount / (body.basePrice + body.deliveryFee) : 0,
       tax_amount: body.taxAmount,
       total: body.totalPrice,
-      amount_paid: body.paymentMethod === 'card' ? body.totalPrice : 0,
-      balance_due: body.paymentMethod === 'card' ? 0 : body.totalPrice,
-      due_date: body.deliveryDate,
-      line_items: [
-        {
-          description: `${body.assetSubtype} ${body.serviceType.replace(/_/g, ' ')} — ${body.rentalDays}-day rental`,
-          quantity: 1,
-          unitPrice: body.basePrice,
-          amount: body.basePrice,
-        },
-        ...(body.deliveryFee > 0
-          ? [{ description: 'Delivery fee', quantity: 1, unitPrice: body.deliveryFee, amount: body.deliveryFee }]
-          : []),
-      ],
+      amount_paid: isPaid ? body.totalPrice : 0,
+      balance_due: isPaid ? 0 : body.totalPrice,
+      paid_at: isPaid ? new Date() : null,
+      summary_of_work: `${body.assetSubtype} ${body.serviceType.replace(/_/g, ' ')} — ${body.rentalDays}-day rental`,
     } as Partial<Invoice> as Invoice);
     const savedInvoice = await this.invoicesRepo.save(invoice);
 
-    // 6. TODO: Process Stripe payment if card
-    // 7. TODO: Send confirmation email
+    // Create line items
+    const rentalItem = this.lineItemRepo.create({
+      invoice_id: savedInvoice.id,
+      sort_order: 0,
+      line_type: 'rental',
+      name: `${body.assetSubtype} ${body.serviceType.replace(/_/g, ' ')} — ${body.rentalDays}-day rental`,
+      quantity: 1,
+      unit_rate: body.basePrice,
+      amount: body.basePrice,
+      net_amount: body.basePrice,
+    });
+    await this.lineItemRepo.save(rentalItem);
+
+    if (body.deliveryFee > 0) {
+      const deliveryItem = this.lineItemRepo.create({
+        invoice_id: savedInvoice.id,
+        sort_order: 1,
+        line_type: 'fee',
+        name: 'Delivery fee',
+        quantity: 1,
+        unit_rate: body.deliveryFee,
+        amount: body.deliveryFee,
+        net_amount: body.deliveryFee,
+      });
+      await this.lineItemRepo.save(deliveryItem);
+    }
 
     return {
       success: true,
-      deliveryJob: {
-        id: savedDelivery.id,
-        jobNumber: savedDelivery.job_number,
-      },
-      pickupJob: {
-        id: savedPickup.id,
-        jobNumber: savedPickup.job_number,
-      },
-      invoice: {
-        id: savedInvoice.id,
-        invoiceNumber: savedInvoice.invoice_number,
-      },
+      deliveryJob: { id: savedDelivery.id, jobNumber: savedDelivery.job_number },
+      pickupJob: { id: savedPickup.id, jobNumber: savedPickup.job_number },
+      invoice: { id: savedInvoice.id, invoiceNumber: savedInvoice.invoice_number },
       customerId,
       autoApproved,
       asset: assignedAsset,
