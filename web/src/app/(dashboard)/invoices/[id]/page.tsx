@@ -92,7 +92,11 @@ export default function InvoiceDetailPage({
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [paymentPanel, setPaymentPanel] = useState(false);
-  const [editOpen, setEditOpen] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editItems, setEditItems] = useState<{ description: string; quantity: number; unitPrice: number }[]>([]);
+  const [editDueDate, setEditDueDate] = useState("");
+  const [editDiscount, setEditDiscount] = useState("");
+  const [editNotes, setEditNotes] = useState("");
   const [history, setHistory] = useState<any[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const { toast } = useToast();
@@ -150,6 +154,53 @@ export default function InvoiceDetailPage({
       setActionLoading(false);
     }
   };
+
+  const isPaid = invoice?.status === "paid";
+  const isVoid = invoice?.status === "void";
+
+  const startEditing = () => {
+    if (!invoice) return;
+    setEditItems(invoice.line_items.map(li => ({ description: li.description, quantity: li.quantity, unitPrice: li.unitPrice })));
+    setEditDueDate(invoice.due_date || "");
+    setEditDiscount(String(invoice.discount_amount || ""));
+    setEditNotes(invoice.notes || "");
+    setEditing(true);
+  };
+
+  const cancelEditing = () => setEditing(false);
+
+  const saveEditing = async () => {
+    if (!invoice) return;
+    setActionLoading(true);
+    try {
+      const body: Record<string, unknown> = { notes: editNotes };
+      if (!isPaid) {
+        body.lineItems = editItems;
+        body.dueDate = editDueDate;
+        body.discountAmount = Number(editDiscount) || 0;
+      }
+      await api.patch(`/invoices/${invoice.id}/edit`, body);
+      setEditing(false);
+      toast("success", "Invoice updated");
+      await fetchData();
+      await fetchHistory();
+    } catch { toast("error", "Failed to save"); }
+    finally { setActionLoading(false); }
+  };
+
+  const updateEditItem = (i: number, field: string, value: string) => {
+    setEditItems(prev => prev.map((li, idx) => idx === i ? { ...li, [field]: field === "description" ? value : Number(value) || 0 } : li));
+  };
+  const addEditItem = () => setEditItems(prev => [...prev, { description: "", quantity: 1, unitPrice: 0 }]);
+  const removeEditItem = (i: number) => setEditItems(prev => prev.filter((_, idx) => idx !== i));
+
+  // Computed totals for edit mode
+  const editSubtotal = editItems.reduce((s, li) => s + li.quantity * li.unitPrice, 0);
+  const editDiscountNum = Number(editDiscount) || 0;
+  const editTotal = Math.round((editSubtotal - editDiscountNum) * 100) / 100;
+  const editBalanceDue = Math.round((editTotal - Number(invoice?.amount_paid || 0)) * 100) / 100;
+
+  const inp = "w-full rounded-[14px] border border-[var(--t-border)] bg-transparent px-3 py-2 text-sm text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)]";
 
   if (loading) {
     return (
@@ -242,43 +293,44 @@ export default function InvoiceDetailPage({
           </p>
         </div>
         <div className="flex gap-2">
-          {canSend && (
-            <button
-              onClick={handleSend}
-              disabled={actionLoading}
-              className="flex items-center gap-2 rounded-full bg-[var(--t-accent)] px-4 py-2 text-sm font-medium text-black transition-opacity hover:opacity-90 disabled:opacity-50"
-            >
-              <Send className="h-4 w-4" />
-              Send
-            </button>
-          )}
-          {canPay && (
-            <button
-              onClick={() => setPaymentPanel(true)}
-              className="flex items-center gap-2 rounded-full bg-[var(--t-accent)] px-4 py-2 text-sm font-medium text-black transition-opacity hover:opacity-90"
-            >
-              <CreditCard className="h-4 w-4" />
-              Record Payment
-            </button>
-          )}
-          {invoice.status !== "void" && (
-            <button
-              onClick={() => setEditOpen(true)}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-full border border-[var(--t-border)] text-white hover:bg-[var(--t-bg-card-hover)] transition-colors"
-            >
-              <Pencil className="h-4 w-4" />
-              {invoice.status === "paid" ? "Edit Notes" : "Edit"}
-            </button>
-          )}
-          {canVoid && (
-            <button
-              onClick={handleVoid}
-              disabled={actionLoading}
-              className="flex items-center gap-2 rounded-full border border-[var(--t-error)]/20 bg-transparent px-4 py-2 text-sm font-medium text-[var(--t-error)] transition-colors hover:bg-[var(--t-error-soft)] disabled:opacity-50"
-            >
-              <XCircle className="h-4 w-4" />
-              Void
-            </button>
+          {editing ? (
+            <>
+              <button onClick={saveEditing} disabled={actionLoading}
+                className="flex items-center gap-2 rounded-full bg-[var(--t-accent)] px-5 py-2.5 text-sm font-semibold text-black transition-opacity hover:opacity-90 disabled:opacity-50">
+                {actionLoading ? "Saving..." : "Save Changes"}
+              </button>
+              <button onClick={cancelEditing}
+                className="flex items-center gap-2 rounded-full border border-[var(--t-border)] px-5 py-2.5 text-sm font-medium text-[var(--t-frame-text-muted)] transition-colors hover:text-[var(--t-frame-text)]">
+                Cancel
+              </button>
+            </>
+          ) : (
+            <>
+              {canSend && (
+                <button onClick={handleSend} disabled={actionLoading}
+                  className="flex items-center gap-2 rounded-full bg-[var(--t-accent)] px-4 py-2 text-sm font-medium text-black transition-opacity hover:opacity-90 disabled:opacity-50">
+                  <Send className="h-4 w-4" /> Send
+                </button>
+              )}
+              {canPay && (
+                <button onClick={() => setPaymentPanel(true)}
+                  className="flex items-center gap-2 rounded-full bg-[var(--t-accent)] px-4 py-2 text-sm font-medium text-black transition-opacity hover:opacity-90">
+                  <CreditCard className="h-4 w-4" /> Record Payment
+                </button>
+              )}
+              {!isVoid && (
+                <button onClick={startEditing}
+                  className="flex items-center gap-2 px-5 py-2.5 rounded-full border border-[var(--t-accent)] text-[var(--t-accent)] hover:bg-[var(--t-accent)] hover:text-white transition-colors">
+                  <Pencil className="h-4 w-4" /> {isPaid ? "Edit Notes" : "Edit"}
+                </button>
+              )}
+              {canVoid && (
+                <button onClick={handleVoid} disabled={actionLoading}
+                  className="flex items-center gap-2 rounded-full border border-[var(--t-error)]/20 bg-transparent px-4 py-2 text-sm font-medium text-[var(--t-error)] transition-colors hover:bg-[var(--t-error-soft)] disabled:opacity-50">
+                  <XCircle className="h-4 w-4" /> Void
+                </button>
+              )}
+            </>
           )}
         </div>
       </div>
@@ -318,9 +370,11 @@ export default function InvoiceDetailPage({
                   Due Date
                 </span>
               </div>
-              <p className="text-sm font-medium text-[var(--t-text-primary)]">
-                {invoice.due_date || "Not set"}
-              </p>
+              {editing && !isPaid ? (
+                <input type="date" value={editDueDate} onChange={e => setEditDueDate(e.target.value)} className={inp} />
+              ) : (
+                <p className="text-sm font-medium text-[var(--t-text-primary)]">{invoice.due_date || "Not set"}</p>
+              )}
               {invoice.job && (
                 <Link
                   href={`/jobs/${invoice.job.id}`}
@@ -334,49 +388,48 @@ export default function InvoiceDetailPage({
           </div>
 
           {/* Line items */}
-          <div className="rounded-[20px] bg-[var(--t-bg-card)] border border-[var(--t-border)] overflow-hidden">
+          <div className={`rounded-[20px] bg-[var(--t-bg-card)] border overflow-hidden ${editing && !isPaid ? "border-[var(--t-accent)]/30" : "border-[var(--t-border)]"}`}>
             <div className="px-6 py-4 border-b border-[var(--t-border)]">
-              <h2 className="text-base font-semibold text-[var(--t-text-primary)]">
-                Line Items
-              </h2>
+              <h2 className="text-base font-semibold text-[var(--t-text-primary)]">Line Items</h2>
             </div>
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-[var(--t-border)]">
-                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-[var(--t-text-muted)]">
-                    Description
-                  </th>
-                  <th className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-[var(--t-text-muted)]">
-                    Qty
-                  </th>
-                  <th className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-[var(--t-text-muted)]">
-                    Unit Price
-                  </th>
-                  <th className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-[var(--t-text-muted)]">
-                    Amount
-                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-[var(--t-text-muted)]">Description</th>
+                  <th className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-[var(--t-text-muted)]">Qty</th>
+                  <th className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-[var(--t-text-muted)]">Unit Price</th>
+                  <th className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-[var(--t-text-muted)]">Amount</th>
+                  {editing && !isPaid && <th className="px-3 py-3 w-10"></th>}
                 </tr>
               </thead>
               <tbody>
-                {invoice.line_items.map((item, i) => (
-                  <tr
-                    key={i}
-                    className="border-b border-[var(--t-border)] last:border-0"
-                  >
-                    <td className="px-6 py-3.5 text-[var(--t-text-primary)]">
-                      {item.description}
-                    </td>
-                    <td className="px-6 py-3.5 text-right text-[var(--t-text-primary)]">
-                      {item.quantity}
-                    </td>
-                    <td className="px-6 py-3.5 text-right text-[var(--t-text-primary)] tabular-nums">
-                      {fmt(item.unitPrice)}
-                    </td>
-                    <td className="px-6 py-3.5 text-right font-medium text-[var(--t-text-primary)] tabular-nums">
-                      {fmt(item.amount)}
-                    </td>
-                  </tr>
-                ))}
+                {editing && !isPaid ? (
+                  <>
+                    {editItems.map((item, i) => (
+                      <tr key={i} className="border-b border-[var(--t-border)] last:border-0">
+                        <td className="px-6 py-2"><input value={item.description} onChange={e => updateEditItem(i, "description", e.target.value)} className={inp} /></td>
+                        <td className="px-6 py-2 w-20"><input type="number" value={item.quantity} onChange={e => updateEditItem(i, "quantity", e.target.value)} className={`${inp} text-right`} /></td>
+                        <td className="px-6 py-2 w-28"><input type="number" step="0.01" value={item.unitPrice} onChange={e => updateEditItem(i, "unitPrice", e.target.value)} className={`${inp} text-right`} /></td>
+                        <td className="px-6 py-2 text-right font-medium text-[var(--t-text-primary)] tabular-nums">{fmt(item.quantity * item.unitPrice)}</td>
+                        <td className="px-3 py-2">{editItems.length > 1 && <button onClick={() => removeEditItem(i)} className="p-1 text-[var(--t-error)]"><Trash2 className="h-3.5 w-3.5" /></button>}</td>
+                      </tr>
+                    ))}
+                    <tr>
+                      <td colSpan={5} className="px-6 py-3">
+                        <button onClick={addEditItem} className="flex items-center gap-1 text-xs font-medium text-[var(--t-accent)] hover:opacity-80"><Plus className="h-3 w-3" /> Add Line Item</button>
+                      </td>
+                    </tr>
+                  </>
+                ) : (
+                  invoice.line_items.map((item, i) => (
+                    <tr key={i} className="border-b border-[var(--t-border)] last:border-0">
+                      <td className="px-6 py-3.5 text-[var(--t-text-primary)]">{item.description}</td>
+                      <td className="px-6 py-3.5 text-right text-[var(--t-text-primary)]">{item.quantity}</td>
+                      <td className="px-6 py-3.5 text-right text-[var(--t-text-primary)] tabular-nums">{fmt(item.unitPrice)}</td>
+                      <td className="px-6 py-3.5 text-right font-medium text-[var(--t-text-primary)] tabular-nums">{fmt(item.amount)}</td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
@@ -489,47 +542,59 @@ export default function InvoiceDetailPage({
             <div className="space-y-2.5 text-sm tabular-nums">
               <div className="flex justify-between text-[var(--t-text-primary)]">
                 <span className="text-[var(--t-text-muted)]">Subtotal</span>
-                <span>{fmt(invoice.subtotal)}</span>
+                <span>{fmt(editing && !isPaid ? editSubtotal : invoice.subtotal)}</span>
               </div>
-              {Number(invoice.discount_amount) > 0 && (
+              {editing && !isPaid ? (
+                <div className="flex items-center justify-between">
+                  <span className="text-[var(--t-text-muted)] text-sm">Discount</span>
+                  <input type="number" step="0.01" value={editDiscount} onChange={e => setEditDiscount(e.target.value)}
+                    className="w-24 rounded-[10px] border border-[var(--t-border)] bg-transparent px-2 py-1 text-right text-sm text-[var(--t-error)] outline-none focus:border-[var(--t-accent)]" placeholder="0" />
+                </div>
+              ) : Number(invoice.discount_amount) > 0 ? (
                 <div className="flex justify-between text-[var(--t-text-primary)]">
                   <span className="text-[var(--t-text-muted)]">Discount</span>
-                  <span className="text-[var(--t-error)]">
-                    -{fmt(invoice.discount_amount)}
-                  </span>
+                  <span className="text-[var(--t-error)]">-{fmt(invoice.discount_amount)}</span>
                 </div>
-              )}
+              ) : null}
               {Number(invoice.tax_amount) > 0 && (
                 <div className="flex justify-between text-[var(--t-text-primary)]">
-                  <span className="text-[var(--t-text-muted)]">
-                    Tax ({(Number(invoice.tax_rate) * 100).toFixed(2)}%)
-                  </span>
+                  <span className="text-[var(--t-text-muted)]">Tax ({(Number(invoice.tax_rate) * 100).toFixed(2)}%)</span>
                   <span>{fmt(invoice.tax_amount)}</span>
                 </div>
               )}
               <div className="flex justify-between border-t border-[var(--t-border)] pt-2.5 font-semibold text-[var(--t-text-primary)]">
                 <span>Total</span>
-                <span>{fmt(invoice.total)}</span>
+                <span>{fmt(editing && !isPaid ? editTotal : invoice.total)}</span>
               </div>
               <div className="flex justify-between text-[var(--t-text-primary)]">
                 <span className="text-[var(--t-text-muted)]">Paid</span>
                 <span className="text-[var(--t-accent)]">{fmt(invoice.amount_paid)}</span>
               </div>
-              <div className={`flex justify-between border-t border-[var(--t-border)] pt-2.5 font-bold text-base ${Number(invoice.balance_due) <= 0 ? "text-emerald-400" : invoice.status === "overdue" ? "text-[var(--t-error)]" : "text-[var(--t-text-primary)]"}`}>
-                <span>Balance Due</span>
-                <span>{Number(invoice.balance_due) <= 0 ? "PAID" : fmt(invoice.balance_due)}</span>
-              </div>
+              {(() => {
+                const bd = editing && !isPaid ? editBalanceDue : Number(invoice.balance_due);
+                return (
+                  <div className={`flex justify-between border-t border-[var(--t-border)] pt-2.5 font-bold text-base ${bd <= 0 ? "text-emerald-400" : invoice.status === "overdue" ? "text-[var(--t-error)]" : "text-[var(--t-text-primary)]"}`}>
+                    <span>Balance Due</span>
+                    <span>{bd <= 0 ? "PAID" : fmt(bd)}</span>
+                  </div>
+                );
+              })()}
             </div>
           </div>
 
-          {invoice.notes && (
-            <div className="rounded-[20px] bg-[var(--t-bg-card)] border border-[var(--t-border)] p-6">
-              <h3 className="text-sm font-semibold text-[var(--t-text-primary)] mb-2">Notes</h3>
-              <p className="text-sm text-[var(--t-text-primary)] whitespace-pre-wrap">
-                {invoice.notes}
-              </p>
-            </div>
-          )}
+          {/* Notes */}
+          <div className={`rounded-[20px] bg-[var(--t-bg-card)] border p-6 ${editing ? "border-[var(--t-accent)]/30" : "border-[var(--t-border)]"}`}>
+            <h3 className="text-sm font-semibold text-[var(--t-text-primary)] mb-2">Notes</h3>
+            {editing ? (
+              <textarea value={editNotes} onChange={e => setEditNotes(e.target.value)} rows={3}
+                className="w-full rounded-[14px] border border-[var(--t-border)] bg-transparent px-3 py-2 text-sm text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)] resize-none"
+                placeholder="Invoice notes..." />
+            ) : invoice.notes ? (
+              <p className="text-sm text-[var(--t-text-primary)] whitespace-pre-wrap">{invoice.notes}</p>
+            ) : (
+              <p className="text-sm text-[var(--t-text-muted)]">No notes</p>
+            )}
+          </div>
         </div>
       </div>
 
@@ -549,114 +614,6 @@ export default function InvoiceDetailPage({
         />
       </SlideOver>
 
-      {/* Edit Invoice Modal */}
-      {editOpen && invoice && (
-        <EditInvoiceModal
-          invoice={invoice}
-          onClose={() => setEditOpen(false)}
-          onSaved={() => { setEditOpen(false); fetchData(); fetchHistory(); toast("success", "Invoice updated"); }}
-        />
-      )}
-    </div>
-  );
-}
-
-/* ---------- Edit Invoice Modal ---------- */
-
-function EditInvoiceModal({ invoice, onClose, onSaved }: { invoice: Invoice; onClose: () => void; onSaved: () => void }) {
-  const isPaid = invoice.status === "paid";
-  const [items, setItems] = useState(invoice.line_items.map(li => ({ description: li.description, quantity: li.quantity, unitPrice: li.unitPrice })));
-  const [dueDate, setDueDate] = useState(invoice.due_date || "");
-  const [discount, setDiscount] = useState(String(invoice.discount_amount || ""));
-  const [notes, setNotes] = useState(invoice.notes || "");
-  const [saving, setSaving] = useState(false);
-
-  const subtotal = items.reduce((s, li) => s + li.quantity * li.unitPrice, 0);
-  const discountNum = Number(discount) || 0;
-  const total = Math.round((subtotal - discountNum) * 100) / 100;
-  const balanceDue = Math.round((total - Number(invoice.amount_paid)) * 100) / 100;
-
-  const updateItem = (i: number, field: string, value: string) => {
-    setItems(prev => prev.map((li, idx) => idx === i ? { ...li, [field]: field === "description" ? value : Number(value) || 0 } : li));
-  };
-  const addItem = () => setItems(prev => [...prev, { description: "", quantity: 1, unitPrice: 0 }]);
-  const removeItem = (i: number) => setItems(prev => prev.filter((_, idx) => idx !== i));
-
-  const handleSave = async () => {
-    setSaving(true);
-    try {
-      const body: Record<string, unknown> = { notes };
-      if (!isPaid) {
-        body.lineItems = items;
-        body.dueDate = dueDate;
-        body.discountAmount = discountNum;
-      }
-      await api.patch(`/invoices/${invoice.id}/edit`, body);
-      onSaved();
-    } catch { setSaving(false); }
-  };
-
-  const inp = "w-full rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-3 py-2 text-sm text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)]";
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full max-w-lg max-h-[85vh] overflow-y-auto animate-fade-in" style={{ borderRadius: 20, border: "1px solid var(--t-border)", background: "var(--t-bg-primary)", padding: 24, boxShadow: "0 25px 50px -12px rgba(0,0,0,0.5)" }}>
-        <h3 className="text-lg font-semibold text-[var(--t-text-primary)] mb-1">{isPaid ? "Edit Notes" : "Edit Invoice"}</h3>
-        <p className="text-sm text-[var(--t-text-muted)] mb-5">{invoice.invoice_number}</p>
-
-        {!isPaid && (
-          <>
-            <label className="block text-xs font-medium text-[var(--t-text-muted)] uppercase tracking-wider mb-2">Line Items</label>
-            <div className="space-y-2 mb-4">
-              {items.map((li, i) => (
-                <div key={i} className="flex items-center gap-2">
-                  <input value={li.description} onChange={e => updateItem(i, "description", e.target.value)} className={`${inp} flex-1`} placeholder="Description" />
-                  <input type="number" value={li.quantity} onChange={e => updateItem(i, "quantity", e.target.value)} className={`${inp} w-16`} placeholder="Qty" />
-                  <input type="number" step="0.01" value={li.unitPrice} onChange={e => updateItem(i, "unitPrice", e.target.value)} className={`${inp} w-24`} placeholder="Price" />
-                  <span className="w-20 text-right text-sm font-medium text-[var(--t-text-primary)] tabular-nums">{fmt(li.quantity * li.unitPrice)}</span>
-                  {items.length > 1 && <button onClick={() => removeItem(i)} className="p-1 text-[var(--t-error)]"><Trash2 className="h-3.5 w-3.5" /></button>}
-                </div>
-              ))}
-              <button onClick={addItem} className="flex items-center gap-1 text-xs font-medium text-[var(--t-accent)] hover:opacity-80">
-                <Plus className="h-3 w-3" /> Add Line Item
-              </button>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 mb-4">
-              <div>
-                <label className="block text-xs font-medium text-[var(--t-text-muted)] mb-1">Due Date</label>
-                <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} className={inp} />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-[var(--t-text-muted)] mb-1">Discount ($)</label>
-                <input type="number" step="0.01" value={discount} onChange={e => setDiscount(e.target.value)} className={inp} placeholder="0" />
-              </div>
-            </div>
-
-            <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-3 mb-4 text-sm tabular-nums space-y-1">
-              <div className="flex justify-between"><span className="text-[var(--t-text-muted)]">Subtotal</span><span className="text-[var(--t-text-primary)]">{fmt(subtotal)}</span></div>
-              {discountNum > 0 && <div className="flex justify-between"><span className="text-[var(--t-text-muted)]">Discount</span><span className="text-[var(--t-error)]">-{fmt(discountNum)}</span></div>}
-              <div className="flex justify-between font-semibold border-t border-[var(--t-border)] pt-1"><span className="text-[var(--t-text-primary)]">Total</span><span>{fmt(total)}</span></div>
-              <div className="flex justify-between"><span className="text-[var(--t-text-muted)]">Balance Due</span><span className={balanceDue <= 0 ? "text-emerald-400" : "text-[var(--t-text-primary)]"}>{balanceDue <= 0 ? "PAID" : fmt(balanceDue)}</span></div>
-            </div>
-          </>
-        )}
-
-        <div className="mb-4">
-          <label className="block text-xs font-medium text-[var(--t-text-muted)] mb-1">Notes</label>
-          <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} className={`${inp} resize-none`} placeholder="Invoice notes..." />
-        </div>
-
-        <div className="flex gap-2">
-          <button onClick={handleSave} disabled={saving} className="flex-1 rounded-full bg-[var(--t-accent)] py-2.5 text-sm font-semibold text-black transition-opacity hover:opacity-90 disabled:opacity-50">
-            {saving ? "Saving..." : "Save Changes"}
-          </button>
-          <button onClick={onClose} className="rounded-full border border-[var(--t-border)] px-6 py-2.5 text-sm text-[var(--t-text-muted)] transition-colors hover:text-[var(--t-text-primary)]">
-            Cancel
-          </button>
-        </div>
-      </div>
     </div>
   );
 }
