@@ -379,19 +379,19 @@ export default function DispatchPage() {
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-1">
-              <button onClick={() => setDate(d => shiftDate(d, -1))} className="p-2 rounded-[20px] border transition-all" style={{ background: "rgba(255,255,255,0.06)", borderColor: "rgba(255,255,255,0.08)", color: "var(--t-frame-text-muted)" }}>
+              <button onClick={() => setDate(d => shiftDate(d, -1))} className="p-2 rounded-[20px] border transition-all" style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)", color: "var(--t-frame-text-muted)" }}>
                 <ChevronLeft className="h-4 w-4" />
               </button>
               <div className="relative">
                 <Calendar className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" style={{ color: "var(--t-frame-text-muted)" }} />
                 <input type="date" value={date} onChange={e => setDate(e.target.value)} className="rounded-[20px] py-2 pl-10 pr-3 text-sm font-medium outline-none w-52"
-                  style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.08)", color: "var(--t-frame-text)" }} />
+                  style={{ background: "var(--t-bg-card)", border: "1px solid var(--t-border)", color: "var(--t-frame-text)" }} />
               </div>
-              <button onClick={() => setDate(d => shiftDate(d, 1))} className="p-2 rounded-[20px] border transition-all" style={{ background: "rgba(255,255,255,0.06)", borderColor: "rgba(255,255,255,0.08)", color: "var(--t-frame-text-muted)" }}>
+              <button onClick={() => setDate(d => shiftDate(d, 1))} className="p-2 rounded-[20px] border transition-all" style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)", color: "var(--t-frame-text-muted)" }}>
                 <ChevronRight className="h-4 w-4" />
               </button>
               <button onClick={() => setDate(today())} className="ml-1 rounded-full px-3 py-2 text-xs font-medium border"
-                style={{ background: date === today() ? "var(--t-accent-soft)" : "rgba(255,255,255,0.06)", borderColor: date === today() ? "var(--t-accent)" : "rgba(255,255,255,0.08)", color: date === today() ? "var(--t-accent)" : "var(--t-frame-text-muted)" }}>
+                style={{ background: date === today() ? "var(--t-accent-soft)" : "var(--t-bg-card)", borderColor: date === today() ? "var(--t-accent)" : "var(--t-border)", color: date === today() ? "var(--t-accent)" : "var(--t-frame-text-muted)" }}>
                 Today
               </button>
             </div>
@@ -403,11 +403,11 @@ export default function DispatchPage() {
           </div>
           <div className="flex items-center gap-2">
             <button onClick={() => fetchBoard(true)} disabled={refreshing} className="p-2 rounded-[20px] border disabled:opacity-50"
-              style={{ background: "rgba(255,255,255,0.06)", borderColor: "rgba(255,255,255,0.08)", color: "var(--t-frame-text-muted)" }}>
+              style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)", color: "var(--t-frame-text-muted)" }}>
               <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
             </button>
             <button onClick={() => setShowColumns(!showColumns)} className="flex items-center gap-1.5 rounded-full px-3 py-2 text-xs font-medium border"
-              style={{ borderColor: "rgba(255,255,255,0.12)", color: "var(--t-frame-text-muted)" }}>
+              style={{ borderColor: "var(--t-border)", color: "var(--t-frame-text-muted)" }}>
               {showColumns ? <MapIcon className="h-3.5 w-3.5" /> : <LayoutDashboard className="h-3.5 w-3.5" />}
               {showColumns ? "Map View" : "Show Columns"}
             </button>
@@ -420,7 +420,7 @@ export default function DispatchPage() {
           <div className="flex gap-1">
             {FILTER_TABS.map(t => (
               <button key={t.key} onClick={() => setFilter(t.key)} className="rounded-full px-3 py-1.5 text-xs font-medium"
-                style={{ background: filter === t.key ? "var(--t-accent-soft)" : "rgba(255,255,255,0.06)", color: filter === t.key ? "var(--t-accent)" : "var(--t-frame-text-muted)" }}>
+                style={{ background: filter === t.key ? "var(--t-accent-soft)" : "var(--t-bg-card)", color: filter === t.key ? "var(--t-accent)" : "var(--t-frame-text-muted)" }}>
                 {t.label}
               </button>
             ))}
@@ -429,13 +429,13 @@ export default function DispatchPage() {
             <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2" style={{ color: "var(--t-frame-text-muted)" }} />
             <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search jobs..."
               className="w-full rounded-[20px] py-1.5 pl-9 pr-3 text-xs outline-none"
-              style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.08)", color: "var(--t-frame-text)" }} />
+              style={{ background: "var(--t-bg-card)", border: "1px solid var(--t-border)", color: "var(--t-frame-text)" }} />
           </div>
           {/* Show hidden columns */}
           {(hiddenDrivers.length > 0 || hiddenCols.has("unassigned")) && (
             <Dropdown trigger={
               <button className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium border"
-                style={{ borderColor: "rgba(255,255,255,0.12)", color: "var(--t-frame-text-muted)" }}>
+                style={{ borderColor: "var(--t-border)", color: "var(--t-frame-text-muted)" }}>
                 <EyeOff className="h-3 w-3" /> {hiddenDrivers.length + (hiddenCols.has("unassigned") ? 1 : 0)} hidden
               </button>
             }>
@@ -529,19 +529,19 @@ export default function DispatchPage() {
 
       {/* ── Context Menu ── */}
       {ctxMenu && createPortal(
-        <div className="fixed z-[9999] rounded-xl border py-1 shadow-xl" style={{ left: ctxMenu.x, top: ctxMenu.y, background: "#1A1A1A", borderColor: "rgba(255,255,255,0.1)", minWidth: 180 }}
+        <div className="fixed z-[9999] rounded-xl border py-1 shadow-xl" style={{ left: ctxMenu.x, top: ctxMenu.y, background: "var(--t-bg-card)", borderColor: "var(--t-border)", minWidth: 180 }}
           onClick={e => e.stopPropagation()}>
-          <button className="flex w-full items-center gap-2 px-4 py-2.5 text-xs hover:bg-white/5" style={{ color: "#E5E5E5" }}
+          <button className="flex w-full items-center gap-2 px-4 py-2.5 text-xs hover:bg-white/5" style={{ color: "var(--t-text-primary)" }}
             onClick={() => { setRescheduleJob(ctxMenu.job); setRescheduleDate(""); setCtxMenu(null); }}>
             <Calendar className="h-3.5 w-3.5" /> Reschedule
           </button>
           {ctxMenu.job.assigned_driver && (
-            <button className="flex w-full items-center gap-2 px-4 py-2.5 text-xs hover:bg-white/5" style={{ color: "#E5E5E5" }}
+            <button className="flex w-full items-center gap-2 px-4 py-2.5 text-xs hover:bg-white/5" style={{ color: "var(--t-text-primary)" }}
               onClick={() => { handleUnassign(ctxMenu.job); setCtxMenu(null); }}>
               <UserPlus className="h-3.5 w-3.5" /> Unassign Driver
             </button>
           )}
-          <Link href={`/jobs/${ctxMenu.job.id}`} className="flex w-full items-center gap-2 px-4 py-2.5 text-xs hover:bg-white/5" style={{ color: "#E5E5E5" }}
+          <Link href={`/jobs/${ctxMenu.job.id}`} className="flex w-full items-center gap-2 px-4 py-2.5 text-xs hover:bg-white/5" style={{ color: "var(--t-text-primary)" }}
             onClick={() => setCtxMenu(null)}>
             <ExternalLink className="h-3.5 w-3.5" /> View Details
           </Link>
@@ -552,15 +552,15 @@ export default function DispatchPage() {
       {/* ── Reschedule Modal ── */}
       {rescheduleJob && createPortal(
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50" onClick={() => setRescheduleJob(null)}>
-          <div className="rounded-2xl border p-6 w-80" style={{ background: "#1A1A1A", borderColor: "rgba(255,255,255,0.1)" }}
+          <div className="rounded-2xl border p-6 w-80" style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)" }}
             onClick={e => e.stopPropagation()}>
-            <h3 className="text-sm font-semibold mb-1" style={{ color: "#E5E5E5" }}>Reschedule {rescheduleJob.job_number}</h3>
+            <h3 className="text-sm font-semibold mb-1" style={{ color: "var(--t-text-primary)" }}>Reschedule {rescheduleJob.job_number}</h3>
             <p className="text-xs mb-4" style={{ color: "#8A8A8A" }}>
               {rescheduleJob.customer ? `${rescheduleJob.customer.first_name} ${rescheduleJob.customer.last_name}` : ""}
             </p>
             <input type="date" value={rescheduleDate} onChange={e => setRescheduleDate(e.target.value)}
               className="w-full rounded-lg border px-3 py-2 text-sm mb-4 outline-none"
-              style={{ background: "rgba(255,255,255,0.06)", borderColor: "rgba(255,255,255,0.12)", color: "#E5E5E5" }} />
+              style={{ background: "var(--t-bg-primary)", borderColor: "var(--t-border)", color: "var(--t-text-primary)" }} />
             <div className="flex gap-2 justify-end">
               <button onClick={() => setRescheduleJob(null)} className="rounded-full px-4 py-2 text-xs font-medium"
                 style={{ color: "#8A8A8A" }}>Cancel</button>
@@ -660,7 +660,7 @@ function DispatchMap({ board, activeJobId }: { board: DispatchBoard | null; acti
   if (!HAS_MAP) {
     // Fallback dark grid background
     return (
-      <div style={{ position: "absolute", inset: 0, background: "#0A0A0A", zIndex: 0 }}>
+      <div style={{ position: "absolute", inset: 0, background: "var(--t-bg-primary)", zIndex: 0 }}>
         <div style={{ position: "absolute", inset: 0, backgroundImage: "radial-gradient(circle, #1a1a1a 1px, transparent 1px)", backgroundSize: "30px 30px", opacity: 0.5 }} />
         <div style={{ position: "absolute", top: 16, left: "50%", transform: "translateX(-50%)", background: "rgba(217,119,6,0.15)", border: "1px solid rgba(217,119,6,0.3)", borderRadius: 12, padding: "8px 16px", fontSize: 12, color: "#D97706", zIndex: 5 }}>
           Add Mapbox token in Settings to enable the live dispatch map
