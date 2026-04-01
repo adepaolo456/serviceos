@@ -25,6 +25,7 @@ import {
 import { api } from "@/lib/api";
 import Dropdown from "@/components/dropdown";
 import { useToast } from "@/components/toast";
+import MapboxMap from "@/components/mapbox-map";
 
 /* --- Types --- */
 
@@ -369,6 +370,19 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
                 <p className="text-xs text-[var(--t-text-muted)] mb-1">Service Address</p>
                 <p className="text-sm text-[var(--t-text-primary)]">{[addr.street, addr.city, addr.state, addr.zip].filter(Boolean).join(", ")}</p>
                 {job.placement_notes && <p className="mt-1 text-xs text-[var(--t-text-muted)] italic">Placement: {job.placement_notes}</p>}
+                {addr.lat && addr.lng && (
+                  <div className="mt-3">
+                    <MapboxMap
+                      markers={[{ id: job.id, lat: Number(addr.lat), lng: Number(addr.lng), type: job.job_type as any, label: job.asset?.subtype?.replace("yd","") || "" }]}
+                      center={{ lat: Number(addr.lat), lng: Number(addr.lng) }}
+                      zoom={14}
+                      interactive={false}
+                      showControls={false}
+                      fitBounds={false}
+                      style={{ height: 180, width: "100%" }}
+                    />
+                  </div>
+                )}
               </div>
             )}
           </Card>

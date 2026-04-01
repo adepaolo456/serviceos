@@ -12,6 +12,7 @@ import { api } from "@/lib/api";
 import { useToast } from "@/components/toast";
 import SlideOver from "@/components/slide-over";
 import AddressAutocomplete, { type AddressValue } from "@/components/address-autocomplete";
+import MapboxMap from "@/components/mapbox-map";
 
 /* ---- Types ---- */
 
@@ -227,6 +228,19 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
           </div>
 
           <div className="lg:col-span-2 space-y-4">
+            {/* Location Map */}
+            {(() => {
+              const mapPins = (customer.service_addresses || [])
+                .filter((a: any) => a.lat && a.lng)
+                .map((a: any, i: number) => ({
+                  id: `svc-${i}`, lat: Number(a.lat), lng: Number(a.lng),
+                  type: "customer" as const, label: String(i + 1),
+                  popupContent: { title: a.street || "Service Address", subtitle: [a.city, a.state, a.zip].filter(Boolean).join(", ") },
+                }));
+              return mapPins.length > 0 ? (
+                <MapboxMap markers={mapPins} style={{ height: 200, width: "100%" }} interactive={false} showControls={false} />
+              ) : null;
+            })()}
             {/* Quick Stats */}
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
               {[
