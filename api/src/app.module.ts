@@ -63,6 +63,7 @@ import { DumpLocation, DumpLocationRate, DumpLocationSurcharge } from './modules
 import { DumpTicket } from './modules/dump-locations/entities/dump-ticket.entity';
 import { SubscriptionPlan } from './modules/subscriptions/entities/subscription-plan.entity';
 import { RentalChainsModule } from './modules/rental-chains/rental-chains.module';
+import { MapboxModule } from './modules/mapbox/mapbox.module';
 
 @Module({
   imports: [
@@ -147,6 +148,7 @@ import { RentalChainsModule } from './modules/rental-chains/rental-chains.module
     StripeModule,
     QuotesModule,
     RentalChainsModule,
+    MapboxModule,
   ],
   controllers: [AppController],
   providers: [

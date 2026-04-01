@@ -12,11 +12,13 @@ import { User } from '../auth/entities/user.entity';
 import { DumpLocation, DumpLocationRate, DumpLocationSurcharge } from '../dump-locations/entities/dump-location.entity';
 import { DumpTicket } from '../dump-locations/entities/dump-ticket.entity';
 import { DeliveryZone } from '../pricing/entities/delivery-zone.entity';
+import { MapboxService } from '../mapbox/mapbox.service';
 import * as bcrypt from 'bcrypt';
 
 @Controller('admin/seed')
 export class SeedController {
   constructor(
+    private mapbox: MapboxService,
     @InjectRepository(Tenant) private tenantRepo: Repository<Tenant>,
     @InjectRepository(Customer) private customerRepo: Repository<Customer>,
     @InjectRepository(Asset) private assetRepo: Repository<Asset>,
@@ -542,5 +544,72 @@ export class SeedController {
     } catch (err: any) {
       return { error: err.message, stack: err.stack?.split('\n').slice(0, 5) };
     }
+  }
+
+  @Post('geocode-backfill')
+  @Public()
+  async geocodeBackfill(@Query('tenantId') tenantId: string) {
+    if (!tenantId) return { error: 'tenantId required' };
+    let processed = 0, geocoded = 0, failed = 0;
+
+    const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+
+    // Customers — billing addresses
+    const customers = await this.customerRepo.find({ where: { tenant_id: tenantId } });
+    for (const c of customers) {
+      if (c.billing_address && c.billing_address.street && !c.billing_address.lat) {
+        const addr = c.billing_address;
+        const result = await this.mapbox.geocodeAddress(
+          `${addr.street}, ${addr.city || ''}, ${addr.state || ''} ${addr.zip || ''}`.trim(),
+        );
+        processed++;
+        if (result) {
+          c.billing_address = { ...addr, lat: result.lat, lng: result.lng };
+          await this.customerRepo.save(c);
+          geocoded++;
+        } else { failed++; }
+        await sleep(100);
+      }
+      // Service addresses
+      if (Array.isArray(c.service_addresses)) {
+        let changed = false;
+        for (const addr of c.service_addresses) {
+          if (addr.street && !addr.lat) {
+            const result = await this.mapbox.geocodeAddress(
+              `${addr.street}, ${addr.city || ''}, ${addr.state || ''} ${addr.zip || ''}`.trim(),
+            );
+            processed++;
+            if (result) {
+              (addr as any).lat = result.lat;
+              (addr as any).lng = result.lng;
+              changed = true;
+              geocoded++;
+            } else { failed++; }
+            await sleep(100);
+          }
+        }
+        if (changed) await this.customerRepo.save(c);
+      }
+    }
+
+    // Jobs — service addresses
+    const jobs = await this.jobRepo.find({ where: { tenant_id: tenantId } });
+    for (const j of jobs) {
+      if (j.service_address && j.service_address.street && !j.service_address.lat) {
+        const addr = j.service_address;
+        const result = await this.mapbox.geocodeAddress(
+          `${addr.street}, ${addr.city || ''}, ${addr.state || ''} ${addr.zip || ''}`.trim(),
+        );
+        processed++;
+        if (result) {
+          j.service_address = { ...addr, lat: String(result.lat), lng: String(result.lng) };
+          await this.jobRepo.save(j);
+          geocoded++;
+        } else { failed++; }
+        await sleep(100);
+      }
+    }
+
+    return { processed, geocoded, failed };
   }
 }
