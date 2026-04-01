@@ -509,64 +509,147 @@ function AddYardForm({ onSuccess }: { onSuccess: () => void }) {
 
 /* ── Notifications ── */
 
+const NOTIF_TYPES = [
+  { type: "booking_confirmation", label: "Booking Confirmation", desc: "Sent when a new rental is booked", group: "service", hasSms: true },
+  { type: "delivery_reminder", label: "Delivery Reminder", desc: "Sent the day before delivery", group: "service", hasSms: true },
+  { type: "on_my_way", label: "On My Way", desc: "Sent when driver starts heading to the job", group: "service", hasSms: true },
+  { type: "service_completed", label: "Service Completed", desc: "Sent when a job is marked complete", group: "service", hasSms: true },
+  { type: "pickup_reminder", label: "Pickup Reminder", desc: "Sent the day before scheduled pickup", group: "service", hasSms: true },
+  { type: "overdue_rental", label: "Overdue Rental", desc: "Sent when rental period has expired", group: "service", hasSms: true },
+  { type: "invoice_sent", label: "Invoice Sent", desc: "Sent when an invoice is emailed to customer", group: "financial", hasSms: false },
+  { type: "payment_received", label: "Payment Received", desc: "Sent when a payment is applied", group: "financial", hasSms: true },
+];
+
+interface NotifPref { notification_type: string; email_enabled: boolean; sms_enabled: boolean }
+
 function NotificationsTab() {
-  const [prefs, setPrefs] = useState({
-    bookingEmail: true, bookingSms: false, onTheWayEmail: true, onTheWaySms: true,
-    pickupReminderEmail: true, pickupReminderSms: false, pickupReminderDays: "2",
-    overdueEmail: true, overdueSms: false, invoiceSentEmail: true,
-    paymentReceivedEmail: true, dailySummaryEmail: false, dailySummaryTime: "08:00",
-  });
+  const [prefs, setPrefs] = useState<NotifPref[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState<string | null>(null);
+  const [testEmail, setTestEmail] = useState("");
+  const [testPhone, setTestPhone] = useState("");
+  const [testResult, setTestResult] = useState<string | null>(null);
+  const [testSending, setTestSending] = useState(false);
 
-  const toggle = (key: string) => setPrefs((p) => ({ ...p, [key]: !(p as any)[key] }));
-  const set = (key: string, val: string) => setPrefs((p) => ({ ...p, [key]: val }));
+  useEffect(() => {
+    api.get<NotifPref[]>("/notifications/preferences").then(d => {
+      setPrefs(Array.isArray(d) ? d : []);
+      setLoading(false);
+    }).catch(() => setLoading(false));
+  }, []);
 
-  const inp = "rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-3 py-1.5 text-sm text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)] transition-colors";
+  const getPref = (type: string) => prefs.find(p => p.notification_type === type) || { notification_type: type, email_enabled: true, sms_enabled: false };
+
+  const togglePref = async (type: string, field: "email_enabled" | "sms_enabled") => {
+    const current = getPref(type);
+    const newVal = !current[field];
+    setSaving(type + field);
+    try {
+      await api.put(`/notifications/preferences/${type}`, { [field]: newVal });
+      setPrefs(prev => {
+        const idx = prev.findIndex(p => p.notification_type === type);
+        if (idx >= 0) { const copy = [...prev]; copy[idx] = { ...copy[idx], [field]: newVal }; return copy; }
+        return [...prev, { notification_type: type, email_enabled: field === "email_enabled" ? newVal : true, sms_enabled: field === "sms_enabled" ? newVal : false }];
+      });
+    } catch { /* */ }
+    setTimeout(() => setSaving(null), 600);
+  };
+
+  const sendTest = async (channel: "email" | "sms") => {
+    setTestSending(true); setTestResult(null);
+    try {
+      const body: any = {};
+      if (channel === "email") body.email = testEmail;
+      else body.phone = testPhone;
+      const res = await api.post<any>("/notifications/test", body);
+      const r = res[channel];
+      setTestResult(r?.status === "delivered" ? `${channel === "email" ? "Email" : "SMS"} sent successfully!` : `Failed: ${r?.error || "Unknown error"}`);
+    } catch (e: any) { setTestResult(`Failed: ${e.message}`); }
+    finally { setTestSending(false); }
+  };
+
+  if (loading) return <div className="space-y-3">{[1,2,3,4].map(i => <div key={i} className="h-20 animate-pulse rounded-[20px]" style={{ background: "var(--t-bg-card)" }} />)}</div>;
+
+  const inp = "rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-3 py-2.5 text-sm text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)] transition-colors";
 
   return (
-    <div className="max-w-2xl space-y-4">
-      <NotifCard title="Booking Confirmation" desc="When a new booking is created">
-        <ToggleSwitch label="Email" checked={prefs.bookingEmail} onChange={() => toggle("bookingEmail")} />
-        <ToggleSwitch label="SMS" checked={prefs.bookingSms} onChange={() => toggle("bookingSms")} />
-      </NotifCard>
-      <NotifCard title="On the Way Alert" desc="When driver marks en route">
-        <ToggleSwitch label="Email" checked={prefs.onTheWayEmail} onChange={() => toggle("onTheWayEmail")} />
-        <ToggleSwitch label="SMS" checked={prefs.onTheWaySms} onChange={() => toggle("onTheWaySms")} />
-      </NotifCard>
-      <NotifCard title="Pickup Reminder" desc="Remind customer before scheduled pickup">
-        <ToggleSwitch label="Email" checked={prefs.pickupReminderEmail} onChange={() => toggle("pickupReminderEmail")} />
-        <ToggleSwitch label="SMS" checked={prefs.pickupReminderSms} onChange={() => toggle("pickupReminderSms")} />
-        <div className="flex items-center gap-2 mt-2">
-          <input type="number" min="1" max="14" value={prefs.pickupReminderDays} onChange={(e) => set("pickupReminderDays", e.target.value)} className={`w-16 ${inp}`} />
-          <span className="text-[13px] text-[var(--t-text-muted)]">days before</span>
-        </div>
-      </NotifCard>
-      <NotifCard title="Overdue Rental Alert" desc="When a rental passes its end date">
-        <ToggleSwitch label="Email" checked={prefs.overdueEmail} onChange={() => toggle("overdueEmail")} />
-        <ToggleSwitch label="SMS" checked={prefs.overdueSms} onChange={() => toggle("overdueSms")} />
-      </NotifCard>
-      <NotifCard title="Invoice Sent" desc="Confirmation when invoice is sent"><ToggleSwitch label="Email" checked={prefs.invoiceSentEmail} onChange={() => toggle("invoiceSentEmail")} /></NotifCard>
-      <NotifCard title="Payment Received" desc="When a payment is recorded"><ToggleSwitch label="Email" checked={prefs.paymentReceivedEmail} onChange={() => toggle("paymentReceivedEmail")} /></NotifCard>
-      <NotifCard title="Daily Summary Report" desc="End-of-day summary of operations">
-        <ToggleSwitch label="Email" checked={prefs.dailySummaryEmail} onChange={() => toggle("dailySummaryEmail")} />
-        {prefs.dailySummaryEmail && (
-          <div className="flex items-center gap-2 mt-2">
-            <input type="time" value={prefs.dailySummaryTime} onChange={(e) => set("dailySummaryTime", e.target.value)} className={`w-32 ${inp}`} />
-            <span className="text-[13px] text-[var(--t-text-muted)]">send time</span>
+    <div className="max-w-2xl space-y-6">
+      {/* Test Setup */}
+      <div className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5">
+        <h3 className="text-sm font-semibold text-[var(--t-text-primary)] mb-3">Test Your Setup</h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="flex gap-2">
+            <input value={testEmail} onChange={e => setTestEmail(e.target.value)} placeholder="your@email.com" className={`flex-1 ${inp}`} />
+            <button onClick={() => sendTest("email")} disabled={testSending || !testEmail} className="shrink-0 rounded-full px-4 py-2 text-xs font-semibold disabled:opacity-40" style={{ background: "var(--t-accent)", color: "#000" }}>
+              {testSending ? "..." : "Test Email"}
+            </button>
           </div>
-        )}
-      </NotifCard>
-
-      <div className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6 mt-6">
-        <h3 className="text-sm font-semibold text-[var(--t-text-primary)] mb-2">SMS Settings</h3>
-        <p className="text-[13px] text-[var(--t-text-muted)]">SMS requires Twilio integration. Coming soon.</p>
-      </div>
-      <div className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6">
-        <h3 className="text-sm font-semibold text-[var(--t-text-primary)] mb-2">Email Settings</h3>
-        <p className="text-[13px] text-[var(--t-text-muted)] mb-3">Emails sent via Resend. Configure in Integrations tab.</p>
-        <div className="space-y-3">
-          <div><label className="text-[13px] text-[var(--t-text-muted)]">From Name</label><input className={`w-full mt-1 ${inp}`} placeholder="Rent This Dumpster" /></div>
-          <div><label className="text-[13px] text-[var(--t-text-muted)]">Reply-to Email</label><input className={`w-full mt-1 ${inp}`} placeholder="info@rentthisdumpster.com" /></div>
+          <div className="flex gap-2">
+            <input value={testPhone} onChange={e => setTestPhone(e.target.value)} placeholder="+1234567890" className={`flex-1 ${inp}`} />
+            <button onClick={() => sendTest("sms")} disabled={testSending || !testPhone} className="shrink-0 rounded-full px-4 py-2 text-xs font-semibold disabled:opacity-40" style={{ background: "var(--t-accent)", color: "#000" }}>
+              {testSending ? "..." : "Test SMS"}
+            </button>
+          </div>
         </div>
+        {testResult && <p className={`mt-2 text-xs font-medium ${testResult.startsWith("Failed") ? "text-[var(--t-error)]" : "text-[var(--t-accent)]"}`}>{testResult}</p>}
+      </div>
+
+      {/* Service Notifications */}
+      <div>
+        <p className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color: "var(--t-text-muted)" }}>Service Notifications</p>
+        <div className="space-y-2">
+          {NOTIF_TYPES.filter(n => n.group === "service").map(n => {
+            const p = getPref(n.type);
+            return (
+              <NotifCard key={n.type} title={n.label} desc={n.desc}>
+                <div className="flex items-center gap-1">
+                  <ToggleSwitch label="Email" checked={p.email_enabled} onChange={() => togglePref(n.type, "email_enabled")} />
+                  {saving === n.type + "email_enabled" && <Check className="h-3 w-3 text-[var(--t-accent)]" />}
+                </div>
+                {n.hasSms && (
+                  <div className="flex items-center gap-1">
+                    <ToggleSwitch label="SMS" checked={p.sms_enabled} onChange={() => togglePref(n.type, "sms_enabled")} />
+                    {saving === n.type + "sms_enabled" && <Check className="h-3 w-3 text-[var(--t-accent)]" />}
+                  </div>
+                )}
+              </NotifCard>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Financial Notifications */}
+      <div>
+        <p className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color: "var(--t-text-muted)" }}>Financial Notifications</p>
+        <div className="space-y-2">
+          {NOTIF_TYPES.filter(n => n.group === "financial").map(n => {
+            const p = getPref(n.type);
+            return (
+              <NotifCard key={n.type} title={n.label} desc={n.desc}>
+                <div className="flex items-center gap-1">
+                  <ToggleSwitch label="Email" checked={p.email_enabled} onChange={() => togglePref(n.type, "email_enabled")} />
+                  {saving === n.type + "email_enabled" && <Check className="h-3 w-3 text-[var(--t-accent)]" />}
+                </div>
+                {n.hasSms && (
+                  <div className="flex items-center gap-1">
+                    <ToggleSwitch label="SMS" checked={p.sms_enabled} onChange={() => togglePref(n.type, "sms_enabled")} />
+                    {saving === n.type + "sms_enabled" && <Check className="h-3 w-3 text-[var(--t-accent)]" />}
+                  </div>
+                )}
+              </NotifCard>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Sender Info */}
+      <div className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5">
+        <h3 className="text-sm font-semibold text-[var(--t-text-primary)] mb-3">Sender Settings</h3>
+        <div className="space-y-2 text-sm">
+          <div className="flex justify-between"><span style={{ color: "var(--t-text-muted)" }}>From Email</span><span style={{ color: "var(--t-text-primary)" }}>noreply@rentthis.com</span></div>
+          <div className="flex justify-between"><span style={{ color: "var(--t-text-muted)" }}>SMS Number</span><span style={{ color: "var(--t-text-primary)" }}>+1 (877) 706-1147</span></div>
+        </div>
+        <p className="mt-3 text-xs" style={{ color: "var(--t-text-muted)" }}>Custom sender domain — coming soon</p>
       </div>
     </div>
   );
