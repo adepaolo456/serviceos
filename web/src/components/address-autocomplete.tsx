@@ -115,7 +115,7 @@ export default function AddressAutocomplete({
   }, [initAutocomplete]);
 
   const inputClass = className ||
-    "w-full bg-[#111C2E] border border-[#1E2D45] rounded-lg pl-10 pr-4 py-3 text-sm text-white placeholder-muted outline-none transition-colors focus:border-[#2ECC71] focus:ring-1 focus:ring-[#2ECC71]";
+    "w-full rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] pl-10 pr-4 py-3 text-sm text-[var(--t-text-primary)] placeholder-[var(--t-text-muted)] outline-none transition-colors focus:border-[var(--t-accent)] focus:ring-1 focus:ring-[var(--t-accent)]";
 
   return (
     <div>
