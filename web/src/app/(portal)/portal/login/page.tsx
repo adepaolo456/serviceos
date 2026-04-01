@@ -110,10 +110,9 @@ export default function PortalLoginPage() {
             <div className="mt-4 space-y-3 text-center">
               {mode === "login" ? (
                 <>
-                  <button onClick={handleMagicLink} disabled={!email || loading}
-                    className="text-xs text-[var(--t-accent)] font-medium hover:underline disabled:opacity-50">
-                    Send me a magic link instead
-                  </button>
+                  <span className="text-xs text-[var(--t-text-muted)]">
+                    Magic link login coming soon
+                  </span>
                   <p className="text-sm text-[var(--t-text-muted)]">
                     First time?{" "}
                     <button onClick={() => { setMode("register"); setError(""); }} className="font-medium text-[var(--t-accent)] hover:underline">

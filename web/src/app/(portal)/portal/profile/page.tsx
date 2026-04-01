@@ -170,27 +170,11 @@ export default function PortalProfilePage() {
         </form>
       )}
 
+      {/* TODO: Add notification preferences when backend endpoint is ready */}
       {tab === "notifications" && (
-        <div className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6 space-y-4">
-          <p className="text-sm text-[var(--t-text-muted)]">Choose how you&apos;d like to be notified.</p>
-          {["Delivery updates", "Pickup reminders", "Invoice notifications", "Payment confirmations"].map(label => (
-            <div key={label} className="flex items-center justify-between py-2 border-b border-[var(--t-border)]/50 last:border-b-0">
-              <div>
-                <p className="text-sm font-medium text-[var(--t-text-primary)]">{label}</p>
-              </div>
-              <div className="flex gap-4">
-                <label className="flex items-center gap-1.5 text-xs text-[var(--t-text-muted)]">
-                  <input type="checkbox" defaultChecked className="rounded border-[var(--t-border)] text-[var(--t-accent)] focus:ring-[var(--t-accent)]" /> Email
-                </label>
-                <label className="flex items-center gap-1.5 text-xs text-[var(--t-text-muted)]">
-                  <input type="checkbox" className="rounded border-[var(--t-border)] text-[var(--t-accent)] focus:ring-[var(--t-accent)]" /> SMS
-                </label>
-              </div>
-            </div>
-          ))}
-          <button className="rounded-full bg-[var(--t-accent)] px-6 py-2.5 text-sm font-semibold text-black hover:opacity-90 transition-opacity">
-            Save Preferences
-          </button>
+        <div className="rounded-[20px] border border-dashed border-[var(--t-border)] bg-[var(--t-bg-card)] p-8 text-center">
+          <p className="text-sm font-medium text-[var(--t-text-muted)]">Notification preferences coming soon</p>
+          <p className="text-xs text-[var(--t-text-muted)] mt-1">You&apos;ll receive all notifications by default via email and SMS.</p>
         </div>
       )}
     </div>

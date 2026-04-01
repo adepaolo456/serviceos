@@ -19,6 +19,21 @@ interface Invoice {
   notes: string | null;
 }
 
+interface Payment {
+  id: string;
+  amount: number;
+  payment_method: string;
+  status: string;
+  processed_at: string | null;
+  created_at: string;
+  notes: string | null;
+}
+
+interface InvoiceDetail {
+  invoice: Invoice;
+  payments: Payment[];
+}
+
 function invoiceStatusText(status: string, dueDate: string) {
   const overdue = status === "sent" && new Date(dueDate) < new Date();
   if (overdue) return <span className="inline-flex items-center gap-1 text-xs font-medium text-[var(--t-error)]"><AlertTriangle className="h-3 w-3" />Overdue</span>;
@@ -35,10 +50,24 @@ export default function PortalInvoicesPage() {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
   const [detail, setDetail] = useState<Invoice | null>(null);
+  const [payments, setPayments] = useState<Payment[]>([]);
+  const [detailLoading, setDetailLoading] = useState(false);
 
   useEffect(() => {
     portalApi.get<Invoice[]>("/portal/invoices").then(setInvoices).catch(() => {}).finally(() => setLoading(false));
   }, []);
+
+  const openDetail = async (inv: Invoice) => {
+    setDetail(inv);
+    setPayments([]);
+    setDetailLoading(true);
+    try {
+      const data = await portalApi.get<InvoiceDetail>(`/portal/invoices/${inv.id}`);
+      setDetail(data.invoice);
+      setPayments(data.payments || []);
+    } catch { /* fall back to list data */ }
+    finally { setDetailLoading(false); }
+  };
 
   const unpaid = invoices.filter(i => i.status === "sent");
   const totalOwed = unpaid.reduce((sum, i) => sum + Number(i.balance_due), 0);
@@ -101,6 +130,28 @@ export default function PortalInvoicesPage() {
               <p className="text-sm text-[var(--t-text-primary)]">{detail.notes}</p>
             </div>
           )}
+
+          {/* Payment History */}
+          {detailLoading ? (
+            <div className="mt-6 h-16 rounded-[20px] bg-[var(--t-bg-primary)] border border-[var(--t-border)] animate-pulse" />
+          ) : payments.length > 0 && (
+            <div className="mt-6">
+              <h3 className="text-sm font-semibold text-[var(--t-text-primary)] mb-3">Payment History</h3>
+              <div className="space-y-2">
+                {payments.map(p => (
+                  <div key={p.id} className="flex items-center justify-between rounded-[16px] border border-[var(--t-border)] bg-[var(--t-bg-primary)] px-4 py-3">
+                    <div>
+                      <p className="text-sm font-medium text-[var(--t-text-primary)]">{formatCurrency(p.amount)} via {p.payment_method}</p>
+                      <p className="text-xs text-[var(--t-text-muted)]">{p.processed_at ? new Date(p.processed_at).toLocaleDateString() : new Date(p.created_at).toLocaleDateString()}</p>
+                    </div>
+                    <span className={`text-xs font-medium ${p.status === "succeeded" ? "text-[var(--t-accent)]" : p.status === "failed" ? "text-[var(--t-error)]" : "text-amber-500"}`}>
+                      {p.status === "succeeded" ? "Paid" : p.status}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -127,7 +178,7 @@ export default function PortalInvoicesPage() {
       ) : (
         <div className="space-y-3">
           {invoices.map(inv => (
-            <button key={inv.id} onClick={() => setDetail(inv)}
+            <button key={inv.id} onClick={() => openDetail(inv)}
               className="w-full text-left rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-4 hover:bg-[var(--t-bg-card-hover)] transition-colors">
               <div className="flex items-center justify-between">
                 <div className="flex-1">
