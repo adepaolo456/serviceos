@@ -151,6 +151,7 @@ export class DriverController {
         staged_notes: body.notes || null,
         needs_dump: true,
         current_location_type: 'yard',
+        current_location_type: 'yard',
       } as any);
     }
 

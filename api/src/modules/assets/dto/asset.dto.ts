@@ -38,7 +38,7 @@ export class CreateAssetDto {
   })
   @IsOptional()
   @IsString()
-  @IsIn(['available', 'on_site', 'in_transit', 'maintenance', 'retired', 'reserved', 'deployed'])
+  @IsIn(['available', 'on_site', 'in_transit', 'maintenance', 'retired', 'reserved', 'deployed', 'full_staged'])
   status?: string;
 
   @ApiPropertyOptional({ example: 'good' })
@@ -107,7 +107,7 @@ export class ListAssetsQueryDto {
   })
   @IsOptional()
   @IsString()
-  @IsIn(['available', 'on_site', 'in_transit', 'maintenance', 'retired', 'reserved', 'deployed'])
+  @IsIn(['available', 'on_site', 'in_transit', 'maintenance', 'retired', 'reserved', 'deployed', 'full_staged'])
   status?: string;
 
   @ApiPropertyOptional({ default: 1 })

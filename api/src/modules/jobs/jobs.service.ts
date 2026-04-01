@@ -547,6 +547,10 @@ export class JobsService {
         current_job_id: null,
         current_location_type: 'yard',
         needs_dump: false,
+        staged_at: null,
+        staged_from_job_id: null,
+        staged_waste_type: null,
+        staged_notes: null,
       } as any);
     }
   }
