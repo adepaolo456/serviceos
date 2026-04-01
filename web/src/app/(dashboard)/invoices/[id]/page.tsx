@@ -20,6 +20,7 @@ import {
 import { useToast } from "@/components/toast";
 import { api } from "@/lib/api";
 import SlideOver from "@/components/slide-over";
+import RentalChainTimeline from "@/components/rental-chain-timeline";
 
 interface ApiLineItem {
   id: string;
@@ -62,6 +63,8 @@ interface Invoice {
   total_cogs: number;
   profit: number;
   summary_of_work: string;
+  rental_chain_id: string | null;
+  job_id: string | null;
   line_items: ApiLineItem[];
   notes?: string;
   sent_at: string;
@@ -419,6 +422,11 @@ export default function InvoiceDetailPage({
         <ArrowLeft className="h-4 w-4" />
         Back to Invoices
       </Link>
+
+      {/* Rental Chain Timeline */}
+      {invoice.rental_chain_id && (
+        <RentalChainTimeline chainId={invoice.rental_chain_id} currentJobId={invoice.job_id || undefined} />
+      )}
 
       {/* Header */}
       <div className="mb-8 flex items-start justify-between">

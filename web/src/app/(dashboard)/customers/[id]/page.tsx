@@ -33,7 +33,7 @@ interface Job {
 }
 
 interface Invoice {
-  id: string; invoice_number: string; status: string; total: number;
+  id: string; invoice_number: number; status: string; total: number;
   balance_due: number; due_date: string; created_at: string;
 }
 
@@ -75,6 +75,7 @@ const TABS = [
   { key: "invoices", label: "Invoices", icon: FileText },
   { key: "pricing", label: "Pricing", icon: DollarSign },
   { key: "notes", label: "Notes", icon: MessageSquare },
+  { key: "settings", label: "Settings", icon: Settings },
 ] as const;
 
 type Tab = typeof TABS[number]["key"];
@@ -290,7 +291,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
               <div className="divide-y divide-[var(--t-border)] -mx-4">
                 {invoices.filter(i => i.status === "paid").map(i => (
                   <div key={i.id} className="flex items-center justify-between px-4 py-2">
-                    <div><p className="text-xs font-medium text-[var(--t-text-primary)]">{i.invoice_number}</p><p className="text-[10px] text-[var(--t-text-muted)]">{new Date(i.created_at).toLocaleDateString()}</p></div>
+                    <div><p className="text-xs font-medium text-[var(--t-text-primary)]">#{i.invoice_number}</p><p className="text-[10px] text-[var(--t-text-muted)]">{new Date(i.created_at).toLocaleDateString()}</p></div>
                     <span className="text-sm font-medium text-[var(--t-accent)] tabular-nums">{fmtMoney(i.total)}</span>
                   </div>
                 ))}
@@ -302,7 +303,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
               <div className="divide-y divide-[var(--t-border)] -mx-4">
                 {invoices.filter(i => ["sent", "overdue", "draft"].includes(i.status)).map(i => (
                   <Link key={i.id} href={`/invoices/${i.id}`} className="flex items-center justify-between px-4 py-2 hover:bg-[var(--t-bg-card-hover)] transition-colors">
-                    <div><p className="text-xs font-medium text-[var(--t-text-primary)]">{i.invoice_number}</p><p className="text-[10px] text-[var(--t-text-muted)]">Due: {i.due_date || "—"}</p></div>
+                    <div><p className="text-xs font-medium text-[var(--t-text-primary)]">#{i.invoice_number}</p><p className="text-[10px] text-[var(--t-text-muted)]">Due: {i.due_date || "—"}</p></div>
                     <div className="flex items-center gap-2">
                       <span className={`text-[10px] font-medium ${STATUS_CLS[i.status] || ""}`}>{i.status}</span>
                       <span className="text-sm font-medium text-[var(--t-error)] tabular-nums">{fmtMoney(i.balance_due)}</span>
@@ -357,7 +358,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
                 {invoices.length === 0 ? <tr><td colSpan={6} className="py-12 text-center text-xs text-[var(--t-text-muted)]">No invoices</td></tr> :
                   invoices.map(i => (
                     <tr key={i.id} onClick={() => router.push(`/invoices/${i.id}`)} className="border-b border-[var(--t-border)] last:border-0 cursor-pointer hover:bg-[var(--t-bg-card-hover)] transition-colors">
-                      <td className="px-4 py-3 font-medium text-[var(--t-text-primary)]">{i.invoice_number}</td>
+                      <td className="px-4 py-3 font-medium text-[var(--t-text-primary)]">#{i.invoice_number}</td>
                       <td className="px-4 py-3 text-[var(--t-text-primary)]">{new Date(i.created_at).toLocaleDateString()}</td>
                       <td className="px-4 py-3 text-[var(--t-text-primary)]">{i.due_date || "—"}</td>
                       <td className="px-4 py-3"><span className={`text-[10px] font-medium capitalize ${STATUS_CLS[i.status] || ""}`}>{i.status}</span></td>
@@ -406,6 +407,66 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
                 </div>
               ))}
             </div>
+          )}
+        </div>
+      )}
+
+      {/* ===== SETTINGS TAB ===== */}
+      {tab === "settings" && customer && (
+        <div className="max-w-2xl space-y-6">
+          <Card title="Client Type">
+            <p className="text-sm capitalize" style={{ color: "var(--t-text-primary)" }}>{customer.type}</p>
+            <p className="text-xs mt-1" style={{ color: "var(--t-text-muted)" }}>Change via the Edit Customer button above</p>
+          </Card>
+          <Card title="Terms Template">
+            <p className="text-sm" style={{ color: "var(--t-text-muted)" }}>
+              Using {customer.type === "commercial" ? "Commercial" : "Residential"} Standard (default)
+            </p>
+            <Link href="/pricing/terms" className="text-xs text-[var(--t-accent)] hover:underline mt-1 inline-block">
+              Manage Templates
+            </Link>
+          </Card>
+          <Card title="Service Addresses">
+            {(customer.service_addresses || []).length === 0 ? (
+              <p className="text-sm" style={{ color: "var(--t-text-muted)" }}>No service addresses on file</p>
+            ) : (
+              <div className="space-y-2">
+                {customer.service_addresses.map((addr, i) => (
+                  <div key={i} className="rounded-[14px] border border-[var(--t-border)] p-3">
+                    <p className="text-sm" style={{ color: "var(--t-text-primary)" }}>{addr.street || "—"}</p>
+                    <p className="text-xs" style={{ color: "var(--t-text-muted)" }}>{[addr.city, addr.state, addr.zip].filter(Boolean).join(", ")}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+          <Card title="Notification Preferences">
+            <p className="text-xs mb-3" style={{ color: "var(--t-text-muted)" }}>
+              Control which notifications this customer receives
+            </p>
+            {[
+              "Booking Confirmation", "Service Reminder", "On Our Way", "Service Complete",
+              "Invoice Sent", "Payment Confirmation", "Overdue Reminder", "Pickup Reminder",
+              "Rental Extension", "Failed Trip Notice", "Schedule Change", "Dump Ticket Ready",
+            ].map(cat => (
+              <div key={cat} className="flex items-center justify-between py-2 border-b border-[var(--t-border)] last:border-0">
+                <span className="text-sm" style={{ color: "var(--t-text-primary)" }}>{cat}</span>
+                <div className="flex gap-3">
+                  <label className="flex items-center gap-1.5 text-xs" style={{ color: "var(--t-text-muted)" }}>
+                    <input type="checkbox" defaultChecked className="accent-[var(--t-accent)]" /> Email
+                  </label>
+                  <label className="flex items-center gap-1.5 text-xs" style={{ color: "var(--t-text-muted)" }}>
+                    <input type="checkbox" defaultChecked className="accent-[var(--t-accent)]" /> SMS
+                  </label>
+                </div>
+              </div>
+            ))}
+            {/* TODO: Connect to backend notification preferences endpoint when available */}
+          </Card>
+          {customer.notes && (
+            <Card title="Internal Notes">
+              <p className="text-sm whitespace-pre-wrap" style={{ color: "var(--t-text-primary)" }}>{customer.notes}</p>
+            </Card>
           )}
         </div>
       )}
