@@ -53,6 +53,9 @@ function daysRemaining(endDate: string | null): number | null {
 export default function PortalHomePage() {
   const [rentals, setRentals] = useState<Rental[]>([]);
   const [loading, setLoading] = useState(true);
+  const [extendJobId, setExtendJobId] = useState<string | null>(null);
+  const [extendDate, setExtendDate] = useState("");
+  const [actionLoading, setActionLoading] = useState(false);
   const customer = portalApi.getCustomer();
 
   useEffect(() => {
@@ -61,6 +64,31 @@ export default function PortalHomePage() {
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
+
+  const refreshRentals = () => portalApi.get<Rental[]>("/portal/rentals").then(setRentals).catch(() => {});
+
+  const handleExtend = async () => {
+    if (!extendJobId || !extendDate) return;
+    setActionLoading(true);
+    try {
+      await portalApi.post(`/portal/rentals/${extendJobId}/extend`, { newEndDate: extendDate });
+      await refreshRentals();
+      setExtendJobId(null);
+      setExtendDate("");
+    } catch (err: any) { alert(err.message || "Failed to extend rental"); }
+    finally { setActionLoading(false); }
+  };
+
+  const handleEarlyPickup = async (jobId: string) => {
+    if (!confirm("Request an early pickup for this rental?")) return;
+    setActionLoading(true);
+    try {
+      await portalApi.post(`/portal/rentals/${jobId}/early-pickup`);
+      alert("Early pickup requested! We'll be in touch to schedule.");
+      await refreshRentals();
+    } catch (err: any) { alert(err.message || "Failed to request pickup"); }
+    finally { setActionLoading(false); }
+  };
 
   const active = rentals.filter(r => !["completed", "cancelled"].includes(r.status) && r.job_type === "delivery");
   const upcoming = rentals.filter(r => r.status === "pending" && r.job_type === "delivery");
@@ -158,10 +186,12 @@ export default function PortalHomePage() {
                       className="rounded-full border border-[var(--t-border)] px-3 py-1.5 text-xs font-medium text-[var(--t-text-primary)] hover:bg-[var(--t-bg-card-hover)] transition-colors">
                       View Details
                     </Link>
-                    <button className="rounded-full border border-[var(--t-border)] px-3 py-1.5 text-xs font-medium text-[var(--t-text-primary)] hover:bg-[var(--t-bg-card-hover)] transition-colors">
+                    <button onClick={() => { setExtendJobId(r.id); setExtendDate(r.rental_end_date || ""); }} disabled={actionLoading}
+                      className="rounded-full border border-[var(--t-border)] px-3 py-1.5 text-xs font-medium text-[var(--t-text-primary)] hover:bg-[var(--t-bg-card-hover)] transition-colors disabled:opacity-50">
                       Extend Rental
                     </button>
-                    <button className="rounded-full border border-[var(--t-error)]/20 px-3 py-1.5 text-xs font-medium text-[var(--t-error)] hover:bg-[var(--t-error-soft)] transition-colors">
+                    <button onClick={() => handleEarlyPickup(r.id)} disabled={actionLoading}
+                      className="rounded-full border border-[var(--t-error)]/20 px-3 py-1.5 text-xs font-medium text-[var(--t-error)] hover:bg-[var(--t-error-soft)] transition-colors disabled:opacity-50">
                       Request Early Pickup
                     </button>
                   </div>
@@ -191,6 +221,24 @@ export default function PortalHomePage() {
             ))}
           </div>
         </section>
+      )}
+      {/* Extend Modal */}
+      {extendJobId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setExtendJobId(null)}>
+          <div className="rounded-2xl border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6 w-80" onClick={e => e.stopPropagation()}>
+            <h3 className="text-sm font-semibold text-[var(--t-text-primary)] mb-4">Extend Rental</h3>
+            <label className="text-xs text-[var(--t-text-muted)] mb-1 block">New end date</label>
+            <input type="date" value={extendDate} onChange={e => setExtendDate(e.target.value)}
+              className="w-full rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-3 py-2 text-sm text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)] mb-4" />
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setExtendJobId(null)} className="rounded-full px-4 py-2 text-xs font-medium text-[var(--t-text-muted)]">Cancel</button>
+              <button onClick={handleExtend} disabled={!extendDate || actionLoading}
+                className="rounded-full bg-[var(--t-accent)] px-4 py-2 text-xs font-semibold text-black disabled:opacity-40">
+                {actionLoading ? "Extending…" : "Confirm Extension"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
