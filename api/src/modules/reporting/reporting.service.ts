@@ -8,6 +8,11 @@ import { Asset } from '../assets/entities/asset.entity';
 import { Customer } from '../customers/entities/customer.entity';
 import { User } from '../auth/entities/user.entity';
 
+const CORRECTION_CUTOFF = '2026-04-02T00:00:00Z';
+function classifyRecord(createdAt: string | Date): 'legacy' | 'post-correction' {
+  return new Date(createdAt) < new Date(CORRECTION_CUTOFF) ? 'legacy' : 'post-correction';
+}
+
 @Injectable()
 export class ReportingService {
   constructor(
@@ -380,5 +385,171 @@ export class ReportingService {
         daysPastDue: Math.ceil((Date.now() - new Date(inv.due_date).getTime()) / (1000 * 60 * 60 * 24)),
       })),
     };
+  }
+
+  async getIntegrityCheck(tenantId: string) {
+    const checks: Array<{ name: string; description: string; legacy_count: number; post_correction_count: number; severity: string; note: string }> = [];
+    const cutoff = CORRECTION_CUTOFF;
+
+    // 1. Balance mismatch: invoices where balance_due != total - amount_paid (within $0.01)
+    const balanceMismatch = await this.invoiceRepo.query(
+      `SELECT id, created_at FROM invoices WHERE tenant_id = $1 AND voided_at IS NULL
+       AND ABS(balance_due - (total - amount_paid)) > 0.01`,
+      [tenantId],
+    );
+    const bmLegacy = balanceMismatch.filter((r: any) => new Date(r.created_at) < new Date(cutoff)).length;
+    const bmPost = balanceMismatch.length - bmLegacy;
+    checks.push({ name: 'balance_mismatch', description: 'Invoices where balance_due != total - amount_paid', legacy_count: bmLegacy, post_correction_count: bmPost, severity: bmPost > 0 ? 'critical' : 'info', note: bmPost > 0 ? `${bmPost} post-correction mismatches need investigation` : bmLegacy > 0 ? `${bmLegacy} legacy records` : 'All clean' });
+
+    // 2. Duplicate dump tickets
+    const dupes = await this.ticketRepo.query(
+      `SELECT job_id, ticket_number, MIN(created_at) as created_at FROM dump_tickets WHERE tenant_id = $1
+       GROUP BY job_id, ticket_number HAVING COUNT(*) > 1`,
+      [tenantId],
+    );
+    const dupLegacy = dupes.filter((r: any) => new Date(r.created_at) < new Date(cutoff)).length;
+    const dupPost = dupes.length - dupLegacy;
+    checks.push({ name: 'duplicate_dump_tickets', description: 'Dump tickets with same job_id + ticket_number', legacy_count: dupLegacy, post_correction_count: dupPost, severity: dupPost > 0 ? 'critical' : 'info', note: dupPost > 0 ? 'Unique constraint may be missing' : 'Clean' });
+
+    // 3. Paid without payment
+    const paidNoPayment = await this.invoiceRepo.query(
+      `SELECT i.id, i.created_at FROM invoices i
+       WHERE i.tenant_id = $1 AND i.status = 'paid' AND i.voided_at IS NULL
+       AND NOT EXISTS (SELECT 1 FROM payments p WHERE p.invoice_id = i.id AND p.status = 'completed')`,
+      [tenantId],
+    );
+    const pnpLegacy = paidNoPayment.filter((r: any) => new Date(r.created_at) < new Date(cutoff)).length;
+    const pnpPost = paidNoPayment.length - pnpLegacy;
+    checks.push({ name: 'paid_without_payment', description: 'Invoices marked paid but no payment record exists', legacy_count: pnpLegacy, post_correction_count: pnpPost, severity: pnpPost > 0 ? 'warning' : 'info', note: pnpPost > 0 ? `${pnpPost} post-correction records` : pnpLegacy > 0 ? `${pnpLegacy} legacy records (pre-correction)` : 'Clean' });
+
+    // 4. Orphaned payments
+    const orphanedPayments = await this.invoiceRepo.query(
+      `SELECT p.id, p.applied_at as created_at FROM payments p
+       WHERE p.tenant_id = $1 AND NOT EXISTS (SELECT 1 FROM invoices i WHERE i.id = p.invoice_id)`,
+      [tenantId],
+    );
+    const opLegacy = orphanedPayments.filter((r: any) => new Date(r.created_at) < new Date(cutoff)).length;
+    const opPost = orphanedPayments.length - opLegacy;
+    checks.push({ name: 'orphaned_payments', description: 'Payments not linked to any invoice', legacy_count: opLegacy, post_correction_count: opPost, severity: opPost > 0 ? 'warning' : 'info', note: opPost > 0 ? `${opPost} post-correction orphans` : 'Clean' });
+
+    // 5. Jobs without invoice
+    const jobsNoInvoice = await this.jobRepo.query(
+      `SELECT j.id, j.created_at FROM jobs j
+       WHERE j.tenant_id = $1 AND j.status != 'cancelled'
+       AND NOT EXISTS (SELECT 1 FROM invoices i WHERE i.job_id = j.id)`,
+      [tenantId],
+    );
+    const jniLegacy = jobsNoInvoice.filter((r: any) => new Date(r.created_at) < new Date(cutoff)).length;
+    const jniPost = jobsNoInvoice.length - jniLegacy;
+    checks.push({ name: 'jobs_without_invoice', description: 'Jobs that have no linked invoice', legacy_count: jniLegacy, post_correction_count: jniPost, severity: jniPost > 0 ? 'warning' : 'info', note: jniPost > 0 ? `${jniPost} post-correction jobs missing invoices` : jniLegacy > 0 ? `${jniLegacy} legacy records` : 'Clean' });
+
+    // 6. Dump tickets without job_cost
+    const ticketsNoCost = await this.ticketRepo.query(
+      `SELECT t.id, t.created_at FROM dump_tickets t
+       WHERE t.tenant_id = $1
+       AND NOT EXISTS (SELECT 1 FROM job_costs jc WHERE jc.job_id = t.job_id AND jc.dump_ticket_number = t.ticket_number)`,
+      [tenantId],
+    );
+    const tncLegacy = ticketsNoCost.filter((r: any) => new Date(r.created_at) < new Date(cutoff)).length;
+    const tncPost = ticketsNoCost.length - tncLegacy;
+    checks.push({ name: 'dump_tickets_without_job_cost', description: 'Dump tickets with no corresponding job_cost record', legacy_count: tncLegacy, post_correction_count: tncPost, severity: tncPost > 0 ? 'warning' : 'info', note: tncPost > 0 ? `${tncPost} missing job_costs` : tncLegacy > 0 ? `${tncLegacy} legacy records` : 'Clean' });
+
+    // 7. Invoices without chain
+    const invoicesNoChain = await this.invoiceRepo.query(
+      `SELECT i.id, i.created_at FROM invoices i
+       WHERE i.tenant_id = $1 AND i.job_id IS NOT NULL AND i.rental_chain_id IS NULL AND i.voided_at IS NULL`,
+      [tenantId],
+    );
+    const incLegacy = invoicesNoChain.filter((r: any) => new Date(r.created_at) < new Date(cutoff)).length;
+    const incPost = invoicesNoChain.length - incLegacy;
+    checks.push({ name: 'invoices_without_chain', description: 'Job-linked invoices not linked to a rental chain', legacy_count: incLegacy, post_correction_count: incPost, severity: incPost > 0 ? 'info' : 'info', note: incPost > 0 ? `${incPost} post-correction records` : incLegacy > 0 ? `${incLegacy} legacy records` : 'Clean' });
+
+    // Sort: critical → warning → info, then alphabetical
+    const severityOrder = { critical: 0, warning: 1, info: 2 };
+    checks.sort((a, b) => (severityOrder[a.severity as keyof typeof severityOrder] ?? 3) - (severityOrder[b.severity as keyof typeof severityOrder] ?? 3) || a.name.localeCompare(b.name));
+
+    return {
+      timestamp: new Date().toISOString(),
+      correctionCutoff: CORRECTION_CUTOFF,
+      checks,
+      summary: {
+        critical: checks.filter(c => c.severity === 'critical').length,
+        warning: checks.filter(c => c.severity === 'warning').length,
+        info: checks.filter(c => c.severity === 'info').length,
+      },
+    };
+  }
+
+  async getRevenueBreakdown(tenantId: string, period?: string, classification?: string) {
+    const date = period || new Date().toISOString().slice(0, 7); // YYYY-MM
+    const startOfMonth = `${date}-01`;
+    const endOfMonth = new Date(new Date(startOfMonth).getFullYear(), new Date(startOfMonth).getMonth() + 1, 0).toISOString().split('T')[0];
+
+    let dateFilter = `i.created_at >= '${startOfMonth}' AND i.created_at <= '${endOfMonth}T23:59:59'`;
+    if (classification === 'post-correction') {
+      dateFilter += ` AND i.created_at >= '${CORRECTION_CUTOFF}'`;
+    } else if (classification === 'legacy') {
+      dateFilter += ` AND i.created_at < '${CORRECTION_CUTOFF}'`;
+    }
+
+    const result = await this.invoiceRepo.query(
+      `SELECT
+         COALESCE(SUM(li.net_amount), 0) as total,
+         COALESCE(SUM(CASE WHEN li.line_type = 'rental' THEN li.net_amount ELSE 0 END), 0) as rental,
+         COALESCE(SUM(CASE WHEN li.line_type = 'fee' THEN li.net_amount ELSE 0 END), 0) as distance,
+         COALESCE(SUM(CASE WHEN li.line_type = 'overage' THEN li.net_amount ELSE 0 END), 0) as overage,
+         COALESCE(SUM(CASE WHEN li.line_type = 'surcharge_item' THEN li.net_amount ELSE 0 END), 0) as surcharges,
+         COUNT(DISTINCT i.id) as invoice_count,
+         COUNT(DISTINCT i.id) FILTER (WHERE i.status = 'paid') as paid_count
+       FROM invoices i
+       LEFT JOIN invoice_line_items li ON li.invoice_id = i.id
+       WHERE i.tenant_id = $1 AND i.voided_at IS NULL AND ${dateFilter}`,
+      [tenantId],
+    );
+
+    const row = result[0] || {};
+    const totalRevenue = Number(row.total) || 0;
+    const paidCount = Number(row.paid_count) || 0;
+    const invoiceCount = Number(row.invoice_count) || 0;
+
+    return {
+      classification: classification || 'all',
+      cutoffDate: CORRECTION_CUTOFF.split('T')[0],
+      period: date,
+      totalRevenue,
+      breakdown: {
+        rental: Number(row.rental) || 0,
+        distance: Number(row.distance) || 0,
+        overage: Number(row.overage) || 0,
+        surcharges: Number(row.surcharges) || 0,
+      },
+      invoiceCount,
+      paidCount,
+      collectionRate: invoiceCount > 0 ? Math.round((paidCount / invoiceCount) * 1000) / 10 : 0,
+    };
+  }
+
+  async getInvoicesCsv(tenantId: string, status?: string, from?: string, to?: string): Promise<string> {
+    const qb = this.invoiceRepo.createQueryBuilder('i')
+      .leftJoin('i.customer', 'c')
+      .select([
+        'i.invoice_number', "CONCAT(c.first_name, ' ', c.last_name) as customer_name",
+        'i.total', 'i.amount_paid', 'i.balance_due', 'i.status',
+        'i.created_at', 'i.sent_at',
+      ])
+      .where('i.tenant_id = :tid', { tid: tenantId });
+
+    if (status) qb.andWhere('i.status = :status', { status });
+    if (from) qb.andWhere('i.created_at >= :from', { from });
+    if (to) qb.andWhere('i.created_at <= :to', { to: to + 'T23:59:59' });
+    qb.orderBy('i.created_at', 'DESC');
+
+    const rows = await qb.getRawMany();
+
+    const header = 'Invoice Number,Customer,Total,Amount Paid,Balance Due,Status,Created,Sent';
+    const csvRows = rows.map(r =>
+      [r.i_invoice_number, `"${(r.customer_name || '').replace(/"/g, '""')}"`, r.i_total, r.i_amount_paid, r.i_balance_due, r.i_status, r.i_created_at, r.i_sent_at || ''].join(',')
+    );
+    return [header, ...csvRows].join('\n');
   }
 }
