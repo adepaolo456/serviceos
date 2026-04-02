@@ -12,6 +12,7 @@ import {
   FileText,
   DollarSign,
   Settings,
+  BookOpen,
   LogOut,
   Menu,
   X,
@@ -57,6 +58,7 @@ const navigation = [
   { name: "Analytics", href: "/analytics", icon: BarChart3 },
   { name: "Marketplace", href: "/marketplace", icon: Store },
   { name: "Settings", href: "/settings", icon: Settings },
+  { name: "Admin Guide", href: "/admin-guide", icon: BookOpen },
 ] as const;
 
 /* ---- Tooltip for collapsed mode ---- */
