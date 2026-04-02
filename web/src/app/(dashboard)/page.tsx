@@ -21,6 +21,8 @@ import {
   BarChart3,
   ChevronLeft,
   ChevronRight,
+  FileWarning,
+  CalendarX,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import SlideOver from "@/components/slide-over";
@@ -136,6 +138,9 @@ export default function DashboardPage() {
   const [arSummary, setArSummary] = useState<{ totalOutstanding: number; totalOverdue: number } | null>(null);
   const [jobPanelOpen, setJobPanelOpen] = useState(false);
   const [scheduleDate, setScheduleDate] = useState(today);
+  const [attentionOverdue, setAttentionOverdue] = useState(0);
+  const [attentionPickups, setAttentionPickups] = useState(0);
+  const [attentionUnassigned, setAttentionUnassigned] = useState(0);
 
   // Keyboard shortcuts: B=booking, arrows=date nav, T=today
   useEffect(() => {
@@ -176,6 +181,11 @@ export default function DashboardPage() {
       const rescheduled = (res.data || []).filter((j: any) => j.rescheduled_by_customer);
       setRescheduledJobs(rescheduled);
     }).catch(() => {});
+    // Needs Attention data
+    api.get<{data: any[]}>("/invoices?status=overdue&limit=1").then(res => setAttentionOverdue(res.data?.length ?? 0)).catch(() => {});
+    api.get<{data: any[]}>("/jobs?status=completed&jobType=pickup&limit=100").then(res => setAttentionPickups(res.data?.length ?? 0)).catch(() => {});
+    const todayDate = today();
+    api.get<{data: any[], meta: {total: number}}>(`/jobs?status=pending&dateFrom=${todayDate}&dateTo=${todayDate}&limit=1`).then(res => setAttentionUnassigned(res.meta?.total ?? res.data?.length ?? 0)).catch(() => {});
   }, []);
 
   // Load jobs for selected schedule date
@@ -414,6 +424,47 @@ export default function DashboardPage() {
                   {kpi.trend}
                 </span>
               )}
+            </div>
+          </Link>
+        ))}
+      </div>
+
+      {/* ---- Needs Attention ---- */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginBottom: 16 }}>
+        {[
+          { label: "Overdue Invoices", count: attentionOverdue, icon: FileWarning, color: "var(--t-error)", href: "/invoices" },
+          { label: "Review Pickups", count: attentionPickups, icon: Truck, color: "var(--t-warning)", href: "/jobs" },
+          { label: "Unassigned Today", count: attentionUnassigned, icon: CalendarX, color: "var(--t-warning)", href: "/dispatch" },
+        ].map((item) => (
+          <Link key={item.label} href={item.href} style={{
+            backgroundColor: "var(--t-bg-card)",
+            border: `1px solid ${item.count > 0 ? item.color : "var(--t-border)"}`,
+            borderRadius: 14,
+            padding: "14px 16px",
+            textDecoration: "none",
+            transition: "background 0.15s ease",
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+          }} className="hover:bg-dark-card-hover">
+            {item.count > 0 ? (
+              <item.icon style={{ width: 20, height: 20, color: item.color, flexShrink: 0 }} />
+            ) : (
+              <CheckCircle2 style={{ width: 20, height: 20, color: "var(--t-accent)", flexShrink: 0 }} />
+            )}
+            <div>
+              <p style={{
+                fontSize: 22,
+                fontWeight: 700,
+                color: item.count > 0 ? item.color : "var(--t-accent)",
+                fontVariantNumeric: "tabular-nums",
+                lineHeight: 1.1,
+              }}>
+                {item.count}
+              </p>
+              <p style={{ fontSize: 11, fontWeight: 600, color: "var(--t-text-muted)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                {item.label}
+              </p>
             </div>
           </Link>
         ))}

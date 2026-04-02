@@ -15,6 +15,10 @@ import {
   DollarSign,
   ArrowRight,
   Bell,
+  MoreHorizontal,
+  Send,
+  XCircle,
+  CreditCard,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import SlideOver from "@/components/slide-over";
@@ -177,6 +181,8 @@ export default function InvoicesPage() {
   const [panelOpen, setPanelOpen] = useState(false);
   const [panelMode, setPanelMode] = useState<"create" | "from-job">("create");
   const [allInvoices, setAllInvoices] = useState<Invoice[]>([]);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkProgress, setBulkProgress] = useState<string | null>(null);
 
   const fetchInvoices = useCallback(async () => {
     setLoading(true);
@@ -350,6 +356,26 @@ export default function InvoicesPage() {
 
       {/* Search & Sort */}
       <div className="flex items-center gap-3 mb-5">
+        <label className="flex items-center gap-2 cursor-pointer shrink-0" onClick={(e) => e.stopPropagation()}>
+          <input
+            type="checkbox"
+            checked={filteredInvoices.length > 0 && filteredInvoices.every(inv => selectedIds.has(inv.id))}
+            onChange={() => {
+              const allSelected = filteredInvoices.every(inv => selectedIds.has(inv.id));
+              setSelectedIds(prev => {
+                const next = new Set(prev);
+                if (allSelected) {
+                  filteredInvoices.forEach(inv => next.delete(inv.id));
+                } else {
+                  filteredInvoices.forEach(inv => next.add(inv.id));
+                }
+                return next;
+              });
+            }}
+            className="h-4 w-4 rounded cursor-pointer accent-[#22C55E]"
+          />
+          <span className="text-xs" style={{ color: "var(--t-frame-text-muted)" }}>All</span>
+        </label>
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4" style={{ color: "var(--t-frame-text-muted)" }} />
           <input
@@ -448,10 +474,26 @@ export default function InvoicesPage() {
                 style={{
                   background: "var(--t-bg-card)",
                   borderColor: "var(--t-border)",
+                  ...(isOverdue || (inv.status === "open" && days < 0) ? { borderLeft: "3px solid var(--t-error)" } : {}),
                 }}
                 onMouseEnter={e => { e.currentTarget.style.background = "var(--t-bg-card-hover)"; }}
                 onMouseLeave={e => { e.currentTarget.style.background = "var(--t-bg-card)"; }}
               >
+                {/* Checkbox for bulk selection */}
+                <input
+                  type="checkbox"
+                  checked={selectedIds.has(inv.id)}
+                  onClick={(e) => e.stopPropagation()}
+                  onChange={(e) => {
+                    e.stopPropagation();
+                    setSelectedIds(prev => {
+                      const next = new Set(prev);
+                      if (next.has(inv.id)) next.delete(inv.id); else next.add(inv.id);
+                      return next;
+                    });
+                  }}
+                  className="shrink-0 h-4 w-4 rounded cursor-pointer accent-[#22C55E]"
+                />
                 {/* Left: Customer + invoice info */}
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-semibold truncate" style={{ color: "var(--t-text-primary)" }}>{customerName}</p>
@@ -469,6 +511,68 @@ export default function InvoicesPage() {
                       {isOverdue ? `${Math.abs(days)}d overdue` : `${days}d left`}
                     </p>
                   )}
+                </div>
+
+                {/* Actions menu */}
+                <div className="shrink-0" onClick={(e) => { e.stopPropagation(); e.preventDefault(); }}>
+                  <Dropdown
+                    trigger={
+                      <button
+                        onClick={(e) => { e.stopPropagation(); e.preventDefault(); }}
+                        className="rounded-full p-1.5 transition-colors hover:bg-[var(--t-bg-card-hover)]"
+                        style={{ color: "var(--t-text-muted)", border: "none", background: "none", cursor: "pointer" }}
+                      >
+                        <MoreHorizontal className="h-4 w-4" />
+                      </button>
+                    }
+                    align="right"
+                  >
+                    <button
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        try {
+                          await api.post(`/invoices/${inv.id}/send`);
+                          toast("success", "Invoice sent");
+                          fetchInvoices(); fetchAllInvoices();
+                        } catch { toast("error", "Failed to send invoice"); }
+                      }}
+                      className="flex w-full items-center gap-2 px-4 py-2 text-sm transition-colors hover:bg-[var(--t-bg-card-hover)]"
+                      style={{ color: "var(--t-text-primary)", border: "none", background: "none", cursor: "pointer" }}
+                    >
+                      <Send className="h-3.5 w-3.5" /> Send Invoice
+                    </button>
+                    <button
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        if (!confirm(`Void Invoice #${inv.invoice_number}? This cannot be undone.`)) return;
+                        try {
+                          await api.post(`/invoices/${inv.id}/void`);
+                          toast("success", "Invoice voided");
+                          fetchInvoices(); fetchAllInvoices();
+                        } catch { toast("error", "Failed to void invoice"); }
+                      }}
+                      className="flex w-full items-center gap-2 px-4 py-2 text-sm transition-colors hover:bg-[var(--t-bg-card-hover)]"
+                      style={{ color: "var(--t-error)", border: "none", background: "none", cursor: "pointer" }}
+                    >
+                      <XCircle className="h-3.5 w-3.5" /> Void Invoice
+                    </button>
+                    <button
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        const amt = prompt("Payment amount:");
+                        if (!amt || isNaN(Number(amt))) return;
+                        try {
+                          await api.post(`/invoices/${inv.id}/payments`, { amount: Number(amt) });
+                          toast("success", "Payment recorded");
+                          fetchInvoices(); fetchAllInvoices();
+                        } catch { toast("error", "Failed to record payment"); }
+                      }}
+                      className="flex w-full items-center gap-2 px-4 py-2 text-sm transition-colors hover:bg-[var(--t-bg-card-hover)]"
+                      style={{ color: "var(--t-text-primary)", border: "none", background: "none", cursor: "pointer" }}
+                    >
+                      <CreditCard className="h-3.5 w-3.5" /> Record Payment
+                    </button>
+                  </Dropdown>
                 </div>
 
                 {/* Right: Amount + status */}
@@ -496,6 +600,84 @@ export default function InvoicesPage() {
               className="rounded-full border px-3 py-1.5 transition-all duration-150 disabled:opacity-40"
               style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)", color: "var(--t-text-primary)" }}>Next</button>
           </div>
+        </div>
+      )}
+
+      {/* Bulk Action Floating Bar */}
+      {selectedIds.size > 0 && (
+        <div
+          style={{
+            position: "fixed",
+            bottom: 24,
+            left: "50%",
+            transform: "translateX(-50%)",
+            zIndex: 50,
+            background: "rgba(23,23,23,0.95)",
+            border: "1px solid var(--t-border)",
+            borderRadius: 16,
+            padding: "10px 20px",
+            display: "flex",
+            alignItems: "center",
+            gap: 16,
+            boxShadow: "0 8px 32px rgba(0,0,0,0.4)",
+            backdropFilter: "blur(12px)",
+          }}
+        >
+          <span className="text-sm font-semibold" style={{ color: "var(--t-text-primary)" }}>
+            {bulkProgress || `${selectedIds.size} selected`}
+          </span>
+          <div style={{ width: 1, height: 20, background: "var(--t-border)" }} />
+          {!bulkProgress && (
+            <>
+              <button
+                onClick={async () => {
+                  if (selectedIds.size > 25) { toast("error", "Select 25 or fewer invoices for bulk actions"); return; }
+                  const ids = Array.from(selectedIds);
+                  for (let i = 0; i < ids.length; i++) {
+                    setBulkProgress(`Sending ${i + 1} of ${ids.length}...`);
+                    try { await api.post(`/invoices/${ids[i]}/send`); } catch { /* continue */ }
+                  }
+                  setBulkProgress(null);
+                  setSelectedIds(new Set());
+                  toast("success", `Sent ${ids.length} reminder(s)`);
+                  fetchInvoices();
+                  fetchAllInvoices();
+                }}
+                className="rounded-full px-4 py-1.5 text-xs font-semibold transition-all duration-150 active:scale-95"
+                style={{ background: "var(--t-warning)", color: "#000" }}
+              >
+                Send Reminders
+              </button>
+              <button
+                onClick={async () => {
+                  if (selectedIds.size > 25) { toast("error", "Select 25 or fewer invoices for bulk actions"); return; }
+                  const ids = Array.from(selectedIds);
+                  const selectedInvs = allInvoices.filter(inv => ids.includes(inv.id));
+                  for (let i = 0; i < selectedInvs.length; i++) {
+                    setBulkProgress(`Marking paid ${i + 1} of ${selectedInvs.length}...`);
+                    try { await api.post(`/invoices/${selectedInvs[i].id}/payments`, { amount: selectedInvs[i].balance_due }); } catch { /* continue */ }
+                  }
+                  setBulkProgress(null);
+                  setSelectedIds(new Set());
+                  toast("success", `Marked ${selectedInvs.length} invoice(s) as paid`);
+                  fetchInvoices();
+                  fetchAllInvoices();
+                }}
+                className="rounded-full px-4 py-1.5 text-xs font-semibold transition-all duration-150 active:scale-95"
+                style={{ background: "var(--t-accent)", color: "#000" }}
+              >
+                Mark as Paid
+              </button>
+            </>
+          )}
+          <div style={{ width: 1, height: 20, background: "var(--t-border)" }} />
+          <button
+            onClick={() => { setSelectedIds(new Set()); setBulkProgress(null); }}
+            className="text-xs font-medium transition-all duration-150"
+            style={{ color: "var(--t-text-muted)" }}
+          >
+            Clear Selection
+          </button>
         </div>
       )}
 
@@ -737,6 +919,26 @@ function CreateInvoiceForm({ onSuccess }: { onSuccess: () => void }) {
       {/* Line Items */}
       <div>
         <label className={lbl} style={lblStyle}>Line Items</label>
+        {/* Quick Add Presets */}
+        <div className="flex flex-wrap gap-2 mb-3">
+          {[
+            { description: "Overage Day", unitPrice: 10 },
+            { description: "Distance Surcharge", unitPrice: 25 },
+            { description: "Overweight Surcharge", unitPrice: 185 },
+          ].map((preset) => (
+            <button
+              key={preset.description}
+              type="button"
+              onClick={() => setLineItems(prev => [...prev, { description: preset.description, quantity: 1, unitPrice: preset.unitPrice, amount: preset.unitPrice }])}
+              className="rounded-full px-3 py-1.5 text-xs font-medium transition-all duration-150 active:scale-95"
+              style={{ background: "var(--t-bg-card)", border: "1px solid var(--t-border)", color: "var(--t-text-primary)", cursor: "pointer" }}
+              onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--t-accent)"; e.currentTarget.style.color = "var(--t-accent)"; }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--t-border)"; e.currentTarget.style.color = "var(--t-text-primary)"; }}
+            >
+              + {preset.description} (${preset.unitPrice})
+            </button>
+          ))}
+        </div>
         <div className="space-y-2">
           {lineItems.map((line, idx) => (
             <div key={idx} className="flex gap-2 items-start">

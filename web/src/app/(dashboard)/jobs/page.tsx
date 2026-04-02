@@ -18,6 +18,10 @@ import {
   ArrowRight,
   AlertCircle,
   Filter,
+  MoreHorizontal,
+  Send,
+  CheckCircle2,
+  FileText,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import SlideOver from "@/components/slide-over";
@@ -43,6 +47,7 @@ interface Job {
   base_price: number;
   total_price: number;
   customer: { id: string; first_name: string; last_name: string; phone?: string } | null;
+  asset_subtype?: string;
   asset: { id: string; identifier: string; asset_type: string; subtype: string } | null;
   assigned_driver: { id: string; first_name: string; last_name: string } | null;
   is_overdue?: boolean;
@@ -180,6 +185,8 @@ export default function JobsPage() {
   const [panelOpen, setPanelOpen] = useState(false);
   const [statusCounts, setStatusCounts] = useState<StatusCount[]>([]);
   const [overdueCount, setOverdueCount] = useState(0);
+  const [selectedJobIds, setSelectedJobIds] = useState<Set<string>>(new Set());
+  const [bulkProgress, setBulkProgress] = useState<string | null>(null);
 
   const fetchJobs = useCallback(async () => {
     setLoading(true);
@@ -416,14 +423,34 @@ export default function JobsPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr style={{ borderBottom: "1px solid var(--t-border)" }}>
+                  <th style={{ padding: "12px 8px 12px 16px", width: 32 }}>
+                    <input
+                      type="checkbox"
+                      checked={filteredJobs.length > 0 && filteredJobs.every(j => selectedJobIds.has(j.id))}
+                      onChange={() => {
+                        const allSelected = filteredJobs.every(j => selectedJobIds.has(j.id));
+                        setSelectedJobIds(prev => {
+                          const next = new Set(prev);
+                          if (allSelected) {
+                            filteredJobs.forEach(j => next.delete(j.id));
+                          } else {
+                            filteredJobs.forEach(j => next.add(j.id));
+                          }
+                          return next;
+                        });
+                      }}
+                      className="h-4 w-4 rounded cursor-pointer accent-[#22C55E]"
+                    />
+                  </th>
+                  <th style={{ padding: "12px 16px", textAlign: "left", fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--t-text-muted)" }}>Size</th>
+                  <th style={{ padding: "12px 16px", textAlign: "left", fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--t-text-muted)" }}>Type</th>
                   <th style={{ padding: "12px 16px", textAlign: "left", fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--t-text-muted)" }}>Customer</th>
                   <th style={{ padding: "12px 16px", textAlign: "left", fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--t-text-muted)" }}>Address</th>
                   <th style={{ padding: "12px 16px", textAlign: "left", fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--t-text-muted)" }}>Schedule</th>
-                  <th style={{ padding: "12px 16px", textAlign: "left", fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--t-text-muted)" }}>Type</th>
-                  <th style={{ padding: "12px 16px", textAlign: "left", fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--t-text-muted)" }}>Size</th>
                   <th style={{ padding: "12px 16px", textAlign: "left", fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--t-text-muted)" }}>Driver</th>
                   <th style={{ padding: "12px 16px", textAlign: "left", fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--t-text-muted)" }}>Status</th>
                   <th style={{ padding: "12px 16px", textAlign: "right", fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--t-text-muted)" }}>Price</th>
+                  <th style={{ padding: "12px 16px", textAlign: "center", fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--t-text-muted)", width: 48 }}></th>
                 </tr>
               </thead>
               <tbody>
@@ -438,20 +465,59 @@ export default function JobsPage() {
                       key={job.id}
                       onClick={() => router.push(`/jobs/${job.id}`)}
                       className="cursor-pointer"
-                      style={{ borderBottom: "1px solid var(--t-border)", transition: "background 0.15s ease" }}
+                      style={{
+                        borderBottom: "1px solid var(--t-border)",
+                        transition: "background 0.15s ease",
+                        ...(job.scheduled_date === todayStr ? { backgroundColor: "rgba(34,197,94,0.04)" } : {}),
+                      }}
                       onMouseOver={(e) => (e.currentTarget.style.background = "var(--t-bg-card-hover)")}
-                      onMouseOut={(e) => (e.currentTarget.style.background = "transparent")}
+                      onMouseOut={(e) => (e.currentTarget.style.background = job.scheduled_date === todayStr ? "rgba(34,197,94,0.04)" : "transparent")}
                     >
+                      {/* Checkbox for bulk selection */}
+                      <td style={{ padding: "14px 8px 14px 16px", width: 32 }}>
+                        <input
+                          type="checkbox"
+                          checked={selectedJobIds.has(job.id)}
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={(e) => {
+                            e.stopPropagation();
+                            setSelectedJobIds(prev => {
+                              const next = new Set(prev);
+                              if (next.has(job.id)) next.delete(job.id); else next.add(job.id);
+                              return next;
+                            });
+                          }}
+                          className="h-4 w-4 rounded cursor-pointer accent-[#22C55E]"
+                        />
+                      </td>
+                      {/* Size — prominent bold badge */}
+                      <td style={{ padding: "14px 16px" }}>
+                        {(job.asset_subtype || job.asset?.subtype) ? (
+                          <span style={{ fontSize: 15, fontWeight: 800, color: "var(--t-text-primary)", background: "rgba(34,197,94,0.08)", padding: "3px 8px", borderRadius: 6, whiteSpace: "nowrap" }}>
+                            {(job.asset_subtype || job.asset?.subtype || "").replace(/yd$/i, "Y").toUpperCase()}
+                          </span>
+                        ) : (
+                          <span style={{ fontSize: 13, color: "var(--t-text-muted)", opacity: 0.5 }}>—</span>
+                        )}
+                      </td>
+
+                      {/* Type — UPPERCASE, colored, larger */}
+                      <td style={{ padding: "14px 16px" }}>
+                        <span className={jobTypeTextClass(job.job_type)} style={{ fontSize: 13, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.02em" }}>
+                          {job.job_type}
+                        </span>
+                      </td>
+
                       {/* Customer */}
                       <td style={{ padding: "14px 16px" }}>
                         <p style={{ fontWeight: 600, fontSize: 14, color: "var(--t-text-primary)" }}>{customerName}</p>
                         <p style={{ fontSize: 12, color: "var(--t-text-muted)", fontFamily: "monospace" }}>{job.job_number}</p>
                       </td>
 
-                      {/* Address */}
-                      <td style={{ padding: "14px 16px", maxWidth: 220 }} className="truncate">
+                      {/* Address — wider, primary color */}
+                      <td style={{ padding: "14px 16px", maxWidth: 280 }} className="truncate">
                         {address ? (
-                          <span style={{ fontSize: 13, color: "var(--t-text-muted)" }}>{address}</span>
+                          <span style={{ fontSize: 13, color: "var(--t-text-primary)" }}>{address}</span>
                         ) : (
                           <span style={{ fontSize: 13, color: "var(--t-text-muted)", opacity: 0.5 }}>\u2014</span>
                         )}
@@ -469,21 +535,7 @@ export default function JobsPage() {
                         )}
                       </td>
 
-                      {/* Type */}
-                      <td style={{ padding: "14px 16px" }}>
-                        <span className={jobTypeTextClass(job.job_type)} style={{ fontSize: 11, fontWeight: 600, textTransform: "capitalize" }}>
-                          {job.job_type}
-                        </span>
-                      </td>
-
-                      {/* Size */}
-                      <td style={{ padding: "14px 16px" }}>
-                        {job.asset?.subtype ? (
-                          <span style={{ fontSize: 13, color: "var(--t-text-muted)" }}>{job.asset.subtype}</span>
-                        ) : (
-                          <span style={{ fontSize: 13, color: "var(--t-text-muted)", opacity: 0.5 }}>\u2014</span>
-                        )}
-                      </td>
+                      {/* (Size and Type columns moved above Customer) */}
 
                       {/* Driver */}
                       <td style={{ padding: "14px 16px" }}>
@@ -522,6 +574,60 @@ export default function JobsPage() {
                         ) : (
                           <span style={{ fontSize: 13, color: "var(--t-text-muted)", opacity: 0.5 }}>\u2014</span>
                         )}
+                      </td>
+                      {/* Actions */}
+                      <td style={{ padding: "14px 8px", textAlign: "center" }}>
+                        <Dropdown
+                          trigger={
+                            <button
+                              onClick={(e) => e.stopPropagation()}
+                              className="rounded-full p-1.5 transition-colors hover:bg-[var(--t-bg-card-hover)]"
+                              style={{ color: "var(--t-text-muted)", border: "none", background: "none", cursor: "pointer" }}
+                            >
+                              <MoreHorizontal className="h-4 w-4" />
+                            </button>
+                          }
+                          align="right"
+                        >
+                          <button
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              try {
+                                await api.patch(`/jobs/${job.id}/status`, { status: "completed" });
+                                toast("success", "Job marked complete");
+                                fetchJobs();
+                              } catch { toast("error", "Failed to update status"); }
+                            }}
+                            className="flex w-full items-center gap-2 px-4 py-2 text-sm transition-colors hover:bg-[var(--t-bg-card-hover)]"
+                            style={{ color: "var(--t-text-primary)", border: "none", background: "none", cursor: "pointer" }}
+                          >
+                            <CheckCircle2 className="h-3.5 w-3.5" /> Mark Complete
+                          </button>
+                          <button
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              try {
+                                await api.patch(`/jobs/${job.id}/status`, { status: "dispatched" });
+                                toast("success", "Job sent to driver");
+                                fetchJobs();
+                              } catch { toast("error", "Failed to update status"); }
+                            }}
+                            className="flex w-full items-center gap-2 px-4 py-2 text-sm transition-colors hover:bg-[var(--t-bg-card-hover)]"
+                            style={{ color: "var(--t-text-primary)", border: "none", background: "none", cursor: "pointer" }}
+                          >
+                            <Send className="h-3.5 w-3.5" /> Send to Driver
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              router.push(`/invoices?jobId=${job.id}`);
+                            }}
+                            className="flex w-full items-center gap-2 px-4 py-2 text-sm transition-colors hover:bg-[var(--t-bg-card-hover)]"
+                            style={{ color: "var(--t-text-primary)", border: "none", background: "none", cursor: "pointer" }}
+                          >
+                            <FileText className="h-3.5 w-3.5" /> View Invoice
+                          </button>
+                        </Dropdown>
                       </td>
                     </tr>
                   );
@@ -565,6 +671,83 @@ export default function JobsPage() {
         </div>
       )}
 
+      {/* Bulk Action Floating Bar */}
+      {selectedJobIds.size > 0 && (
+        <div
+          style={{
+            position: "fixed",
+            bottom: 24,
+            left: "50%",
+            transform: "translateX(-50%)",
+            zIndex: 50,
+            background: "rgba(23,23,23,0.95)",
+            border: "1px solid var(--t-border)",
+            borderRadius: 16,
+            padding: "10px 20px",
+            display: "flex",
+            alignItems: "center",
+            gap: 16,
+            boxShadow: "0 8px 32px rgba(0,0,0,0.4)",
+            backdropFilter: "blur(12px)",
+          }}
+        >
+          <span className="text-sm font-semibold" style={{ color: "var(--t-text-primary)" }}>
+            {bulkProgress || `${selectedJobIds.size} selected`}
+          </span>
+          <div style={{ width: 1, height: 20, background: "var(--t-border)" }} />
+          {!bulkProgress && (
+            <>
+              <button
+                onClick={async () => {
+                  if (selectedJobIds.size > 25) { toast("error", "Select 25 or fewer jobs for bulk actions"); return; }
+                  const driverId = prompt("Driver ID:");
+                  if (!driverId) return;
+                  const ids = Array.from(selectedJobIds);
+                  for (let i = 0; i < ids.length; i++) {
+                    setBulkProgress(`Assigning ${i + 1} of ${ids.length}...`);
+                    try { await api.patch(`/jobs/${ids[i]}`, { assignedDriverId: driverId }); } catch { /* continue */ }
+                  }
+                  setBulkProgress(null);
+                  setSelectedJobIds(new Set());
+                  toast("success", `Assigned ${ids.length} job(s)`);
+                  fetchJobs();
+                }}
+                className="rounded-full px-4 py-1.5 text-xs font-semibold transition-all duration-150 active:scale-95"
+                style={{ background: "var(--t-warning)", color: "#000" }}
+              >
+                Assign Driver
+              </button>
+              <button
+                onClick={async () => {
+                  if (selectedJobIds.size > 25) { toast("error", "Select 25 or fewer jobs for bulk actions"); return; }
+                  const ids = Array.from(selectedJobIds);
+                  for (let i = 0; i < ids.length; i++) {
+                    setBulkProgress(`Completing ${i + 1} of ${ids.length}...`);
+                    try { await api.patch(`/jobs/${ids[i]}/status`, { status: "completed" }); } catch { /* continue */ }
+                  }
+                  setBulkProgress(null);
+                  setSelectedJobIds(new Set());
+                  toast("success", `Marked ${ids.length} job(s) as completed`);
+                  fetchJobs();
+                }}
+                className="rounded-full px-4 py-1.5 text-xs font-semibold transition-all duration-150 active:scale-95"
+                style={{ background: "var(--t-accent)", color: "#000" }}
+              >
+                Mark Complete
+              </button>
+            </>
+          )}
+          <div style={{ width: 1, height: 20, background: "var(--t-border)" }} />
+          <button
+            onClick={() => { setSelectedJobIds(new Set()); setBulkProgress(null); }}
+            className="text-xs font-medium transition-all duration-150"
+            style={{ color: "var(--t-text-muted)" }}
+          >
+            Clear Selection
+          </button>
+        </div>
+      )}
+
       {/* New Job Slide-Over */}
       <SlideOver open={panelOpen} onClose={() => setPanelOpen(false)} title="New Job">
         <NewJobForm onSuccess={() => { setPanelOpen(false); fetchJobs(); toast("success", "Job created"); }} />
@@ -599,6 +782,12 @@ function NewJobForm({ onSuccess }: { onSuccess: () => void }) {
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const searchTimeout = useRef<ReturnType<typeof setTimeout>>(null);
+
+  // 2A: Pre-fill driver from last job
+  useEffect(() => {
+    const lastDriver = sessionStorage.getItem("serviceos_lastJobDriver");
+    if (lastDriver) setDriverId(lastDriver);
+  }, []);
 
   useEffect(() => {
     api.get<{ data: AssetOption[] }>("/assets?status=available&limit=100").then((r) => setAssets(r.data)).catch(() => {});
@@ -643,6 +832,7 @@ function NewJobForm({ onSuccess }: { onSuccess: () => void }) {
         basePrice: priceQuote?.breakdown.basePrice,
         totalPrice: priceQuote?.breakdown.total,
       });
+      if (driverId) sessionStorage.setItem("serviceos_lastJobDriver", driverId);
       onSuccess();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create");
