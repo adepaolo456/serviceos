@@ -118,8 +118,9 @@ export class AssetsService {
       .where('a.tenant_id = :tenantId', { tenantId })
       .andWhere('a.asset_type = :assetType', { assetType })
       .andWhere('a.status NOT IN (:...excluded)', {
-        excluded: ['reserved', 'deployed', 'on_site', 'in_transit'],
+        excluded: ['reserved', 'deployed', 'on_site', 'in_transit', 'full_staged', 'maintenance'],
       })
+      .andWhere('a.needs_dump = false')
       .andWhere('a.current_job_id IS NULL')
       .orderBy('a.created_at', 'DESC')
       .getMany();
@@ -135,6 +136,34 @@ export class AssetsService {
       .where('a.tenant_id = :tenantId', { tenantId })
       .groupBy('a.status')
       .getRawMany();
+  }
+
+  async getAwaitingDump(tenantId: string): Promise<Asset[]> {
+    return this.assetsRepository
+      .createQueryBuilder('a')
+      .leftJoinAndSelect('a.yard', 'yard')
+      .where('a.tenant_id = :tenantId', { tenantId })
+      .andWhere('(a.status = :staged OR a.needs_dump = true)', { staged: 'full_staged' })
+      .orderBy('a.staged_at', 'ASC', 'NULLS LAST')
+      .getMany();
+  }
+
+  async addHistory(assetId: string, event: {
+    event: string;
+    actor_id?: string;
+    actor_role?: string;
+    job_id?: string;
+    yard_id?: string;
+    yard_name?: string;
+    details?: Record<string, unknown>;
+  }): Promise<void> {
+    const asset = await this.assetsRepository.findOne({ where: { id: assetId } });
+    if (!asset) return;
+    const history = Array.isArray(asset.operational_history) ? [...asset.operational_history] : [];
+    history.push({ ...event, timestamp: new Date().toISOString() });
+    // Keep last 50 entries
+    if (history.length > 50) history.splice(0, history.length - 50);
+    await this.assetsRepository.update(assetId, { operational_history: history } as any);
   }
 
   async getAvailability(

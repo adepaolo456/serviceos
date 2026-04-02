@@ -17,7 +17,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getJobDetail, updateJobStatus, uploadJobPhoto, getDumpLocations, submitDumpSlip } from '../../src/api';
+import { getJobDetail, updateJobStatus, uploadJobPhoto, getDumpLocations, submitDumpSlip, getYards, stageAtYard } from '../../src/api';
 import { useAppTheme, type ThemeColors } from '../../constants/theme';
 
 interface PhotoEntry {
@@ -102,6 +102,10 @@ export default function JobDetailScreen() {
   const [dumpsterPin, setDumpsterPin] = useState('');
   const [dumpsterConfirmed, setDumpsterConfirmed] = useState(false);
   const [showWhereNext, setShowWhereNext] = useState(false);
+  const [yards, setYards] = useState<Array<{ id: string; name: string; is_primary: boolean }>>([]);
+  const [showYardPicker, setShowYardPicker] = useState(false);
+  const [selectedYardId, setSelectedYardId] = useState<string>('');
+  const [stagingAtYard, setStagingAtYard] = useState(false);
 
   // Complete Stop modal state
   const [showCompleteStop, setShowCompleteStop] = useState(false);
@@ -789,21 +793,72 @@ export default function JobDetailScreen() {
       <Modal visible={showWhereNext} transparent animationType="slide">
         <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.5)' }}>
           <View style={{ backgroundColor: colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40 }}>
-            <Text style={{ fontSize: 20, fontWeight: '800', color: '#0A0A0A', marginBottom: 20 }}>Where to next?</Text>
-            <TouchableOpacity onPress={() => {
-              setShowWhereNext(false);
-              router.push({ pathname: '/job/dump-slip', params: { jobId: job.id, customerName: `${job.customer?.first_name || ''} ${job.customer?.last_name || ''}`.trim() } });
-            }} style={{ backgroundColor: '#22C55E', borderRadius: 14, padding: 16, marginBottom: 10, alignItems: 'center' }}>
-              <Text style={{ fontSize: 16, fontWeight: '700', color: '#fff' }}>Go to Dump</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => { setShowWhereNext(false); router.replace('/(tabs)' as any); }}
-              style={{ borderWidth: 1, borderColor: '#E5E5E5', borderRadius: 14, padding: 16, marginBottom: 10, alignItems: 'center' }}>
-              <Text style={{ fontSize: 16, fontWeight: '700', color: '#0A0A0A' }}>Return to Yard</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => { setShowWhereNext(false); router.replace('/(tabs)' as any); }}
-              style={{ alignItems: 'center', paddingVertical: 12 }}>
-              <Text style={{ fontSize: 14, fontWeight: '600', color: '#8A8A8A' }}>Skip — Next Job</Text>
-            </TouchableOpacity>
+            {showYardPicker ? (
+              <>
+                <Text style={{ fontSize: 18, fontWeight: '800', color: colors.text, marginBottom: 12 }}>Select Yard</Text>
+                {yards.map(y => (
+                  <TouchableOpacity key={y.id} onPress={() => setSelectedYardId(y.id)}
+                    style={{
+                      backgroundColor: selectedYardId === y.id ? colors.accentSoft : colors.surfaceHover,
+                      borderRadius: 14, padding: 16, marginBottom: 8,
+                      borderWidth: selectedYardId === y.id ? 2 : 1,
+                      borderColor: selectedYardId === y.id ? colors.accent : colors.border,
+                    }}>
+                    <Text style={{ fontSize: 15, fontWeight: '700', color: colors.text }}>{y.name}</Text>
+                    {y.is_primary && <Text style={{ fontSize: 11, color: colors.accent, marginTop: 2 }}>Primary Yard</Text>}
+                  </TouchableOpacity>
+                ))}
+                <TouchableOpacity onPress={async () => {
+                  setStagingAtYard(true);
+                  try {
+                    await stageAtYard(job.id, { yardId: selectedYardId });
+                    setShowYardPicker(false);
+                    setShowWhereNext(false);
+                    router.replace('/(tabs)' as any);
+                  } catch { Alert.alert('Error', 'Failed to stage at yard'); }
+                  finally { setStagingAtYard(false); }
+                }} disabled={stagingAtYard}
+                  style={{ backgroundColor: colors.accent, borderRadius: 14, padding: 16, alignItems: 'center', marginTop: 8, opacity: stagingAtYard ? 0.5 : 1 }}>
+                  {stagingAtYard ? <ActivityIndicator color="#fff" /> : <Text style={{ fontSize: 16, fontWeight: '700', color: '#fff' }}>Drop at Yard</Text>}
+                </TouchableOpacity>
+              </>
+            ) : (
+              <>
+                <Text style={{ fontSize: 20, fontWeight: '800', color: '#0A0A0A', marginBottom: 20 }}>Where to next?</Text>
+                <TouchableOpacity onPress={() => {
+                  setShowWhereNext(false);
+                  router.push({ pathname: '/job/dump-slip', params: { jobId: job.id, customerName: `${job.customer?.first_name || ''} ${job.customer?.last_name || ''}`.trim() } });
+                }} style={{ backgroundColor: '#22C55E', borderRadius: 14, padding: 16, marginBottom: 10, alignItems: 'center' }}>
+                  <Text style={{ fontSize: 16, fontWeight: '700', color: '#fff' }}>Go to Dump</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={async () => {
+                  try {
+                    const yardList = await getYards();
+                    if (yardList.length <= 1) {
+                      setStagingAtYard(true);
+                      await stageAtYard(job.id, { yardId: yardList[0]?.id });
+                      setStagingAtYard(false);
+                      setShowWhereNext(false);
+                      router.replace('/(tabs)' as any);
+                    } else {
+                      setYards(yardList);
+                      setSelectedYardId(yardList.find((y: any) => y.is_primary)?.id || yardList[0]?.id || '');
+                      setShowYardPicker(true);
+                    }
+                  } catch {
+                    setShowWhereNext(false);
+                    router.replace('/(tabs)' as any);
+                  }
+                }}
+                  style={{ borderWidth: 1, borderColor: '#E5E5E5', borderRadius: 14, padding: 16, marginBottom: 10, alignItems: 'center' }}>
+                  <Text style={{ fontSize: 16, fontWeight: '700', color: '#0A0A0A' }}>Return to Yard</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => { setShowWhereNext(false); router.replace('/(tabs)' as any); }}
+                  style={{ alignItems: 'center', paddingVertical: 12 }}>
+                  <Text style={{ fontSize: 14, fontWeight: '600', color: '#8A8A8A' }}>Skip — Next Job</Text>
+                </TouchableOpacity>
+              </>
+            )}
           </View>
         </View>
       </Modal>

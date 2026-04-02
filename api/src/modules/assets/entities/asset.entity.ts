@@ -8,6 +8,7 @@ import {
   JoinColumn,
 } from 'typeorm';
 import { Tenant } from '../../tenants/entities/tenant.entity';
+import { Yard } from '../../yards/yard.entity';
 
 @Entity('assets')
 export class Asset {
@@ -83,6 +84,25 @@ export class Asset {
 
   @Column({ name: 'needs_dump', default: false })
   needs_dump!: boolean;
+
+  @Column({ name: 'yard_id', type: 'uuid', nullable: true })
+  yard_id!: string;
+
+  @ManyToOne(() => Yard)
+  @JoinColumn({ name: 'yard_id' })
+  yard!: any; // Yard entity
+
+  @Column({ name: 'operational_history', type: 'jsonb', default: '[]' })
+  operational_history!: Array<{
+    event: string;
+    timestamp: string;
+    actor_id?: string;
+    actor_role?: string;
+    job_id?: string;
+    yard_id?: string;
+    yard_name?: string;
+    details?: Record<string, unknown>;
+  }>;
 
   @CreateDateColumn({ name: 'created_at' })
   created_at!: Date;
