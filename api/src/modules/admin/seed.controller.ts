@@ -36,7 +36,12 @@ export class SeedController {
   @Public()
   @Post()
   async seed(@Query('secret') secret: string) {
-    if (secret !== 'SEED_2026') return { error: 'Invalid secret' };
+    // Disable in production
+    if (process.env.NODE_ENV === 'production' && !process.env.SEED_ENABLED) {
+      return { error: 'Seed is disabled in production' };
+    }
+    const expectedSecret = process.env.SEED_SECRET || 'SEED_2026';
+    if (secret !== expectedSecret) return { error: 'Invalid secret' };
 
     const tenant = await this.tenantRepo.findOne({ where: { slug: 'rent-this-dumpster-mnbxs4jm' } });
     if (!tenant) return { error: 'Tenant not found' };

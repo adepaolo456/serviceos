@@ -53,6 +53,11 @@ export class LoginDto {
   @IsString()
   @IsNotEmpty()
   password: string;
+
+  @ApiProperty({ description: 'Tenant ID (company) the user belongs to' })
+  @IsString()
+  @IsNotEmpty()
+  tenantId: string;
 }
 
 export class RefreshTokenDto {

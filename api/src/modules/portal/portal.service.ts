@@ -141,7 +141,7 @@ export class PortalService {
   }
 
   async submitServiceRequest(customerId: string, tenantId: string, dto: any) {
-    const customer = await this.customerRepo.findOne({ where: { id: customerId } });
+    const customer = await this.customerRepo.findOne({ where: { id: customerId, tenant_id: tenantId } });
     if (!customer) throw new NotFoundException('Customer not found');
 
     const date = new Date();
