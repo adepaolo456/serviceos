@@ -211,7 +211,7 @@ export class SeedController {
     } as any);
     log.push('Set yard location: Brockton, MA (42.0834, -71.0184)');
 
-    // --- DELIVERY ZONES ---
+    // --- DELIVERY ZONES (Legacy — no longer used for pricing. Distance-band model replaces this.) ---
     await this.zoneRepo.delete({ tenant_id: tid });
     const zones = [
       { zone_name: 'Zone 1', min_miles: 0, max_miles: 15, surcharge: 0, sort_order: 1 },

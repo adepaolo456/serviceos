@@ -840,7 +840,7 @@ function QuickJobForm({ onSuccess }: { onSuccess: () => void }) {
     if (step < 4) return;
     api.post<PriceQuote>("/pricing/calculate", {
       serviceType: "dumpster_rental", assetSubtype, jobType,
-      customerLat: address.lat || 30.27, customerLng: address.lng || -97.74,
+      customerLat: address.lat || 42.0834, customerLng: address.lng || -71.0184,
     }).then(setPriceQuote).catch(() => {});
   }, [step, assetSubtype, jobType, address.lat, address.lng]);
 

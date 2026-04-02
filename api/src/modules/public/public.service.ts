@@ -8,6 +8,7 @@ import { Job } from '../jobs/entities/job.entity';
 import { Customer } from '../customers/entities/customer.entity';
 import { BillingService } from '../billing/billing.service';
 import { CreatePublicBookingDto } from './dto/public-booking.dto';
+import { haversineDistance } from '../pricing/pricing.utils';
 
 @Injectable()
 export class PublicService {
@@ -154,12 +155,29 @@ export class PublicService {
       });
     }
 
-    const rentalDays = body.rentalDays || 7;
-    const basePrice = rule ? Number(rule.base_price) : 0;
-    const deliveryFee = rule ? Number(rule.delivery_fee) : 0;
-    const extraDays = rule ? Math.max(0, rentalDays - rule.rental_period_days) : 0;
-    const extraDayCost = rule ? extraDays * Number(rule.extra_day_rate) : 0;
-    const totalPrice = basePrice + deliveryFee + extraDayCost;
+    if (!rule) {
+      throw new BadRequestException(
+        `No active pricing available for ${assetSubtype || 'unknown'} dumpsters. This size cannot be booked at this time.`,
+      );
+    }
+
+    const rentalDays = body.rentalDays || rule.rental_period_days || 7;
+    const basePrice = Number(rule.base_price);
+    const deliveryFee = Number(rule.delivery_fee);
+    const extraDays = Math.max(0, rentalDays - rule.rental_period_days);
+    const extraDayCost = extraDays * Number(rule.extra_day_rate);
+    // Distance charge — requires customer coordinates. Use address lat/lng if available.
+    let distanceCharge = 0;
+    if (serviceAddress?.lat && serviceAddress?.lng && t.yard_latitude && t.yard_longitude) {
+      const dist = haversineDistance(
+        Number(t.yard_latitude), Number(t.yard_longitude),
+        Number(serviceAddress.lat), Number(serviceAddress.lng),
+      );
+      const extraMiles = Math.max(dist - 15, 0);
+      const bands = Math.ceil(extraMiles / 5);
+      distanceCharge = bands * 25;
+    }
+    const totalPrice = basePrice + deliveryFee + extraDayCost + distanceCharge;
 
     const email = body.customerEmail;
     const phone = body.customerPhone;

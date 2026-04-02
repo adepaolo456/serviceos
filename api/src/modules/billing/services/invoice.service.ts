@@ -658,7 +658,7 @@ export class InvoiceService {
       dto.dumpster_size,
     );
 
-    // Resolve delivery zone if address available
+    // Legacy — delivery zone resolution is informational only, not used for pricing. Distance-band model replaces this.
     const addr = dto.service_address;
     const addrString = addr
       ? [addr.street, addr.city, addr.state, addr.zip].filter(Boolean).join(', ')

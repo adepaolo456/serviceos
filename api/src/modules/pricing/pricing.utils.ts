@@ -17,6 +17,7 @@ export interface PriceCalculation {
   isExemptExtraDays: boolean;
 }
 
+// DEPRECATED — no active callers. Distance-band pricing model in PricingService replaces this.
 export async function calculatePriceForCustomer(
   pricingRepo: Repository<PricingRule>,
   customerRepo: Repository<Customer>,
