@@ -26,10 +26,12 @@ import {
   Moon,
   ChevronLeft,
   ChevronRight,
+  Plus,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useTheme } from "@/components/theme-provider";
 import { useSidebar } from "@/components/sidebar-context";
+import { useBooking } from "@/components/booking-provider";
 
 interface UserProfile {
   firstName: string;
@@ -83,6 +85,7 @@ export default function Sidebar() {
   const [billingIssueCount, setBillingIssueCount] = useState(0);
   const { theme, cycleTheme } = useTheme();
   const { collapsed, toggleCollapsed } = useSidebar();
+  const { openWizard } = useBooking();
 
   useEffect(() => {
     api
@@ -117,6 +120,16 @@ export default function Sidebar() {
         <span className="text-[17px] font-bold tracking-tight" style={{ color: "var(--t-frame-text)" }}>
           Service<span style={{ color: "var(--t-accent)" }}>OS</span>
         </span>
+      </div>
+
+      <div className="px-3 pt-2">
+        <button
+          onClick={() => openWizard()}
+          className="flex w-full items-center justify-center gap-2 rounded-full py-2.5 text-sm font-semibold transition-opacity hover:opacity-90"
+          style={{ backgroundColor: "var(--t-accent)", color: "#fff" }}
+        >
+          <Plus className="h-4 w-4" /> New Booking
+        </button>
       </div>
 
       <nav className="flex-1 overflow-y-auto px-3 py-2">
@@ -193,6 +206,17 @@ export default function Sidebar() {
       {/* Logo — just green "OS" */}
       <div className="flex h-14 items-center justify-center shrink-0">
         <span className="text-[15px] font-bold" style={{ color: "var(--t-accent)" }}>OS</span>
+      </div>
+
+      {/* New Booking — icon only */}
+      <div className="flex justify-center pt-2">
+        <button
+          onClick={() => openWizard()}
+          className="flex h-10 w-10 items-center justify-center rounded-full transition-opacity hover:opacity-90"
+          style={{ backgroundColor: "var(--t-accent)", color: "#fff" }}
+        >
+          <Plus className="h-4 w-4" />
+        </button>
       </div>
 
       {/* Nav — icons only with tooltips */}

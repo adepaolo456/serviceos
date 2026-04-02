@@ -1,7 +1,7 @@
-import { Controller, Post, Body, Req } from '@nestjs/common';
+import { Controller, Post, Body, Req, Logger } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, DataSource } from 'typeorm';
 import type { Request } from 'express';
 import { Customer } from '../customers/entities/customer.entity';
 import { Job } from '../jobs/entities/job.entity';
@@ -9,12 +9,15 @@ import { Asset } from '../assets/entities/asset.entity';
 import { Invoice } from './entities/invoice.entity';
 import { InvoiceLineItem } from './entities/invoice-line-item.entity';
 import { Tenant } from '../tenants/entities/tenant.entity';
-import { DataSource } from 'typeorm';
+import { RentalChain } from '../rental-chains/entities/rental-chain.entity';
+import { TaskChainLink } from '../rental-chains/entities/task-chain-link.entity';
 
 @ApiTags('Bookings')
 @ApiBearerAuth()
 @Controller('bookings')
 export class BookingsController {
+  private readonly logger = new Logger(BookingsController.name);
+
   constructor(
     @InjectRepository(Customer) private customersRepo: Repository<Customer>,
     @InjectRepository(Job) private jobsRepo: Repository<Job>,
@@ -22,6 +25,8 @@ export class BookingsController {
     @InjectRepository(Invoice) private invoicesRepo: Repository<Invoice>,
     @InjectRepository(InvoiceLineItem) private lineItemRepo: Repository<InvoiceLineItem>,
     @InjectRepository(Tenant) private tenantsRepo: Repository<Tenant>,
+    @InjectRepository(RentalChain) private rentalChainRepo: Repository<RentalChain>,
+    @InjectRepository(TaskChainLink) private taskChainLinkRepo: Repository<TaskChainLink>,
     private dataSource: DataSource,
   ) {}
 
@@ -39,6 +44,8 @@ export class BookingsController {
         type?: string;
         companyName?: string;
         billingAddress?: Record<string, unknown>;
+        additionalContacts?: { value: string; role: string }[];
+        county?: string;
       };
       serviceType: string;
       assetSubtype: string;
@@ -64,6 +71,12 @@ export class BookingsController {
     // 1. Create or find customer
     let customerId = body.customerId;
     if (!customerId && body.customer) {
+      const serviceAddresses = body.serviceAddress ? [body.serviceAddress] : [];
+      const customerPreferences: Record<string, unknown> = {};
+      if (body.customer.additionalContacts && body.customer.additionalContacts.length > 0) {
+        customerPreferences.additionalContacts = body.customer.additionalContacts;
+      }
+
       const c = this.customersRepo.create({
         tenant_id: tenantId,
         type: body.customer.type || 'residential',
@@ -73,9 +86,43 @@ export class BookingsController {
         phone: body.customer.phone,
         company_name: body.customer.companyName,
         billing_address: body.customer.billingAddress as Record<string, string>,
+        service_addresses: serviceAddresses as Record<string, any>[],
+        customer_preferences: customerPreferences,
       });
       const saved = await this.customersRepo.save(c);
       customerId = saved.id;
+    } else if (customerId) {
+      // Existing customer — store additional contacts and service address
+      const existingCustomer = await this.customersRepo.findOne({ where: { id: customerId } });
+      if (existingCustomer) {
+        let updated = false;
+
+        // Store additional contacts in customer_preferences
+        if (body.customer?.additionalContacts && body.customer.additionalContacts.length > 0) {
+          const prefs = existingCustomer.customer_preferences || {};
+          prefs.additionalContacts = body.customer.additionalContacts;
+          existingCustomer.customer_preferences = prefs;
+          updated = true;
+        }
+
+        // Add service address if not already on file
+        if (body.serviceAddress) {
+          const addresses = existingCustomer.service_addresses || [];
+          const addrStr = JSON.stringify(body.serviceAddress);
+          const alreadyExists = addresses.some(
+            (a) => JSON.stringify(a) === addrStr,
+          );
+          if (!alreadyExists) {
+            addresses.push(body.serviceAddress as Record<string, any>);
+            existingCustomer.service_addresses = addresses;
+            updated = true;
+          }
+        }
+
+        if (updated) {
+          await this.customersRepo.save(existingCustomer);
+        }
+      }
     }
 
     // 2. Generate job number
@@ -126,6 +173,7 @@ export class BookingsController {
       job_number: deliveryNumber,
       job_type: 'delivery',
       service_type: body.serviceType,
+      asset_subtype: body.assetSubtype,
       status: jobStatus,
       priority: 'normal',
       source: 'phone',
@@ -136,6 +184,7 @@ export class BookingsController {
       placement_notes: body.placementNotes,
       base_price: body.basePrice,
       total_price: body.totalPrice,
+      rental_days: body.rentalDays,
       ...(assignedAsset ? { asset_id: assignedAsset.id } : {}),
     } as Partial<Job> as Job);
     const savedDelivery = await this.jobsRepo.save(deliveryJob);
@@ -147,6 +196,7 @@ export class BookingsController {
       job_number: pickupNumber,
       job_type: 'pickup',
       service_type: body.serviceType,
+      asset_subtype: body.assetSubtype,
       status: 'pending',
       priority: 'normal',
       source: 'phone',
@@ -213,12 +263,60 @@ export class BookingsController {
       await this.lineItemRepo.save(deliveryItem);
     }
 
+    // 6. Create RentalChain and TaskChainLinks
+    let rentalChainId: string | null = null;
+    try {
+      const rentalChain = this.rentalChainRepo.create({
+        tenant_id: tenantId,
+        customer_id: customerId,
+        drop_off_date: body.deliveryDate,
+        expected_pickup_date: body.pickupDate,
+        dumpster_size: body.assetSubtype,
+        rental_days: body.rentalDays,
+        status: 'active',
+      });
+      const savedChain = await this.rentalChainRepo.save(rentalChain);
+      rentalChainId = savedChain.id;
+
+      const deliveryLink = this.taskChainLinkRepo.create({
+        rental_chain_id: savedChain.id,
+        job_id: savedDelivery.id,
+        sequence_number: 1,
+        task_type: 'drop_off',
+        status: 'scheduled',
+        scheduled_date: body.deliveryDate,
+      });
+      const savedDeliveryLink = await this.taskChainLinkRepo.save(deliveryLink);
+
+      const pickupLink = this.taskChainLinkRepo.create({
+        rental_chain_id: savedChain.id,
+        job_id: savedPickup.id,
+        sequence_number: 2,
+        task_type: 'pick_up',
+        status: 'scheduled',
+        scheduled_date: body.pickupDate,
+        previous_link_id: savedDeliveryLink.id,
+      });
+      await this.taskChainLinkRepo.save(pickupLink);
+
+      // Update delivery link with next_link_id
+      await this.taskChainLinkRepo.update(savedDeliveryLink.id, { next_link_id: pickupLink.id });
+    } catch {
+      this.logger.warn(`Failed to create rental chain for booking — non-fatal`);
+    }
+
+    // 7. Schedule delivery reminder notification (best-effort)
+    this.logger.log(
+      `Booking complete: delivery ${savedDelivery.job_number} scheduled for ${body.deliveryDate}, pickup ${savedPickup.job_number} for ${body.pickupDate}. Customer: ${customerId}`,
+    );
+
     return {
       success: true,
       deliveryJob: { id: savedDelivery.id, jobNumber: savedDelivery.job_number },
       pickupJob: { id: savedPickup.id, jobNumber: savedPickup.job_number },
       invoice: { id: savedInvoice.id, invoiceNumber: savedInvoice.invoice_number },
       customerId,
+      rentalChainId,
       autoApproved,
       asset: assignedAsset,
       assetWarning,

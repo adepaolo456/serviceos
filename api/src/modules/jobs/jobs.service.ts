@@ -11,11 +11,14 @@ import { PricingRule } from '../pricing/entities/pricing-rule.entity';
 import { AutomationLog } from '../automation/entities/automation-log.entity';
 import { Customer } from '../customers/entities/customer.entity';
 import { Route } from '../dispatch/entities/route.entity';
+import { Invoice } from '../billing/entities/invoice.entity';
+import { CreditMemo } from '../billing/entities/credit-memo.entity';
+import { RentalChain } from '../rental-chains/entities/rental-chain.entity';
+import { TaskChainLink } from '../rental-chains/entities/task-chain-link.entity';
 import { BillingService } from '../billing/billing.service';
 import { BillingIssueDetectorService } from '../billing/services/billing-issue-detector.service';
 import { RentalChainsService } from '../rental-chains/rental-chains.service';
 import { NotificationsService } from '../notifications/notifications.service';
-import { Invoice } from '../billing/entities/invoice.entity';
 import {
   CreateJobDto,
   UpdateJobDto,
@@ -47,6 +50,14 @@ export class JobsService {
     private customerRepo: Repository<Customer>,
     @InjectRepository(Route)
     private routeRepo: Repository<Route>,
+    @InjectRepository(Invoice)
+    private invoiceRepo: Repository<Invoice>,
+    @InjectRepository(CreditMemo)
+    private creditMemoRepo: Repository<CreditMemo>,
+    @InjectRepository(RentalChain)
+    private rentalChainRepo: Repository<RentalChain>,
+    @InjectRepository(TaskChainLink)
+    private taskChainLinkRepo: Repository<TaskChainLink>,
     private billingService: BillingService,
     private billingIssueDetector: BillingIssueDetectorService,
     private rentalChainsService: RentalChainsService,
@@ -511,6 +522,280 @@ export class JobsService {
     }
 
     return savedJob;
+  }
+
+  async getCascadePreview(tenantId: string, id: string) {
+    const job = await this.findOne(tenantId, id);
+
+    // Task info
+    const task = {
+      id: job.id,
+      job_number: job.job_number,
+      job_type: job.job_type,
+      status: job.status,
+      asset_subtype: job.asset_subtype,
+      scheduled_date: job.scheduled_date,
+    };
+
+    // Linked pickup task
+    let linkedPickup: Record<string, any> | null = null;
+    if (job.job_type === 'delivery') {
+      // Try linked_job_ids first
+      if (Array.isArray(job.linked_job_ids) && job.linked_job_ids.length > 0) {
+        const linked = await this.jobsRepository.findOne({
+          where: { id: In(job.linked_job_ids), job_type: 'pickup', tenant_id: tenantId },
+        });
+        if (linked) {
+          linkedPickup = {
+            id: linked.id,
+            job_number: linked.job_number,
+            status: linked.status,
+            scheduled_date: linked.scheduled_date,
+          };
+        }
+      }
+      // Fallback: match by customer_id + asset_id + job_type
+      if (!linkedPickup) {
+        const pickup = await this.jobsRepository.findOne({
+          where: {
+            tenant_id: tenantId,
+            customer_id: job.customer_id,
+            ...(job.asset_id ? { asset_id: job.asset_id } : {}),
+            job_type: 'pickup',
+          },
+        });
+        if (pickup && !['completed', 'cancelled'].includes(pickup.status)) {
+          linkedPickup = {
+            id: pickup.id,
+            job_number: pickup.job_number,
+            status: pickup.status,
+            scheduled_date: pickup.scheduled_date,
+          };
+        }
+      }
+    }
+
+    // Linked invoices
+    const invoices = await this.invoiceRepo.find({
+      where: { job_id: job.id, tenant_id: tenantId },
+    });
+    const linkedInvoices = invoices.map((inv) => ({
+      id: inv.id,
+      invoice_number: inv.invoice_number,
+      status: inv.status,
+      total: inv.total,
+      amount_paid: inv.amount_paid,
+    }));
+
+    // Asset info
+    let assetInfo: Record<string, any> | null = null;
+    if (job.asset_id) {
+      const asset = await this.assetRepo.findOne({ where: { id: job.asset_id } });
+      if (asset) {
+        assetInfo = { status: asset.status, identifier: asset.identifier };
+      }
+    }
+
+    // Assigned driver
+    let assignedDriver: Record<string, any> | null = null;
+    if (job.assigned_driver_id && job.assigned_driver) {
+      assignedDriver = {
+        first_name: job.assigned_driver.first_name,
+        last_name: job.assigned_driver.last_name,
+      };
+    }
+
+    // Whether task is in progress
+    const isInProgress = ['en_route', 'arrived', 'in_progress'].includes(job.status);
+
+    // Customer info
+    let customerInfo: Record<string, any> | null = null;
+    if (job.customer) {
+      customerInfo = {
+        first_name: job.customer.first_name,
+        last_name: job.customer.last_name,
+        account_id: job.customer.account_id,
+      };
+    }
+
+    return {
+      task,
+      linkedPickup,
+      linkedInvoices,
+      assetInfo,
+      assignedDriver,
+      isInProgress,
+      customerInfo,
+    };
+  }
+
+  async cascadeDelete(
+    tenantId: string,
+    id: string,
+    userId: string,
+    options: {
+      deletePickup?: boolean;
+      voidInvoices?: { invoiceId: string; void: boolean }[];
+      voidReason?: string;
+    },
+  ) {
+    const job = await this.findOne(tenantId, id);
+
+    // 1. Validate
+    if (['en_route', 'arrived', 'in_progress'].includes(job.status)) {
+      throw new BadRequestException('Cannot delete a task that is currently in progress');
+    }
+
+    const now = new Date();
+    const deletedTasks: { id: string; job_number: string }[] = [];
+    const voidedInvoices: { id: string; invoice_number: number }[] = [];
+    const creditMemos: { id: string; amount: number }[] = [];
+    const assetsReleased: { id: string; identifier: string }[] = [];
+    const rentalChainsCancelled: { id: string }[] = [];
+
+    const previousStatus = job.status;
+
+    // 2. Cancel main task
+    await this.jobsRepository.update(
+      { id: job.id, tenant_id: tenantId },
+      { status: 'cancelled', cancelled_at: now },
+    );
+    deletedTasks.push({ id: job.id, job_number: job.job_number });
+
+    // 7. Driver unassign on main task
+    if (job.assigned_driver_id) {
+      await this.jobsRepository.update(
+        { id: job.id, tenant_id: tenantId },
+        { assigned_driver_id: null as any },
+      );
+    }
+
+    // 3. Pickup deletion
+    if (options.deletePickup && job.job_type === 'delivery') {
+      let pickupJob: Job | null = null;
+
+      // Try linked_job_ids first
+      if (Array.isArray(job.linked_job_ids) && job.linked_job_ids.length > 0) {
+        pickupJob = await this.jobsRepository.findOne({
+          where: { id: In(job.linked_job_ids), job_type: 'pickup', tenant_id: tenantId },
+        });
+      }
+
+      // Fallback
+      if (!pickupJob) {
+        pickupJob = await this.jobsRepository.findOne({
+          where: {
+            tenant_id: tenantId,
+            customer_id: job.customer_id,
+            ...(job.asset_id ? { asset_id: job.asset_id } : {}),
+            job_type: 'pickup',
+          },
+        });
+        if (pickupJob && ['completed', 'cancelled'].includes(pickupJob.status)) {
+          pickupJob = null;
+        }
+      }
+
+      if (pickupJob) {
+        await this.jobsRepository.update(
+          { id: pickupJob.id, tenant_id: tenantId },
+          { status: 'cancelled', cancelled_at: now },
+        );
+        deletedTasks.push({ id: pickupJob.id, job_number: pickupJob.job_number });
+
+        // Unassign driver from pickup
+        if (pickupJob.assigned_driver_id) {
+          await this.jobsRepository.update(
+            { id: pickupJob.id, tenant_id: tenantId },
+            { assigned_driver_id: null as any },
+          );
+        }
+
+        // Release pickup's asset
+        if (pickupJob.asset_id) {
+          const pickupAsset = await this.assetRepo.findOne({ where: { id: pickupJob.asset_id } });
+          if (pickupAsset) {
+            await this.assetRepo.update(pickupJob.asset_id, {
+              status: 'available',
+              current_job_id: null,
+            } as any);
+            assetsReleased.push({ id: pickupAsset.id, identifier: pickupAsset.identifier });
+          }
+        }
+      }
+    }
+
+    // 4. Asset release for main task
+    if (job.asset_id) {
+      const asset = await this.assetRepo.findOne({ where: { id: job.asset_id } });
+      if (asset) {
+        const preDeliveryStatuses = ['pending', 'confirmed'];
+        if (preDeliveryStatuses.includes(previousStatus)) {
+          // Not yet delivered — release back to available
+          await this.assetRepo.update(job.asset_id, {
+            status: 'available',
+            current_job_id: null,
+          } as any);
+          // Only add if not already in the released list
+          if (!assetsReleased.find((a) => a.id === asset.id)) {
+            assetsReleased.push({ id: asset.id, identifier: asset.identifier });
+          }
+        }
+        // If dispatched or later with completed delivery or pickup type, keep as deployed
+      }
+    }
+
+    // 5. Invoice voiding
+    if (options.voidInvoices && options.voidInvoices.length > 0) {
+      for (const inv of options.voidInvoices) {
+        if (!inv.void) continue;
+
+        const invoice = await this.invoiceRepo.findOne({
+          where: { id: inv.invoiceId, tenant_id: tenantId },
+        });
+        if (!invoice) continue;
+
+        await this.invoiceRepo.update(invoice.id, {
+          status: 'voided',
+          voided_at: now,
+          balance_due: 0,
+        });
+        voidedInvoices.push({ id: invoice.id, invoice_number: invoice.invoice_number });
+
+        // Create credit memo
+        const memo = this.creditMemoRepo.create({
+          tenant_id: tenantId,
+          original_invoice_id: invoice.id,
+          customer_id: invoice.customer_id,
+          amount: invoice.total,
+          reason: options.voidReason || 'Task cancelled',
+          status: 'issued',
+          created_by: userId,
+        });
+        const savedMemo = await this.creditMemoRepo.save(memo);
+        creditMemos.push({ id: savedMemo.id, amount: Number(savedMemo.amount) });
+      }
+    }
+
+    // 6. Rental chain cancellation
+    const allDeletedJobIds = deletedTasks.map((t) => t.id);
+    const chainLinks = await this.taskChainLinkRepo.find({
+      where: { job_id: In(allDeletedJobIds) },
+    });
+
+    const chainIds = [...new Set(chainLinks.map((l) => l.rental_chain_id))];
+    for (const chainId of chainIds) {
+      await this.rentalChainRepo.update(chainId, { status: 'cancelled' });
+      rentalChainsCancelled.push({ id: chainId });
+    }
+
+    return {
+      deletedTasks,
+      voidedInvoices,
+      creditMemos,
+      assetsReleased,
+      rentalChainsCancelled,
+    };
   }
 
   private async updateAssetOnJobStatus(job: Job, newStatus: string): Promise<void> {

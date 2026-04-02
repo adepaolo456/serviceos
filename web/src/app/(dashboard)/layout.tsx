@@ -1,27 +1,27 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
 import Sidebar from "@/components/sidebar";
 import { SidebarProvider, useSidebar } from "@/components/sidebar-context";
 import { ToastProvider } from "@/components/toast";
 import KeyboardShortcuts from "@/components/keyboard-shortcuts";
 import NotificationBell from "@/components/notification-bell";
+import { BookingProvider, useBooking } from "@/components/booking-provider";
 
 function DashboardContent({ children }: { children: React.ReactNode }) {
-  const router = useRouter();
   const { collapsed } = useSidebar();
+  const { openWizard } = useBooking();
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) return;
       if (e.key === "?" && !e.ctrlKey && !e.metaKey) { e.preventDefault(); setShortcutsOpen(true); }
-      if (e.key === "b" || e.key === "B") { if (!e.ctrlKey && !e.metaKey) router.push("/book"); }
+      if (e.key === "b" || e.key === "B") { if (!e.ctrlKey && !e.metaKey) { e.preventDefault(); openWizard(); } }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [router]);
+  }, [openWizard]);
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: "var(--t-bg-primary)" }}>
@@ -49,7 +49,9 @@ export default function DashboardLayout({
   return (
     <SidebarProvider>
       <ToastProvider>
-        <DashboardContent>{children}</DashboardContent>
+        <BookingProvider>
+          <DashboardContent>{children}</DashboardContent>
+        </BookingProvider>
       </ToastProvider>
     </SidebarProvider>
   );
