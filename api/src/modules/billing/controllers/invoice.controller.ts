@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Put,
+  Patch,
   Delete,
   Body,
   Param,
@@ -131,6 +132,22 @@ export class InvoiceController {
     @Body() dto: ApplyPaymentDto,
   ) {
     return this.invoiceService.applyPayment(tenantId, userId, id, dto);
+  }
+
+  @Patch(':id/collections')
+  updateCollections(
+    @TenantId() tenantId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: {
+      lastContactMethod?: string;
+      contactNotes?: string;
+      promiseToPayDate?: string;
+      promiseToPayAmount?: number;
+      disputeStatus?: string;
+      disputeNotes?: string;
+    },
+  ) {
+    return this.invoiceService.updateCollections(tenantId, id, body);
   }
 
   @Post('find-price')

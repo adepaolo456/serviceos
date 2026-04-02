@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, DataSource } from 'typeorm';
 import { Invoice } from '../billing/entities/invoice.entity';
 import { Job } from '../jobs/entities/job.entity';
 import { DumpTicket } from '../dump-locations/entities/dump-ticket.entity';
@@ -22,6 +22,7 @@ export class ReportingService {
     @InjectRepository(Asset) private assetRepo: Repository<Asset>,
     @InjectRepository(Customer) private customerRepo: Repository<Customer>,
     @InjectRepository(User) private userRepo: Repository<User>,
+    private dataSource: DataSource,
   ) {}
 
   private dateRange(s?: string, e?: string) {
@@ -730,5 +731,38 @@ export class ReportingService {
       [r.i_invoice_number, `"${(r.customer_name || '').replace(/"/g, '""')}"`, r.i_total, r.i_amount_paid, r.i_balance_due, r.i_status, r.i_created_at, r.i_sent_at || ''].join(',')
     );
     return [header, ...csvRows].join('\n');
+  }
+
+  async getExceptions(tenantId: string) {
+    // Critical: billing inconsistencies (invoice total != sum of line items)
+    let inconsistencies: any[] = [];
+    try {
+      inconsistencies = await this.dataSource.query(`
+        SELECT i.id, i.invoice_number, i.total,
+          COALESCE(SUM(li.net_amount), 0) as line_total
+        FROM invoices i
+        LEFT JOIN invoice_line_items li ON li.invoice_id = i.id
+        WHERE i.tenant_id = $1 AND i.status != 'voided'
+        GROUP BY i.id
+        HAVING ABS(i.total - COALESCE(SUM(li.net_amount), 0)) > 0.01
+        LIMIT 10
+      `, [tenantId]);
+    } catch { /* table may not have expected schema yet */ }
+
+    // Action required counts
+    const needsReschedule = await this.jobRepo.count({
+      where: { tenant_id: tenantId, status: 'needs_reschedule' } as any,
+    });
+    const overdueInvoices = await this.invoiceRepo.count({
+      where: { tenant_id: tenantId, status: 'overdue' } as any,
+    });
+    const overdueRentals = await this.jobRepo.count({
+      where: { tenant_id: tenantId, is_overdue: true } as any,
+    });
+
+    return {
+      critical: { inconsistencies },
+      actionRequired: { needsReschedule, overdueInvoices, overdueRentals },
+    };
   }
 }

@@ -28,11 +28,12 @@ import {
 
 const VALID_TRANSITIONS: Record<string, string[]> = {
   pending: ['confirmed', 'cancelled'],
-  confirmed: ['dispatched', 'cancelled', 'failed'],
-  dispatched: ['en_route', 'cancelled', 'failed'],
-  en_route: ['arrived', 'cancelled', 'failed'],
-  arrived: ['in_progress', 'cancelled', 'failed'],
-  in_progress: ['completed', 'cancelled', 'failed'],
+  confirmed: ['dispatched', 'cancelled', 'failed', 'needs_reschedule'],
+  dispatched: ['en_route', 'cancelled', 'failed', 'needs_reschedule'],
+  en_route: ['arrived', 'cancelled', 'failed', 'needs_reschedule'],
+  arrived: ['in_progress', 'cancelled', 'failed', 'needs_reschedule'],
+  in_progress: ['completed', 'cancelled', 'failed', 'needs_reschedule'],
+  needs_reschedule: ['pending', 'confirmed', 'dispatched', 'cancelled'],
 };
 
 @Injectable()
@@ -332,45 +333,20 @@ export class JobsService {
         }
         break;
       case 'failed':
-        job.cancelled_at = now;
+        // Failure is recorded but status transitions to needs_reschedule
         break;
     }
 
-    // Handle failed trip — create failure invoice + replacement job
+    // Handle failed trip — create failure invoice, set needs_reschedule
     if (dto.status === 'failed') {
       job.is_failed_trip = true;
       job.failed_reason = (dto as any).reason || (dto as any).cancellationReason || '';
       job.failed_reason_code = (dto as any).reasonCode || null;
       job.failed_at = now;
-      job.cancelled_at = now;
+      job.attempt_count = ((job as any).attempt_count || 1) + 1;
 
-      // Auto-create replacement job
-      const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
-      const seq = Math.floor(Math.random() * 9000) + 1000;
-      const replacement = this.jobsRepository.create({
-        tenant_id: tenantId,
-        job_number: `JOB-${dateStr}-${seq}`,
-        customer_id: job.customer_id,
-        job_type: job.job_type,
-        service_type: job.service_type,
-        priority: job.priority,
-        service_address: job.service_address,
-        placement_notes: job.placement_notes,
-        scheduled_window_start: job.scheduled_window_start,
-        scheduled_window_end: job.scheduled_window_end,
-        rental_days: job.rental_days,
-        base_price: job.base_price,
-        total_price: job.total_price,
-        status: 'pending',
-        source: 'rescheduled_from_failure',
-        parent_job_id: job.id,
-      } as Partial<Job>);
-      const savedReplacement = await this.jobsRepository.save(replacement);
-
-      // Update failed job's linked_job_ids
-      const linked = Array.isArray(job.linked_job_ids) ? [...job.linked_job_ids] : [];
-      linked.push(savedReplacement.id);
-      job.linked_job_ids = linked;
+      // Set to needs_reschedule instead of leaving as failed
+      job.status = 'needs_reschedule';
 
       // Create failure charge invoice
       const pricingRule = await this.pricingRepo.findOne({
@@ -388,7 +364,7 @@ export class JobsService {
         notes: `Driver arrived but job could not be completed. Reason: ${job.failed_reason || 'Not specified'}`,
       });
 
-      // Log
+      // Log notification
       await this.notifRepo.save(this.notifRepo.create({
         tenant_id: tenantId,
         job_id: job.id,
@@ -399,8 +375,6 @@ export class JobsService {
           invoiceId: savedInvoice.id,
           invoiceNumber: savedInvoice.invoice_number,
           amount: baseFee,
-          replacementJobId: savedReplacement.id,
-          replacementJobNumber: savedReplacement.job_number,
           reason: job.failed_reason,
         }),
         status: 'logged',
@@ -459,6 +433,24 @@ export class JobsService {
           await this.billingIssueDetector.detectMissingInvoice(tenantId, savedJob.id);
         }
       } catch { /* billing issue detection is best-effort */ }
+
+      // If this job was previously failed, reverse the failed-trip charge
+      if (savedJob.is_failed_trip) {
+        try {
+          const failedInvoices = await this.invoiceRepo.find({
+            where: { job_id: savedJob.id, tenant_id: tenantId },
+            relations: ['line_items'],
+          });
+          for (const inv of failedInvoices) {
+            const hasFailedLine = inv.line_items?.some(
+              (li) => li.name?.toLowerCase().includes('failed'),
+            );
+            if (hasFailedLine && inv.status !== 'voided') {
+              await this.billingService.voidInternalInvoice(inv.id, 'Failed trip charge reversed — job completed successfully');
+            }
+          }
+        } catch { /* reversal is best-effort */ }
+      }
     }
 
     // Rental chain reaction on job type change
@@ -474,7 +466,7 @@ export class JobsService {
     await this.updateAssetOnJobStatus(savedJob, dto.status);
 
     // Check if all jobs on this driver's route are done
-    if (['completed', 'cancelled', 'failed'].includes(dto.status) && savedJob.assigned_driver_id && savedJob.scheduled_date) {
+    if (['completed', 'cancelled', 'failed', 'needs_reschedule'].includes(dto.status) && savedJob.assigned_driver_id && savedJob.scheduled_date) {
       await this.checkRouteCompletion(tenantId, savedJob.assigned_driver_id, savedJob.scheduled_date);
     }
 
@@ -993,7 +985,7 @@ export class JobsService {
   async rescheduleJob(
     tenantId: string,
     jobId: string,
-    body: { scheduledDate: string; reason?: string; source?: string; timeWindow?: string },
+    body: { scheduledDate: string; reason?: string; source?: string; timeWindow?: string; scheduledWindowStart?: string; scheduledWindowEnd?: string; assignedDriverId?: string },
   ): Promise<Job> {
     const job = await this.findOne(tenantId, jobId);
 
@@ -1001,12 +993,21 @@ export class JobsService {
       throw new BadRequestException('Cannot reschedule a completed or cancelled job');
     }
 
+    const isFromFailure = job.status === 'needs_reschedule';
+
     const oldDate = job.scheduled_date;
     const updates: Record<string, unknown> = {
       scheduled_date: body.scheduledDate,
       rescheduled_from_date: oldDate,
       rescheduled_reason: body.reason || null,
     };
+
+    // Transition out of needs_reschedule
+    if (isFromFailure) {
+      updates.status = 'pending';
+      updates.failed_at = null;
+      updates.rescheduled_at = new Date();
+    }
 
     if (body.source === 'portal') {
       updates.rescheduled_by_customer = true;
@@ -1022,10 +1023,19 @@ export class JobsService {
     }
 
     // Update time window if provided
-    if (body.timeWindow) {
+    if (body.scheduledWindowStart) updates.scheduled_window_start = body.scheduledWindowStart;
+    if (body.scheduledWindowEnd) updates.scheduled_window_end = body.scheduledWindowEnd;
+    if (!body.scheduledWindowStart && body.timeWindow) {
       if (body.timeWindow === 'morning') { updates.scheduled_window_start = '08:00'; updates.scheduled_window_end = '12:00'; }
       else if (body.timeWindow === 'afternoon') { updates.scheduled_window_start = '12:00'; updates.scheduled_window_end = '17:00'; }
       else { updates.scheduled_window_start = '08:00'; updates.scheduled_window_end = '17:00'; }
+    }
+
+    // If assignedDriverId provided (e.g. from needs_reschedule), dispatch immediately
+    if (body.assignedDriverId && isFromFailure) {
+      updates.assigned_driver_id = body.assignedDriverId;
+      updates.status = 'dispatched';
+      updates.dispatched_at = new Date();
     }
 
     await this.jobsRepository.update({ id: jobId, tenant_id: tenantId }, updates);

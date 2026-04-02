@@ -7,7 +7,7 @@ import {
   ChevronLeft, ChevronRight, Calendar, Clock, MapPin, UserPlus, Truck,
   Phone, Plus, Box, Search, CheckCircle2, RefreshCw, Zap, X, ExternalLink,
   ChevronDown, ChevronUp, Navigation, Mail, MoreHorizontal, Eye, EyeOff,
-  FileText, Send, Map as MapIcon, LayoutDashboard,
+  FileText, Send, Map as MapIcon, LayoutDashboard, AlertTriangle,
 } from "lucide-react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
@@ -38,6 +38,7 @@ interface DispatchJob {
   is_overdue?: boolean; extra_days?: number;
   rescheduled_by_customer?: boolean; rescheduled_from_date?: string;
   is_failed_trip?: boolean; failed_reason?: string; source?: string;
+  failed_at?: string; attempt_count?: number;
   dump_status?: string;
   dump_disposition?: string;
 }
@@ -150,6 +151,7 @@ export default function DispatchPage() {
     current_job_id: string;
   }>>([]);
   const [showYardQueue, setShowYardQueue] = useState(true);
+  const [rescheduleQueue, setRescheduleQueue] = useState<DispatchJob[]>([]);
   const saveOrderTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { toast } = useToast();
 
@@ -192,8 +194,14 @@ export default function DispatchPage() {
     api.get<{data: typeof yardQueue}>("/assets/awaiting-dump").then(r => setYardQueue(r.data || [])).catch(() => {});
   }, []);
 
-  useEffect(() => { fetchBoard(); fetchYardQueue(); }, [fetchBoard, fetchYardQueue]);
-  useEffect(() => { const i = setInterval(() => { fetchBoard(true); fetchYardQueue(); }, 30000); return () => clearInterval(i); }, [fetchBoard, fetchYardQueue]);
+  const fetchRescheduleQueue = useCallback(() => {
+    api.get<{data: DispatchJob[]}>("/jobs?status=needs_reschedule&limit=50")
+      .then(r => setRescheduleQueue(r.data || []))
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => { fetchBoard(); fetchYardQueue(); fetchRescheduleQueue(); }, [fetchBoard, fetchYardQueue, fetchRescheduleQueue]);
+  useEffect(() => { const i = setInterval(() => { fetchBoard(true); fetchYardQueue(); fetchRescheduleQueue(); }, 30000); return () => clearInterval(i); }, [fetchBoard, fetchYardQueue, fetchRescheduleQueue]);
 
   const handleOptimize = async () => {
     if (!board) return;
@@ -546,6 +554,81 @@ export default function DispatchPage() {
                 })()}
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Needs Reschedule ── */}
+      {rescheduleQueue.length > 0 && (
+        <div className="shrink-0 mb-3">
+          <div className="rounded-[20px] border" style={{ background: "var(--t-bg-secondary)", borderColor: "var(--t-error)" }}>
+            {/* Header */}
+            <div className="flex items-center justify-between px-4 py-2.5" style={{ borderBottom: "1px solid var(--t-border)" }}>
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4" style={{ color: "var(--t-error)" }} />
+                <span className="text-sm font-semibold" style={{ color: "var(--t-text-primary)" }}>Needs Reschedule</span>
+                <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: "rgba(220,38,38,0.1)", color: "#DC2626" }}>{rescheduleQueue.length}</span>
+              </div>
+            </div>
+            {/* Cards */}
+            <div className="px-4 py-3 flex gap-3 overflow-x-auto">
+              {rescheduleQueue.map(job => {
+                const tc = TYPE_CONFIG[job.job_type] || { label: job.job_type, stripe: "#8A8A8A" };
+                const size = (job.asset_subtype || job.asset?.subtype || "").replace(/yd$/i, "Y").toUpperCase();
+                const addr = job.service_address ? [job.service_address.street, job.service_address.city].filter(Boolean).join(", ") : "";
+                const failedTime = job.failed_at ? new Date(job.failed_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "";
+                const driverName = job.assigned_driver ? `${job.assigned_driver.first_name} ${job.assigned_driver.last_name}` : "";
+
+                return (
+                  <div key={job.id} className="shrink-0 rounded-xl border px-4 py-3" style={{
+                    background: "var(--t-bg-card)", borderColor: "var(--t-error)", borderLeftWidth: 4, minWidth: 260, maxWidth: 300
+                  }}>
+                    {/* Line 1: Size + Type */}
+                    <div className="flex items-baseline gap-1.5">
+                      {size && <span className="text-[15px] font-extrabold" style={{ color: "var(--t-text-primary)" }}>{size}</span>}
+                      <span className="text-[13px] font-bold uppercase" style={{ color: tc.stripe }}>{tc.label}</span>
+                    </div>
+                    {/* Line 2: Address */}
+                    {addr && <p className="text-[12px] font-medium mt-0.5 truncate" style={{ color: "var(--t-text-primary)" }}>{addr}</p>}
+                    {/* Line 3: Failure info */}
+                    <div className="flex items-center gap-1.5 mt-1">
+                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: "rgba(220,38,38,0.08)", color: "#DC2626" }}>FAILED</span>
+                      <span className="text-[11px] truncate" style={{ color: "var(--t-text-muted)" }}>{job.failed_reason || "No reason"}</span>
+                    </div>
+                    {/* Line 4: Time + Driver */}
+                    <p className="text-[10px] mt-1" style={{ color: "var(--t-text-muted)" }}>
+                      {failedTime}{driverName ? ` — ${driverName}` : ""}
+                      {(job.attempt_count || 1) > 1 ? ` · Attempt #${job.attempt_count}` : ""}
+                    </p>
+                    {/* Actions */}
+                    <div className="flex gap-2 mt-2">
+                      <button onClick={async (e) => {
+                        e.stopPropagation();
+                        const newDate = prompt("Reschedule to date (YYYY-MM-DD):", date);
+                        if (!newDate) return;
+                        const driverId = prompt("Assign to driver ID (or leave empty):");
+                        try {
+                          await api.patch(`/jobs/${job.id}/reschedule`, {
+                            scheduledDate: newDate,
+                            assignedDriverId: driverId || undefined
+                          });
+                          toast("success", `${job.job_number} rescheduled to ${newDate}`);
+                          fetchBoard(true);
+                          fetchRescheduleQueue();
+                        } catch (err: any) { toast("error", err.message || "Failed to reschedule"); }
+                      }} className="flex-1 rounded-full px-2.5 py-1 text-[10px] font-semibold"
+                        style={{ background: "var(--t-accent)", color: "#000" }}>
+                        Reschedule
+                      </button>
+                      <button onClick={() => openQuickView(job)} className="rounded-full px-2.5 py-1 text-[10px] font-medium border"
+                        style={{ borderColor: "var(--t-border)", color: "var(--t-text-muted)" }}>
+                        Details
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
       )}

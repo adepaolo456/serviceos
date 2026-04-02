@@ -8,6 +8,7 @@ import { Repository, EntityManager, DataSource } from 'typeorm';
 import { Invoice } from './entities/invoice.entity';
 import { InvoiceLineItem } from './entities/invoice-line-item.entity';
 import { Payment } from './entities/payment.entity';
+import { CreditMemo } from './entities/credit-memo.entity';
 import { Job } from '../jobs/entities/job.entity';
 import { Asset } from '../assets/entities/asset.entity';
 import { PricingRule } from '../pricing/entities/pricing-rule.entity';
@@ -599,6 +600,34 @@ export class BillingService {
       where: { tenant_id: tenantId, job_id: jobId },
     });
     return count > 0;
+  }
+
+  async voidInternalInvoice(invoiceId: string, reason?: string): Promise<void> {
+    const invoice = await this.invoicesRepository.findOneBy({ id: invoiceId });
+    if (!invoice || invoice.status === 'voided') return;
+
+    await this.invoicesRepository.update(invoiceId, {
+      voided_at: new Date(),
+      balance_due: 0,
+    });
+
+    // Create credit memo for the voided amount
+    try {
+      const memoResult = await this.dataSource.query(
+        `SELECT COALESCE(MAX(memo_number), 0) + 1 as num FROM credit_memos WHERE tenant_id = $1`,
+        [invoice.tenant_id],
+      );
+      const creditMemoRepo = this.dataSource.getRepository(CreditMemo);
+      await creditMemoRepo.save(creditMemoRepo.create({
+        tenant_id: invoice.tenant_id,
+        memo_number: memoResult[0].num,
+        original_invoice_id: invoiceId,
+        customer_id: invoice.customer_id,
+        amount: Number(invoice.total),
+        reason: reason || 'Internal void',
+        status: 'applied',
+      }));
+    } catch { /* credit memo is best-effort */ }
   }
 
   private async recalculate(invoiceId: string) {
