@@ -58,6 +58,9 @@ const navigation = [
   { name: "Analytics", href: "/analytics", icon: BarChart3 },
   { name: "Marketplace", href: "/marketplace", icon: Store },
   { name: "Settings", href: "/settings", icon: Settings },
+] as const;
+
+const adminNav = [
   { name: "Admin Guide", href: "/admin-guide", icon: BookOpen },
 ] as const;
 
@@ -163,6 +166,34 @@ export default function Sidebar() {
             );
           })}
         </ul>
+
+        {/* Admin Tools */}
+        <div className="mt-2 pt-2" style={{ borderTop: "1px solid var(--t-frame-border)" }}>
+          <p className="px-3 pb-1.5 text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--t-frame-text-muted)", opacity: 0.5 }}>Admin Tools</p>
+          <ul className="space-y-0.5">
+            {adminNav.map((item) => {
+              const isActive = pathname === item.href || pathname.startsWith(item.href);
+              return (
+                <li key={item.name}>
+                  <Link
+                    href={item.href}
+                    className="flex items-center gap-3 rounded-[10px] px-3 py-2.5 text-[15px] transition-all duration-150"
+                    style={{
+                      fontWeight: isActive ? 600 : 400,
+                      color: isActive ? "var(--t-accent)" : "var(--t-frame-text-muted)",
+                      backgroundColor: isActive ? "var(--t-accent-soft)" : "transparent",
+                    }}
+                    onMouseEnter={(e) => { if (!isActive) { e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.06)"; e.currentTarget.style.color = "var(--t-frame-text)"; } }}
+                    onMouseLeave={(e) => { if (!isActive) { e.currentTarget.style.backgroundColor = "transparent"; e.currentTarget.style.color = "var(--t-frame-text-muted)"; } }}
+                  >
+                    <item.icon className="h-[18px] w-[18px] shrink-0" style={{ color: isActive ? "var(--t-accent)" : "var(--t-frame-text-muted)" }} />
+                    {item.name}
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
       </nav>
 
       <div className="px-3 pb-4 pt-2 space-y-1 shrink-0" style={{ borderTop: "1px solid var(--t-frame-border)" }}>
@@ -251,6 +282,38 @@ export default function Sidebar() {
             );
           })}
         </ul>
+
+        {/* Admin Tools — icon only in collapsed */}
+        <div className="mt-2 pt-2" style={{ borderTop: "1px solid var(--t-frame-border)" }}>
+          <ul className="space-y-1">
+            {adminNav.map((item) => {
+              const isActive = pathname === item.href || pathname.startsWith(item.href);
+              return (
+                <li key={item.name} className="relative">
+                  <Link
+                    href={item.href}
+                    className="flex items-center justify-center h-11 w-11 mx-auto rounded-[10px] transition-all duration-150"
+                    style={{
+                      color: isActive ? "var(--t-accent)" : "var(--t-frame-text-muted)",
+                      backgroundColor: isActive ? "var(--t-accent-soft)" : "transparent",
+                    }}
+                    onMouseEnter={(e) => {
+                      setHoveredItem(item.name);
+                      if (!isActive) { e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.06)"; e.currentTarget.style.color = "var(--t-frame-text)"; }
+                    }}
+                    onMouseLeave={(e) => {
+                      setHoveredItem(null);
+                      if (!isActive) { e.currentTarget.style.backgroundColor = "transparent"; e.currentTarget.style.color = "var(--t-frame-text-muted)"; }
+                    }}
+                  >
+                    <item.icon className="h-[18px] w-[18px]" />
+                  </Link>
+                  <NavTooltip label={item.name} show={hoveredItem === item.name} />
+                </li>
+              );
+            })}
+          </ul>
+        </div>
       </nav>
 
       {/* Footer — icons only */}
