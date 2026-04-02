@@ -70,6 +70,7 @@ interface Job {
   is_failed_trip?: boolean;
   failed_reason?: string;
   failed_at?: string;
+  attempt_count?: number;
   is_overdue?: boolean;
   extra_days?: number;
   extra_day_rate?: number;
@@ -388,7 +389,14 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
           <div className="flex items-start gap-3">
             <AlertTriangle className="h-5 w-5 shrink-0 mt-0.5" style={{ color: "var(--t-error)" }} />
             <div>
-              <p className="text-sm font-semibold" style={{ color: "var(--t-error)" }}>Failed Trip</p>
+              <p className="text-sm font-semibold" style={{ color: "var(--t-error)" }}>
+                Failed Trip
+                {job.attempt_count && job.attempt_count > 1 && (
+                  <span className="ml-2 text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: "rgba(220,38,38,0.1)", color: "#DC2626" }}>
+                    Attempt #{job.attempt_count}
+                  </span>
+                )}
+              </p>
               {job.failed_reason && <p className="text-xs mt-1" style={{ color: "var(--t-text-primary)" }}>{job.failed_reason}</p>}
               {job.failed_at && <p className="text-[11px] mt-1" style={{ color: "var(--t-text-muted)" }}>Failed at {new Date(job.failed_at).toLocaleString()}</p>}
             </div>

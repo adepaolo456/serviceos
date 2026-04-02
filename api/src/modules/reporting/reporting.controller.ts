@@ -82,6 +82,12 @@ export class ReportingController {
     return this.service.getAlerts(tid);
   }
 
+  @Get('exceptions')
+  @ApiOperation({ summary: 'Operational and billing exceptions' })
+  exceptions(@TenantId() tid: string) {
+    return this.service.getExceptions(tid);
+  }
+
   @Get('daily-summary')
   @ApiOperation({ summary: 'Daily operational summary' })
   dailySummary(@TenantId() tid: string) {

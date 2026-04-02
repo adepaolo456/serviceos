@@ -127,11 +127,11 @@ export class JobsController {
   }
 
   @Patch(':id/reschedule')
-  @ApiOperation({ summary: 'Reschedule a job' })
+  @ApiOperation({ summary: 'Reschedule a job (also handles needs_reschedule status)' })
   reschedule(
     @TenantId() tenantId: string,
     @Param('id', ParseUUIDPipe) id: string,
-    @Body() body: { scheduledDate: string; reason?: string; source?: string; timeWindow?: string },
+    @Body() body: { scheduledDate: string; reason?: string; source?: string; timeWindow?: string; scheduledWindowStart?: string; scheduledWindowEnd?: string; assignedDriverId?: string },
   ) {
     return this.jobsService.rescheduleJob(tenantId, id, body);
   }

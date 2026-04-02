@@ -141,6 +141,7 @@ export default function DashboardPage() {
   const [attentionOverdue, setAttentionOverdue] = useState(0);
   const [attentionPickups, setAttentionPickups] = useState(0);
   const [attentionUnassigned, setAttentionUnassigned] = useState(0);
+  const [attentionReschedule, setAttentionReschedule] = useState(0);
 
   // Keyboard shortcuts: B=booking, arrows=date nav, T=today
   useEffect(() => {
@@ -186,6 +187,7 @@ export default function DashboardPage() {
     api.get<{data: any[]}>("/jobs?status=completed&jobType=pickup&limit=100").then(res => setAttentionPickups(res.data?.length ?? 0)).catch(() => {});
     const todayDate = today();
     api.get<{data: any[], meta: {total: number}}>(`/jobs?status=pending&dateFrom=${todayDate}&dateTo=${todayDate}&limit=1`).then(res => setAttentionUnassigned(res.meta?.total ?? res.data?.length ?? 0)).catch(() => {});
+    api.get<{data: any[], meta: {total: number}}>("/jobs?status=needs_reschedule&limit=1").then(r => setAttentionReschedule(r.meta?.total ?? r.data?.length ?? 0)).catch(() => {});
   }, []);
 
   // Load jobs for selected schedule date
@@ -430,11 +432,12 @@ export default function DashboardPage() {
       </div>
 
       {/* ---- Needs Attention ---- */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginBottom: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 16 }}>
         {[
           { label: "Overdue Invoices", count: attentionOverdue, icon: FileWarning, color: "var(--t-error)", href: "/invoices" },
           { label: "Review Pickups", count: attentionPickups, icon: Truck, color: "var(--t-warning)", href: "/jobs" },
           { label: "Unassigned Today", count: attentionUnassigned, icon: CalendarX, color: "var(--t-warning)", href: "/dispatch" },
+          { label: "Needs Reschedule", count: attentionReschedule, icon: AlertTriangle, color: "var(--t-error)", href: "/dispatch" },
         ].map((item) => (
           <Link key={item.label} href={item.href} style={{
             backgroundColor: "var(--t-bg-card)",

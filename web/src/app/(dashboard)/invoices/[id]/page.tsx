@@ -75,6 +75,13 @@ interface Invoice {
   job: { id: string; job_number: string; asset_subtype?: string; service_type?: string; rental_days?: number; base_price?: number; total_price?: number; extra_day_rate?: number; asset?: { id: string; identifier: string; subtype?: string } } | null;
   payments?: Array<{ id: string; amount: number; payment_method: string; applied_at: string; notes?: string }>;
   revisions?: Array<{ id: string; revision_number: number; change_summary: string; changed_at: string }>;
+  last_contacted_at?: string;
+  contact_attempt_count?: number;
+  last_contact_method?: string;
+  promise_to_pay_date?: string;
+  promise_to_pay_amount?: number;
+  dispute_status?: string;
+  dispute_notes?: string;
 }
 
 interface PricingRule {
@@ -808,6 +815,76 @@ export default function InvoiceDetailPage({
           </div>
         </div>
       </div>
+
+      {/* Collections */}
+      {(invoice.status === 'open' || invoice.status === 'overdue' || invoice.status === 'partial') && (
+        <div className="rounded-[20px] border p-5 mt-6" style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)" }}>
+          <h3 className="text-sm font-semibold mb-4" style={{ color: "var(--t-text-primary)" }}>Collections</h3>
+          <div className="space-y-3">
+            {/* Log Contact */}
+            <div className="flex gap-2">
+              <select id="contactMethod" className="rounded-lg border px-3 py-2 text-xs" style={{ background: "var(--t-bg-primary)", borderColor: "var(--t-border)", color: "var(--t-text-primary)" }}>
+                <option value="phone">Phone</option>
+                <option value="email">Email</option>
+                <option value="sms">SMS</option>
+              </select>
+              <button onClick={async () => {
+                const method = (document.getElementById('contactMethod') as HTMLSelectElement)?.value || 'phone';
+                try {
+                  await api.patch(`/invoices/${invoice.id}/collections`, { lastContactMethod: method });
+                  toast("success", "Contact logged");
+                  fetchData();
+                } catch { toast("error", "Failed"); }
+              }} className="rounded-lg px-3 py-2 text-xs font-medium" style={{ background: "var(--t-accent-soft)", color: "var(--t-accent)" }}>
+                Log Contact
+              </button>
+            </div>
+            {/* Info */}
+            {invoice.last_contacted_at && (
+              <p className="text-xs" style={{ color: "var(--t-text-muted)" }}>
+                Last contacted: {new Date(invoice.last_contacted_at).toLocaleDateString()} via {invoice.last_contact_method}
+                {' '}({invoice.contact_attempt_count || 0} attempts)
+              </p>
+            )}
+            {/* Promise to Pay */}
+            <div className="flex items-center gap-2">
+              <input type="date" id="ptpDate" className="rounded-lg border px-3 py-2 text-xs" style={{ background: "var(--t-bg-primary)", borderColor: "var(--t-border)", color: "var(--t-text-primary)" }} />
+              <button onClick={async () => {
+                const ptpDate = (document.getElementById('ptpDate') as HTMLInputElement)?.value;
+                if (!ptpDate) return;
+                try {
+                  await api.patch(`/invoices/${invoice.id}/collections`, { promiseToPayDate: ptpDate });
+                  toast("success", "Promise recorded");
+                  fetchData();
+                } catch { toast("error", "Failed"); }
+              }} className="rounded-lg px-3 py-2 text-xs font-medium" style={{ background: "var(--t-accent-soft)", color: "var(--t-accent)" }}>
+                Record Promise
+              </button>
+            </div>
+            {invoice.promise_to_pay_date && (
+              <p className="text-xs" style={{ color: "var(--t-text-muted)" }}>Promise to pay by: {invoice.promise_to_pay_date}</p>
+            )}
+            {/* Dispute */}
+            <div className="flex items-center gap-2">
+              <button onClick={async () => {
+                const notes = prompt("Dispute notes:");
+                if (!notes) return;
+                try {
+                  await api.patch(`/invoices/${invoice.id}/collections`, { disputeStatus: 'disputed', disputeNotes: notes });
+                  toast("success", "Marked as disputed");
+                  fetchData();
+                } catch { toast("error", "Failed"); }
+              }} className="rounded-lg px-3 py-2 text-xs font-medium border" style={{ borderColor: "var(--t-error)", color: "var(--t-error)" }}>
+                Mark Disputed
+              </button>
+              {invoice.dispute_status === 'disputed' && (
+                <span className="text-xs font-bold px-2 py-0.5 rounded" style={{ background: "rgba(220,38,38,0.08)", color: "#DC2626" }}>DISPUTED</span>
+              )}
+            </div>
+            {invoice.dispute_notes && <p className="text-xs" style={{ color: "var(--t-text-muted)" }}>Dispute: {invoice.dispute_notes}</p>}
+          </div>
+        </div>
+      )}
 
       {/* Record Payment panel */}
       <SlideOver

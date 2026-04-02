@@ -172,7 +172,10 @@ export class Job {
   failed_reason_code!: string;
 
   @Column({ name: 'failed_at', type: 'timestamptz', nullable: true })
-  failed_at!: Date;
+  failed_at!: Date | null;
+
+  @Column({ name: 'attempt_count', type: 'int', default: 1 })
+  attempt_count!: number;
 
   @Column({ name: 'drop_off_asset_id', type: 'uuid', nullable: true })
   drop_off_asset_id!: string;

@@ -659,6 +659,32 @@ export class InvoiceService {
     });
   }
 
+  async updateCollections(tenantId: string, invoiceId: string, dto: {
+    lastContactMethod?: string;
+    contactNotes?: string;
+    promiseToPayDate?: string;
+    promiseToPayAmount?: number;
+    disputeStatus?: string;
+    disputeNotes?: string;
+  }): Promise<void> {
+    const invoice = await this.findOne(tenantId, invoiceId);
+    const updates: any = {};
+
+    if (dto.lastContactMethod) {
+      updates.last_contacted_at = new Date();
+      updates.last_contact_method = dto.lastContactMethod;
+      updates.contact_attempt_count = (invoice.contact_attempt_count || 0) + 1;
+    }
+    if (dto.promiseToPayDate) updates.promise_to_pay_date = dto.promiseToPayDate;
+    if (dto.promiseToPayAmount !== undefined) updates.promise_to_pay_amount = dto.promiseToPayAmount;
+    if (dto.disputeStatus) updates.dispute_status = dto.disputeStatus;
+    if (dto.disputeNotes !== undefined) updates.dispute_notes = dto.disputeNotes;
+
+    if (Object.keys(updates).length > 0) {
+      await this.invoiceRepo.update(invoiceId, updates);
+    }
+  }
+
   async findPrice(tenantId: string, dto: FindPriceDto) {
     const pricing = await this.priceResolution.resolvePrice(
       tenantId,

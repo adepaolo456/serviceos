@@ -149,6 +149,28 @@ export class Invoice {
   @Column({ name: 'updated_by', type: 'uuid', nullable: true })
   updated_by!: string;
 
+  // Collections tracking fields
+  @Column({ name: 'last_contacted_at', type: 'timestamptz', nullable: true })
+  last_contacted_at!: Date;
+
+  @Column({ name: 'contact_attempt_count', type: 'int', default: 0 })
+  contact_attempt_count!: number;
+
+  @Column({ name: 'last_contact_method', nullable: true })
+  last_contact_method!: string;
+
+  @Column({ name: 'promise_to_pay_date', type: 'date', nullable: true })
+  promise_to_pay_date!: string;
+
+  @Column({ name: 'promise_to_pay_amount', type: 'decimal', precision: 10, scale: 2, nullable: true })
+  promise_to_pay_amount!: number;
+
+  @Column({ name: 'dispute_status', default: 'none' })
+  dispute_status!: string;
+
+  @Column({ name: 'dispute_notes', type: 'text', nullable: true })
+  dispute_notes!: string;
+
   @OneToMany(() => InvoiceLineItem, (li) => li.invoice)
   line_items!: InvoiceLineItem[];
 
