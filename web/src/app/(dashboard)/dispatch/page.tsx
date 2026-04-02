@@ -38,6 +38,8 @@ interface DispatchJob {
   is_overdue?: boolean; extra_days?: number;
   rescheduled_by_customer?: boolean; rescheduled_from_date?: string;
   is_failed_trip?: boolean; failed_reason?: string; source?: string;
+  dump_status?: string;
+  dump_disposition?: string;
 }
 
 interface Driver { id: string; firstName: string; lastName: string; phone: string; vehicleInfo?: { year?: string; make?: string; model?: string } | null; }
@@ -373,6 +375,12 @@ export default function DispatchPage() {
   const visibleDrivers = orderedDrivers.length > 0 ? orderedDrivers : (board?.drivers.filter(d => !hiddenCols.has(d.driver.id)) || []);
   const hiddenDrivers = board?.drivers.filter(d => hiddenCols.has(d.driver.id)) || [];
 
+  // Step 5: Compute driver job cities for proximity suggestions
+  const driverJobCities = board?.drivers.map(d => ({
+    driverName: `${d.driver.firstName}`,
+    cities: [...new Set(d.jobs.map(j => j.service_address?.city).filter(Boolean) as string[])],
+  })) || [];
+
   return (
     <div className="flex h-[calc(100vh-5rem)] flex-col">
       {/* ── Top bar ── */}
@@ -490,7 +498,8 @@ export default function DispatchPage() {
                 onQuickView={openQuickView} onCtxMenu={handleContextMenu} activeId={activeId}
                 onStatusChange={async (jid, s) => { try { await api.patch(`/jobs/${jid}/status`, { status: s, cancellationReason: s === "failed" ? "Dispatcher override" : undefined }); toast("success", `Status → ${s.replace(/_/g, " ")}`); await fetchBoard(true); } catch { toast("error", "Failed"); } }}
                 collapsed={collapsedCols.has("unassigned")} onToggleCollapse={() => toggleCollapse("unassigned")}
-                onHide={() => hideColumn("unassigned")} />
+                onHide={() => hideColumn("unassigned")}
+                driverJobCities={driverJobCities} />
               )}
               {visibleDrivers.map((col, idx) => (
                 <ColumnCard key={col.driver.id} columnId={col.driver.id} title={`${col.driver.firstName} ${col.driver.lastName}`}
@@ -754,7 +763,7 @@ function DispatchMap({ board, activeJobId }: { board: DispatchBoard | null; acti
    Column Card — white card with accordion collapse
    ═══════════════════════════════════════════════════ */
 
-function ColumnCard({ columnId, title, driver, isUnassigned, count, progress, jobs, drivers, onAssign, onUnassign, onQuickView, onStatusChange, onCtxMenu, activeId, collapsed, onToggleCollapse, onHide, onColumnDrag }: {
+function ColumnCard({ columnId, title, driver, isUnassigned, count, progress, jobs, drivers, onAssign, onUnassign, onQuickView, onStatusChange, onCtxMenu, activeId, collapsed, onToggleCollapse, onHide, onColumnDrag, driverJobCities }: {
   columnId: string; title: string; driver?: Driver; isUnassigned?: boolean;
   count: number; progress?: { completed: number; total: number };
   jobs: DispatchJob[]; drivers?: Driver[];
@@ -766,10 +775,30 @@ function ColumnCard({ columnId, title, driver, isUnassigned, count, progress, jo
   activeId: string | null;
   collapsed: boolean; onToggleCollapse: () => void; onHide?: () => void;
   onColumnDrag?: { onDragStart: (e: React.DragEvent) => void; onDragOver: (e: React.DragEvent) => void; onDrop: (e: React.DragEvent) => void; onDragEnd: (e: React.DragEvent) => void };
+  driverJobCities?: Array<{ driverName: string; cities: string[] }>;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: columnId });
   const completedCount = progress?.completed || 0;
   const totalCount = progress?.total || count;
+
+  // Step 3: Capacity type breakdown counts
+  const deliveryCount = jobs.filter(j => j.job_type === 'delivery').length;
+  const pickupCount = jobs.filter(j => j.job_type === 'pickup').length;
+  const exchangeCount = jobs.filter(j => j.job_type === 'exchange').length;
+
+  // Step 2: Next Stop Preview logic
+  const activeJob = jobs.find(j => j.status === 'en_route' || j.status === 'in_progress');
+  const nextJob = activeJob || jobs.find(j => j.status !== 'completed' && j.status !== 'cancelled');
+  const allDone = jobs.length > 0 && jobs.every(j => j.status === 'completed' || j.status === 'cancelled');
+
+  // Step 5: Proximity suggestion for unassigned jobs
+  const getSuggestion = (job: DispatchJob): string | undefined => {
+    if (!isUnassigned || !driverJobCities) return;
+    const jobCity = job.service_address?.city;
+    if (!jobCity) return;
+    const match = driverJobCities.find(d => d.cities.some(c => c.toLowerCase() === jobCity.toLowerCase()));
+    return match ? `Near ${match.driverName}'s route` : undefined;
+  };
 
   const firstIncomplete = jobs.find(j => j.status !== "completed");
   const hiddenCount = collapsed && jobs.length > 1 ? jobs.length - 1 : 0;
@@ -829,6 +858,11 @@ function ColumnCard({ columnId, title, driver, isUnassigned, count, progress, jo
             style={{ background: "var(--t-bg-card-hover)", color: "var(--t-text-muted)" }}>
             {completedCount > 0 ? `${completedCount}/${totalCount}` : count === 1 ? "1 stop" : `${count} stops`}
           </span>
+          {(deliveryCount > 0 || pickupCount > 0 || exchangeCount > 0) && (
+            <span className="text-[10px]" style={{ color: "var(--t-text-muted)" }}>
+              {deliveryCount > 0 && `${deliveryCount}D`}{pickupCount > 0 && ` ${pickupCount}P`}{exchangeCount > 0 && ` ${exchangeCount}X`}
+            </span>
+          )}
           {progress && progress.total > 0 && (
             <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: "var(--t-bg-card-hover)" }}>
               <div className="h-full rounded-full" style={{ width: `${(progress.completed / progress.total) * 100}%`, background: "var(--t-accent)", transition: "width 0.3s ease" }} />
@@ -840,6 +874,37 @@ function ColumnCard({ columnId, title, driver, isUnassigned, count, progress, jo
           </button>
         </div>
       </div>
+
+      {/* ── Next Stop Preview ── */}
+      {!isUnassigned && jobs.length > 0 && (
+        <div style={{ padding: "8px 12px", background: "var(--t-bg-card-hover)", borderBottom: "1px solid var(--t-border)", fontSize: 12 }}>
+          {allDone ? (
+            <div className="flex items-center gap-1.5" style={{ color: "#22C55E" }}>
+              <CheckCircle2 className="h-3.5 w-3.5" />
+              <span className="font-medium">All stops complete</span>
+            </div>
+          ) : activeJob ? (
+            <div className="flex items-center gap-1.5 min-w-0">
+              <span style={{ display: "inline-block", width: 6, height: 6, borderRadius: "50%", background: "#22C55E", animation: "pulse 2s infinite", flexShrink: 0 }} />
+              <span className="font-bold" style={{ color: "#22C55E" }}>NOW:</span>
+              <span className="truncate" style={{ color: "var(--t-text-primary)" }}>
+                {(activeJob.asset_subtype || activeJob.asset?.subtype || "").replace(/yd$/i, "Y").toUpperCase()}{" "}
+                {TYPE_CONFIG[activeJob.job_type]?.label.toUpperCase() || activeJob.job_type.toUpperCase()}
+                {activeJob.service_address ? ` — ${[activeJob.service_address.street, activeJob.service_address.city].filter(Boolean).join(", ")}` : ""}
+              </span>
+            </div>
+          ) : nextJob ? (
+            <div className="flex items-center gap-1.5 min-w-0">
+              <span className="font-bold" style={{ color: "var(--t-text-muted)" }}>NEXT:</span>
+              <span className="truncate" style={{ color: "var(--t-text-primary)" }}>
+                {(nextJob.asset_subtype || nextJob.asset?.subtype || "").replace(/yd$/i, "Y").toUpperCase()}{" "}
+                {TYPE_CONFIG[nextJob.job_type]?.label.toUpperCase() || nextJob.job_type.toUpperCase()}
+                {nextJob.service_address ? ` — ${[nextJob.service_address.street, nextJob.service_address.city].filter(Boolean).join(", ")}` : ""}
+              </span>
+            </div>
+          ) : null}
+        </div>
+      )}
 
       {/* ── Job cards area ── */}
       <SortableContext items={jobs.map(j => j.id)} strategy={verticalListSortingStrategy}>
@@ -858,11 +923,19 @@ function ColumnCard({ columnId, title, driver, isUnassigned, count, progress, jo
             </div>
           ) : (
             <div className="space-y-2">
-              {jobs.map(job => (
-                <JobTile key={job.id} job={job} isUnassigned={!!isUnassigned} drivers={drivers}
-                  onAssign={onAssign} onUnassign={onUnassign} onQuickView={() => onQuickView(job)}
-                  onStatusChange={onStatusChange} onCtxMenu={onCtxMenu} />
-              ))}
+              {jobs.map((job, idx) => {
+                const prevJob = idx > 0 ? jobs[idx - 1] : null;
+                const needsYardStop = job.job_type === 'delivery' && prevJob?.job_type === 'delivery' &&
+                  (job.asset_subtype || job.asset?.subtype) && (prevJob.asset_subtype || prevJob.asset?.subtype) &&
+                  (job.asset_subtype || job.asset?.subtype) !== (prevJob.asset_subtype || prevJob.asset?.subtype);
+                return (
+                  <JobTile key={job.id} job={job} isUnassigned={!!isUnassigned} drivers={drivers}
+                    onAssign={onAssign} onUnassign={onUnassign} onQuickView={() => onQuickView(job)}
+                    onStatusChange={onStatusChange} onCtxMenu={onCtxMenu}
+                    needsYardStop={!!needsYardStop}
+                    proximitySuggestion={getSuggestion(job)} />
+                );
+              })}
             </div>
           )}
         </div>
@@ -883,13 +956,15 @@ function ColumnCard({ columnId, title, driver, isUnassigned, count, progress, jo
    Job Tile — white card, entire tile draggable
    ═══════════════════════════════════════════════════ */
 
-const JobTile = memo(function JobTile({ job, isUnassigned, drivers, onAssign, onUnassign, onQuickView, onStatusChange, onCtxMenu }: {
+const JobTile = memo(function JobTile({ job, isUnassigned, drivers, onAssign, onUnassign, onQuickView, onStatusChange, onCtxMenu, needsYardStop, proximitySuggestion }: {
   job: DispatchJob; isUnassigned: boolean; drivers?: Driver[];
   onAssign?: (jobId: string, driverId: string | null) => void;
   onUnassign?: (jobId: string) => void;
   onQuickView: () => void;
   onStatusChange?: (jobId: string, newStatus: string) => void;
   onCtxMenu?: (e: React.MouseEvent, job: DispatchJob) => void;
+  needsYardStop?: boolean;
+  proximitySuggestion?: string;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: job.id });
   const isCompleted = job.status === "completed";
@@ -948,6 +1023,7 @@ const JobTile = memo(function JobTile({ job, isUnassigned, drivers, onAssign, on
           <p className="text-[12px] mt-0.5 truncate" style={{ color: "var(--t-text-muted)" }}>
             {job.customer ? `${job.customer.first_name} ${job.customer.last_name}` : job.job_number}
           </p>
+          {proximitySuggestion && <p className="text-[10px] mt-0.5 italic" style={{ color: "var(--t-accent)" }}>{proximitySuggestion}</p>}
           {/* Line 4: Time window */}
           {(job.scheduled_window_start || job.scheduled_window_end) && (
             <p className="text-[11px] mt-0.5" style={{ color: "#8A8A8A" }}>
@@ -955,12 +1031,19 @@ const JobTile = memo(function JobTile({ job, isUnassigned, drivers, onAssign, on
             </p>
           )}
           {/* Line 5: Badges */}
-          {(job.asset?.identifier || job.is_failed_trip || job.source === "rescheduled_from_failure" || job.is_overdue) && (
+          {(job.asset?.identifier || job.is_failed_trip || job.source === "rescheduled_from_failure" || job.is_overdue || needsYardStop || (isCompleted && (job.job_type === 'pickup' || job.job_type === 'exchange')) || job.dump_disposition === 'staged') && (
             <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
               {job.asset?.identifier && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ background: "rgba(34,197,94,0.08)", color: "#22C55E" }}>{job.asset.identifier}</span>}
+              {needsYardStop && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: "rgba(217,119,6,0.08)", color: "#D97706" }}>YARD STOP</span>}
               {job.is_failed_trip && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: "rgba(220,38,38,0.08)", color: "#DC2626" }}>FAILED</span>}
               {job.source === "rescheduled_from_failure" && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: "rgba(217,119,6,0.08)", color: "#D97706" }}>FROM FAILED</span>}
               {job.is_overdue && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: "rgba(220,38,38,0.08)", color: "#DC2626" }}>OVERDUE {job.extra_days}d</span>}
+              {isCompleted && (job.job_type === 'pickup' || job.job_type === 'exchange') && (
+                job.dump_status && job.dump_status !== 'none'
+                  ? <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: "rgba(34,197,94,0.08)", color: "#22C55E" }}>DUMPED</span>
+                  : <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: "rgba(217,119,6,0.08)", color: "#D97706" }}>AWAITING DUMP</span>
+              )}
+              {job.dump_disposition === 'staged' && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: "rgba(139,92,246,0.08)", color: "#8B5CF6" }}>AT YARD</span>}
             </div>
           )}
         </div>
