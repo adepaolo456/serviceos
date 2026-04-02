@@ -99,6 +99,18 @@ export async function submitDumpSlip(jobId: string, data: {
   return res.data;
 }
 
+// Get dump slips for a job
+export async function getDumpSlips(jobId: string): Promise<{ tickets: any[] }> {
+  const { data } = await client.get(`/jobs/${jobId}/dump-slip`);
+  return data;
+}
+
+// Edit dump ticket (driver correction)
+export async function updateDumpTicket(ticketId: string, updates: Record<string, unknown>): Promise<any> {
+  const { data } = await client.patch(`/dump-tickets/${ticketId}`, updates);
+  return data;
+}
+
 // Update job fields (driver notes, asset, etc.)
 export async function updateJob(jobId: string, updates: Record<string, unknown>): Promise<any> {
   const { data } = await client.patch(`/jobs/${jobId}`, updates);

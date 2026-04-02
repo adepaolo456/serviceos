@@ -83,6 +83,25 @@ export class DumpTicket {
   @Column({ name: 'invoice_id', type: 'uuid', nullable: true })
   invoice_id!: string;
 
+  @Column({ type: 'jsonb', default: '[]' })
+  revisions!: Array<{
+    revision: number;
+    changedBy: string;
+    changedByRole: string;
+    changedAt: string;
+    changes: Record<string, { old: unknown; new: unknown }>;
+    reason?: string;
+  }>;
+
+  @Column({ name: 'voided_at', type: 'timestamptz', nullable: true })
+  voided_at!: Date;
+
+  @Column({ name: 'voided_by', type: 'uuid', nullable: true })
+  voided_by!: string;
+
+  @Column({ name: 'void_reason', type: 'text', nullable: true })
+  void_reason!: string;
+
   @CreateDateColumn({ name: 'created_at' })
   created_at!: Date;
 }

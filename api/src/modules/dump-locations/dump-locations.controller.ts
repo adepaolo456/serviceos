@@ -62,5 +62,26 @@ export class DumpLocationsController {
   getDumpSlip(@TenantId() tid: string, @Param('id', ParseUUIDPipe) id: string) { return this.service.getDumpSlip(tid, id); }
 
   @Post('jobs/:id/dump-slip/review')
-  reviewDumpSlip(@TenantId() tid: string, @Param('id', ParseUUIDPipe) id: string) { return this.service.reviewDumpSlip(tid, id); }
+  @ApiOperation({ summary: 'Review/finalize dump slip' })
+  reviewDumpSlip(@TenantId() tid: string, @CurrentUser('id') uid: string, @Param('id', ParseUUIDPipe) id: string) { return this.service.reviewDumpSlip(tid, id, uid); }
+
+  @Patch('dump-tickets/:ticketId')
+  @ApiOperation({ summary: 'Edit dump ticket with audit trail and financial recalculation' })
+  updateDumpTicket(
+    @TenantId() tid: string,
+    @CurrentUser('id') uid: string,
+    @CurrentUser('role') role: string,
+    @Param('ticketId', ParseUUIDPipe) ticketId: string,
+    @Body() body: Record<string, unknown>,
+  ) { return this.service.updateDumpTicket(tid, ticketId, body, uid, role); }
+
+  @Post('dump-tickets/:ticketId/void')
+  @ApiOperation({ summary: 'Void a dump ticket and remove billing impact' })
+  voidDumpTicket(
+    @TenantId() tid: string,
+    @CurrentUser('id') uid: string,
+    @CurrentUser('role') role: string,
+    @Param('ticketId', ParseUUIDPipe) ticketId: string,
+    @Body() body: { reason: string },
+  ) { return this.service.voidDumpTicket(tid, ticketId, body.reason || 'Voided by admin', uid, role); }
 }

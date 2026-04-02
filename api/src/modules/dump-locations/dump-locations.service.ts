@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import { DumpLocation, DumpLocationRate, DumpLocationSurcharge } from './entities/dump-location.entity';
@@ -458,9 +458,17 @@ export class DumpLocationsService {
     return { tickets, jobTotals: { dumpTotalCost: job?.dump_total_cost || 0, customerAdditionalCharges: job?.customer_additional_charges || 0 } };
   }
 
-  async reviewDumpSlip(tenantId: string, jobId: string) {
+  async reviewDumpSlip(tenantId: string, jobId: string, userId: string) {
     const job = await this.jobRepo.findOne({ where: { id: jobId, tenant_id: tenantId } });
     if (!job) throw new NotFoundException('Job not found');
+
+    // Also mark all submitted tickets as reviewed
+    await this.ticketRepo
+      .createQueryBuilder()
+      .update()
+      .set({ status: 'reviewed' })
+      .where('job_id = :jobId AND tenant_id = :tenantId AND status = :status', { jobId, tenantId, status: 'submitted' })
+      .execute();
 
     job.dump_status = 'reviewed';
     await this.jobRepo.save(job);
@@ -477,5 +485,343 @@ export class DumpLocationsService {
     }));
 
     return job;
+  }
+
+  /* ───── Edit Dump Ticket ───── */
+
+  async updateDumpTicket(
+    tenantId: string,
+    ticketId: string,
+    body: Record<string, unknown>,
+    userId: string,
+    userRole: string,
+  ) {
+    const ticket = await this.ticketRepo.findOne({ where: { id: ticketId, tenant_id: tenantId } });
+    if (!ticket) throw new NotFoundException('Dump ticket not found');
+
+    if (ticket.status === 'voided') {
+      throw new BadRequestException('Cannot edit a voided dump ticket');
+    }
+
+    // Driver edit restrictions
+    const isAdmin = userRole === 'admin' || userRole === 'dispatcher' || userRole === 'owner';
+    if (!isAdmin) {
+      // Drivers cannot edit reviewed tickets
+      if (ticket.status === 'reviewed') {
+        throw new BadRequestException('This stop has been finalized. Contact dispatch/admin to correct it.');
+      }
+      // Drivers can only edit same-day submissions
+      const submittedDate = ticket.submitted_at ? new Date(ticket.submitted_at).toISOString().split('T')[0] : null;
+      const today = new Date().toISOString().split('T')[0];
+      if (submittedDate && submittedDate !== today) {
+        throw new BadRequestException('This stop has been finalized. Contact dispatch/admin to correct it.');
+      }
+    }
+
+    // Capture old values for audit trail
+    const editableFields = ['ticket_number', 'weight_tons', 'waste_type', 'ticket_photo', 'dump_location_id'] as const;
+    const overageItemsRaw = body.overageItems || body.overage_items;
+    const changes: Record<string, { old: unknown; new: unknown }> = {};
+
+    // Track field changes
+    if (body.ticketNumber !== undefined && body.ticketNumber !== ticket.ticket_number) {
+      changes.ticket_number = { old: ticket.ticket_number, new: body.ticketNumber };
+    }
+    if (body.weightTons !== undefined && Number(body.weightTons) !== Number(ticket.weight_tons)) {
+      changes.weight_tons = { old: Number(ticket.weight_tons), new: Number(body.weightTons) };
+    }
+    if (body.wasteType !== undefined && body.wasteType !== ticket.waste_type) {
+      changes.waste_type = { old: ticket.waste_type, new: body.wasteType };
+    }
+    if (body.ticketPhoto !== undefined && body.ticketPhoto !== ticket.ticket_photo) {
+      changes.ticket_photo = { old: '(photo)', new: '(photo replaced)' };
+    }
+    if (body.dumpLocationId !== undefined && body.dumpLocationId !== ticket.dump_location_id) {
+      changes.dump_location_id = { old: ticket.dump_location_id, new: body.dumpLocationId };
+    }
+    if (overageItemsRaw !== undefined) {
+      changes.overage_items = { old: ticket.overage_items, new: overageItemsRaw };
+    }
+
+    if (Object.keys(changes).length === 0) {
+      return { ticket, message: 'No changes detected' };
+    }
+
+    // Apply field updates
+    const dumpLocationId = (body.dumpLocationId as string) || ticket.dump_location_id;
+    const wasteType = (body.wasteType as string) || ticket.waste_type;
+    const weightTons = body.weightTons !== undefined ? Number(body.weightTons) : Number(ticket.weight_tons);
+    const ticketNumber = (body.ticketNumber as string) ?? ticket.ticket_number;
+    const ticketPhoto = (body.ticketPhoto as string) ?? ticket.ticket_photo;
+    const overageItems = (overageItemsRaw || []) as Array<{ type: string; quantity: number }>;
+
+    // Load job for recalculation context
+    const job = await this.jobRepo.findOne({ where: { id: ticket.job_id, tenant_id: tenantId }, relations: ['asset'] });
+    if (!job) throw new NotFoundException('Job not found');
+
+    // Recalculate costs (same logic as submitDumpSlip)
+    const location = await this.locRepo.findOne({ where: { id: dumpLocationId }, relations: ['rates', 'surcharges'] });
+    if (!location) throw new NotFoundException('Dump location not found');
+
+    const rate = location.rates.find(r => r.waste_type === wasteType && r.is_active);
+    const ratePerTon = rate ? Number(rate.rate_per_ton) : 0;
+    const minimumCharge = rate ? Number(rate.minimum_charge) || 0 : 0;
+
+    const dumpTonnageCost = Math.max(weightTons * ratePerTon, minimumCharge);
+    const fuelEnvSurchargePerTon = Number(location.fuel_env_surcharge_per_ton) || 0;
+    const fuelEnvCost = Math.round(weightTons * fuelEnvSurchargePerTon * 100) / 100;
+
+    const pricingRule = await this.pricingRepo.findOne({
+      where: { tenant_id: tenantId, asset_subtype: job.asset?.subtype || undefined, is_active: true },
+    });
+    const includedTons = pricingRule ? Number(pricingRule.included_tons) || 0 : 0;
+    const overageRatePerTon = pricingRule ? Number(pricingRule.overage_per_ton) : 0;
+    const tenantRates = await this.jobRepo.query(`SELECT customer_overage_rates FROM tenants WHERE id = $1`, [tenantId]);
+    const customerRates = tenantRates?.[0]?.customer_overage_rates || {};
+    const perTonRates = (customerRates as any)?.perTon || {};
+    const customerRateForType = Number(perTonRates[wasteType]) || overageRatePerTon;
+
+    const overageTons = Math.max(0, weightTons - includedTons);
+    const customerTonnageOverage = overageTons * customerRateForType;
+
+    const surchargeItemPrices = (customerRates as any)?.surchargeItems || {};
+    let totalDumpOverage = 0;
+    let totalCustomerSurcharges = 0;
+    const calculatedItems: Array<{ type: string; label: string; quantity: number; chargePerUnit: number; total: number }> = [];
+
+    for (const item of overageItems) {
+      const surcharge = location.surcharges.find(s => s.item_type === item.type && s.is_active);
+      if (surcharge) {
+        const qty = Number(item.quantity) || 0;
+        totalDumpOverage += Number(surcharge.dump_charge) * qty;
+        const customerPrice = surchargeItemPrices[item.type]?.price || Number(surcharge.customer_charge);
+        totalCustomerSurcharges += customerPrice * qty;
+        calculatedItems.push({ type: surcharge.item_type, label: surcharge.label, quantity: qty, chargePerUnit: customerPrice, total: customerPrice * qty });
+      }
+    }
+
+    const dumpTotalCost = dumpTonnageCost + fuelEnvCost + totalDumpOverage;
+    const customerCharges = customerTonnageOverage + totalCustomerSurcharges;
+
+    // Record revision
+    const revisions = ticket.revisions || [];
+    revisions.push({
+      revision: revisions.length + 1,
+      changedBy: userId,
+      changedByRole: userRole,
+      changedAt: new Date().toISOString(),
+      changes,
+      reason: (body.reason as string) || undefined,
+    });
+    if (revisions.length > 50) revisions.shift();
+
+    // Update ticket
+    await this.ticketRepo.update(ticketId, {
+      ticket_number: ticketNumber,
+      ticket_photo: ticketPhoto,
+      waste_type: wasteType,
+      weight_tons: weightTons,
+      dump_location_id: dumpLocationId,
+      dump_location_name: location.name,
+      base_cost: dumpTonnageCost,
+      overage_items: calculatedItems,
+      overage_charges: totalDumpOverage,
+      total_cost: dumpTotalCost,
+      customer_charges: customerCharges,
+      dump_tonnage_cost: dumpTonnageCost,
+      fuel_env_cost: fuelEnvCost,
+      dump_surcharge_cost: totalDumpOverage,
+      customer_tonnage_charge: customerTonnageOverage,
+      customer_surcharge_charge: totalCustomerSurcharges,
+      status: ticket.status === 'reviewed' ? 'corrected' : ticket.status,
+      revisions,
+    });
+
+    // Sync job_cost
+    const existingCost = await this.jobCostRepo.findOne({
+      where: { job_id: ticket.job_id, dump_ticket_number: ticket.ticket_number },
+    });
+    const jobCostData = {
+      tenant_id: tenantId, job_id: ticket.job_id, cost_type: 'dump_fee' as const,
+      amount: dumpTotalCost,
+      description: `Dump fee - ${location.name} - Ticket #${ticketNumber} - ${weightTons}t`,
+      dump_location_id: dumpLocationId, dump_ticket_number: ticketNumber, net_weight_tons: weightTons,
+    };
+    if (existingCost) {
+      await this.jobCostRepo.update(existingCost.id, jobCostData);
+    } else {
+      await this.jobCostRepo.save(this.jobCostRepo.create(jobCostData));
+    }
+
+    // Update job totals
+    await this.recalcJobDumpTotals(tenantId, ticket.job_id);
+
+    // Recalculate invoice if linked
+    if (ticket.invoice_id) {
+      await this.recalcDumpInvoice(tenantId, ticket.invoice_id, ticket.job_id, includedTons, overageRatePerTon);
+    }
+
+    // Audit log
+    await this.notifRepo.save(this.notifRepo.create({
+      tenant_id: tenantId, job_id: ticket.job_id, channel: 'automation', type: 'dump_ticket_corrected',
+      recipient: 'system', body: JSON.stringify({ ticketId, changes, userId, userRole }),
+      status: 'logged', sent_at: new Date(),
+    }));
+
+    return { ticket: await this.ticketRepo.findOne({ where: { id: ticketId } }), changes };
+  }
+
+  /* ───── Void Dump Ticket ───── */
+
+  async voidDumpTicket(
+    tenantId: string,
+    ticketId: string,
+    reason: string,
+    userId: string,
+    userRole: string,
+  ) {
+    const ticket = await this.ticketRepo.findOne({ where: { id: ticketId, tenant_id: tenantId } });
+    if (!ticket) throw new NotFoundException('Dump ticket not found');
+    if (ticket.status === 'voided') throw new BadRequestException('Dump ticket is already voided');
+
+    // Only admin can void
+    const isAdmin = userRole === 'admin' || userRole === 'dispatcher' || userRole === 'owner';
+    if (!isAdmin) throw new BadRequestException('Only admin or dispatcher can void dump tickets');
+
+    // Record revision
+    const revisions = ticket.revisions || [];
+    revisions.push({
+      revision: revisions.length + 1,
+      changedBy: userId,
+      changedByRole: userRole,
+      changedAt: new Date().toISOString(),
+      changes: { status: { old: ticket.status, new: 'voided' } },
+      reason,
+    });
+    if (revisions.length > 50) revisions.shift();
+
+    // Void the ticket
+    await this.ticketRepo.update(ticketId, {
+      status: 'voided',
+      voided_at: new Date(),
+      voided_by: userId,
+      void_reason: reason,
+      revisions,
+    });
+
+    // Remove job_cost for this ticket
+    await this.jobCostRepo.delete({ job_id: ticket.job_id, dump_ticket_number: ticket.ticket_number });
+
+    // Update job totals
+    await this.recalcJobDumpTotals(tenantId, ticket.job_id);
+
+    // Remove invoice line items and recalculate if linked
+    if (ticket.invoice_id) {
+      await this.lineItemRepo.delete({ invoice_id: ticket.invoice_id });
+      // Recalculate invoice to zero (or remaining ticket amounts)
+      const pricingRule = await this.pricingRepo.findOne({
+        where: { tenant_id: tenantId, is_active: true },
+      });
+      const includedTons = pricingRule ? Number(pricingRule.included_tons) || 0 : 0;
+      const overageRatePerTon = pricingRule ? Number(pricingRule.overage_per_ton) : 0;
+      await this.recalcDumpInvoice(tenantId, ticket.invoice_id, ticket.job_id, includedTons, overageRatePerTon);
+    }
+
+    // Audit log
+    await this.notifRepo.save(this.notifRepo.create({
+      tenant_id: tenantId, job_id: ticket.job_id, channel: 'automation', type: 'dump_ticket_voided',
+      recipient: 'system', body: JSON.stringify({ ticketId, reason, userId, userRole }),
+      status: 'logged', sent_at: new Date(),
+    }));
+
+    return { message: 'Dump ticket voided', ticketId, reason };
+  }
+
+  /* ───── Private: Recalculate job dump totals from all non-voided tickets ───── */
+
+  private async recalcJobDumpTotals(tenantId: string, jobId: string) {
+    const allTickets = await this.ticketRepo.find({ where: { job_id: jobId, tenant_id: tenantId } });
+    const activeTickets = allTickets.filter(t => t.status !== 'voided');
+    const totalDump = activeTickets.reduce((s, t) => s + Number(t.total_cost), 0);
+    const totalCust = activeTickets.reduce((s, t) => s + Number(t.customer_charges), 0);
+
+    await this.jobRepo.update(jobId, {
+      dump_total_cost: totalDump,
+      customer_additional_charges: totalCust,
+    });
+  }
+
+  /* ───── Private: Recalculate dump invoice from active tickets ───── */
+
+  private async recalcDumpInvoice(
+    tenantId: string,
+    invoiceId: string,
+    jobId: string,
+    includedTons: number,
+    overageRatePerTon: number,
+  ) {
+    // Remove existing line items
+    await this.lineItemRepo.delete({ invoice_id: invoiceId });
+
+    // Rebuild from active tickets
+    const activeTickets = await this.ticketRepo.find({
+      where: { job_id: jobId, tenant_id: tenantId },
+    });
+    const nonVoided = activeTickets.filter(t => t.status !== 'voided');
+
+    let sortIdx = 0;
+    let newSubtotal = 0;
+
+    for (const t of nonVoided) {
+      const custTonnage = Number(t.customer_tonnage_charge) || 0;
+      const custSurcharge = Number(t.customer_surcharge_charge) || 0;
+
+      if (custTonnage > 0) {
+        const overTons = Math.max(0, Number(t.weight_tons) - includedTons);
+        await this.lineItemRepo.save(this.lineItemRepo.create({
+          invoice_id: invoiceId, sort_order: sortIdx++, line_type: 'overage',
+          name: `Weight overage: ${overTons.toFixed(2)} tons over ${includedTons} ton allowance @ $${overageRatePerTon}/ton`,
+          quantity: 1, unit_rate: custTonnage, amount: custTonnage, net_amount: custTonnage,
+          is_taxable: false, tax_rate: 0, tax_amount: 0,
+        }));
+        newSubtotal += custTonnage;
+      }
+
+      for (const item of (t.overage_items || [])) {
+        if (item.total > 0) {
+          await this.lineItemRepo.save(this.lineItemRepo.create({
+            invoice_id: invoiceId, sort_order: sortIdx++, line_type: 'surcharge_item',
+            name: item.label, quantity: item.quantity, unit_rate: item.chargePerUnit,
+            amount: item.total, net_amount: item.total,
+            is_taxable: false, tax_rate: 0, tax_amount: 0,
+          }));
+          newSubtotal += item.total;
+        }
+      }
+    }
+
+    // Update invoice totals
+    await this.invoiceRepo.update(invoiceId, {
+      subtotal: Math.round(newSubtotal * 100) / 100,
+      tax_amount: 0,
+      total: Math.round(newSubtotal * 100) / 100,
+    });
+
+    // Reconcile balance
+    const paymentRepo = this.dataSource.getRepository(Payment);
+    const payments = await paymentRepo.find({ where: { invoice_id: invoiceId, status: 'completed' } });
+    const totalPaid = payments.reduce((sum: number, p: Payment) => sum + Number(p.amount), 0);
+    const balanceDue = Math.max(Math.round((newSubtotal - totalPaid) * 100) / 100, 0);
+    const inv = await this.invoiceRepo.findOneOrFail({ where: { id: invoiceId } });
+    let invoiceStatus: string;
+    if (totalPaid >= newSubtotal && totalPaid > 0) invoiceStatus = 'paid';
+    else if (totalPaid > 0) invoiceStatus = 'partial';
+    else if (inv.sent_at) invoiceStatus = 'open';
+    else invoiceStatus = 'draft';
+    await this.invoiceRepo.update(invoiceId, {
+      amount_paid: Math.round(totalPaid * 100) / 100,
+      balance_due: balanceDue,
+      status: invoiceStatus,
+    });
   }
 }
