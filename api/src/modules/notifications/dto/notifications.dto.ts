@@ -17,6 +17,8 @@ const TYPES = [
   'pickup_reminder',
   'overdue_alert',
   'invoice_sent',
+  'invoice_reminder',
+  'payment_failed',
 ];
 
 export class SendNotificationDto {

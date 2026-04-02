@@ -1,6 +1,6 @@
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, DataSource } from 'typeorm';
 import Stripe from 'stripe';
 import { Tenant } from '../tenants/entities/tenant.entity';
 import { Customer } from '../customers/entities/customer.entity';
@@ -12,6 +12,7 @@ import { SubscriptionPlan } from '../subscriptions/entities/subscription-plan.en
 @Injectable()
 export class StripeService {
   private stripe: Stripe;
+  private readonly logger = new Logger(StripeService.name);
 
   constructor(
     @InjectRepository(Tenant) private tenantRepo: Repository<Tenant>,
@@ -20,6 +21,7 @@ export class StripeService {
     @InjectRepository(Payment) private paymentRepo: Repository<Payment>,
     @InjectRepository(AutomationLog) private logRepo: Repository<AutomationLog>,
     @InjectRepository(SubscriptionPlan) private planRepo: Repository<SubscriptionPlan>,
+    private dataSource: DataSource,
   ) {
     this.stripe = new Stripe(process.env.STRIPE_SECRET_KEY || 'sk_test_placeholder', { apiVersion: '2024-12-18.acacia' as any });
   }
@@ -168,6 +170,8 @@ export class StripeService {
         tenant_id: tenantId, job_id: invoice.job_id, type: 'payment_failed', status: 'failed',
         details: { invoiceId, error: err.message },
       }));
+      // Phase 6: Alert admin of failed payment
+      await this.logPaymentFailedAlert(tenantId, invoiceId, err.message);
       throw new BadRequestException(`Payment failed: ${err.message}`);
     }
   }
@@ -252,9 +256,15 @@ export class StripeService {
       case 'payment_intent.payment_failed': {
         const pi = event.data.object as Stripe.PaymentIntent;
         if (pi.metadata.invoiceId) {
-          await this.invoiceRepo.update(pi.metadata.invoiceId, {
-            summary_of_work: `Payment failed: ${pi.last_payment_error?.message || 'Unknown error'}`,
-          });
+          const failedInv = await this.invoiceRepo.findOne({ where: { id: pi.metadata.invoiceId } });
+          if (failedInv) {
+            // Phase 6: Alert admin of failed payment
+            await this.logPaymentFailedAlert(
+              failedInv.tenant_id,
+              pi.metadata.invoiceId,
+              pi.last_payment_error?.message || 'Unknown error',
+            );
+          }
         }
         break;
       }
@@ -268,6 +278,54 @@ export class StripeService {
     }
 
     return { received: true };
+  }
+
+  private async logPaymentFailedAlert(tenantId: string, invoiceId: string, errorMessage: string) {
+    try {
+      const invoice = await this.invoiceRepo.findOne({ where: { id: invoiceId }, relations: ['customer'] });
+      if (!invoice) return;
+
+      const customerName = invoice.customer
+        ? `${invoice.customer.first_name} ${invoice.customer.last_name}`
+        : 'Unknown';
+
+      const alertMessage = `Payment failed for ${customerName} — Invoice #${invoice.invoice_number} ($${Number(invoice.balance_due).toFixed(2)}): ${errorMessage}`;
+      const href = `/invoices/${invoiceId}`;
+
+      // Dedup: check if same alert already sent in last 24 hours
+      const recent = await this.dataSource.query(
+        `SELECT COUNT(*) as cnt FROM notifications
+         WHERE tenant_id = $1 AND type = 'payment_failed' AND channel = 'admin_email'
+         AND body LIKE $2 AND created_at > NOW() - INTERVAL '24 hours'`,
+        [tenantId, `%${invoiceId}%`],
+      );
+      if (Number(recent[0]?.cnt) > 0) return;
+
+      // Rate limit: max 5 admin emails per hour
+      const hourCount = await this.dataSource.query(
+        `SELECT COUNT(*) as cnt FROM notifications
+         WHERE tenant_id = $1 AND type IN ('admin_alert', 'payment_failed') AND channel IN ('email', 'admin_email')
+         AND created_at > NOW() - INTERVAL '1 hour'`,
+        [tenantId],
+      );
+      if (Number(hourCount[0]?.cnt) >= 5) return;
+
+      // Get admin email
+      const tenant = await this.tenantRepo.findOne({ where: { id: tenantId } });
+      const adminEmail = (tenant as any)?.website_email;
+      if (!adminEmail) return;
+
+      // Log as notification for dedup tracking and delivery
+      await this.dataSource.query(
+        `INSERT INTO notifications (id, tenant_id, channel, type, recipient, subject, body, status, sent_at, created_at)
+         VALUES (gen_random_uuid(), $1, 'admin_email', 'payment_failed', $2, $3, $4, 'delivered', NOW(), NOW())`,
+        [tenantId, adminEmail, `Payment Failed: Invoice #${invoice.invoice_number}`, alertMessage],
+      );
+
+      this.logger.warn(`Payment failed alert: ${alertMessage}`);
+    } catch (err) {
+      this.logger.error(`Failed to log payment alert: ${err}`);
+    }
   }
 
   async getPlans() {

@@ -225,6 +225,7 @@ export default function BookingWizard({
   const [availability, setAvailability] = useState<number | null>(null);
   const [quoteLoading, setQuoteLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [sendInvoiceNow, setSendInvoiceNow] = useState(false);
 
   // Lock body scroll
   useEffect(() => {
@@ -430,6 +431,7 @@ export default function BookingWizard({
         taxAmount: 0,
         totalPrice: priceQuote?.total || priceQuote?.base_price || 0,
         paymentMethod: collectPayment ? "card" as const : "invoice" as const,
+        sendInvoiceNow: !collectPayment && sendInvoiceNow ? true : undefined,
       });
       toast("success", "Booking created successfully");
       onComplete?.();
@@ -1066,6 +1068,20 @@ export default function BookingWizard({
                   <p className="text-sm" style={{ color: "var(--t-text-muted)" }}>Select options to see pricing</p>
                 )}
               </div>
+
+              {/* Send invoice option */}
+              <label className="flex items-center gap-2 pt-2 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={sendInvoiceNow}
+                  onChange={(e) => setSendInvoiceNow(e.target.checked)}
+                  className="rounded"
+                  style={{ accentColor: "var(--t-accent)" }}
+                />
+                <span className="text-sm" style={{ color: "var(--t-text-secondary)" }}>
+                  Send invoice to customer now
+                </span>
+              </label>
 
               {/* Footer buttons */}
               <div className="flex gap-3 pt-2">

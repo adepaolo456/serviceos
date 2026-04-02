@@ -13,6 +13,7 @@ import { RentalChain } from '../rental-chains/entities/rental-chain.entity';
 import { TaskChainLink } from '../rental-chains/entities/task-chain-link.entity';
 import { PricingRule } from '../pricing/entities/pricing-rule.entity';
 import { Payment } from './entities/payment.entity';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @ApiTags('Bookings')
 @ApiBearerAuth()
@@ -30,6 +31,7 @@ export class BookingsController {
     @InjectRepository(RentalChain) private rentalChainRepo: Repository<RentalChain>,
     @InjectRepository(TaskChainLink) private taskChainLinkRepo: Repository<TaskChainLink>,
     private dataSource: DataSource,
+    private notificationsService: NotificationsService,
   ) {}
 
   @Post('complete')
@@ -65,6 +67,7 @@ export class BookingsController {
       depositAmount?: number;
       paymentMethod: 'card' | 'invoice';
       stripeToken?: string;
+      sendInvoiceNow?: boolean;
     },
   ) {
     const user = req.user as { tenantId: string; sub: string };
@@ -308,10 +311,29 @@ export class BookingsController {
         status: 'completed',
       }));
     }
-    // Mark as sent (open) if not paid, then reconcile to derive status
-    if (!isPaid) {
-      await this.invoicesRepo.update(savedInvoice.id, { sent_at: new Date(), sent_method: 'auto' });
+
+    // 5c. Opt-in invoice send — only if explicitly requested and not card-paid
+    if (!isPaid && body.sendInvoiceNow) {
+      await this.invoicesRepo.update(savedInvoice.id, { sent_at: new Date(), sent_method: 'email' });
+
+      // Send email to customer if they have one
+      const customer = await this.customersRepo.findOne({ where: { id: customerId } });
+      if (customer?.email) {
+        try {
+          await this.notificationsService.send(tenantId, {
+            channel: 'email',
+            type: 'invoice_sent',
+            recipient: customer.email,
+            subject: `Invoice #${invNum} from your service provider`,
+            body: `<p>Hello ${customer.first_name},</p><p>Invoice <strong>#${invNum}</strong> for <strong>$${body.totalPrice.toFixed(2)}</strong> has been sent to you.</p><p>Due date: ${body.deliveryDate}</p><p>Summary: ${body.assetSubtype} ${body.serviceType.replace(/_/g, ' ')} — ${body.rentalDays}-day rental</p>`,
+            customerId: customerId,
+          });
+        } catch (err) {
+          this.logger.warn(`Failed to send invoice email for #${invNum}: ${err}`);
+        }
+      }
     }
+
     // Derive status/balance from payment records (reconcileBalance pattern)
     {
       const paymentRepo = this.dataSource.getRepository(Payment);

@@ -9,6 +9,7 @@ import { AutomationLog } from '../automation/entities/automation-log.entity';
 import { Invoice } from '../billing/entities/invoice.entity';
 import { InvoiceLineItem } from '../billing/entities/invoice-line-item.entity';
 import { JobCost } from '../billing/entities/job-cost.entity';
+import { Payment } from '../billing/entities/payment.entity';
 
 function haversineDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 3959; // miles
@@ -420,6 +421,23 @@ export class DumpLocationsService {
           await this.invoiceRepo.update(savedInvoice.id, { rental_chain_id: link[0].rental_chain_id });
         }
       } catch { /* non-fatal */ }
+
+      // Reconcile balance to derive correct status
+      const paymentRepo = this.dataSource.getRepository(Payment);
+      const payments = await paymentRepo.find({ where: { invoice_id: savedInvoice.id, status: 'completed' } });
+      const totalPaid = payments.reduce((sum: number, p: Payment) => sum + Number(p.amount), 0);
+      const balanceDue = Math.max(Math.round((customerCharges - totalPaid) * 100) / 100, 0);
+      const inv = await this.invoiceRepo.findOneOrFail({ where: { id: savedInvoice.id } });
+      let invoiceStatus: string;
+      if (totalPaid >= customerCharges && totalPaid > 0) invoiceStatus = 'paid';
+      else if (totalPaid > 0) invoiceStatus = 'partial';
+      else if (inv.sent_at) invoiceStatus = 'open';
+      else invoiceStatus = 'draft';
+      await this.invoiceRepo.update(savedInvoice.id, {
+        amount_paid: Math.round(totalPaid * 100) / 100,
+        balance_due: balanceDue,
+        status: invoiceStatus,
+      });
 
       // Mark this ticket as invoiced
       await this.ticketRepo.update(savedTicket.id, { invoiced: true, invoice_id: savedInvoice.id });
