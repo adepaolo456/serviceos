@@ -426,7 +426,7 @@ export default function BookingWizard({
         rentalDays: rentalLength,
         placementNotes: driverNotes || undefined,
         basePrice: priceQuote?.base_price || 0,
-        deliveryFee: 0,
+        deliveryFee: priceQuote?.distanceCharge || 0,
         taxAmount: 0,
         totalPrice: priceQuote?.total || priceQuote?.base_price || 0,
         paymentMethod: collectPayment ? "card" as const : "invoice" as const,
