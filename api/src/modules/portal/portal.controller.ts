@@ -53,13 +53,13 @@ export class PortalController {
   @Get('profile')
   getProfile(@Req() req: Request) {
     const user = req.user as PortalUser;
-    return this.portalService.getProfile(user.customerId);
+    return this.portalService.getProfile(user.customerId, user.tenantId);
   }
 
   @Patch('profile')
   updateProfile(@Req() req: Request, @Body() dto: UpdatePortalProfileDto) {
     const user = req.user as PortalUser;
-    return this.portalService.updateProfile(user.customerId, dto);
+    return this.portalService.updateProfile(user.customerId, user.tenantId, dto);
   }
 
   @Post('profile/change-password')
@@ -78,5 +78,23 @@ export class PortalController {
   async rescheduleRental(@Req() req: Request, @Param('id') id: string, @Body() body: { scheduledDate: string; reason?: string }) {
     const user = req.user as PortalUser;
     return this.portalService.rescheduleRental(user.customerId, user.tenantId, id, body);
+  }
+
+  @Get('dashboard')
+  getDashboard(@Req() req: Request) {
+    const user = req.user as PortalUser;
+    return this.portalService.getDashboard(user.customerId, user.tenantId);
+  }
+
+  @Post('report-issue')
+  reportIssue(@Req() req: Request, @Body() body: { jobId?: string; reason: string; notes?: string }) {
+    const user = req.user as PortalUser;
+    return this.portalService.reportIssue(user.customerId, user.tenantId, body);
+  }
+
+  @Post('payments/prepare')
+  preparePayment(@Req() req: Request, @Body() body: { invoiceId: string; amount?: number }) {
+    const user = req.user as PortalUser;
+    return this.portalService.createPaymentIntent(user.customerId, user.tenantId, body.invoiceId, body.amount);
   }
 }

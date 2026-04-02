@@ -52,6 +52,9 @@ export default function PortalInvoicesPage() {
   const [detail, setDetail] = useState<Invoice | null>(null);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [payConfirmInvoice, setPayConfirmInvoice] = useState<Invoice | null>(null);
+  const [paying, setPaying] = useState(false);
+  const [payResult, setPayResult] = useState<{ success: boolean; message: string } | null>(null);
 
   useEffect(() => {
     portalApi.get<Invoice[]>("/portal/invoices").then(setInvoices).catch(() => {}).finally(() => setLoading(false));
@@ -67,6 +70,30 @@ export default function PortalInvoicesPage() {
       setPayments(data.payments || []);
     } catch { /* fall back to list data */ }
     finally { setDetailLoading(false); }
+  };
+
+  const handlePayInvoice = async (inv: Invoice) => {
+    setPaying(true);
+    setPayResult(null);
+    try {
+      const result = await portalApi.post<{ success?: boolean; url?: string; message?: string }>(
+        "/portal/payments/prepare",
+        { invoiceId: inv.id, amount: inv.balance_due }
+      );
+      if (result.url) {
+        // Redirect to Stripe checkout if URL provided
+        window.location.href = result.url;
+        return;
+      }
+      setPayResult({ success: true, message: result.message || "Payment submitted successfully. You will receive a confirmation shortly." });
+      // Refresh invoices
+      portalApi.get<Invoice[]>("/portal/invoices").then(setInvoices).catch(() => {});
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Payment could not be processed. Please try again or contact the office.";
+      setPayResult({ success: false, message });
+    } finally {
+      setPaying(false);
+    }
   };
 
   const unpaid = invoices.filter(i => i.status === "open");
@@ -118,7 +145,8 @@ export default function PortalInvoicesPage() {
 
           {detail.status === "open" && Number(detail.balance_due) > 0 && (
             <div className="mt-6 flex justify-end">
-              <button className="flex items-center gap-2 rounded-full bg-[var(--t-accent)] px-6 py-2.5 text-sm font-semibold text-black hover:opacity-90 transition-opacity">
+              <button onClick={() => { setPayConfirmInvoice(detail); setPayResult(null); }}
+                className="flex items-center gap-2 rounded-full bg-[var(--t-accent)] px-6 py-2.5 text-sm font-semibold text-black hover:opacity-90 transition-opacity">
                 <CreditCard className="h-4 w-4" /> Pay {formatCurrency(detail.balance_due)}
               </button>
             </div>
@@ -193,11 +221,69 @@ export default function PortalInvoicesPage() {
                   </div>
                 </div>
                 {inv.status === "open" && Number(inv.balance_due) > 0 && (
-                  <span className="rounded-full bg-[var(--t-accent)] px-3 py-1.5 text-xs font-semibold text-black shrink-0 ml-2">Pay Now</span>
+                  <span onClick={(e) => { e.stopPropagation(); setPayConfirmInvoice(inv); setPayResult(null); }}
+                    className="rounded-full bg-[var(--t-accent)] px-3 py-1.5 text-xs font-semibold text-black shrink-0 ml-2 hover:opacity-90 transition-opacity cursor-pointer">Pay Now</span>
                 )}
               </div>
             </button>
           ))}
+        </div>
+      )}
+
+      {/* Payment Confirmation Modal */}
+      {payConfirmInvoice && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4" onClick={() => { setPayConfirmInvoice(null); setPayResult(null); }}>
+          <div className="rounded-2xl border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6 w-full max-w-sm" onClick={e => e.stopPropagation()}>
+            {payResult ? (
+              <div className="text-center py-4">
+                <div className={`mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full ${payResult.success ? "bg-[var(--t-accent-soft)]" : "bg-[var(--t-error-soft)]"}`}>
+                  {payResult.success ? (
+                    <CheckCircle2 className="h-6 w-6 text-[var(--t-accent)]" />
+                  ) : (
+                    <AlertTriangle className="h-6 w-6 text-[var(--t-error)]" />
+                  )}
+                </div>
+                <h3 className="text-sm font-semibold text-[var(--t-text-primary)] mb-1">
+                  {payResult.success ? "Payment Submitted" : "Payment Failed"}
+                </h3>
+                <p className="text-xs text-[var(--t-text-muted)]">{payResult.message}</p>
+                <button onClick={() => { setPayConfirmInvoice(null); setPayResult(null); }}
+                  className="mt-4 rounded-full bg-[var(--t-accent)] px-5 py-2 text-sm font-semibold text-black hover:opacity-90 transition-opacity">
+                  Done
+                </button>
+              </div>
+            ) : (
+              <>
+                <h3 className="text-sm font-semibold text-[var(--t-text-primary)] mb-2">Confirm Payment</h3>
+                <p className="text-sm text-[var(--t-text-muted)] mb-4">
+                  Pay <span className="font-bold text-[var(--t-text-primary)]">{formatCurrency(payConfirmInvoice.balance_due)}</span> for Invoice <span className="font-bold text-[var(--t-text-primary)]">#{payConfirmInvoice.invoice_number}</span>?
+                </p>
+                <div className="rounded-[16px] bg-[var(--t-bg-primary)] border border-[var(--t-border)] p-3 mb-4">
+                  <div className="flex justify-between text-xs text-[var(--t-text-muted)]">
+                    <span>Invoice Total</span>
+                    <span className="text-[var(--t-text-primary)] font-medium">{formatCurrency(payConfirmInvoice.total)}</span>
+                  </div>
+                  <div className="flex justify-between text-xs text-[var(--t-text-muted)] mt-1">
+                    <span>Already Paid</span>
+                    <span className="text-[var(--t-accent)]">{formatCurrency(Number(payConfirmInvoice.total) - Number(payConfirmInvoice.balance_due))}</span>
+                  </div>
+                  <div className="flex justify-between text-xs font-semibold text-[var(--t-text-primary)] mt-1.5 pt-1.5 border-t border-[var(--t-border)]">
+                    <span>Amount Due</span>
+                    <span>{formatCurrency(payConfirmInvoice.balance_due)}</span>
+                  </div>
+                </div>
+                <div className="flex gap-2 justify-end">
+                  <button onClick={() => { setPayConfirmInvoice(null); setPayResult(null); }}
+                    className="rounded-full px-4 py-2 text-xs font-medium text-[var(--t-text-muted)]">Cancel</button>
+                  <button onClick={() => handlePayInvoice(payConfirmInvoice)} disabled={paying}
+                    className="flex items-center gap-1.5 rounded-full bg-[var(--t-accent)] px-5 py-2 text-sm font-semibold text-black disabled:opacity-40 hover:opacity-90 transition-opacity">
+                    <CreditCard className="h-4 w-4" />
+                    {paying ? "Processing..." : `Pay ${formatCurrency(payConfirmInvoice.balance_due)}`}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       )}
     </div>

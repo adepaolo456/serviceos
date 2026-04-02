@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { portalApi } from "@/lib/portal-api";
 import { formatCurrency } from "@/lib/utils";
-import { Package, FileText, PlusCircle, Phone, Calendar, MapPin, Clock, ArrowUpRight } from "lucide-react";
+import { Package, FileText, PlusCircle, Phone, Calendar, MapPin, Clock, ArrowUpRight, AlertCircle, CreditCard, CalendarClock, AlertTriangle } from "lucide-react";
 
 interface Rental {
   id: string;
@@ -20,6 +20,24 @@ interface Rental {
   service_address: { formatted?: string; street?: string; city?: string } | null;
   asset: { identifier?: string; size?: string } | null;
 }
+
+interface Invoice {
+  id: string;
+  invoice_number: number;
+  status: string;
+  due_date: string;
+  total: number;
+  balance_due: number;
+}
+
+const ISSUE_REASONS = [
+  "Blocked Access",
+  "Not Ready for Pickup",
+  "Overfilled",
+  "Wrong Size",
+  "Damaged",
+  "Other",
+] as const;
 
 const STATUS_COLORS: Record<string, string> = {
   pending: "text-yellow-500",
@@ -52,18 +70,52 @@ function daysRemaining(endDate: string | null): number | null {
 
 export default function PortalHomePage() {
   const [rentals, setRentals] = useState<Rental[]>([]);
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
   const [extendJobId, setExtendJobId] = useState<string | null>(null);
   const [extendDate, setExtendDate] = useState("");
   const [actionLoading, setActionLoading] = useState(false);
+  const [issueOpen, setIssueOpen] = useState(false);
+  const [issueReason, setIssueReason] = useState("");
+  const [issueNotes, setIssueNotes] = useState("");
+  const [issueJobId, setIssueJobId] = useState("");
+  const [issueSubmitting, setIssueSubmitting] = useState(false);
+  const [issueSuccess, setIssueSuccess] = useState(false);
   const customer = portalApi.getCustomer();
 
   useEffect(() => {
-    portalApi.get<Rental[]>("/portal/rentals")
-      .then(setRentals)
-      .catch(() => {})
-      .finally(() => setLoading(false));
+    Promise.all([
+      portalApi.get<Rental[]>("/portal/rentals").catch(() => [] as Rental[]),
+      portalApi.get<Invoice[]>("/portal/invoices").catch(() => [] as Invoice[]),
+    ]).then(([r, i]) => {
+      setRentals(r);
+      setInvoices(i);
+    }).finally(() => setLoading(false));
   }, []);
+
+  const unpaidInvoices = invoices.filter(i => i.status === "open");
+  const totalOutstanding = unpaidInvoices.reduce((sum, i) => sum + Number(i.balance_due), 0);
+
+  const handleIssueSubmit = async () => {
+    if (!issueReason) return;
+    setIssueSubmitting(true);
+    try {
+      await portalApi.post("/portal/report-issue", {
+        reason: issueReason,
+        notes: issueNotes || undefined,
+        jobId: issueJobId || undefined,
+      });
+      setIssueSuccess(true);
+      setIssueReason("");
+      setIssueNotes("");
+      setIssueJobId("");
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to submit. Please try again.";
+      alert(message);
+    } finally {
+      setIssueSubmitting(false);
+    }
+  };
 
   const refreshRentals = () => portalApi.get<Rental[]>("/portal/rentals").then(setRentals).catch(() => {});
 
@@ -103,35 +155,59 @@ export default function PortalHomePage() {
         <p className="mt-1 text-sm" style={{ color: "var(--t-frame-text-muted)" }}>Here&apos;s an overview of your rentals and account.</p>
       </div>
 
+      {/* Outstanding Balance */}
+      {totalOutstanding > 0 && (
+        <div className="rounded-[20px] border border-amber-500/30 bg-amber-500/5 p-5 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-xs font-medium text-amber-500 mb-1">Outstanding Balance</p>
+            <p className="text-2xl font-bold text-[var(--t-text-primary)]">{formatCurrency(totalOutstanding)}</p>
+            <p className="text-xs text-[var(--t-text-muted)] mt-0.5">{unpaidInvoices.length} unpaid invoice{unpaidInvoices.length !== 1 ? "s" : ""}</p>
+          </div>
+          <Link href="/portal/invoices"
+            className="flex items-center gap-2 rounded-full bg-[var(--t-accent)] px-5 py-2.5 text-sm font-semibold text-black hover:opacity-90 transition-opacity">
+            <CreditCard className="h-4 w-4" /> Pay Now <ArrowUpRight className="h-3.5 w-3.5" />
+          </Link>
+        </div>
+      )}
+
       {/* Quick Actions */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <Link href="/portal/request" className="flex items-center gap-3 rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-4 hover:bg-[var(--t-bg-card-hover)] transition-colors">
-          <div className="flex h-10 w-10 items-center justify-center rounded-[20px] bg-[var(--t-accent-soft)]">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[20px] bg-[var(--t-accent-soft)]">
             <PlusCircle className="h-5 w-5 text-[var(--t-accent)]" />
           </div>
-          <div>
+          <div className="min-w-0">
             <p className="text-sm font-semibold text-[var(--t-text-primary)]">Request a Dumpster</p>
-            <p className="text-xs text-[var(--t-text-muted)]">Get a quote instantly</p>
+            <p className="text-xs text-[var(--t-text-muted)]">Get a quote</p>
           </div>
         </Link>
+        <Link href="/portal/rentals" className="flex items-center gap-3 rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-4 hover:bg-[var(--t-bg-card-hover)] transition-colors">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[20px] bg-purple-500/10">
+            <CalendarClock className="h-5 w-5 text-purple-400" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-[var(--t-text-primary)]">Change Pickup Date</p>
+            <p className="text-xs text-[var(--t-text-muted)]">Reschedule</p>
+          </div>
+        </Link>
+        <button onClick={() => { setIssueOpen(true); setIssueSuccess(false); }} className="flex items-center gap-3 rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-4 hover:bg-[var(--t-bg-card-hover)] transition-colors text-left">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[20px] bg-[var(--t-error-soft)]">
+            <AlertCircle className="h-5 w-5 text-[var(--t-error)]" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-[var(--t-text-primary)]">Report an Issue</p>
+            <p className="text-xs text-[var(--t-text-muted)]">Get help</p>
+          </div>
+        </button>
         <Link href="/portal/invoices" className="flex items-center gap-3 rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-4 hover:bg-[var(--t-bg-card-hover)] transition-colors">
-          <div className="flex h-10 w-10 items-center justify-center rounded-[20px] bg-blue-500/10">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[20px] bg-blue-500/10">
             <FileText className="h-5 w-5 text-blue-400" />
           </div>
-          <div>
-            <p className="text-sm font-semibold text-[var(--t-text-primary)]">Pay Invoice</p>
-            <p className="text-xs text-[var(--t-text-muted)]">View & pay open invoices</p>
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-[var(--t-text-primary)]">View Invoices</p>
+            <p className="text-xs text-[var(--t-text-muted)]">Pay & review</p>
           </div>
         </Link>
-        <a href="tel:+1234567890" className="flex items-center gap-3 rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-4 hover:bg-[var(--t-bg-card-hover)] transition-colors">
-          <div className="flex h-10 w-10 items-center justify-center rounded-[20px] bg-[var(--t-warning-soft)]">
-            <Phone className="h-5 w-5 text-amber-500" />
-          </div>
-          <div>
-            <p className="text-sm font-semibold text-[var(--t-text-primary)]">Contact Us</p>
-            <p className="text-xs text-[var(--t-text-muted)]">Call the office</p>
-          </div>
-        </a>
       </div>
 
       {/* Active Rentals */}
@@ -234,9 +310,70 @@ export default function PortalHomePage() {
               <button onClick={() => setExtendJobId(null)} className="rounded-full px-4 py-2 text-xs font-medium text-[var(--t-text-muted)]">Cancel</button>
               <button onClick={handleExtend} disabled={!extendDate || actionLoading}
                 className="rounded-full bg-[var(--t-accent)] px-4 py-2 text-xs font-semibold text-black disabled:opacity-40">
-                {actionLoading ? "Extending…" : "Confirm Extension"}
+                {actionLoading ? "Extending..." : "Confirm Extension"}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Report Issue Modal */}
+      {issueOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4" onClick={() => { setIssueOpen(false); setIssueSuccess(false); }}>
+          <div className="rounded-2xl border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6 w-full max-w-sm" onClick={e => e.stopPropagation()}>
+            {issueSuccess ? (
+              <div className="text-center py-4">
+                <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-[var(--t-accent-soft)]">
+                  <AlertCircle className="h-6 w-6 text-[var(--t-accent)]" />
+                </div>
+                <h3 className="text-sm font-semibold text-[var(--t-text-primary)] mb-1">Issue Reported</h3>
+                <p className="text-xs text-[var(--t-text-muted)]">Our office has been notified and will follow up shortly.</p>
+                <button onClick={() => { setIssueOpen(false); setIssueSuccess(false); }}
+                  className="mt-4 rounded-full bg-[var(--t-accent)] px-5 py-2 text-sm font-semibold text-black hover:opacity-90 transition-opacity">
+                  Done
+                </button>
+              </div>
+            ) : (
+              <>
+                <h3 className="text-sm font-semibold text-[var(--t-text-primary)] mb-4">Report an Issue</h3>
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-medium text-[var(--t-text-primary)] mb-1">What happened?</label>
+                    <select value={issueReason} onChange={e => setIssueReason(e.target.value)}
+                      className="w-full rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-3 py-2.5 text-sm text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)] appearance-none">
+                      <option value="">Select a reason...</option>
+                      {ISSUE_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-[var(--t-text-primary)] mb-1">Which rental? (optional)</label>
+                    <select value={issueJobId} onChange={e => setIssueJobId(e.target.value)}
+                      className="w-full rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-3 py-2.5 text-sm text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)] appearance-none">
+                      <option value="">All rentals</option>
+                      {active.map(r => (
+                        <option key={r.id} value={r.id}>
+                          {r.asset?.size || "Dumpster"} - {r.service_address?.formatted || r.service_address?.street || r.job_number}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-[var(--t-text-primary)] mb-1">Additional details (optional)</label>
+                    <textarea value={issueNotes} onChange={e => setIssueNotes(e.target.value)}
+                      placeholder="Tell us more about the issue..."
+                      rows={3}
+                      className="w-full rounded-[16px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-3 py-2.5 text-sm text-[var(--t-text-primary)] placeholder-[var(--t-text-muted)] outline-none focus:border-[var(--t-accent)] resize-none" />
+                  </div>
+                </div>
+                <div className="flex gap-2 justify-end mt-4">
+                  <button onClick={() => setIssueOpen(false)} className="rounded-full px-4 py-2 text-xs font-medium text-[var(--t-text-muted)]">Cancel</button>
+                  <button onClick={handleIssueSubmit} disabled={!issueReason || issueSubmitting}
+                    className="rounded-full bg-[var(--t-accent)] px-4 py-2 text-xs font-semibold text-black disabled:opacity-40 hover:opacity-90 transition-opacity">
+                    {issueSubmitting ? "Submitting..." : "Submit Report"}
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}

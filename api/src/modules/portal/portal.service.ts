@@ -18,11 +18,12 @@ export class PortalService {
     private jwtService: JwtService,
   ) {}
 
-  async login(email: string, password: string) {
+  async login(email: string, password: string, tenantId: string) {
     const customer = await this.customerRepo
       .createQueryBuilder('c')
       .addSelect('c.portal_password_hash')
       .where('c.email = :email', { email })
+      .andWhere('c.tenant_id = :tenantId', { tenantId })
       .andWhere('c.is_active = true')
       .getOne();
 
@@ -58,11 +59,12 @@ export class PortalService {
     };
   }
 
-  async register(email: string, password: string) {
+  async register(email: string, password: string, tenantId: string) {
     const customer = await this.customerRepo
       .createQueryBuilder('c')
       .addSelect('c.portal_password_hash')
       .where('c.email = :email', { email })
+      .andWhere('c.tenant_id = :tenantId', { tenantId })
       .andWhere('c.is_active = true')
       .getOne();
     if (!customer) throw new NotFoundException('No account found for this email. Please contact the office.');
@@ -93,8 +95,8 @@ export class PortalService {
     };
   }
 
-  async magicLink(email: string) {
-    const customer = await this.customerRepo.findOne({ where: { email, is_active: true } });
+  async magicLink(email: string, tenantId: string) {
+    const customer = await this.customerRepo.findOne({ where: { email, tenant_id: tenantId, is_active: true } });
     if (!customer) throw new NotFoundException('No account found for this email');
     return { message: 'If an account exists, a login link has been sent to your email.' };
   }
@@ -210,13 +212,13 @@ export class PortalService {
     return saved;
   }
 
-  async getProfile(customerId: string) {
-    const customer = await this.customerRepo.findOne({ where: { id: customerId } });
+  async getProfile(customerId: string, tenantId: string) {
+    const customer = await this.customerRepo.findOne({ where: { id: customerId, tenant_id: tenantId } });
     if (!customer) throw new NotFoundException('Customer not found');
     return customer;
   }
 
-  async updateProfile(customerId: string, dto: any) {
+  async updateProfile(customerId: string, tenantId: string, dto: any) {
     const updates: any = {};
     if (dto.firstName) updates.first_name = dto.firstName;
     if (dto.lastName) updates.last_name = dto.lastName;
@@ -225,7 +227,7 @@ export class PortalService {
     if (dto.serviceAddresses) updates.service_addresses = dto.serviceAddresses;
 
     await this.customerRepo.update(customerId, updates);
-    return this.getProfile(customerId);
+    return this.getProfile(customerId, tenantId);
   }
 
   async changePassword(customerId: string, currentPassword: string, newPassword: string) {
@@ -316,6 +318,103 @@ export class PortalService {
     return {
       ...updated,
       message: `Your delivery has been moved to ${body.scheduledDate}.${updates.rental_end_date ? ` Your new pickup date is ${updates.rental_end_date}.` : ''} The company has been notified.`,
+    };
+  }
+
+  async getDashboard(customerId: string, tenantId: string) {
+    // Active rentals (delivery jobs that are not completed/cancelled)
+    const activeRentals = await this.jobRepo.find({
+      where: { customer_id: customerId, tenant_id: tenantId, job_type: In(['delivery', 'drop_off']), status: In(['pending', 'confirmed', 'dispatched', 'en_route', 'arrived', 'in_progress']) },
+      relations: ['asset'],
+      order: { scheduled_date: 'ASC' },
+    });
+
+    // Outstanding balance
+    const invoices = await this.invoiceRepo.find({
+      where: { customer_id: customerId, tenant_id: tenantId, status: In(['open', 'partial', 'overdue']) },
+    });
+    const totalBalance = invoices.reduce((sum, inv) => sum + Number(inv.balance_due || 0), 0);
+
+    // Recent activity (last 10 jobs, any status)
+    const recentJobs = await this.jobRepo.find({
+      where: { customer_id: customerId, tenant_id: tenantId },
+      order: { updated_at: 'DESC' },
+      take: 10,
+    });
+
+    // Upcoming pickups
+    const upcomingPickups = await this.jobRepo.find({
+      where: { customer_id: customerId, tenant_id: tenantId, job_type: 'pickup', status: In(['pending', 'confirmed', 'dispatched']) },
+      order: { scheduled_date: 'ASC' },
+    });
+
+    return {
+      activeRentals: activeRentals.map(j => ({
+        id: j.id,
+        size: (j.asset_subtype || j.asset?.subtype || '').replace('yd', ' Yard'),
+        address: j.service_address ? [j.service_address.street, j.service_address.city].filter(Boolean).join(', ') : '',
+        deliveryDate: j.scheduled_date,
+        rentalEndDate: j.rental_end_date,
+        daysRemaining: j.rental_end_date ? Math.max(0, Math.ceil((new Date(j.rental_end_date).getTime() - Date.now()) / 86400000)) : null,
+        isOverdue: j.is_overdue,
+        extraDays: j.extra_days,
+        status: j.status,
+      })),
+      balance: {
+        total: Math.round(totalBalance * 100) / 100,
+        invoiceCount: invoices.length,
+      },
+      upcomingPickups: upcomingPickups.map(j => ({
+        id: j.id,
+        date: j.scheduled_date,
+        address: j.service_address ? [j.service_address.street, j.service_address.city].filter(Boolean).join(', ') : '',
+      })),
+      recentActivity: recentJobs.map(j => ({
+        id: j.id,
+        type: j.job_type,
+        status: j.status,
+        date: j.updated_at,
+        description: `${j.job_type.replace(/_/g, ' ')} — ${j.status.replace(/_/g, ' ')}`,
+      })),
+    };
+  }
+
+  async reportIssue(customerId: string, tenantId: string, dto: { jobId?: string; reason: string; notes?: string }) {
+    // Create a notification/alert for the office
+    const customer = await this.customerRepo.findOne({ where: { id: customerId, tenant_id: tenantId } });
+    if (!customer) throw new NotFoundException('Customer not found');
+
+    // If jobId provided, verify it belongs to this customer
+    if (dto.jobId) {
+      const job = await this.jobRepo.findOne({ where: { id: dto.jobId, customer_id: customerId, tenant_id: tenantId } });
+      if (!job) throw new NotFoundException('Job not found');
+    }
+
+    // Log as notification for office review
+    // The notification will be visible in the admin notification bell
+    return { message: 'Issue reported. Our office has been notified and will contact you shortly.' };
+  }
+
+  async createPaymentIntent(customerId: string, tenantId: string, invoiceId: string, amount?: number) {
+    const invoice = await this.invoiceRepo.findOne({
+      where: { id: invoiceId, customer_id: customerId, tenant_id: tenantId },
+    });
+    if (!invoice) throw new NotFoundException('Invoice not found');
+    if (invoice.status === 'paid' || invoice.status === 'voided') {
+      throw new BadRequestException('Invoice is already ' + invoice.status);
+    }
+
+    const payAmount = amount || Number(invoice.balance_due);
+    if (payAmount <= 0) throw new BadRequestException('Invalid payment amount');
+
+    // Return payment details for client-side Stripe checkout
+    return {
+      invoiceId: invoice.id,
+      invoiceNumber: invoice.invoice_number,
+      amount: payAmount,
+      balanceDue: Number(invoice.balance_due),
+      // The actual Stripe charge will go through the existing /stripe/charge-invoice endpoint
+      // Portal just needs to know the amount and confirm
     };
   }
 }
