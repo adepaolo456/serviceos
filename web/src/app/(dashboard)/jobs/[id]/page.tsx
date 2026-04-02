@@ -152,6 +152,14 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
   const [job, setJob] = useState<Job | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
+  const [dumpTickets, setDumpTickets] = useState<Array<{
+    id: string; ticket_number: string; waste_type: string; weight_tons: number;
+    total_cost: number; customer_charges: number; status: string; ticket_photo: string;
+    dump_location_name: string; submitted_at: string; overage_items: Array<{ label: string; quantity: number; total: number }>;
+    revisions?: Array<{ revision: number; changedBy: string; changedByRole: string; changedAt: string; changes: Record<string, { old: unknown; new: unknown }>; reason?: string }>;
+    voided_at?: string; void_reason?: string;
+  }>>([]);
+  const [showRevisions, setShowRevisions] = useState<string | null>(null);
 
   const fetchJob = async () => {
     try {
@@ -162,7 +170,14 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
     }
   };
 
-  useEffect(() => { fetchJob(); }, [id]);
+  const fetchDumpTickets = async () => {
+    try {
+      const data = await api.get<{ tickets: typeof dumpTickets }>(`/jobs/${id}/dump-slip`);
+      setDumpTickets(data.tickets || []);
+    } catch { /* */ }
+  };
+
+  useEffect(() => { fetchJob(); fetchDumpTickets(); }, [id]);
 
   const changeStatus = async (newStatus: string) => {
     if (actionLoading) return;
@@ -424,6 +439,131 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
                     <img src={p.url} alt={`Photo ${i + 1}`} className="h-full w-full object-cover" />
                   </div>
                 ))}
+              </div>
+            </Card>
+          )}
+
+          {/* Dump Tickets */}
+          {dumpTickets.length > 0 && (
+            <Card title={`Dump Tickets (${dumpTickets.length})`} icon={FileText}>
+              <div className="space-y-4">
+                {dumpTickets.map((t) => {
+                  const statusColors: Record<string, string> = {
+                    submitted: "bg-yellow-500/10 text-yellow-500",
+                    reviewed: "bg-emerald-500/10 text-emerald-400",
+                    corrected: "bg-orange-500/10 text-orange-400",
+                    voided: "bg-red-500/10 text-red-400",
+                  };
+                  return (
+                    <div key={t.id} className={`rounded-xl border p-4 space-y-2 ${t.status === "voided" ? "opacity-50 border-red-500/20" : "border-[var(--t-border)]"}`}>
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-semibold text-[var(--t-text-primary)]">
+                          Ticket #{t.ticket_number || "—"}
+                        </span>
+                        <span className={`text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full ${statusColors[t.status] || "bg-gray-500/10 text-gray-400"}`}>
+                          {t.status}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div>
+                          <span className="text-[var(--t-text-muted)]">Location: </span>
+                          <span className="text-[var(--t-text-primary)]">{t.dump_location_name}</span>
+                        </div>
+                        <div>
+                          <span className="text-[var(--t-text-muted)]">Waste: </span>
+                          <span className="text-[var(--t-text-primary)] capitalize">{t.waste_type?.replace(/_/g, " ")}</span>
+                        </div>
+                        <div>
+                          <span className="text-[var(--t-text-muted)]">Weight: </span>
+                          <span className="text-[var(--t-text-primary)]">{Number(t.weight_tons).toFixed(2)} tons</span>
+                        </div>
+                        <div>
+                          <span className="text-[var(--t-text-muted)]">Customer charges: </span>
+                          <span className="text-[var(--t-text-primary)]">{fmt(t.customer_charges)}</span>
+                        </div>
+                      </div>
+                      {t.void_reason && (
+                        <p className="text-xs text-red-400">Void reason: {t.void_reason}</p>
+                      )}
+                      {/* Actions */}
+                      {t.status !== "voided" && (
+                        <div className="flex gap-2 pt-1">
+                          <button
+                            onClick={async () => {
+                              const newWeight = prompt("Correct weight (tons):", String(t.weight_tons));
+                              if (!newWeight) return;
+                              try {
+                                await api.patch(`/dump-tickets/${t.id}`, { weightTons: Number(newWeight), reason: "Admin correction" });
+                                toast("success", "Dump ticket updated");
+                                fetchDumpTickets();
+                              } catch (e: any) { toast("error", e.message || "Failed to update"); }
+                            }}
+                            className="text-[10px] font-medium text-[var(--t-accent)] hover:underline"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            onClick={async () => {
+                              const reason = prompt("Void reason:");
+                              if (!reason) return;
+                              try {
+                                await api.post(`/dump-tickets/${t.id}/void`, { reason });
+                                toast("success", "Dump ticket voided");
+                                fetchDumpTickets();
+                              } catch (e: any) { toast("error", e.message || "Failed to void"); }
+                            }}
+                            className="text-[10px] font-medium text-[var(--t-error)] hover:underline"
+                          >
+                            Void
+                          </button>
+                          {t.status === "submitted" && (
+                            <button
+                              onClick={async () => {
+                                try {
+                                  await api.post(`/jobs/${id}/dump-slip/review`);
+                                  toast("success", "Dump slip reviewed");
+                                  fetchDumpTickets();
+                                } catch (e: any) { toast("error", e.message || "Failed"); }
+                              }}
+                              className="text-[10px] font-medium text-emerald-400 hover:underline"
+                            >
+                              Finalize
+                            </button>
+                          )}
+                          {t.revisions && t.revisions.length > 0 && (
+                            <button
+                              onClick={() => setShowRevisions(showRevisions === t.id ? null : t.id)}
+                              className="text-[10px] font-medium text-[var(--t-text-muted)] hover:underline"
+                            >
+                              {showRevisions === t.id ? "Hide" : "Show"} History ({t.revisions.length})
+                            </button>
+                          )}
+                        </div>
+                      )}
+                      {/* Correction History */}
+                      {showRevisions === t.id && t.revisions && t.revisions.length > 0 && (
+                        <div className="mt-2 border-t border-[var(--t-border)] pt-2 space-y-2">
+                          <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--t-text-muted)]">Correction History</p>
+                          {t.revisions.map((rev, ri) => (
+                            <div key={ri} className="text-xs space-y-0.5 pl-2 border-l-2 border-[var(--t-border)]">
+                              <p className="text-[var(--t-text-muted)]">
+                                Rev {rev.revision} &middot; {rev.changedByRole} &middot; {new Date(rev.changedAt).toLocaleString()}
+                              </p>
+                              {rev.reason && <p className="text-[var(--t-text-secondary)]">Reason: {rev.reason}</p>}
+                              {Object.entries(rev.changes).map(([field, val]) => (
+                                <p key={field} className="text-[var(--t-text-primary)]">
+                                  <span className="text-[var(--t-text-muted)]">{field.replace(/_/g, " ")}:</span>{" "}
+                                  <span className="line-through text-red-400">{String(val.old)}</span>{" → "}
+                                  <span className="text-emerald-400">{String(val.new)}</span>
+                                </p>
+                              ))}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </Card>
           )}

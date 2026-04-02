@@ -4,7 +4,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAppTheme } from '../../constants/theme';
-import { getDumpLocations, submitDumpSlip } from '../../src/api';
+import { getDumpLocations, submitDumpSlip, getDumpSlips, updateDumpTicket } from '../../src/api';
 
 interface DumpLocation {
   id: string;
@@ -40,6 +40,11 @@ export default function DumpSlipScreen() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
+  // Edit mode: if a ticket already exists for this job, load it
+  const [editMode, setEditMode] = useState(false);
+  const [existingTicketId, setExistingTicketId] = useState<string | null>(null);
+  const [editBlocked, setEditBlocked] = useState(false);
+
   // Form state
   const [selectedLocation, setSelectedLocation] = useState<DumpLocation | null>(null);
   const [ticketNumber, setTicketNumber] = useState('');
@@ -49,7 +54,32 @@ export default function DumpSlipScreen() {
   const [dumpSlipPhoto, setDumpSlipPhoto] = useState<string | null>(null);
 
   useEffect(() => {
-    getDumpLocations().then(setLocations).catch(() => {}).finally(() => setLoading(false));
+    const init = async () => {
+      try {
+        const [locs, slips] = await Promise.all([getDumpLocations(), getDumpSlips(jobId!)]);
+        setLocations(locs);
+        // Check if there's an existing ticket we can edit
+        const activeTickets = (slips.tickets || []).filter((t: any) => t.status !== 'voided');
+        if (activeTickets.length > 0) {
+          const t = activeTickets[0];
+          // If reviewed, driver can't edit
+          if (t.status === 'reviewed') {
+            setEditBlocked(true);
+          }
+          setEditMode(true);
+          setExistingTicketId(t.id);
+          setTicketNumber(t.ticket_number || '');
+          setWasteType(t.waste_type || '');
+          setWeightTons(String(t.weight_tons || ''));
+          setDumpSlipPhoto(t.ticket_photo || null);
+          // Try to select matching location
+          const matchLoc = locs.find((l: DumpLocation) => l.id === t.dump_location_id);
+          if (matchLoc) setSelectedLocation(matchLoc);
+        }
+      } catch { /* */ }
+      setLoading(false);
+    };
+    init();
   }, []);
 
   const addSurcharge = (item: { item_type: string; label: string; customer_charge: string }) => {
@@ -72,14 +102,28 @@ export default function DumpSlipScreen() {
     }
     setSubmitting(true);
     try {
-      await submitDumpSlip(jobId!, {
-        dumpLocationId: selectedLocation.id,
-        ticketNumber,
-        wasteType,
-        weightTons: parseFloat(weightTons),
-        surchargeItems: surcharges.map(s => ({ itemType: s.itemType, quantity: s.quantity })),
-      });
-      Alert.alert('Dump Slip Submitted', 'Dump complete', [{ text: 'OK', onPress: () => router.replace('/(tabs)' as any) }]);
+      if (editMode && existingTicketId) {
+        // Update existing ticket
+        await updateDumpTicket(existingTicketId, {
+          dumpLocationId: selectedLocation.id,
+          ticketNumber,
+          wasteType,
+          weightTons: parseFloat(weightTons),
+          overageItems: surcharges.map(s => ({ type: s.itemType, quantity: s.quantity })),
+          ticketPhoto: dumpSlipPhoto || undefined,
+          reason: 'Driver correction',
+        });
+        Alert.alert('Dump Slip Updated', 'Correction saved', [{ text: 'OK', onPress: () => router.replace('/(tabs)' as any) }]);
+      } else {
+        await submitDumpSlip(jobId!, {
+          dumpLocationId: selectedLocation.id,
+          ticketNumber,
+          wasteType,
+          weightTons: parseFloat(weightTons),
+          surchargeItems: surcharges.map(s => ({ itemType: s.itemType, quantity: s.quantity })),
+        });
+        Alert.alert('Dump Slip Submitted', 'Dump complete', [{ text: 'OK', onPress: () => router.replace('/(tabs)' as any) }]);
+      }
     } catch (err: any) {
       Alert.alert('Error', err.message || 'Failed to submit');
     } finally {
@@ -95,6 +139,23 @@ export default function DumpSlipScreen() {
     );
   }
 
+  if (editBlocked) {
+    return (
+      <View style={{ flex: 1, backgroundColor: colors.background, justifyContent: 'center', alignItems: 'center', padding: 32 }}>
+        <Ionicons name="lock-closed" size={48} color={colors.textSecondary} />
+        <Text style={{ fontSize: 18, fontWeight: '700', color: colors.frameText, marginTop: 16, textAlign: 'center' }}>
+          This stop has been finalized
+        </Text>
+        <Text style={{ fontSize: 14, color: colors.textSecondary, marginTop: 8, textAlign: 'center' }}>
+          Contact dispatch/admin to correct it.
+        </Text>
+        <TouchableOpacity onPress={() => router.back()} style={{ marginTop: 24, backgroundColor: colors.accent, borderRadius: 12, paddingHorizontal: 24, paddingVertical: 12 }}>
+          <Text style={{ fontSize: 15, fontWeight: '600', color: '#000' }}>Go Back</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       {/* Header */}
@@ -102,7 +163,7 @@ export default function DumpSlipScreen() {
         <TouchableOpacity onPress={() => router.back()} style={{ marginBottom: 12 }}>
           <Ionicons name="arrow-back" size={24} color={colors.frameText} />
         </TouchableOpacity>
-        <Text style={{ fontSize: 22, fontWeight: '800', color: colors.frameText }}>Dump Slip</Text>
+        <Text style={{ fontSize: 22, fontWeight: '800', color: colors.frameText }}>{editMode ? 'Edit Dump Slip' : 'Dump Slip'}</Text>
         {customerName && <Text style={{ fontSize: 14, color: colors.frameTextMuted, marginTop: 4 }}>{customerName}</Text>}
         {/* Step indicators */}
         <View style={{ flexDirection: 'row', gap: 8, marginTop: 16 }}>
@@ -281,7 +342,7 @@ export default function DumpSlipScreen() {
           ) : (
             <TouchableOpacity onPress={handleSubmit} disabled={submitting || !dumpSlipPhoto}
               style={{ flex: 1, paddingVertical: 16, borderRadius: 20, backgroundColor: colors.accent, alignItems: 'center', opacity: (submitting || !dumpSlipPhoto) ? 0.5 : 1 }}>
-              {submitting ? <ActivityIndicator color="#000" /> : <Text style={{ fontSize: 15, fontWeight: '700', color: '#000' }}>Submit Dump Slip</Text>}
+              {submitting ? <ActivityIndicator color="#000" /> : <Text style={{ fontSize: 15, fontWeight: '700', color: '#000' }}>{editMode ? 'Save Correction' : 'Submit Dump Slip'}</Text>}
             </TouchableOpacity>
           )}
         </View>
