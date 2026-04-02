@@ -208,6 +208,7 @@ export class PriceResolutionService {
   /**
    * Resolve delivery zone surcharge based on driving distance from yard.
    */
+  // Legacy — no longer used for pricing. Distance-band model in PricingService.calculateDistanceCharge() replaces this.
   async resolveDeliveryZone(
     tenantId: string,
     customerLat?: number | null,

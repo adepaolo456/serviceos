@@ -255,7 +255,7 @@ export class DumpLocationsService {
       where: { tenant_id: tenantId, asset_subtype: job.asset?.subtype || undefined, is_active: true },
     });
     const includedTons = pricingRule ? Number(pricingRule.included_tons) || 0 : 0;
-    const overageRatePerTon = pricingRule ? Number(pricingRule.overage_per_ton) || ratePerTon : ratePerTon;
+    const overageRatePerTon = pricingRule ? Number(pricingRule.overage_per_ton) : 0;
     // Get tenant's customer overage rates
     const tenantRates = await this.jobRepo.query(`SELECT customer_overage_rates FROM tenants WHERE id = $1`, [tenantId]);
     const customerRates = tenantRates?.[0]?.customer_overage_rates || {};
@@ -314,15 +314,6 @@ export class DumpLocationsService {
     // Auto-create draft invoice if customer has overage charges
     let invoiceId: string | null = null;
     if (customerCharges > 0) {
-      const lineItems: Array<{ description: string; quantity: number; unitPrice: number; amount: number }> = [];
-      if (customerTonnageOverage > 0) {
-        const overTons = weightTons - includedTons;
-        lineItems.push({ description: `Weight overage: ${overTons.toFixed(2)} tons over ${includedTons} ton allowance @ $${overageRatePerTon}/ton`, quantity: 1, unitPrice: customerTonnageOverage, amount: customerTonnageOverage });
-      }
-      for (const item of calculatedItems) {
-        lineItems.push({ description: `${item.label} (qty: ${item.quantity}) @ $${item.chargePerUnit}/each`, quantity: item.quantity, unitPrice: item.chargePerUnit, amount: item.total });
-      }
-
       const invNumResult = await this.invoiceRepo.query(
         `SELECT next_invoice_number($1) as num`, [tenantId],
       );
@@ -333,22 +324,43 @@ export class DumpLocationsService {
         job_id: jobId, status: 'draft', invoice_date: today,
         due_date: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0],
         subtotal: customerCharges, total: customerCharges, balance_due: customerCharges,
+        tax_amount: 0,
         summary_of_work: `Auto-generated from dump ticket #${ticketNumber} at ${location.name}`,
       } as Partial<Invoice>);
       const savedInvoice = await this.invoiceRepo.save(invoice);
 
-      // Create line items
-      for (let idx = 0; idx < lineItems.length; idx++) {
-        const li = lineItems[idx];
+      // Create line items — tonnage overages
+      let sortIdx = 0;
+      if (customerTonnageOverage > 0) {
+        const overTons = weightTons - includedTons;
         await this.lineItemRepo.save(this.lineItemRepo.create({
           invoice_id: savedInvoice.id,
-          sort_order: idx,
+          sort_order: sortIdx++,
           line_type: 'overage',
-          name: li.description,
-          quantity: li.quantity,
-          unit_rate: li.unitPrice,
-          amount: li.amount,
-          net_amount: li.amount,
+          name: `Weight overage: ${overTons.toFixed(2)} tons over ${includedTons} ton allowance @ $${overageRatePerTon}/ton`,
+          quantity: 1,
+          unit_rate: customerTonnageOverage,
+          amount: customerTonnageOverage,
+          net_amount: customerTonnageOverage,
+          is_taxable: false,
+          tax_rate: 0,
+          tax_amount: 0,
+        }));
+      }
+      // Create line items — surcharge items
+      for (const item of calculatedItems) {
+        await this.lineItemRepo.save(this.lineItemRepo.create({
+          invoice_id: savedInvoice.id,
+          sort_order: sortIdx++,
+          line_type: 'surcharge_item',
+          name: item.label,
+          quantity: item.quantity,
+          unit_rate: item.chargePerUnit,
+          amount: item.total,
+          net_amount: item.total,
+          is_taxable: false,
+          tax_rate: 0,
+          tax_amount: 0,
         }));
       }
       invoiceId = savedInvoice.id;

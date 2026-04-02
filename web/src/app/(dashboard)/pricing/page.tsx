@@ -50,7 +50,7 @@ export default function PricingPage() {
   const [quoteEmail, setQuoteEmail] = useState("");
   const [quotePhone, setQuotePhone] = useState("");
   const [quoteSending, setQuoteSending] = useState(false);
-  const [distanceInfo, setDistanceInfo] = useState<{ distanceMiles: number; zone: { name: string; surcharge: number } | null; outsideServiceArea: boolean; maxServiceMiles: number } | null>(null);
+  const [distanceInfo, setDistanceInfo] = useState<{ distanceMiles: number; distanceCharge: number; bands: number; extraMiles: number; freeRadius: number; zone: { name: string; surcharge: number } | null; outsideServiceArea: boolean; maxServiceMiles: number } | null>(null);
   const [zones, setZones] = useState<Array<{ id: string; zone_name: string; min_miles: number; max_miles: number; surcharge: number }>>([]);
   const [editingZone, setEditingZone] = useState<string | null>(null);
   const [zoneForm, setZoneForm] = useState({ zoneName: "", minMiles: "", maxMiles: "", surcharge: "" });
@@ -93,8 +93,8 @@ export default function PricingPage() {
   }, [quoteCoords]);
 
   const selectedRule = rules.find((r) => r.asset_subtype === quoteSize);
-  const deliverySurcharge = distanceInfo?.zone?.surcharge || 0;
-  const totalQuoted = selectedRule ? Number(selectedRule.base_price) + deliverySurcharge : 0;
+  const distanceCharge = distanceInfo?.distanceCharge || 0;
+  const totalQuoted = selectedRule ? Number(selectedRule.base_price) + distanceCharge : 0;
 
   const saveRule = async (data: Partial<PricingRule>) => {
     if (!editRule) return;
@@ -256,10 +256,10 @@ export default function PricingPage() {
                 <div className="flex justify-between"><span>Base price</span><span style={{ color: "var(--t-text-primary)" }}>${Number(selectedRule.base_price).toLocaleString()}</span></div>
                 {distanceInfo && !distanceInfo.outsideServiceArea && (
                   <div className="flex justify-between">
-                    <span>Delivery zone</span>
-                    <span style={{ color: deliverySurcharge > 0 ? "var(--t-warning)" : "var(--t-accent)" }}>
-                      {distanceInfo.zone ? `${distanceInfo.zone.name} · ${distanceInfo.distanceMiles} mi` : `${distanceInfo.distanceMiles} mi`}
-                      {deliverySurcharge > 0 ? ` (+$${deliverySurcharge})` : " (Free)"}
+                    <span>Delivery distance</span>
+                    <span style={{ color: distanceCharge > 0 ? "var(--t-warning)" : "var(--t-accent)" }}>
+                      {distanceInfo.distanceMiles} mi
+                      {distanceCharge > 0 ? ` (+$${distanceCharge})` : " (Free — within 15 mi)"}
                     </span>
                   </div>
                 )}

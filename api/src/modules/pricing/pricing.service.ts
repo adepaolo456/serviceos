@@ -185,7 +185,7 @@ export class PricingService {
     const rule = await qb.getOne();
     if (!rule) {
       throw new BadRequestException(
-        `No active pricing rule found for ${dto.serviceType} / ${dto.assetSubtype}`,
+        `No active pricing available for ${dto.assetSubtype} dumpsters. This size cannot be quoted or booked at this time.`,
       );
     }
 
@@ -202,19 +202,16 @@ export class PricingService {
       }
     }
 
-    const distanceMiles = this.haversine(
-      dto.customerLat,
-      dto.customerLng,
-      yardLat,
-      yardLng,
-    );
+    // Distance-band model replaces legacy per-mile pricing
+    const distanceBand = this.calculateDistanceCharge(yardLat, yardLng, dto.customerLat, dto.customerLng);
+    const distanceSurcharge = distanceBand.distanceCharge;
 
     if (
       rule.max_service_miles &&
-      distanceMiles > Number(rule.max_service_miles)
+      distanceBand.distanceMiles > Number(rule.max_service_miles)
     ) {
       throw new BadRequestException(
-        `Distance ${distanceMiles.toFixed(1)} miles exceeds max service radius of ${rule.max_service_miles} miles`,
+        `Distance ${distanceBand.distanceMiles.toFixed(1)} miles exceeds max service radius of ${rule.max_service_miles} miles`,
       );
     }
 
@@ -222,11 +219,6 @@ export class PricingService {
     const includedDays = Number(rule.rental_period_days);
     const extraDays = Math.max(0, rentalDays - includedDays);
     const extraDayCharges = extraDays * Number(rule.extra_day_rate);
-
-    const includedMiles = Number(rule.included_miles);
-    const excessMiles = Math.max(0, distanceMiles - includedMiles);
-    const distanceSurcharge =
-      Math.round(excessMiles * Number(rule.per_mile_charge) * 100) / 100;
 
     let jobFee = 0;
     let exchangeDiscount = 0;
@@ -271,11 +263,11 @@ export class PricingService {
         extraDays,
         extraDayRate: Number(rule.extra_day_rate),
         extraDayCharges,
-        distanceMiles: Math.round(distanceMiles * 100) / 100,
-        includedMiles,
-        excessMiles: Math.round(excessMiles * 100) / 100,
-        perMileCharge: Number(rule.per_mile_charge),
-        distanceSurcharge,
+        distanceMiles: distanceBand.distanceMiles,
+        includedMiles: 15,
+        excessMiles: distanceBand.extraMiles,
+        perMileCharge: 25,
+        distanceSurcharge: distanceBand.distanceCharge,
         jobType: dto.jobType,
         jobFee,
         subtotal,
@@ -320,6 +312,26 @@ export class PricingService {
   async deleteTemplate(id: string) {
     await this.templateRepo.update(id, { is_active: false });
     return { message: 'Deleted' };
+  }
+
+  /**
+   * Distance-band pricing: first 15 miles free, then $25 per 5-mile band (ceiling).
+   */
+  calculateDistanceCharge(
+    yardLat: number | null | undefined,
+    yardLng: number | null | undefined,
+    customerLat: number,
+    customerLng: number,
+  ): { distanceMiles: number; extraMiles: number; bands: number; distanceCharge: number } {
+    if (!yardLat || !yardLng) {
+      throw new BadRequestException('Yard address not geocoded — cannot calculate distance pricing');
+    }
+    const distanceMiles = this.haversine(customerLat, customerLng, yardLat, yardLng);
+    const rounded = Math.round(distanceMiles * 100) / 100;
+    const extraMiles = Math.max(rounded - 15, 0);
+    const bands = Math.ceil(extraMiles / 5);
+    const distanceCharge = bands * 25;
+    return { distanceMiles: rounded, extraMiles, bands, distanceCharge };
   }
 
   private haversine(

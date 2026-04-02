@@ -66,6 +66,7 @@ export class BillingService {
       invoice_date: today,
       due_date: dto.dueDate || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
       summary_of_work: dto.notes,
+      tax_amount: 0,
     });
 
     const saved = await this.invoicesRepository.save(invoice);
