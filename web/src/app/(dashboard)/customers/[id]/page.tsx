@@ -3,6 +3,7 @@
 import { useState, useEffect, use, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useBooking } from "@/components/booking-provider";
 import {
   ArrowLeft, Mail, Phone, MapPin, Building, Calendar, Pencil, Trash2,
   Briefcase, FileText, DollarSign, Clock, Plus, MessageSquare,
@@ -86,6 +87,7 @@ type Tab = typeof TABS[number]["key"];
 export default function CustomerDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
+  const { openWizard } = useBooking();
   const { toast } = useToast();
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -175,7 +177,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
           </div>
           {/* Quick Actions */}
           <div className="flex items-center gap-2 shrink-0 flex-wrap">
-            <Link href="/book" className="flex items-center gap-1.5 rounded-full bg-[var(--t-accent)] px-4 py-2 text-xs font-semibold text-black hover:opacity-90 transition-opacity"><Plus className="h-3.5 w-3.5" /> New Job</Link>
+            <button onClick={() => openWizard({ customerId: id })} className="flex items-center gap-1.5 rounded-full bg-[var(--t-accent)] px-4 py-2 text-xs font-semibold text-black hover:opacity-90 transition-opacity border-none cursor-pointer"><Plus className="h-3.5 w-3.5" /> New Job</button>
             {customer.phone && <a href={`tel:${customer.phone}`} className="flex items-center gap-1.5 rounded-full border border-[var(--t-border)] bg-transparent px-3 py-2 text-xs font-medium text-[var(--t-text-primary)] hover:bg-[var(--t-bg-card-hover)] transition-colors"><Phone className="h-3.5 w-3.5" /> Call</a>}
             {customer.email && <a href={`mailto:${customer.email}`} className="flex items-center gap-1.5 rounded-full border border-[var(--t-border)] bg-transparent px-3 py-2 text-xs font-medium text-[var(--t-text-primary)] hover:bg-[var(--t-bg-card-hover)] transition-colors"><Mail className="h-3.5 w-3.5" /> Email</a>}
             <button onClick={() => setEditOpen(true)} className="rounded-full border border-[var(--t-border)] bg-transparent p-2 text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)] hover:bg-[var(--t-bg-card-hover)] transition-colors"><Pencil className="h-3.5 w-3.5" /></button>

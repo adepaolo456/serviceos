@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
+import { useBooking } from "@/components/booking-provider";
 import {
   Plus, Search, Users, MoreHorizontal, Trash2, Phone as PhoneIcon,
   Mail, Briefcase, FileText, ArrowUpDown, Pencil,
@@ -54,6 +55,7 @@ type SortDir = "asc" | "desc";
 
 export default function CustomersPage() {
   const router = useRouter();
+  const { openWizard } = useBooking();
   const { toast } = useToast();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [total, setTotal] = useState(0);
@@ -421,7 +423,7 @@ export default function CustomersPage() {
                         <button onClick={() => router.push(`/customers/${c.id}`)} className="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-dark-card-hover" style={{ color: "var(--t-text-primary)" }}>
                           <Pencil style={{ width: 14, height: 14, color: "var(--t-text-muted)" }} /> Edit
                         </button>
-                        <button onClick={() => router.push(`/book`)} className="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-dark-card-hover" style={{ color: "var(--t-text-primary)" }}>
+                        <button onClick={() => openWizard({ customerId: c.id })} className="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-dark-card-hover" style={{ color: "var(--t-text-primary)" }}>
                           <Briefcase style={{ width: 14, height: 14, color: "var(--t-text-muted)" }} /> Create Job
                         </button>
                         <button onClick={() => router.push(`/invoices`)} className="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-dark-card-hover" style={{ color: "var(--t-text-primary)" }}>

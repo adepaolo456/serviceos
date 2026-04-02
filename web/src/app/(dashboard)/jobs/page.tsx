@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
+import { useBooking } from "@/components/booking-provider";
 import {
   Plus,
   Briefcase,
@@ -166,6 +167,7 @@ function getDateRange(range: string): { dateFrom?: string; dateTo?: string } {
 
 export default function JobsPage() {
   const router = useRouter();
+  const { openWizard } = useBooking();
   const { toast } = useToast();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [total, setTotal] = useState(0);
@@ -289,7 +291,7 @@ export default function JobsPage() {
             ))}
           </div>
           <button
-            onClick={() => router.push("/book")}
+            onClick={() => openWizard()}
             style={{
               display: "inline-flex", alignItems: "center", gap: 8,
               background: "#22C55E", color: "#000", fontWeight: 600, fontSize: 14,
