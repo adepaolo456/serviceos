@@ -11,6 +11,7 @@ import { InvoiceLineItem } from './entities/invoice-line-item.entity';
 import { Tenant } from '../tenants/entities/tenant.entity';
 import { RentalChain } from '../rental-chains/entities/rental-chain.entity';
 import { TaskChainLink } from '../rental-chains/entities/task-chain-link.entity';
+import { PricingRule } from '../pricing/entities/pricing-rule.entity';
 
 @ApiTags('Bookings')
 @ApiBearerAuth()
@@ -215,6 +216,7 @@ export class BookingsController {
     const invNum = invoiceNumber[0].num;
     const isPaid = body.paymentMethod === 'card';
     const today = new Date().toISOString().split('T')[0];
+    const taxAmt = body.taxAmount || 0;
 
     const invoice = this.invoicesRepo.create({
       tenant_id: tenantId,
@@ -227,7 +229,7 @@ export class BookingsController {
       due_date: body.deliveryDate,
       service_date: body.deliveryDate,
       subtotal: body.basePrice + body.deliveryFee,
-      tax_amount: body.taxAmount,
+      tax_amount: taxAmt,
       total: body.totalPrice,
       amount_paid: isPaid ? body.totalPrice : 0,
       balance_due: isPaid ? 0 : body.totalPrice,
@@ -235,6 +237,34 @@ export class BookingsController {
       summary_of_work: `${body.assetSubtype} ${body.serviceType.replace(/_/g, ' ')} — ${body.rentalDays}-day rental`,
     } as Partial<Invoice> as Invoice);
     const savedInvoice = await this.invoicesRepo.save(invoice);
+
+    // Pricing snapshot for historical accuracy
+    try {
+      const pricingRule = await this.dataSource.getRepository(PricingRule).findOne({
+        where: { tenant_id: tenantId, asset_subtype: body.assetSubtype, is_active: true },
+      });
+      if (pricingRule) {
+        const snapshot = {
+          capturedAt: new Date().toISOString(),
+          pricingRuleId: pricingRule.id,
+          pricingRuleName: pricingRule.name,
+          basePrice: Number(pricingRule.base_price),
+          includedTons: Number(pricingRule.included_tons),
+          overagePerTon: Number(pricingRule.overage_per_ton),
+          extraDayRate: Number(pricingRule.extra_day_rate),
+          rentalPeriodDays: pricingRule.rental_period_days,
+          exchangeFee: Number(pricingRule.exchange_fee),
+          taxRate: Number(pricingRule.tax_rate),
+          taxEnabled: Number(pricingRule.tax_rate) > 0,
+          distanceCharge: 0,
+          distanceMiles: 0,
+        };
+        await this.invoicesRepo.update(savedInvoice.id, {
+          pricing_rule_snapshot: snapshot,
+          pricing_tier_used: 'global',
+        } as Partial<Invoice>);
+      }
+    } catch { /* non-fatal */ }
 
     // Create line items
     const rentalItem = this.lineItemRepo.create({

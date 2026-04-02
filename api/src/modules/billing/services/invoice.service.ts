@@ -719,8 +719,8 @@ export class InvoiceService {
     }
 
     li.net_amount = Math.round((li.amount - discountAmt) * 100) / 100;
-    li.tax_amount = li.is_taxable
-      ? Math.round(li.net_amount * Number(li.tax_rate || 0) * 100) / 100
+    li.tax_amount = (li.is_taxable && Number(li.tax_rate || 0) > 0)
+      ? Math.round(li.net_amount * Number(li.tax_rate) * 100) / 100
       : 0;
   }
 

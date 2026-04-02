@@ -141,15 +141,25 @@ export class PricingController {
     );
     const distRounded = Math.round(dist * 10) / 10;
 
+    // Distance-band model: first 15 miles free, then $25 per 5-mile band (ceiling)
+    const distanceBand = this.pricingService.calculateDistanceCharge(
+      Number(tenant.yard_latitude), Number(tenant.yard_longitude),
+      Number(destLat), Number(destLng),
+    );
+
+    // Legacy — no longer used for pricing. Distance-band model in PricingService replaces this.
     const zones = await this.zoneRepo.find({ where: { tenant_id: tenantId, is_active: true }, order: { sort_order: 'ASC' } });
     const matchedZone = zones.find(z => distRounded >= Number(z.min_miles) && distRounded < Number(z.max_miles));
     const maxZone = zones.length > 0 ? Math.max(...zones.map(z => Number(z.max_miles))) : 0;
 
     return {
       distanceMiles: distRounded,
+      distanceCharge: distanceBand.distanceCharge,
+      bands: distanceBand.bands,
+      extraMiles: distanceBand.extraMiles,
+      freeRadius: 15,
       zone: matchedZone ? { id: matchedZone.id, name: matchedZone.zone_name, surcharge: Number(matchedZone.surcharge) } : null,
       outsideServiceArea: maxZone > 0 && distRounded >= maxZone,
-      maxServiceMiles: maxZone,
     };
   }
 
