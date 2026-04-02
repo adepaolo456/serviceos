@@ -1,0 +1,1101 @@
+"use client";
+
+import { useState, useEffect, useRef, useCallback } from "react";
+import { X, Plus, Loader2, MapPin, Check, ToggleLeft, ToggleRight } from "lucide-react";
+import { api } from "@/lib/api";
+import { useToast } from "@/components/toast";
+import { formatCurrency } from "@/lib/utils";
+import AddressAutocomplete, { type AddressValue } from "@/components/address-autocomplete";
+
+/* ------------------------------------------------------------------ */
+/*  Types                                                              */
+/* ------------------------------------------------------------------ */
+
+interface BookingWizardProps {
+  open: boolean;
+  onClose: () => void;
+  onComplete?: () => void;
+  prefillCustomerId?: string;
+  prefillDate?: string;
+}
+
+interface CustomerSearchResult {
+  id: string;
+  account_id: string;
+  first_name: string;
+  last_name: string;
+  company_name?: string;
+  email: string;
+  phone: string;
+  type?: string;
+  billing_address?: AddressFields;
+  service_addresses?: AddressFields[];
+  customer_preferences?: { additionalContacts?: ContactRow[] };
+}
+
+interface AddressFields {
+  street: string;
+  street2?: string;
+  city: string;
+  state: string;
+  zip: string;
+  county?: string;
+  lat?: number | null;
+  lng?: number | null;
+}
+
+interface ContactRow {
+  name?: string;
+  value: string;
+  role: string;
+}
+
+interface PricingOption {
+  id: string;
+  asset_subtype: string;
+  base_price: number;
+  included_tons?: number;
+  overage_per_ton?: number;
+  rental_period_days?: number;
+}
+
+interface PriceQuote {
+  base_price: number;
+  weight_allowance: number;
+  overage_rate: number;
+  total: number;
+}
+
+interface AvailabilityResponse {
+  availableOnDate: number;
+  availableNow: number;
+  total: number;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Constants                                                          */
+/* ------------------------------------------------------------------ */
+
+const US_STATES = [
+  "AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA","HI","ID","IL","IN","IA",
+  "KS","KY","LA","ME","MD","MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ",
+  "NM","NY","NC","ND","OH","OK","OR","PA","RI","SC","SD","TN","TX","UT","VT",
+  "VA","WA","WV","WI","WY","DC",
+];
+
+const CONTACT_ROLES = ["Accounting", "Site Contact", "Property Manager", "General"];
+const RENTAL_LENGTHS = [7, 14, 21, 30];
+const PRIORITIES = ["Normal", "First Stop", "Last Stop", "AM Only", "PM Only"];
+
+const INPUT_CLASS =
+  "w-full rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-3 text-sm outline-none transition-colors focus:border-[var(--t-accent)] focus:ring-1 focus:ring-[var(--t-accent)]";
+
+const LABEL_CLASS = "block text-[11px] font-semibold uppercase tracking-wide mb-1.5";
+
+/* ------------------------------------------------------------------ */
+/*  Helpers                                                            */
+/* ------------------------------------------------------------------ */
+
+function getNextBusinessDay(offset = 1): string {
+  const d = new Date();
+  let added = 0;
+  while (added < offset) {
+    d.setDate(d.getDate() + 1);
+    const day = d.getDay();
+    if (day !== 0 && day !== 6) added++;
+  }
+  return d.toISOString().split("T")[0];
+}
+
+function addDays(dateStr: string, days: number): string {
+  const d = new Date(dateStr + "T00:00:00");
+  d.setDate(d.getDate() + days);
+  return d.toISOString().split("T")[0];
+}
+
+function SectionDivider({ label }: { label: string }) {
+  return (
+    <div className="relative flex items-center py-4">
+      <div className="flex-1 h-px" style={{ backgroundColor: "var(--t-border)" }} />
+      <span
+        className="px-3 text-[11px] font-semibold uppercase tracking-wide"
+        style={{ color: "var(--t-text-muted)" }}
+      >
+        {label}
+      </span>
+      <div className="flex-1 h-px" style={{ backgroundColor: "var(--t-border)" }} />
+    </div>
+  );
+}
+
+function TileButton({
+  selected,
+  onClick,
+  title,
+  subtitle,
+}: {
+  selected: boolean;
+  onClick: () => void;
+  title: string;
+  subtitle: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex-1 rounded-[20px] border px-4 py-3 text-left transition-colors"
+      style={{
+        backgroundColor: selected ? "var(--t-accent-soft)" : "var(--t-bg-card)",
+        borderColor: selected ? "var(--t-accent)" : "var(--t-border)",
+      }}
+    >
+      <span className="block text-sm font-medium" style={{ color: "var(--t-text-primary)" }}>
+        {title}
+      </span>
+      <span className="block text-xs mt-0.5" style={{ color: "var(--t-text-muted)" }}>
+        {subtitle}
+      </span>
+    </button>
+  );
+}
+
+function ProgressDots({ step }: { step: number }) {
+  return (
+    <div className="flex items-center justify-center gap-2 py-3">
+      {[1, 2, 3].map((s) => (
+        <div
+          key={s}
+          className="h-2 w-2 rounded-full transition-colors"
+          style={{
+            backgroundColor: s <= step ? "var(--t-accent)" : "var(--t-text-muted)",
+            opacity: s <= step ? 1 : 0.3,
+          }}
+        />
+      ))}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Main component                                                     */
+/* ------------------------------------------------------------------ */
+
+export default function BookingWizard({
+  open,
+  onClose,
+  onComplete,
+  prefillCustomerId,
+  prefillDate,
+}: BookingWizardProps) {
+  const { toast } = useToast();
+  const [step, setStep] = useState(1);
+
+  // Step 1 — Customer
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [companyName, setCompanyName] = useState("");
+  const [clientType, setClientType] = useState<"residential" | "commercial" | "">("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [additionalContacts, setAdditionalContacts] = useState<ContactRow[]>([]);
+  const [selectedCustomer, setSelectedCustomer] = useState<CustomerSearchResult | null>(null);
+  const [searchResults, setSearchResults] = useState<CustomerSearchResult[]>([]);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [serviceAddressMode, setServiceAddressMode] = useState<"same" | "different" | "existing">("same");
+  const [selectedAddressIdx, setSelectedAddressIdx] = useState(0);
+  const [newServiceAddress, setNewServiceAddress] = useState<AddressFields>({ street: "", city: "", state: "", zip: "" });
+  const searchRef = useRef<HTMLDivElement>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Step 2 — Billing address
+  const [billingAddress, setBillingAddress] = useState<AddressFields>({ street: "", street2: "", city: "", state: "", zip: "", county: "" });
+
+  // Step 3 — Schedule
+  const [taskType, setTaskType] = useState<"drop_off" | "delivery">("drop_off");
+  const [dumpsterSize, setDumpsterSize] = useState("");
+  const [deliveryDate, setDeliveryDate] = useState(prefillDate || getNextBusinessDay());
+  const [rentalLength, setRentalLength] = useState(14);
+  const [priority, setPriority] = useState("Normal");
+  const [autoSchedulePickup, setAutoSchedulePickup] = useState(true);
+  const [driverNotes, setDriverNotes] = useState("");
+  const [pricingOptions, setPricingOptions] = useState<PricingOption[]>([]);
+  const [priceQuote, setPriceQuote] = useState<PriceQuote | null>(null);
+  const [availability, setAvailability] = useState<number | null>(null);
+  const [quoteLoading, setQuoteLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+
+  // Lock body scroll
+  useEffect(() => {
+    if (open) document.body.style.overflow = "hidden";
+    else document.body.style.overflow = "";
+    return () => { document.body.style.overflow = ""; };
+  }, [open]);
+
+  // Escape key
+  useEffect(() => {
+    if (!open) return;
+    const handleEsc = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", handleEsc);
+    return () => window.removeEventListener("keydown", handleEsc);
+  }, [open, onClose]);
+
+  // Click outside search dropdown
+  useEffect(() => {
+    if (!showDropdown) return;
+    const handler = (e: MouseEvent) => {
+      if (searchRef.current && !searchRef.current.contains(e.target as Node)) setShowDropdown(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [showDropdown]);
+
+  // Reset on open
+  useEffect(() => {
+    if (open) {
+      setStep(1);
+      setFirstName("");
+      setLastName("");
+      setCompanyName("");
+      setClientType("");
+      setEmail("");
+      setPhone("");
+      setAdditionalContacts([]);
+      setSelectedCustomer(null);
+      setSearchResults([]);
+      setShowDropdown(false);
+      setServiceAddressMode("same");
+      setSelectedAddressIdx(0);
+      setNewServiceAddress({ street: "", city: "", state: "", zip: "" });
+      setBillingAddress({ street: "", street2: "", city: "", state: "", zip: "", county: "" });
+      setTaskType("drop_off");
+      setDumpsterSize("");
+      setDeliveryDate(prefillDate || getNextBusinessDay());
+      setRentalLength(14);
+      setPriority("Normal");
+      setAutoSchedulePickup(true);
+      setDriverNotes("");
+      setPriceQuote(null);
+      setAvailability(null);
+      setSubmitting(false);
+    }
+  }, [open, prefillDate]);
+
+  // Prefill customer
+  useEffect(() => {
+    if (open && prefillCustomerId) {
+      api.get<CustomerSearchResult>(`/customers/${prefillCustomerId}`)
+        .then((c) => selectCustomer(c))
+        .catch(() => {});
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, prefillCustomerId]);
+
+  // Fetch pricing options on step 3
+  useEffect(() => {
+    if (step === 3) {
+      api.get<{ data: PricingOption[] }>("/pricing?limit=100")
+        .then((res) => {
+          const opts = res.data || [];
+          setPricingOptions(opts);
+          if (opts.length > 0 && !dumpsterSize) setDumpsterSize(opts[0].asset_subtype);
+        })
+        .catch(() => {});
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step]);
+
+  // Re-quote when options change
+  const fetchQuote = useCallback(async () => {
+    if (!dumpsterSize || !deliveryDate) return;
+    setQuoteLoading(true);
+    try {
+      const svcAddr = resolvedServiceAddress();
+      const res = await api.post<{ breakdown: { basePrice: number; total: number; includedTons: number; overagePerTon: number } }>("/pricing/calculate", {
+        serviceType: "dumpster_rental",
+        assetSubtype: dumpsterSize,
+        jobType: "delivery",
+        customerLat: svcAddr.lat || 42.0834,
+        customerLng: svcAddr.lng || -71.0184,
+        rentalDays: rentalLength,
+      });
+      const quote: PriceQuote = {
+        base_price: res.breakdown.basePrice,
+        total: res.breakdown.total,
+        weight_allowance: res.breakdown.includedTons,
+        overage_rate: res.breakdown.overagePerTon,
+      };
+      setPriceQuote(quote);
+    } catch {
+      setPriceQuote(null);
+    } finally {
+      setQuoteLoading(false);
+    }
+  }, [dumpsterSize, rentalLength, deliveryDate]);
+
+  useEffect(() => {
+    if (step === 3 && dumpsterSize) fetchQuote();
+  }, [step, dumpsterSize, rentalLength, deliveryDate, fetchQuote]);
+
+  // Fetch availability
+  useEffect(() => {
+    if (step === 3 && dumpsterSize && deliveryDate) {
+      api.get<AvailabilityResponse>(`/assets/availability?subtype=${encodeURIComponent(dumpsterSize)}&date=${deliveryDate}`)
+        .then((r) => setAvailability(r.availableOnDate))
+        .catch(() => setAvailability(null));
+    }
+  }, [step, dumpsterSize, deliveryDate]);
+
+  /* ---- Customer search ---- */
+  const searchCustomers = useCallback((fn: string, ln: string) => {
+    const q = `${fn} ${ln}`.trim();
+    if (q.length < 2) { setSearchResults([]); setShowDropdown(false); return; }
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(async () => {
+      try {
+        const res = await api.get<CustomerSearchResult[]>(`/customers/search?q=${encodeURIComponent(q)}&limit=5`);
+        setSearchResults(Array.isArray(res) ? res : []);
+        setShowDropdown(true);
+      } catch {
+        setSearchResults([]);
+      }
+    }, 300);
+  }, []);
+
+  const selectCustomer = (c: CustomerSearchResult) => {
+    setSelectedCustomer(c);
+    setFirstName(c.first_name);
+    setLastName(c.last_name);
+    setCompanyName(c.company_name || "");
+    setClientType((c.type as "residential" | "commercial") || "");
+    setEmail(c.email || "");
+    setPhone(c.phone || "");
+    setAdditionalContacts(c.customer_preferences?.additionalContacts || []);
+    if (c.billing_address) {
+      setBillingAddress({ ...c.billing_address, street2: c.billing_address.street2 || "", county: c.billing_address.county || "" });
+    }
+    if (c.service_addresses && c.service_addresses.length > 0) {
+      setServiceAddressMode("existing");
+      setSelectedAddressIdx(0);
+    }
+    setShowDropdown(false);
+  };
+
+  /* ---- Validation ---- */
+  const step1Valid = firstName.trim() && lastName.trim() && clientType && email.trim() && phone.trim();
+
+  /* ---- Resolve service address for step 3 display ---- */
+  const resolvedServiceAddress = (): AddressFields => {
+    if (selectedCustomer && serviceAddressMode === "existing" && selectedCustomer.service_addresses?.length) {
+      return selectedCustomer.service_addresses[selectedAddressIdx];
+    }
+    if (serviceAddressMode === "different") return newServiceAddress;
+    return billingAddress;
+  };
+
+  const formatAddr = (a: AddressFields) =>
+    [a.street, a.city, a.state, a.zip].filter(Boolean).join(", ");
+
+  /* ---- Submit ---- */
+  const handleSubmit = async (collectPayment: boolean) => {
+    setSubmitting(true);
+    const svcAddr = resolvedServiceAddress();
+    const pickupDateStr = addDays(deliveryDate, rentalLength);
+    try {
+      await api.post("/bookings/complete", {
+        customerId: selectedCustomer?.id || undefined,
+        customer: selectedCustomer ? undefined : {
+          firstName,
+          lastName,
+          companyName: companyName || undefined,
+          type: clientType || "residential",
+          email,
+          phone,
+          billingAddress: { street: billingAddress.street, city: billingAddress.city, state: billingAddress.state, zip: billingAddress.zip },
+          additionalContacts: additionalContacts.length > 0 ? additionalContacts : undefined,
+          county: billingAddress.county || undefined,
+        },
+        serviceType: "dumpster_rental",
+        assetSubtype: dumpsterSize,
+        serviceAddress: { street: svcAddr.street, city: svcAddr.city, state: svcAddr.state, zip: svcAddr.zip, lat: svcAddr.lat, lng: svcAddr.lng },
+        deliveryDate,
+        pickupDate: autoSchedulePickup ? pickupDateStr : pickupDateStr,
+        rentalDays: rentalLength,
+        placementNotes: driverNotes || undefined,
+        basePrice: priceQuote?.base_price || 0,
+        deliveryFee: 0,
+        taxAmount: 0,
+        totalPrice: priceQuote?.total || priceQuote?.base_price || 0,
+        paymentMethod: collectPayment ? "card" as const : "invoice" as const,
+      });
+      toast("success", "Booking created successfully");
+      onComplete?.();
+      onClose();
+    } catch (err) {
+      toast("error", err instanceof Error ? err.message : "Failed to create booking");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (!open) return null;
+
+  /* ================================================================ */
+  /*  RENDER                                                           */
+  /* ================================================================ */
+
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end">
+      {/* Backdrop */}
+      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm animate-fade-in" onClick={onClose} />
+
+      {/* Panel */}
+      <div
+        className="relative w-full max-w-2xl shadow-2xl animate-slide-in-right rounded-l-[20px] flex flex-col"
+        style={{ backgroundColor: "var(--t-bg-secondary)", borderLeft: "1px solid var(--t-border)" }}
+      >
+        {/* Header */}
+        <div
+          className="flex h-14 items-center justify-between px-6 shrink-0"
+          style={{ borderBottom: "1px solid var(--t-border)" }}
+        >
+          <h2 className="text-[15px] font-semibold" style={{ color: "var(--t-text-primary)" }}>
+            New Booking
+          </h2>
+          <button
+            onClick={onClose}
+            className="rounded-lg p-1.5 transition-colors duration-150"
+            style={{ color: "var(--t-text-muted)" }}
+            onMouseEnter={(e) => { e.currentTarget.style.color = "var(--t-text-primary)"; e.currentTarget.style.backgroundColor = "var(--t-bg-card-hover)"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.color = "var(--t-text-muted)"; e.currentTarget.style.backgroundColor = "transparent"; }}
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        {/* Progress */}
+        <ProgressDots step={step} />
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto px-6 pb-6">
+          {/* ============================== STEP 1 ============================== */}
+          {step === 1 && (
+            <div className="space-y-4">
+              {/* Customer name with search */}
+              <div ref={searchRef} className="relative">
+                <label className={LABEL_CLASS} style={{ color: "var(--t-text-muted)" }}>Customer Name</label>
+                <div className="flex gap-3">
+                  <input
+                    type="text"
+                    placeholder="First name"
+                    value={firstName}
+                    onChange={(e) => {
+                      setFirstName(e.target.value);
+                      if (!selectedCustomer) searchCustomers(e.target.value, lastName);
+                    }}
+                    className={INPUT_CLASS}
+                    style={{ color: "var(--t-text-primary)" }}
+                  />
+                  <input
+                    type="text"
+                    placeholder="Last name"
+                    value={lastName}
+                    onChange={(e) => {
+                      setLastName(e.target.value);
+                      if (!selectedCustomer) searchCustomers(firstName, e.target.value);
+                    }}
+                    className={INPUT_CLASS}
+                    style={{ color: "var(--t-text-primary)" }}
+                  />
+                </div>
+
+                {/* Search dropdown */}
+                {showDropdown && searchResults.length > 0 && (
+                  <div
+                    className="absolute left-0 right-0 z-[9999] mt-1 overflow-hidden rounded-[14px] border shadow-xl"
+                    style={{ background: "var(--t-bg-secondary)", borderColor: "var(--t-border)" }}
+                  >
+                    {searchResults.map((c) => (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() => selectCustomer(c)}
+                        className="flex w-full flex-col px-4 py-2.5 text-left transition-colors"
+                        style={{ borderBottom: "1px solid var(--t-border)" }}
+                        onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--t-bg-card-hover)"; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; }}
+                      >
+                        <span className="text-sm font-semibold" style={{ color: "var(--t-text-primary)" }}>
+                          {c.first_name} {c.last_name}
+                        </span>
+                        {c.company_name && (
+                          <span className="text-xs" style={{ color: "var(--t-text-muted)" }}>{c.company_name}</span>
+                        )}
+                        {c.billing_address && (
+                          <span className="text-xs" style={{ color: "var(--t-text-muted)" }}>
+                            {formatAddr(c.billing_address)}
+                          </span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Existing / New badge */}
+              {selectedCustomer ? (
+                <div className="flex items-center gap-2">
+                  <span
+                    className="inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium"
+                    style={{ backgroundColor: "var(--t-accent-soft)", color: "var(--t-accent)" }}
+                  >
+                    <Check className="h-3 w-3" /> Existing customer &mdash; {selectedCustomer.account_id}
+                  </span>
+                  <button
+                    type="button"
+                    className="text-xs underline"
+                    style={{ color: "var(--t-text-muted)" }}
+                    onClick={() => {
+                      setSelectedCustomer(null);
+                      setFirstName("");
+                      setLastName("");
+                      setCompanyName("");
+                      setClientType("");
+                      setEmail("");
+                      setPhone("");
+                      setAdditionalContacts([]);
+                      setServiceAddressMode("same");
+                    }}
+                  >
+                    Clear
+                  </button>
+                </div>
+              ) : (firstName.trim() || lastName.trim()) ? (
+                <span
+                  className="inline-flex items-center rounded-full px-3 py-1 text-xs font-medium"
+                  style={{ backgroundColor: "var(--t-accent-soft)", color: "var(--t-accent)", opacity: 0.7 }}
+                >
+                  New customer will be created
+                </span>
+              ) : null}
+
+              {/* Company */}
+              <div>
+                <label className={LABEL_CLASS} style={{ color: "var(--t-text-muted)" }}>Company Name</label>
+                <input
+                  type="text"
+                  placeholder="Optional"
+                  value={companyName}
+                  onChange={(e) => setCompanyName(e.target.value)}
+                  className={INPUT_CLASS}
+                  style={{ color: "var(--t-text-primary)" }}
+                />
+              </div>
+
+              {/* Client type */}
+              <div>
+                <label className={LABEL_CLASS} style={{ color: "var(--t-text-muted)" }}>Client Type</label>
+                <div className="flex gap-3">
+                  <TileButton
+                    selected={clientType === "residential"}
+                    onClick={() => setClientType("residential")}
+                    title="Residential"
+                    subtitle="Homeowner / tenant"
+                  />
+                  <TileButton
+                    selected={clientType === "commercial"}
+                    onClick={() => setClientType("commercial")}
+                    title="Commercial"
+                    subtitle="Contractor / business"
+                  />
+                </div>
+              </div>
+
+              {/* Contact */}
+              <SectionDivider label="Contact" />
+              <div className="flex gap-3">
+                <div className="flex-1">
+                  <label className={LABEL_CLASS} style={{ color: "var(--t-text-muted)" }}>Email</label>
+                  <input
+                    type="email"
+                    placeholder="email@example.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className={INPUT_CLASS}
+                    style={{ color: "var(--t-text-primary)" }}
+                  />
+                </div>
+                <div className="flex-1">
+                  <label className={LABEL_CLASS} style={{ color: "var(--t-text-muted)" }}>Phone</label>
+                  <input
+                    type="tel"
+                    placeholder="(555) 555-5555"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    className={INPUT_CLASS}
+                    style={{ color: "var(--t-text-primary)" }}
+                  />
+                </div>
+              </div>
+
+              {/* Additional contacts */}
+              {additionalContacts.map((c, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    placeholder="Contact info"
+                    value={c.value}
+                    onChange={(e) => {
+                      const copy = [...additionalContacts];
+                      copy[i] = { ...copy[i], value: e.target.value };
+                      setAdditionalContacts(copy);
+                    }}
+                    className={`${INPUT_CLASS} flex-1`}
+                    style={{ color: "var(--t-text-primary)" }}
+                  />
+                  <select
+                    value={c.role}
+                    onChange={(e) => {
+                      const copy = [...additionalContacts];
+                      copy[i] = { ...copy[i], role: e.target.value };
+                      setAdditionalContacts(copy);
+                    }}
+                    className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-3 py-3 text-sm outline-none"
+                    style={{ color: "var(--t-text-primary)" }}
+                  >
+                    {CONTACT_ROLES.map((r) => (
+                      <option key={r} value={r}>{r}</option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => setAdditionalContacts(additionalContacts.filter((_, j) => j !== i))}
+                    className="rounded-full p-2 transition-colors"
+                    style={{ color: "var(--t-error)" }}
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              ))}
+
+              <button
+                type="button"
+                onClick={() => setAdditionalContacts([...additionalContacts, { value: "", role: "General" }])}
+                className="flex items-center gap-1.5 text-sm font-medium"
+                style={{ color: "var(--t-accent)" }}
+              >
+                <Plus className="h-4 w-4" /> Add contact
+              </button>
+
+              {/* Service address */}
+              <SectionDivider label="Service Address" />
+
+              {selectedCustomer && selectedCustomer.service_addresses && selectedCustomer.service_addresses.length > 0 ? (
+                <div className="space-y-2">
+                  {selectedCustomer.service_addresses.map((addr, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => { setServiceAddressMode("existing"); setSelectedAddressIdx(i); }}
+                      className="w-full rounded-[20px] border px-4 py-3 text-left transition-colors"
+                      style={{
+                        backgroundColor: serviceAddressMode === "existing" && selectedAddressIdx === i ? "var(--t-accent-soft)" : "var(--t-bg-card)",
+                        borderColor: serviceAddressMode === "existing" && selectedAddressIdx === i ? "var(--t-accent)" : "var(--t-border)",
+                      }}
+                    >
+                      <div className="flex items-center gap-2">
+                        <MapPin className="h-4 w-4 shrink-0" style={{ color: "var(--t-text-muted)" }} />
+                        <span className="text-sm" style={{ color: "var(--t-text-primary)" }}>
+                          {formatAddr(addr)}
+                        </span>
+                      </div>
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => setServiceAddressMode("different")}
+                    className="flex items-center gap-1.5 text-sm font-medium"
+                    style={{ color: "var(--t-accent)" }}
+                  >
+                    <Plus className="h-4 w-4" /> Add new service address
+                  </button>
+                  {serviceAddressMode === "different" && (
+                    <div className="mt-3">
+                      <AddressAutocomplete
+                        label="New Service Address"
+                        value={newServiceAddress}
+                        onChange={(a) => setNewServiceAddress({ street: a.street, city: a.city, state: a.state, zip: a.zip })}
+                      />
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="svc_addr"
+                      checked={serviceAddressMode === "same"}
+                      onChange={() => setServiceAddressMode("same")}
+                      className="accent-[var(--t-accent)]"
+                    />
+                    <span className="text-sm" style={{ color: "var(--t-text-primary)" }}>Same as billing address</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="svc_addr"
+                      checked={serviceAddressMode === "different"}
+                      onChange={() => setServiceAddressMode("different")}
+                      className="accent-[var(--t-accent)]"
+                    />
+                    <span className="text-sm" style={{ color: "var(--t-text-primary)" }}>Different service address</span>
+                  </label>
+                  {serviceAddressMode === "different" && (
+                    <div className="mt-2">
+                      <AddressAutocomplete
+                        label="Service Address"
+                        value={newServiceAddress}
+                        onChange={(a) => setNewServiceAddress({ street: a.street, city: a.city, state: a.state, zip: a.zip })}
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Continue */}
+              <div className="pt-4">
+                <button
+                  type="button"
+                  disabled={!step1Valid}
+                  onClick={() => setStep(2)}
+                  className="w-full rounded-full py-3 text-sm font-semibold transition-opacity disabled:opacity-40"
+                  style={{ backgroundColor: "var(--t-accent)", color: "#fff" }}
+                >
+                  Continue
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* ============================== STEP 2 ============================== */}
+          {step === 2 && (
+            <div className="space-y-4">
+              <h3 className="text-base font-semibold" style={{ color: "var(--t-text-primary)" }}>
+                Billing Address
+              </h3>
+
+              {/* Street */}
+              <AddressAutocomplete
+                label="Street"
+                value={{ street: billingAddress.street, city: billingAddress.city, state: billingAddress.state, zip: billingAddress.zip }}
+                onChange={(a) =>
+                  setBillingAddress((prev) => ({
+                    ...prev,
+                    street: a.street,
+                    city: a.city,
+                    state: a.state,
+                    zip: a.zip,
+                  }))
+                }
+              />
+
+              {/* Street 2 */}
+              <div>
+                <label className={LABEL_CLASS} style={{ color: "var(--t-text-muted)" }}>Street 2</label>
+                <input
+                  type="text"
+                  placeholder="Apt, suite, unit (optional)"
+                  value={billingAddress.street2 || ""}
+                  onChange={(e) => setBillingAddress((prev) => ({ ...prev, street2: e.target.value }))}
+                  className={INPUT_CLASS}
+                  style={{ color: "var(--t-text-primary)" }}
+                />
+              </div>
+
+              {/* City / State / Zip */}
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className={LABEL_CLASS} style={{ color: "var(--t-text-muted)" }}>City</label>
+                  <input
+                    type="text"
+                    value={billingAddress.city}
+                    onChange={(e) => setBillingAddress((prev) => ({ ...prev, city: e.target.value }))}
+                    className={INPUT_CLASS}
+                    style={{ color: "var(--t-text-primary)" }}
+                  />
+                </div>
+                <div>
+                  <label className={LABEL_CLASS} style={{ color: "var(--t-text-muted)" }}>State</label>
+                  <select
+                    value={billingAddress.state}
+                    onChange={(e) => setBillingAddress((prev) => ({ ...prev, state: e.target.value }))}
+                    className="w-full rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-3 text-sm outline-none transition-colors focus:border-[var(--t-accent)] focus:ring-1 focus:ring-[var(--t-accent)]"
+                    style={{ color: "var(--t-text-primary)" }}
+                  >
+                    <option value="">--</option>
+                    {US_STATES.map((s) => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className={LABEL_CLASS} style={{ color: "var(--t-text-muted)" }}>Zip</label>
+                  <input
+                    type="text"
+                    value={billingAddress.zip}
+                    onChange={(e) => setBillingAddress((prev) => ({ ...prev, zip: e.target.value }))}
+                    className={INPUT_CLASS}
+                    style={{ color: "var(--t-text-primary)" }}
+                  />
+                </div>
+              </div>
+
+              {/* County */}
+              <div className="w-1/3">
+                <label className={LABEL_CLASS} style={{ color: "var(--t-text-muted)" }}>County</label>
+                <input
+                  type="text"
+                  value={billingAddress.county || ""}
+                  onChange={(e) => setBillingAddress((prev) => ({ ...prev, county: e.target.value }))}
+                  className={INPUT_CLASS}
+                  style={{ color: "var(--t-text-primary)" }}
+                />
+              </div>
+
+              {/* Navigation */}
+              <div className="flex gap-3 pt-4">
+                <button
+                  type="button"
+                  onClick={() => setStep(1)}
+                  className="flex-1 rounded-full py-3 text-sm font-semibold border"
+                  style={{ borderColor: "var(--t-border)", color: "var(--t-text-primary)" }}
+                >
+                  Back
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStep(3)}
+                  className="flex-1 rounded-full py-3 text-sm font-semibold"
+                  style={{ backgroundColor: "var(--t-accent)", color: "#fff" }}
+                >
+                  Continue
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* ============================== STEP 3 ============================== */}
+          {step === 3 && (
+            <div className="space-y-4">
+              {/* Service address header */}
+              <div className="flex items-center gap-2 text-xs" style={{ color: "var(--t-text-muted)" }}>
+                <MapPin className="h-3.5 w-3.5" />
+                <span>{formatAddr(resolvedServiceAddress())}</span>
+              </div>
+
+              <h3 className="text-base font-semibold" style={{ color: "var(--t-text-primary)" }}>
+                Schedule Delivery
+              </h3>
+
+              {/* Task type */}
+              <div>
+                <label className={LABEL_CLASS} style={{ color: "var(--t-text-muted)" }}>Task Type</label>
+                <div className="flex gap-3">
+                  <TileButton
+                    selected={taskType === "drop_off"}
+                    onClick={() => setTaskType("drop_off")}
+                    title="Drop Off"
+                    subtitle="Leave on site"
+                  />
+                  <TileButton
+                    selected={taskType === "delivery"}
+                    onClick={() => setTaskType("delivery")}
+                    title="Delivery"
+                    subtitle="Deliver to customer"
+                  />
+                </div>
+              </div>
+
+              <SectionDivider label="Booking Details" />
+
+              {/* Dumpster size */}
+              <div>
+                <label className={LABEL_CLASS} style={{ color: "var(--t-text-muted)" }}>Dumpster Size</label>
+                <select
+                  value={dumpsterSize}
+                  onChange={(e) => setDumpsterSize(e.target.value)}
+                  className="w-full rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-3 text-sm outline-none transition-colors focus:border-[var(--t-accent)] focus:ring-1 focus:ring-[var(--t-accent)]"
+                  style={{ color: "var(--t-text-primary)" }}
+                >
+                  {pricingOptions.map((p) => (
+                    <option key={p.id} value={p.asset_subtype}>
+                      {p.asset_subtype} — {formatCurrency(p.base_price)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Date + Rental + Priority */}
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className={LABEL_CLASS} style={{ color: "var(--t-text-muted)" }}>Delivery Date</label>
+                  <input
+                    type="date"
+                    value={deliveryDate}
+                    onChange={(e) => setDeliveryDate(e.target.value)}
+                    className={INPUT_CLASS}
+                    style={{ color: "var(--t-text-primary)" }}
+                  />
+                </div>
+                <div>
+                  <label className={LABEL_CLASS} style={{ color: "var(--t-text-muted)" }}>Rental Length</label>
+                  <select
+                    value={rentalLength}
+                    onChange={(e) => setRentalLength(Number(e.target.value))}
+                    className="w-full rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-3 text-sm outline-none transition-colors focus:border-[var(--t-accent)] focus:ring-1 focus:ring-[var(--t-accent)]"
+                    style={{ color: "var(--t-text-primary)" }}
+                  >
+                    {RENTAL_LENGTHS.map((d) => (
+                      <option key={d} value={d}>{d} days</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className={LABEL_CLASS} style={{ color: "var(--t-text-muted)" }}>Priority</label>
+                  <select
+                    value={priority}
+                    onChange={(e) => setPriority(e.target.value)}
+                    className="w-full rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-3 text-sm outline-none transition-colors focus:border-[var(--t-accent)] focus:ring-1 focus:ring-[var(--t-accent)]"
+                    style={{ color: "var(--t-text-primary)" }}
+                  >
+                    {PRIORITIES.map((p) => (
+                      <option key={p} value={p}>{p}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Inventory */}
+              {availability !== null && (
+                <div className="flex items-center gap-2 text-sm" style={{ color: "var(--t-text-muted)" }}>
+                  <Box className="h-4 w-4" style={{ color: availability > 0 ? "var(--t-accent)" : "var(--t-error)" }} />
+                  <span>{availability} {dumpsterSize} available on {deliveryDate}</span>
+                </div>
+              )}
+
+              {/* Auto-schedule pickup */}
+              <div className="flex items-center justify-between rounded-[20px] border px-4 py-3" style={{ borderColor: "var(--t-border)", backgroundColor: "var(--t-bg-card)" }}>
+                <div>
+                  <span className="text-sm font-medium" style={{ color: "var(--t-text-primary)" }}>Auto-schedule pickup</span>
+                  {autoSchedulePickup && deliveryDate && (
+                    <span className="block text-xs mt-0.5" style={{ color: "var(--t-text-muted)" }}>
+                      Pickup: {addDays(deliveryDate, rentalLength)}
+                    </span>
+                  )}
+                </div>
+                <button type="button" onClick={() => setAutoSchedulePickup(!autoSchedulePickup)}>
+                  {autoSchedulePickup ? (
+                    <ToggleRight className="h-7 w-7" style={{ color: "var(--t-accent)" }} />
+                  ) : (
+                    <ToggleLeft className="h-7 w-7" style={{ color: "var(--t-text-muted)" }} />
+                  )}
+                </button>
+              </div>
+
+              {/* Driver notes */}
+              <div>
+                <label className={LABEL_CLASS} style={{ color: "var(--t-text-muted)" }}>Driver Notes</label>
+                <textarea
+                  placeholder="Optional notes for the driver..."
+                  value={driverNotes}
+                  onChange={(e) => setDriverNotes(e.target.value)}
+                  rows={3}
+                  className="w-full rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-3 text-sm outline-none transition-colors focus:border-[var(--t-accent)] focus:ring-1 focus:ring-[var(--t-accent)] resize-none"
+                  style={{ color: "var(--t-text-primary)" }}
+                />
+              </div>
+
+              {/* Price quote */}
+              <div
+                className="rounded-[20px] border p-4 space-y-2"
+                style={{ borderColor: "var(--t-border)", backgroundColor: "var(--t-bg-card)" }}
+              >
+                <h4 className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--t-text-muted)" }}>
+                  Price Quote
+                </h4>
+                {quoteLoading ? (
+                  <div className="flex items-center justify-center py-4">
+                    <Loader2 className="h-5 w-5 animate-spin" style={{ color: "var(--t-text-muted)" }} />
+                  </div>
+                ) : priceQuote ? (
+                  <div className="space-y-1.5">
+                    <div className="flex justify-between text-sm">
+                      <span style={{ color: "var(--t-text-muted)" }}>Base price</span>
+                      <span style={{ color: "var(--t-text-primary)" }}>{formatCurrency(priceQuote.base_price)}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span style={{ color: "var(--t-text-muted)" }}>Weight allowance</span>
+                      <span style={{ color: "var(--t-text-primary)" }}>{priceQuote.weight_allowance} tons</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span style={{ color: "var(--t-text-muted)" }}>Overage rate</span>
+                      <span style={{ color: "var(--t-text-primary)" }}>{formatCurrency(priceQuote.overage_rate)}/ton</span>
+                    </div>
+                    <div className="h-px my-1" style={{ backgroundColor: "var(--t-border)" }} />
+                    <div className="flex justify-between text-sm font-bold">
+                      <span style={{ color: "var(--t-text-primary)" }}>Total</span>
+                      <span style={{ color: "var(--t-accent)" }}>{formatCurrency(priceQuote.total)}</span>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-sm" style={{ color: "var(--t-text-muted)" }}>Select options to see pricing</p>
+                )}
+              </div>
+
+              {/* Footer buttons */}
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setStep(2)}
+                  className="rounded-full px-4 py-3 text-sm font-semibold border"
+                  style={{ borderColor: "var(--t-border)", color: "var(--t-text-primary)" }}
+                >
+                  Back
+                </button>
+                <button
+                  type="button"
+                  disabled={submitting}
+                  onClick={() => handleSubmit(false)}
+                  className="flex-1 rounded-full py-3 text-sm font-semibold border transition-opacity disabled:opacity-50"
+                  style={{ borderColor: "var(--t-accent)", color: "var(--t-accent)" }}
+                >
+                  {submitting ? "Creating..." : "Create invoice"}
+                </button>
+                <button
+                  type="button"
+                  disabled={submitting}
+                  onClick={() => handleSubmit(true)}
+                  className="flex-1 rounded-full py-3 text-sm font-semibold transition-opacity disabled:opacity-50"
+                  style={{ backgroundColor: "var(--t-accent)", color: "#fff" }}
+                >
+                  {submitting ? "Creating..." : "Create + collect payment"}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Re-export for convenience — not used as a standalone icon but referenced in step 3
+function Box(props: React.SVGProps<SVGSVGElement> & { className?: string; style?: React.CSSProperties }) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z" />
+      <path d="m3.3 7 8.7 5 8.7-5" />
+      <path d="M12 22V12" />
+    </svg>
+  );
+}

@@ -8,8 +8,6 @@ import {
   Param,
   Query,
   ParseUUIDPipe,
-  NotFoundException,
-  BadRequestException,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JobsService } from './jobs.service';
@@ -57,6 +55,15 @@ export class JobsController {
       query.date,
       query.days ?? 7,
     );
+  }
+
+  @Get(':id/cascade-preview')
+  @ApiOperation({ summary: 'Preview what would be affected if this task were deleted' })
+  getCascadePreview(
+    @TenantId() tenantId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.jobsService.getCascadePreview(tenantId, id);
   }
 
   // Static PATCH routes MUST come before :id parameterized routes
@@ -140,21 +147,18 @@ export class JobsController {
   }
 
   @Delete(':id')
-  @ApiOperation({ summary: 'Soft-delete (cancel) a job' })
+  @ApiOperation({ summary: 'Cascade delete (cancel) a job with related entities' })
   async deleteJob(
     @TenantId() tenantId: string,
     @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser('id') userId: string,
+    @Body() body: {
+      deletePickup?: boolean;
+      voidInvoices?: { invoiceId: string; void: boolean }[];
+      voidReason?: string;
+    },
   ) {
-    const job = await this.jobsService.findOne(tenantId, id);
-    if (!job) throw new NotFoundException('Job not found');
-    if (['completed', 'in_progress', 'en_route', 'arrived'].includes(job.status)) {
-      throw new BadRequestException('Cannot delete a job that is in progress or completed');
-    }
-    if (job.asset_id) {
-      await this.jobsService.updateAssetStatus(job.asset_id, 'available');
-    }
-    await this.jobsService.softDelete(tenantId, id);
-    return { message: 'Job deleted successfully' };
+    return this.jobsService.cascadeDelete(tenantId, id, userId, body);
   }
 
   @Post('dump-run')

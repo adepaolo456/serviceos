@@ -20,6 +20,8 @@ import { BillingIssueController } from './controllers/billing-issue.controller';
 import { BookingsController } from './bookings.controller';
 import { BillingService } from './billing.service';
 import { PaymentsController } from './billing.controller';
+import { RentalChain } from '../rental-chains/entities/rental-chain.entity';
+import { TaskChainLink } from '../rental-chains/entities/task-chain-link.entity';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { PricingModule } from '../pricing/pricing.module';
 
@@ -39,6 +41,8 @@ import { PricingModule } from '../pricing/pricing.module';
       Tenant,
       AutomationLog,
       PricingRule,
+      RentalChain,
+      TaskChainLink,
     ]),
     NotificationsModule,
     PricingModule,

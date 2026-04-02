@@ -6,6 +6,10 @@ import { PricingRule } from '../pricing/entities/pricing-rule.entity';
 import { AutomationLog } from '../automation/entities/automation-log.entity';
 import { Customer } from '../customers/entities/customer.entity';
 import { Route } from '../dispatch/entities/route.entity';
+import { Invoice } from '../billing/entities/invoice.entity';
+import { CreditMemo } from '../billing/entities/credit-memo.entity';
+import { RentalChain } from '../rental-chains/entities/rental-chain.entity';
+import { TaskChainLink } from '../rental-chains/entities/task-chain-link.entity';
 import { BillingModule } from '../billing/billing.module';
 import { RentalChainsModule } from '../rental-chains/rental-chains.module';
 import { NotificationsModule } from '../notifications/notifications.module';
@@ -14,7 +18,7 @@ import { JobsController } from './jobs.controller';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Job, Asset, PricingRule, AutomationLog, Customer, Route]),
+    TypeOrmModule.forFeature([Job, Asset, PricingRule, AutomationLog, Customer, Route, Invoice, CreditMemo, RentalChain, TaskChainLink]),
     BillingModule,
     RentalChainsModule,
     NotificationsModule,

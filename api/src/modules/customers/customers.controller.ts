@@ -38,6 +38,16 @@ export class CustomersController {
     return this.customersService.findAll(tenantId, query);
   }
 
+  @Get('search')
+  @ApiOperation({ summary: 'Search customers by name or company' })
+  search(
+    @TenantId() tenantId: string,
+    @Query('q') q: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.customersService.search(tenantId, q, limit ? parseInt(limit, 10) : 5);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get a customer by ID' })
   findOne(

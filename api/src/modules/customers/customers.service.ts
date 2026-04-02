@@ -84,6 +84,41 @@ export class CustomersService {
     };
   }
 
+  async search(tenantId: string, q: string, limit: number = 5) {
+    if (!q || q.trim().length === 0) {
+      return [];
+    }
+
+    const qb = this.customersRepository
+      .createQueryBuilder('c')
+      .select([
+        'c.id',
+        'c.account_id',
+        'c.first_name',
+        'c.last_name',
+        'c.company_name',
+        'c.type',
+        'c.email',
+        'c.phone',
+        'c.billing_address',
+        'c.service_addresses',
+      ])
+      .where('c.tenant_id = :tenantId', { tenantId })
+      .andWhere(
+        `(
+          c.first_name ILIKE :search OR
+          c.last_name ILIKE :search OR
+          c.company_name ILIKE :search
+        )`,
+        { search: `%${q.trim()}%` },
+      )
+      .orderBy('c.last_name', 'ASC')
+      .addOrderBy('c.first_name', 'ASC')
+      .take(limit);
+
+    return qb.getMany();
+  }
+
   async findOne(tenantId: string, id: string): Promise<Customer> {
     const customer = await this.customersRepository.findOne({
       where: { id, tenant_id: tenantId },
