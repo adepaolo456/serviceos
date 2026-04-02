@@ -529,6 +529,181 @@ export class ReportingService {
     };
   }
 
+  async getAlerts(tenantId: string) {
+    const integrity = await this.getIntegrityCheck(tenantId);
+    const alerts: Array<{
+      id: string; type: string; severity: string; classification: string;
+      title: string; message: string; entityType: string; href: string;
+      createdAt: string; read: boolean;
+    }> = [];
+
+    const now = new Date().toISOString();
+
+    for (const check of integrity.checks) {
+      if (check.post_correction_count > 0) {
+        alerts.push({
+          id: `${check.name}:post:${now.split('T')[0]}`,
+          type: check.name,
+          severity: check.severity,
+          classification: 'post-correction',
+          title: this.alertTitle(check.name),
+          message: `${check.post_correction_count} post-correction ${check.description.toLowerCase()}`,
+          entityType: this.alertEntityType(check.name),
+          href: this.alertHref(check.name),
+          createdAt: now,
+          read: false,
+        });
+      }
+      if (check.legacy_count > 0) {
+        alerts.push({
+          id: `${check.name}:legacy:${now.split('T')[0]}`,
+          type: check.name,
+          severity: 'info',
+          classification: 'legacy',
+          title: `${this.alertTitle(check.name)} (legacy)`,
+          message: `${check.legacy_count} legacy records — informational only`,
+          entityType: this.alertEntityType(check.name),
+          href: this.alertHref(check.name),
+          createdAt: now,
+          read: false,
+        });
+      }
+    }
+
+    // Add overdue invoices as warning
+    const overdue = await this.invoiceRepo.query(
+      `SELECT COUNT(*) as cnt, COALESCE(SUM(balance_due), 0) as total
+       FROM invoices WHERE tenant_id = $1 AND status IN ('open', 'partial')
+       AND sent_at < NOW() - INTERVAL '30 days' AND voided_at IS NULL
+       AND created_at >= $2`,
+      [tenantId, CORRECTION_CUTOFF],
+    );
+    if (Number(overdue[0]?.cnt) > 0) {
+      alerts.push({
+        id: `overdue_invoice:${now.split('T')[0]}`,
+        type: 'overdue_invoice',
+        severity: 'warning',
+        classification: 'post-correction',
+        title: 'Overdue invoices',
+        message: `${overdue[0].cnt} invoices overdue totaling $${Number(overdue[0].total).toFixed(2)}`,
+        entityType: 'invoice',
+        href: '/invoices',
+        createdAt: now,
+        read: false,
+      });
+    }
+
+    // Sort: critical → warning → info
+    const severityOrder: Record<string, number> = { critical: 0, warning: 1, info: 2 };
+    alerts.sort((a, b) => (severityOrder[a.severity] ?? 3) - (severityOrder[b.severity] ?? 3));
+
+    const unreadCount = alerts.filter(a => a.severity !== 'info').length;
+
+    return {
+      generatedAt: now,
+      unreadCount,
+      alerts,
+    };
+  }
+
+  private alertTitle(name: string): string {
+    const titles: Record<string, string> = {
+      balance_mismatch: 'Invoice balance mismatch',
+      duplicate_dump_tickets: 'Duplicate dump tickets',
+      paid_without_payment: 'Paid without payment record',
+      orphaned_payments: 'Orphaned payments',
+      jobs_without_invoice: 'Jobs without invoice',
+      dump_tickets_without_job_cost: 'Dump tickets without job cost',
+      invoices_without_chain: 'Invoices without rental chain',
+    };
+    return titles[name] || name.replace(/_/g, ' ');
+  }
+
+  private alertEntityType(name: string): string {
+    if (name.includes('invoice') || name.includes('balance') || name.includes('paid')) return 'invoice';
+    if (name.includes('dump') || name.includes('ticket')) return 'dump_ticket';
+    if (name.includes('job')) return 'job';
+    if (name.includes('payment')) return 'payment';
+    return 'system';
+  }
+
+  private alertHref(name: string): string {
+    if (name.includes('invoice') || name.includes('balance') || name.includes('paid')) return '/invoices';
+    if (name.includes('dump') || name.includes('ticket')) return '/analytics';
+    if (name.includes('job')) return '/jobs';
+    if (name.includes('payment')) return '/invoices';
+    return '/analytics';
+  }
+
+  async getDailySummary(tenantId: string) {
+    const today = new Date().toISOString().split('T')[0];
+
+    const revenue = await this.invoiceRepo.query(
+      `SELECT COALESCE(SUM(total), 0) as revenue FROM invoices
+       WHERE tenant_id = $1 AND created_at::date = $2 AND voided_at IS NULL`,
+      [tenantId, today],
+    );
+    const ar = await this.invoiceRepo.query(
+      `SELECT COALESCE(SUM(CASE WHEN status IN ('open','partial') THEN balance_due ELSE 0 END), 0) as open_ar,
+              COALESCE(SUM(CASE WHEN status IN ('open','partial') AND sent_at < NOW() - INTERVAL '30 days' THEN balance_due ELSE 0 END), 0) as overdue_ar
+       FROM invoices WHERE tenant_id = $1 AND voided_at IS NULL`,
+      [tenantId],
+    );
+    const jobs = await this.jobRepo.query(
+      `SELECT COUNT(*) FILTER (WHERE created_at::date = $2) as created,
+              COUNT(*) FILTER (WHERE status = 'completed' AND completed_at::date = $2) as completed
+       FROM jobs WHERE tenant_id = $1`,
+      [tenantId, today],
+    );
+    const integrity = await this.getIntegrityCheck(tenantId);
+
+    return {
+      date: today,
+      revenue: Number(revenue[0]?.revenue) || 0,
+      openAR: Number(ar[0]?.open_ar) || 0,
+      overdueAR: Number(ar[0]?.overdue_ar) || 0,
+      jobsCreated: Number(jobs[0]?.created) || 0,
+      jobsCompleted: Number(jobs[0]?.completed) || 0,
+      alerts: integrity.summary,
+    };
+  }
+
+  async sendCriticalAlertEmail(tenantId: string, alertType: string, message: string, href: string): Promise<boolean> {
+    // Dedup: check if same alert already sent in last 24 hours
+    const recent = await this.invoiceRepo.query(
+      `SELECT COUNT(*) as cnt FROM notifications
+       WHERE tenant_id = $1 AND type = 'admin_alert' AND channel = 'email'
+       AND body LIKE $2 AND sent_at > NOW() - INTERVAL '24 hours'`,
+      [tenantId, `%${alertType}%`],
+    );
+    if (Number(recent[0]?.cnt) > 0) return false; // Already sent
+
+    // Rate limit: max 5 admin emails per hour
+    const hourCount = await this.invoiceRepo.query(
+      `SELECT COUNT(*) as cnt FROM notifications
+       WHERE tenant_id = $1 AND type = 'admin_alert' AND channel = 'email'
+       AND sent_at > NOW() - INTERVAL '1 hour'`,
+      [tenantId],
+    );
+    if (Number(hourCount[0]?.cnt) >= 5) return false; // Rate limited
+
+    // Get admin email from tenant
+    const tenant = await this.invoiceRepo.query(
+      `SELECT website_email, name FROM tenants WHERE id = $1`, [tenantId],
+    );
+    const adminEmail = tenant[0]?.website_email;
+    if (!adminEmail) return false;
+
+    // Log the notification (for dedup tracking)
+    await this.invoiceRepo.query(
+      `INSERT INTO notifications (id, tenant_id, channel, type, recipient, subject, body, status, sent_at, created_at)
+       VALUES (gen_random_uuid(), $1, 'email', 'admin_alert', $2, $3, $4, 'delivered', NOW(), NOW())`,
+      [tenantId, adminEmail, `ServiceOS Alert: ${alertType.replace(/_/g, ' ')}`, `Alert: ${alertType} — ${message}. View: ${href}`],
+    );
+
+    return true;
+  }
+
   async getInvoicesCsv(tenantId: string, status?: string, from?: string, to?: string): Promise<string> {
     const qb = this.invoiceRepo.createQueryBuilder('i')
       .leftJoin('i.customer', 'c')
