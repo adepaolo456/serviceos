@@ -132,6 +132,8 @@ export default function DashboardPage() {
   const [overdueJobs, setOverdueJobs] = useState<any[]>([]);
   const [rescheduledJobs, setRescheduledJobs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [fleet, setFleet] = useState<{ totalAssets: number; byStatus: Record<string, number> } | null>(null);
+  const [arSummary, setArSummary] = useState<{ totalOutstanding: number; totalOverdue: number } | null>(null);
   const [jobPanelOpen, setJobPanelOpen] = useState(false);
   const [scheduleDate, setScheduleDate] = useState(today);
 
@@ -168,6 +170,8 @@ export default function DashboardPage() {
     }
     loadDashboard();
     api.get<any[]>("/automation/overdue").then(setOverdueJobs).catch(() => {});
+    api.get<{ totalAssets: number; byStatus: Record<string, number> }>("/reporting/assets").then(setFleet).catch(() => {});
+    api.get<{ totalOutstanding: number; totalOverdue: number }>("/reporting/accounts-receivable").then(setArSummary).catch(() => {});
     api.get<{ data: any[] }>("/jobs?limit=10").then(res => {
       const rescheduled = (res.data || []).filter((j: any) => j.rescheduled_by_customer);
       setRescheduledJobs(rescheduled);
@@ -225,11 +229,17 @@ export default function DashboardPage() {
 
   const activeRentals = (dashboard?.jobs.total ?? 0) - (dashboard?.jobs.completed ?? 0) - (dashboard?.jobs.cancelled ?? 0);
 
+  const deployed = fleet?.byStatus?.deployed || fleet?.byStatus?.on_site || 0;
+  const fleetTotal = fleet?.totalAssets || 0;
+  const utilRate = fleetTotal > 0 ? Math.round((deployed / fleetTotal) * 100) : 0;
+
   const kpis = [
     { label: "Revenue", value: `$${(dashboard?.revenue.thisMonth ?? 0).toLocaleString()}`, trend: "+12%", positive: true },
     { label: "Jobs This Month", value: String(dashboard?.jobs.thisMonth ?? 0), trend: "+3", positive: true },
     { label: "Completed", value: String(dashboard?.jobs.completed ?? 0), trend: null, positive: true },
     { label: "Active Rentals", value: String(activeRentals), trend: null, positive: true },
+    { label: "Fleet", value: `${deployed}/${fleetTotal} deployed`, trend: `${utilRate}%`, positive: utilRate < 80 },
+    { label: "AR Outstanding", value: `$${(arSummary?.totalOutstanding ?? 0).toLocaleString()}`, trend: arSummary?.totalOverdue ? `$${arSummary.totalOverdue.toLocaleString()} overdue` : null, positive: !(arSummary?.totalOverdue) },
   ];
 
   return (

@@ -8,6 +8,7 @@ import {
   Trash2,
   Search,
   ArrowDownUp,
+  Download,
   AlertTriangle,
   Calendar,
   Clock,
@@ -389,6 +390,25 @@ export default function InvoicesPage() {
             </button>
           ))}
         </Dropdown>
+        <button
+          onClick={async () => {
+            try {
+              const params = new URLSearchParams();
+              if (tab !== "all") params.set("status", tab);
+              const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "https://serviceos-api.vercel.app"}/reporting/invoices/export?${params}`, {
+                headers: { Authorization: `Bearer ${localStorage.getItem("accessToken") || ""}` },
+              });
+              const blob = await res.blob();
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement("a"); a.href = url; a.download = "invoices.csv"; a.click();
+              URL.revokeObjectURL(url);
+            } catch { /* */ }
+          }}
+          className="flex items-center gap-2 rounded-full border px-3 py-2 text-sm transition-all duration-150"
+          style={{ borderColor: "var(--t-frame-border)", background: "rgba(255,255,255,0.06)", color: "var(--t-frame-text-muted)" }}
+        >
+          <Download className="h-3.5 w-3.5" /> CSV
+        </button>
       </div>
 
       {/* Invoice List */}

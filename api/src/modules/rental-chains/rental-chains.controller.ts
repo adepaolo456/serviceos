@@ -23,6 +23,12 @@ export class RentalChainsController {
     return this.service.findAll(tenantId);
   }
 
+  @Get(':id/lifecycle')
+  @ApiOperation({ summary: 'Get lifecycle drill-down for a rental chain' })
+  getLifecycle(@TenantId() tenantId: string, @Param('id', ParseUUIDPipe) id: string) {
+    return this.service.getLifecycle(tenantId, id);
+  }
+
   @Get(':id/financials')
   @ApiOperation({ summary: 'Get financial summary for a rental chain' })
   getFinancials(@TenantId() tenantId: string, @Param('id', ParseUUIDPipe) id: string) {

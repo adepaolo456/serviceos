@@ -1,4 +1,4 @@
-import { Controller, Get, Query } from '@nestjs/common';
+import { Controller, Get, Query, Res } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
 import { ReportingService } from './reporting.service';
 import { TenantId } from '../../common/decorators';
@@ -62,5 +62,32 @@ export class ReportingController {
   @ApiOperation({ summary: 'Accounts receivable aging report' })
   receivables(@TenantId() tid: string) {
     return this.service.getAccountsReceivable(tid);
+  }
+
+  @Get('integrity-check')
+  @ApiOperation({ summary: 'Data integrity check' })
+  integrityCheck(@TenantId() tid: string) {
+    return this.service.getIntegrityCheck(tid);
+  }
+
+  @Get('revenue-breakdown')
+  @ApiOperation({ summary: 'Revenue breakdown by line type' })
+  revenueBreakdown(@TenantId() tid: string, @Query('period') period?: string, @Query('classification') classification?: string) {
+    return this.service.getRevenueBreakdown(tid, period, classification);
+  }
+
+  @Get('invoices/export')
+  @ApiOperation({ summary: 'Export invoices as CSV' })
+  async exportInvoices(
+    @TenantId() tid: string,
+    @Query('status') status?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Res() res?: any,
+  ) {
+    const csv = await this.service.getInvoicesCsv(tid, status, from, to);
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename=invoices.csv');
+    res.send(csv);
   }
 }

@@ -6,6 +6,11 @@ import { TaskChainLink } from './entities/task-chain-link.entity';
 import { Job } from '../jobs/entities/job.entity';
 import { CreateRentalChainDto } from './dto/create-rental-chain.dto';
 
+const CORRECTION_CUTOFF = '2026-04-02T00:00:00Z';
+function classifyRecord(createdAt: string | Date): 'legacy' | 'post-correction' {
+  return new Date(createdAt) < new Date(CORRECTION_CUTOFF) ? 'legacy' : 'post-correction';
+}
+
 @Injectable()
 export class RentalChainsService {
   constructor(
@@ -321,5 +326,115 @@ export class RentalChainsService {
       link.completed_at = new Date();
     }
     return this.linkRepo.save(link);
+  }
+
+  async getLifecycle(tenantId: string, chainId: string) {
+    const chain = await this.chainRepo.findOne({
+      where: { id: chainId, tenant_id: tenantId },
+      relations: ['customer'],
+    });
+    if (!chain) throw new NotFoundException('Rental chain not found');
+
+    // Get all links with jobs
+    const links = await this.linkRepo.find({
+      where: { rental_chain_id: chainId },
+      relations: ['job', 'job.asset', 'job.assigned_driver'],
+      order: { sequence_number: 'ASC' },
+    });
+
+    const jobIds = links.map(l => l.job_id).filter(Boolean);
+
+    // Get invoices for this chain
+    const invoices = jobIds.length > 0 ? await this.chainRepo.manager.query(
+      `SELECT i.*, json_agg(json_build_object('id', li.id, 'line_type', li.line_type, 'name', li.name, 'amount', li.net_amount, 'sort_order', li.sort_order) ORDER BY li.sort_order) as line_items
+       FROM invoices i LEFT JOIN invoice_line_items li ON li.invoice_id = i.id
+       WHERE (i.rental_chain_id = $1 OR i.job_id = ANY($2)) AND i.tenant_id = $3
+       GROUP BY i.id ORDER BY i.created_at`,
+      [chainId, jobIds, tenantId],
+    ) : [];
+
+    const invoiceIds = invoices.map((i: any) => i.id);
+
+    // Get payments
+    const payments = invoiceIds.length > 0 ? await this.chainRepo.manager.query(
+      `SELECT * FROM payments WHERE invoice_id = ANY($1) ORDER BY applied_at`,
+      [invoiceIds],
+    ) : [];
+
+    // Get dump tickets
+    const dumpTickets = jobIds.length > 0 ? await this.chainRepo.manager.query(
+      `SELECT * FROM dump_tickets WHERE job_id = ANY($1) ORDER BY created_at`,
+      [jobIds],
+    ) : [];
+
+    // Get job costs
+    const jobCosts = jobIds.length > 0 ? await this.chainRepo.manager.query(
+      `SELECT * FROM job_costs WHERE job_id = ANY($1) ORDER BY created_at`,
+      [jobIds],
+    ) : [];
+
+    // Financials
+    const financials = await this.getFinancials(tenantId, chainId);
+
+    return {
+      rentalChain: {
+        id: chain.id,
+        status: chain.status,
+        dumpsterSize: chain.dumpster_size,
+        rentalDays: chain.rental_days,
+        dropOffDate: chain.drop_off_date,
+        expectedPickupDate: chain.expected_pickup_date,
+        createdAt: chain.created_at,
+        classification: classifyRecord(chain.created_at),
+      },
+      customer: chain.customer ? {
+        id: chain.customer.id,
+        name: `${chain.customer.first_name} ${chain.customer.last_name}`,
+        accountId: chain.customer.account_id,
+      } : null,
+      jobs: links.map(l => ({
+        id: l.job?.id,
+        jobNumber: l.job?.job_number,
+        taskType: l.task_type,
+        status: l.job?.status,
+        scheduledDate: l.scheduled_date,
+        completedAt: l.completed_at,
+        asset: l.job?.asset ? { subtype: l.job.asset.subtype, identifier: l.job.asset.identifier } : null,
+        driver: l.job?.assigned_driver ? { name: `${l.job.assigned_driver.first_name} ${l.job.assigned_driver.last_name}` } : null,
+        classification: l.job ? classifyRecord(l.job.created_at) : null,
+      })),
+      invoices: invoices.map((i: any) => ({
+        id: i.id,
+        invoiceNumber: i.invoice_number,
+        total: Number(i.total),
+        status: i.status,
+        balanceDue: Number(i.balance_due),
+        lineItems: (i.line_items || []).filter((li: any) => li.id),
+        pricingSnapshot: i.pricing_rule_snapshot,
+        classification: classifyRecord(i.created_at),
+      })),
+      payments: payments.map((p: any) => ({
+        id: p.id,
+        amount: Number(p.amount),
+        status: p.status,
+        paymentMethod: p.payment_method,
+        appliedAt: p.applied_at,
+      })),
+      dumpTickets: dumpTickets.map((t: any) => ({
+        id: t.id,
+        ticketNumber: t.ticket_number,
+        weightTons: Number(t.weight_tons),
+        totalCost: Number(t.total_cost),
+        customerCharges: Number(t.customer_charges),
+        wasteType: t.waste_type,
+      })),
+      jobCosts: jobCosts.map((jc: any) => ({
+        id: jc.id,
+        costType: jc.cost_type,
+        amount: Number(jc.amount),
+        description: jc.description,
+      })),
+      financials,
+    };
   }
 }
