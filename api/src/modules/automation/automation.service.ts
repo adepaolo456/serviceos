@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, LessThan, In, IsNull, Not } from 'typeorm';
 import { AutomationLog } from './entities/automation-log.entity';
@@ -6,15 +6,23 @@ import { Job } from '../jobs/entities/job.entity';
 import { Customer } from '../customers/entities/customer.entity';
 import { PricingRule } from '../pricing/entities/pricing-rule.entity';
 import { Tenant } from '../tenants/entities/tenant.entity';
+import { Invoice } from '../billing/entities/invoice.entity';
+import { Notification } from '../notifications/entities/notification.entity';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class AutomationService {
+  private readonly logger = new Logger(AutomationService.name);
+
   constructor(
     @InjectRepository(AutomationLog) private logRepo: Repository<AutomationLog>,
     @InjectRepository(Job) private jobRepo: Repository<Job>,
     @InjectRepository(Customer) private customerRepo: Repository<Customer>,
     @InjectRepository(PricingRule) private pricingRepo: Repository<PricingRule>,
     @InjectRepository(Tenant) private tenantRepo: Repository<Tenant>,
+    @InjectRepository(Invoice) private invoiceRepo: Repository<Invoice>,
+    @InjectRepository(Notification) private notifRepo: Repository<Notification>,
+    private notificationsService: NotificationsService,
   ) {}
 
   async scanOverdueRentals(tenantId?: string) {
@@ -203,5 +211,64 @@ export class AutomationService {
       order: { created_at: 'DESC' },
       take: 50,
     });
+  }
+
+  async sendOverdueReminders(tenantId: string) {
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+    // Find open invoices that were sent more than 7 days ago
+    const overdueInvoices = await this.invoiceRepo
+      .createQueryBuilder('i')
+      .leftJoinAndSelect('i.customer', 'c')
+      .where('i.tenant_id = :tenantId', { tenantId })
+      .andWhere('i.status = :status', { status: 'open' })
+      .andWhere('i.sent_at IS NOT NULL')
+      .andWhere('i.sent_at < :cutoff', { cutoff: sevenDaysAgo })
+      .getMany();
+
+    let remindersSent = 0;
+    const maxPerRun = 20;
+
+    for (const invoice of overdueInvoices) {
+      if (remindersSent >= maxPerRun) break;
+
+      // Dedup: check if a reminder was sent within the last 7 days
+      const recentReminder = await this.notifRepo
+        .createQueryBuilder('n')
+        .where('n.tenant_id = :tenantId', { tenantId })
+        .andWhere('n.type = :type', { type: 'invoice_reminder' })
+        .andWhere('n.customer_id = :cid', { cid: invoice.customer_id })
+        .andWhere('n.body LIKE :invRef', { invRef: `%#${invoice.invoice_number}%` })
+        .andWhere('n.created_at > :since', { since: sevenDaysAgo })
+        .getCount();
+
+      if (recentReminder > 0) continue;
+
+      const customer = invoice.customer;
+      if (!customer?.email) continue;
+
+      try {
+        await this.notificationsService.send(tenantId, {
+          channel: 'email',
+          type: 'invoice_reminder',
+          recipient: customer.email,
+          subject: `Reminder: Invoice #${invoice.invoice_number} is overdue`,
+          body: `<p>Hello ${customer.first_name},</p><p>This is a friendly reminder that invoice <strong>#${invoice.invoice_number}</strong> for <strong>$${Number(invoice.balance_due).toFixed(2)}</strong> is overdue.</p><p>Please arrange payment at your earliest convenience.</p>`,
+          customerId: customer.id,
+        });
+        remindersSent++;
+      } catch (err) {
+        this.logger.warn(`Failed to send reminder for invoice #${invoice.invoice_number}: ${err}`);
+      }
+    }
+
+    await this.logRepo.save(this.logRepo.create({
+      tenant_id: tenantId,
+      type: 'overdue_reminders',
+      status: 'completed',
+      details: { overdueCount: overdueInvoices.length, remindersSent },
+    }));
+
+    return { overdueCount: overdueInvoices.length, remindersSent };
   }
 }

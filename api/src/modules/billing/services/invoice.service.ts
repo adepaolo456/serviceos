@@ -14,6 +14,7 @@ import { JobCost } from '../entities/job-cost.entity';
 import { Job } from '../../jobs/entities/job.entity';
 import { Customer } from '../../customers/entities/customer.entity';
 import { PriceResolutionService, ResolvedPrice } from '../../pricing/services/price-resolution.service';
+import { NotificationsService } from '../../notifications/notifications.service';
 import { CreateInvoiceDto } from '../dto/create-invoice.dto';
 import { UpdateInvoiceDto } from '../dto/update-invoice.dto';
 import { CreateLineItemDto } from '../dto/create-line-item.dto';
@@ -43,6 +44,7 @@ export class InvoiceService {
     @InjectRepository(Customer)
     private customerRepo: Repository<Customer>,
     private priceResolution: PriceResolutionService,
+    private notificationsService: NotificationsService,
     private dataSource: DataSource,
   ) {}
 
@@ -538,11 +540,32 @@ export class InvoiceService {
 
   async sendInvoice(tenantId: string, invoiceId: string, method: string) {
     const invoice = await this.findOne(tenantId, invoiceId);
+
+    // Guard: do not resend if already open, partial, paid, or voided
+    if (invoice.status !== 'draft') {
+      throw new BadRequestException(`Invoice is already ${invoice.status} — cannot send again`);
+    }
+
     await this.invoiceRepo.update(invoiceId, {
       sent_at: new Date(),
       sent_method: method || 'email',
     });
     await this.reconcileBalance(invoiceId);
+
+    // Send email to customer if they have one
+    if (invoice.customer?.email) {
+      try {
+        await this.notificationsService.send(tenantId, {
+          channel: 'email',
+          type: 'invoice_sent',
+          recipient: invoice.customer.email,
+          subject: `Invoice #${invoice.invoice_number}`,
+          body: `<p>Hello ${invoice.customer.first_name},</p><p>Invoice <strong>#${invoice.invoice_number}</strong> for <strong>$${Number(invoice.total).toFixed(2)}</strong> has been sent to you.</p><p>Due date: ${invoice.due_date}</p>`,
+          customerId: invoice.customer_id,
+        });
+      } catch { /* email send is best-effort */ }
+    }
+
     return this.findOne(tenantId, invoiceId);
   }
 

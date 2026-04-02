@@ -37,6 +37,12 @@ export class AutomationController {
     return this.automationService.acknowledgeOverdue(tenantId, jobId, body.action, body.days);
   }
 
+  @Post('send-overdue-reminders')
+  @ApiOperation({ summary: 'Send reminder emails for overdue invoices' })
+  sendOverdueReminders(@TenantId() tenantId: string) {
+    return this.automationService.sendOverdueReminders(tenantId);
+  }
+
   @Get('log')
   @ApiOperation({ summary: 'Get automation log' })
   getLog(@TenantId() tenantId: string) {
