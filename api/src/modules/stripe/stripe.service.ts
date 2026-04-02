@@ -6,7 +6,7 @@ import { Tenant } from '../tenants/entities/tenant.entity';
 import { Customer } from '../customers/entities/customer.entity';
 import { Invoice } from '../billing/entities/invoice.entity';
 import { Payment } from '../billing/entities/payment.entity';
-import { AutomationLog } from '../automation/entities/automation-log.entity';
+import { Notification } from '../notifications/entities/notification.entity';
 import { SubscriptionPlan } from '../subscriptions/entities/subscription-plan.entity';
 
 @Injectable()
@@ -19,7 +19,7 @@ export class StripeService {
     @InjectRepository(Customer) private customerRepo: Repository<Customer>,
     @InjectRepository(Invoice) private invoiceRepo: Repository<Invoice>,
     @InjectRepository(Payment) private paymentRepo: Repository<Payment>,
-    @InjectRepository(AutomationLog) private logRepo: Repository<AutomationLog>,
+    @InjectRepository(Notification) private notifRepo: Repository<Notification>,
     @InjectRepository(SubscriptionPlan) private planRepo: Repository<SubscriptionPlan>,
     private dataSource: DataSource,
   ) {
@@ -159,16 +159,18 @@ export class StripeService {
         paid_at: balanceDue <= 0 ? new Date() : null,
       });
 
-      await this.logRepo.save(this.logRepo.create({
-        tenant_id: tenantId, job_id: invoice.job_id, type: 'payment_collected', status: 'success',
-        details: { invoiceId, amount: Number(invoice.balance_due), paymentIntentId: pi.id },
+      await this.notifRepo.save(this.notifRepo.create({
+        tenant_id: tenantId, job_id: invoice.job_id, channel: 'automation', type: 'payment_collected',
+        recipient: 'system', body: JSON.stringify({ invoiceId, amount: Number(invoice.balance_due), paymentIntentId: pi.id }),
+        status: 'logged', sent_at: new Date(),
       }));
 
       return { success: true, paymentIntentId: pi.id };
     } catch (err: any) {
-      await this.logRepo.save(this.logRepo.create({
-        tenant_id: tenantId, job_id: invoice.job_id, type: 'payment_failed', status: 'failed',
-        details: { invoiceId, error: err.message },
+      await this.notifRepo.save(this.notifRepo.create({
+        tenant_id: tenantId, job_id: invoice.job_id, channel: 'automation', type: 'payment_failed',
+        recipient: 'system', body: JSON.stringify({ invoiceId, error: err.message }),
+        status: 'logged', sent_at: new Date(),
       }));
       // Phase 6: Alert admin of failed payment
       await this.logPaymentFailedAlert(tenantId, invoiceId, err.message);
@@ -213,9 +215,10 @@ export class StripeService {
       status: newStatus,
     });
 
-    await this.logRepo.save(this.logRepo.create({
-      tenant_id: tenantId, job_id: invoice.job_id, type: 'refund_processed', status: 'success',
-      details: { invoiceId, refundId: refund.id, amount: refundedAmount },
+    await this.notifRepo.save(this.notifRepo.create({
+      tenant_id: tenantId, job_id: invoice.job_id, channel: 'automation', type: 'refund_processed',
+      recipient: 'system', body: JSON.stringify({ invoiceId, refundId: refund.id, amount: refundedAmount }),
+      status: 'logged', sent_at: new Date(),
     }));
 
     return { success: true, refundId: refund.id, refundedAmount };

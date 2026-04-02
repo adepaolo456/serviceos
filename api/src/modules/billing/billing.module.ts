@@ -11,7 +11,7 @@ import { Job } from '../jobs/entities/job.entity';
 import { Customer } from '../customers/entities/customer.entity';
 import { Asset } from '../assets/entities/asset.entity';
 import { Tenant } from '../tenants/entities/tenant.entity';
-import { AutomationLog } from '../automation/entities/automation-log.entity';
+import { Notification } from '../notifications/entities/notification.entity';
 import { PricingRule } from '../pricing/entities/pricing-rule.entity';
 import { InvoiceService } from './services/invoice.service';
 import { BillingIssueDetectorService } from './services/billing-issue-detector.service';
@@ -39,7 +39,7 @@ import { PricingModule } from '../pricing/pricing.module';
       Customer,
       Asset,
       Tenant,
-      AutomationLog,
+      Notification,
       PricingRule,
       RentalChain,
       TaskChainLink,

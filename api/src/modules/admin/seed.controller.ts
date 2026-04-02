@@ -249,13 +249,13 @@ export class SeedController {
     const log: string[] = [];
 
     // Clear existing seed data in correct FK order:
-    // 1. automation_logs (refs jobs)
+    // 1. notifications/automation logs
     // 2. dump_tickets (refs jobs + invoices)
     // 3. invoices (refs jobs)
     // 4. jobs self-refs (parent_job_id)
     // 5. assets refs (current_job_id)
     // 6. jobs
-    await this.jobRepo.query(`DELETE FROM automation_logs WHERE tenant_id = $1`, [tid]);
+    await this.jobRepo.query(`DELETE FROM notifications WHERE tenant_id = $1 AND channel = 'automation'`, [tid]);
     await this.jobRepo.query(`UPDATE dump_tickets SET invoice_id = NULL WHERE tenant_id = $1`, [tid]);
     await this.jobRepo.query(`DELETE FROM dump_tickets WHERE tenant_id = $1`, [tid]);
     await this.jobRepo.query(`DELETE FROM payments WHERE tenant_id = $1`, [tid]);
