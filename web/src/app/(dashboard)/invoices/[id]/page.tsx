@@ -410,7 +410,7 @@ export default function InvoiceDetailPage({
   }
 
   const canSend = invoice.status === "draft";
-  const canPay = ["sent", "delivered", "read", "partial", "overdue"].includes(invoice.status);
+  const canPay = ["open", "partial", "overdue"].includes(invoice.status);
   const canVoid = !["paid", "voided", "void"].includes(invoice.status);
 
   return (

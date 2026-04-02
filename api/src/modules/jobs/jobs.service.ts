@@ -383,7 +383,7 @@ export class JobsService {
         jobId: job.id,
         source: 'failed_trip',
         invoiceType: 'failure_charge',
-        status: 'sent',
+        status: 'open',
         lineItems: [{ description: 'Failed pickup/delivery charge', quantity: 1, unitPrice: baseFee, amount: baseFee }],
         notes: `Driver arrived but job could not be completed. Reason: ${job.failed_reason || 'Not specified'}`,
       });
@@ -434,7 +434,7 @@ export class JobsService {
             jobId: rootJob.id,
             source: 'pickup_completion',
             invoiceType: 'final_charges',
-            status: 'sent',
+            status: 'open',
             lineItems,
             notes: `Final charges for rental #${rootJob.job_number}`,
           });
@@ -1060,7 +1060,7 @@ export class JobsService {
           jobId: jobs[jobs.length - 1].id,
           source: 'exchange',
           invoiceType: 'exchange',
-          status: 'sent',
+          status: 'open',
           lineItems: [{ description: 'Dumpster Exchange', quantity: 1, unitPrice: exchangeFee, amount: exchangeFee }],
           notes: `Exchange scheduled from job #${parent.job_number}`,
         });

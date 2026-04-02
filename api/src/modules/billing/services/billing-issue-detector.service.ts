@@ -502,7 +502,7 @@ export class BillingIssueDetectorService {
     today: Date,
   ): Promise<BillingIssue | null> {
     if (
-      !['sent', 'delivered', 'read'].includes(invoice.status) ||
+      !['open', 'partial', 'delivered', 'read'].includes(invoice.status) ||
       invoice.due_date >= todayStr ||
       Number(invoice.balance_due) <= 0
     )

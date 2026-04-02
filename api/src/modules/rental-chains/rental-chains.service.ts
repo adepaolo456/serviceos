@@ -282,6 +282,29 @@ export class RentalChainsService {
     return chain;
   }
 
+  async getFinancials(tenantId: string, chainId: string) {
+    const chain = await this.chainRepo.findOne({ where: { id: chainId, tenant_id: tenantId } });
+    if (!chain) throw new NotFoundException('Rental chain not found');
+
+    // Revenue: sum of all non-voided invoices for this chain
+    const revenueResult = await this.chainRepo.manager.query(
+      `SELECT COALESCE(SUM(total), 0) as revenue FROM invoices WHERE rental_chain_id = $1 AND voided_at IS NULL`,
+      [chainId],
+    );
+    // Cost: sum of all job_costs for jobs in this chain
+    const costResult = await this.chainRepo.manager.query(
+      `SELECT COALESCE(SUM(jc.amount), 0) as cost FROM job_costs jc INNER JOIN task_chain_links tcl ON tcl.job_id = jc.job_id WHERE tcl.rental_chain_id = $1`,
+      [chainId],
+    );
+
+    const totalRevenue = Number(revenueResult[0]?.revenue || 0);
+    const totalCost = Number(costResult[0]?.cost || 0);
+    const profit = Math.round((totalRevenue - totalCost) * 100) / 100;
+    const marginPercent = totalRevenue > 0 ? Math.round((profit / totalRevenue) * 10000) / 100 : 0;
+
+    return { totalRevenue, totalCost, profit, marginPercent };
+  }
+
   async updateLinkStatus(
     tenantId: string,
     chainId: string,

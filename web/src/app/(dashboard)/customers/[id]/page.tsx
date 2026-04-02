@@ -315,9 +315,9 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
             )}
           </Card>
           <Card title="Unpaid Invoices">
-            {invoices.filter(i => ["sent", "overdue", "draft"].includes(i.status)).length === 0 ? <p className="py-4 text-center text-xs text-[var(--t-text-muted)]">All paid up</p> : (
+            {invoices.filter(i => ["open", "overdue", "draft", "partial"].includes(i.status)).length === 0 ? <p className="py-4 text-center text-xs text-[var(--t-text-muted)]">All paid up</p> : (
               <div className="divide-y divide-[var(--t-border)] -mx-4">
-                {invoices.filter(i => ["sent", "overdue", "draft"].includes(i.status)).map(i => (
+                {invoices.filter(i => ["open", "overdue", "draft", "partial"].includes(i.status)).map(i => (
                   <Link key={i.id} href={`/invoices/${i.id}`} className="flex items-center justify-between px-4 py-2 hover:bg-[var(--t-bg-card-hover)] transition-colors">
                     <div><p className="text-xs font-medium text-[var(--t-text-primary)]">#{i.invoice_number}</p><p className="text-[10px] text-[var(--t-text-muted)]">Due: {i.due_date || "—"}</p></div>
                     <div className="flex items-center gap-2">
