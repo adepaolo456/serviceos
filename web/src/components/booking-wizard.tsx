@@ -64,6 +64,8 @@ interface PriceQuote {
   weight_allowance: number;
   overage_rate: number;
   total: number;
+  distanceMiles: number;
+  distanceCharge: number;
 }
 
 interface AvailabilityResponse {
@@ -310,7 +312,7 @@ export default function BookingWizard({
     setQuoteLoading(true);
     try {
       const svcAddr = resolvedServiceAddress();
-      const res = await api.post<{ breakdown: { basePrice: number; total: number; includedTons: number; overagePerTon: number } }>("/pricing/calculate", {
+      const res = await api.post<{ breakdown: { basePrice: number; total: number; includedTons: number; overagePerTon: number; distanceMiles: number; distanceSurcharge: number } }>("/pricing/calculate", {
         serviceType: "dumpster_rental",
         assetSubtype: dumpsterSize,
         jobType: "delivery",
@@ -323,6 +325,8 @@ export default function BookingWizard({
         total: res.breakdown.total,
         weight_allowance: res.breakdown.includedTons,
         overage_rate: res.breakdown.overagePerTon,
+        distanceMiles: res.breakdown.distanceMiles,
+        distanceCharge: res.breakdown.distanceSurcharge,
       };
       setPriceQuote(quote);
     } catch {
@@ -1033,6 +1037,17 @@ export default function BookingWizard({
                       <span style={{ color: "var(--t-text-muted)" }}>Base price</span>
                       <span style={{ color: "var(--t-text-primary)" }}>{formatCurrency(priceQuote.base_price)}</span>
                     </div>
+                    {priceQuote.distanceCharge > 0 ? (
+                      <div className="flex justify-between text-sm">
+                        <span style={{ color: "var(--t-text-muted)" }}>Distance charge ({priceQuote.distanceMiles} mi)</span>
+                        <span style={{ color: "var(--t-warning, #D97706)" }}>{formatCurrency(priceQuote.distanceCharge)}</span>
+                      </div>
+                    ) : priceQuote.distanceMiles > 0 ? (
+                      <div className="flex justify-between text-sm">
+                        <span style={{ color: "var(--t-text-muted)" }}>Delivery distance</span>
+                        <span style={{ color: "var(--t-accent)" }}>{priceQuote.distanceMiles} mi (Free — within 15 mi)</span>
+                      </div>
+                    ) : null}
                     <div className="flex justify-between text-sm">
                       <span style={{ color: "var(--t-text-muted)" }}>Weight allowance</span>
                       <span style={{ color: "var(--t-text-primary)" }}>{priceQuote.weight_allowance} tons</span>

@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useBooking } from "@/components/booking-provider";
 import {
   Plus,
   UserPlus,
@@ -123,6 +124,7 @@ function fmtLongDate(d: string): string {
 
 export default function DashboardPage() {
   const router = useRouter();
+  const { openWizard } = useBooking();
   const [user, setUser] = useState<UserProfile | null>(null);
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
   const [todayJobs, setTodayJobs] = useState<TodayJob[]>([]);
@@ -137,8 +139,7 @@ export default function DashboardPage() {
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
       if (e.target !== document.body || e.metaKey || e.ctrlKey) return;
-      if (e.key === "b") router.push("/book");
-      else if (e.key === "ArrowLeft") setScheduleDate(d => shiftDate(d, -1));
+      if (e.key === "ArrowLeft") setScheduleDate(d => shiftDate(d, -1));
       else if (e.key === "ArrowRight") setScheduleDate(d => shiftDate(d, 1));
       else if (e.key === "t") setScheduleDate(today());
     };
@@ -250,8 +251,8 @@ export default function DashboardPage() {
         </p>
 
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-          <Link
-            href="/book"
+          <button
+            onClick={() => openWizard()}
             style={{
               display: "inline-flex",
               alignItems: "center",
@@ -262,13 +263,14 @@ export default function DashboardPage() {
               fontWeight: 600,
               padding: "10px 20px",
               borderRadius: 24,
-              textDecoration: "none",
+              border: "none",
+              cursor: "pointer",
               transition: "opacity 0.15s ease",
             }}
           >
             <Plus style={{ width: 16, height: 16 }} strokeWidth={2.5} />
             New Booking
-          </Link>
+          </button>
           <Link
             href="/customers"
             style={{
