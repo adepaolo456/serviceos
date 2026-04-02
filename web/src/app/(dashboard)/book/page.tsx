@@ -91,9 +91,21 @@ export default function BookingPage() {
   useEffect(() => {
     try { const s = localStorage.getItem("serviceos-last-booking"); if (s) setPrefilledFromLast(true); } catch {}
   }, []);
+  const [activeSizes, setActiveSizes] = useState<string[]>([]);
   const [quote, setQuote] = useState<PriceQuote | null>(null);
   const [quoting, setQuoting] = useState(false);
   const [availability, setAvailability] = useState<{ availableOnDate: number; availableNow: number; pickupsBeforeDate: number; total: number } | null>(null);
+
+  // Fetch active sizes from pricing rules
+  useEffect(() => {
+    api.get<{ data: { asset_subtype: string }[] }>("/pricing?limit=100")
+      .then((res) => {
+        const sizes = [...new Set((res.data || []).map(r => r.asset_subtype).filter(Boolean))];
+        setActiveSizes(sizes);
+        if (sizes.length > 0 && !sizes.includes(assetSubtype)) setAssetSubtype(sizes[0]);
+      })
+      .catch(() => {});
+  }, []);
 
   // Step 2: Customer
   const [phoneSearch, setPhoneSearch] = useState("");
@@ -267,8 +279,8 @@ export default function BookingPage() {
             </div>
             <div>
               <label className={labelCls}>Size</label>
-              <div className="grid grid-cols-5 gap-1">
-                {["10yd", "15yd", "20yd", "30yd", "40yd"].map(s => (
+              <div className={`grid gap-1`} style={{ gridTemplateColumns: `repeat(${Math.min(activeSizes.length || 3, 5)}, 1fr)` }}>
+                {activeSizes.map(s => (
                   <button key={s} onClick={() => setAssetSubtype(s)}
                     className={`rounded-[20px] py-3 text-xs font-bold transition-all active:scale-95 ${assetSubtype === s ? "bg-[#22C55E] text-black" : "bg-[var(--t-bg-card)] text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)] border border-[var(--t-border)]"}`}>
                     {s}
