@@ -21,6 +21,11 @@ import {
   FileText,
   Trash2,
   ArrowRight,
+  Send,
+  StickyNote,
+  ChevronDown,
+  ChevronUp,
+  ExternalLink,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import Dropdown from "@/components/dropdown";
@@ -160,6 +165,8 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
     voided_at?: string; void_reason?: string;
   }>>([]);
   const [showRevisions, setShowRevisions] = useState<string | null>(null);
+  const [invoice, setInvoice] = useState<{ id: string; invoice_number: number; status: string; total: number; balance_due: number } | null>(null);
+  const [invoiceOpen, setInvoiceOpen] = useState(true);
 
   const fetchJob = async () => {
     try {
@@ -177,7 +184,14 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
     } catch { /* */ }
   };
 
-  useEffect(() => { fetchJob(); fetchDumpTickets(); }, [id]);
+  const fetchInvoice = async () => {
+    try {
+      const res = await api.get<{ data: Array<{ id: string; invoice_number: number; status: string; total: number; balance_due: number }> }>(`/invoices?jobId=${id}&limit=1`);
+      if (res.data && res.data.length > 0) setInvoice(res.data[0]);
+    } catch { /* */ }
+  };
+
+  useEffect(() => { fetchJob(); fetchDumpTickets(); fetchInvoice(); }, [id]);
 
   const changeStatus = async (newStatus: string) => {
     if (actionLoading) return;
@@ -316,6 +330,48 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
             )}
           </Dropdown>
         </div>
+      </div>
+
+      {/* --- Quick Action Buttons --- */}
+      <div className="mb-6 flex items-center gap-2 flex-wrap">
+        <button
+          onClick={async () => {
+            if (!invoice) { toast("warning", "No invoice linked to this job"); return; }
+            try {
+              await api.post(`/invoices/${invoice.id}/send`);
+              toast("success", "Invoice sent");
+            } catch { toast("error", "Failed to send invoice"); }
+          }}
+          disabled={actionLoading}
+          className="flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-all disabled:opacity-50 hover:bg-[var(--t-bg-card-hover)]"
+          style={{ borderColor: "var(--t-border)", color: "var(--t-text-primary)", background: "none", cursor: "pointer" }}
+        >
+          <Send className="h-3 w-3" /> Send Invoice
+        </button>
+        <button
+          onClick={() => changeStatus("completed")}
+          disabled={actionLoading || !transitions.includes("completed")}
+          className="flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-all disabled:opacity-50 hover:bg-[var(--t-bg-card-hover)]"
+          style={{ borderColor: "var(--t-border)", color: "var(--t-text-primary)", background: "none", cursor: "pointer" }}
+        >
+          <CheckCircle2 className="h-3 w-3" /> Mark Complete
+        </button>
+        <button
+          onClick={async () => {
+            const note = prompt("Add a note:");
+            if (!note) return;
+            try {
+              await api.patch(`/jobs/${id}`, { driver_notes: note });
+              toast("success", "Note added");
+              await fetchJob();
+            } catch { toast("error", "Failed to add note"); }
+          }}
+          disabled={actionLoading}
+          className="flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-all disabled:opacity-50 hover:bg-[var(--t-bg-card-hover)]"
+          style={{ borderColor: "var(--t-border)", color: "var(--t-text-primary)", background: "none", cursor: "pointer" }}
+        >
+          <StickyNote className="h-3 w-3" /> Add Note
+        </button>
       </div>
 
       {/* --- Timeline --- */}
@@ -492,8 +548,11 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
                             onClick={async () => {
                               const newWeight = prompt("Correct weight (tons):", String(t.weight_tons));
                               if (!newWeight) return;
+                              const w = Number(newWeight);
+                              if (w === 0) { if (!confirm("Weight is 0 — are you sure?")) return; }
+                              else if (w > 10) { if (!confirm("Weight seems high (" + w + " tons) — are you sure?")) return; }
                               try {
-                                await api.patch(`/dump-tickets/${t.id}`, { weightTons: Number(newWeight), reason: "Admin correction" });
+                                await api.patch(`/dump-tickets/${t.id}`, { weightTons: w, reason: "Admin correction" });
                                 toast("success", "Dump ticket updated");
                                 fetchDumpTickets();
                               } catch (e: any) { toast("error", e.message || "Failed to update"); }
@@ -504,6 +563,7 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
                           </button>
                           <button
                             onClick={async () => {
+                              if (!confirm(`Void ticket #${t.ticket_number || t.id}? This cannot be undone.`)) return;
                               const reason = prompt("Void reason:");
                               if (!reason) return;
                               try {
@@ -566,6 +626,50 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
                 })}
               </div>
             </Card>
+          )}
+
+          {/* Invoice Summary */}
+          {invoice && (
+            <div className="rounded-[20px] bg-[var(--t-bg-card)] border border-[var(--t-border)] p-5">
+              <button
+                onClick={() => setInvoiceOpen(!invoiceOpen)}
+                className="flex w-full items-center justify-between"
+                style={{ background: "none", border: "none", cursor: "pointer", padding: 0 }}
+              >
+                <div className="flex items-center gap-2">
+                  <FileText className="h-4 w-4 text-[var(--t-text-muted)]" />
+                  <h3 className="text-sm font-semibold text-[var(--t-text-primary)]">Invoice Summary</h3>
+                </div>
+                {invoiceOpen ? <ChevronUp className="h-4 w-4 text-[var(--t-text-muted)]" /> : <ChevronDown className="h-4 w-4 text-[var(--t-text-muted)]" />}
+              </button>
+              {invoiceOpen && (
+                <div className="mt-4 space-y-2.5 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-[var(--t-text-muted)]">Invoice #</span>
+                    <span className="text-[var(--t-text-primary)] font-medium">{invoice.invoice_number}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[var(--t-text-muted)]">Status</span>
+                    <span className="capitalize font-medium" style={{
+                      color: invoice.status === "paid" ? "var(--t-accent)" : invoice.status === "overdue" ? "var(--t-error)" : "var(--t-warning)"
+                    }}>{invoice.status}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[var(--t-text-muted)]">Total</span>
+                    <span className="text-[var(--t-text-primary)] tabular-nums font-semibold">{fmt(invoice.total)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[var(--t-text-muted)]">Balance Due</span>
+                    <span className="tabular-nums font-semibold" style={{ color: invoice.balance_due > 0 ? "var(--t-warning)" : "var(--t-accent)" }}>{fmt(invoice.balance_due)}</span>
+                  </div>
+                  <div className="pt-2 border-t border-[var(--t-border)]">
+                    <Link href={`/invoices/${invoice.id}`} className="flex items-center gap-1.5 text-xs font-medium text-[var(--t-accent)] hover:underline">
+                      <ExternalLink className="h-3 w-3" /> View Full Invoice
+                    </Link>
+                  </div>
+                </div>
+              )}
+            </div>
           )}
         </div>
 

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -11,11 +11,13 @@ import {
   Platform,
   Image,
   Modal,
+  TextInput,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import { getJobDetail, updateJobStatus, uploadJobPhoto } from '../../src/api';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getJobDetail, updateJobStatus, uploadJobPhoto, getDumpLocations, submitDumpSlip } from '../../src/api';
 import { useAppTheme, type ThemeColors } from '../../constants/theme';
 
 interface PhotoEntry {
@@ -100,6 +102,17 @@ export default function JobDetailScreen() {
   const [dumpsterPin, setDumpsterPin] = useState('');
   const [dumpsterConfirmed, setDumpsterConfirmed] = useState(false);
   const [showWhereNext, setShowWhereNext] = useState(false);
+
+  // Complete Stop modal state
+  const [showCompleteStop, setShowCompleteStop] = useState(false);
+  const [csPhoto, setCsPhoto] = useState<{ uri: string; base64: string } | null>(null);
+  const [csTicketNumber, setCsTicketNumber] = useState('');
+  const [csNetWeight, setCsNetWeight] = useState('');
+  const [csDumpLocations, setCsDumpLocations] = useState<any[]>([]);
+  const [csSelectedLocation, setCsSelectedLocation] = useState<string>('');
+  const [csShowLocationPicker, setCsShowLocationPicker] = useState(false);
+  const [csSubmitting, setCsSubmitting] = useState(false);
+  const [csShowNoPhotoWarning, setCsShowNoPhotoWarning] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -276,6 +289,93 @@ export default function JobDetailScreen() {
     );
   };
 
+  // Complete Stop: open modal and load dump locations + last used
+  const openCompleteStop = useCallback(async () => {
+    setCsPhoto(null);
+    setCsTicketNumber('');
+    setCsNetWeight('');
+    setCsShowNoPhotoWarning(false);
+    setShowCompleteStop(true);
+
+    try {
+      const locations = await getDumpLocations();
+      setCsDumpLocations(locations);
+      const lastId = await AsyncStorage.getItem('lastDumpLocation');
+      if (lastId && locations.some((l: any) => l.id === lastId)) {
+        setCsSelectedLocation(lastId);
+      } else if (locations.length > 0) {
+        setCsSelectedLocation(locations[0].id);
+      }
+    } catch {
+      /* locations optional */
+    }
+  }, []);
+
+  // Complete Stop: take photo
+  const csCapture = async () => {
+    const perm = await ImagePicker.requestCameraPermissionsAsync();
+    if (!perm.granted) {
+      Alert.alert('Permission required', 'Camera access is needed to take photos.');
+      return;
+    }
+    const result = await ImagePicker.launchCameraAsync({ base64: true, quality: 0.7 });
+    if (!result.canceled && result.assets?.[0]) {
+      setCsPhoto({ uri: result.assets[0].uri, base64: result.assets[0].base64 || '' });
+      setCsShowNoPhotoWarning(false);
+    }
+  };
+
+  // Complete Stop: submit
+  const csComplete = async (bypassPhotoWarning = false) => {
+    if (!job) return;
+    const needsDumpFields = job.job_type === 'pickup' || job.job_type === 'exchange';
+
+    // Soft warning: no photo on pickup/exchange
+    if (needsDumpFields && !csPhoto && !bypassPhotoWarning) {
+      setCsShowNoPhotoWarning(true);
+      return;
+    }
+
+    setCsSubmitting(true);
+    try {
+      // 1) Upload photo if taken
+      if (csPhoto) {
+        await uploadJobPhoto(job.id, csPhoto.base64, 'After');
+        const newPhotoEntry: PhotoEntry = { uri: csPhoto.uri, takenAt: new Date().toISOString(), type: 'After' };
+        setPhotos((prev) => [...prev, newPhotoEntry]);
+      }
+
+      // 2) Submit dump slip for pickup/exchange if fields filled
+      if (needsDumpFields && (csTicketNumber || csNetWeight)) {
+        await submitDumpSlip(job.id, {
+          dumpLocationId: csSelectedLocation,
+          ticketNumber: csTicketNumber,
+          wasteType: 'cnd',
+          weightTons: parseFloat(csNetWeight) || 0,
+        });
+      }
+
+      // 3) Complete the job
+      await updateJobStatus(job.id, 'completed');
+      setJob((prev) => (prev ? { ...prev, status: 'completed' } : prev));
+
+      // 4) Save last dump location
+      if (csSelectedLocation) {
+        await AsyncStorage.setItem('lastDumpLocation', csSelectedLocation);
+      }
+
+      // 5) Success
+      setShowCompleteStop(false);
+      Alert.alert('Job Complete', 'Job has been completed.', [
+        { text: 'OK', onPress: () => router.replace('/(tabs)' as any) },
+      ]);
+    } catch (err) {
+      Alert.alert('Error', (err as any)?.response?.data?.message || (err as any)?.message || 'Failed to complete job');
+    } finally {
+      setCsSubmitting(false);
+    }
+  };
+
   const s = makeStyles(colors);
 
   if (loading) {
@@ -338,6 +438,45 @@ export default function JobDetailScreen() {
           </View>
         </View>
       </View>
+
+      {/* Priority Header — Size, Type, Address */}
+      {(() => {
+        const subtypeRaw = job.asset_subtype || job.asset?.subtype;
+        const sizeLabel = subtypeRaw
+          ? subtypeRaw.replace(/[^0-9]/g, '') + ' YARD'
+          : null;
+        const typeColor = TYPE_COLORS[job.job_type] || '#71717A';
+        const fullAddr = addr
+          ? [addr.street, addr.city, addr.state].filter(Boolean).join(', ')
+          : null;
+        return (
+          <View style={{
+            paddingHorizontal: 20,
+            paddingVertical: 14,
+            borderLeftWidth: 5,
+            borderLeftColor: typeColor,
+            marginHorizontal: 16,
+            marginTop: 8,
+            marginBottom: 4,
+            backgroundColor: colors.surface,
+            borderRadius: 12,
+            borderWidth: 1,
+            borderColor: colors.border,
+          }}>
+            <Text style={{ fontSize: 24, fontWeight: '900', color: colors.text, letterSpacing: -0.5 }}>
+              {sizeLabel || TYPE_LABELS[job.job_type] || job.job_type.toUpperCase()}
+              {sizeLabel ? (
+                <Text style={{ color: typeColor }}>{' — '}{(TYPE_LABELS[job.job_type] || job.job_type).toUpperCase()}</Text>
+              ) : null}
+            </Text>
+            {fullAddr && (
+              <Text style={{ fontSize: 15, color: colors.textSecondary, marginTop: 4 }}>
+                {fullAddr}
+              </Text>
+            )}
+          </View>
+        );
+      })()}
 
       <ScrollView style={s.scroll} contentContainerStyle={s.scrollContent}>
         {/* Quick Actions Row */}
@@ -556,6 +695,16 @@ export default function JobDetailScreen() {
       {/* Action Button — 3-step flow */}
       {transition && job.status !== 'completed' && (
         <View style={s.actionBar}>
+          {/* Complete Stop shortcut — shown above the main action when dumpster is confirmed */}
+          {(job.status === 'arrived' || job.status === 'in_progress') && dumpsterConfirmed && (
+            <TouchableOpacity
+              style={[s.actionBtn, { backgroundColor: '#F59E0B', marginBottom: 10 }]}
+              onPress={openCompleteStop}
+            >
+              <Ionicons name="clipboard" size={20} color="#fff" />
+              <Text style={s.actionBtnText}>Complete Stop</Text>
+            </TouchableOpacity>
+          )}
           {/* Show "Complete Job" only after dumpster confirmed on arrived status */}
           {(job.status === 'arrived' || job.status === 'in_progress') && !dumpsterConfirmed ? (
             <TouchableOpacity
@@ -654,6 +803,202 @@ export default function JobDetailScreen() {
             <TouchableOpacity onPress={() => { setShowWhereNext(false); router.replace('/(tabs)' as any); }}
               style={{ alignItems: 'center', paddingVertical: 12 }}>
               <Text style={{ fontSize: 14, fontWeight: '600', color: '#8A8A8A' }}>Skip — Next Job</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Complete Stop Modal */}
+      <Modal visible={showCompleteStop} transparent animationType="slide">
+        <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.5)' }}>
+          <View style={{ backgroundColor: colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40, maxHeight: '85%' }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <Text style={{ fontSize: 18, fontWeight: '800', color: colors.text }}>Complete Stop</Text>
+              <TouchableOpacity onPress={() => setShowCompleteStop(false)} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+                <Ionicons name="close" size={24} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false}>
+              {/* Camera capture area */}
+              <TouchableOpacity
+                onPress={csCapture}
+                style={{
+                  backgroundColor: colors.surfaceHover,
+                  borderRadius: 14,
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                  borderStyle: 'dashed',
+                  height: 140,
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  marginBottom: 16,
+                  overflow: 'hidden',
+                }}
+              >
+                {csPhoto ? (
+                  <Image source={{ uri: csPhoto.uri }} style={{ width: '100%', height: '100%', borderRadius: 14 }} resizeMode="cover" />
+                ) : (
+                  <View style={{ alignItems: 'center' }}>
+                    <Ionicons name="camera" size={32} color={colors.textTertiary} />
+                    <Text style={{ fontSize: 13, color: colors.textSecondary, marginTop: 6 }}>Tap to take photo</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+              {csPhoto && (
+                <Text style={{ fontSize: 12, color: colors.textSecondary, textAlign: 'center', marginTop: -12, marginBottom: 12 }}>Tap photo to retake</Text>
+              )}
+
+              {/* Dump ticket fields — only for pickup/exchange */}
+              {(job.job_type === 'pickup' || job.job_type === 'exchange') && (
+                <View style={{ marginBottom: 8 }}>
+                  <Text style={{ fontSize: 11, fontWeight: '800', color: colors.textSecondary, letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 10 }}>DUMP TICKET</Text>
+
+                  {/* Ticket number */}
+                  <View style={{ marginBottom: 12 }}>
+                    <Text style={{ fontSize: 12, fontWeight: '600', color: colors.textSecondary, marginBottom: 4 }}>Ticket Number</Text>
+                    <TextInput
+                      style={{
+                        backgroundColor: colors.surfaceHover,
+                        borderRadius: 10,
+                        borderWidth: 1,
+                        borderColor: colors.border,
+                        padding: 12,
+                        fontSize: 15,
+                        color: colors.text,
+                      }}
+                      value={csTicketNumber}
+                      onChangeText={setCsTicketNumber}
+                      placeholder="Enter ticket #"
+                      placeholderTextColor={colors.textTertiary}
+                      autoFocus
+                    />
+                    {job.job_type === 'pickup' && !csTicketNumber && (
+                      <Text style={{ fontSize: 11, color: '#F59E0B', marginTop: 4 }}>Ticket number recommended for pickup jobs</Text>
+                    )}
+                  </View>
+
+                  {/* Net weight */}
+                  <View style={{ marginBottom: 12 }}>
+                    <Text style={{ fontSize: 12, fontWeight: '600', color: colors.textSecondary, marginBottom: 4 }}>Net Weight (tons)</Text>
+                    <TextInput
+                      style={{
+                        backgroundColor: colors.surfaceHover,
+                        borderRadius: 10,
+                        borderWidth: 1,
+                        borderColor: colors.border,
+                        padding: 12,
+                        fontSize: 15,
+                        color: colors.text,
+                      }}
+                      value={csNetWeight}
+                      onChangeText={setCsNetWeight}
+                      placeholder="0.00"
+                      placeholderTextColor={colors.textTertiary}
+                      keyboardType="decimal-pad"
+                    />
+                    {parseFloat(csNetWeight) > 10 && (
+                      <Text style={{ fontSize: 11, color: '#F59E0B', marginTop: 4 }}>Weight seems high — please verify.</Text>
+                    )}
+                  </View>
+
+                  {/* Dump location dropdown */}
+                  <View style={{ marginBottom: 12 }}>
+                    <Text style={{ fontSize: 12, fontWeight: '600', color: colors.textSecondary, marginBottom: 4 }}>Dump Location</Text>
+                    <TouchableOpacity
+                      onPress={() => setCsShowLocationPicker(!csShowLocationPicker)}
+                      style={{
+                        backgroundColor: colors.surfaceHover,
+                        borderRadius: 10,
+                        borderWidth: 1,
+                        borderColor: colors.border,
+                        padding: 12,
+                        flexDirection: 'row',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                      }}
+                    >
+                      <Text style={{ fontSize: 15, color: csSelectedLocation ? colors.text : colors.textTertiary }}>
+                        {csSelectedLocation
+                          ? (csDumpLocations.find((l: any) => l.id === csSelectedLocation)?.name || 'Selected')
+                          : 'Select location'}
+                      </Text>
+                      <Ionicons name={csShowLocationPicker ? 'chevron-up' : 'chevron-down'} size={18} color={colors.textSecondary} />
+                    </TouchableOpacity>
+                    {csShowLocationPicker && (
+                      <View style={{ backgroundColor: colors.surfaceHover, borderRadius: 10, borderWidth: 1, borderColor: colors.border, marginTop: 4, maxHeight: 150 }}>
+                        <ScrollView nestedScrollEnabled>
+                          {csDumpLocations.map((loc: any) => (
+                            <TouchableOpacity
+                              key={loc.id}
+                              onPress={() => { setCsSelectedLocation(loc.id); setCsShowLocationPicker(false); }}
+                              style={{
+                                padding: 12,
+                                borderBottomWidth: 0.5,
+                                borderBottomColor: colors.borderSubtle,
+                                backgroundColor: loc.id === csSelectedLocation ? colors.accentSoft : 'transparent',
+                              }}
+                            >
+                              <Text style={{ fontSize: 14, color: colors.text, fontWeight: loc.id === csSelectedLocation ? '700' : '400' }}>{loc.name}</Text>
+                              {loc.address && <Text style={{ fontSize: 11, color: colors.textSecondary, marginTop: 2 }}>{loc.address}</Text>}
+                            </TouchableOpacity>
+                          ))}
+                          {csDumpLocations.length === 0 && (
+                            <Text style={{ padding: 12, fontSize: 13, color: colors.textTertiary }}>No locations available</Text>
+                          )}
+                        </ScrollView>
+                      </View>
+                    )}
+                  </View>
+                </View>
+              )}
+
+              {/* No-photo warning banner */}
+              {csShowNoPhotoWarning && (
+                <View style={{ backgroundColor: '#FFFBEB', borderRadius: 10, padding: 14, marginBottom: 16, borderWidth: 1, borderColor: '#F59E0B' }}>
+                  <Text style={{ fontSize: 14, fontWeight: '600', color: '#92400E', marginBottom: 10 }}>No photo attached — are you sure?</Text>
+                  <View style={{ flexDirection: 'row', gap: 10 }}>
+                    <TouchableOpacity
+                      onPress={() => { setCsShowNoPhotoWarning(false); csCapture(); }}
+                      style={{ flex: 1, paddingVertical: 10, borderRadius: 10, backgroundColor: '#F59E0B', alignItems: 'center' }}
+                    >
+                      <Text style={{ fontSize: 13, fontWeight: '700', color: '#fff' }}>Add Photo</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => csComplete(true)}
+                      style={{ flex: 1, paddingVertical: 10, borderRadius: 10, borderWidth: 1, borderColor: '#F59E0B', alignItems: 'center' }}
+                    >
+                      <Text style={{ fontSize: 13, fontWeight: '700', color: '#92400E' }}>Complete Anyway</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
+            </ScrollView>
+
+            {/* Complete button */}
+            <TouchableOpacity
+              onPress={() => csComplete(false)}
+              disabled={csSubmitting}
+              style={{
+                backgroundColor: '#22C55E',
+                borderRadius: 28,
+                paddingVertical: 16,
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexDirection: 'row',
+                gap: 8,
+                marginTop: 12,
+                opacity: csSubmitting ? 0.6 : 1,
+              }}
+            >
+              {csSubmitting ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <>
+                  <Ionicons name="checkmark-circle" size={20} color="#fff" />
+                  <Text style={{ fontSize: 16, fontWeight: '700', color: '#fff' }}>Complete</Text>
+                </>
+              )}
             </TouchableOpacity>
           </View>
         </View>

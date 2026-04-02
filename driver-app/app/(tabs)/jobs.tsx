@@ -20,12 +20,13 @@ interface Job {
   job_number: string;
   job_type: string;
   status: string;
+  asset_subtype?: string;
   scheduled_date: string;
   scheduled_window_start: string;
   scheduled_window_end: string;
   service_address: { street?: string; city?: string; state?: string } | null;
   customer: { first_name: string; last_name: string } | null;
-  asset: { identifier?: string } | null;
+  asset: { identifier?: string; subtype?: string } | null;
 }
 
 type Filter = 'today' | 'upcoming' | 'completed';
@@ -152,6 +153,10 @@ export default function JobsScreen() {
         renderItem={({ item: j }) => {
           const isCompleted = j.status === 'completed';
           const addr = j.service_address;
+          const sizeRaw = j.asset_subtype || j.asset?.subtype; // e.g. "20yd"
+          const sizeAbbr = sizeRaw
+            ? sizeRaw.replace(/[^0-9]/g, '') + 'Y'
+            : '—';
           return (
             <TouchableOpacity
               style={[
@@ -165,36 +170,24 @@ export default function JobsScreen() {
                 s.cardLeftEdge,
                 { backgroundColor: STATUS_COLORS[j.status] || '#71717A' },
               ]} />
-              <View style={s.cardTop}>
-                <Text style={s.customerName} numberOfLines={1}>
-                  {j.customer
-                    ? `${j.customer.first_name} ${j.customer.last_name}`
-                    : j.job_number}
+              {/* Primary line: Size + Type + Address */}
+              <View style={s.cardPrimary}>
+                <Text style={s.sizeAbbr}>{sizeAbbr}</Text>
+                <Text style={[s.primaryType, { color: TYPE_COLORS[j.job_type] || '#71717A' }]}>
+                  {j.job_type.toUpperCase()}
                 </Text>
-                <View
-                  style={[
-                    s.typeBadge,
-                    {
-                      backgroundColor:
-                        (TYPE_COLORS[j.job_type] || '#71717A') + '14',
-                    },
-                  ]}
-                >
-                  <Text
-                    style={[
-                      s.typeText,
-                      { color: TYPE_COLORS[j.job_type] || '#71717A' },
-                    ]}
-                  >
-                    {j.job_type}
+                {addr && (
+                  <Text style={s.primaryAddress} numberOfLines={1}>
+                    {[addr.street, addr.city].filter(Boolean).join(', ')}
                   </Text>
-                </View>
+                )}
               </View>
-              {addr && (
-                <Text style={s.address} numberOfLines={1}>
-                  {[addr.street, addr.city].filter(Boolean).join(', ')}
-                </Text>
-              )}
+              {/* Secondary: customer name */}
+              <Text style={s.customerName} numberOfLines={1}>
+                {j.customer
+                  ? `${j.customer.first_name} ${j.customer.last_name}`
+                  : j.job_number}
+              </Text>
               <View style={s.cardMeta}>
                 {j.scheduled_date && (
                   <Text style={s.metaText}>
@@ -276,22 +269,32 @@ const makeStyles = (colors: ThemeColors) =>
       borderBottomLeftRadius: 14,
     },
     cardCompleted: { opacity: 0.45 },
-    cardTop: {
+    cardPrimary: {
       flexDirection: 'row',
       alignItems: 'center',
-      justifyContent: 'space-between',
       marginBottom: 4,
+      gap: 8,
+    },
+    sizeAbbr: {
+      fontSize: 18,
+      fontWeight: '900',
+      color: colors.text,
+    },
+    primaryType: {
+      fontSize: 13,
+      fontWeight: '700',
+    },
+    primaryAddress: {
+      fontSize: 13,
+      color: colors.textSecondary,
+      flex: 1,
     },
     customerName: {
-      fontSize: 14,
-      fontWeight: '600',
-      color: colors.text,
-      flex: 1,
-      marginRight: 8,
+      fontSize: 13,
+      fontWeight: '500',
+      color: colors.textSecondary,
+      marginBottom: 4,
     },
-    typeBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 },
-    typeText: { fontSize: 10, fontWeight: '700', textTransform: 'capitalize' },
-    address: { fontSize: 12, color: colors.textSecondary, marginBottom: 4 },
     cardMeta: { flexDirection: 'row', gap: 8, flexWrap: 'wrap', alignItems: 'center' },
     metaText: { fontSize: 11, color: colors.textSecondary },
     statusBadge: { paddingHorizontal: 6, paddingVertical: 1, borderRadius: 4 },

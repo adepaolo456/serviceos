@@ -575,7 +575,7 @@ export default function DispatchPage() {
 
       {/* ── QuickView ── */}
       <QuickView isOpen={!!quickViewJob} onClose={() => { setQuickViewJob(null); setQvDetail(null); }}
-        title={quickViewJob ? `${quickViewJob.asset?.subtype || ""} ${TYPE_CONFIG[quickViewJob.job_type]?.label || quickViewJob.job_type}`.trim() : ""}
+        title={quickViewJob ? `${quickViewJob.asset_subtype || quickViewJob.asset?.subtype || ""} ${TYPE_CONFIG[quickViewJob.job_type]?.label || quickViewJob.job_type}`.trim() : ""}
         subtitle={quickViewJob?.job_number}
         actions={quickViewJob ? <Link href={`/jobs/${quickViewJob.id}`} className="rounded-full px-3 py-1.5 text-xs font-medium" style={{ background: "var(--t-bg-card-hover)", color: "var(--t-text-primary)" }}><ExternalLink className="h-3 w-3 inline mr-1" />Full Detail</Link> : undefined}
         footer={quickViewJob ? (
@@ -664,7 +664,7 @@ function DispatchMap({ board, activeJobId }: { board: DispatchBoard | null; acti
 
       const custName = job.customer ? `${job.customer.first_name} ${job.customer.last_name}` : job.job_number;
       const addrStr = [job.service_address?.street, job.service_address?.city].filter(Boolean).join(", ") || "No address";
-      const typeStr = `${job.asset?.subtype || ""} ${tc.label || job.job_type}`.trim();
+      const typeStr = `${job.asset_subtype || job.asset?.subtype || ""} ${tc.label || job.job_type}`.trim();
       const driverName = driverMap.get(job.id) || "Unassigned";
       const statusStr = (job.status || "pending").replace(/_/g, " ");
 
@@ -913,24 +913,41 @@ const JobTile = memo(function JobTile({ job, isUnassigned, drivers, onAssign, on
       onClick={onQuickView}
       onContextMenu={onCtxMenu ? (e) => onCtxMenu(e, job) : undefined}
     >
-      {/* Green left accent bar */}
-      <div className="absolute left-0 top-3 bottom-3 w-[4px] rounded-full" style={{ background: "#22C55E" }} />
+      {/* Left accent bar — colored by job type */}
+      <div className="absolute left-0 top-3 bottom-3 w-[4px] rounded-full" style={{ background: tc.stripe }} />
+
+      {/* Warning dot for overdue or failed trip */}
+      {(job.is_overdue || job.is_failed_trip) && (
+        <div
+          style={{
+            position: "absolute",
+            top: 6,
+            right: 6,
+            width: 8,
+            height: 8,
+            borderRadius: "50%",
+            backgroundColor: job.is_failed_trip ? "#DC2626" : "#D97706",
+            zIndex: 1,
+            pointerEvents: "none",
+          }}
+        />
+      )}
 
       <div className="py-3.5 pl-5 pr-3 flex items-center gap-3">
         {/* Content */}
         <div className="flex-1 min-w-0">
-          {/* Line 1: Size + Type */}
+          {/* Line 1: Size badge + Type (UPPERCASE, colored by job type) */}
           <div className="flex items-baseline gap-1.5">
-            {size && <span className="text-[14px] font-extrabold" style={{ color: "var(--t-text-primary)" }}>{size}</span>}
-            <span className="text-[14px] font-extrabold" style={{ color: "#22C55E" }}>{tc.label}</span>
+            {size && <span className="text-[15px] font-extrabold" style={{ color: "var(--t-text-primary)" }}>{size.replace(/yd$/i, "Y").toUpperCase()}</span>}
+            <span className="text-[14px] font-extrabold uppercase" style={{ color: tc.stripe }}>{tc.label.toUpperCase()}</span>
             {isCompleted && <CheckCircle2 className="h-3.5 w-3.5 ml-1" style={{ color: "#22C55E" }} />}
           </div>
-          {/* Line 2: Customer name */}
-          <p className="text-[13px] font-semibold mt-1 truncate" style={{ color: "var(--t-text-primary)" }}>
+          {/* Line 2: Address (always visible, prominent) */}
+          {addrStr && <p className="text-[13px] font-medium mt-0.5 truncate" style={{ color: "var(--t-text-primary)" }}>{addrStr}</p>}
+          {/* Line 3: Customer name (secondary) */}
+          <p className="text-[12px] mt-0.5 truncate" style={{ color: "var(--t-text-muted)" }}>
             {job.customer ? `${job.customer.first_name} ${job.customer.last_name}` : job.job_number}
           </p>
-          {/* Line 3: Address */}
-          {addrStr && <p className="text-[12px] mt-0.5 truncate" style={{ color: "var(--t-text-muted)" }}>{addrStr}</p>}
           {/* Line 4: Time window */}
           {(job.scheduled_window_start || job.scheduled_window_end) && (
             <p className="text-[11px] mt-0.5" style={{ color: "#8A8A8A" }}>
@@ -1025,9 +1042,9 @@ function JobTileGhost({ job }: { job: DispatchJob }) {
     <div className="relative rounded-[14px] bg-white px-4 py-3" style={{ width: 310, border: "2px solid var(--t-accent)", boxShadow: "0 12px 32px rgba(0,0,0,0.2)" }}>
       <div className="absolute left-0 top-2.5 bottom-2.5 w-[4px] rounded-full" style={{ background: tc.stripe }} />
       <div className="flex items-center gap-2 pl-2">
-        {size && <span className="rounded-md px-2 py-0.5 text-[12px] font-bold" style={{ background: "#F0F0F0", border: "1px solid #E0E0E0", color: "#0A0A0A" }}>{size}</span>}
-        <span className="flex h-[20px] w-[20px] items-center justify-center rounded-full text-[9px] font-bold text-white" style={{ background: tc.stripe }}>{tc.letter}</span>
-        <span className="text-[14px] font-semibold" style={{ color: "#0A0A0A" }}>{job.customer ? `${job.customer.first_name} ${job.customer.last_name}` : job.job_number}</span>
+        {size && <span className="rounded-md px-2 py-0.5 text-[13px] font-extrabold" style={{ background: "#F0F0F0", border: "1px solid #E0E0E0", color: "#0A0A0A" }}>{size.replace(/yd$/i, "Y").toUpperCase()}</span>}
+        <span className="text-[13px] font-extrabold uppercase" style={{ color: tc.stripe }}>{tc.label.toUpperCase()}</span>
+        <span className="text-[12px] font-medium" style={{ color: "#666" }}>{job.customer ? `${job.customer.first_name} ${job.customer.last_name}` : job.job_number}</span>
       </div>
     </div>
   );
@@ -1064,7 +1081,7 @@ function QVContent({ job, detail, board, onAssign, onRefresh, toast }: {
       <div className="flex items-center gap-2 flex-wrap">
         <span className="text-xs font-medium" style={{ color: tc.stripe }}>{tc.label}</span>
         <span className="text-xs font-medium capitalize" style={{ color: isCompleted ? "var(--t-accent)" : "var(--t-warning)" }}>{job.status.replace(/_/g, " ")}</span>
-        {d.asset?.subtype && <span className="rounded-md px-2 py-0.5 text-[11px] font-bold" style={{ background: "#F0F0F0", border: "1px solid #E0E0E0", color: "#0A0A0A" }}>{d.asset.subtype}</span>}
+        {(d.asset_subtype || d.asset?.subtype) && <span className="rounded-md px-2 py-0.5 text-[11px] font-bold" style={{ background: "#F0F0F0", border: "1px solid #E0E0E0", color: "#0A0A0A" }}>{d.asset_subtype || d.asset?.subtype}</span>}
         {d.asset?.identifier && <span className="text-xs font-bold" style={{ color: "var(--t-accent)" }}>{d.asset.identifier}</span>}
       </div>
       {cust && (
@@ -1099,15 +1116,25 @@ function QVContent({ job, detail, board, onAssign, onRefresh, toast }: {
             <div className="flex justify-between"><span style={{ color: "var(--t-text-muted)" }}>Asset</span><span style={{ color: "var(--t-text-primary)" }}>{d.asset?.identifier || "Not assigned"}</span></div>
           </div>
           <div className="mt-3 pt-3" style={{ borderTop: "1px solid var(--t-border)" }}>
-            <Dropdown trigger={<button className="text-xs font-medium" style={{ color: "var(--t-accent)" }}>{job.assigned_driver ? "Reassign" : "Assign Driver"}</button>}>
-              <button onClick={() => onAssign(job.id, null)} className="flex w-full items-center gap-2 px-3 py-2 text-xs" style={{ color: "var(--t-error)" }}>Unassign</button>
-              {board.drivers.map(col => (
-                <button key={col.driver.id} onClick={() => onAssign(job.id, col.driver.id)} className="flex w-full items-center gap-2 px-3 py-2 text-xs whitespace-nowrap" style={{ color: "var(--t-text-primary)" }}>
-                  <div className="flex h-5 w-5 items-center justify-center rounded-full text-[8px] font-bold" style={{ background: "var(--t-accent-soft)", color: "var(--t-accent)" }}>{col.driver.firstName[0]}{col.driver.lastName[0]}</div>
-                  {col.driver.firstName} {col.driver.lastName}
-                </button>
-              ))}
-            </Dropdown>
+            {!job.assigned_driver && board.drivers.length === 1 ? (
+              <button
+                onClick={() => onAssign(job.id, board.drivers[0].driver.id)}
+                className="text-xs font-medium rounded-full px-3 py-1.5 transition-all duration-150 active:scale-95"
+                style={{ background: "var(--t-accent)", color: "#000", border: "none", cursor: "pointer" }}
+              >
+                Assign to {board.drivers[0].driver.firstName} {board.drivers[0].driver.lastName}
+              </button>
+            ) : (
+              <Dropdown trigger={<button className="text-xs font-medium" style={{ color: "var(--t-accent)" }}>{job.assigned_driver ? "Reassign" : "Assign Driver"}</button>}>
+                <button onClick={() => onAssign(job.id, null)} className="flex w-full items-center gap-2 px-3 py-2 text-xs" style={{ color: "var(--t-error)" }}>Unassign</button>
+                {board.drivers.map(col => (
+                  <button key={col.driver.id} onClick={() => onAssign(job.id, col.driver.id)} className="flex w-full items-center gap-2 px-3 py-2 text-xs whitespace-nowrap" style={{ color: "var(--t-text-primary)" }}>
+                    <div className="flex h-5 w-5 items-center justify-center rounded-full text-[8px] font-bold" style={{ background: "var(--t-accent-soft)", color: "var(--t-accent)" }}>{col.driver.firstName[0]}{col.driver.lastName[0]}</div>
+                    {col.driver.firstName} {col.driver.lastName}
+                  </button>
+                ))}
+              </Dropdown>
+            )}
           </div>
         </div>
       )}
