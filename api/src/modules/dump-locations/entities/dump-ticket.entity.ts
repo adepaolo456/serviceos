@@ -1,7 +1,8 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, ManyToOne, JoinColumn } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, ManyToOne, JoinColumn, Unique } from 'typeorm';
 import { Job } from '../../jobs/entities/job.entity';
 
 @Entity('dump_tickets')
+@Unique('uq_dump_ticket_job_ticket', ['job_id', 'ticket_number'])
 export class DumpTicket {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
