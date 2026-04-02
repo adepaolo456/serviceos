@@ -17,7 +17,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getJobDetail, updateJobStatus, uploadJobPhoto, getDumpLocations, submitDumpSlip, getYards, stageAtYard } from '../../src/api';
+import { getJobDetail, updateJobStatus, uploadJobPhoto, getDumpLocations, submitDumpSlip, getYards, stageAtYard, failJob } from '../../src/api';
 import { useAppTheme, type ThemeColors } from '../../constants/theme';
 
 interface PhotoEntry {
@@ -117,6 +117,13 @@ export default function JobDetailScreen() {
   const [csShowLocationPicker, setCsShowLocationPicker] = useState(false);
   const [csSubmitting, setCsSubmitting] = useState(false);
   const [csShowNoPhotoWarning, setCsShowNoPhotoWarning] = useState(false);
+
+  // Failed Trip modal state
+  const [showFailModal, setShowFailModal] = useState(false);
+  const [failReason, setFailReason] = useState('');
+  const [failNotes, setFailNotes] = useState('');
+  const [failPhoto, setFailPhoto] = useState<{ uri: string; base64: string } | null>(null);
+  const [failSubmitting, setFailSubmitting] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -377,6 +384,41 @@ export default function JobDetailScreen() {
       Alert.alert('Error', (err as any)?.response?.data?.message || (err as any)?.message || 'Failed to complete job');
     } finally {
       setCsSubmitting(false);
+    }
+  };
+
+  // Failed Trip: take photo
+  const failCapture = async () => {
+    const perm = await ImagePicker.requestCameraPermissionsAsync();
+    if (!perm.granted) {
+      Alert.alert('Permission required', 'Camera access is needed to take photos.');
+      return;
+    }
+    const result = await ImagePicker.launchCameraAsync({ base64: true, quality: 0.7 });
+    if (!result.canceled && result.assets?.[0]) {
+      setFailPhoto({ uri: result.assets[0].uri, base64: result.assets[0].base64 || '' });
+    }
+  };
+
+  // Failed Trip: submit
+  const handleFailSubmit = async () => {
+    if (!job || !failReason) return;
+    setFailSubmitting(true);
+    try {
+      // Upload photo if taken
+      if (failPhoto) {
+        await uploadJobPhoto(job.id, failPhoto.base64, 'Damage');
+      }
+      // Call fail endpoint
+      await failJob(job.id, `${failReason}${failNotes ? ': ' + failNotes : ''}`);
+      setShowFailModal(false);
+      Alert.alert('Stop Reported', 'Failed trip recorded. A replacement job will be created.', [
+        { text: 'OK', onPress: () => router.replace('/(tabs)' as any) },
+      ]);
+    } catch (err) {
+      Alert.alert('Error', (err as any)?.message || 'Failed to report');
+    } finally {
+      setFailSubmitting(false);
     }
   };
 
@@ -731,6 +773,11 @@ export default function JobDetailScreen() {
               )}
             </TouchableOpacity>
           )}
+          {transition && job.status !== 'completed' && job.status !== 'cancelled' && (
+            <TouchableOpacity onPress={() => { setFailReason(''); setFailNotes(''); setFailPhoto(null); setShowFailModal(true); }} style={{ alignItems: 'center', paddingTop: 8 }}>
+              <Text style={{ fontSize: 12, fontWeight: '600', color: colors.error }}>Can't Complete</Text>
+            </TouchableOpacity>
+          )}
         </View>
       )}
 
@@ -859,6 +906,120 @@ export default function JobDetailScreen() {
                 </TouchableOpacity>
               </>
             )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* Failed Trip Modal */}
+      <Modal visible={showFailModal} transparent animationType="slide">
+        <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.5)' }}>
+          <View style={{ backgroundColor: colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40, maxHeight: '85%' }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <Text style={{ fontSize: 18, fontWeight: '800', color: colors.text }}>Report Failed Stop</Text>
+              <TouchableOpacity onPress={() => setShowFailModal(false)} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+                <Ionicons name="close" size={24} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false}>
+              {/* Reason picker */}
+              <Text style={{ fontSize: 11, fontWeight: '800', color: colors.textSecondary, letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 10 }}>REASON</Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
+                {['Blocked', 'Customer Not Ready', 'Overfilled', 'Inaccessible', 'No Access', 'Unsafe Conditions', 'Wrong Size', 'Other'].map((r) => (
+                  <TouchableOpacity
+                    key={r}
+                    onPress={() => setFailReason(r)}
+                    style={{
+                      paddingHorizontal: 14,
+                      paddingVertical: 10,
+                      borderRadius: 10,
+                      borderWidth: failReason === r ? 2 : 1,
+                      borderColor: failReason === r ? colors.error : colors.border,
+                      backgroundColor: failReason === r ? (colors.error + '14') : colors.surfaceHover,
+                    }}
+                  >
+                    <Text style={{ fontSize: 13, fontWeight: failReason === r ? '700' : '500', color: failReason === r ? colors.error : colors.text }}>{r}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              {/* Notes */}
+              <Text style={{ fontSize: 11, fontWeight: '800', color: colors.textSecondary, letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 6 }}>NOTES (OPTIONAL)</Text>
+              <TextInput
+                style={{
+                  backgroundColor: colors.surfaceHover,
+                  borderRadius: 10,
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                  padding: 12,
+                  fontSize: 14,
+                  color: colors.text,
+                  minHeight: 70,
+                  textAlignVertical: 'top',
+                  marginBottom: 16,
+                }}
+                value={failNotes}
+                onChangeText={setFailNotes}
+                placeholder="Additional details..."
+                placeholderTextColor={colors.textTertiary}
+                multiline
+              />
+
+              {/* Photo capture */}
+              <TouchableOpacity
+                onPress={failCapture}
+                style={{
+                  backgroundColor: colors.surfaceHover,
+                  borderRadius: 14,
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                  borderStyle: 'dashed',
+                  height: 120,
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  marginBottom: 16,
+                  overflow: 'hidden',
+                }}
+              >
+                {failPhoto ? (
+                  <Image source={{ uri: failPhoto.uri }} style={{ width: '100%', height: '100%', borderRadius: 14 }} resizeMode="cover" />
+                ) : (
+                  <View style={{ alignItems: 'center' }}>
+                    <Ionicons name="camera" size={28} color={colors.textTertiary} />
+                    <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 4 }}>Tap to take photo (optional)</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+              {failPhoto && (
+                <Text style={{ fontSize: 12, color: colors.textSecondary, textAlign: 'center', marginTop: -12, marginBottom: 12 }}>Tap photo to retake</Text>
+              )}
+            </ScrollView>
+
+            {/* Submit button */}
+            <TouchableOpacity
+              onPress={handleFailSubmit}
+              disabled={failSubmitting || !failReason}
+              style={{
+                backgroundColor: !failReason ? '#ccc' : '#DC2626',
+                borderRadius: 28,
+                paddingVertical: 16,
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexDirection: 'row',
+                gap: 8,
+                marginTop: 12,
+                opacity: failSubmitting ? 0.6 : 1,
+              }}
+            >
+              {failSubmitting ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <>
+                  <Ionicons name="warning" size={20} color="#fff" />
+                  <Text style={{ fontSize: 16, fontWeight: '700', color: '#fff' }}>Submit Failed Trip</Text>
+                </>
+              )}
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>

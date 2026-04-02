@@ -499,6 +499,8 @@ export class ReportingService {
          COALESCE(SUM(CASE WHEN li.line_type = 'fee' THEN li.net_amount ELSE 0 END), 0) as distance,
          COALESCE(SUM(CASE WHEN li.line_type = 'overage' THEN li.net_amount ELSE 0 END), 0) as overage,
          COALESCE(SUM(CASE WHEN li.line_type = 'surcharge_item' THEN li.net_amount ELSE 0 END), 0) as surcharges,
+         COALESCE(SUM(CASE WHEN li.line_type = 'overage_days' THEN li.net_amount ELSE 0 END), 0) as extra_day_revenue,
+         COALESCE(SUM(CASE WHEN i.source = 'failed_trip' THEN li.net_amount ELSE 0 END), 0) as failed_trip_revenue,
          COUNT(DISTINCT i.id) as invoice_count,
          COUNT(DISTINCT i.id) FILTER (WHERE i.status = 'paid') as paid_count
        FROM invoices i
@@ -522,6 +524,8 @@ export class ReportingService {
         distance: Number(row.distance) || 0,
         overage: Number(row.overage) || 0,
         surcharges: Number(row.surcharges) || 0,
+        extraDayRevenue: Number(row.extra_day_revenue) || 0,
+        failedTripRevenue: Number(row.failed_trip_revenue) || 0,
       },
       invoiceCount,
       paidCount,
