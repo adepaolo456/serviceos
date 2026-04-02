@@ -12,6 +12,7 @@ import { Tenant } from '../tenants/entities/tenant.entity';
 import { RentalChain } from '../rental-chains/entities/rental-chain.entity';
 import { TaskChainLink } from '../rental-chains/entities/task-chain-link.entity';
 import { PricingRule } from '../pricing/entities/pricing-rule.entity';
+import { Payment } from './entities/payment.entity';
 
 @ApiTags('Bookings')
 @ApiBearerAuth()
@@ -223,7 +224,7 @@ export class BookingsController {
       customer_id: customerId,
       job_id: savedDelivery.id,
       invoice_number: invNum,
-      status: isPaid ? 'paid' : 'open',
+      status: 'draft',
       customer_type: 'residential',
       invoice_date: today,
       due_date: body.deliveryDate,
@@ -231,9 +232,8 @@ export class BookingsController {
       subtotal: body.basePrice + body.deliveryFee,
       tax_amount: taxAmt,
       total: body.totalPrice,
-      amount_paid: isPaid ? body.totalPrice : 0,
-      balance_due: isPaid ? 0 : body.totalPrice,
-      paid_at: isPaid ? new Date() : null,
+      amount_paid: 0,
+      balance_due: body.totalPrice,
       summary_of_work: `${body.assetSubtype} ${body.serviceType.replace(/_/g, ' ')} — ${body.rentalDays}-day rental`,
       rental_chain_id: null,
     } as Partial<Invoice> as Invoice);
@@ -257,8 +257,8 @@ export class BookingsController {
           exchangeFee: Number(pricingRule.exchange_fee),
           taxRate: Number(pricingRule.tax_rate),
           taxEnabled: Number(pricingRule.tax_rate) > 0,
-          distanceCharge: 0,
-          distanceMiles: 0,
+          distanceCharge: body.deliveryFee || 0,
+          distanceMiles: 0, // Haversine distance not passed from frontend; charge is accurate
         };
         await this.invoicesRepo.update(savedInvoice.id, {
           pricing_rule_snapshot: snapshot,
@@ -281,17 +281,55 @@ export class BookingsController {
     await this.lineItemRepo.save(rentalItem);
 
     if (body.deliveryFee > 0) {
-      const deliveryItem = this.lineItemRepo.create({
+      const distanceItem = this.lineItemRepo.create({
         invoice_id: savedInvoice.id,
         sort_order: 1,
         line_type: 'fee',
-        name: 'Delivery fee',
+        name: 'Distance charge',
         quantity: 1,
         unit_rate: body.deliveryFee,
         amount: body.deliveryFee,
         net_amount: body.deliveryFee,
+        is_taxable: false,
+        tax_rate: 0,
+        tax_amount: 0,
       });
-      await this.lineItemRepo.save(deliveryItem);
+      await this.lineItemRepo.save(distanceItem);
+    }
+
+    // 5b. If paid by card, create a Payment record and reconcile
+    if (isPaid) {
+      const paymentRepo = this.dataSource.getRepository(Payment);
+      await paymentRepo.save(paymentRepo.create({
+        tenant_id: tenantId,
+        invoice_id: savedInvoice.id,
+        amount: body.totalPrice,
+        payment_method: 'card',
+        status: 'completed',
+      }));
+    }
+    // Mark as sent (open) if not paid, then reconcile to derive status
+    if (!isPaid) {
+      await this.invoicesRepo.update(savedInvoice.id, { sent_at: new Date(), sent_method: 'auto' });
+    }
+    // Derive status/balance from payment records (reconcileBalance pattern)
+    {
+      const paymentRepo = this.dataSource.getRepository(Payment);
+      const payments = await paymentRepo.find({ where: { invoice_id: savedInvoice.id, status: 'completed' } });
+      const totalPaid = payments.reduce((sum, p) => sum + Number(p.amount), 0);
+      const balanceDue = Math.max(Math.round((body.totalPrice - totalPaid) * 100) / 100, 0);
+      const inv = await this.invoicesRepo.findOneOrFail({ where: { id: savedInvoice.id } });
+      let status: string;
+      if (totalPaid >= body.totalPrice && totalPaid > 0) status = 'paid';
+      else if (totalPaid > 0) status = 'partial';
+      else if (inv.sent_at) status = 'open';
+      else status = 'draft';
+      await this.invoicesRepo.update(savedInvoice.id, {
+        amount_paid: Math.round(totalPaid * 100) / 100,
+        balance_due: balanceDue,
+        status,
+        paid_at: status === 'paid' ? new Date() : null,
+      });
     }
 
     // 6. Create RentalChain and TaskChainLinks
