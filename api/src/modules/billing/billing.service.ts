@@ -11,7 +11,7 @@ import { Payment } from './entities/payment.entity';
 import { Job } from '../jobs/entities/job.entity';
 import { Asset } from '../assets/entities/asset.entity';
 import { PricingRule } from '../pricing/entities/pricing-rule.entity';
-import { AutomationLog } from '../automation/entities/automation-log.entity';
+import { Notification } from '../notifications/entities/notification.entity';
 import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
@@ -25,8 +25,8 @@ export class BillingService {
     private paymentsRepository: Repository<Payment>,
     @InjectRepository(Job)
     private jobsRepository: Repository<Job>,
-    @InjectRepository(AutomationLog)
-    private logRepo: Repository<AutomationLog>,
+    @InjectRepository(Notification)
+    private notifRepo: Repository<Notification>,
     @InjectRepository(Asset)
     private assetRepo: Repository<Asset>,
     @InjectRepository(PricingRule)
@@ -252,11 +252,12 @@ export class BillingService {
     // Audit log
     if (Object.keys(changes).length > 0) {
       try {
-        await this.logRepo.save(this.logRepo.create({
+        await this.notifRepo.save(this.notifRepo.create({
           tenant_id: tenantId,
+          channel: 'automation',
           type: 'invoice_edited',
-          status: 'completed',
-          details: {
+          recipient: 'system',
+          body: JSON.stringify({
             entity_type: 'invoice',
             entity_id: id,
             invoice_number: invoice.invoice_number,
@@ -264,7 +265,9 @@ export class BillingService {
             user_id: userId,
             user_name: userName,
             changes,
-          },
+          }),
+          status: 'logged',
+          sent_at: new Date(),
         }));
       } catch { /* best effort */ }
     }
@@ -368,15 +371,17 @@ export class BillingService {
         await this.jobsRepository.save(pickup);
       }
 
-      await this.logRepo.save(this.logRepo.create({
-        tenant_id: tenantId, job_id: job.id, type: 'size_change_cascade', status: 'completed',
-        details: {
+      await this.notifRepo.save(this.notifRepo.create({
+        tenant_id: tenantId, job_id: job.id, channel: 'automation', type: 'size_change_cascade',
+        recipient: 'system',
+        body: JSON.stringify({
           entity_type: 'invoice', entity_id: invoice.id,
           old_subtype: oldSubtype, new_subtype: newSubtype,
           old_total: oldTotal, new_total: newTotal, difference,
           asset_warning: assetWarning,
           user_id: userId, user_name: userName,
-        },
+        }),
+        status: 'logged', sent_at: new Date(),
       }));
     }
 
@@ -389,16 +394,18 @@ export class BillingService {
 
   async getInvoiceHistory(tenantId: string, id: string) {
     await this.findOneInvoice(tenantId, id);
-    const logs = await this.logRepo.find({
-      where: { tenant_id: tenantId },
+    const logs = await this.notifRepo.find({
+      where: { tenant_id: tenantId, channel: 'automation' },
       order: { created_at: 'DESC' },
     });
     return logs.filter(log => {
-      const details = log.details as Record<string, unknown> || {};
-      return (
-        (details.entity_type === 'invoice' && details.entity_id === id) ||
-        (details.invoiceId === id)
-      );
+      try {
+        const details = JSON.parse(log.body) as Record<string, unknown>;
+        return (
+          (details.entity_type === 'invoice' && details.entity_id === id) ||
+          (details.invoiceId === id)
+        );
+      } catch { return false; }
     }).slice(0, 50);
   }
 

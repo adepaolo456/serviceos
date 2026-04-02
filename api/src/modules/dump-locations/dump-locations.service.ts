@@ -5,7 +5,7 @@ import { DumpLocation, DumpLocationRate, DumpLocationSurcharge } from './entitie
 import { DumpTicket } from './entities/dump-ticket.entity';
 import { Job } from '../jobs/entities/job.entity';
 import { PricingRule } from '../pricing/entities/pricing-rule.entity';
-import { AutomationLog } from '../automation/entities/automation-log.entity';
+import { Notification } from '../notifications/entities/notification.entity';
 import { Invoice } from '../billing/entities/invoice.entity';
 import { InvoiceLineItem } from '../billing/entities/invoice-line-item.entity';
 import { JobCost } from '../billing/entities/job-cost.entity';
@@ -29,7 +29,7 @@ export class DumpLocationsService {
     @InjectRepository(DumpLocationSurcharge) private readonly surRepo: Repository<DumpLocationSurcharge>,
     @InjectRepository(Job) private readonly jobRepo: Repository<Job>,
     @InjectRepository(PricingRule) private readonly pricingRepo: Repository<PricingRule>,
-    @InjectRepository(AutomationLog) private readonly logRepo: Repository<AutomationLog>,
+    @InjectRepository(Notification) private readonly notifRepo: Repository<Notification>,
     @InjectRepository(DumpTicket) private readonly ticketRepo: Repository<DumpTicket>,
     @InjectRepository(Invoice) private readonly invoiceRepo: Repository<Invoice>,
     @InjectRepository(InvoiceLineItem) private readonly lineItemRepo: Repository<InvoiceLineItem>,
@@ -443,9 +443,10 @@ export class DumpLocationsService {
       await this.ticketRepo.update(savedTicket.id, { invoiced: true, invoice_id: savedInvoice.id });
     }
 
-    await this.logRepo.save(this.logRepo.create({
-      tenant_id: tenantId, job_id: jobId, type: 'dump_slip_submitted', status: 'success',
-      details: { ticketId: savedTicket.id, dumpCost: dumpTotalCost, customerCharges, invoiceId, ticketCount: allTickets.length },
+    await this.notifRepo.save(this.notifRepo.create({
+      tenant_id: tenantId, job_id: jobId, channel: 'automation', type: 'dump_slip_submitted',
+      recipient: 'system', body: JSON.stringify({ ticketId: savedTicket.id, dumpCost: dumpTotalCost, customerCharges, invoiceId, ticketCount: allTickets.length }),
+      status: 'logged', sent_at: new Date(),
     }));
 
     return { ticket: savedTicket, invoiceId, jobTotals: { dumpTotalCost: totalDump, customerAdditionalCharges: totalCust, ticketCount: allTickets.length } };
@@ -464,12 +465,15 @@ export class DumpLocationsService {
     job.dump_status = 'reviewed';
     await this.jobRepo.save(job);
 
-    await this.logRepo.save(this.logRepo.create({
+    await this.notifRepo.save(this.notifRepo.create({
       tenant_id: tenantId,
       job_id: jobId,
+      channel: 'automation',
       type: 'dump_slip_reviewed',
-      status: 'success',
-      details: { dump_total_cost: job.dump_total_cost },
+      recipient: 'system',
+      body: JSON.stringify({ dump_total_cost: job.dump_total_cost }),
+      status: 'logged',
+      sent_at: new Date(),
     }));
 
     return job;

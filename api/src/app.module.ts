@@ -55,7 +55,6 @@ import { ScheduledNotification } from './modules/notifications/entities/schedule
 import { MarketplaceBooking } from './modules/marketplace/entities/marketplace-booking.entity';
 import { AutomationModule } from './modules/automation/automation.module';
 import { DriverModule } from './modules/driver/driver.module';
-import { AutomationLog } from './modules/automation/entities/automation-log.entity';
 import { DumpLocationsModule } from './modules/dump-locations/dump-locations.module';
 import { ReportingModule } from './modules/reporting/reporting.module';
 import { StripeModule } from './modules/stripe/stripe.module';
@@ -113,7 +112,6 @@ import { MapboxModule } from './modules/mapbox/mapbox.module';
             Yard,
             CustomerNote,
             TimeEntry,
-            AutomationLog,
             DumpLocation,
             DumpLocationRate,
             DumpLocationSurcharge,

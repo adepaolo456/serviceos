@@ -3,7 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { Job } from './entities/job.entity';
 import { Asset } from '../assets/entities/asset.entity';
 import { PricingRule } from '../pricing/entities/pricing-rule.entity';
-import { AutomationLog } from '../automation/entities/automation-log.entity';
+import { Notification } from '../notifications/entities/notification.entity';
 import { Customer } from '../customers/entities/customer.entity';
 import { Route } from '../dispatch/entities/route.entity';
 import { Invoice } from '../billing/entities/invoice.entity';
@@ -18,7 +18,7 @@ import { JobsController } from './jobs.controller';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Job, Asset, PricingRule, AutomationLog, Customer, Route, Invoice, CreditMemo, RentalChain, TaskChainLink]),
+    TypeOrmModule.forFeature([Job, Asset, PricingRule, Notification, Customer, Route, Invoice, CreditMemo, RentalChain, TaskChainLink]),
     BillingModule,
     RentalChainsModule,
     NotificationsModule,

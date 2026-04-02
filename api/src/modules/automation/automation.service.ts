@@ -1,7 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, LessThan, In, IsNull, Not } from 'typeorm';
-import { AutomationLog } from './entities/automation-log.entity';
 import { Job } from '../jobs/entities/job.entity';
 import { Customer } from '../customers/entities/customer.entity';
 import { PricingRule } from '../pricing/entities/pricing-rule.entity';
@@ -15,7 +14,6 @@ export class AutomationService {
   private readonly logger = new Logger(AutomationService.name);
 
   constructor(
-    @InjectRepository(AutomationLog) private logRepo: Repository<AutomationLog>,
     @InjectRepository(Job) private jobRepo: Repository<Job>,
     @InjectRepository(Customer) private customerRepo: Repository<Customer>,
     @InjectRepository(PricingRule) private pricingRepo: Repository<PricingRule>,
@@ -74,26 +72,32 @@ export class AutomationService {
         });
         notificationsSent++;
 
-        await this.logRepo.save(this.logRepo.create({
+        await this.notifRepo.save(this.notifRepo.create({
           tenant_id: job.tenant_id,
           job_id: job.id,
+          channel: 'automation',
           type: 'overdue_notification',
-          status: 'sent',
-          details: {
+          recipient: 'system',
+          body: JSON.stringify({
             customerName: job.customer ? `${job.customer.first_name} ${job.customer.last_name}` : null,
             extraDays, charges, rate,
             assetIdentifier: job.asset?.identifier,
-          },
+          }),
+          status: 'logged',
+          sent_at: new Date(),
         }));
       }
     }
 
     // Log the scan
-    await this.logRepo.save(this.logRepo.create({
+    await this.notifRepo.save(this.notifRepo.create({
       tenant_id: tenantId || 'all',
+      channel: 'automation',
       type: 'overdue_scan',
-      status: 'completed',
-      details: { overdueCount: jobs.length, totalExtraCharges, notificationsSent, date: today },
+      recipient: 'system',
+      body: JSON.stringify({ overdueCount: jobs.length, totalExtraCharges, notificationsSent, date: today }),
+      status: 'logged',
+      sent_at: new Date(),
     }));
 
     return { overdueCount: jobs.length, totalExtraCharges, notificationsSent, date: today };
@@ -125,16 +129,19 @@ export class AutomationService {
       overdue_notification_count: (job.overdue_notification_count || 0) + 1,
     });
 
-    await this.logRepo.save(this.logRepo.create({
+    await this.notifRepo.save(this.notifRepo.create({
       tenant_id: tenantId,
       job_id: jobId,
+      channel: 'automation',
       type: 'overdue_notification',
-      status: 'sent',
-      details: {
+      recipient: 'system',
+      body: JSON.stringify({
         customerName: job.customer ? `${job.customer.first_name} ${job.customer.last_name}` : null,
         extraDays: job.extra_days,
         charges: job.extra_day_charges,
-      },
+      }),
+      status: 'logged',
+      sent_at: new Date(),
     }));
 
     return { message: 'Notification sent', jobId, extraDays: job.extra_days };
@@ -194,20 +201,23 @@ export class AutomationService {
       await this.jobRepo.update(jobId, updates);
     }
 
-    await this.logRepo.save(this.logRepo.create({
+    await this.notifRepo.save(this.notifRepo.create({
       tenant_id: tenantId,
       job_id: jobId,
+      channel: 'automation',
       type: 'overdue_action',
-      status: 'completed',
-      details: { action, days },
+      recipient: 'system',
+      body: JSON.stringify({ action, days }),
+      status: 'logged',
+      sent_at: new Date(),
     }));
 
     return { message: `Action '${action}' completed`, jobId, action };
   }
 
   async getLog(tenantId: string) {
-    return this.logRepo.find({
-      where: { tenant_id: tenantId },
+    return this.notifRepo.find({
+      where: { tenant_id: tenantId, channel: 'automation' },
       order: { created_at: 'DESC' },
       take: 50,
     });
@@ -262,11 +272,14 @@ export class AutomationService {
       }
     }
 
-    await this.logRepo.save(this.logRepo.create({
+    await this.notifRepo.save(this.notifRepo.create({
       tenant_id: tenantId,
+      channel: 'automation',
       type: 'overdue_reminders',
-      status: 'completed',
-      details: { overdueCount: overdueInvoices.length, remindersSent },
+      recipient: 'system',
+      body: JSON.stringify({ overdueCount: overdueInvoices.length, remindersSent }),
+      status: 'logged',
+      sent_at: new Date(),
     }));
 
     return { overdueCount: overdueInvoices.length, remindersSent };

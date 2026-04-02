@@ -8,7 +8,7 @@ import { Repository, In } from 'typeorm';
 import { Job } from './entities/job.entity';
 import { Asset } from '../assets/entities/asset.entity';
 import { PricingRule } from '../pricing/entities/pricing-rule.entity';
-import { AutomationLog } from '../automation/entities/automation-log.entity';
+import { Notification } from '../notifications/entities/notification.entity';
 import { Customer } from '../customers/entities/customer.entity';
 import { Route } from '../dispatch/entities/route.entity';
 import { Invoice } from '../billing/entities/invoice.entity';
@@ -44,8 +44,8 @@ export class JobsService {
     private assetRepo: Repository<Asset>,
     @InjectRepository(PricingRule)
     private pricingRepo: Repository<PricingRule>,
-    @InjectRepository(AutomationLog)
-    private logRepo: Repository<AutomationLog>,
+    @InjectRepository(Notification)
+    private notifRepo: Repository<Notification>,
     @InjectRepository(Customer)
     private customerRepo: Repository<Customer>,
     @InjectRepository(Route)
@@ -389,19 +389,22 @@ export class JobsService {
       });
 
       // Log
-      await this.logRepo.save(this.logRepo.create({
+      await this.notifRepo.save(this.notifRepo.create({
         tenant_id: tenantId,
         job_id: job.id,
+        channel: 'automation',
         type: 'failed_trip_charge',
-        status: 'completed',
-        details: {
+        recipient: 'system',
+        body: JSON.stringify({
           invoiceId: savedInvoice.id,
           invoiceNumber: savedInvoice.invoice_number,
           amount: baseFee,
           replacementJobId: savedReplacement.id,
           replacementJobNumber: savedReplacement.job_number,
           reason: job.failed_reason,
-        },
+        }),
+        status: 'logged',
+        sent_at: new Date(),
       }));
     }
 
@@ -511,12 +514,15 @@ export class JobsService {
     // Log admin status overrides (backward transitions)
     if (isAdmin && previousStatus !== dto.status) {
       try {
-        await this.logRepo.save(this.logRepo.create({
+        await this.notifRepo.save(this.notifRepo.create({
           tenant_id: tenantId,
           job_id: job.id,
+          channel: 'automation',
           type: 'status_override',
-          status: 'completed',
-          details: { from: previousStatus, to: dto.status, overriddenBy: userRole },
+          recipient: 'system',
+          body: JSON.stringify({ from: previousStatus, to: dto.status, overriddenBy: userRole }),
+          status: 'logged',
+          sent_at: new Date(),
         }));
       } catch { /* best effort */ }
     }
