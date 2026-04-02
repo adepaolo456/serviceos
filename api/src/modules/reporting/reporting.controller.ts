@@ -76,6 +76,18 @@ export class ReportingController {
     return this.service.getRevenueBreakdown(tid, period, classification);
   }
 
+  @Get('alerts')
+  @ApiOperation({ summary: 'Admin alerts from live data' })
+  getAlerts(@TenantId() tid: string) {
+    return this.service.getAlerts(tid);
+  }
+
+  @Get('daily-summary')
+  @ApiOperation({ summary: 'Daily operational summary' })
+  dailySummary(@TenantId() tid: string) {
+    return this.service.getDailySummary(tid);
+  }
+
   @Get('invoices/export')
   @ApiOperation({ summary: 'Export invoices as CSV' })
   async exportInvoices(
