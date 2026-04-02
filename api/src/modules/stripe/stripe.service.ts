@@ -72,7 +72,7 @@ export class StripeService {
   }
 
   async getOrCreateStripeCustomer(tenantId: string, customerId: string): Promise<string> {
-    const customer = await this.customerRepo.findOne({ where: { id: customerId } });
+    const customer = await this.customerRepo.findOne({ where: { id: customerId, tenant_id: tenantId } });
     if (!customer) throw new NotFoundException('Customer not found');
 
     if (customer.stripe_customer_id) return customer.stripe_customer_id;

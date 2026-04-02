@@ -86,7 +86,7 @@ export class NotificationsService {
       }
 
       const override = await this.overrideRepo.findOne({
-        where: { customer_id: params.customerId, notification_type: params.notificationType },
+        where: { customer_id: params.customerId, notification_type: params.notificationType, tenant_id: params.tenantId },
       });
       if (override) {
         if (override.email_enabled !== null) emailEnabled = override.email_enabled;
@@ -183,10 +183,12 @@ export class NotificationsService {
 
   // ─── Process scheduled notifications ───
 
-  async processScheduled(): Promise<number> {
+  async processScheduled(tenantId?: string): Promise<number> {
     const now = new Date();
+    const where: any = { status: 'pending', scheduled_for: LessThanOrEqual(now) };
+    if (tenantId) where.tenant_id = tenantId;
     const pending = await this.scheduledRepo.find({
-      where: { status: 'pending', scheduled_for: LessThanOrEqual(now) },
+      where,
       take: 50,
     });
 
@@ -288,7 +290,7 @@ export class NotificationsService {
 
   async setClientOverride(tenantId: string, customerId: string, type: string, data: { email_enabled?: boolean | null; sms_enabled?: boolean | null }) {
     let ov = await this.overrideRepo.findOne({
-      where: { customer_id: customerId, notification_type: type },
+      where: { customer_id: customerId, notification_type: type, tenant_id: tenantId },
     });
     if (!ov) {
       ov = this.overrideRepo.create({ tenant_id: tenantId, customer_id: customerId, notification_type: type });

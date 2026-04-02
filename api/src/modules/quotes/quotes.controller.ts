@@ -92,8 +92,14 @@ export class QuotesController {
   @Get(':id/book')
   async bookFromQuote(@Param('id', ParseUUIDPipe) id: string) {
     const quote = await this.quoteRepo.findOne({ where: { id } });
-    if (!quote) return { error: 'Quote not found' };
-    if (new Date() > quote.expires_at) return { expired: true, message: 'This quote has expired' };
-    return { quote, valid: true };
+    if (!quote) return { valid: false, error: 'Quote not found' };
+    if (new Date() > quote.expires_at) return { valid: false, expired: true, message: 'This quote has expired' };
+    // Return ONLY safe fields — no customer PII, no detailed pricing
+    return {
+      valid: true,
+      quoteId: quote.id,
+      expiresAt: quote.expires_at,
+      size: quote.asset_subtype,
+    };
   }
 }

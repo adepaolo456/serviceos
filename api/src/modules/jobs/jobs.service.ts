@@ -95,7 +95,7 @@ export class JobsService {
 
         // Check customer discount
         if (dto.customerId) {
-          const customer = await this.customerRepo.findOne({ where: { id: dto.customerId } });
+          const customer = await this.customerRepo.findOne({ where: { id: dto.customerId, tenant_id: tenantId } });
           if (customer?.discount_percentage) {
             discountPercentage = Number(customer.discount_percentage);
             discountAmount = Math.round(basePrice * discountPercentage) / 100;
@@ -912,7 +912,7 @@ export class JobsService {
 
       // Release old asset if switching or unassigning
       if (job.asset_id && job.asset_id !== newAssetId) {
-        await this.assetRepo.update(job.asset_id, {
+        await this.assetRepo.update({ id: job.asset_id, tenant_id: tenantId } as any, {
           status: 'available',
           current_job_id: null,
         } as any);
@@ -920,7 +920,7 @@ export class JobsService {
 
       // Reserve new asset
       if (newAssetId && newAssetId !== job.asset_id) {
-        await this.assetRepo.update(newAssetId, {
+        await this.assetRepo.update({ id: newAssetId, tenant_id: tenantId } as any, {
           status: 'reserved',
           current_job_id: id,
         } as any);

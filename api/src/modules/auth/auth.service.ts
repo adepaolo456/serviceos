@@ -89,7 +89,7 @@ export class AuthService {
 
   async login(dto: LoginDto) {
     const user = await this.usersRepository.findOne({
-      where: { email: dto.email },
+      where: { email: dto.email, tenant_id: dto.tenantId },
       select: [
         'id',
         'email',
@@ -320,7 +320,7 @@ export class AuthService {
 
   async inviteUser(dto: InviteUserDto, tenantId: string) {
     const existingUser = await this.usersRepository.findOne({
-      where: { email: dto.email },
+      where: { email: dto.email, tenant_id: tenantId },
     });
     if (existingUser) {
       throw new ConflictException('Email already registered');
@@ -356,7 +356,10 @@ export class AuthService {
     firstName: string;
     lastName: string;
   }) {
-    // Check if user already exists
+    // TODO: Google OAuth needs tenant context (subdomain or pre-login selection)
+    // Currently matches any user with this email globally. For single-tenant
+    // deployments this is safe, but for multi-tenant it needs a tenant selector
+    // before the OAuth redirect.
     let user = await this.usersRepository.findOne({
       where: { email: googleUser.email },
     });

@@ -148,7 +148,7 @@ export class AssetsService {
       .getMany();
   }
 
-  async addHistory(assetId: string, event: {
+  async addHistory(assetId: string, tenantId: string, event: {
     event: string;
     actor_id?: string;
     actor_role?: string;
@@ -157,7 +157,7 @@ export class AssetsService {
     yard_name?: string;
     details?: Record<string, unknown>;
   }): Promise<void> {
-    const asset = await this.assetsRepository.findOne({ where: { id: assetId } });
+    const asset = await this.assetsRepository.findOne({ where: { id: assetId, tenant_id: tenantId } });
     if (!asset) return;
     const history = Array.isArray(asset.operational_history) ? [...asset.operational_history] : [];
     history.push({ ...event, timestamp: new Date().toISOString() });
