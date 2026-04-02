@@ -57,7 +57,8 @@ export class AutomationService {
         extra_days: extraDays,
         extra_day_charges: finalCharges,
         is_overdue: true,
-      });
+        extra_day_last_calculated_at: new Date(),
+      } as any);
 
       totalExtraCharges += finalCharges;
 

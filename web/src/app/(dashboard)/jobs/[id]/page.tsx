@@ -26,6 +26,7 @@ import {
   ChevronDown,
   ChevronUp,
   ExternalLink,
+  AlertTriangle,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import Dropdown from "@/components/dropdown";
@@ -66,6 +67,13 @@ interface Job {
   customer: { id: string; first_name: string; last_name: string; phone: string; email: string } | null;
   asset: { id: string; identifier: string; asset_type: string; subtype: string } | null;
   assigned_driver: { id: string; first_name: string; last_name: string; phone: string } | null;
+  is_failed_trip?: boolean;
+  failed_reason?: string;
+  failed_at?: string;
+  is_overdue?: boolean;
+  extra_days?: number;
+  extra_day_rate?: number;
+  extra_day_charges?: number;
 }
 
 /* --- Constants --- */
@@ -373,6 +381,20 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
           <StickyNote className="h-3 w-3" /> Add Note
         </button>
       </div>
+
+      {/* --- Failed Trip Banner --- */}
+      {job.is_failed_trip && (
+        <div className="mb-6 rounded-[20px] border px-5 py-4" style={{ borderColor: "var(--t-error)", background: "rgba(220,38,38,0.05)" }}>
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="h-5 w-5 shrink-0 mt-0.5" style={{ color: "var(--t-error)" }} />
+            <div>
+              <p className="text-sm font-semibold" style={{ color: "var(--t-error)" }}>Failed Trip</p>
+              {job.failed_reason && <p className="text-xs mt-1" style={{ color: "var(--t-text-primary)" }}>{job.failed_reason}</p>}
+              {job.failed_at && <p className="text-[11px] mt-1" style={{ color: "var(--t-text-muted)" }}>Failed at {new Date(job.failed_at).toLocaleString()}</p>}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* --- Timeline --- */}
       <div className="mb-8 rounded-[20px] bg-[var(--t-bg-card)] border border-[var(--t-border)] p-6">
@@ -685,8 +707,40 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
                 <span className="text-[var(--t-text-primary)]">Total</span>
                 <span className="text-[var(--t-accent)] tabular-nums text-base">{fmt(job.total_price)}</span>
               </div>
+              {job.extra_day_charges != null && job.extra_day_charges > 0 && (
+                <PriceRow label={`Extra Days (${job.extra_days || 0}d)`} value={fmt(job.extra_day_charges)} />
+              )}
             </div>
           </Card>
+
+          {/* Rental Overage */}
+          {(job.is_overdue || (job.extra_days != null && job.extra_days > 0)) && (
+            <div className="rounded-[20px] border p-5" style={{ background: "var(--t-bg-card)", borderColor: job.is_overdue ? "var(--t-error)" : "var(--t-warning)" }}>
+              <div className="flex items-center gap-2 mb-3">
+                <Clock className="h-4 w-4" style={{ color: job.is_overdue ? "var(--t-error)" : "var(--t-warning)" }} />
+                <span className="text-xs font-medium uppercase tracking-wider" style={{ color: "var(--t-text-muted)" }}>Rental Overage</span>
+              </div>
+              <div className="space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <span style={{ color: "var(--t-text-muted)" }}>Extra Days</span>
+                  <span className="font-semibold tabular-nums" style={{ color: job.is_overdue ? "var(--t-error)" : "var(--t-text-primary)" }}>{job.extra_days || 0}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span style={{ color: "var(--t-text-muted)" }}>Daily Rate</span>
+                  <span className="tabular-nums" style={{ color: "var(--t-text-primary)" }}>{fmt(job.extra_day_rate)}</span>
+                </div>
+                <div className="flex justify-between pt-2 font-semibold" style={{ borderTop: "1px solid var(--t-border)" }}>
+                  <span style={{ color: "var(--t-text-primary)" }}>Extra Charges</span>
+                  <span className="tabular-nums" style={{ color: job.is_overdue ? "var(--t-error)" : "var(--t-accent)" }}>{fmt(job.extra_day_charges)}</span>
+                </div>
+              </div>
+              {job.rental_start_date && job.rental_end_date && (
+                <p className="text-[11px] mt-3" style={{ color: "var(--t-text-muted)" }}>
+                  Rental: {fmtDateFull(job.rental_start_date)} — {fmtDateFull(job.rental_end_date)} ({job.rental_days || 0} days included)
+                </p>
+              )}
+            </div>
+          )}
 
           {/* Customer */}
           {job.customer && (

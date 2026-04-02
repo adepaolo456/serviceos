@@ -141,6 +141,9 @@ export class Job {
   @Column({ name: 'extra_day_charges', type: 'decimal', precision: 10, scale: 2, default: 0 })
   extra_day_charges!: number;
 
+  @Column({ name: 'extra_day_last_calculated_at', type: 'timestamptz', nullable: true })
+  extra_day_last_calculated_at!: Date;
+
   @Column({ name: 'is_overdue', default: false })
   is_overdue!: boolean;
 
