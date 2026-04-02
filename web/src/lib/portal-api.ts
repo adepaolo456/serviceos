@@ -34,6 +34,15 @@ class PortalApiClient {
     localStorage.removeItem("portal_customer");
   }
 
+  getTenantId(): string | null {
+    if (typeof window === "undefined") return null;
+    return localStorage.getItem("portalTenantId");
+  }
+
+  setTenantId(id: string) {
+    localStorage.setItem("portalTenantId", id);
+  }
+
   async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
     const token = this.getToken();
     const headers: Record<string, string> = {

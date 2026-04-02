@@ -19,15 +19,21 @@ export default function PortalLoginPage() {
   const [loading, setLoading] = useState(false);
   const [magicSent, setMagicSent] = useState(false);
 
+  const getTenantId = () => {
+    return portalApi.getTenantId() || process.env.NEXT_PUBLIC_PORTAL_TENANT_ID || undefined;
+  };
+
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError("");
     setLoading(true);
     try {
       const endpoint = mode === "login" ? "/portal/auth/login" : "/portal/auth/register";
-      const data = await portalApi.post<AuthResponse>(endpoint, { email, password });
+      const tenantId = getTenantId();
+      const data = await portalApi.post<AuthResponse>(endpoint, { email, password, tenantId });
       portalApi.setToken(data.token);
       portalApi.setCustomer(data.customer);
+      if (tenantId) portalApi.setTenantId(tenantId);
       router.push("/portal");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
@@ -40,7 +46,8 @@ export default function PortalLoginPage() {
     setError("");
     setLoading(true);
     try {
-      await portalApi.post("/portal/auth/magic-link", { email });
+      const tenantId = getTenantId();
+      await portalApi.post("/portal/auth/magic-link", { email, tenantId });
       setMagicSent(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");

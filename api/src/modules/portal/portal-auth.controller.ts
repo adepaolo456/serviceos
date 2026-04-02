@@ -10,18 +10,18 @@ export class PortalAuthController {
   @Public()
   @Post('login')
   login(@Body() dto: PortalLoginDto) {
-    return this.portalService.login(dto.email, dto.password);
+    return this.portalService.login(dto.email, dto.password, dto.tenantId);
   }
 
   @Public()
   @Post('register')
   register(@Body() dto: PortalRegisterDto) {
-    return this.portalService.register(dto.email, dto.password);
+    return this.portalService.register(dto.email, dto.password, dto.tenantId);
   }
 
   @Public()
   @Post('magic-link')
   magicLink(@Body() dto: PortalMagicLinkDto) {
-    return this.portalService.magicLink(dto.email);
+    return this.portalService.magicLink(dto.email, dto.tenantId);
   }
 }

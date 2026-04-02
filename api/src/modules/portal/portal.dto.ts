@@ -7,11 +7,19 @@ export class PortalLoginDto {
   @IsString()
   @IsNotEmpty()
   password!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  tenantId!: string;
 }
 
 export class PortalMagicLinkDto {
   @IsEmail()
   email!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  tenantId!: string;
 }
 
 export class PortalRegisterDto {
@@ -21,6 +29,10 @@ export class PortalRegisterDto {
   @IsString()
   @MinLength(8)
   password!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  tenantId!: string;
 }
 
 export class ServiceRequestDto {
