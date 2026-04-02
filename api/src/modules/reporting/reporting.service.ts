@@ -32,7 +32,7 @@ export class ReportingService {
     const totals = await this.invoiceRepo.createQueryBuilder('i')
       .select('SUM(i.total)', 'totalRevenue')
       .addSelect('SUM(i.amount_paid)', 'totalCollected')
-      .addSelect(`SUM(CASE WHEN i.status = 'sent' THEN i.balance_due ELSE 0 END)`, 'totalOutstanding')
+      .addSelect(`SUM(CASE WHEN i.status IN ('open', 'partial') THEN i.balance_due ELSE 0 END)`, 'totalOutstanding')
       .where('i.tenant_id = :tid', { tid: tenantId })
       .andWhere('i.created_at >= :start', { start })
       .andWhere('i.created_at <= :end', { end: end + 'T23:59:59' })
@@ -41,7 +41,7 @@ export class ReportingService {
     const overdue = await this.invoiceRepo.createQueryBuilder('i')
       .select('SUM(i.balance_due)', 'totalOverdue')
       .where('i.tenant_id = :tid', { tid: tenantId })
-      .andWhere('i.status = :status', { status: 'sent' })
+      .andWhere('i.status IN (:...statuses)', { statuses: ['open', 'partial'] })
       .andWhere('i.due_date < :today', { today: new Date().toISOString().split('T')[0] })
       .getRawOne();
 
@@ -327,8 +327,8 @@ export class ReportingService {
     const today = new Date().toISOString().split('T')[0];
 
     const totals = await this.invoiceRepo.createQueryBuilder('i')
-      .select(`SUM(CASE WHEN i.status = 'sent' THEN i.balance_due ELSE 0 END)`, 'totalOutstanding')
-      .addSelect(`SUM(CASE WHEN i.status = 'sent' AND i.due_date < '${today}' THEN i.balance_due ELSE 0 END)`, 'totalOverdue')
+      .select(`SUM(CASE WHEN i.status IN ('open', 'partial') THEN i.balance_due ELSE 0 END)`, 'totalOutstanding')
+      .addSelect(`SUM(CASE WHEN i.status IN ('open', 'partial') AND i.due_date < '${today}' THEN i.balance_due ELSE 0 END)`, 'totalOverdue')
       .where('i.tenant_id = :tid', { tid: tenantId })
       .getRawOne();
 
@@ -347,14 +347,14 @@ export class ReportingService {
         COUNT(CASE WHEN i.due_date < '${today}'::date - 90 THEN 1 END) as days90plus_count
       `)
       .where('i.tenant_id = :tid', { tid: tenantId })
-      .andWhere('i.status = :status', { status: 'sent' })
+      .andWhere('i.status IN (:...statuses)', { statuses: ['open', 'partial'] })
       .andWhere('i.balance_due > 0')
       .getRawOne();
 
     const overdueList = await this.invoiceRepo.createQueryBuilder('i')
       .leftJoinAndSelect('i.customer', 'c')
       .where('i.tenant_id = :tid', { tid: tenantId })
-      .andWhere('i.status = :status', { status: 'sent' })
+      .andWhere('i.status IN (:...statuses)', { statuses: ['open', 'partial'] })
       .andWhere('i.due_date < :today', { today })
       .andWhere('i.balance_due > 0')
       .orderBy('i.due_date', 'ASC')

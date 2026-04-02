@@ -84,10 +84,11 @@ interface JobOption { id: string; job_number: string; status: string; total_pric
 
 /* --- Constants --- */
 
-const TABS = ["all", "paid", "sent", "partial", "draft", "overdue", "voided"] as const;
+const TABS = ["all", "paid", "open", "partial", "draft", "overdue", "voided"] as const;
 
 const STATUS_COLOR: Record<string, string> = {
   draft:     "var(--t-text-muted)",
+  open:      "var(--t-warning)",
   sent:      "var(--t-warning)",
   delivered: "var(--t-info, #3b82f6)",
   read:      "var(--t-info, #3b82f6)",
@@ -99,7 +100,7 @@ const STATUS_COLOR: Record<string, string> = {
 };
 
 const TAB_LABELS: Record<string, string> = {
-  all: "All", draft: "Draft", sent: "Pending", partial: "Partial", paid: "Paid", overdue: "Overdue", voided: "Voided",
+  all: "All", draft: "Draft", open: "Pending", sent: "Pending", partial: "Partial", paid: "Paid", overdue: "Overdue", voided: "Voided",
 };
 
 const DATE_RANGES = [
@@ -216,7 +217,7 @@ export default function InvoicesPage() {
   }, [allInvoices]);
 
   const outstandingTotal = useMemo(() =>
-    allInvoices.filter((i) => i.status === "sent" || i.status === "overdue").reduce((s, i) => s + Number(i.balance_due), 0),
+    allInvoices.filter((i) => i.status === "open" || i.status === "overdue").reduce((s, i) => s + Number(i.balance_due), 0),
   [allInvoices]);
 
   const overdueInvoices = useMemo(() =>
@@ -454,7 +455,7 @@ export default function InvoicesPage() {
                 <div className="shrink-0 text-right" style={{ minWidth: 100 }}>
                   <p className="text-sm font-bold tabular-nums" style={{ color: "var(--t-text-primary)" }}>{fmt(inv.total)}</p>
                   <p className="text-xs font-medium capitalize mt-0.5" style={{ color: statusColor, textDecoration: inv.status === "void" ? "line-through" : "none" }}>
-                    {inv.status === "sent" ? "Pending" : inv.status}
+                    {inv.status === "open" ? "Pending" : inv.status}
                   </p>
                 </div>
               </button>

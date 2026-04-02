@@ -85,20 +85,20 @@ export class CreateInvoiceDto {
 }
 
 export class UpdateInvoiceDto extends PartialType(CreateInvoiceDto) {
-  @ApiPropertyOptional({ enum: ['draft', 'sent', 'paid', 'overdue', 'void'] })
+  @ApiPropertyOptional({ enum: ['draft', 'open', 'partial', 'paid', 'overdue', 'voided'] })
   @IsOptional()
   @IsString()
-  @IsIn(['draft', 'sent', 'paid', 'overdue', 'void'])
+  @IsIn(['draft', 'open', 'partial', 'paid', 'overdue', 'voided'])
   status?: string;
 }
 
 export class ListInvoicesQueryDto {
   @ApiPropertyOptional({
-    enum: ['draft', 'sent', 'paid', 'overdue', 'void'],
+    enum: ['draft', 'open', 'partial', 'paid', 'overdue', 'voided'],
   })
   @IsOptional()
   @IsString()
-  @IsIn(['draft', 'sent', 'paid', 'overdue', 'void'])
+  @IsIn(['draft', 'open', 'partial', 'paid', 'overdue', 'voided'])
   status?: string;
 
   @ApiPropertyOptional()

@@ -35,11 +35,11 @@ interface InvoiceDetail {
 }
 
 function invoiceStatusText(status: string, dueDate: string) {
-  const overdue = status === "sent" && new Date(dueDate) < new Date();
+  const overdue = status === "open" && new Date(dueDate) < new Date();
   if (overdue) return <span className="inline-flex items-center gap-1 text-xs font-medium text-[var(--t-error)]"><AlertTriangle className="h-3 w-3" />Overdue</span>;
   const map: Record<string, { cls: string; icon: React.ReactNode; label: string }> = {
     draft: { cls: "text-[var(--t-text-muted)]", icon: <Clock className="h-3 w-3" />, label: "Draft" },
-    sent: { cls: "text-amber-500", icon: <FileText className="h-3 w-3" />, label: "Unpaid" },
+    open: { cls: "text-amber-500", icon: <FileText className="h-3 w-3" />, label: "Unpaid" },
     paid: { cls: "text-[var(--t-accent)]", icon: <CheckCircle2 className="h-3 w-3" />, label: "Paid" },
   };
   const s = map[status] || map.draft;
@@ -69,7 +69,7 @@ export default function PortalInvoicesPage() {
     finally { setDetailLoading(false); }
   };
 
-  const unpaid = invoices.filter(i => i.status === "sent");
+  const unpaid = invoices.filter(i => i.status === "open");
   const totalOwed = unpaid.reduce((sum, i) => sum + Number(i.balance_due), 0);
 
   if (detail) {
@@ -116,7 +116,7 @@ export default function PortalInvoicesPage() {
             </div>
           </div>
 
-          {detail.status === "sent" && Number(detail.balance_due) > 0 && (
+          {detail.status === "open" && Number(detail.balance_due) > 0 && (
             <div className="mt-6 flex justify-end">
               <button className="flex items-center gap-2 rounded-full bg-[var(--t-accent)] px-6 py-2.5 text-sm font-semibold text-black hover:opacity-90 transition-opacity">
                 <CreditCard className="h-4 w-4" /> Pay {formatCurrency(detail.balance_due)}
@@ -192,7 +192,7 @@ export default function PortalInvoicesPage() {
                     {Number(inv.balance_due) > 0 && <span className="text-amber-500">Balance: {formatCurrency(inv.balance_due)}</span>}
                   </div>
                 </div>
-                {inv.status === "sent" && Number(inv.balance_due) > 0 && (
+                {inv.status === "open" && Number(inv.balance_due) > 0 && (
                   <span className="rounded-full bg-[var(--t-accent)] px-3 py-1.5 text-xs font-semibold text-black shrink-0 ml-2">Pay Now</span>
                 )}
               </div>

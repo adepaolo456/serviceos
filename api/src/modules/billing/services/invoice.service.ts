@@ -4,7 +4,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource } from 'typeorm';
+import { Repository, DataSource, Like } from 'typeorm';
 import { Invoice } from '../entities/invoice.entity';
 import { InvoiceLineItem } from '../entities/invoice-line-item.entity';
 import { InvoiceRevision } from '../entities/invoice-revision.entity';
@@ -123,6 +123,14 @@ export class InvoiceService {
     });
     const saved = await this.invoiceRepo.save(invoice);
 
+    // 6b. Resolve rental chain if not provided
+    if (!dto.rental_chain_id && dto.job_id) {
+      const chainId = await this.resolveRentalChainId(dto.job_id);
+      if (chainId) {
+        await this.invoiceRepo.update(saved.id, { rental_chain_id: chainId });
+      }
+    }
+
     // 7. Create line items from dto
     if (dto.line_items && dto.line_items.length > 0) {
       for (let i = 0; i < dto.line_items.length; i++) {
@@ -180,6 +188,14 @@ export class InvoiceService {
     dto: UpdateInvoiceDto,
   ): Promise<Invoice> {
     const invoice = await this.findOne(tenantId, invoiceId);
+
+    const derivedStatuses = ['paid', 'partial', 'open', 'voided'];
+    if (dto.status && derivedStatuses.includes(dto.status)) {
+      throw new BadRequestException(
+        'Statuses "open", "partial", "paid", and "voided" are system-derived and cannot be set directly.'
+      );
+    }
+
     const oldSnapshot = this.snapshotInvoice(invoice);
 
     // Apply scalar fields
@@ -250,10 +266,10 @@ export class InvoiceService {
     }
 
     await this.invoiceRepo.update(invoiceId, {
-      status: 'voided',
       voided_at: new Date(),
       updated_by: userId,
     });
+    await this.reconcileBalance(invoiceId);
 
     // Credit memo
     const memoResult = await this.dataSource.query(
@@ -315,41 +331,9 @@ export class InvoiceService {
     });
     const savedPayment = await this.paymentRepo.save(payment);
 
-    // Update invoice totals — use update() to avoid cascade issues
-    const newAmountPaid =
-      Math.round((Number(invoice.amount_paid) + Number(dto.amount)) * 100) / 100;
-    let newBalanceDue =
-      Math.round((Number(invoice.total) - newAmountPaid) * 100) / 100;
-    if (newBalanceDue < 0) newBalanceDue = 0;
-
-    let newStatus = invoice.status;
-    let paidAt = invoice.paid_at;
-    if (newBalanceDue <= 0) {
-      newStatus = 'paid';
-      paidAt = new Date();
-    } else if (newAmountPaid > 0) {
-      newStatus = 'partial';
-    }
-
-    const newRevision = invoice.revision + 1;
-    await this.invoiceRepo.update(invoiceId, {
-      amount_paid: newAmountPaid,
-      balance_due: newBalanceDue,
-      status: newStatus,
-      paid_at: paidAt,
-      updated_by: userId,
-      revision: newRevision,
-    });
-
-    // Refresh for revision snapshot
+    await this.reconcileBalance(invoiceId);
     const updated = await this.findOne(tenantId, invoiceId);
-    await this.createRevision(
-      updated,
-      null,
-      userId,
-      `Payment of $${dto.amount} applied via ${dto.payment_method}`,
-    );
-
+    await this.createRevision(updated, null, userId, `Payment of $${dto.amount} applied via ${dto.payment_method}`);
     return { invoice: updated, payment: savedPayment };
   }
 
@@ -554,10 +538,11 @@ export class InvoiceService {
 
   async sendInvoice(tenantId: string, invoiceId: string, method: string) {
     const invoice = await this.findOne(tenantId, invoiceId);
-    invoice.status = 'sent';
-    invoice.sent_at = new Date();
-    invoice.sent_method = method || 'email';
-    await this.invoiceRepo.save(invoice);
+    await this.invoiceRepo.update(invoiceId, {
+      sent_at: new Date(),
+      sent_method: method || 'email',
+    });
+    await this.reconcileBalance(invoiceId);
     return this.findOne(tenantId, invoiceId);
   }
 
@@ -743,10 +728,6 @@ export class InvoiceService {
       0,
     );
     const total = Math.round((subtotal + taxAmount) * 100) / 100;
-    const balanceDue = Math.max(
-      0,
-      Math.round((total - Number(invoice.amount_paid)) * 100) / 100,
-    );
 
     // COGS
     const jobCosts = await this.jobCostRepo.find({
@@ -762,7 +743,6 @@ export class InvoiceService {
       subtotal: Math.round(subtotal * 100) / 100,
       tax_amount: Math.round(taxAmount * 100) / 100,
       total,
-      balance_due: balanceDue,
       total_cogs: Math.round(totalCogs * 100) / 100,
       profit,
     };
@@ -771,6 +751,82 @@ export class InvoiceService {
 
     // Sync in-memory object
     Object.assign(invoice, updates);
+
+    // Derive balance_due and status from payments
+    await this.reconcileBalance(invoice.id);
+  }
+
+  // ─────────────────────────────────────────────────────────
+  // RECONCILE BALANCE — single source of truth for status/amounts
+  // ─────────────────────────────────────────────────────────
+
+  async reconcileBalance(invoiceId: string): Promise<void> {
+    const payments = await this.paymentRepo.find({
+      where: { invoice_id: invoiceId, status: 'completed' },
+    });
+    const totalPaid = payments.reduce((sum, p) => sum + Number(p.amount), 0);
+
+    const invoice = await this.invoiceRepo.findOneOrFail({ where: { id: invoiceId } });
+
+    const amountPaid = Math.round(totalPaid * 100) / 100;
+    const balanceDue = Math.max(Math.round((Number(invoice.total) - totalPaid) * 100) / 100, 0);
+
+    let status: string;
+    if (invoice.voided_at) {
+      status = 'voided';
+    } else if (totalPaid >= Number(invoice.total) && totalPaid > 0) {
+      status = 'paid';
+    } else if (totalPaid > 0) {
+      status = 'partial';
+    } else if (invoice.sent_at) {
+      status = 'open';
+    } else {
+      status = 'draft';
+    }
+
+    // Handle overpayment — idempotent credit memo
+    const overpayment = Math.round(Math.max(totalPaid - Number(invoice.total), 0) * 100) / 100;
+    if (overpayment > 0) {
+      const existingMemo = await this.creditMemoRepo.findOne({
+        where: { original_invoice_id: invoiceId, reason: Like('%Overpayment%') },
+      });
+      if (!existingMemo) {
+        await this.creditMemoRepo.save(this.creditMemoRepo.create({
+          tenant_id: invoice.tenant_id,
+          original_invoice_id: invoiceId,
+          customer_id: invoice.customer_id,
+          amount: overpayment,
+          reason: `Overpayment on invoice #${invoice.invoice_number}`,
+          status: 'issued',
+        }));
+      } else if (Math.round(Number(existingMemo.amount) * 100) !== Math.round(overpayment * 100)) {
+        await this.creditMemoRepo.update(existingMemo.id, { amount: overpayment });
+      }
+    }
+
+    const paidAt = (status === 'paid' && !invoice.paid_at) ? new Date() : invoice.paid_at;
+
+    // TODO: Remove after Phase 2 validation
+    console.log(`[reconcileBalance] invoice=${invoiceId} total=${invoice.total} totalPaid=${totalPaid} balanceDue=${balanceDue} status=${status}`);
+
+    await this.invoiceRepo.update(invoiceId, {
+      amount_paid: amountPaid,
+      balance_due: balanceDue,
+      status,
+      paid_at: paidAt,
+    });
+  }
+
+  // ─────────────────────────────────────────────────────────
+  // PRIVATE: resolveRentalChainId
+  // ─────────────────────────────────────────────────────────
+
+  private async resolveRentalChainId(jobId: string | null): Promise<string | null> {
+    if (!jobId) return null;
+    const link = await this.dataSource.getRepository('task_chain_links').findOne({
+      where: { job_id: jobId },
+    });
+    return link ? (link as any).rental_chain_id : null;
   }
 
   // ─────────────────────────────────────────────────────────

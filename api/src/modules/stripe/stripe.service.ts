@@ -136,15 +136,7 @@ export class StripeService {
         } : {}),
       }, tenant?.stripe_connect_id ? { stripeAccount: tenant.stripe_connect_id } : undefined);
 
-      // Update invoice
-      await this.invoiceRepo.update(invoiceId, {
-        status: 'paid',
-        amount_paid: invoice.total,
-        balance_due: 0,
-        paid_at: new Date(),
-      });
-
-      // Create payment record
+      // Create payment record first
       await this.paymentRepo.save(this.paymentRepo.create({
         tenant_id: tenantId,
         invoice_id: invoiceId,
@@ -153,6 +145,17 @@ export class StripeService {
         stripe_payment_intent_id: pi.id,
         status: 'completed',
       }));
+
+      // Derive invoice state from payments
+      const allPayments = await this.paymentRepo.find({ where: { invoice_id: invoiceId, status: 'completed' } });
+      const totalPaid = allPayments.reduce((sum, p) => sum + Number(p.amount), 0);
+      const balanceDue = Math.max(Math.round((Number(invoice.total) - totalPaid) * 100) / 100, 0);
+      await this.invoiceRepo.update(invoiceId, {
+        status: balanceDue <= 0 ? 'paid' : 'partial',
+        amount_paid: Math.round(totalPaid * 100) / 100,
+        balance_due: balanceDue,
+        paid_at: balanceDue <= 0 ? new Date() : null,
+      });
 
       await this.logRepo.save(this.logRepo.create({
         tenant_id: tenantId, job_id: invoice.job_id, type: 'payment_collected', status: 'success',
@@ -195,11 +198,15 @@ export class StripeService {
     payment.refunded_amount = Math.round((Number(payment.refunded_amount || 0) + refundedAmount) * 100) / 100;
     await this.paymentRepo.save(payment);
 
-    // Update invoice
+    // Derive invoice state from payments (accounting for refunds)
+    const allPayments = await this.paymentRepo.find({ where: { invoice_id: invoiceId, status: 'completed' } });
+    const totalPaid = allPayments.reduce((sum, p) => sum + Number(p.amount) - Number(p.refunded_amount || 0), 0);
+    const balanceDue = Math.max(Math.round((Number(invoice.total) - totalPaid) * 100) / 100, 0);
+    const newStatus = totalPaid <= 0 ? 'voided' : balanceDue <= 0 ? 'paid' : 'partial';
     await this.invoiceRepo.update(invoiceId, {
-      amount_paid: Number(invoice.amount_paid) - refundedAmount,
-      balance_due: Number(invoice.balance_due) + refundedAmount,
-      status: refundedAmount >= Number(invoice.total) ? 'voided' : 'sent',
+      amount_paid: Math.round(totalPaid * 100) / 100,
+      balance_due: balanceDue,
+      status: newStatus,
     });
 
     await this.logRepo.save(this.logRepo.create({
@@ -226,10 +233,19 @@ export class StripeService {
       case 'payment_intent.succeeded': {
         const pi = event.data.object as Stripe.PaymentIntent;
         if (pi.metadata.invoiceId) {
-          await this.invoiceRepo.update(pi.metadata.invoiceId, {
-            status: 'paid',
-            paid_at: new Date(),
-          });
+          // Derive from payments — the payment record should already exist from chargeInvoice
+          const payments = await this.paymentRepo.find({ where: { invoice_id: pi.metadata.invoiceId, status: 'completed' } });
+          const totalPaid = payments.reduce((sum, p) => sum + Number(p.amount), 0);
+          const inv = await this.invoiceRepo.findOne({ where: { id: pi.metadata.invoiceId } });
+          if (inv) {
+            const balanceDue = Math.max(Math.round((Number(inv.total) - totalPaid) * 100) / 100, 0);
+            await this.invoiceRepo.update(pi.metadata.invoiceId, {
+              status: balanceDue <= 0 ? 'paid' : totalPaid > 0 ? 'partial' : 'open',
+              amount_paid: Math.round(totalPaid * 100) / 100,
+              balance_due: balanceDue,
+              paid_at: balanceDue <= 0 ? new Date() : null,
+            });
+          }
         }
         break;
       }

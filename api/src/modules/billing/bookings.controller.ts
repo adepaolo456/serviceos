@@ -223,7 +223,7 @@ export class BookingsController {
       customer_id: customerId,
       job_id: savedDelivery.id,
       invoice_number: invNum,
-      status: isPaid ? 'paid' : 'sent',
+      status: isPaid ? 'paid' : 'open',
       customer_type: 'residential',
       invoice_date: today,
       due_date: body.deliveryDate,
@@ -235,6 +235,7 @@ export class BookingsController {
       balance_due: isPaid ? 0 : body.totalPrice,
       paid_at: isPaid ? new Date() : null,
       summary_of_work: `${body.assetSubtype} ${body.serviceType.replace(/_/g, ' ')} — ${body.rentalDays}-day rental`,
+      rental_chain_id: null,
     } as Partial<Invoice> as Invoice);
     const savedInvoice = await this.invoicesRepo.save(invoice);
 
@@ -307,6 +308,9 @@ export class BookingsController {
       });
       const savedChain = await this.rentalChainRepo.save(rentalChain);
       rentalChainId = savedChain.id;
+
+      // Link invoice to rental chain
+      await this.invoicesRepo.update(savedInvoice.id, { rental_chain_id: savedChain.id });
 
       const deliveryLink = this.taskChainLinkRepo.create({
         rental_chain_id: savedChain.id,

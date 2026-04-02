@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, DataSource } from 'typeorm';
 import { DumpLocation, DumpLocationRate, DumpLocationSurcharge } from './entities/dump-location.entity';
 import { DumpTicket } from './entities/dump-ticket.entity';
 import { Job } from '../jobs/entities/job.entity';
@@ -8,6 +8,7 @@ import { PricingRule } from '../pricing/entities/pricing-rule.entity';
 import { AutomationLog } from '../automation/entities/automation-log.entity';
 import { Invoice } from '../billing/entities/invoice.entity';
 import { InvoiceLineItem } from '../billing/entities/invoice-line-item.entity';
+import { JobCost } from '../billing/entities/job-cost.entity';
 
 function haversineDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 3959; // miles
@@ -31,6 +32,8 @@ export class DumpLocationsService {
     @InjectRepository(DumpTicket) private readonly ticketRepo: Repository<DumpTicket>,
     @InjectRepository(Invoice) private readonly invoiceRepo: Repository<Invoice>,
     @InjectRepository(InvoiceLineItem) private readonly lineItemRepo: Repository<InvoiceLineItem>,
+    @InjectRepository(JobCost) private readonly jobCostRepo: Repository<JobCost>,
+    private readonly dataSource: DataSource,
   ) {}
 
   /* ───── Dump Locations CRUD ───── */
@@ -231,6 +234,17 @@ export class DumpLocationsService {
     const job = await this.jobRepo.findOne({ where: { id: jobId, tenant_id: tenantId }, relations: ['asset'] });
     if (!job) throw new NotFoundException('Job not found');
 
+    // Idempotency: return existing ticket if same job + ticket number
+    const ticketNumberCheck = (body.ticketNumber || body.dump_ticket_number || '') as string;
+    if (ticketNumberCheck) {
+      const existing = await this.ticketRepo.findOne({
+        where: { job_id: jobId, ticket_number: ticketNumberCheck },
+      });
+      if (existing) {
+        return { ticket: existing, invoiceId: existing.invoice_id, dumpTotal: Number(existing.total_cost), customerTotal: Number(existing.customer_charges) };
+      }
+    }
+
     const dumpLocationId = (body.dumpLocationId || body.dump_location_id) as string;
     const wasteType = (body.wasteType || body.dump_waste_type) as string;
     const weightTons = Number(body.weightTons || body.dump_weight_tons || 0);
@@ -295,10 +309,41 @@ export class DumpLocationsService {
       dump_tonnage_cost: dumpTonnageCost, fuel_env_cost: fuelEnvCost,
       dump_surcharge_cost: totalDumpOverage,
       customer_tonnage_charge: customerTonnageOverage, customer_surcharge_charge: totalCustomerSurcharges,
-      profit_margin: customerCharges - dumpTotalCost,
+      profit_margin: 0, // Profit calculated at rental-chain level, not per-ticket
       submitted_by: userId, submitted_at: new Date(), status: 'submitted',
     });
-    const savedTicket = await this.ticketRepo.save(ticket);
+    let savedTicket: DumpTicket;
+    try {
+      savedTicket = await this.ticketRepo.save(ticket);
+    } catch (error: any) {
+      if (error.code === '23505') {
+        const existing = await this.ticketRepo.findOne({
+          where: { job_id: jobId, ticket_number: ticketNumber },
+        });
+        if (existing) return { ticket: existing, invoiceId: existing.invoice_id, dumpTotal: Number(existing.total_cost), customerTotal: Number(existing.customer_charges) };
+      }
+      throw error;
+    }
+
+    // Sync to job_costs — one ticket = one cost record
+    const jobCostData = {
+      tenant_id: tenantId,
+      job_id: jobId,
+      cost_type: 'dump_fee',
+      amount: dumpTotalCost,
+      description: `Dump fee - ${location.name} - Ticket #${ticketNumber} - ${weightTons}t`,
+      dump_location_id: dumpLocationId,
+      dump_ticket_number: ticketNumber,
+      net_weight_tons: weightTons,
+    };
+    const existingCost = await this.jobCostRepo.findOne({
+      where: { job_id: jobId, dump_ticket_number: ticketNumber },
+    });
+    if (existingCost) {
+      await this.jobCostRepo.update(existingCost.id, jobCostData);
+    } else {
+      await this.jobCostRepo.save(this.jobCostRepo.create(jobCostData));
+    }
 
     // Sum all tickets for this job
     const allTickets = await this.ticketRepo.find({ where: { job_id: jobId } });
@@ -364,6 +409,17 @@ export class DumpLocationsService {
         }));
       }
       invoiceId = savedInvoice.id;
+
+      // Resolve rental chain from job
+      try {
+        const link = await this.dataSource.query(
+          'SELECT rental_chain_id FROM task_chain_links WHERE job_id = $1 LIMIT 1',
+          [jobId],
+        );
+        if (link?.[0]?.rental_chain_id) {
+          await this.invoiceRepo.update(savedInvoice.id, { rental_chain_id: link[0].rental_chain_id });
+        }
+      } catch { /* non-fatal */ }
 
       // Mark this ticket as invoiced
       await this.ticketRepo.update(savedTicket.id, { invoiced: true, invoice_id: savedInvoice.id });

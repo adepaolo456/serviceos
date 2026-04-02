@@ -97,6 +97,19 @@ export class BillingService {
     // Recalculate
     await this.recalculate(saved.id);
 
+    // Resolve rental chain from job
+    if (dto.jobId) {
+      try {
+        const link = await this.dataSource.query(
+          'SELECT rental_chain_id FROM task_chain_links WHERE job_id = $1 LIMIT 1',
+          [dto.jobId],
+        );
+        if (link?.[0]?.rental_chain_id) {
+          await this.invoicesRepository.update(saved.id, { rental_chain_id: link[0].rental_chain_id });
+        }
+      } catch { /* non-fatal */ }
+    }
+
     return this.findOneInvoice(tenantId, saved.id);
   }
 
@@ -134,6 +147,10 @@ export class BillingService {
 
   async updateInvoice(tenantId: string, id: string, dto: any): Promise<Invoice> {
     const invoice = await this.findOneInvoice(tenantId, id);
+    const derivedStatuses = ['paid', 'partial', 'open', 'voided'];
+    if (dto.status && derivedStatuses.includes(dto.status)) {
+      throw new BadRequestException('Statuses "open", "partial", "paid", and "voided" are system-derived and cannot be set directly.');
+    }
     if (dto.customerId !== undefined) invoice.customer_id = dto.customerId;
     if (dto.jobId !== undefined) invoice.job_id = dto.jobId;
     if (dto.dueDate !== undefined) invoice.due_date = dto.dueDate;
@@ -147,7 +164,7 @@ export class BillingService {
     if (invoice.status !== 'draft') {
       throw new BadRequestException(`Cannot send invoice with status "${invoice.status}"`);
     }
-    invoice.status = 'sent';
+    invoice.status = 'open';
     invoice.sent_at = new Date();
     invoice.sent_method = 'email';
     const saved = await this.invoicesRepository.save(invoice);
@@ -392,7 +409,7 @@ export class BillingService {
       .update()
       .set({ status: 'overdue' })
       .where('tenant_id = :tenantId', { tenantId })
-      .andWhere('status = :status', { status: 'sent' })
+      .andWhere('status = :status', { status: 'open' })
       .andWhere('due_date < :today', { today })
       .execute();
     return result.affected || 0;
@@ -462,15 +479,20 @@ export class BillingService {
     const savedPayment = await this.paymentsRepository.save(payment);
 
     if (status === 'completed') {
-      const newAmountPaid = Math.round((Number(invoice.amount_paid) + dto.amount) * 100) / 100;
-      const newBalance = Math.round((Number(invoice.total) - newAmountPaid) * 100) / 100;
-      invoice.amount_paid = newAmountPaid;
-      invoice.balance_due = Math.max(0, newBalance);
-      if (invoice.balance_due <= 0) {
-        invoice.status = 'paid';
-        invoice.paid_at = new Date();
-      }
-      await this.invoicesRepository.save(invoice);
+      // Derive balance from actual payments
+      const allPayments = await this.paymentsRepository.find({
+        where: { invoice_id: dto.invoiceId, status: 'completed' },
+      });
+      const totalPaid = allPayments.reduce((sum, p) => sum + Number(p.amount), 0);
+      const balanceDue = Math.max(Math.round((Number(invoice.total) - totalPaid) * 100) / 100, 0);
+      const newStatus = balanceDue <= 0 ? 'paid' : totalPaid > 0 ? 'partial' : invoice.status;
+      const paidAt = newStatus === 'paid' ? new Date() : invoice.paid_at;
+      await this.invoicesRepository.update(dto.invoiceId, {
+        amount_paid: Math.round(totalPaid * 100) / 100,
+        balance_due: balanceDue,
+        status: newStatus,
+        paid_at: paidAt,
+      });
     }
 
     return savedPayment;

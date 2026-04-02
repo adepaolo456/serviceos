@@ -7,7 +7,7 @@ import {
   Param,
   ParseUUIDPipe,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
 import { TenantId } from '../../common/decorators';
 import { RentalChainsService } from './rental-chains.service';
 import { CreateRentalChainDto } from './dto/create-rental-chain.dto';
@@ -21,6 +21,12 @@ export class RentalChainsController {
   @Get()
   findAll(@TenantId() tenantId: string) {
     return this.service.findAll(tenantId);
+  }
+
+  @Get(':id/financials')
+  @ApiOperation({ summary: 'Get financial summary for a rental chain' })
+  getFinancials(@TenantId() tenantId: string, @Param('id', ParseUUIDPipe) id: string) {
+    return this.service.getFinancials(tenantId, id);
   }
 
   @Get(':id')
