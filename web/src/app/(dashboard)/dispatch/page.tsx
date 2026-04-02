@@ -143,6 +143,13 @@ export default function DispatchPage() {
   const [rescheduleJob, setRescheduleJob] = useState<DispatchJob | null>(null);
   const [rescheduleDate, setRescheduleDate] = useState("");
   const [dragColId, setDragColId] = useState<string | null>(null);
+  const [yardQueue, setYardQueue] = useState<Array<{
+    id: string; identifier: string; subtype: string; status: string;
+    needs_dump: boolean; staged_at: string; staged_waste_type: string;
+    staged_notes: string; yard_id: string; yard?: { id: string; name: string };
+    current_job_id: string;
+  }>>([]);
+  const [showYardQueue, setShowYardQueue] = useState(true);
   const saveOrderTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { toast } = useToast();
 
@@ -181,8 +188,12 @@ export default function DispatchPage() {
     catch { /* */ } finally { setLoading(false); setRefreshing(false); }
   }, [date]);
 
-  useEffect(() => { fetchBoard(); }, [fetchBoard]);
-  useEffect(() => { const i = setInterval(() => fetchBoard(true), 30000); return () => clearInterval(i); }, [fetchBoard]);
+  const fetchYardQueue = useCallback(() => {
+    api.get<{data: typeof yardQueue}>("/assets/awaiting-dump").then(r => setYardQueue(r.data || [])).catch(() => {});
+  }, []);
+
+  useEffect(() => { fetchBoard(); fetchYardQueue(); }, [fetchBoard, fetchYardQueue]);
+  useEffect(() => { const i = setInterval(() => { fetchBoard(true); fetchYardQueue(); }, 30000); return () => clearInterval(i); }, [fetchBoard, fetchYardQueue]);
 
   const handleOptimize = async () => {
     if (!board) return;
@@ -467,6 +478,77 @@ export default function DispatchPage() {
           )}
         </div>
       </div>
+
+      {/* ── Yard Queue ── */}
+      {yardQueue.length > 0 && (
+        <div className="shrink-0 mb-3">
+          <div className="rounded-[20px] border" style={{ background: "var(--t-bg-secondary)", borderColor: "var(--t-border)" }}>
+            {/* Header */}
+            <div className="flex items-center justify-between px-4 py-2.5 cursor-pointer" onClick={() => setShowYardQueue(!showYardQueue)}
+              style={{ borderBottom: showYardQueue ? "1px solid var(--t-border)" : "none" }}>
+              <div className="flex items-center gap-2">
+                <Box className="h-4 w-4" style={{ color: "#D97706" }} />
+                <span className="text-sm font-semibold" style={{ color: "var(--t-text-primary)" }}>Awaiting Dump</span>
+                <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: "rgba(217,119,6,0.1)", color: "#D97706" }}>{yardQueue.length}</span>
+              </div>
+              <ChevronDown className="h-4 w-4 transition-transform" style={{ color: "var(--t-text-muted)", transform: showYardQueue ? "rotate(180deg)" : "rotate(0deg)" }} />
+            </div>
+            {/* Content */}
+            {showYardQueue && (
+              <div className="px-4 py-3">
+                {/* Group by yard */}
+                {(() => {
+                  const byYard = new Map<string, typeof yardQueue>();
+                  yardQueue.forEach(a => {
+                    const yardName = a.yard?.name || 'Unspecified Yard';
+                    if (!byYard.has(yardName)) byYard.set(yardName, []);
+                    byYard.get(yardName)!.push(a);
+                  });
+                  return Array.from(byYard.entries()).map(([yardName, assets]) => (
+                    <div key={yardName} className="mb-3 last:mb-0">
+                      <p className="text-[11px] font-bold uppercase tracking-wider mb-2" style={{ color: "var(--t-text-muted)" }}>{yardName}</p>
+                      <div className="flex gap-2 flex-wrap">
+                        {assets.map(asset => {
+                          const waitHours = asset.staged_at ? Math.round((Date.now() - new Date(asset.staged_at).getTime()) / 3600000) : 0;
+                          const sizeLabel = (asset.subtype || '').replace(/yd$/i, 'Y').toUpperCase();
+                          return (
+                            <div key={asset.id} className="rounded-xl border px-3 py-2 flex items-center gap-3"
+                              style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)", minWidth: 200 }}>
+                              <div>
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-sm font-extrabold" style={{ color: "var(--t-text-primary)" }}>{sizeLabel || '\u2014'}</span>
+                                  <span className="text-xs font-bold" style={{ color: "#22C55E" }}>{asset.identifier}</span>
+                                </div>
+                                <p className="text-[11px] mt-0.5" style={{ color: waitHours > 24 ? "#DC2626" : "#D97706" }}>
+                                  {waitHours > 0 ? `${waitHours}h waiting` : 'Just arrived'}
+                                </p>
+                                {asset.staged_waste_type && <p className="text-[10px]" style={{ color: "var(--t-text-muted)" }}>{asset.staged_waste_type}</p>}
+                              </div>
+                              <button onClick={async (e) => {
+                                e.stopPropagation();
+                                const driverId = prompt("Driver ID for dump run (or leave empty for unassigned):");
+                                try {
+                                  await api.post("/jobs/dump-run", { assetId: asset.id, assignedDriverId: driverId || undefined, scheduledDate: date });
+                                  toast("success", `Dump run created for ${asset.identifier}`);
+                                  fetchBoard(true);
+                                  fetchYardQueue();
+                                } catch (err: any) { toast("error", err.message || "Failed to create dump run"); }
+                              }} className="shrink-0 rounded-full px-2.5 py-1 text-[10px] font-semibold"
+                                style={{ background: "rgba(217,119,6,0.1)", color: "#D97706", border: "1px solid rgba(217,119,6,0.2)" }}>
+                                Create Run
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ));
+                })()}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* ── Board ── */}
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>

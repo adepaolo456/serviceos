@@ -130,7 +130,7 @@ export class DriverController {
     @CurrentUser('id') userId: string,
     @TenantId() tenantId: string,
     @Param('id', ParseUUIDPipe) id: string,
-    @Body() body: { wasteType?: string; notes?: string },
+    @Body() body: { wasteType?: string; notes?: string; yardId?: string },
   ) {
     const job = await this.jobRepo.findOne({
       where: { id, tenant_id: tenantId, assigned_driver_id: userId },
@@ -143,7 +143,7 @@ export class DriverController {
 
     // Update asset if exists
     if (job.asset_id) {
-      await this.assetRepo.update(job.asset_id, {
+      const updateData: any = {
         status: 'full_staged',
         staged_at: new Date(),
         staged_from_job_id: id,
@@ -151,7 +151,26 @@ export class DriverController {
         staged_notes: body.notes || null,
         needs_dump: true,
         current_location_type: 'yard',
-      } as any);
+      };
+      if (body.yardId) updateData.yard_id = body.yardId;
+      await this.assetRepo.update(job.asset_id, updateData);
+
+      // Add operational history
+      const asset = await this.assetRepo.findOne({ where: { id: job.asset_id } });
+      if (asset) {
+        const history = Array.isArray(asset.operational_history) ? [...asset.operational_history] : [];
+        history.push({
+          event: 'yard_drop',
+          timestamp: new Date().toISOString(),
+          actor_id: userId,
+          actor_role: 'driver',
+          job_id: id,
+          yard_id: body.yardId || undefined,
+          details: { wasteType: body.wasteType, notes: body.notes },
+        });
+        if (history.length > 50) history.splice(0, history.length - 50);
+        await this.assetRepo.update(job.asset_id, { operational_history: history } as any);
+      }
     }
 
     return this.jobRepo.findOne({ where: { id }, relations: ['asset', 'customer'] });

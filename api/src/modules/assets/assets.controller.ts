@@ -48,6 +48,13 @@ export class AssetsController {
     return this.assetsService.getAvailability(tenantId, subtype || '20yd', date);
   }
 
+  @Get('awaiting-dump')
+  @ApiOperation({ summary: 'Get assets awaiting dump, grouped by yard' })
+  async getAwaitingDump(@TenantId() tenantId: string) {
+    const assets = await this.assetsService.getAwaitingDump(tenantId);
+    return { data: assets };
+  }
+
   @Get('available/:type')
   @ApiOperation({ summary: 'Get available assets by type' })
   findAvailable(@TenantId() tenantId: string, @Param('type') type: string) {

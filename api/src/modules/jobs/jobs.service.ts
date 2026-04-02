@@ -860,6 +860,14 @@ export class JobsService {
         current_location_type: 'yard',
         needs_dump: true,
       } as any);
+      // Log history
+      const pickupAsset = await this.assetRepo.findOne({ where: { id: job.asset_id } });
+      if (pickupAsset) {
+        const hist = Array.isArray(pickupAsset.operational_history) ? [...pickupAsset.operational_history] : [];
+        hist.push({ event: 'picked_up', timestamp: new Date().toISOString(), job_id: job.id, details: { from: 'customer_site' } });
+        if (hist.length > 50) hist.splice(0, hist.length - 50);
+        await this.assetRepo.update(job.asset_id, { operational_history: hist } as any);
+      }
     } else if (jobType === 'exchange') {
       // Old asset (main asset_id) returns to yard
       await this.assetRepo.update(job.asset_id, {
@@ -886,6 +894,13 @@ export class JobsService {
         staged_waste_type: null,
         staged_notes: null,
       } as any);
+      const dumpAsset = await this.assetRepo.findOne({ where: { id: job.asset_id } });
+      if (dumpAsset) {
+        const hist = Array.isArray(dumpAsset.operational_history) ? [...dumpAsset.operational_history] : [];
+        hist.push({ event: 'dump_run_completed', timestamp: new Date().toISOString(), job_id: job.id, details: { now: 'ready_for_rental' } });
+        if (hist.length > 50) hist.splice(0, hist.length - 50);
+        await this.assetRepo.update(job.asset_id, { operational_history: hist } as any);
+      }
     }
   }
 

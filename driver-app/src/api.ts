@@ -129,4 +129,15 @@ export async function failJob(jobId: string, reason: string): Promise<any> {
   return data;
 }
 
+// Yards
+export async function getYards(): Promise<any[]> {
+  const { data } = await client.get('/yards');
+  return data?.data || data || [];
+}
+
+export async function stageAtYard(jobId: string, body: { yardId?: string; wasteType?: string; notes?: string }): Promise<any> {
+  const { data } = await client.patch(`/driver/jobs/${jobId}/stage-at-yard`, body);
+  return data;
+}
+
 export default client;
