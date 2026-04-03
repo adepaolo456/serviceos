@@ -91,16 +91,16 @@ function statusTextClass(s: string): string {
   if (s === "pending") return "text-[var(--t-warning)]";
   if (s === "dispatched") return "text-[var(--t-warning)]";
   if (s === "en_route") return "text-[var(--t-warning)]";
-  if (s === "in_progress") return "text-[#3B82F6]";
+  if (s === "in_progress") return "text-[var(--t-info)]";
   return "text-[var(--t-text-muted)]";
 }
 
 /* ─── Job type text (no badge backgrounds) ─── */
 
 function jobTypeTextClass(t: string): string {
-  if (t === "delivery") return "text-[#3B82F6]";
-  if (t === "pickup") return "text-[#F97316]";
-  if (t === "exchange") return "text-[#A855F7]";
+  if (t === "delivery") return "text-[var(--t-info)]";
+  if (t === "pickup") return "text-[var(--t-warning)]";
+  if (t === "exchange") return "text-[var(--t-text-secondary)]";
   return "text-[var(--t-text-muted)]";
 }
 
@@ -229,6 +229,11 @@ export default function JobsPage() {
   const todayStr = new Date().toISOString().split("T")[0];
   const todayCount = jobs.filter((j) => j.scheduled_date === todayStr).length;
   const unassignedCount = statusCounts.filter((c) => ["pending", "confirmed"].includes(c.status)).reduce((s, c) => s + Number(c.count), 0);
+  const inProgressCount = getCount("in_progress") + getCount("en_route");
+  const completedCount = getCount("completed");
+
+  const PRIMARY_STATUSES = ["all", "overdue", "pending", "confirmed"] as const;
+  const SECONDARY_STATUSES = ["dispatched", "en_route", "in_progress", "completed", "cancelled"] as const;
 
   const filteredJobs = useMemo(() => {
     let result = [...jobs];
@@ -261,158 +266,184 @@ export default function JobsPage() {
     return result;
   }, [jobs, searchQuery, sortBy]);
 
+  const thStyle: React.CSSProperties = { padding: "10px 16px", textAlign: "left", fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--t-text-muted)", whiteSpace: "nowrap" };
+
   return (
     <div>
-      {/* Header */}
-      <div className="flex items-start justify-between gap-4 mb-8">
+      {/* ─── Header ─── */}
+      <div className="flex items-start justify-between gap-4 mb-6">
         <div>
-          <h1 className="text-[28px] font-bold tracking-[-1px] text-[var(--t-frame-text)]">Jobs</h1>
-          <p className="mt-1 text-[13px] text-[var(--t-frame-text-muted)]">
-            {totalCount} total &middot;{" "}
-            <span className="text-[var(--t-frame-text)]">{todayCount} today</span> &middot;{" "}
-            {unassignedCount > 0 ? (
-              <span className="text-[var(--t-error)]">{unassignedCount} unassigned</span>
-            ) : (
-              <span className="text-[var(--t-accent)]">All assigned</span>
-            )}
+          <h1 style={{ fontSize: 26, fontWeight: 700, letterSpacing: "-0.02em", color: "var(--t-text-primary)" }}>Jobs</h1>
+          <p className="mt-1" style={{ fontSize: 13, color: "var(--t-text-muted)" }}>
+            {totalCount} total{unassignedCount > 0 && <> &middot; <span style={{ fontWeight: 600, color: "var(--t-warning)" }}>{unassignedCount} unassigned</span></>}
           </p>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <div className="flex overflow-hidden rounded-full border border-[var(--t-frame-border)]">
+        <button onClick={() => openWizard()} className="btn-primary inline-flex items-center gap-1.5 text-sm shrink-0">
+          <Plus className="h-4 w-4" strokeWidth={2.5} /> New Booking
+        </button>
+      </div>
+
+      {/* ─── Stat strip ─── */}
+      <div className="grid grid-cols-4 gap-3 mb-6">
+        {[
+          { label: "Unassigned", value: unassignedCount, color: unassignedCount > 0 ? "var(--t-warning)" : "var(--t-accent)", bg: unassignedCount > 0 ? "var(--t-warning-soft)" : undefined, filter: "pending", icon: AlertCircle },
+          { label: "Today", value: todayCount, color: "var(--t-text-primary)", filter: "all", icon: Calendar },
+          { label: "In Progress", value: inProgressCount, color: "var(--t-info)", filter: "in_progress", icon: Truck },
+          { label: "Completed", value: completedCount, color: "var(--t-accent)", filter: "completed", icon: CheckCircle2 },
+        ].map((stat) => (
+          <button
+            key={stat.label}
+            onClick={() => { setStatusFilter(stat.filter); if (stat.label === "Today") setDateRange("today"); }}
+            className="surface-card card-hover text-left px-4 py-3"
+            style={stat.bg ? { backgroundColor: stat.bg } : undefined}
+          >
+            <div className="flex items-center justify-between mb-1">
+              <stat.icon style={{ width: 14, height: 14, color: stat.color }} />
+              {stat.value > 0 && stat.label === "Unassigned" && (
+                <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--t-warning)", display: "inline-block" }} />
+              )}
+            </div>
+            <p style={{ fontSize: 24, fontWeight: 700, color: stat.color, fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>{stat.value}</p>
+            <p style={{ fontSize: 11, fontWeight: 500, color: "var(--t-text-muted)", marginTop: 4 }}>{stat.label}</p>
+          </button>
+        ))}
+      </div>
+
+      {/* ─── Controls bar ─── */}
+      <div className="surface-card mb-5" style={{ padding: "10px 14px", display: "flex", flexDirection: "column", gap: 10 }}>
+        {/* Row 1: Primary filters + secondary overflow + date range */}
+        <div className="flex items-center gap-1 flex-wrap">
+          {/* Primary statuses */}
+          {PRIMARY_STATUSES.map((s) => {
+            const isActive = statusFilter === s;
+            const count = getCount(s);
+            return (
+              <button
+                key={s}
+                onClick={() => setStatusFilter(s)}
+                style={{
+                  display: "inline-flex", alignItems: "center", gap: 5,
+                  padding: "5px 12px", borderRadius: 8, fontSize: 12, fontWeight: isActive ? 600 : 500,
+                  background: isActive ? "var(--t-accent-soft)" : "transparent",
+                  color: isActive ? "var(--t-accent-text)" : "var(--t-text-secondary)",
+                  border: "none", cursor: "pointer", transition: "all 0.12s ease",
+                }}
+              >
+                {STATUS_LABELS[s]}
+                {count > 0 && <span style={{ fontSize: 10, fontWeight: 700, opacity: isActive ? 1 : 0.6, color: s === "overdue" ? "var(--t-error)" : undefined }}>{count}</span>}
+              </button>
+            );
+          })}
+          {/* Separator */}
+          <span style={{ width: 1, height: 16, background: "var(--t-border)", margin: "0 4px" }} />
+          {/* Secondary statuses */}
+          {SECONDARY_STATUSES.map((s) => {
+            const isActive = statusFilter === s;
+            const count = getCount(s);
+            return (
+              <button
+                key={s}
+                onClick={() => setStatusFilter(s)}
+                style={{
+                  display: "inline-flex", alignItems: "center", gap: 5,
+                  padding: "5px 10px", borderRadius: 8, fontSize: 11, fontWeight: isActive ? 600 : 400,
+                  background: isActive ? "var(--t-accent-soft)" : "transparent",
+                  color: isActive ? "var(--t-accent-text)" : "var(--t-text-muted)",
+                  border: "none", cursor: "pointer", transition: "all 0.12s ease",
+                }}
+              >
+                {STATUS_LABELS[s]}
+                {count > 0 && <span style={{ fontSize: 10, fontWeight: 600, opacity: isActive ? 1 : 0.4 }}>{count}</span>}
+              </button>
+            );
+          })}
+          {/* Date range — pushed right */}
+          <div className="ml-auto" style={{ display: "flex", borderRadius: 8, border: "1px solid var(--t-border)", overflow: "hidden" }}>
             {DATE_RANGE_OPTIONS.map((opt) => (
               <button
                 key={opt.value}
                 onClick={() => setDateRange(opt.value)}
-                className={`px-3.5 py-1.5 text-xs font-medium transition-all ${
-                  dateRange === opt.value
-                    ? "bg-[var(--t-accent-soft)] text-[var(--t-accent)]"
-                    : "text-[var(--t-frame-text-muted)]"
-                }`}
+                style={{
+                  padding: "5px 12px", fontSize: 11, fontWeight: 500, border: "none", cursor: "pointer",
+                  background: dateRange === opt.value ? "var(--t-accent-soft)" : "transparent",
+                  color: dateRange === opt.value ? "var(--t-accent-text)" : "var(--t-text-muted)",
+                  transition: "all 0.12s ease",
+                }}
               >
                 {opt.label}
               </button>
             ))}
           </div>
-          <button
-            onClick={() => openWizard()}
-            className="inline-flex items-center gap-1.5 rounded-full bg-[var(--t-accent)] px-5 py-2.5 text-sm font-semibold text-[var(--t-accent-on-accent)] transition-all hover:brightness-110"
+        </div>
+
+        {/* Row 2: Search + sort */}
+        <div className="flex items-center gap-2">
+          <div className="relative flex-1">
+            <Search style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", width: 14, height: 14, color: "var(--t-text-muted)" }} />
+            <input
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search job #, customer, phone, address..."
+              className="input-field"
+              style={{ paddingLeft: 32, fontSize: 13, borderRadius: 8, padding: "7px 12px 7px 32px" }}
+            />
+          </div>
+          <Dropdown
+            trigger={
+              <button className="btn-ghost" style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12, padding: "6px 10px", border: "1px solid var(--t-border)", borderRadius: 8 }}>
+                <ArrowDownUp className="h-3 w-3" />
+                {SORT_OPTIONS.find((o) => o.value === sortBy)?.label}
+              </button>
+            }
+            align="right"
           >
-            <Plus className="h-4 w-4" />
-            New Booking
-          </button>
+            {SORT_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                onClick={() => setSortBy(opt.value)}
+                className="block w-full px-4 py-2 text-left text-sm transition-colors"
+                style={{
+                  color: sortBy === opt.value ? "var(--t-accent-text)" : "var(--t-text-primary)",
+                  background: sortBy === opt.value ? "var(--t-accent-soft)" : "transparent",
+                  border: "none", cursor: "pointer",
+                }}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </Dropdown>
         </div>
-      </div>
-
-      {/* ─── Filter Tabs (Pills) ─── */}
-      <div className="flex gap-2 mb-6 flex-wrap">
-        {STATUSES.map((s) => {
-          const isActive = statusFilter === s;
-          return (
-            <button
-              key={s}
-              onClick={() => setStatusFilter(s)}
-              style={{
-                display: "inline-flex", alignItems: "center", gap: 6,
-                padding: "6px 14px", borderRadius: 24, fontSize: 13, fontWeight: 500,
-                background: isActive ? "var(--t-accent-soft)" : "var(--t-frame-hover)",
-                color: isActive ? "var(--t-accent-text)" : "var(--t-frame-text-muted)",
-                border: isActive ? "1px solid transparent" : "1px solid var(--t-frame-border)",
-                transition: "all 0.15s ease", cursor: "pointer",
-              }}
-            >
-              {STATUS_LABELS[s]}
-              <span style={{ fontSize: 11, opacity: 0.7 }}>{getCount(s)}</span>
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Search & Sort */}
-      <div className="flex items-center gap-3 mb-5">
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4" style={{ color: "var(--t-frame-text-muted)" }} />
-          <input
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search job #, customer, phone, address..."
-            style={{
-              width: "100%", borderRadius: 14, border: "1px solid var(--t-frame-border)",
-              background: "var(--t-frame-hover)", padding: "10px 16px 10px 40px",
-              fontSize: 14, color: "var(--t-frame-text)", outline: "none",
-              transition: "border 0.15s ease",
-            }}
-          />
-        </div>
-        <Dropdown
-          trigger={
-            <button
-              style={{
-                display: "inline-flex", alignItems: "center", gap: 6,
-                padding: "8px 14px", borderRadius: 24, fontSize: 13, fontWeight: 500,
-                border: "1px solid var(--t-frame-border)", background: "transparent",
-                color: "var(--t-frame-text-muted)", cursor: "pointer", transition: "all 0.15s ease",
-              }}
-            >
-              <ArrowDownUp className="h-3.5 w-3.5" />
-              {SORT_OPTIONS.find((o) => o.value === sortBy)?.label}
-            </button>
-          }
-          align="right"
-        >
-          {SORT_OPTIONS.map((opt) => (
-            <button
-              key={opt.value}
-              onClick={() => setSortBy(opt.value)}
-              className="block w-full px-4 py-2 text-left text-sm transition-colors"
-              style={{
-                color: sortBy === opt.value ? "var(--t-accent-text)" : "var(--t-text-primary)",
-                background: sortBy === opt.value ? "var(--t-accent-soft)" : "transparent",
-              }}
-            >
-              {opt.label}
-            </button>
-          ))}
-        </Dropdown>
       </div>
 
       {/* ─── Job Table ─── */}
       {loading ? (
         <div className="space-y-2">
           {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="h-16 w-full skeleton" style={{ borderRadius: 14 }} />
+            <div key={i} className="h-14 w-full skeleton" style={{ borderRadius: 14 }} />
           ))}
         </div>
       ) : filteredJobs.length === 0 ? (
-        <div className="py-24 flex flex-col items-center justify-center text-center">
-          <Briefcase size={48} style={{ color: "var(--t-text-muted)", opacity: 0.3 }} className="mb-4" />
-          <h2 style={{ fontSize: 18, fontWeight: 600, color: "var(--t-text-primary)" }} className="mb-1">
+        <div className="surface-card py-20 flex flex-col items-center justify-center text-center">
+          <Briefcase size={44} style={{ color: "var(--t-text-tertiary)" }} className="mb-3" />
+          <h2 style={{ fontSize: 17, fontWeight: 600, color: "var(--t-text-primary)" }} className="mb-1">
             {searchQuery ? "No matching jobs" : "No jobs yet"}
           </h2>
-          <p style={{ fontSize: 14, color: "var(--t-text-muted)" }} className="mb-6">
+          <p style={{ fontSize: 13, color: "var(--t-text-muted)" }} className="mb-5">
             {searchQuery ? "Try a different search" : "Create your first job to get started"}
           </p>
           {!searchQuery && (
-            <button
-              onClick={() => setPanelOpen(true)}
-              style={{
-                display: "inline-flex", alignItems: "center", gap: 8,
-                background: "var(--t-accent)", color: "var(--t-accent-on-accent)", fontWeight: 600, fontSize: 14,
-                padding: "10px 20px", borderRadius: 24,
-                transition: "opacity 0.15s ease", cursor: "pointer", border: "none",
-              }}
-            >
-              <Plus className="h-4 w-4" />
-              New Job
+            <button onClick={() => setPanelOpen(true)} className="btn-primary inline-flex items-center gap-2 text-sm">
+              <Plus className="h-4 w-4" /> New Job
             </button>
           )}
         </div>
       ) : (
-        <div style={{ borderRadius: 14, border: "1px solid var(--t-border)", background: "var(--t-bg-card)", overflow: "hidden" }}>
+        <div className="surface-card" style={{ overflow: "hidden", padding: 0 }}>
           <div className="table-scroll">
-            <table className="w-full text-sm">
+            <table className="w-full" style={{ fontSize: 13, borderCollapse: "collapse" }}>
               <thead>
-                <tr style={{ borderBottom: "1px solid var(--t-border)" }}>
-                  <th style={{ padding: "12px 8px 12px 16px", width: 32 }}>
+                <tr className="table-header" style={{ borderBottom: "1px solid var(--t-border)" }}>
+                  <th style={{ ...thStyle, padding: "10px 6px 10px 14px", width: 36 }}>
                     <input
                       type="checkbox"
                       checked={filteredJobs.length > 0 && filteredJobs.every(j => selectedJobIds.has(j.id))}
@@ -420,50 +451,45 @@ export default function JobsPage() {
                         const allSelected = filteredJobs.every(j => selectedJobIds.has(j.id));
                         setSelectedJobIds(prev => {
                           const next = new Set(prev);
-                          if (allSelected) {
-                            filteredJobs.forEach(j => next.delete(j.id));
-                          } else {
-                            filteredJobs.forEach(j => next.add(j.id));
-                          }
+                          if (allSelected) filteredJobs.forEach(j => next.delete(j.id));
+                          else filteredJobs.forEach(j => next.add(j.id));
                           return next;
                         });
                       }}
-                      className="h-4 w-4 rounded cursor-pointer accent-[var(--t-accent)]"
+                      className="h-3.5 w-3.5 rounded cursor-pointer accent-[var(--t-accent)]"
                     />
                   </th>
-                  <th style={{ padding: "12px 16px", textAlign: "left", fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--t-text-muted)" }}>Size</th>
-                  <th style={{ padding: "12px 16px", textAlign: "left", fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--t-text-muted)" }}>Type</th>
-                  <th style={{ padding: "12px 16px", textAlign: "left", fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--t-text-muted)" }}>Customer</th>
-                  <th style={{ padding: "12px 16px", textAlign: "left", fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--t-text-muted)" }}>Address</th>
-                  <th style={{ padding: "12px 16px", textAlign: "left", fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--t-text-muted)" }}>Schedule</th>
-                  <th style={{ padding: "12px 16px", textAlign: "left", fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--t-text-muted)" }}>Driver</th>
-                  <th style={{ padding: "12px 16px", textAlign: "left", fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--t-text-muted)" }}>Status</th>
-                  <th style={{ padding: "12px 16px", textAlign: "right", fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--t-text-muted)" }}>Price</th>
-                  <th style={{ padding: "12px 16px", textAlign: "center", fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--t-text-muted)", width: 48 }}></th>
+                  <th style={{ ...thStyle, width: 72 }}>Size</th>
+                  <th style={{ ...thStyle, width: 80 }}>Type</th>
+                  <th style={thStyle}>Customer</th>
+                  <th style={thStyle}>Address</th>
+                  <th style={{ ...thStyle, width: 130 }}>Schedule</th>
+                  <th style={{ ...thStyle, width: 100 }}>Driver</th>
+                  <th style={{ ...thStyle, width: 90 }}>Status</th>
+                  <th style={{ ...thStyle, textAlign: "right", width: 90 }}>Price</th>
+                  <th style={{ ...thStyle, width: 40 }}></th>
                 </tr>
               </thead>
               <tbody>
                 {filteredJobs.map((job) => {
-                  const customerName = job.customer ? `${job.customer.first_name} ${job.customer.last_name}` : "No customer";
+                  const customerName = job.customer ? `${job.customer.first_name} ${job.customer.last_name}` : "";
                   const address = fmtAddress(job.service_address);
-                  const hasRental = job.rental_start_date && job.rental_end_date;
-                  const rentalDays = hasRental ? daysBetween(job.rental_start_date, job.rental_end_date) : job.rental_days;
+                  const isToday = job.scheduled_date === todayStr;
 
                   return (
                     <tr
                       key={job.id}
                       onClick={() => router.push(`/jobs/${job.id}`)}
-                      className="cursor-pointer"
+                      className="table-row cursor-pointer"
                       style={{
-                        borderBottom: "1px solid var(--t-border)",
-                        transition: "background 0.15s ease",
-                        ...(job.scheduled_date === todayStr ? { backgroundColor: "rgba(34,197,94,0.04)" } : {}),
+                        borderBottom: "1px solid var(--t-border-subtle)",
+                        ...(job.is_overdue ? { borderLeft: "3px solid var(--t-error)", backgroundColor: "var(--t-error-soft)" }
+                          : !job.assigned_driver && !["completed", "cancelled"].includes(job.status) ? { borderLeft: "3px solid var(--t-warning)", backgroundColor: "var(--t-warning-soft)" }
+                          : isToday ? { borderLeft: "3px solid var(--t-accent)", backgroundColor: "var(--t-accent-soft)" }
+                          : { borderLeft: "3px solid transparent" }),
                       }}
-                      onMouseOver={(e) => (e.currentTarget.style.background = "var(--t-bg-card-hover)")}
-                      onMouseOut={(e) => (e.currentTarget.style.background = job.scheduled_date === todayStr ? "rgba(34,197,94,0.04)" : "transparent")}
                     >
-                      {/* Checkbox for bulk selection */}
-                      <td style={{ padding: "14px 8px 14px 16px", width: 32 }}>
+                      <td style={{ padding: "12px 6px 12px 14px", width: 36 }}>
                         <input
                           type="checkbox"
                           checked={selectedJobIds.has(job.id)}
@@ -476,102 +502,97 @@ export default function JobsPage() {
                               return next;
                             });
                           }}
-                          className="h-4 w-4 rounded cursor-pointer accent-[var(--t-accent)]"
+                          className="h-3.5 w-3.5 rounded cursor-pointer accent-[var(--t-accent)]"
                         />
                       </td>
-                      {/* Size — prominent bold badge */}
-                      <td style={{ padding: "14px 16px" }}>
+
+                      {/* Size */}
+                      <td style={{ padding: "12px 16px 12px 12px" }}>
                         {(job.asset_subtype || job.asset?.subtype) ? (
-                          <span style={{ fontSize: 15, fontWeight: 800, color: "var(--t-text-primary)", background: "rgba(34,197,94,0.08)", padding: "3px 8px", borderRadius: 6, whiteSpace: "nowrap" }}>
+                          <span style={{ fontSize: 13, fontWeight: 800, color: "var(--t-text-primary)", background: "var(--t-accent-soft)", padding: "2px 7px", borderRadius: 5, whiteSpace: "nowrap", letterSpacing: "0.02em" }}>
                             {(job.asset_subtype || job.asset?.subtype || "").replace(/yd$/i, "Y").toUpperCase()}
                           </span>
                         ) : (
-                          <span style={{ fontSize: 13, color: "var(--t-text-muted)", opacity: 0.5 }}>—</span>
+                          <span style={{ color: "var(--t-text-tertiary)" }}>&mdash;</span>
                         )}
                       </td>
 
-                      {/* Type — UPPERCASE, colored, larger */}
-                      <td style={{ padding: "14px 16px" }}>
-                        <span className={jobTypeTextClass(job.job_type)} style={{ fontSize: 13, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.02em" }}>
+                      {/* Type */}
+                      <td style={{ padding: "12px 16px" }}>
+                        <span className={jobTypeTextClass(job.job_type)} style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em" }}>
                           {job.job_type}
                         </span>
                       </td>
 
-                      {/* Customer */}
-                      <td style={{ padding: "14px 16px" }}>
-                        <p style={{ fontWeight: 600, fontSize: 14, color: "var(--t-text-primary)" }}>{customerName}</p>
-                        <p style={{ fontSize: 12, color: "var(--t-text-muted)", fontFamily: "monospace" }}>{job.job_number}</p>
+                      {/* Customer (primary) + Job # (secondary) */}
+                      <td style={{ padding: "12px 16px" }}>
+                        <p style={{ fontWeight: 600, fontSize: 13, color: "var(--t-text-primary)", lineHeight: 1.3 }}>{customerName || <span style={{ color: "var(--t-text-tertiary)" }}>No customer</span>}</p>
+                        <p style={{ fontSize: 11, color: "var(--t-text-muted)", fontVariantNumeric: "tabular-nums", marginTop: 1 }}>{job.job_number}</p>
                       </td>
 
-                      {/* Address — wider, primary color */}
-                      <td style={{ padding: "14px 16px", maxWidth: 280 }} className="truncate">
+                      {/* Address */}
+                      <td style={{ padding: "12px 16px", maxWidth: 240 }}>
                         {address ? (
-                          <span style={{ fontSize: 13, color: "var(--t-text-primary)" }}>{address}</span>
+                          <span style={{ fontSize: 12, color: "var(--t-text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>{address}</span>
                         ) : (
-                          <span style={{ fontSize: 13, color: "var(--t-text-muted)", opacity: 0.5 }}>\u2014</span>
+                          <span style={{ color: "var(--t-text-tertiary)" }}>&mdash;</span>
                         )}
                       </td>
 
                       {/* Schedule */}
-                      <td style={{ padding: "14px 16px" }}>
-                        <p style={{ fontSize: 13, color: "var(--t-text-primary)" }}>
-                          {job.scheduled_date ? fmtDateFull(job.scheduled_date) : "Unscheduled"}
+                      <td style={{ padding: "12px 16px" }}>
+                        <p style={{ fontSize: 12, fontWeight: 500, color: "var(--t-text-primary)", lineHeight: 1.3 }}>
+                          {job.scheduled_date ? fmtDate(job.scheduled_date) : <span style={{ color: "var(--t-text-tertiary)" }}>TBD</span>}
                         </p>
                         {job.scheduled_window_start && (
-                          <p style={{ fontSize: 12, color: "var(--t-text-muted)" }}>
-                            {fmtTime(job.scheduled_window_start)}{job.scheduled_window_end ? ` \u2013 ${fmtTime(job.scheduled_window_end)}` : ""}
+                          <p style={{ fontSize: 11, color: "var(--t-text-muted)", fontVariantNumeric: "tabular-nums", marginTop: 1 }}>
+                            {fmtTime(job.scheduled_window_start)}{job.scheduled_window_end ? `–${fmtTime(job.scheduled_window_end)}` : ""}
                           </p>
                         )}
                       </td>
 
-                      {/* (Size and Type columns moved above Customer) */}
-
                       {/* Driver */}
-                      <td style={{ padding: "14px 16px" }}>
+                      <td style={{ padding: "12px 16px" }}>
                         {job.assigned_driver ? (
-                          <span style={{ fontSize: 13, color: "var(--t-text-primary)" }}>
-                            {job.assigned_driver.first_name} {job.assigned_driver.last_name}
+                          <span style={{ fontSize: 12, color: "var(--t-text-secondary)" }}>
+                            {job.assigned_driver.first_name} {job.assigned_driver.last_name?.[0]}.
                           </span>
                         ) : (
-                          <span style={{ fontSize: 11, fontWeight: 600, color: "var(--t-warning)" }}>Unassigned</span>
+                          <span className="badge-warning" style={{ fontSize: 10, padding: "1px 6px" }}>Unassigned</span>
                         )}
                       </td>
 
                       {/* Status */}
-                      <td style={{ padding: "14px 16px" }}>
-                        <span className={statusTextClass(job.status)} style={{ fontSize: 11, fontWeight: 600 }}>
+                      <td style={{ padding: "12px 16px" }}>
+                        <span className={statusTextClass(job.status)} style={{ fontSize: 11, fontWeight: 600, textTransform: "capitalize" }}>
                           {STATUS_LABELS[job.status] || job.status.replace(/_/g, " ")}
                         </span>
                         {job.is_overdue && (
-                          <p style={{ fontSize: 10, fontWeight: 700, color: "var(--t-error)", marginTop: 2 }}>
-                            OVERDUE {job.extra_days}d
-                          </p>
-                        )}
-                        {job.rescheduled_by_customer && (
-                          <p style={{ fontSize: 10, fontWeight: 500, color: "var(--t-warning)", marginTop: 2 }}>
-                            Rescheduled by customer
+                          <p className="badge-error" style={{ fontSize: 9, fontWeight: 700, marginTop: 3, padding: "0px 5px", display: "inline-block" }}>
+                            +{job.extra_days}d
                           </p>
                         )}
                       </td>
 
                       {/* Price */}
-                      <td style={{ padding: "14px 16px", textAlign: "right" }}>
+                      <td style={{ padding: "12px 16px", textAlign: "right" }}>
                         {job.total_price > 0 ? (
-                          <span className="tabular-nums" style={{ fontSize: 14, fontWeight: 600, color: "var(--t-text-primary)" }}>
-                            ${Number(job.total_price).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          <span style={{ fontSize: 13, fontWeight: 600, color: "var(--t-text-primary)", fontVariantNumeric: "tabular-nums" }}>
+                            ${Number(job.total_price).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                           </span>
                         ) : (
-                          <span style={{ fontSize: 13, color: "var(--t-text-muted)", opacity: 0.5 }}>\u2014</span>
+                          <span style={{ color: "var(--t-text-tertiary)" }}>&mdash;</span>
                         )}
                       </td>
+
                       {/* Actions */}
-                      <td style={{ padding: "14px 8px", textAlign: "center" }}>
+                      <td style={{ padding: "12px 8px 12px 0", textAlign: "center" }}>
                         <Dropdown
                           trigger={
                             <button
                               onClick={(e) => e.stopPropagation()}
-                              className="rounded-full p-1.5 transition-colors hover:bg-[var(--t-bg-card-hover)]"
-                              style={{ color: "var(--t-text-muted)", border: "none", background: "none", cursor: "pointer" }}
+                              className="btn-ghost rounded-md p-1"
+                              style={{ color: "var(--t-text-tertiary)" }}
                             >
                               <MoreHorizontal className="h-4 w-4" />
                             </button>
@@ -587,10 +608,10 @@ export default function JobsPage() {
                                 fetchJobs();
                               } catch { toast("error", "Failed to update status"); }
                             }}
-                            className="flex w-full items-center gap-2 px-4 py-2 text-sm transition-colors hover:bg-[var(--t-bg-card-hover)]"
+                            className="flex w-full items-center gap-2 px-4 py-2 text-sm transition-colors"
                             style={{ color: "var(--t-text-primary)", border: "none", background: "none", cursor: "pointer" }}
                           >
-                            <CheckCircle2 className="h-3.5 w-3.5" /> Mark Complete
+                            <CheckCircle2 className="h-3.5 w-3.5" style={{ color: "var(--t-accent)" }} /> Mark Complete
                           </button>
                           <button
                             onClick={async (e) => {
@@ -601,20 +622,20 @@ export default function JobsPage() {
                                 fetchJobs();
                               } catch { toast("error", "Failed to update status"); }
                             }}
-                            className="flex w-full items-center gap-2 px-4 py-2 text-sm transition-colors hover:bg-[var(--t-bg-card-hover)]"
+                            className="flex w-full items-center gap-2 px-4 py-2 text-sm transition-colors"
                             style={{ color: "var(--t-text-primary)", border: "none", background: "none", cursor: "pointer" }}
                           >
-                            <Send className="h-3.5 w-3.5" /> Send to Driver
+                            <Send className="h-3.5 w-3.5" style={{ color: "var(--t-warning)" }} /> Send to Driver
                           </button>
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
                               router.push(`/invoices?jobId=${job.id}`);
                             }}
-                            className="flex w-full items-center gap-2 px-4 py-2 text-sm transition-colors hover:bg-[var(--t-bg-card-hover)]"
+                            className="flex w-full items-center gap-2 px-4 py-2 text-sm transition-colors"
                             style={{ color: "var(--t-text-primary)", border: "none", background: "none", cursor: "pointer" }}
                           >
-                            <FileText className="h-3.5 w-3.5" /> View Invoice
+                            <FileText className="h-3.5 w-3.5" style={{ color: "var(--t-text-muted)" }} /> View Invoice
                           </button>
                         </Dropdown>
                       </td>
@@ -629,30 +650,22 @@ export default function JobsPage() {
 
       {/* Pagination */}
       {total > 30 && (
-        <div className="mt-6 flex items-center justify-between" style={{ fontSize: 14, color: "var(--t-text-muted)" }}>
-          <span>Showing {(page - 1) * 30 + 1}\u2013{Math.min(page * 30, total)} of {total}</span>
+        <div className="mt-5 flex items-center justify-between" style={{ fontSize: 13, color: "var(--t-text-muted)" }}>
+          <span>Showing {(page - 1) * 30 + 1}–{Math.min(page * 30, total)} of {total}</span>
           <div className="flex gap-2">
             <button
               onClick={() => setPage((p) => Math.max(1, p - 1))}
               disabled={page === 1}
-              style={{
-                padding: "6px 14px", borderRadius: 24, fontSize: 13,
-                border: "1px solid var(--t-border)", background: "var(--t-bg-card)",
-                color: "var(--t-text-muted)", cursor: "pointer",
-                transition: "all 0.15s ease", opacity: page === 1 ? 0.4 : 1,
-              }}
+              className="btn-ghost"
+              style={{ padding: "5px 12px", fontSize: 12, border: "1px solid var(--t-border)", borderRadius: 8, opacity: page === 1 ? 0.4 : 1 }}
             >
               Previous
             </button>
             <button
               onClick={() => setPage((p) => p + 1)}
               disabled={page * 30 >= total}
-              style={{
-                padding: "6px 14px", borderRadius: 24, fontSize: 13,
-                border: "1px solid var(--t-border)", background: "var(--t-bg-card)",
-                color: "var(--t-text-muted)", cursor: "pointer",
-                transition: "all 0.15s ease", opacity: page * 30 >= total ? 0.4 : 1,
-              }}
+              className="btn-ghost"
+              style={{ padding: "5px 12px", fontSize: 12, border: "1px solid var(--t-border)", borderRadius: 8, opacity: page * 30 >= total ? 0.4 : 1 }}
             >
               Next
             </button>
@@ -663,24 +676,14 @@ export default function JobsPage() {
       {/* Bulk Action Floating Bar */}
       {selectedJobIds.size > 0 && (
         <div
+          className="surface-elevated animate-fade-in"
           style={{
-            position: "fixed",
-            bottom: 24,
-            left: "50%",
-            transform: "translateX(-50%)",
-            zIndex: 50,
-            background: "rgba(23,23,23,0.95)",
-            border: "1px solid var(--t-border)",
-            borderRadius: 16,
-            padding: "10px 20px",
-            display: "flex",
-            alignItems: "center",
-            gap: 16,
-            boxShadow: "0 8px 32px rgba(0,0,0,0.4)",
-            backdropFilter: "blur(12px)",
+            position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", zIndex: 50,
+            padding: "10px 20px", display: "flex", alignItems: "center", gap: 16,
+            boxShadow: "var(--t-shadow-lg)", backdropFilter: "blur(12px)",
           }}
         >
-          <span className="text-sm font-semibold" style={{ color: "var(--t-text-primary)" }}>
+          <span style={{ fontSize: 13, fontWeight: 600, color: "var(--t-text-primary)" }}>
             {bulkProgress || `${selectedJobIds.size} selected`}
           </span>
           <div style={{ width: 1, height: 20, background: "var(--t-border)" }} />
@@ -729,10 +732,9 @@ export default function JobsPage() {
           <div style={{ width: 1, height: 20, background: "var(--t-border)" }} />
           <button
             onClick={() => { setSelectedJobIds(new Set()); setBulkProgress(null); }}
-            className="text-xs font-medium transition-all duration-150"
-            style={{ color: "var(--t-text-muted)" }}
+            className="btn-ghost text-xs"
           >
-            Clear Selection
+            Clear
           </button>
         </div>
       )}

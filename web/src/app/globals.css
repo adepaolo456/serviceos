@@ -99,70 +99,70 @@
 /* ===== Light Theme ===== */
 
 .light {
-  /* Page & layout */
-  --t-bg-primary: #F8F8F8;
-  --t-bg-secondary: #F0F0F0;
+  /* Page & layout — sidebar (#FFF) → page (#F5F5F7) → card (#FFF) layering */
+  --t-bg-primary: #F5F5F7;
+  --t-bg-secondary: #EDEDF0;
   --t-bg-card: #FFFFFF;
-  --t-bg-card-hover: #F5F5F5;
+  --t-bg-card-hover: #FAFAFA;
   --t-bg-elevated: #FFFFFF;
-  --t-bg-input: #F5F5F5;
-  --t-bg-inset: #F0F0F0;
+  --t-bg-input: #FFFFFF;
+  --t-bg-inset: #EDEDF0;
 
   /* Borders */
-  --t-border: rgba(0, 0, 0, 0.08);
-  --t-border-subtle: rgba(0, 0, 0, 0.04);
-  --t-border-strong: rgba(0, 0, 0, 0.12);
+  --t-border: #D8D8D8;
+  --t-border-subtle: #E2E2E2;
+  --t-border-strong: #C0C0C0;
 
   /* Text */
-  --t-text-primary: #111111;
-  --t-text-secondary: #555555;
-  --t-text-muted: #888888;
-  --t-text-tertiary: #AAAAAA;
+  --t-text-primary: #0A0A0A;
+  --t-text-secondary: #333333;
+  --t-text-muted: #666666;
+  --t-text-tertiary: #999999;
 
   /* Semantic colors */
   --t-accent: #16A34A;
-  --t-accent-soft: rgba(22, 163, 74, 0.08);
+  --t-accent-soft: rgba(22, 163, 74, 0.07);
   --t-accent-text: #15803D;
   --t-accent-on-accent: #FFFFFF;
   --t-error: #DC2626;
-  --t-error-soft: rgba(220, 38, 38, 0.06);
+  --t-error-soft: rgba(239, 68, 68, 0.12);
   --t-warning: #B45309;
-  --t-warning-soft: rgba(180, 83, 9, 0.06);
+  --t-warning-soft: rgba(245, 158, 11, 0.12);
   --t-success: #16A34A;
   --t-success-soft: rgba(22, 163, 74, 0.06);
   --t-info: #2563EB;
   --t-info-soft: rgba(37, 99, 235, 0.06);
 
   /* Shadows */
-  --t-shadow: rgba(0, 0, 0, 0.06);
-  --t-shadow-lg: 0 4px 24px rgba(0, 0, 0, 0.08);
-  --t-shadow-card: 0 1px 3px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.03);
+  --t-shadow: rgba(0, 0, 0, 0.07);
+  --t-shadow-lg: 0 4px 20px rgba(0, 0, 0, 0.1);
+  --t-shadow-card: 0 1px 3px rgba(0, 0, 0, 0.06), 0 4px 12px rgba(0, 0, 0, 0.04);
 
   /* Frame — sidebar, topbar, shell */
   --t-frame-bg: #FFFFFF;
-  --t-frame-text: #111111;
-  --t-frame-text-muted: #888888;
-  --t-frame-border: rgba(0, 0, 0, 0.08);
+  --t-frame-text: #0A0A0A;
+  --t-frame-text-muted: #666666;
+  --t-frame-border: #E5E5E5;
   --t-frame-hover: rgba(0, 0, 0, 0.04);
 
   /* Tables */
-  --t-table-header-bg: #F5F5F5;
+  --t-table-header-bg: #F3F4F6;
   --t-table-row-bg: transparent;
-  --t-table-row-hover: rgba(0, 0, 0, 0.02);
+  --t-table-row-hover: #F1F3F5;
   --t-table-row-alt: rgba(0, 0, 0, 0.015);
 
   /* Badges */
-  --t-badge-bg: rgba(0, 0, 0, 0.05);
-  --t-badge-text: #555555;
+  --t-badge-bg: rgba(0, 0, 0, 0.06);
+  --t-badge-text: #333333;
 
   /* Interactive */
-  --t-btn-secondary-bg: rgba(0, 0, 0, 0.04);
-  --t-btn-secondary-hover: rgba(0, 0, 0, 0.08);
-  --t-btn-secondary-text: #333333;
+  --t-btn-secondary-bg: #FFFFFF;
+  --t-btn-secondary-hover: #F3F3F3;
+  --t-btn-secondary-text: #1A1A1A;
 
   /* Dashboard hero */
-  --t-hero-bg: linear-gradient(145deg, #FFFFFF, #F5F5F5);
-  --t-hero-glow: rgba(22, 163, 74, 0.06);
+  --t-hero-bg: linear-gradient(135deg, #FFFFFF 0%, #EDF7F0 100%);
+  --t-hero-glow: rgba(34, 197, 94, 0.12);
 
   color-scheme: light;
 }
@@ -182,6 +182,7 @@
 /* ---- Card hover ---- */
 .card-hover { transition: background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease; }
 .card-hover:hover { background-color: var(--t-bg-card-hover); border-color: var(--t-border-strong); }
+.light .card-hover:hover { box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08), 0 8px 20px rgba(0, 0, 0, 0.06); }
 
 /* ---- Text ---- */
 .text-th-primary   { color: var(--t-text-primary); }
@@ -209,6 +210,7 @@
 .table-row    { background-color: var(--t-table-row-bg); transition: background-color 0.1s ease; }
 .table-row:hover { background-color: var(--t-table-row-hover); }
 .table-row-alt { background-color: var(--t-table-row-alt); }
+.light .table-row { padding-top: 1px; padding-bottom: 1px; }
 
 /* ---- Badges ---- */
 .badge      { background-color: var(--t-badge-bg); color: var(--t-badge-text); font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 20px; }
@@ -223,6 +225,8 @@
 .alert-error   { background-color: var(--t-error-soft); border: 1px solid color-mix(in srgb, var(--t-error) 15%, transparent); border-radius: 12px; }
 .alert-success { background-color: var(--t-success-soft); border: 1px solid color-mix(in srgb, var(--t-success) 15%, transparent); border-radius: 12px; }
 .alert-info    { background-color: var(--t-info-soft); border: 1px solid color-mix(in srgb, var(--t-info) 15%, transparent); border-radius: 12px; }
+.light .alert-warning { border-color: rgba(245, 158, 11, 0.35); }
+.light .alert-error   { border-color: rgba(239, 68, 68, 0.35); }
 
 /* ---- Buttons ---- */
 .btn-primary { background-color: var(--t-accent); color: #fff; font-weight: 600; border-radius: 24px; padding: 10px 20px; font-size: 14px; border: none; cursor: pointer; transition: filter 0.15s ease; }
