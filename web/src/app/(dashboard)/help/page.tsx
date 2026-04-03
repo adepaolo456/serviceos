@@ -4,6 +4,7 @@ import { useState, useMemo, useEffect, useRef, Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Search, ExternalLink, X } from "lucide-react";
+import { usePathname } from "next/navigation";
 import {
   getFeature,
   getVisibleGuideFeatures,
@@ -13,6 +14,14 @@ import {
   type FeatureDescription,
   type FeatureCategory,
 } from "@/lib/feature-registry";
+import {
+  trackHelpCenterViewed,
+  trackHelpTopicViewed,
+  trackHelpSearchUsed,
+  trackHelpRelatedTopicClicked,
+  trackHelpTopicNotFound,
+  type HelpAnalyticsSource,
+} from "@/lib/help-analytics";
 
 const NAVIGABLE_ROUTES = new Set([
   "/", "/jobs", "/dispatch", "/customers", "/assets", "/invoices",
@@ -72,10 +81,51 @@ function HelpCenterPage() {
     POPULAR_IDS.map(id => getFeature(id)).filter((f): f is FeatureDescription => !!f && f.isGuideEligible && f.isUserFacing),
   []);
 
+  const pathname = usePathname();
   const selectedFeature = selectedId ? getFeature(selectedId) : null;
   const relatedTopics = useMemo(() =>
     selectedId ? getRelatedFeatures(selectedId) : [],
   [selectedId]);
+
+  // Track source context for topic selection
+  const selectionSourceRef = useRef<HelpAnalyticsSource>("unknown");
+  const lastTrackedFeatureRef = useRef<string | null>(null);
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Page view — fire once on mount
+  useEffect(() => {
+    trackHelpCenterViewed({
+      pagePath: pathname,
+      source: selectedId ? "unknown" : "direct",
+    });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Topic viewed — fires when selectedId changes
+  useEffect(() => {
+    if (!selectedId) { lastTrackedFeatureRef.current = null; return; }
+    if (lastTrackedFeatureRef.current === selectedId) return;
+    lastTrackedFeatureRef.current = selectedId;
+
+    if (!getFeature(selectedId)) {
+      trackHelpTopicNotFound({ featureId: selectedId, pagePath: pathname });
+      return;
+    }
+    trackHelpTopicViewed({
+      featureId: selectedId, pagePath: pathname,
+      source: selectionSourceRef.current,
+    });
+    selectionSourceRef.current = "unknown"; // reset after use
+  }, [selectedId, pathname]);
+
+  // Search tracking — debounced 800ms
+  useEffect(() => {
+    if (search.length < 2) return;
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    searchDebounceRef.current = setTimeout(() => {
+      trackHelpSearchUsed({ pagePath: pathname, searchQuery: search });
+    }, 800);
+    return () => { if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current); };
+  }, [search, pathname]);
 
   // Scroll selected into view on deep-link
   useEffect(() => {
@@ -84,8 +134,15 @@ function HelpCenterPage() {
     }
   }, [selectedId]);
 
-  const selectFeature = (id: string) => {
+  const selectFeature = (id: string, source: HelpAnalyticsSource = "direct") => {
+    selectionSourceRef.current = source;
     router.replace(`/help?feature=${id}`, { scroll: false });
+  };
+
+  const selectRelatedTopic = (fromId: string, toId: string) => {
+    trackHelpRelatedTopicClicked({ featureId: fromId, relatedFeatureId: toId, pagePath: pathname });
+    selectionSourceRef.current = "related_topics";
+    router.replace(`/help?feature=${toId}`, { scroll: false });
   };
 
   const clearSelection = () => {
@@ -128,9 +185,9 @@ function HelpCenterPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {filtered.map(f => (
                 <div key={f.id} ref={f.id === selectedId ? selectedRef : undefined}>
-                  <TopicCard feature={f} isSelected={f.id === selectedId} onSelect={selectFeature} />
+                  <TopicCard feature={f} isSelected={f.id === selectedId} onSelect={(id) => selectFeature(id, "search")} />
                   {f.id === selectedId && selectedVisibleInSearch && relatedTopics.length > 0 && (
-                    <RelatedSection topics={relatedTopics} onSelect={selectFeature} />
+                    <RelatedSection topics={relatedTopics} selectedId={selectedId} onSelect={selectRelatedTopic} />
                   )}
                 </div>
               ))}
@@ -169,7 +226,7 @@ function HelpCenterPage() {
                     <div key={f.id} ref={f.id === selectedId ? selectedRef : undefined}>
                       <TopicCard feature={f} isSelected={f.id === selectedId} onSelect={selectFeature} />
                       {f.id === selectedId && relatedTopics.length > 0 && (
-                        <RelatedSection topics={relatedTopics} onSelect={selectFeature} />
+                        <RelatedSection topics={relatedTopics} selectedId={selectedId} onSelect={selectRelatedTopic} />
                       )}
                     </div>
                   ))}
@@ -229,13 +286,13 @@ function TopicCard({ feature, isSelected, onSelect }: { feature: FeatureDescript
 }
 
 /* ── Related Topics Section ── */
-function RelatedSection({ topics, onSelect }: { topics: FeatureDescription[]; onSelect: (id: string) => void }) {
+function RelatedSection({ topics, selectedId, onSelect }: { topics: FeatureDescription[]; selectedId: string; onSelect: (fromId: string, toId: string) => void }) {
   return (
     <div className="mt-3 mb-2">
       <p className="text-[11px] font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--t-text-muted)" }}>Related Topics</p>
       <div className="flex gap-3 overflow-x-auto">
         {topics.map(f => (
-          <button key={f.id} onClick={() => onSelect(f.id)}
+          <button key={f.id} onClick={() => onSelect(selectedId, f.id)}
             className="shrink-0 rounded-[12px] border p-3 text-left transition-all"
             style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border-subtle)", minWidth: 180, maxWidth: 220 }}
             onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--t-border-strong)"; }}

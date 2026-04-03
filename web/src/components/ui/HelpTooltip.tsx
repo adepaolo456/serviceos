@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useId, useCallback } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { getFeature, isRegisteredFeature } from "@/lib/feature-registry";
+import { trackHelpTooltipLearnMoreClicked } from "@/lib/help-analytics";
 
 interface HelpTooltipProps {
   featureId?: string;
@@ -212,7 +213,10 @@ export default function HelpTooltip({
             {showLearnMore && (
               <Link
                 href={`/help?feature=${featureId}`}
-                onClick={() => setVisible(false)}
+                onClick={() => {
+                  trackHelpTooltipLearnMoreClicked({ featureId: featureId!, pagePath: typeof window !== "undefined" ? window.location.pathname : undefined });
+                  setVisible(false);
+                }}
                 className="block text-[11px] font-medium mt-1.5"
                 style={{ color: "var(--t-accent)" }}
               >
