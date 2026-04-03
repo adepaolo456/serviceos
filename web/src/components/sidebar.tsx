@@ -90,6 +90,7 @@ export default function Sidebar() {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [hoveredItem, setHoveredItem] = useState<string | null>(null);
   const [billingIssueCount, setBillingIssueCount] = useState(0);
+  const [pricingQaCount, setPricingQaCount] = useState(0);
   const { theme, cycleTheme } = useTheme();
   const { collapsed, toggleCollapsed } = useSidebar();
   const { openWizard } = useBooking();
@@ -102,6 +103,13 @@ export default function Sidebar() {
     api
       .get<{ total: number }>("/billing-issues/summary")
       .then((s) => setBillingIssueCount(s.total || 0))
+      .catch(() => {});
+    api
+      .get<{ summary: { geocode_blocked: number; missing_address: number; missing_snapshots: number; missing_pricing_rules: number; missing_asset_subtypes: number } }>("/pricing-qa/overview")
+      .then((d) => {
+        const s = d.summary;
+        setPricingQaCount((s.geocode_blocked || 0) + (s.missing_address || 0) + (s.missing_snapshots || 0) + (s.missing_pricing_rules || 0) + (s.missing_asset_subtypes || 0));
+      })
       .catch(() => {});
   }, []);
 
@@ -161,6 +169,11 @@ export default function Sidebar() {
                   {(item.name === "Invoices" || item.name === "Billing Issues") && billingIssueCount > 0 && (
                     <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-bold text-white" style={{ background: "var(--t-error)" }}>
                       {billingIssueCount}
+                    </span>
+                  )}
+                  {item.name === "Pricing QA" && pricingQaCount > 0 && (
+                    <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-bold text-white" style={{ background: "var(--t-warning)" }}>
+                      {pricingQaCount}
                     </span>
                   )}
                 </Link>
