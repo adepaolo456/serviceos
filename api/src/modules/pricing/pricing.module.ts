@@ -19,6 +19,10 @@ import { TermsTemplateController } from './controllers/terms-template.controller
 import { ClientPricingController } from './controllers/client-pricing.controller';
 import { ClientSurchargeController } from './controllers/client-surcharge.controller';
 import { TenantFeeController } from './controllers/tenant-fee.controller';
+import { PricingQaController } from './controllers/pricing-qa.controller';
+import { Job } from '../jobs/entities/job.entity';
+import { JobPricingAudit } from '../jobs/entities/job-pricing-audit.entity';
+import { Invoice } from '../billing/entities/invoice.entity';
 
 @Module({
   imports: [
@@ -34,6 +38,9 @@ import { TenantFeeController } from './controllers/tenant-fee.controller';
       PricingSnapshot,
       Yard,
       Tenant,
+      Job,
+      JobPricingAudit,
+      Invoice,
     ]),
   ],
   controllers: [
@@ -43,6 +50,7 @@ import { TenantFeeController } from './controllers/tenant-fee.controller';
     ClientPricingController,
     ClientSurchargeController,
     TenantFeeController,
+    PricingQaController,
   ],
   providers: [PricingService, PriceResolutionService],
   exports: [PricingService, PriceResolutionService],
