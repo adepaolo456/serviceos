@@ -15,7 +15,7 @@ function CallbackHandler() {
     if (token && refresh) {
       api.setToken(token);
       localStorage.setItem("refreshToken", refresh);
-      window.location.href = isNew ? "/onboarding/plan" : "/";
+      window.location.href = "/";
     } else {
       window.location.href = "/login?error=oauth_failed";
     }
