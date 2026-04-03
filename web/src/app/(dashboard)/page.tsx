@@ -272,19 +272,22 @@ export default function DashboardPage() {
   const fleetTotal = fleet?.totalAssets || 0;
   const utilRate = fleetTotal > 0 ? Math.round((deployed / fleetTotal) * 100) : 0;
 
-  const kpis = [
-    { label: "Revenue", value: `$${(dashboard?.revenue.thisMonth ?? 0).toLocaleString()}`, trend: "+12%", positive: true },
-    { label: "Jobs This Month", value: String(dashboard?.jobs.thisMonth ?? 0), trend: "+3", positive: true },
-    { label: "Completed", value: String(dashboard?.jobs.completed ?? 0), trend: null, positive: true },
-    { label: "Active Rentals", value: String(activeRentals), trend: null, positive: true },
-    { label: "Fleet", value: `${deployed}/${fleetTotal} deployed`, trend: `${utilRate}%`, positive: utilRate < 80 },
-    { label: "AR Outstanding", value: `$${(arSummary?.totalOutstanding ?? 0).toLocaleString()}`, trend: arSummary?.totalOverdue ? `$${arSummary.totalOverdue.toLocaleString()} overdue` : null, positive: !(arSummary?.totalOverdue) },
-  ];
+  const revenueThisMonth = dashboard?.revenue.thisMonth ?? 0;
+  const jobsThisMonth = dashboard?.jobs.thisMonth ?? 0;
+  const completedJobs = dashboard?.jobs.completed ?? 0;
+
+  // Action items — only items with count > 0
+  const actionItems = [
+    { label: "Overdue Invoices", count: attentionOverdue, icon: FileWarning, color: "var(--t-error)", href: "/invoices" },
+    { label: "Review Pickups", count: attentionPickups, icon: Truck, color: "var(--t-warning)", href: "/jobs" },
+    { label: "Unassigned Today", count: attentionUnassigned, icon: CalendarX, color: "var(--t-warning)", href: "/dispatch" },
+    { label: "Needs Reschedule", count: attentionReschedule, icon: AlertTriangle, color: "var(--t-error)", href: "/dispatch" },
+  ].filter((item) => item.count > 0);
 
   return (
     <div>
       {/* ---- Header ---- */}
-      <div className="flex items-start justify-between gap-4 mb-8">
+      <div className="flex items-start justify-between gap-4 mb-10">
         <div>
           <h1 className="text-[28px] font-bold tracking-[-1px] text-[var(--t-frame-text)]">
             {getGreeting()}, {user?.firstName || "Anthony"}
@@ -294,43 +297,23 @@ export default function DashboardPage() {
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <button
-            onClick={() => openWizard()}
-            className="inline-flex items-center gap-1.5 rounded-full bg-[var(--t-accent)] px-5 py-2.5 text-sm font-semibold text-black transition-all hover:brightness-110"
-          >
-            <Plus className="h-4 w-4" strokeWidth={2.5} />
-            New Booking
-          </button>
-          <Link
-            href="/customers"
-            className="inline-flex items-center gap-1.5 rounded-full border border-[var(--t-frame-border)] px-5 py-2.5 text-sm font-semibold text-[var(--t-frame-text)] transition-all hover:bg-[rgba(255,255,255,0.06)]"
-          >
-            <UserPlus className="h-4 w-4 text-[var(--t-frame-text-muted)]" />
-            New Customer
-          </Link>
-        </div>
-      </div>
-
-      {/* ---- Controls ---- */}
-      <div className="flex items-center gap-2 flex-wrap mb-6">
-
           {/* Search */}
-          <div style={{ position: "relative", flex: 1, maxWidth: 340, marginLeft: "auto" }}>
-            <Search style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", width: 16, height: 16, color: "var(--t-frame-text-muted)" }} />
+          <div style={{ position: "relative", width: 260 }}>
+            <Search style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", width: 15, height: 15, color: "var(--t-frame-text-muted)" }} />
             <input
               type="text"
-              placeholder="Search customers, jobs, assets..."
+              placeholder="Search..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               onFocus={() => searchResults.length > 0 && setSearchOpen(true)}
               onBlur={() => setTimeout(() => setSearchOpen(false), 200)}
               style={{
                 width: "100%",
-                backgroundColor: "rgba(255,255,255,0.06)",
-                border: "1px solid rgba(255,255,255,0.08)",
-                borderRadius: 24,
-                padding: "10px 16px 10px 38px",
-                fontSize: 14,
+                backgroundColor: "rgba(255,255,255,0.04)",
+                border: "1px solid rgba(255,255,255,0.06)",
+                borderRadius: 10,
+                padding: "9px 14px 9px 36px",
+                fontSize: 13,
                 color: "var(--t-frame-text)",
                 outline: "none",
                 transition: "border-color 0.15s ease",
@@ -383,67 +366,125 @@ export default function DashboardPage() {
               </div>
             )}
           </div>
+          <button
+            onClick={() => openWizard()}
+            className="inline-flex items-center gap-1.5 rounded-full bg-[var(--t-accent)] px-5 py-2.5 text-sm font-semibold text-black transition-all hover:brightness-110"
+          >
+            <Plus className="h-4 w-4" strokeWidth={2.5} />
+            New Booking
+          </button>
+          <Link
+            href="/customers"
+            className="inline-flex items-center gap-1.5 rounded-full border border-[var(--t-frame-border)] px-5 py-2.5 text-sm font-semibold text-[var(--t-frame-text)] transition-all hover:bg-[rgba(255,255,255,0.06)]"
+          >
+            <UserPlus className="h-4 w-4 text-[var(--t-frame-text-muted)]" />
+            New Customer
+          </Link>
+        </div>
       </div>
 
-      {/* ---- KPI Cards ---- */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-        {kpis.map((kpi) => (
-          <Link key={kpi.label} href="/analytics" className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-[18px] no-underline transition-colors hover:bg-[var(--t-bg-card-hover)]">
-            <p className="text-[12px] font-semibold uppercase tracking-wide text-[var(--t-text-muted)] mb-1.5">{kpi.label}</p>
-            <div className="flex items-baseline gap-2">
-              <span className="text-2xl font-bold tracking-tight text-[var(--t-text-primary)] tabular-nums">{kpi.value}</span>
-              {kpi.trend && (
-                <span className={`text-[12px] font-semibold ${kpi.positive ? "text-[var(--t-accent)]" : "text-[var(--t-error)]"}`}>{kpi.trend}</span>
+      {/* ---- SECTION 1: Primary Metrics ---- */}
+      <div className="grid grid-cols-5 gap-3 mb-8">
+        {/* Revenue — hero card, 2 cols */}
+        <Link
+          href="/analytics"
+          className="col-span-2 no-underline rounded-[16px] px-6 py-5 transition-all hover:brightness-105"
+          style={{
+            background: "linear-gradient(135deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.02) 100%)",
+            position: "relative",
+            overflow: "hidden",
+          }}
+        >
+          <div style={{ position: "absolute", top: -30, right: -30, width: 120, height: 120, borderRadius: "50%", background: "var(--t-accent)", opacity: 0.04 }} />
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-[var(--t-text-muted)] mb-1">Revenue</p>
+          <p className="text-[40px] font-bold tracking-tight text-[var(--t-accent)] tabular-nums leading-none">
+            ${revenueThisMonth.toLocaleString()}
+          </p>
+          <p className="text-[12px] text-[var(--t-text-muted)] mt-2">this month</p>
+        </Link>
+
+        {/* Secondary metrics — stacked 3 cards in remaining 3 cols */}
+        <Link href="/analytics" className="no-underline rounded-[14px] px-4 py-4 transition-colors hover:bg-[rgba(255,255,255,0.04)]" style={{ background: "rgba(255,255,255,0.03)" }}>
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--t-text-muted)] mb-1">Jobs This Month</p>
+          <p className="text-[28px] font-bold tracking-tight text-[var(--t-text-primary)] tabular-nums leading-none">{jobsThisMonth}</p>
+        </Link>
+        <Link href="/analytics" className="no-underline rounded-[14px] px-4 py-4 transition-colors hover:bg-[rgba(255,255,255,0.04)]" style={{ background: "rgba(255,255,255,0.03)" }}>
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--t-text-muted)] mb-1">Completed</p>
+          <p className="text-[28px] font-bold tracking-tight text-[var(--t-text-primary)] tabular-nums leading-none">{completedJobs}</p>
+        </Link>
+        <Link href="/analytics" className="no-underline rounded-[14px] px-4 py-4 transition-colors hover:bg-[rgba(255,255,255,0.04)]" style={{ background: "rgba(255,255,255,0.03)" }}>
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--t-text-muted)] mb-1">Active Rentals</p>
+          <p className="text-[28px] font-bold tracking-tight text-[var(--t-text-primary)] tabular-nums leading-none">{activeRentals}</p>
+        </Link>
+      </div>
+
+      {/* ---- SECTION 2: Operations ---- */}
+      <div className="mb-8">
+        <p className="text-[10px] font-semibold uppercase tracking-widest text-[var(--t-text-muted)] mb-3 px-1" style={{ opacity: 0.6 }}>Operations</p>
+        <div className="grid grid-cols-2 gap-3">
+          {/* Fleet */}
+          <Link href="/assets" className="flex items-center gap-3 no-underline rounded-[14px] px-4 py-3.5 transition-colors hover:bg-[rgba(255,255,255,0.04)]" style={{ background: "rgba(255,255,255,0.03)" }}>
+            <Truck className="h-[18px] w-[18px] shrink-0 text-[var(--t-text-muted)]" style={{ opacity: 0.5 }} />
+            <div className="min-w-0 flex-1">
+              <p className="text-[13px] font-semibold text-[var(--t-text-primary)]">Fleet</p>
+              <p className="text-[11px] text-[var(--t-text-muted)]">{deployed} deployed · {fleetTotal - deployed} available</p>
+            </div>
+            <span className="text-[20px] font-bold tabular-nums text-[var(--t-text-primary)]">{fleetTotal}</span>
+            <span className={`text-[11px] font-semibold tabular-nums ${utilRate >= 80 ? "text-[var(--t-error)]" : "text-[var(--t-accent)]"}`}>{utilRate}%</span>
+          </Link>
+
+          {/* AR Outstanding */}
+          <Link href="/invoices" className="flex items-center gap-3 no-underline rounded-[14px] px-4 py-3.5 transition-colors hover:bg-[rgba(255,255,255,0.04)]" style={{ background: "rgba(255,255,255,0.03)" }}>
+            <DollarSign className="h-[18px] w-[18px] shrink-0 text-[var(--t-text-muted)]" style={{ opacity: 0.5 }} />
+            <div className="min-w-0 flex-1">
+              <p className="text-[13px] font-semibold text-[var(--t-text-primary)]">AR Outstanding</p>
+              {arSummary?.totalOverdue ? (
+                <p className="text-[11px] text-[var(--t-error)]">${arSummary.totalOverdue.toLocaleString()} overdue</p>
+              ) : (
+                <p className="text-[11px] text-[var(--t-text-muted)]">No overdue invoices</p>
               )}
             </div>
+            <span className={`text-[20px] font-bold tabular-nums ${arSummary?.totalOverdue ? "text-[var(--t-warning)]" : "text-[var(--t-text-primary)]"}`}>
+              ${(arSummary?.totalOutstanding ?? 0).toLocaleString()}
+            </span>
           </Link>
-        ))}
+        </div>
       </div>
 
-      {/* ---- Needs Attention ---- */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-        {[
-          { label: "Overdue Invoices", count: attentionOverdue, icon: FileWarning, color: "var(--t-error)", href: "/invoices" },
-          { label: "Review Pickups", count: attentionPickups, icon: Truck, color: "var(--t-warning)", href: "/jobs" },
-          { label: "Unassigned Today", count: attentionUnassigned, icon: CalendarX, color: "var(--t-warning)", href: "/dispatch" },
-          { label: "Needs Reschedule", count: attentionReschedule, icon: AlertTriangle, color: "var(--t-error)", href: "/dispatch" },
-        ].map((item) => (
-          <Link
-            key={item.label}
-            href={item.href}
-            className="flex items-center gap-3 rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-3.5 no-underline transition-colors hover:bg-[var(--t-bg-card-hover)]"
-            style={item.count > 0 ? { borderLeftWidth: 3, borderLeftColor: item.color } : undefined}
-          >
-            {item.count > 0 ? (
-              <item.icon className="h-5 w-5 shrink-0" style={{ color: item.color }} />
-            ) : (
-              <CheckCircle2 className="h-5 w-5 shrink-0 text-[var(--t-accent)]" />
-            )}
-            <div>
-              <p className="text-[22px] font-bold tabular-nums leading-none" style={{ color: item.count > 0 ? item.color : "var(--t-accent)" }}>
-                {item.count}
-              </p>
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--t-text-muted)]">{item.label}</p>
-            </div>
-          </Link>
-        ))}
-      </div>
+      {/* ---- SECTION 3: Action Items (only non-zero) ---- */}
+      {actionItems.length > 0 && (
+        <div className="mb-8">
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-[var(--t-text-muted)] mb-3 px-1" style={{ opacity: 0.6 }}>Needs Attention</p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            {actionItems.map((item) => (
+              <Link
+                key={item.label}
+                href={item.href}
+                className="flex items-center gap-3 no-underline rounded-[12px] px-4 py-2.5 transition-colors hover:bg-[rgba(255,255,255,0.04)]"
+                style={{ background: `color-mix(in srgb, ${item.color} 4%, transparent)` }}
+              >
+                <item.icon className="h-[15px] w-[15px] shrink-0" style={{ color: item.color }} />
+                <span className="text-[13px] font-medium text-[var(--t-text-primary)] flex-1">{item.label}</span>
+                <span className="text-[13px] font-bold tabular-nums" style={{ color: item.color }}>{item.count}</span>
+                <ArrowRight className="h-3 w-3 shrink-0 text-[var(--t-text-muted)]" style={{ opacity: 0.4 }} />
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
 
-      {/* ---- Missing config notices ---- */}
+      {/* ---- Config notices (inline warning banners) ---- */}
       {configHints.length > 0 && (
-        <div className="flex flex-wrap gap-4 mb-8">
+        <div className="mb-8" style={{ display: "flex", flexDirection: "column", gap: 4 }}>
           {configHints.map((h) => (
             <Link
               key={h.key}
               href={h.href}
-              className="flex flex-1 items-center gap-3 rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-4 no-underline transition-colors hover:border-[var(--t-accent)]"
-              style={{ minWidth: 240, borderLeftWidth: 3, borderLeftColor: "var(--t-warning)" }}
+              className="flex items-center gap-3 no-underline rounded-[12px] px-4 py-2.5 transition-colors hover:bg-[rgba(255,255,255,0.04)]"
+              style={{ background: "color-mix(in srgb, var(--t-warning) 5%, transparent)" }}
             >
-              <AlertTriangle className="h-4 w-4 shrink-0 text-[var(--t-warning)]" />
-              <div className="min-w-0 flex-1">
-                <p className="text-[13px] font-semibold text-[var(--t-text-primary)] leading-tight">{h.title}</p>
-                <p className="text-[11px] text-[var(--t-text-muted)] leading-tight">{h.desc}</p>
-              </div>
+              <AlertTriangle className="h-[14px] w-[14px] shrink-0 text-[var(--t-warning)]" />
+              <span className="text-[12px] font-medium text-[var(--t-text-primary)] flex-1">{h.title}</span>
               <span className="text-[11px] font-semibold text-[var(--t-accent)] whitespace-nowrap shrink-0">{h.cta} &rarr;</span>
             </Link>
           ))}
