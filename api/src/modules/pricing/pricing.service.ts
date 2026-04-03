@@ -7,6 +7,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { PricingRule } from './entities/pricing-rule.entity';
 import { PricingTemplate } from './entities/pricing-template.entity';
+import { TenantFee } from './entities/tenant-fee.entity';
+import { PricingSnapshot } from './entities/pricing-snapshot.entity';
 import { Yard } from '../yards/yard.entity';
 import {
   CreatePricingRuleDto,
@@ -24,6 +26,10 @@ export class PricingService {
     private yardsRepository: Repository<Yard>,
     @InjectRepository(PricingTemplate)
     private templateRepo: Repository<PricingTemplate>,
+    @InjectRepository(TenantFee)
+    private tenantFeeRepo: Repository<TenantFee>,
+    @InjectRepository(PricingSnapshot)
+    private snapshotRepo: Repository<PricingSnapshot>,
   ) {}
 
   async create(
@@ -62,9 +68,12 @@ export class PricingService {
 
     const qb = this.pricingRulesRepository
       .createQueryBuilder('p')
-      .where('p.tenant_id = :tenantId', { tenantId })
-      .andWhere('p.is_active = true')
-      .andWhere('(p.effective_until IS NULL OR p.effective_until >= :today)', { today });
+      .where('p.tenant_id = :tenantId', { tenantId });
+
+    if (!query.include_history) {
+      qb.andWhere('p.is_active = true')
+        .andWhere('(p.effective_until IS NULL OR p.effective_until >= :today)', { today });
+    }
 
     if (query.serviceType) {
       qb.andWhere('p.service_type = :serviceType', {
@@ -114,11 +123,7 @@ export class PricingService {
     const old = await this.findOne(tenantId, id);
     const today = new Date().toISOString().split('T')[0];
 
-    // Archive old version
-    old.effective_until = today;
-    await this.pricingRulesRepository.save(old);
-
-    // Create new versioned rule
+    // Create new versioned rule (immutable — old row is never mutated for pricing fields)
     const newRule = this.pricingRulesRepository.create({
       tenant_id: tenantId,
       name: dto.name ?? old.name,
@@ -142,11 +147,25 @@ export class PricingService {
       failed_trip_base_fee: old.failed_trip_base_fee,
       min_rental_days: old.min_rental_days,
       max_rental_days: old.max_rental_days,
+      residential_included_days: old.residential_included_days,
+      commercial_included_days: old.commercial_included_days,
+      residential_extra_day_rate: old.residential_extra_day_rate,
+      commercial_extra_day_rate: old.commercial_extra_day_rate,
+      commercial_unlimited_days: old.commercial_unlimited_days,
       is_active: dto.isActive ?? true,
       effective_date: today,
+      published_at: new Date(),
     } as Partial<PricingRule>);
 
-    return this.pricingRulesRepository.save(newRule);
+    const saved = await this.pricingRulesRepository.save(newRule);
+
+    // Archive old version: mark superseded, deactivate
+    old.effective_until = today;
+    old.is_active = false;
+    old.superseded_by = saved.id;
+    await this.pricingRulesRepository.save(old);
+
+    return saved;
   }
 
   async remove(tenantId: string, id: string): Promise<void> {
@@ -158,40 +177,25 @@ export class PricingService {
   }
 
   async calculate(tenantId: string, dto: CalculatePriceDto) {
-    const qb = this.pricingRulesRepository
-      .createQueryBuilder('p')
-      .where('p.tenant_id = :tenantId', { tenantId })
-      .andWhere('p.is_active = true')
-      .andWhere('p.service_type = :serviceType', {
-        serviceType: dto.serviceType,
-      })
-      .andWhere('p.asset_subtype = :assetSubtype', {
-        assetSubtype: dto.assetSubtype,
-      });
+    const rule = await this.findActiveRule(tenantId, dto.serviceType, dto.assetSubtype, dto.customerType);
 
-    if (dto.customerType) {
-      qb.andWhere(
-        '(p.customer_type = :customerType OR p.customer_type IS NULL)',
-        { customerType: dto.customerType },
-      );
-      qb.orderBy(
-        `CASE WHEN p.customer_type = '${dto.customerType}' THEN 0 ELSE 1 END`,
-        'ASC',
-      );
-    } else {
-      qb.andWhere('p.customer_type IS NULL');
-    }
-
-    const rule = await qb.getOne();
-    if (!rule) {
-      throw new BadRequestException(
-        `No active pricing available for ${dto.assetSubtype} dumpsters. This size cannot be quoted or booked at this time.`,
-      );
-    }
-
-    // Auto-fetch primary yard if no yard coords provided
+    // ── Step 5: Multi-yard support ──
+    // If yardId provided, load that yard's coordinates. Otherwise fall back to yardLat/Lng or primary yard.
     let yardLat = dto.yardLat;
     let yardLng = dto.yardLng;
+    let yardId: string | undefined = dto.yardId;
+
+    if (dto.yardId) {
+      const yard = await this.yardsRepository.findOne({
+        where: { id: dto.yardId, tenant_id: tenantId, is_active: true },
+      });
+      if (yard?.lat && yard?.lng) {
+        yardLat = Number(yard.lat);
+        yardLng = Number(yard.lng);
+        yardId = yard.id;
+      }
+    }
+
     if (!yardLat || !yardLng) {
       const primaryYard = await this.yardsRepository.findOne({
         where: { tenant_id: tenantId, is_primary: true, is_active: true },
@@ -199,27 +203,39 @@ export class PricingService {
       if (primaryYard?.lat && primaryYard?.lng) {
         yardLat = Number(primaryYard.lat);
         yardLng = Number(primaryYard.lng);
+        yardId = primaryYard.id;
       }
     }
 
-    // Distance-band model replaces legacy per-mile pricing
+    // Distance-band model
     const distanceBand = this.calculateDistanceCharge(yardLat, yardLng, dto.customerLat, dto.customerLng);
-    const distanceSurcharge = distanceBand.distanceCharge;
 
-    if (
-      rule.max_service_miles &&
-      distanceBand.distanceMiles > Number(rule.max_service_miles)
-    ) {
+    if (rule.max_service_miles && distanceBand.distanceMiles > Number(rule.max_service_miles)) {
       throw new BadRequestException(
         `Distance ${distanceBand.distanceMiles.toFixed(1)} miles exceeds max service radius of ${rule.max_service_miles} miles`,
       );
     }
 
-    const rentalDays = dto.rentalDays ?? Number(rule.rental_period_days);
-    const includedDays = Number(rule.rental_period_days);
-    const extraDays = Math.max(0, rentalDays - includedDays);
-    const extraDayCharges = extraDays * Number(rule.extra_day_rate);
+    // ── Step 6: Commercial vs residential rental policies ──
+    const rentalType = dto.rentalType || 'residential';
+    let includedDays: number;
+    let extraDayRate: number;
+    let unlimitedDays = false;
 
+    if (rentalType === 'commercial') {
+      includedDays = rule.commercial_included_days ?? Number(rule.rental_period_days);
+      extraDayRate = rule.commercial_extra_day_rate != null ? Number(rule.commercial_extra_day_rate) : Number(rule.extra_day_rate);
+      unlimitedDays = !!rule.commercial_unlimited_days;
+    } else {
+      includedDays = rule.residential_included_days ?? Number(rule.rental_period_days);
+      extraDayRate = rule.residential_extra_day_rate != null ? Number(rule.residential_extra_day_rate) : Number(rule.extra_day_rate);
+    }
+
+    const rentalDays = dto.rentalDays ?? includedDays;
+    const extraDays = unlimitedDays ? 0 : Math.max(0, rentalDays - includedDays);
+    const extraDayCharges = extraDays * extraDayRate;
+
+    // ── Job fee + exchange discount ──
     let jobFee = 0;
     let exchangeDiscount = 0;
     if (dto.jobType === 'delivery') {
@@ -227,42 +243,80 @@ export class PricingService {
     } else if (dto.jobType === 'pickup') {
       jobFee = Number(rule.pickup_fee);
     } else if (dto.jobType === 'exchange') {
-      // Exchange = pickup + new delivery, priced same as delivery
       jobFee = Number(rule.delivery_fee);
-      // exchange_fee repurposed as discount %. Old flat fees (>50) are ignored.
       const discountPct = Number(rule.exchange_fee) || 0;
       if (discountPct > 0 && discountPct <= 50) {
         exchangeDiscount = discountPct;
       }
     }
 
+    // ── Step 3: Exchange tonnage logic ──
+    // Business rule: for exchange jobs, tonnage overage is calculated based ONLY
+    // on the pickup container. The dumpster being hauled to the dump determines
+    // the disposal allowance, not the new dropoff container.
+    let includedTons = Number(rule.included_tons);
+    let overagePerTon = Number(rule.overage_per_ton);
+    let tonnageSource: string | undefined;
+    let exchangePickupSubtype: string | undefined;
+    let exchangeDropoffSubtype: string | undefined;
+
+    if (dto.jobType === 'exchange' && dto.exchange_context) {
+      exchangePickupSubtype = dto.exchange_context.pickup_asset_subtype;
+      exchangeDropoffSubtype = dto.exchange_context.dropoff_asset_subtype;
+      tonnageSource = 'pickup';
+
+      // Load the pickup container's pricing rule for tonnage allowance
+      const pickupRule = await this.findActiveRule(
+        tenantId, dto.serviceType, dto.exchange_context.pickup_asset_subtype, dto.customerType,
+      ).catch(() => null);
+
+      if (pickupRule) {
+        includedTons = Number(pickupRule.included_tons);
+        overagePerTon = Number(pickupRule.overage_per_ton);
+      }
+    }
+
     const basePrice = Number(rule.base_price);
-    let subtotal = basePrice + extraDayCharges + distanceSurcharge + jobFee;
-    // Apply exchange discount if applicable
+    let subtotal = basePrice + extraDayCharges + distanceBand.distanceCharge + jobFee;
+
     if (exchangeDiscount > 0) {
       subtotal = Math.round(subtotal * (1 - exchangeDiscount / 100) * 100) / 100;
     }
+
+    // ── Step 7: Tenant fees ──
+    const activeFees = await this.tenantFeeRepo.find({
+      where: { tenant_id: tenantId, is_active: true },
+    });
+    const applicableFees = activeFees.filter(
+      f => f.applies_to === 'all' || f.applies_to === dto.jobType,
+    );
+    const fees = applicableFees.map(f => {
+      const feeAmount = f.is_percentage
+        ? Math.round(subtotal * (Number(f.amount) / 100) * 100) / 100
+        : Number(f.amount);
+      return { fee_key: f.fee_key, label: f.label, amount: feeAmount, is_percentage: f.is_percentage };
+    });
+    const totalFees = fees.reduce((sum, f) => sum + f.amount, 0);
+
     // Tax is handled at invoice level, not at quoting/booking time.
-    // Per-rule tax_rate is informational only; do not bake into quoted total.
     const taxRate = 0;
     const tax = 0;
-    const total = Math.round(subtotal * 100) / 100;
+    const total = Math.round((subtotal + totalFees) * 100) / 100;
 
     const requireDeposit = rule.require_deposit;
     const depositAmount = requireDeposit ? Number(rule.deposit_amount) : 0;
 
-    return {
-      rule: {
-        id: rule.id,
-        name: rule.name,
-      },
+    const result = {
+      rule: { id: rule.id, name: rule.name },
       breakdown: {
         basePrice,
         rentalDays,
+        rentalType,
         includedDays,
         extraDays,
-        extraDayRate: Number(rule.extra_day_rate),
+        extraDayRate,
         extraDayCharges,
+        unlimitedDays,
         distanceMiles: distanceBand.distanceMiles,
         includedMiles: 15,
         excessMiles: distanceBand.extraMiles,
@@ -271,6 +325,8 @@ export class PricingService {
         jobType: dto.jobType,
         jobFee,
         subtotal,
+        fees,
+        totalFees,
         taxRate,
         tax,
         total,
@@ -278,10 +334,70 @@ export class PricingService {
         depositAmount,
         exchangeDiscount,
         isExchange: dto.jobType === 'exchange',
-        includedTons: Number(rule.included_tons),
-        overagePerTon: Number(rule.overage_per_ton),
+        includedTons,
+        overagePerTon,
+        // Exchange-specific (additive, backward compatible)
+        ...(tonnageSource && {
+          tonnageSource,
+          exchangePickupSubtype,
+          exchangeDropoffSubtype,
+        }),
+        // Metadata
+        yardId,
+        pricingConfigVersionId: rule.version_id,
+        engineVersion: 'v2',
       },
     };
+
+    // ── Step 8: Snapshot persistence ──
+    if (dto.persist_snapshot) {
+      const snapshot = this.snapshotRepo.create({
+        tenant_id: tenantId,
+        job_id: dto.jobId || null,
+        request_inputs: dto as unknown as Record<string, unknown>,
+        pricing_outputs: result as unknown as Record<string, unknown>,
+        pricing_config_version_id: rule.version_id || rule.id,
+        engine_version: 'v2',
+        locked: true,
+      });
+      const saved = await this.snapshotRepo.save(snapshot);
+      return { ...result, snapshot_id: saved.id };
+    }
+
+    return result;
+  }
+
+  /**
+   * Find the best matching active pricing rule for a given service type + subtype + optional customer type.
+   * Reusable for both primary and exchange-context lookups.
+   */
+  private async findActiveRule(
+    tenantId: string,
+    serviceType: string,
+    assetSubtype: string,
+    customerType?: string,
+  ): Promise<PricingRule> {
+    const qb = this.pricingRulesRepository
+      .createQueryBuilder('p')
+      .where('p.tenant_id = :tenantId', { tenantId })
+      .andWhere('p.is_active = true')
+      .andWhere('p.service_type = :serviceType', { serviceType })
+      .andWhere('p.asset_subtype = :assetSubtype', { assetSubtype });
+
+    if (customerType) {
+      qb.andWhere('(p.customer_type = :customerType OR p.customer_type IS NULL)', { customerType });
+      qb.orderBy(`CASE WHEN p.customer_type = '${customerType}' THEN 0 ELSE 1 END`, 'ASC');
+    } else {
+      qb.andWhere('p.customer_type IS NULL');
+    }
+
+    const rule = await qb.getOne();
+    if (!rule) {
+      throw new BadRequestException(
+        `No active pricing available for ${assetSubtype} dumpsters. This size cannot be quoted or booked at this time.`,
+      );
+    }
+    return rule;
   }
 
   async listTemplates(tenantId: string) {

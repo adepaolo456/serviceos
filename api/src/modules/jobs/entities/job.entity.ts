@@ -267,6 +267,20 @@ export class Job {
   @Column({ name: 'route_order', type: 'int', nullable: true })
   route_order!: number;
 
+  // ── Pricing lock fields (pricing engine v2) ──
+
+  @Column({ name: 'pricing_snapshot', type: 'jsonb', nullable: true })
+  pricing_snapshot!: Record<string, unknown> | null;
+
+  @Column({ name: 'pricing_locked_at', type: 'timestamptz', nullable: true })
+  pricing_locked_at!: Date | null;
+
+  @Column({ name: 'pricing_config_version_id', type: 'uuid', nullable: true })
+  pricing_config_version_id!: string | null;
+
+  @Column({ name: 'pricing_snapshot_id', type: 'uuid', nullable: true })
+  pricing_snapshot_id!: string | null;
+
   @CreateDateColumn({ name: 'created_at' })
   created_at!: Date;
 

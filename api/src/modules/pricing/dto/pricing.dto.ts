@@ -7,7 +7,9 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  IsUUID,
   Min,
+  ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -163,6 +165,24 @@ export class ListPricingRulesQueryDto {
   @IsInt()
   @Min(1)
   limit?: number;
+
+  @ApiPropertyOptional({ description: 'Include superseded/inactive versions', default: false })
+  @IsOptional()
+  @Type(() => Boolean)
+  @IsBoolean()
+  include_history?: boolean;
+}
+
+export class ExchangeContextDto {
+  @ApiProperty({ example: '15yd', description: 'Subtype of the container being picked up' })
+  @IsString()
+  @IsNotEmpty()
+  pickup_asset_subtype: string;
+
+  @ApiProperty({ example: '20yd', description: 'Subtype of the container being dropped off' })
+  @IsString()
+  @IsNotEmpty()
+  dropoff_asset_subtype: string;
 }
 
 export class CalculatePriceDto {
@@ -216,4 +236,33 @@ export class CalculatePriceDto {
   @IsInt()
   @Min(1)
   rentalDays?: number;
+
+  // ── V2 extensions ──
+
+  @ApiPropertyOptional({ description: 'Yard ID for distance calculation (overrides yardLat/yardLng)' })
+  @IsOptional()
+  @IsUUID()
+  yardId?: string;
+
+  @ApiPropertyOptional({ description: 'Exchange context — determines which container is used for tonnage overage' })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ExchangeContextDto)
+  exchange_context?: ExchangeContextDto;
+
+  @ApiPropertyOptional({ enum: ['residential', 'commercial'], description: 'Rental type for day/rate policies' })
+  @IsOptional()
+  @IsString()
+  @IsIn(['residential', 'commercial'])
+  rentalType?: string;
+
+  @ApiPropertyOptional({ description: 'Persist snapshot to pricing_snapshots table', default: false })
+  @IsOptional()
+  @IsBoolean()
+  persist_snapshot?: boolean;
+
+  @ApiPropertyOptional({ description: 'Job ID to link snapshot to' })
+  @IsOptional()
+  @IsUUID()
+  jobId?: string;
 }

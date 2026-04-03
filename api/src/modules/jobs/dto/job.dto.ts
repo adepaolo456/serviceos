@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 import {
+  IsBoolean,
   IsNotEmpty,
   IsOptional,
   IsString,
@@ -10,6 +11,7 @@ import {
   IsNumber,
   Min,
   ValidateIf,
+  ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -127,7 +129,41 @@ export class CreateJobDto {
   assetSubtype?: string;
 }
 
-export class UpdateJobDto extends PartialType(CreateJobDto) {}
+class ExchangeContextInput {
+  @ApiPropertyOptional({ example: '15yd' })
+  @IsOptional()
+  @IsString()
+  pickup_asset_subtype?: string;
+
+  @ApiPropertyOptional({ example: '20yd' })
+  @IsOptional()
+  @IsString()
+  dropoff_asset_subtype?: string;
+}
+
+export class UpdateJobDto extends PartialType(CreateJobDto) {
+  @ApiPropertyOptional({ description: 'Force pricing recalculation even if no pricing-relevant fields changed' })
+  @IsOptional()
+  @IsBoolean()
+  recalculate?: boolean;
+
+  @ApiPropertyOptional({ description: 'Yard ID for distance recalculation' })
+  @IsOptional()
+  @IsUUID()
+  yardId?: string;
+
+  @ApiPropertyOptional({ enum: ['residential', 'commercial'], description: 'Rental type for day/rate policies' })
+  @IsOptional()
+  @IsString()
+  @IsIn(['residential', 'commercial'])
+  rentalType?: string;
+
+  @ApiPropertyOptional({ description: 'Exchange context for tonnage calculation' })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ExchangeContextInput)
+  exchange_context?: ExchangeContextInput;
+}
 
 export class ListJobsQueryDto {
   @ApiPropertyOptional({

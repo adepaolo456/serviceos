@@ -47,6 +47,9 @@ import { ClientPricingOverride } from './modules/pricing/entities/client-pricing
 import { SurchargeTemplate } from './modules/pricing/entities/surcharge-template.entity';
 import { ClientSurchargeOverride } from './modules/pricing/entities/client-surcharge-override.entity';
 import { TermsTemplate } from './modules/pricing/entities/terms-template.entity';
+import { TenantFee } from './modules/pricing/entities/tenant-fee.entity';
+import { PricingSnapshot } from './modules/pricing/entities/pricing-snapshot.entity';
+import { JobPricingAudit } from './modules/jobs/entities/job-pricing-audit.entity';
 import { Route } from './modules/dispatch/entities/route.entity';
 import { Notification } from './modules/notifications/entities/notification.entity';
 import { NotificationPreference } from './modules/notifications/entities/notification-preference.entity';
@@ -126,6 +129,9 @@ import { RateLimitLog } from './common/entities/rate-limit-log.entity';
             SubscriptionPlan,
             Quote,
             DeliveryZone,
+            TenantFee,
+            PricingSnapshot,
+            JobPricingAudit,
             SetupChecklist,
             TenantSettings,
             AiSuggestionLog,

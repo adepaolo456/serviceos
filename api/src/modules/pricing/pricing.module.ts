@@ -7,6 +7,8 @@ import { ClientPricingOverride } from './entities/client-pricing-override.entity
 import { SurchargeTemplate } from './entities/surcharge-template.entity';
 import { ClientSurchargeOverride } from './entities/client-surcharge-override.entity';
 import { TermsTemplate } from './entities/terms-template.entity';
+import { TenantFee } from './entities/tenant-fee.entity';
+import { PricingSnapshot } from './entities/pricing-snapshot.entity';
 import { Yard } from '../yards/yard.entity';
 import { Tenant } from '../tenants/entities/tenant.entity';
 import { PricingService } from './pricing.service';
@@ -16,6 +18,7 @@ import { SurchargeTemplateController } from './controllers/surcharge-template.co
 import { TermsTemplateController } from './controllers/terms-template.controller';
 import { ClientPricingController } from './controllers/client-pricing.controller';
 import { ClientSurchargeController } from './controllers/client-surcharge.controller';
+import { TenantFeeController } from './controllers/tenant-fee.controller';
 
 @Module({
   imports: [
@@ -27,6 +30,8 @@ import { ClientSurchargeController } from './controllers/client-surcharge.contro
       SurchargeTemplate,
       ClientSurchargeOverride,
       TermsTemplate,
+      TenantFee,
+      PricingSnapshot,
       Yard,
       Tenant,
     ]),
@@ -37,6 +42,7 @@ import { ClientSurchargeController } from './controllers/client-surcharge.contro
     TermsTemplateController,
     ClientPricingController,
     ClientSurchargeController,
+    TenantFeeController,
   ],
   providers: [PricingService, PriceResolutionService],
   exports: [PricingService, PriceResolutionService],
