@@ -104,6 +104,26 @@ const STAT_CARDS = [
   { key: "locked_snapshots", label: "Locked", color: "var(--t-accent)", field: "locked_snapshots" as const },
 ];
 
+/* ── Actionable vs informational ── */
+
+const ACTIONABLE_TYPES = new Set([
+  "geocode_blocked", "missing_address", "pricing_snapshot_missing",
+  "missing_asset_subtype", "missing_pricing_rule",
+]);
+
+const INFO_TYPES = new Set([
+  "pricing_locked_snapshot", "pricing_recalculated", "exchange_job",
+]);
+
+function computeActionableCount(summary: Summary | null): number {
+  if (!summary) return 0;
+  return (summary.geocode_blocked || 0)
+    + (summary.missing_address || 0)
+    + (summary.missing_snapshots || 0)
+    + (summary.missing_asset_subtypes || 0)
+    + (summary.missing_pricing_rules || 0);
+}
+
 /* ── Page ── */
 
 export default function PricingQaPage() {
@@ -113,6 +133,7 @@ export default function PricingQaPage() {
   const [filteredRows, setFilteredRows] = useState<PricingQaRow[]>([]);
   const [issueFilter, setIssueFilter] = useState("");
   const [severityFilter, setSeverityFilter] = useState("");
+  const [showResolved, setShowResolved] = useState(false);
   const [reviewQueue, setReviewQueue] = useState<ReviewQueueItem[]>([]);
   const [selectedRow, setSelectedRow] = useState<PricingQaRow | null>(null);
   const [originalIssue, setOriginalIssue] = useState<{ type: string; severity: string } | null>(null);
@@ -222,13 +243,17 @@ export default function PricingQaPage() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  // Apply filters
+  // Apply filters — default hides resolved/info rows
   useEffect(() => {
     let result = rows;
+    // Default: show only actionable, unless a specific info filter is active or showResolved is on
+    if (!showResolved && !issueFilter) {
+      result = result.filter(r => ACTIONABLE_TYPES.has(r.issue_type));
+    }
     if (issueFilter) result = result.filter(r => r.issue_type === issueFilter);
     if (severityFilter) result = result.filter(r => r.severity === severityFilter);
     setFilteredRows(result);
-  }, [rows, issueFilter, severityFilter]);
+  }, [rows, issueFilter, severityFilter, showResolved]);
 
   const openDetail = async (row: PricingQaRow) => {
     setSelectedRow(row);
@@ -254,7 +279,7 @@ export default function PricingQaPage() {
         <div>
           <h1 className="text-[28px] font-bold tracking-[-1px] text-[var(--t-frame-text)]">Pricing QA</h1>
           <p className="mt-1 text-[13px] text-[var(--t-frame-text-muted)]">
-            {summary ? `${summary.total_jobs} jobs · ${summary.geocode_blocked + summary.missing_address} blockers` : "Loading..."}
+            {summary ? `${computeActionableCount(summary)} actionable issue${computeActionableCount(summary) !== 1 ? "s" : ""}` : "Loading..."}
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -277,9 +302,20 @@ export default function PricingQaPage() {
           {STAT_CARDS.map(s => {
             const count = summary[s.field];
             const active = issueFilter === s.key;
+            // Info-type stat cards need showResolved to display their rows
+            const isInfoType = s.key === "locked_snapshots" || s.key === "recalculations" || s.key === "exchange_jobs";
             return (
               <button key={s.key}
-                onClick={() => setIssueFilter(active ? "" : s.key)}
+                onClick={() => {
+                  if (active) {
+                    setIssueFilter("");
+                    setShowResolved(false);
+                  } else {
+                    setIssueFilter(s.key);
+                    if (isInfoType) setShowResolved(true);
+                    else setShowResolved(false);
+                  }
+                }}
                 className={`rounded-[16px] border p-3 text-left transition-all ${active ? "ring-2 ring-[var(--t-accent)]" : ""}`}
                 style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)" }}>
                 <p className="text-lg font-bold tabular-nums" style={{ color: count > 0 ? s.color : "var(--t-text-muted)" }}>
@@ -308,8 +344,8 @@ export default function PricingQaPage() {
           <option value="">All Issue Types</option>
           {Object.entries(ISSUE_CONFIG).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
         </select>
-        {(issueFilter || severityFilter) && (
-          <button onClick={() => { setIssueFilter(""); setSeverityFilter(""); }}
+        {(issueFilter || severityFilter || showResolved) && (
+          <button onClick={() => { setIssueFilter(""); setSeverityFilter(""); setShowResolved(false); }}
             className="text-xs text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)]">Clear Filters</button>
         )}
         <span className="ml-auto text-xs tabular-nums" style={{ color: "var(--t-text-muted)" }}>
@@ -328,7 +364,9 @@ export default function PricingQaPage() {
         <div className="flex flex-col items-center justify-center py-24 text-center">
           <CheckCircle2 className="h-12 w-12 mb-4" style={{ color: "var(--t-accent)" }} />
           <h3 className="text-lg font-semibold mb-1" style={{ color: "var(--t-frame-text)" }}>All clear</h3>
-          <p className="text-sm" style={{ color: "var(--t-frame-text-muted)" }}>No pricing issues found for this filter.</p>
+          <p className="text-sm" style={{ color: "var(--t-frame-text-muted)" }}>
+            {!issueFilter && !showResolved ? "No active pricing issues. Resolved items are hidden by default." : "No pricing issues found for this filter."}
+          </p>
         </div>
       ) : (
         <div className="overflow-x-auto">
