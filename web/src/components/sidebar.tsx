@@ -24,6 +24,7 @@ import {
   Trash2,
   AlertTriangle,
   Bell,
+  HelpCircle,
   Sun,
   Moon,
   ChevronLeft,
@@ -60,6 +61,7 @@ const navigation = [
   { name: "Analytics", href: "/analytics", icon: BarChart3 },
   { name: "Marketplace", href: "/marketplace", icon: Store },
   { name: "Settings", href: "/settings", icon: Settings },
+  { name: "Help Center", href: "/help", icon: HelpCircle },
 ] as const;
 
 const adminNav = [
