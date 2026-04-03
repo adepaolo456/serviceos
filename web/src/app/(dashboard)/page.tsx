@@ -384,67 +384,104 @@ export default function DashboardPage() {
       </div>
 
       {/* ---- SECTION 1: Primary Metrics ---- */}
-      <div className="grid grid-cols-5 gap-3 mb-8">
+      <div className="grid grid-cols-5 gap-4 mb-10">
         {/* Revenue — hero card, 2 cols */}
         <Link
           href="/analytics"
-          className="col-span-2 no-underline rounded-[16px] px-6 py-5 transition-all hover:brightness-105"
+          className="col-span-2 no-underline rounded-[16px] px-6 py-6 transition-all hover:brightness-110"
           style={{
-            background: "linear-gradient(135deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.02) 100%)",
+            background: "linear-gradient(145deg, #151515 0%, #0F0F0F 100%)",
+            border: "1px solid rgba(255,255,255,0.06)",
+            boxShadow: "0 0 40px rgba(34,197,94,0.04), 0 4px 24px rgba(0,0,0,0.3)",
             position: "relative",
             overflow: "hidden",
           }}
         >
-          <div style={{ position: "absolute", top: -30, right: -30, width: 120, height: 120, borderRadius: "50%", background: "var(--t-accent)", opacity: 0.04 }} />
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-[var(--t-text-muted)] mb-1">Revenue</p>
-          <p className="text-[40px] font-bold tracking-tight text-[var(--t-accent)] tabular-nums leading-none">
+          <div style={{ position: "absolute", top: -40, right: -40, width: 160, height: 160, borderRadius: "50%", background: "radial-gradient(circle, var(--t-accent) 0%, transparent 70%)", opacity: 0.06 }} />
+          <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: 1, background: "linear-gradient(90deg, transparent 0%, var(--t-accent) 50%, transparent 100%)", opacity: 0.15 }} />
+          <p style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", color: "rgba(255,255,255,0.4)", marginBottom: 6 }}>Revenue</p>
+          <p style={{ fontSize: 44, fontWeight: 800, letterSpacing: "-0.03em", color: "var(--t-accent)", fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>
             ${revenueThisMonth.toLocaleString()}
           </p>
-          <p className="text-[12px] text-[var(--t-text-muted)] mt-2">this month</p>
+          <p style={{ fontSize: 12, color: "rgba(255,255,255,0.35)", marginTop: 8 }}>this month</p>
         </Link>
 
-        {/* Secondary metrics — stacked 3 cards in remaining 3 cols */}
-        <Link href="/analytics" className="no-underline rounded-[14px] px-4 py-4 transition-colors hover:bg-[rgba(255,255,255,0.04)]" style={{ background: "rgba(255,255,255,0.03)" }}>
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--t-text-muted)] mb-1">Jobs This Month</p>
-          <p className="text-[28px] font-bold tracking-tight text-[var(--t-text-primary)] tabular-nums leading-none">{jobsThisMonth}</p>
+        {/* Secondary metrics — 3 cards in remaining 3 cols */}
+        <Link
+          href="/analytics"
+          className="no-underline rounded-[14px] px-5 py-5 transition-all"
+          style={{ background: "#131313", border: "1px solid rgba(255,255,255,0.06)", boxShadow: "0 2px 8px rgba(0,0,0,0.2)" }}
+          onMouseEnter={(e) => { e.currentTarget.style.background = "#181818"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)"; }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = "#131313"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.06)"; }}
+        >
+          <p style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", color: "rgba(255,255,255,0.4)", marginBottom: 8 }}>Jobs This Month</p>
+          <p style={{ fontSize: 32, fontWeight: 700, letterSpacing: "-0.02em", color: "#fff", fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>{jobsThisMonth}</p>
         </Link>
-        <Link href="/analytics" className="no-underline rounded-[14px] px-4 py-4 transition-colors hover:bg-[rgba(255,255,255,0.04)]" style={{ background: "rgba(255,255,255,0.03)" }}>
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--t-text-muted)] mb-1">Completed</p>
-          <p className="text-[28px] font-bold tracking-tight text-[var(--t-text-primary)] tabular-nums leading-none">{completedJobs}</p>
+        <Link
+          href="/analytics"
+          className="no-underline rounded-[14px] px-5 py-5 transition-all"
+          style={{ background: "#131313", border: "1px solid rgba(255,255,255,0.06)", boxShadow: "0 2px 8px rgba(0,0,0,0.2)" }}
+          onMouseEnter={(e) => { e.currentTarget.style.background = "#181818"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)"; }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = "#131313"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.06)"; }}
+        >
+          <p style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", color: "rgba(255,255,255,0.4)", marginBottom: 8 }}>Completed</p>
+          <p style={{ fontSize: 32, fontWeight: 700, letterSpacing: "-0.02em", color: "#fff", fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>{completedJobs}</p>
         </Link>
-        <Link href="/analytics" className="no-underline rounded-[14px] px-4 py-4 transition-colors hover:bg-[rgba(255,255,255,0.04)]" style={{ background: "rgba(255,255,255,0.03)" }}>
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--t-text-muted)] mb-1">Active Rentals</p>
-          <p className="text-[28px] font-bold tracking-tight text-[var(--t-text-primary)] tabular-nums leading-none">{activeRentals}</p>
+        <Link
+          href="/analytics"
+          className="no-underline rounded-[14px] px-5 py-5 transition-all"
+          style={{ background: "#131313", border: "1px solid rgba(255,255,255,0.06)", boxShadow: "0 2px 8px rgba(0,0,0,0.2)" }}
+          onMouseEnter={(e) => { e.currentTarget.style.background = "#181818"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)"; }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = "#131313"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.06)"; }}
+        >
+          <p style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", color: "rgba(255,255,255,0.4)", marginBottom: 8 }}>Active Rentals</p>
+          <p style={{ fontSize: 32, fontWeight: 700, letterSpacing: "-0.02em", color: "#fff", fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>{activeRentals}</p>
         </Link>
       </div>
 
       {/* ---- SECTION 2: Operations ---- */}
-      <div className="mb-8">
-        <p className="text-[10px] font-semibold uppercase tracking-widest text-[var(--t-text-muted)] mb-3 px-1" style={{ opacity: 0.6 }}>Operations</p>
-        <div className="grid grid-cols-2 gap-3">
+      <div className="mb-10">
+        <p style={{ fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.1em", color: "rgba(255,255,255,0.25)", marginBottom: 12, paddingLeft: 2 }}>Operations</p>
+        <div className="grid grid-cols-2 gap-4">
           {/* Fleet */}
-          <Link href="/assets" className="flex items-center gap-3 no-underline rounded-[14px] px-4 py-3.5 transition-colors hover:bg-[rgba(255,255,255,0.04)]" style={{ background: "rgba(255,255,255,0.03)" }}>
-            <Truck className="h-[18px] w-[18px] shrink-0 text-[var(--t-text-muted)]" style={{ opacity: 0.5 }} />
-            <div className="min-w-0 flex-1">
-              <p className="text-[13px] font-semibold text-[var(--t-text-primary)]">Fleet</p>
-              <p className="text-[11px] text-[var(--t-text-muted)]">{deployed} deployed · {fleetTotal - deployed} available</p>
+          <Link
+            href="/assets"
+            className="no-underline rounded-[14px] px-5 py-4 transition-all flex items-center gap-4"
+            style={{ background: "#131313", border: "1px solid rgba(255,255,255,0.06)", boxShadow: "0 2px 8px rgba(0,0,0,0.2)" }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = "#181818"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = "#131313"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.06)"; }}
+          >
+            <div style={{ width: 36, height: 36, borderRadius: 10, background: "rgba(255,255,255,0.04)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+              <Truck className="h-[17px] w-[17px]" style={{ color: "rgba(255,255,255,0.5)" }} />
             </div>
-            <span className="text-[20px] font-bold tabular-nums text-[var(--t-text-primary)]">{fleetTotal}</span>
+            <div className="min-w-0 flex-1">
+              <p style={{ fontSize: 13, fontWeight: 600, color: "#fff" }}>Fleet</p>
+              <p style={{ fontSize: 11, color: "rgba(255,255,255,0.35)" }}>{deployed} deployed · {fleetTotal - deployed} available</p>
+            </div>
+            <span style={{ fontSize: 22, fontWeight: 700, fontVariantNumeric: "tabular-nums", color: "#fff" }}>{fleetTotal}</span>
             <span className={`text-[11px] font-semibold tabular-nums ${utilRate >= 80 ? "text-[var(--t-error)]" : "text-[var(--t-accent)]"}`}>{utilRate}%</span>
           </Link>
 
           {/* AR Outstanding */}
-          <Link href="/invoices" className="flex items-center gap-3 no-underline rounded-[14px] px-4 py-3.5 transition-colors hover:bg-[rgba(255,255,255,0.04)]" style={{ background: "rgba(255,255,255,0.03)" }}>
-            <DollarSign className="h-[18px] w-[18px] shrink-0 text-[var(--t-text-muted)]" style={{ opacity: 0.5 }} />
+          <Link
+            href="/invoices"
+            className="no-underline rounded-[14px] px-5 py-4 transition-all flex items-center gap-4"
+            style={{ background: "#131313", border: "1px solid rgba(255,255,255,0.06)", boxShadow: "0 2px 8px rgba(0,0,0,0.2)" }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = "#181818"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = "#131313"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.06)"; }}
+          >
+            <div style={{ width: 36, height: 36, borderRadius: 10, background: "rgba(255,255,255,0.04)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+              <DollarSign className="h-[17px] w-[17px]" style={{ color: "rgba(255,255,255,0.5)" }} />
+            </div>
             <div className="min-w-0 flex-1">
-              <p className="text-[13px] font-semibold text-[var(--t-text-primary)]">AR Outstanding</p>
+              <p style={{ fontSize: 13, fontWeight: 600, color: "#fff" }}>AR Outstanding</p>
               {arSummary?.totalOverdue ? (
-                <p className="text-[11px] text-[var(--t-error)]">${arSummary.totalOverdue.toLocaleString()} overdue</p>
+                <p style={{ fontSize: 11, color: "var(--t-error)" }}>${arSummary.totalOverdue.toLocaleString()} overdue</p>
               ) : (
-                <p className="text-[11px] text-[var(--t-text-muted)]">No overdue invoices</p>
+                <p style={{ fontSize: 11, color: "rgba(255,255,255,0.35)" }}>No overdue invoices</p>
               )}
             </div>
-            <span className={`text-[20px] font-bold tabular-nums ${arSummary?.totalOverdue ? "text-[var(--t-warning)]" : "text-[var(--t-text-primary)]"}`}>
+            <span style={{ fontSize: 22, fontWeight: 700, fontVariantNumeric: "tabular-nums", color: arSummary?.totalOverdue ? "var(--t-warning)" : "#fff" }}>
               ${(arSummary?.totalOutstanding ?? 0).toLocaleString()}
             </span>
           </Link>
@@ -453,20 +490,27 @@ export default function DashboardPage() {
 
       {/* ---- SECTION 3: Action Items (only non-zero) ---- */}
       {actionItems.length > 0 && (
-        <div className="mb-8">
-          <p className="text-[10px] font-semibold uppercase tracking-widest text-[var(--t-text-muted)] mb-3 px-1" style={{ opacity: 0.6 }}>Needs Attention</p>
-          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            {actionItems.map((item) => (
+        <div className="mb-10">
+          <p style={{ fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.1em", color: "rgba(255,255,255,0.25)", marginBottom: 12, paddingLeft: 2 }}>Needs Attention</p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, borderRadius: 14, overflow: "hidden", background: "#111111", border: "1px solid rgba(255,255,255,0.05)" }}>
+            {actionItems.map((item, idx) => (
               <Link
                 key={item.label}
                 href={item.href}
-                className="flex items-center gap-3 no-underline rounded-[12px] px-4 py-2.5 transition-colors hover:bg-[rgba(255,255,255,0.04)]"
-                style={{ background: `color-mix(in srgb, ${item.color} 4%, transparent)` }}
+                className="flex items-center gap-3 no-underline px-5 py-3 transition-colors"
+                style={{
+                  background: item.color === "var(--t-error)" ? "rgba(220,38,38,0.06)" : "rgba(217,119,6,0.06)",
+                  borderBottom: idx < actionItems.length - 1 ? "1px solid rgba(255,255,255,0.04)" : "none",
+                  margin: 0,
+                  borderRadius: 0,
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = item.color === "var(--t-error)" ? "rgba(220,38,38,0.1)" : "rgba(217,119,6,0.1)"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = item.color === "var(--t-error)" ? "rgba(220,38,38,0.06)" : "rgba(217,119,6,0.06)"; }}
               >
-                <item.icon className="h-[15px] w-[15px] shrink-0" style={{ color: item.color }} />
-                <span className="text-[13px] font-medium text-[var(--t-text-primary)] flex-1">{item.label}</span>
-                <span className="text-[13px] font-bold tabular-nums" style={{ color: item.color }}>{item.count}</span>
-                <ArrowRight className="h-3 w-3 shrink-0 text-[var(--t-text-muted)]" style={{ opacity: 0.4 }} />
+                <item.icon className="h-[16px] w-[16px] shrink-0" style={{ color: item.color }} />
+                <span style={{ fontSize: 13, fontWeight: 500, color: "rgba(255,255,255,0.85)", flex: 1 }}>{item.label}</span>
+                <span style={{ fontSize: 15, fontWeight: 700, fontVariantNumeric: "tabular-nums", color: item.color }}>{item.count}</span>
+                <ArrowRight className="h-3.5 w-3.5 shrink-0" style={{ color: "rgba(255,255,255,0.2)" }} />
               </Link>
             ))}
           </div>
@@ -475,16 +519,18 @@ export default function DashboardPage() {
 
       {/* ---- Config notices (inline warning banners) ---- */}
       {configHints.length > 0 && (
-        <div className="mb-8" style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        <div className="mb-10" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           {configHints.map((h) => (
             <Link
               key={h.key}
               href={h.href}
-              className="flex items-center gap-3 no-underline rounded-[12px] px-4 py-2.5 transition-colors hover:bg-[rgba(255,255,255,0.04)]"
-              style={{ background: "color-mix(in srgb, var(--t-warning) 5%, transparent)" }}
+              className="flex items-center gap-3 no-underline rounded-[12px] px-5 py-3 transition-colors"
+              style={{ background: "rgba(217,119,6,0.06)", border: "1px solid rgba(217,119,6,0.1)" }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(217,119,6,0.1)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(217,119,6,0.06)"; }}
             >
               <AlertTriangle className="h-[14px] w-[14px] shrink-0 text-[var(--t-warning)]" />
-              <span className="text-[12px] font-medium text-[var(--t-text-primary)] flex-1">{h.title}</span>
+              <span style={{ fontSize: 12, fontWeight: 500, color: "rgba(255,255,255,0.8)", flex: 1 }}>{h.title}</span>
               <span className="text-[11px] font-semibold text-[var(--t-accent)] whitespace-nowrap shrink-0">{h.cta} &rarr;</span>
             </Link>
           ))}
@@ -493,7 +539,7 @@ export default function DashboardPage() {
 
       {/* ---- Overdue Alerts ---- */}
       {overdueJobs.length > 0 && (
-        <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-4 mb-6" style={{ borderLeftWidth: 3, borderLeftColor: "var(--t-error)" }}>
+        <div className="rounded-[14px] p-4 mb-6" style={{ background: "#111111", border: "1px solid rgba(255,255,255,0.05)", borderLeftWidth: 3, borderLeftColor: "var(--t-error)", boxShadow: "0 2px 8px rgba(0,0,0,0.2)" }}>
           <div className="flex items-center gap-2 mb-4">
             <span className="h-2 w-2 rounded-full bg-[var(--t-error)] shrink-0" />
             <span className="text-[13px] font-semibold text-[var(--t-error)]">
@@ -509,18 +555,18 @@ export default function DashboardPage() {
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "space-between",
-                backgroundColor: "var(--t-bg-card)",
-                border: "1px solid var(--t-border)",
+                backgroundColor: "rgba(255,255,255,0.03)",
+                border: "1px solid rgba(255,255,255,0.04)",
                 borderRadius: 10,
                 padding: "8px 12px",
               }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
                   <span style={{ fontSize: 11, fontWeight: 600, color: "var(--t-error)" }}>{j.extra_days}d</span>
                   <div style={{ minWidth: 0 }}>
-                    <p style={{ fontSize: 13, fontWeight: 500, color: "var(--t-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    <p style={{ fontSize: 13, fontWeight: 500, color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                       {j.customer ? `${j.customer.first_name} ${j.customer.last_name}` : j.job_number}
                     </p>
-                    <p style={{ fontSize: 11, color: "var(--t-text-muted)" }}>{j.asset?.identifier || j.service_type} &middot; ${Number(j.extra_day_charges || 0).toFixed(2)} charges</p>
+                    <p style={{ fontSize: 11, color: "rgba(255,255,255,0.4)" }}>{j.asset?.identifier || j.service_type} &middot; ${Number(j.extra_day_charges || 0).toFixed(2)} charges</p>
                   </div>
                 </div>
                 <div style={{ display: "flex", gap: 6, flexShrink: 0 }} onClick={e => e.stopPropagation()}>
@@ -545,7 +591,7 @@ export default function DashboardPage() {
 
       {/* ---- Reschedule Alerts ---- */}
       {rescheduledJobs.length > 0 && (
-        <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-4 mb-8" style={{ borderLeftWidth: 3, borderLeftColor: "var(--t-warning)" }}>
+        <div className="rounded-[14px] p-4 mb-8" style={{ background: "#111111", border: "1px solid rgba(255,255,255,0.05)", borderLeftWidth: 3, borderLeftColor: "var(--t-warning)", boxShadow: "0 2px 8px rgba(0,0,0,0.2)" }}>
           <div className="flex items-center gap-2 mb-4">
             <span className="h-2 w-2 rounded-full bg-[var(--t-warning)] shrink-0" />
             <span className="text-[13px] font-semibold text-[var(--t-warning)]">
@@ -558,19 +604,19 @@ export default function DashboardPage() {
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "space-between",
-                backgroundColor: "var(--t-bg-card)",
-                border: "1px solid var(--t-border)",
+                backgroundColor: "rgba(255,255,255,0.03)",
+                border: "1px solid rgba(255,255,255,0.04)",
                 borderRadius: 10,
                 padding: "8px 12px",
               }}>
                 <div style={{ minWidth: 0 }}>
-                  <p style={{ fontSize: 13, fontWeight: 500, color: "var(--t-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  <p style={{ fontSize: 13, fontWeight: 500, color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                     {j.customer ? `${j.customer.first_name} ${j.customer.last_name}` : j.job_number}
                   </p>
-                  <p style={{ fontSize: 11, color: "var(--t-text-muted)" }}>Moved from {j.rescheduled_from_date} &rarr; {j.scheduled_date}</p>
+                  <p style={{ fontSize: 11, color: "rgba(255,255,255,0.4)" }}>Moved from {j.rescheduled_from_date} &rarr; {j.scheduled_date}</p>
                 </div>
                 <button onClick={() => { api.patch(`/jobs/${j.id}`, { rescheduledByCustomer: false }).then(() => setRescheduledJobs(prev => prev.filter(x => x.id !== j.id))).catch(() => {}); }}
-                  style={{ fontSize: 11, fontWeight: 500, color: "var(--t-text-muted)", backgroundColor: "transparent", border: "1px solid var(--t-border)", borderRadius: 20, padding: "4px 10px", cursor: "pointer", flexShrink: 0, marginLeft: 8, transition: "all 0.15s ease" }}>
+                  style={{ fontSize: 11, fontWeight: 500, color: "rgba(255,255,255,0.5)", backgroundColor: "transparent", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 20, padding: "4px 10px", cursor: "pointer", flexShrink: 0, marginLeft: 8, transition: "all 0.15s ease" }}>
                   Acknowledge
                 </button>
               </div>
@@ -584,10 +630,11 @@ export default function DashboardPage() {
         {/* Schedule */}
         <div className="lg:col-span-3 flex flex-col gap-5">
           <div style={{
-            backgroundColor: "var(--t-bg-card)",
-            border: "1px solid var(--t-border)",
+            backgroundColor: "#111111",
+            border: "1px solid rgba(255,255,255,0.05)",
             borderRadius: 14,
             overflow: "hidden",
+            boxShadow: "0 2px 8px rgba(0,0,0,0.2)",
           }}>
             {/* Date nav header */}
             <div style={{
@@ -595,7 +642,7 @@ export default function DashboardPage() {
               alignItems: "center",
               justifyContent: "space-between",
               padding: "10px 16px",
-              borderBottom: "1px solid var(--t-border)",
+              borderBottom: "1px solid rgba(255,255,255,0.05)",
             }}>
               <div style={{ display: "flex", alignItems: "center", gap: 0 }}>
                 <button
@@ -696,7 +743,7 @@ export default function DashboardPage() {
                           gap: 16,
                           padding: "12px 20px",
                           textDecoration: "none",
-                          borderBottom: idx < todayJobs.slice(0, 8).length - 1 ? "1px solid var(--t-border)" : "none",
+                          borderBottom: idx < todayJobs.slice(0, 8).length - 1 ? "1px solid rgba(255,255,255,0.04)" : "none",
                           transition: "background 0.15s ease",
                         }}
                         className="hover:bg-dark-card-hover"
@@ -773,17 +820,18 @@ export default function DashboardPage() {
         <div className="lg:col-span-2 flex flex-col gap-5">
           {/* This Week */}
           <div style={{
-            backgroundColor: "var(--t-bg-card)",
-            border: "1px solid var(--t-border)",
+            backgroundColor: "#111111",
+            border: "1px solid rgba(255,255,255,0.05)",
             borderRadius: 14,
             overflow: "hidden",
+            boxShadow: "0 2px 8px rgba(0,0,0,0.2)",
           }}>
             <div style={{
               display: "flex",
               alignItems: "center",
               justifyContent: "space-between",
               padding: "12px 16px",
-              borderBottom: "1px solid var(--t-border)",
+              borderBottom: "1px solid rgba(255,255,255,0.05)",
             }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <BarChart3 style={{ width: 16, height: 16, color: "var(--t-text-muted)" }} />
@@ -796,17 +844,18 @@ export default function DashboardPage() {
           {/* Unassigned */}
           {unassignedJobs.length > 0 && (
             <div style={{
-              backgroundColor: "var(--t-bg-card)",
-              border: "1px solid var(--t-border)",
+              backgroundColor: "#111111",
+              border: "1px solid rgba(255,255,255,0.05)",
               borderRadius: 14,
               overflow: "hidden",
+              boxShadow: "0 2px 8px rgba(0,0,0,0.2)",
             }}>
               <div style={{
                 display: "flex",
                 alignItems: "center",
                 gap: 8,
                 padding: "12px 16px",
-                borderBottom: "1px solid var(--t-border)",
+                borderBottom: "1px solid rgba(255,255,255,0.05)",
               }}>
                 <UserPlus2 style={{ width: 16, height: 16, color: "var(--t-error)" }} />
                 <span style={{ fontSize: 15, fontWeight: 600, color: "var(--t-text-primary)" }}>Unassigned</span>
@@ -823,7 +872,7 @@ export default function DashboardPage() {
                       justifyContent: "space-between",
                       padding: "10px 16px",
                       textDecoration: "none",
-                      borderBottom: idx < unassignedJobs.slice(0, 5).length - 1 ? "1px solid var(--t-border)" : "none",
+                      borderBottom: idx < unassignedJobs.slice(0, 5).length - 1 ? "1px solid rgba(255,255,255,0.04)" : "none",
                       transition: "background 0.15s ease",
                     }}
                     className="hover:bg-dark-card-hover"
