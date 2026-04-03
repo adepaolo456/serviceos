@@ -93,15 +93,16 @@ const SEVERITY_CONFIG = {
   info: { label: "Info", bg: "var(--t-info-soft)", color: "var(--t-info)", icon: Info },
 };
 
+// Stat card key → issue_type mapping (key is summary field name, issueType is backend row value)
 const STAT_CARDS = [
-  { key: "geocode_blocked", label: "Geocode Blocked", color: "var(--t-error)", field: "geocode_blocked" as const },
-  { key: "missing_address", label: "Missing Address", color: "var(--t-error)", field: "missing_address" as const },
-  { key: "missing_snapshots", label: "No Snapshot", color: "var(--t-warning)", field: "missing_snapshots" as const },
-  { key: "missing_pricing_rules", label: "Unsupported Size", color: "var(--t-error)", field: "missing_pricing_rules" as const },
-  { key: "missing_asset_subtypes", label: "No Size Set", color: "var(--t-warning)", field: "missing_asset_subtypes" as const },
-  { key: "exchange_jobs", label: "Exchange Jobs", color: "#a78bfa", field: "exchange_jobs" as const },
-  { key: "recalculations", label: "Recalculated", color: "var(--t-info)", field: "recalculations" as const },
-  { key: "locked_snapshots", label: "Locked", color: "var(--t-accent)", field: "locked_snapshots" as const },
+  { key: "geocode_blocked", issueType: "geocode_blocked", label: "Geocode Blocked", color: "var(--t-error)", field: "geocode_blocked" as const },
+  { key: "missing_address", issueType: "missing_address", label: "Missing Address", color: "var(--t-error)", field: "missing_address" as const },
+  { key: "missing_snapshots", issueType: "pricing_snapshot_missing", label: "No Snapshot", color: "var(--t-warning)", field: "missing_snapshots" as const },
+  { key: "missing_pricing_rules", issueType: "missing_pricing_rule", label: "Unsupported Size", color: "var(--t-error)", field: "missing_pricing_rules" as const },
+  { key: "missing_asset_subtypes", issueType: "missing_asset_subtype", label: "No Size Set", color: "var(--t-warning)", field: "missing_asset_subtypes" as const },
+  { key: "exchange_jobs", issueType: "exchange_job", label: "Exchange Jobs", color: "#a78bfa", field: "exchange_jobs" as const },
+  { key: "recalculations", issueType: "pricing_recalculated", label: "Recalculated", color: "var(--t-info)", field: "recalculations" as const },
+  { key: "locked_snapshots", issueType: "pricing_locked_snapshot", label: "Locked", color: "var(--t-accent)", field: "locked_snapshots" as const },
 ];
 
 /* ── Actionable vs informational ── */
@@ -301,9 +302,8 @@ export default function PricingQaPage() {
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
           {STAT_CARDS.map(s => {
             const count = summary[s.field];
-            const active = issueFilter === s.key;
-            // Info-type stat cards need showResolved to display their rows
-            const isInfoType = s.key === "locked_snapshots" || s.key === "recalculations" || s.key === "exchange_jobs";
+            const active = issueFilter === s.issueType;
+            const isInfoType = INFO_TYPES.has(s.issueType);
             return (
               <button key={s.key}
                 onClick={() => {
@@ -311,17 +311,17 @@ export default function PricingQaPage() {
                     setIssueFilter("");
                     setShowResolved(false);
                   } else {
-                    setIssueFilter(s.key);
+                    setIssueFilter(s.issueType);
                     if (isInfoType) setShowResolved(true);
                     else setShowResolved(false);
                   }
                 }}
-                className={`rounded-[16px] border p-3 text-left transition-all ${active ? "ring-2 ring-[var(--t-accent)]" : ""}`}
-                style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)" }}>
+                className={`rounded-[16px] border p-3 text-left transition-all cursor-pointer ${active ? "ring-2 ring-[var(--t-accent)]" : "hover:border-[var(--t-border-strong)]"}`}
+                style={{ background: active ? "var(--t-bg-elevated)" : "var(--t-bg-card)", borderColor: active ? "var(--t-accent)" : "var(--t-border)" }}>
                 <p className="text-lg font-bold tabular-nums" style={{ color: count > 0 ? s.color : "var(--t-text-muted)" }}>
                   {count}
                 </p>
-                <p className="text-[11px] font-medium" style={{ color: "var(--t-text-muted)" }}>{s.label}</p>
+                <p className="text-[11px] font-medium" style={{ color: active ? "var(--t-text-primary)" : "var(--t-text-muted)" }}>{s.label}</p>
               </button>
             );
           })}
@@ -338,7 +338,12 @@ export default function PricingQaPage() {
           <option value="warning">Warning</option>
           <option value="info">Info</option>
         </select>
-        <select value={issueFilter} onChange={e => setIssueFilter(e.target.value)}
+        <select value={issueFilter} onChange={e => {
+            const val = e.target.value;
+            setIssueFilter(val);
+            if (val && INFO_TYPES.has(val)) setShowResolved(true);
+            else if (!val) setShowResolved(false);
+          }}
           className="rounded-[14px] border px-3 py-2 text-sm outline-none"
           style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)", color: "var(--t-text-primary)" }}>
           <option value="">All Issue Types</option>
