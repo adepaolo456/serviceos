@@ -384,104 +384,93 @@ export default function DashboardPage() {
       </div>
 
       {/* ---- SECTION 1: Primary Metrics ---- */}
-      <div className="grid grid-cols-5 gap-4 mb-10">
+      <div className="grid grid-cols-5 gap-4 mb-12">
         {/* Revenue — hero card, 2 cols */}
         <Link
           href="/analytics"
-          className="col-span-2 no-underline rounded-[16px] px-6 py-6 transition-all hover:brightness-110"
+          className="col-span-2 no-underline rounded-[16px] px-7 py-7 transition-all"
           style={{
-            background: "linear-gradient(145deg, #151515 0%, #0F0F0F 100%)",
-            border: "1px solid rgba(255,255,255,0.06)",
-            boxShadow: "0 0 40px rgba(34,197,94,0.04), 0 4px 24px rgba(0,0,0,0.3)",
+            background: "linear-gradient(145deg, #161616 0%, #0E0E0E 100%)",
+            border: "1px solid rgba(255,255,255,0.07)",
+            boxShadow: "0 0 60px rgba(34,197,94,0.06), 0 4px 24px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.03)",
             position: "relative",
             overflow: "hidden",
           }}
+          onMouseEnter={(e) => { e.currentTarget.style.borderColor = "rgba(34,197,94,0.2)"; e.currentTarget.style.boxShadow = "0 0 80px rgba(34,197,94,0.08), 0 8px 32px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.04)"; }}
+          onMouseLeave={(e) => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.07)"; e.currentTarget.style.boxShadow = "0 0 60px rgba(34,197,94,0.06), 0 4px 24px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.03)"; }}
         >
-          <div style={{ position: "absolute", top: -40, right: -40, width: 160, height: 160, borderRadius: "50%", background: "radial-gradient(circle, var(--t-accent) 0%, transparent 70%)", opacity: 0.06 }} />
-          <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: 1, background: "linear-gradient(90deg, transparent 0%, var(--t-accent) 50%, transparent 100%)", opacity: 0.15 }} />
-          <p style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", color: "rgba(255,255,255,0.4)", marginBottom: 6 }}>Revenue</p>
-          <p style={{ fontSize: 44, fontWeight: 800, letterSpacing: "-0.03em", color: "var(--t-accent)", fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>
+          <div style={{ position: "absolute", top: -50, right: -50, width: 180, height: 180, borderRadius: "50%", background: "radial-gradient(circle, rgba(34,197,94,0.12) 0%, transparent 70%)", pointerEvents: "none" }} />
+          <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: 1, background: "linear-gradient(90deg, transparent 0%, rgba(34,197,94,0.25) 50%, transparent 100%)", pointerEvents: "none" }} />
+          <p style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.1em", color: "rgba(255,255,255,0.45)", marginBottom: 8 }}>Revenue</p>
+          <p style={{ fontSize: 46, fontWeight: 800, letterSpacing: "-0.03em", color: "#22C55E", fontVariantNumeric: "tabular-nums", lineHeight: 1, textShadow: "0 0 40px rgba(34,197,94,0.2)" }}>
             ${revenueThisMonth.toLocaleString()}
           </p>
-          <p style={{ fontSize: 12, color: "rgba(255,255,255,0.35)", marginTop: 8 }}>this month</p>
+          <p style={{ fontSize: 12, color: "rgba(255,255,255,0.3)", marginTop: 10 }}>this month</p>
         </Link>
 
         {/* Secondary metrics — 3 cards in remaining 3 cols */}
-        <Link
-          href="/analytics"
-          className="no-underline rounded-[14px] px-5 py-5 transition-all"
-          style={{ background: "#131313", border: "1px solid rgba(255,255,255,0.06)", boxShadow: "0 2px 8px rgba(0,0,0,0.2)" }}
-          onMouseEnter={(e) => { e.currentTarget.style.background = "#181818"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)"; }}
-          onMouseLeave={(e) => { e.currentTarget.style.background = "#131313"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.06)"; }}
-        >
-          <p style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", color: "rgba(255,255,255,0.4)", marginBottom: 8 }}>Jobs This Month</p>
-          <p style={{ fontSize: 32, fontWeight: 700, letterSpacing: "-0.02em", color: "#fff", fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>{jobsThisMonth}</p>
-        </Link>
-        <Link
-          href="/analytics"
-          className="no-underline rounded-[14px] px-5 py-5 transition-all"
-          style={{ background: "#131313", border: "1px solid rgba(255,255,255,0.06)", boxShadow: "0 2px 8px rgba(0,0,0,0.2)" }}
-          onMouseEnter={(e) => { e.currentTarget.style.background = "#181818"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)"; }}
-          onMouseLeave={(e) => { e.currentTarget.style.background = "#131313"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.06)"; }}
-        >
-          <p style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", color: "rgba(255,255,255,0.4)", marginBottom: 8 }}>Completed</p>
-          <p style={{ fontSize: 32, fontWeight: 700, letterSpacing: "-0.02em", color: "#fff", fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>{completedJobs}</p>
-        </Link>
-        <Link
-          href="/analytics"
-          className="no-underline rounded-[14px] px-5 py-5 transition-all"
-          style={{ background: "#131313", border: "1px solid rgba(255,255,255,0.06)", boxShadow: "0 2px 8px rgba(0,0,0,0.2)" }}
-          onMouseEnter={(e) => { e.currentTarget.style.background = "#181818"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)"; }}
-          onMouseLeave={(e) => { e.currentTarget.style.background = "#131313"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.06)"; }}
-        >
-          <p style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", color: "rgba(255,255,255,0.4)", marginBottom: 8 }}>Active Rentals</p>
-          <p style={{ fontSize: 32, fontWeight: 700, letterSpacing: "-0.02em", color: "#fff", fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>{activeRentals}</p>
-        </Link>
+        {[
+          { label: "Jobs This Month", value: jobsThisMonth },
+          { label: "Completed", value: completedJobs },
+          { label: "Active Rentals", value: activeRentals },
+        ].map((kpi) => (
+          <Link
+            key={kpi.label}
+            href="/analytics"
+            className="no-underline rounded-[14px] px-5 py-4 transition-all flex flex-col justify-center"
+            style={{ background: "#141414", border: "1px solid rgba(255,255,255,0.07)", boxShadow: "0 2px 12px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.03)" }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = "#1A1A1A"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.12)"; e.currentTarget.style.boxShadow = "0 4px 16px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.04)"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = "#141414"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.07)"; e.currentTarget.style.boxShadow = "0 2px 12px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.03)"; }}
+          >
+            <p style={{ fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", color: "rgba(255,255,255,0.4)", marginBottom: 10 }}>{kpi.label}</p>
+            <p style={{ fontSize: 34, fontWeight: 700, letterSpacing: "-0.02em", color: "rgba(255,255,255,0.95)", fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>{kpi.value}</p>
+          </Link>
+        ))}
       </div>
 
       {/* ---- SECTION 2: Operations ---- */}
-      <div className="mb-10">
-        <p style={{ fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.1em", color: "rgba(255,255,255,0.25)", marginBottom: 12, paddingLeft: 2 }}>Operations</p>
+      <div className="mb-12">
+        <p style={{ fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.12em", color: "rgba(255,255,255,0.25)", marginBottom: 14, paddingLeft: 2 }}>Operations</p>
         <div className="grid grid-cols-2 gap-4">
           {/* Fleet */}
           <Link
             href="/assets"
-            className="no-underline rounded-[14px] px-5 py-4 transition-all flex items-center gap-4"
-            style={{ background: "#131313", border: "1px solid rgba(255,255,255,0.06)", boxShadow: "0 2px 8px rgba(0,0,0,0.2)" }}
-            onMouseEnter={(e) => { e.currentTarget.style.background = "#181818"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)"; }}
-            onMouseLeave={(e) => { e.currentTarget.style.background = "#131313"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.06)"; }}
+            className="no-underline rounded-[14px] px-5 py-5 transition-all flex items-center gap-4"
+            style={{ background: "#141414", border: "1px solid rgba(255,255,255,0.07)", boxShadow: "0 2px 12px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.03)" }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = "#1A1A1A"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.12)"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = "#141414"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.07)"; }}
           >
-            <div style={{ width: 36, height: 36, borderRadius: 10, background: "rgba(255,255,255,0.04)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-              <Truck className="h-[17px] w-[17px]" style={{ color: "rgba(255,255,255,0.5)" }} />
+            <div style={{ width: 40, height: 40, borderRadius: 10, background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.06)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+              <Truck className="h-[18px] w-[18px]" style={{ color: "rgba(255,255,255,0.55)" }} />
             </div>
             <div className="min-w-0 flex-1">
-              <p style={{ fontSize: 13, fontWeight: 600, color: "#fff" }}>Fleet</p>
-              <p style={{ fontSize: 11, color: "rgba(255,255,255,0.35)" }}>{deployed} deployed · {fleetTotal - deployed} available</p>
+              <p style={{ fontSize: 14, fontWeight: 600, color: "rgba(255,255,255,0.95)" }}>Fleet</p>
+              <p style={{ fontSize: 11, color: "rgba(255,255,255,0.35)", marginTop: 2 }}>{deployed} deployed · {fleetTotal - deployed} available</p>
             </div>
-            <span style={{ fontSize: 22, fontWeight: 700, fontVariantNumeric: "tabular-nums", color: "#fff" }}>{fleetTotal}</span>
-            <span className={`text-[11px] font-semibold tabular-nums ${utilRate >= 80 ? "text-[var(--t-error)]" : "text-[var(--t-accent)]"}`}>{utilRate}%</span>
+            <span style={{ fontSize: 24, fontWeight: 700, fontVariantNumeric: "tabular-nums", color: "rgba(255,255,255,0.95)" }}>{fleetTotal}</span>
+            <span className={`text-[12px] font-bold tabular-nums ${utilRate >= 80 ? "text-[var(--t-error)]" : "text-[var(--t-accent)]"}`}>{utilRate}%</span>
           </Link>
 
           {/* AR Outstanding */}
           <Link
             href="/invoices"
-            className="no-underline rounded-[14px] px-5 py-4 transition-all flex items-center gap-4"
-            style={{ background: "#131313", border: "1px solid rgba(255,255,255,0.06)", boxShadow: "0 2px 8px rgba(0,0,0,0.2)" }}
-            onMouseEnter={(e) => { e.currentTarget.style.background = "#181818"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)"; }}
-            onMouseLeave={(e) => { e.currentTarget.style.background = "#131313"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.06)"; }}
+            className="no-underline rounded-[14px] px-5 py-5 transition-all flex items-center gap-4"
+            style={{ background: "#141414", border: "1px solid rgba(255,255,255,0.07)", boxShadow: "0 2px 12px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.03)" }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = "#1A1A1A"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.12)"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = "#141414"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.07)"; }}
           >
-            <div style={{ width: 36, height: 36, borderRadius: 10, background: "rgba(255,255,255,0.04)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-              <DollarSign className="h-[17px] w-[17px]" style={{ color: "rgba(255,255,255,0.5)" }} />
+            <div style={{ width: 40, height: 40, borderRadius: 10, background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.06)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+              <DollarSign className="h-[18px] w-[18px]" style={{ color: "rgba(255,255,255,0.55)" }} />
             </div>
             <div className="min-w-0 flex-1">
-              <p style={{ fontSize: 13, fontWeight: 600, color: "#fff" }}>AR Outstanding</p>
+              <p style={{ fontSize: 14, fontWeight: 600, color: "rgba(255,255,255,0.95)" }}>AR Outstanding</p>
               {arSummary?.totalOverdue ? (
-                <p style={{ fontSize: 11, color: "var(--t-error)" }}>${arSummary.totalOverdue.toLocaleString()} overdue</p>
+                <p style={{ fontSize: 11, color: "var(--t-error)", marginTop: 2 }}>${arSummary.totalOverdue.toLocaleString()} overdue</p>
               ) : (
-                <p style={{ fontSize: 11, color: "rgba(255,255,255,0.35)" }}>No overdue invoices</p>
+                <p style={{ fontSize: 11, color: "rgba(255,255,255,0.35)", marginTop: 2 }}>No overdue invoices</p>
               )}
             </div>
-            <span style={{ fontSize: 22, fontWeight: 700, fontVariantNumeric: "tabular-nums", color: arSummary?.totalOverdue ? "var(--t-warning)" : "#fff" }}>
+            <span style={{ fontSize: 24, fontWeight: 700, fontVariantNumeric: "tabular-nums", color: arSummary?.totalOverdue ? "var(--t-warning)" : "rgba(255,255,255,0.95)" }}>
               ${(arSummary?.totalOutstanding ?? 0).toLocaleString()}
             </span>
           </Link>
@@ -490,27 +479,27 @@ export default function DashboardPage() {
 
       {/* ---- SECTION 3: Action Items (only non-zero) ---- */}
       {actionItems.length > 0 && (
-        <div className="mb-10">
-          <p style={{ fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.1em", color: "rgba(255,255,255,0.25)", marginBottom: 12, paddingLeft: 2 }}>Needs Attention</p>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6, borderRadius: 14, overflow: "hidden", background: "#111111", border: "1px solid rgba(255,255,255,0.05)" }}>
+        <div className="mb-12">
+          <p style={{ fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.12em", color: "rgba(255,255,255,0.25)", marginBottom: 14, paddingLeft: 2 }}>Needs Attention</p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 0, borderRadius: 14, overflow: "hidden", background: "#121212", border: "1px solid rgba(255,255,255,0.06)", boxShadow: "0 2px 12px rgba(0,0,0,0.25)" }}>
             {actionItems.map((item, idx) => (
               <Link
                 key={item.label}
                 href={item.href}
-                className="flex items-center gap-3 no-underline px-5 py-3 transition-colors"
+                className="flex items-center gap-4 no-underline px-5 py-3.5 transition-all"
                 style={{
-                  background: item.color === "var(--t-error)" ? "rgba(220,38,38,0.06)" : "rgba(217,119,6,0.06)",
+                  background: item.color === "var(--t-error)" ? "rgba(220,38,38,0.05)" : "rgba(217,119,6,0.05)",
                   borderBottom: idx < actionItems.length - 1 ? "1px solid rgba(255,255,255,0.04)" : "none",
                   margin: 0,
                   borderRadius: 0,
                 }}
                 onMouseEnter={(e) => { e.currentTarget.style.background = item.color === "var(--t-error)" ? "rgba(220,38,38,0.1)" : "rgba(217,119,6,0.1)"; }}
-                onMouseLeave={(e) => { e.currentTarget.style.background = item.color === "var(--t-error)" ? "rgba(220,38,38,0.06)" : "rgba(217,119,6,0.06)"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = item.color === "var(--t-error)" ? "rgba(220,38,38,0.05)" : "rgba(217,119,6,0.05)"; }}
               >
-                <item.icon className="h-[16px] w-[16px] shrink-0" style={{ color: item.color }} />
-                <span style={{ fontSize: 13, fontWeight: 500, color: "rgba(255,255,255,0.85)", flex: 1 }}>{item.label}</span>
-                <span style={{ fontSize: 15, fontWeight: 700, fontVariantNumeric: "tabular-nums", color: item.color }}>{item.count}</span>
-                <ArrowRight className="h-3.5 w-3.5 shrink-0" style={{ color: "rgba(255,255,255,0.2)" }} />
+                <item.icon className="h-[16px] w-[16px] shrink-0" style={{ color: item.color, filter: "brightness(1.2)" }} />
+                <span style={{ fontSize: 13, fontWeight: 600, color: "rgba(255,255,255,0.9)", flex: 1 }}>{item.label}</span>
+                <span style={{ fontSize: 16, fontWeight: 700, fontVariantNumeric: "tabular-nums", color: item.color, filter: "brightness(1.1)" }}>{item.count}</span>
+                <ArrowRight className="h-3.5 w-3.5 shrink-0" style={{ color: "rgba(255,255,255,0.15)" }} />
               </Link>
             ))}
           </div>
@@ -519,18 +508,18 @@ export default function DashboardPage() {
 
       {/* ---- Config notices (inline warning banners) ---- */}
       {configHints.length > 0 && (
-        <div className="mb-10" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        <div className="mb-12" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           {configHints.map((h) => (
             <Link
               key={h.key}
               href={h.href}
-              className="flex items-center gap-3 no-underline rounded-[12px] px-5 py-3 transition-colors"
-              style={{ background: "rgba(217,119,6,0.06)", border: "1px solid rgba(217,119,6,0.1)" }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(217,119,6,0.1)"; }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(217,119,6,0.06)"; }}
+              className="flex items-center gap-3 no-underline rounded-[12px] px-5 py-3 transition-all"
+              style={{ background: "rgba(217,119,6,0.06)", border: "1px solid rgba(217,119,6,0.12)" }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(217,119,6,0.1)"; e.currentTarget.style.borderColor = "rgba(217,119,6,0.2)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(217,119,6,0.06)"; e.currentTarget.style.borderColor = "rgba(217,119,6,0.12)"; }}
             >
-              <AlertTriangle className="h-[14px] w-[14px] shrink-0 text-[var(--t-warning)]" />
-              <span style={{ fontSize: 12, fontWeight: 500, color: "rgba(255,255,255,0.8)", flex: 1 }}>{h.title}</span>
+              <AlertTriangle className="h-[14px] w-[14px] shrink-0" style={{ color: "var(--t-warning)", filter: "brightness(1.2)" }} />
+              <span style={{ fontSize: 12, fontWeight: 500, color: "rgba(255,255,255,0.85)", flex: 1 }}>{h.title}</span>
               <span className="text-[11px] font-semibold text-[var(--t-accent)] whitespace-nowrap shrink-0">{h.cta} &rarr;</span>
             </Link>
           ))}
@@ -630,11 +619,11 @@ export default function DashboardPage() {
         {/* Schedule */}
         <div className="lg:col-span-3 flex flex-col gap-5">
           <div style={{
-            backgroundColor: "#111111",
-            border: "1px solid rgba(255,255,255,0.05)",
+            backgroundColor: "#121212",
+            border: "1px solid rgba(255,255,255,0.06)",
             borderRadius: 14,
             overflow: "hidden",
-            boxShadow: "0 2px 8px rgba(0,0,0,0.2)",
+            boxShadow: "0 2px 12px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.03)",
           }}>
             {/* Date nav header */}
             <div style={{
@@ -654,7 +643,7 @@ export default function DashboardPage() {
                     width: 36,
                     height: 36,
                     borderRadius: 10,
-                    color: "var(--t-text-muted)",
+                    color: "rgba(255,255,255,0.4)",
                     backgroundColor: "transparent",
                     border: "none",
                     cursor: "pointer",
@@ -670,7 +659,7 @@ export default function DashboardPage() {
                       fontSize: 11,
                       fontWeight: 600,
                       color: "var(--t-accent)",
-                      backgroundColor: "var(--t-accent-soft)",
+                      backgroundColor: "rgba(34,197,94,0.1)",
                       border: "none",
                       borderRadius: 20,
                       padding: "4px 10px",
@@ -683,8 +672,8 @@ export default function DashboardPage() {
                   </button>
                 )}
                 <div style={{ minWidth: 140, textAlign: "center", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-                  <Clock style={{ width: 14, height: 14, color: "var(--t-text-muted)", flexShrink: 0 }} />
-                  <span style={{ fontSize: 14, fontWeight: 600, color: "var(--t-text-primary)", whiteSpace: "nowrap" }}>
+                  <Clock style={{ width: 14, height: 14, color: "rgba(255,255,255,0.35)", flexShrink: 0 }} />
+                  <span style={{ fontSize: 14, fontWeight: 600, color: "rgba(255,255,255,0.9)", whiteSpace: "nowrap" }}>
                     {fmtShortDate(scheduleDate)}
                   </span>
                   <span style={{
@@ -705,7 +694,7 @@ export default function DashboardPage() {
                     width: 36,
                     height: 36,
                     borderRadius: 10,
-                    color: "var(--t-text-muted)",
+                    color: "rgba(255,255,255,0.4)",
                     backgroundColor: "transparent",
                     border: "none",
                     cursor: "pointer",
@@ -724,8 +713,8 @@ export default function DashboardPage() {
             <div key={scheduleDate} className="animate-fade-in">
               {todayJobs.length === 0 ? (
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: "48px 16px" }}>
-                  <Briefcase style={{ width: 40, height: 40, color: "var(--t-text-muted)", opacity: 0.3, marginBottom: 8 }} />
-                  <p style={{ fontSize: 14, color: "var(--t-text-muted)" }}>No jobs scheduled for {fmtShortDate(scheduleDate).toLowerCase()}</p>
+                  <Briefcase style={{ width: 40, height: 40, color: "rgba(255,255,255,0.15)", marginBottom: 8 }} />
+                  <p style={{ fontSize: 14, color: "rgba(255,255,255,0.3)" }}>No jobs scheduled for {fmtShortDate(scheduleDate).toLowerCase()}</p>
                   <Link href="/book" style={{ marginTop: 12, fontSize: 12, color: "var(--t-accent)", textDecoration: "none" }}>+ Create a job</Link>
                 </div>
               ) : (
@@ -750,11 +739,11 @@ export default function DashboardPage() {
                       >
                         {/* Time */}
                         <div style={{ width: 52, flexShrink: 0, textAlign: "center" }}>
-                          <p style={{ fontSize: 14, fontWeight: 600, color: "var(--t-text-primary)", fontVariantNumeric: "tabular-nums" }}>
+                          <p style={{ fontSize: 14, fontWeight: 600, color: "rgba(255,255,255,0.9)", fontVariantNumeric: "tabular-nums" }}>
                             {formatTime(job.scheduled_window_start)}
                           </p>
                           {job.scheduled_window_end && (
-                            <p style={{ fontSize: 11, color: "var(--t-text-muted)", fontVariantNumeric: "tabular-nums" }}>
+                            <p style={{ fontSize: 11, color: "rgba(255,255,255,0.35)", fontVariantNumeric: "tabular-nums" }}>
                               {formatTime(job.scheduled_window_end)}
                             </p>
                           )}
@@ -762,11 +751,11 @@ export default function DashboardPage() {
 
                         {/* Customer + Address */}
                         <div style={{ minWidth: 0, flex: 1 }}>
-                          <p style={{ fontSize: 14, fontWeight: 600, color: "var(--t-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          <p style={{ fontSize: 14, fontWeight: 600, color: "rgba(255,255,255,0.9)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                             {job.customer ? `${job.customer.first_name} ${job.customer.last_name}` : job.job_number}
                           </p>
                           {addrStr && (
-                            <p style={{ fontSize: 12, color: "var(--t-text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 4 }}>
+                            <p style={{ fontSize: 12, color: "rgba(255,255,255,0.35)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 4 }}>
                               <MapPin style={{ width: 12, height: 12, flexShrink: 0 }} />{addrStr}
                             </p>
                           )}
@@ -776,7 +765,7 @@ export default function DashboardPage() {
                         <span style={{
                           fontSize: 11,
                           fontWeight: 600,
-                          color: JOB_TYPE_COLOR[job.job_type] || "var(--t-text-muted)",
+                          color: JOB_TYPE_COLOR[job.job_type] || "rgba(255,255,255,0.4)",
                           textTransform: "capitalize",
                           flexShrink: 0,
                         }}>
@@ -786,14 +775,14 @@ export default function DashboardPage() {
                         {/* Driver + Asset */}
                         <div style={{ width: 80, flexShrink: 0, textAlign: "right" }}>
                           {job.assigned_driver ? (
-                            <p style={{ fontSize: 12, color: "var(--t-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            <p style={{ fontSize: 12, color: "rgba(255,255,255,0.8)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                               {job.assigned_driver.first_name}
                             </p>
                           ) : (
                             <span style={{ fontSize: 11, fontWeight: 600, color: "var(--t-error)" }}>Unassigned</span>
                           )}
                           {job.asset && (
-                            <p style={{ fontSize: 11, color: "var(--t-text-muted)" }}>{job.asset.identifier}</p>
+                            <p style={{ fontSize: 11, color: "rgba(255,255,255,0.35)" }}>{job.asset.identifier}</p>
                           )}
                         </div>
 
@@ -801,7 +790,7 @@ export default function DashboardPage() {
                         <span style={{
                           fontSize: 11,
                           fontWeight: 600,
-                          color: STATUS_COLOR[job.status] || "var(--t-text-muted)",
+                          color: STATUS_COLOR[job.status] || "rgba(255,255,255,0.4)",
                           textTransform: "capitalize",
                           flexShrink: 0,
                         }}>
@@ -820,11 +809,11 @@ export default function DashboardPage() {
         <div className="lg:col-span-2 flex flex-col gap-5">
           {/* This Week */}
           <div style={{
-            backgroundColor: "#111111",
-            border: "1px solid rgba(255,255,255,0.05)",
+            backgroundColor: "#121212",
+            border: "1px solid rgba(255,255,255,0.06)",
             borderRadius: 14,
             overflow: "hidden",
-            boxShadow: "0 2px 8px rgba(0,0,0,0.2)",
+            boxShadow: "0 2px 12px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.03)",
           }}>
             <div style={{
               display: "flex",
@@ -834,8 +823,8 @@ export default function DashboardPage() {
               borderBottom: "1px solid rgba(255,255,255,0.05)",
             }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <BarChart3 style={{ width: 16, height: 16, color: "var(--t-text-muted)" }} />
-                <span style={{ fontSize: 15, fontWeight: 600, color: "var(--t-text-primary)" }}>This Week</span>
+                <BarChart3 style={{ width: 16, height: 16, color: "rgba(255,255,255,0.35)" }} />
+                <span style={{ fontSize: 15, fontWeight: 600, color: "rgba(255,255,255,0.9)" }}>This Week</span>
               </div>
             </div>
             <WeekView scheduleDate={scheduleDate} onSelectDay={setScheduleDate} />
@@ -844,11 +833,11 @@ export default function DashboardPage() {
           {/* Unassigned */}
           {unassignedJobs.length > 0 && (
             <div style={{
-              backgroundColor: "#111111",
-              border: "1px solid rgba(255,255,255,0.05)",
+              backgroundColor: "#121212",
+              border: "1px solid rgba(255,255,255,0.06)",
               borderRadius: 14,
               overflow: "hidden",
-              boxShadow: "0 2px 8px rgba(0,0,0,0.2)",
+              boxShadow: "0 2px 12px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.03)",
             }}>
               <div style={{
                 display: "flex",
@@ -858,7 +847,7 @@ export default function DashboardPage() {
                 borderBottom: "1px solid rgba(255,255,255,0.05)",
               }}>
                 <UserPlus2 style={{ width: 16, height: 16, color: "var(--t-error)" }} />
-                <span style={{ fontSize: 15, fontWeight: 600, color: "var(--t-text-primary)" }}>Unassigned</span>
+                <span style={{ fontSize: 15, fontWeight: 600, color: "rgba(255,255,255,0.9)" }}>Unassigned</span>
                 <span style={{ fontSize: 11, fontWeight: 600, color: "var(--t-error)" }}>{unassignedJobs.length}</span>
               </div>
               <div>
@@ -875,20 +864,21 @@ export default function DashboardPage() {
                       borderBottom: idx < unassignedJobs.slice(0, 5).length - 1 ? "1px solid rgba(255,255,255,0.04)" : "none",
                       transition: "background 0.15s ease",
                     }}
-                    className="hover:bg-dark-card-hover"
+                    onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.03)"; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; }}
                   >
                     <div style={{ minWidth: 0 }}>
-                      <p style={{ fontSize: 14, fontWeight: 500, color: "var(--t-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      <p style={{ fontSize: 14, fontWeight: 500, color: "rgba(255,255,255,0.9)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                         {job.customer ? `${job.customer.first_name} ${job.customer.last_name}` : job.job_number}
                       </p>
-                      <p style={{ fontSize: 11, color: "var(--t-text-muted)", textTransform: "capitalize" }}>
+                      <p style={{ fontSize: 11, color: "rgba(255,255,255,0.35)", textTransform: "capitalize" }}>
                         {job.job_type} &middot; {job.asset?.identifier || "No asset"}
                       </p>
                     </div>
                     <span style={{
                       fontSize: 11,
                       fontWeight: 600,
-                      color: JOB_TYPE_COLOR[job.job_type] || "var(--t-text-muted)",
+                      color: JOB_TYPE_COLOR[job.job_type] || "rgba(255,255,255,0.4)",
                       textTransform: "capitalize",
                       flexShrink: 0,
                     }}>
@@ -1341,38 +1331,39 @@ function WeekView({ scheduleDate, onSelectDay }: { scheduleDate: string; onSelec
               justifyContent: "space-between",
               padding: "10px 16px",
               textAlign: "left",
-              backgroundColor: isSelected ? "var(--t-accent-soft)" : "transparent",
+              backgroundColor: isSelected ? "rgba(34,197,94,0.08)" : "transparent",
               borderLeft: isSelected ? "2px solid var(--t-accent)" : "2px solid transparent",
               borderRight: "none",
               borderTop: "none",
-              borderBottom: idx < days.length - 1 ? "1px solid var(--t-border)" : "none",
+              borderBottom: idx < days.length - 1 ? "1px solid rgba(255,255,255,0.04)" : "none",
               cursor: "pointer",
               transition: "background 0.15s ease",
             }}
-            className="hover:bg-dark-card-hover"
+            onMouseEnter={(e) => { if (!isSelected) e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.03)"; }}
+            onMouseLeave={(e) => { if (!isSelected) e.currentTarget.style.backgroundColor = "transparent"; }}
           >
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              <div style={{ width: 40, textAlign: "center", color: isToday ? "var(--t-accent)" : "var(--t-text-muted)" }}>
+              <div style={{ width: 40, textAlign: "center", color: isToday ? "var(--t-accent)" : "rgba(255,255,255,0.4)" }}>
                 <p style={{ fontSize: 10, textTransform: "uppercase", fontWeight: isToday ? 700 : 500 }}>{dayName}</p>
-                <p style={{ fontSize: 14, fontWeight: 600 }}>{dayNum}</p>
+                <p style={{ fontSize: 14, fontWeight: 600, color: isToday ? "var(--t-accent)" : "rgba(255,255,255,0.7)" }}>{dayNum}</p>
               </div>
               {data.total > 0 ? (
                 <div>
-                  <p style={{ fontSize: 14, fontWeight: 500, color: "var(--t-text-primary)" }}>
+                  <p style={{ fontSize: 14, fontWeight: 500, color: "rgba(255,255,255,0.9)" }}>
                     {data.total} {data.total === 1 ? "job" : "jobs"}
                   </p>
-                  <p style={{ fontSize: 11, color: "var(--t-text-muted)" }}>{parts.join(", ")}</p>
+                  <p style={{ fontSize: 11, color: "rgba(255,255,255,0.35)" }}>{parts.join(", ")}</p>
                 </div>
               ) : (
-                <p style={{ fontSize: 12, color: "var(--t-text-muted)", opacity: 0.5 }}>No jobs</p>
+                <p style={{ fontSize: 12, color: "rgba(255,255,255,0.2)" }}>No jobs</p>
               )}
             </div>
             {data.total > 0 && (
               <div style={{ display: "flex", gap: 3, alignItems: "center" }}>
                 {Array.from({ length: Math.min(data.total, 5) }).map((_, i) => (
-                  <div key={i} style={{ width: 5, height: 5, borderRadius: "50%", backgroundColor: "var(--t-accent)", opacity: 0.4 }} />
+                  <div key={i} style={{ width: 5, height: 5, borderRadius: "50%", backgroundColor: "var(--t-accent)", opacity: 0.5 }} />
                 ))}
-                {data.total > 5 && <span style={{ fontSize: 9, color: "var(--t-text-muted)" }}>+{data.total - 5}</span>}
+                {data.total > 5 && <span style={{ fontSize: 9, color: "rgba(255,255,255,0.3)" }}>+{data.total - 5}</span>}
               </div>
             )}
           </button>
