@@ -1426,6 +1426,15 @@ const JobTile = memo(function JobTile({ job, isUnassigned, drivers, onAssign, on
         </div>
         {/* Quick actions — visible on hover */}
         <div className="shrink-0 flex flex-col gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity" data-no-select>
+          {/* Info button — opens QuickView */}
+          <button onClick={(e) => { e.stopPropagation(); onQuickView(); }}
+            className="flex items-center justify-center w-5 h-5 rounded transition-all"
+            title="Quick view"
+            style={{ color: "var(--t-text-muted)" }}
+            onMouseEnter={e => { e.currentTarget.style.background = "var(--t-bg-card-hover)"; e.currentTarget.style.color = "var(--t-accent)"; }}
+            onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "var(--t-text-muted)"; }}>
+            <Eye className="h-3.5 w-3.5" />
+          </button>
           {onMoveToTop && (
             <button onClick={(e) => { e.stopPropagation(); onMoveToTop(); }}
               className="flex items-center justify-center w-5 h-5 rounded transition-all"
@@ -1445,9 +1454,6 @@ const JobTile = memo(function JobTile({ job, isUnassigned, drivers, onAssign, on
               onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "var(--t-text-muted)"; }}>
               <ChevronDown className="h-3.5 w-3.5" />
             </button>
-          )}
-          {!onMoveToTop && !onMoveToBottom && (
-            <ChevronRight className="h-4 w-4" style={{ color: "var(--t-text-tertiary)" }} />
           )}
         </div>
       </div>
@@ -1565,11 +1571,22 @@ function QVContent({ job, detail, board, onAssign, onRefresh, toast }: {
   const [newDate, setNewDate] = useState(detail?.scheduled_date || "");
   const [reason, setReason] = useState("");
   const [rescheduling, setRescheduling] = useState(false);
+  const [editingNotes, setEditingNotes] = useState(false);
+  const [notesValue, setNotesValue] = useState("");
+  const [savingNotes, setSavingNotes] = useState(false);
+  const [editingPlacement, setEditingPlacement] = useState(false);
+  const [placementValue, setPlacementValue] = useState("");
+  const [savingPlacement, setSavingPlacement] = useState(false);
   const tc = TYPE_CONFIG[job.job_type] || { label: job.job_type, letter: "?", stripe: "#8A8A8A" };
   const isCompleted = job.status === "completed";
   const d = detail || job;
   const addr = d.service_address;
   const cust = d.customer;
+
+  // Billing fields (graceful: show if present)
+  const balanceDue = d.balance_due ?? d.amount_due ?? null;
+  const isPastDue = d.is_past_due || d.past_due || (balanceDue != null && balanceDue > 0 && d.billing_status === "past_due");
+  const billingStatus = d.billing_status || null;
 
   const handleReschedule = async () => {
     if (!newDate) return; setRescheduling(true);
@@ -1577,8 +1594,40 @@ function QVContent({ job, detail, board, onAssign, onRefresh, toast }: {
     catch { toast("error", "Failed"); } finally { setRescheduling(false); }
   };
 
+  const handleSaveNotes = async () => {
+    setSavingNotes(true);
+    try { await api.patch(`/jobs/${job.id}`, { dispatch_notes: notesValue }); toast("success", "Notes saved"); setEditingNotes(false); await onRefresh(); }
+    catch { toast("error", "Failed to save notes"); } finally { setSavingNotes(false); }
+  };
+
+  const handleSavePlacement = async () => {
+    setSavingPlacement(true);
+    try { await api.patch(`/jobs/${job.id}`, { placement_notes: placementValue }); toast("success", "Delivery instructions saved"); setEditingPlacement(false); await onRefresh(); }
+    catch { toast("error", "Failed to save"); } finally { setSavingPlacement(false); }
+  };
+
   return (
     <div className="space-y-4">
+      {/* Billing warning banner */}
+      {(isPastDue || (balanceDue != null && balanceDue > 0)) && (
+        <div className="rounded-[14px] px-4 py-3 flex items-center gap-3" style={{ background: "var(--t-error-soft)", border: "1px solid var(--t-error)" }}>
+          <AlertTriangle className="h-4 w-4 shrink-0" style={{ color: "var(--t-error)" }} />
+          <div>
+            <p className="text-xs font-bold" style={{ color: "var(--t-error)" }}>
+              {isPastDue ? "Past Due" : "Balance Due"}
+            </p>
+            {balanceDue != null && <p className="text-sm font-bold tabular-nums" style={{ color: "var(--t-error)" }}>${Number(balanceDue).toLocaleString()}</p>}
+            {billingStatus && <p className="text-[10px] capitalize" style={{ color: "var(--t-text-muted)" }}>{billingStatus.replace(/_/g, " ")}</p>}
+          </div>
+          {cust?.id && (
+            <Link href={`/customers/${cust.id}`} className="ml-auto text-[10px] font-semibold rounded-full px-2.5 py-1 border"
+              style={{ borderColor: "var(--t-error)", color: "var(--t-error)" }}>
+              View Account
+            </Link>
+          )}
+        </div>
+      )}
+
       <div className="flex items-center gap-2 flex-wrap">
         <span className="text-xs font-medium" style={{ color: tc.stripe }}>{tc.label}</span>
         <span className="text-xs font-medium capitalize" style={{ color: isCompleted ? "var(--t-accent)" : "var(--t-warning)" }}>{job.status.replace(/_/g, " ")}</span>
@@ -1587,20 +1636,89 @@ function QVContent({ job, detail, board, onAssign, onRefresh, toast }: {
       </div>
       {cust && (
         <div className="rounded-[20px] border p-4" style={{ borderColor: "var(--t-border)" }}>
-          <p className="text-[11px] uppercase tracking-wider mb-2" style={{ color: "var(--t-text-muted)" }}>Customer</p>
-          <Link href={`/customers/${cust.id}`} className="text-sm font-semibold" style={{ color: "var(--t-text-primary)" }}>{cust.first_name} {cust.last_name}</Link>
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-[11px] uppercase tracking-wider" style={{ color: "var(--t-text-muted)" }}>Customer</p>
+            <Link href={`/customers/${cust.id}`} className="text-[10px] font-medium" style={{ color: "var(--t-accent)" }}>Full Profile →</Link>
+          </div>
+          <p className="text-sm font-semibold" style={{ color: "var(--t-text-primary)" }}>{cust.first_name} {cust.last_name}</p>
           {cust.phone && <a href={`tel:${cust.phone}`} className="flex items-center gap-1.5 mt-2 text-xs" style={{ color: "var(--t-accent)" }}><Phone className="h-3 w-3" />{formatPhone(cust.phone)}</a>}
           {cust.email && <a href={`mailto:${cust.email}`} className="flex items-center gap-1.5 mt-1 text-xs" style={{ color: "var(--t-text-muted)" }}><Mail className="h-3 w-3" />{cust.email}</a>}
         </div>
       )}
       {addr && (
         <div className="rounded-[20px] border p-4" style={{ borderColor: "var(--t-border)" }}>
-          <p className="text-[11px] uppercase tracking-wider mb-2" style={{ color: "var(--t-text-muted)" }}>Service Address</p>
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-[11px] uppercase tracking-wider" style={{ color: "var(--t-text-muted)" }}>Service Address</p>
+            {!editingPlacement && (
+              <button onClick={() => { setEditingPlacement(true); setPlacementValue(d.placement_notes || ""); }}
+                className="text-[10px] font-medium" style={{ color: "var(--t-accent)" }}>
+                {d.placement_notes ? "Edit" : "Add"} Instructions
+              </button>
+            )}
+          </div>
           <p className="text-sm" style={{ color: "var(--t-text-primary)" }}>{addr.street}</p>
           <p className="text-xs" style={{ color: "var(--t-text-muted)" }}>{[addr.city, addr.state, addr.zip].filter(Boolean).join(", ")}</p>
-          {d.placement_notes && <p className="text-xs mt-2 italic" style={{ color: "var(--t-text-muted)" }}>"{d.placement_notes}"</p>}
+          {editingPlacement ? (
+            <div className="mt-2 space-y-2">
+              <textarea value={placementValue} onChange={e => setPlacementValue(e.target.value)}
+                placeholder="Delivery/placement instructions..."
+                rows={2} className="w-full rounded-[10px] border px-3 py-2 text-xs outline-none resize-none"
+                style={{ borderColor: "var(--t-border)", color: "var(--t-text-primary)", background: "var(--t-bg-input)" }} />
+              <div className="flex gap-2">
+                <button onClick={handleSavePlacement} disabled={savingPlacement}
+                  className="rounded-full px-3 py-1 text-[10px] font-semibold disabled:opacity-50"
+                  style={{ background: "var(--t-accent)", color: "var(--t-accent-on-accent)" }}>
+                  {savingPlacement ? "Saving..." : "Save"}
+                </button>
+                <button onClick={() => setEditingPlacement(false)} className="rounded-full px-3 py-1 text-[10px]"
+                  style={{ color: "var(--t-text-muted)" }}>Cancel</button>
+              </div>
+            </div>
+          ) : d.placement_notes ? (
+            <p className="text-xs mt-2 italic" style={{ color: "var(--t-text-muted)" }}>"{d.placement_notes}"</p>
+          ) : null}
         </div>
       )}
+
+      {/* Dispatch Notes — editable */}
+      <div className="rounded-[20px] border p-4" style={{ borderColor: "var(--t-border)" }}>
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-[11px] uppercase tracking-wider" style={{ color: "var(--t-text-muted)" }}>Dispatch Notes</p>
+          {!editingNotes && (
+            <button onClick={() => { setEditingNotes(true); setNotesValue(d.dispatch_notes || d.internal_notes || ""); }}
+              className="text-[10px] font-medium" style={{ color: "var(--t-accent)" }}>
+              {(d.dispatch_notes || d.internal_notes) ? "Edit" : "Add Note"}
+            </button>
+          )}
+        </div>
+        {editingNotes ? (
+          <div className="space-y-2">
+            <textarea value={notesValue} onChange={e => setNotesValue(e.target.value)}
+              placeholder="Internal dispatch notes..."
+              rows={3} className="w-full rounded-[10px] border px-3 py-2 text-xs outline-none resize-none"
+              style={{ borderColor: "var(--t-border)", color: "var(--t-text-primary)", background: "var(--t-bg-input)" }} />
+            <div className="flex gap-2">
+              <button onClick={handleSaveNotes} disabled={savingNotes}
+                className="rounded-full px-3 py-1 text-[10px] font-semibold disabled:opacity-50"
+                style={{ background: "var(--t-accent)", color: "var(--t-accent-on-accent)" }}>
+                {savingNotes ? "Saving..." : "Save"}
+              </button>
+              <button onClick={() => setEditingNotes(false)} className="rounded-full px-3 py-1 text-[10px]"
+                style={{ color: "var(--t-text-muted)" }}>Cancel</button>
+            </div>
+          </div>
+        ) : (d.dispatch_notes || d.internal_notes) ? (
+          <p className="text-xs" style={{ color: "var(--t-text-secondary)" }}>{d.dispatch_notes || d.internal_notes}</p>
+        ) : (
+          <p className="text-xs" style={{ color: "var(--t-text-tertiary)" }}>No notes</p>
+        )}
+        {d.customer_notes && (
+          <div className="mt-3 pt-3" style={{ borderTop: "1px solid var(--t-border)" }}>
+            <p className="text-[10px] uppercase tracking-wider mb-1" style={{ color: "var(--t-text-muted)" }}>Customer Notes</p>
+            <p className="text-xs italic" style={{ color: "var(--t-text-secondary)" }}>"{d.customer_notes}"</p>
+          </div>
+        )}
+      </div>
       <div className="rounded-[20px] border p-4" style={{ borderColor: "var(--t-border)" }}>
         <p className="text-[11px] uppercase tracking-wider mb-2" style={{ color: "var(--t-text-muted)" }}>Schedule</p>
         <div className="space-y-1.5 text-sm">
