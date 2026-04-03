@@ -56,7 +56,7 @@ export default function RegisterPage() {
       });
       api.setToken(data.accessToken);
       localStorage.setItem("refreshToken", data.refreshToken);
-      window.location.href = "/onboarding/plan";
+      window.location.href = "/";
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Registration failed. Please try again."
