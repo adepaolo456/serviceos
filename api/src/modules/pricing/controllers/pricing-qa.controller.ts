@@ -1,4 +1,4 @@
-import { Controller, Get, Query } from '@nestjs/common';
+import { Controller, Get, Post, Param, Body, Query, ParseUUIDPipe } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -7,7 +7,12 @@ import { Job } from '../../jobs/entities/job.entity';
 import { PricingSnapshot } from '../entities/pricing-snapshot.entity';
 import { JobPricingAudit } from '../../jobs/entities/job-pricing-audit.entity';
 import { Invoice } from '../../billing/entities/invoice.entity';
-import { hasValidServiceCoordinates } from '../../../common/helpers/coordinate-validator';
+import { PricingService } from '../pricing.service';
+import {
+  hasValidServiceCoordinates,
+  extractCoordinates,
+  buildAddressString,
+} from '../../../common/helpers/coordinate-validator';
 
 interface PricingQaRow {
   job_id: string;
@@ -33,6 +38,18 @@ interface PricingQaRow {
   invoice_status: string | null;
   created_at: string;
   updated_at: string;
+  // Eligibility fields (additive)
+  can_generate_snapshot: boolean;
+  can_fix_address: boolean;
+  action_blockers: string[];
+}
+
+interface SnapshotResult {
+  job_id: string;
+  job_number: string;
+  status: 'success' | 'skipped' | 'failed';
+  reason?: string;
+  snapshot_id?: string;
 }
 
 @ApiTags('Pricing QA')
@@ -44,6 +61,7 @@ export class PricingQaController {
     @InjectRepository(PricingSnapshot) private snapshotRepo: Repository<PricingSnapshot>,
     @InjectRepository(JobPricingAudit) private auditRepo: Repository<JobPricingAudit>,
     @InjectRepository(Invoice) private invoiceRepo: Repository<Invoice>,
+    private pricingService: PricingService,
   ) {}
 
   @Get('overview')
@@ -95,13 +113,22 @@ export class PricingQaController {
 
       const issues: Array<{ type: string; severity: 'critical' | 'warning' | 'info' }> = [];
 
-      if (!validCoords && addr && (addr.street || addr.city)) {
+      // Eligibility analysis
+      const blockers: string[] = [];
+      const hasAddress = !!addr && !!(addr.street || addr.city);
+      const hasSubtype = !!job.asset_subtype;
+
+      if (!validCoords && hasAddress) {
         issues.push({ type: 'geocode_blocked', severity: 'critical' });
         geocodeBlockedCount++;
-      } else if (!validCoords && (!addr || (!addr.street && !addr.city))) {
+        blockers.push('geocode_blocked');
+      } else if (!validCoords && !hasAddress) {
         issues.push({ type: 'missing_address', severity: 'critical' });
         reviewQueueCount++;
+        blockers.push('missing_address');
       }
+
+      if (!hasSubtype) blockers.push('missing_asset_subtype');
 
       if (!hasSnapshot && job.base_price) {
         issues.push({ type: 'pricing_snapshot_missing', severity: 'warning' });
@@ -123,19 +150,18 @@ export class PricingQaController {
         issues.push({ type: 'exchange_job', severity: 'info' });
       }
 
-      // Build address summary
       const addrParts = addr ? [addr.street, addr.city, addr.state].filter(Boolean) : [];
       const addrSummary = addrParts.length > 0 ? addrParts.join(', ') as string : 'No address';
 
-      // Customer name
       const cust = (job as any).customer;
       const custName = cust ? `${cust.first_name || ''} ${cust.last_name || ''}`.trim() : 'Unknown';
 
-      // Exchange context from snapshot
       const snapshot = job.pricing_snapshot as Record<string, any> | null;
       const breakdown = snapshot?.breakdown || {};
 
-      // Only add to rows if there's at least one issue OR it's a notable job
+      const canGenerate = !hasSnapshot && validCoords && hasSubtype && blockers.length === 0;
+      const canFixAddress = !validCoords;
+
       const primaryIssue = issues.length > 0 ? issues.sort((a, b) => {
         const order = { critical: 0, warning: 1, info: 2 };
         return order[a.severity] - order[b.severity];
@@ -166,11 +192,13 @@ export class PricingQaController {
           invoice_status: inv?.status || null,
           created_at: job.created_at.toISOString(),
           updated_at: job.updated_at.toISOString(),
+          can_generate_snapshot: canGenerate,
+          can_fix_address: canFixAddress,
+          action_blockers: blockers,
         });
       }
     }
 
-    // Sort: critical first, then warning, then info; within each, most recent first
     rows.sort((a, b) => {
       const order = { critical: 0, warning: 1, info: 2 };
       const diff = order[a.severity] - order[b.severity];
@@ -189,6 +217,117 @@ export class PricingQaController {
         missing_snapshots: missingSnapshotCount,
       },
       rows,
+    };
+  }
+
+  @Post('generate-snapshot/:jobId')
+  @ApiOperation({ summary: 'Generate pricing snapshot for a single job' })
+  async generateSnapshot(
+    @TenantId() tenantId: string,
+    @Param('jobId', ParseUUIDPipe) jobId: string,
+  ): Promise<SnapshotResult> {
+    const job = await this.jobRepo.findOne({ where: { id: jobId, tenant_id: tenantId } });
+    if (!job) return { job_id: jobId, job_number: '', status: 'failed', reason: 'job_not_found' };
+
+    if (job.pricing_snapshot) {
+      return { job_id: jobId, job_number: job.job_number, status: 'skipped', reason: 'already_has_snapshot' };
+    }
+
+    const addr = job.service_address as Record<string, unknown> | null;
+    const coords = extractCoordinates(addr);
+    if (!coords) {
+      const addrStr = buildAddressString(addr);
+      return {
+        job_id: jobId,
+        job_number: job.job_number,
+        status: 'failed',
+        reason: addrStr ? 'geocode_blocked' : 'missing_address',
+      };
+    }
+
+    if (!job.asset_subtype) {
+      return { job_id: jobId, job_number: job.job_number, status: 'failed', reason: 'missing_asset_subtype' };
+    }
+
+    try {
+      const calcResult = await this.pricingService.calculate(tenantId, {
+        serviceType: job.service_type || 'dumpster_rental',
+        assetSubtype: job.asset_subtype,
+        jobType: job.job_type || 'delivery',
+        customerLat: coords.lat,
+        customerLng: coords.lng,
+        rentalDays: job.rental_days || undefined,
+        persist_snapshot: true,
+        jobId: job.id,
+      });
+
+      const result = calcResult as Record<string, any>;
+      const breakdown = result.breakdown || {};
+
+      // Update job with snapshot reference
+      job.pricing_snapshot = result;
+      job.pricing_locked_at = new Date();
+      job.pricing_config_version_id = breakdown.pricingConfigVersionId || null;
+      job.pricing_snapshot_id = result.snapshot_id || null;
+      job.base_price = breakdown.basePrice;
+      job.total_price = breakdown.total;
+      await this.jobRepo.save(job);
+
+      return {
+        job_id: jobId,
+        job_number: job.job_number,
+        status: 'success',
+        snapshot_id: result.snapshot_id,
+      };
+    } catch (err) {
+      return {
+        job_id: jobId,
+        job_number: job.job_number,
+        status: 'failed',
+        reason: err instanceof Error ? err.message : 'pricing_calculation_failed',
+      };
+    }
+  }
+
+  @Post('generate-snapshots-bulk')
+  @ApiOperation({ summary: 'Bulk generate pricing snapshots for eligible jobs' })
+  async generateSnapshotsBulk(
+    @TenantId() tenantId: string,
+    @Body() body: { job_ids: string[]; dry_run?: boolean },
+  ) {
+    const dryRun = body.dry_run ?? false;
+    const results: SnapshotResult[] = [];
+    let successCount = 0;
+    let failedCount = 0;
+    let skippedCount = 0;
+
+    for (const jobId of (body.job_ids || [])) {
+      if (dryRun) {
+        // Check eligibility only
+        const job = await this.jobRepo.findOne({ where: { id: jobId, tenant_id: tenantId } });
+        if (!job) { results.push({ job_id: jobId, job_number: '', status: 'failed', reason: 'job_not_found' }); failedCount++; continue; }
+        if (job.pricing_snapshot) { results.push({ job_id: jobId, job_number: job.job_number, status: 'skipped', reason: 'already_has_snapshot' }); skippedCount++; continue; }
+        const coords = extractCoordinates(job.service_address as Record<string, unknown>);
+        if (!coords) { results.push({ job_id: jobId, job_number: job.job_number, status: 'failed', reason: 'no_valid_coordinates' }); failedCount++; continue; }
+        if (!job.asset_subtype) { results.push({ job_id: jobId, job_number: job.job_number, status: 'failed', reason: 'missing_asset_subtype' }); failedCount++; continue; }
+        results.push({ job_id: jobId, job_number: job.job_number, status: 'success', reason: 'eligible' });
+        successCount++;
+      } else {
+        const result = await this.generateSnapshot(tenantId, jobId);
+        results.push(result);
+        if (result.status === 'success') successCount++;
+        else if (result.status === 'skipped') skippedCount++;
+        else failedCount++;
+      }
+    }
+
+    return {
+      dry_run: dryRun,
+      total: body.job_ids?.length || 0,
+      success_count: successCount,
+      failed_count: failedCount,
+      skipped_count: skippedCount,
+      results,
     };
   }
 

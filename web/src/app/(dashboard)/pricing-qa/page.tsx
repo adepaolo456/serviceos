@@ -5,7 +5,7 @@ import Link from "next/link";
 import {
   Shield, Lock, RefreshCw, ArrowLeftRight, MapPinOff, FileX, Eye,
   AlertTriangle, Info, CheckCircle2, ExternalLink, Copy, X, MapPin,
-  ChevronRight,
+  ChevronRight, Zap, Pencil, Square, CheckSquare,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useToast } from "@/components/toast";
@@ -37,6 +37,9 @@ interface PricingQaRow {
   invoice_status: string | null;
   created_at: string;
   updated_at: string;
+  can_generate_snapshot: boolean;
+  can_fix_address: boolean;
+  action_blockers: string[];
 }
 
 interface Summary {
@@ -104,7 +107,57 @@ export default function PricingQaPage() {
   const [selectedRow, setSelectedRow] = useState<PricingQaRow | null>(null);
   const [auditHistory, setAuditHistory] = useState<AuditEntry[]>([]);
   const [auditLoading, setAuditLoading] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkRunning, setBulkRunning] = useState(false);
+  const [generatingId, setGeneratingId] = useState<string | null>(null);
   const { toast } = useToast();
+
+  // Single snapshot generation
+  const handleGenerateSnapshot = async (jobId: string) => {
+    setGeneratingId(jobId);
+    try {
+      const result = await api.post<{ status: string; reason?: string; snapshot_id?: string; job_number: string }>(`/pricing-qa/generate-snapshot/${jobId}`);
+      if (result.status === "success") {
+        toast("success", `Snapshot generated for ${result.job_number}`);
+        await fetchData();
+      } else {
+        toast("error", `${result.job_number}: ${(result.reason || "failed").replace(/_/g, " ")}`);
+      }
+    } catch { toast("error", "Failed to generate snapshot"); }
+    finally { setGeneratingId(null); }
+  };
+
+  // Bulk snapshot generation
+  const handleBulkGenerate = async () => {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    setBulkRunning(true);
+    try {
+      const result = await api.post<{
+        success_count: number; failed_count: number; skipped_count: number;
+        results: Array<{ job_id: string; job_number: string; status: string; reason?: string }>;
+      }>("/pricing-qa/generate-snapshots-bulk", { job_ids: ids });
+      const msg = `${result.success_count} generated, ${result.skipped_count} skipped, ${result.failed_count} failed`;
+      toast(result.failed_count > 0 ? "warning" : "success", msg);
+      setSelectedIds(new Set());
+      await fetchData();
+    } catch { toast("error", "Bulk generation failed"); }
+    finally { setBulkRunning(false); }
+  };
+
+  // Toggle selection
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const selectAllEligible = () => {
+    const eligible = filteredRows.filter(r => r.can_generate_snapshot).map(r => r.job_id);
+    setSelectedIds(new Set(eligible));
+  };
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -231,11 +284,35 @@ export default function PricingQaPage() {
         </div>
       ) : (
         <div className="overflow-x-auto">
+          {/* Bulk action bar */}
+          {selectedIds.size > 0 && (
+            <div className="flex items-center gap-3 px-4 py-2.5 mb-2 rounded-[14px] border"
+              style={{ background: "var(--t-accent-soft)", borderColor: "var(--t-accent)" }}>
+              <CheckSquare className="h-4 w-4" style={{ color: "var(--t-accent)" }} />
+              <span className="text-xs font-bold" style={{ color: "var(--t-accent)" }}>{selectedIds.size} selected</span>
+              <button onClick={handleBulkGenerate} disabled={bulkRunning}
+                className="inline-flex items-center gap-1 rounded-full px-3 py-1 text-[11px] font-semibold disabled:opacity-50"
+                style={{ background: "var(--t-accent)", color: "var(--t-accent-on-accent)" }}>
+                <Zap className={`h-3 w-3 ${bulkRunning ? "animate-spin" : ""}`} />
+                {bulkRunning ? "Generating..." : "Generate Snapshots"}
+              </button>
+              <button onClick={() => setSelectedIds(new Set())} className="ml-auto p-1 rounded" style={{ color: "var(--t-text-muted)" }}>
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          )}
           <table className="w-full">
             <thead>
               <tr className="table-header">
-                {["Severity", "Job #", "Customer", "Type", "Status", "Address", "Pricing", "Version", "Updated"].map(h => (
-                  <th key={h} className="text-left px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.06em]"
+                <th className="w-10 px-3 py-2.5">
+                  <button onClick={selectAllEligible} title="Select all eligible"
+                    className="flex items-center justify-center w-4 h-4 rounded border transition-all"
+                    style={{ borderColor: "var(--t-border-strong)", background: selectedIds.size > 0 ? "var(--t-accent)" : "transparent", color: selectedIds.size > 0 ? "var(--t-accent-on-accent)" : "transparent" }}>
+                    {selectedIds.size > 0 && <CheckCircle2 className="h-3 w-3" />}
+                  </button>
+                </th>
+                {["Severity", "Job #", "Customer", "Type", "Address", "Pricing", "Actions"].map(h => (
+                  <th key={h} className="text-left px-3 py-2.5 text-[11px] font-semibold uppercase tracking-[0.06em]"
                     style={{ color: "var(--t-text-muted)" }}>{h}</th>
                 ))}
               </tr>
@@ -244,54 +321,81 @@ export default function PricingQaPage() {
               {filteredRows.map(row => {
                 const issue = getIssueInfo(row.issue_type);
                 const sev = SEVERITY_CONFIG[row.severity];
+                const isSelected = selectedIds.has(row.job_id);
+                const isGenerating = generatingId === row.job_id;
                 return (
                   <tr key={row.job_id} className="table-row cursor-pointer" onClick={() => openDetail(row)}>
-                    <td className="px-4 py-3">
+                    {/* Checkbox */}
+                    <td className="w-10 px-3 py-3" onClick={e => e.stopPropagation()}>
+                      {row.can_generate_snapshot ? (
+                        <button onClick={() => toggleSelect(row.job_id)}
+                          className="flex items-center justify-center w-4 h-4 rounded border transition-all"
+                          style={{ borderColor: isSelected ? "var(--t-accent)" : "var(--t-border-strong)", background: isSelected ? "var(--t-accent)" : "transparent", color: isSelected ? "var(--t-accent-on-accent)" : "transparent" }}>
+                          {isSelected && <CheckCircle2 className="h-3 w-3" />}
+                        </button>
+                      ) : (
+                        <span className="w-4 h-4 block" />
+                      )}
+                    </td>
+                    <td className="px-3 py-3">
                       <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full"
                         style={{ background: sev.bg, color: sev.color }}>
                         <sev.icon className="h-3 w-3" /> {sev.label}
                       </span>
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-3 py-3">
                       <span className="text-sm font-semibold" style={{ color: "var(--t-text-primary)" }}>{row.job_number}</span>
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-3 py-3">
                       <span className="text-sm" style={{ color: "var(--t-text-primary)" }}>{row.customer_name}</span>
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-3 py-3">
                       <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full"
                         style={{ background: "var(--t-bg-elevated)", color: issue.color }}>
                         <issue.icon className="h-3 w-3" /> {issue.label}
                       </span>
                     </td>
-                    <td className="px-4 py-3">
-                      <span className="text-xs capitalize" style={{ color: "var(--t-text-muted)" }}>{row.status}</span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-1 max-w-[180px]">
+                    <td className="px-3 py-3">
+                      <div className="flex items-center gap-1 max-w-[160px]">
                         {!row.has_valid_coordinates && <MapPinOff className="h-3 w-3 shrink-0" style={{ color: "var(--t-error)" }} />}
                         <span className="text-xs truncate" style={{ color: row.has_valid_coordinates ? "var(--t-text-muted)" : "var(--t-error)" }}>
                           {row.service_address_summary}
                         </span>
                       </div>
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-3 py-3">
                       {row.has_locked_snapshot ? (
                         <Lock className="h-3.5 w-3.5" style={{ color: "var(--t-accent)" }} />
                       ) : (
                         <span className="text-[10px]" style={{ color: "var(--t-text-muted)" }}>—</span>
                       )}
                     </td>
-                    <td className="px-4 py-3">
-                      <span className="text-[10px] font-mono truncate max-w-[80px] inline-block"
-                        style={{ color: "var(--t-text-muted)" }}>
-                        {row.pricing_config_version_id?.slice(0, 8) || "—"}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="text-xs" style={{ color: "var(--t-text-muted)" }}>
-                        {new Date(row.updated_at).toLocaleDateString()}
-                      </span>
+                    {/* Actions */}
+                    <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
+                      <div className="flex items-center gap-1.5">
+                        {row.can_generate_snapshot && (
+                          <button onClick={() => handleGenerateSnapshot(row.job_id)} disabled={isGenerating}
+                            className="inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px] font-medium transition-all disabled:opacity-50"
+                            style={{ borderColor: "var(--t-accent)", color: "var(--t-accent)" }}
+                            title="Generate pricing snapshot">
+                            <Zap className={`h-3 w-3 ${isGenerating ? "animate-spin" : ""}`} />
+                            {isGenerating ? "..." : "Snapshot"}
+                          </button>
+                        )}
+                        {row.can_fix_address && (
+                          <Link href={`/jobs/${row.job_id}`}
+                            className="inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px] font-medium"
+                            style={{ borderColor: "var(--t-warning)", color: "var(--t-warning)" }}
+                            title="Fix address">
+                            <Pencil className="h-3 w-3" /> Address
+                          </Link>
+                        )}
+                        {!row.can_generate_snapshot && !row.can_fix_address && (
+                          <Link href={`/jobs/${row.job_id}`} className="text-[10px]" style={{ color: "var(--t-text-muted)" }}>
+                            Open <ExternalLink className="h-3 w-3 inline" />
+                          </Link>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 );
