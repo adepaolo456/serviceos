@@ -150,8 +150,9 @@ export default function DispatchPage() {
     staged_notes: string; yard_id: string; yard?: { id: string; name: string };
     current_job_id: string;
   }>>([]);
-  const [showYardQueue, setShowYardQueue] = useState(true);
+  const [showYardPanel, setShowYardPanel] = useState(false);
   const [rescheduleQueue, setRescheduleQueue] = useState<DispatchJob[]>([]);
+  const [unassignedRail, setUnassignedRail] = useState(false);
   const saveOrderTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { toast } = useToast();
 
@@ -260,7 +261,7 @@ export default function DispatchPage() {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-      if (e.key === "Escape") { setQuickViewJob(null); setCtxMenu(null); setRescheduleJob(null); }
+      if (e.key === "Escape") { setQuickViewJob(null); setCtxMenu(null); setRescheduleJob(null); setShowYardPanel(false); }
       else if (e.key === "ArrowLeft") setDate(d => shiftDate(d, -1));
       else if (e.key === "ArrowRight") setDate(d => shiftDate(d, 1));
       else if (e.key === "t" || e.key === "T") setDate(today());
@@ -485,154 +486,22 @@ export default function DispatchPage() {
               </button>
             </Dropdown>
           )}
+          {/* Awaiting Dump chip */}
+          {yardQueue.length > 0 && (
+            <button onClick={() => setShowYardPanel(true)} className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium border"
+              style={{ borderColor: "rgba(217,119,6,0.3)", background: "rgba(217,119,6,0.06)", color: "var(--t-warning)" }}>
+              <Box className="h-3 w-3" /> Awaiting Dump ({yardQueue.length})
+            </button>
+          )}
+          {/* Reschedule chip */}
+          {rescheduleQueue.length > 0 && (
+            <span className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium border"
+              style={{ borderColor: "rgba(220,38,38,0.3)", background: "rgba(220,38,38,0.06)", color: "var(--t-error)" }}>
+              <AlertTriangle className="h-3 w-3" /> Reschedule ({rescheduleQueue.length})
+            </span>
+          )}
         </div>
       </div>
-
-      {/* ── Yard Queue ── */}
-      {yardQueue.length > 0 && (
-        <div className="shrink-0 mb-3">
-          <div className="rounded-[20px] border" style={{ background: "var(--t-bg-secondary)", borderColor: "var(--t-border)" }}>
-            {/* Header */}
-            <div className="flex items-center justify-between px-4 py-2.5 cursor-pointer" onClick={() => setShowYardQueue(!showYardQueue)}
-              style={{ borderBottom: showYardQueue ? "1px solid var(--t-border)" : "none" }}>
-              <div className="flex items-center gap-2">
-                <Box className="h-4 w-4" style={{ color: "var(--t-warning)" }} />
-                <span className="text-sm font-semibold" style={{ color: "var(--t-text-primary)" }}>Awaiting Dump</span>
-                <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: "rgba(217,119,6,0.1)", color: "var(--t-warning)" }}>{yardQueue.length}</span>
-              </div>
-              <ChevronDown className="h-4 w-4 transition-transform" style={{ color: "var(--t-text-muted)", transform: showYardQueue ? "rotate(180deg)" : "rotate(0deg)" }} />
-            </div>
-            {/* Content */}
-            {showYardQueue && (
-              <div className="px-4 py-3">
-                {/* Group by yard */}
-                {(() => {
-                  const byYard = new Map<string, typeof yardQueue>();
-                  yardQueue.forEach(a => {
-                    const yardName = a.yard?.name || 'Unspecified Yard';
-                    if (!byYard.has(yardName)) byYard.set(yardName, []);
-                    byYard.get(yardName)!.push(a);
-                  });
-                  return Array.from(byYard.entries()).map(([yardName, assets]) => (
-                    <div key={yardName} className="mb-3 last:mb-0">
-                      <p className="text-[11px] font-bold uppercase tracking-wider mb-2" style={{ color: "var(--t-text-muted)" }}>{yardName}</p>
-                      <div className="flex gap-2 flex-wrap">
-                        {assets.map(asset => {
-                          const waitHours = asset.staged_at ? Math.round((Date.now() - new Date(asset.staged_at).getTime()) / 3600000) : 0;
-                          const sizeLabel = (asset.subtype || '').replace(/yd$/i, 'Y').toUpperCase();
-                          return (
-                            <div key={asset.id} className="rounded-xl border px-3 py-2 flex items-center gap-3"
-                              style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)", minWidth: 200 }}>
-                              <div>
-                                <div className="flex items-center gap-1.5">
-                                  <span className="text-sm font-extrabold" style={{ color: "var(--t-text-primary)" }}>{sizeLabel || '\u2014'}</span>
-                                  <span className="text-xs font-bold" style={{ color: "var(--t-accent-text)" }}>{asset.identifier}</span>
-                                </div>
-                                <p className="text-[11px] mt-0.5" style={{ color: waitHours > 24 ? "var(--t-error)" : "var(--t-warning)" }}>
-                                  {waitHours > 0 ? `${waitHours}h waiting` : 'Just arrived'}
-                                </p>
-                                {asset.staged_waste_type && <p className="text-[10px]" style={{ color: "var(--t-text-muted)" }}>{asset.staged_waste_type}</p>}
-                              </div>
-                              <button onClick={async (e) => {
-                                e.stopPropagation();
-                                const driverId = prompt("Driver ID for dump run (or leave empty for unassigned):");
-                                try {
-                                  await api.post("/jobs/dump-run", { assetId: asset.id, assignedDriverId: driverId || undefined, scheduledDate: date });
-                                  toast("success", `Dump run created for ${asset.identifier}`);
-                                  fetchBoard(true);
-                                  fetchYardQueue();
-                                } catch (err: any) { toast("error", err.message || "Failed to create dump run"); }
-                              }} className="shrink-0 rounded-full px-2.5 py-1 text-[10px] font-semibold"
-                                style={{ background: "rgba(217,119,6,0.1)", color: "var(--t-warning)", border: "1px solid rgba(217,119,6,0.2)" }}>
-                                Create Run
-                              </button>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  ));
-                })()}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* ── Needs Reschedule ── */}
-      {rescheduleQueue.length > 0 && (
-        <div className="shrink-0 mb-3">
-          <div className="rounded-[20px] border" style={{ background: "var(--t-bg-secondary)", borderColor: "var(--t-error)" }}>
-            {/* Header */}
-            <div className="flex items-center justify-between px-4 py-2.5" style={{ borderBottom: "1px solid var(--t-border)" }}>
-              <div className="flex items-center gap-2">
-                <AlertTriangle className="h-4 w-4" style={{ color: "var(--t-error)" }} />
-                <span className="text-sm font-semibold" style={{ color: "var(--t-text-primary)" }}>Needs Reschedule</span>
-                <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: "rgba(220,38,38,0.1)", color: "var(--t-error)" }}>{rescheduleQueue.length}</span>
-              </div>
-            </div>
-            {/* Cards */}
-            <div className="px-4 py-3 flex gap-3 overflow-x-auto">
-              {rescheduleQueue.map(job => {
-                const tc = TYPE_CONFIG[job.job_type] || { label: job.job_type, stripe: "#8A8A8A" };
-                const size = (job.asset_subtype || job.asset?.subtype || "").replace(/yd$/i, "Y").toUpperCase();
-                const addr = job.service_address ? [job.service_address.street, job.service_address.city].filter(Boolean).join(", ") : "";
-                const failedTime = job.failed_at ? new Date(job.failed_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "";
-                const driverName = job.assigned_driver ? `${job.assigned_driver.first_name} ${job.assigned_driver.last_name}` : "";
-
-                return (
-                  <div key={job.id} className="shrink-0 rounded-xl border px-4 py-3" style={{
-                    background: "var(--t-bg-card)", borderColor: "var(--t-error)", borderLeftWidth: 4, minWidth: 260, maxWidth: 300
-                  }}>
-                    {/* Line 1: Size + Type */}
-                    <div className="flex items-baseline gap-1.5">
-                      {size && <span className="text-[15px] font-extrabold" style={{ color: "var(--t-text-primary)" }}>{size}</span>}
-                      <span className="text-[13px] font-bold uppercase" style={{ color: tc.stripe }}>{tc.label}</span>
-                    </div>
-                    {/* Line 2: Address */}
-                    {addr && <p className="text-[12px] font-medium mt-0.5 truncate" style={{ color: "var(--t-text-primary)" }}>{addr}</p>}
-                    {/* Line 3: Failure info */}
-                    <div className="flex items-center gap-1.5 mt-1">
-                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: "rgba(220,38,38,0.08)", color: "var(--t-error)" }}>FAILED</span>
-                      <span className="text-[11px] truncate" style={{ color: "var(--t-text-muted)" }}>{job.failed_reason || "No reason"}</span>
-                    </div>
-                    {/* Line 4: Time + Driver */}
-                    <p className="text-[10px] mt-1" style={{ color: "var(--t-text-muted)" }}>
-                      {failedTime}{driverName ? ` — ${driverName}` : ""}
-                      {(job.attempt_count || 1) > 1 ? ` · Attempt #${job.attempt_count}` : ""}
-                    </p>
-                    {/* Actions */}
-                    <div className="flex gap-2 mt-2">
-                      <button onClick={async (e) => {
-                        e.stopPropagation();
-                        const newDate = prompt("Reschedule to date (YYYY-MM-DD):", date);
-                        if (!newDate) return;
-                        const driverId = prompt("Assign to driver ID (or leave empty):");
-                        try {
-                          await api.patch(`/jobs/${job.id}/reschedule`, {
-                            scheduledDate: newDate,
-                            assignedDriverId: driverId || undefined
-                          });
-                          toast("success", `${job.job_number} rescheduled to ${newDate}`);
-                          fetchBoard(true);
-                          fetchRescheduleQueue();
-                        } catch (err: any) { toast("error", err.message || "Failed to reschedule"); }
-                      }} className="flex-1 rounded-full px-2.5 py-1 text-[10px] font-semibold"
-                        style={{ background: "var(--t-accent)", color: "var(--t-accent-on-accent)" }}>
-                        Reschedule
-                      </button>
-                      <button onClick={() => openQuickView(job)} className="rounded-full px-2.5 py-1 text-[10px] font-medium border"
-                        style={{ borderColor: "var(--t-border)", color: "var(--t-text-muted)" }}>
-                        Details
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* ── Board ── */}
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
@@ -659,15 +528,40 @@ export default function DispatchPage() {
             </div>
           ) : showColumns ? (
             <div className="flex gap-4 overflow-x-auto pb-2 items-start h-full" style={{ pointerEvents: "auto" }}>
+              {/* Unassigned — collapsible rail or full column */}
               {!hiddenCols.has("unassigned") && (
-              <ColumnCard columnId="unassigned" title="Unassigned" isUnassigned count={board.unassigned.length}
-                jobs={filterJobs(board.unassigned, filter, search)} drivers={board.drivers.map(d => d.driver)}
-                onAssign={async (jid, did) => { try { await api.patch(`/jobs/${jid}/assign`, { assignedDriverId: did }); toast("success", "Assigned"); await fetchBoard(true); } catch { toast("error", "Failed"); } }}
-                onQuickView={openQuickView} onCtxMenu={handleContextMenu} activeId={activeId}
-                onStatusChange={async (jid, s) => { try { await api.patch(`/jobs/${jid}/status`, { status: s, cancellationReason: s === "failed" ? "Dispatcher override" : undefined }); toast("success", `Status → ${s.replace(/_/g, " ")}`); await fetchBoard(true); } catch { toast("error", "Failed"); } }}
-                collapsed={collapsedCols.has("unassigned")} onToggleCollapse={() => toggleCollapse("unassigned")}
-                onHide={() => hideColumn("unassigned")}
-                driverJobCities={driverJobCities} />
+                unassignedRail ? (
+                  /* Collapsed rail */
+                  <div
+                    onClick={() => setUnassignedRail(false)}
+                    className="shrink-0 rounded-[20px] cursor-pointer transition-all duration-200 flex flex-col items-center py-4 gap-3"
+                    style={{
+                      width: 52, minWidth: 52, height: "100%",
+                      background: board.unassigned.length > 0 ? "var(--t-warning-soft)" : "var(--t-bg-secondary)",
+                      border: "1px solid var(--t-border-strong)",
+                    }}>
+                    <UserPlus className="h-4 w-4 shrink-0" style={{ color: "var(--t-warning)" }} />
+                    <span className="text-[10px] font-bold" style={{ color: "var(--t-warning)", writingMode: "vertical-lr", transform: "rotate(180deg)" }}>UNASSIGNED</span>
+                    {board.unassigned.length > 0 && (
+                      <span className="rounded-full px-1.5 py-0.5 text-[10px] font-bold tabular-nums"
+                        style={{ background: "rgba(217,119,6,0.15)", color: "var(--t-warning)" }}>
+                        {board.unassigned.length}
+                      </span>
+                    )}
+                  </div>
+                ) : (
+                  /* Expanded column */
+                  <div className="shrink-0" style={{ transition: "width 0.2s ease" }}>
+                    <ColumnCard columnId="unassigned" title="Unassigned" isUnassigned count={board.unassigned.length}
+                      jobs={filterJobs(board.unassigned, filter, search)} drivers={board.drivers.map(d => d.driver)}
+                      onAssign={async (jid, did) => { try { await api.patch(`/jobs/${jid}/assign`, { assignedDriverId: did }); toast("success", "Assigned"); await fetchBoard(true); } catch { toast("error", "Failed"); } }}
+                      onQuickView={openQuickView} onCtxMenu={handleContextMenu} activeId={activeId}
+                      onStatusChange={async (jid, s) => { try { await api.patch(`/jobs/${jid}/status`, { status: s, cancellationReason: s === "failed" ? "Dispatcher override" : undefined }); toast("success", `Status → ${s.replace(/_/g, " ")}`); await fetchBoard(true); } catch { toast("error", "Failed"); } }}
+                      collapsed={collapsedCols.has("unassigned")} onToggleCollapse={() => toggleCollapse("unassigned")}
+                      onHide={() => setUnassignedRail(true)}
+                      driverJobCities={driverJobCities} />
+                  </div>
+                )
               )}
               {visibleDrivers.map((col, idx) => (
                 <ColumnCard key={col.driver.id} columnId={col.driver.id} title={`${col.driver.firstName} ${col.driver.lastName}`}
@@ -768,6 +662,70 @@ export default function DispatchPage() {
             try { await api.patch(`/jobs/${jid}/assign`, { assignedDriverId: did }); toast("success", "Reassigned"); await fetchBoard(true); } catch { toast("error", "Failed"); }
           }} onRefresh={() => fetchBoard(true)} toast={toast} />
         ) : null}
+      </QuickView>
+
+      {/* ── Awaiting Dump slide panel ── */}
+      <QuickView
+        isOpen={showYardPanel}
+        onClose={() => setShowYardPanel(false)}
+        title="Awaiting Dump"
+        subtitle={`${yardQueue.length} asset${yardQueue.length !== 1 ? "s" : ""} staged`}
+      >
+        <div className="space-y-4">
+          {(() => {
+            const byYard = new Map<string, typeof yardQueue>();
+            yardQueue.forEach(a => {
+              const yardName = a.yard?.name || "Unspecified Yard";
+              if (!byYard.has(yardName)) byYard.set(yardName, []);
+              byYard.get(yardName)!.push(a);
+            });
+            return Array.from(byYard.entries()).map(([yardName, assets]) => (
+              <div key={yardName}>
+                <p className="text-[11px] font-bold uppercase tracking-wider mb-2" style={{ color: "var(--t-text-muted)" }}>{yardName}</p>
+                <div className="space-y-2">
+                  {assets.map(asset => {
+                    const waitHours = asset.staged_at ? Math.round((Date.now() - new Date(asset.staged_at).getTime()) / 3600000) : 0;
+                    const sizeLabel = (asset.subtype || "").replace(/yd$/i, "Y").toUpperCase();
+                    return (
+                      <div key={asset.id} className="rounded-xl border px-4 py-3 flex items-center justify-between"
+                        style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)" }}>
+                        <div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-sm font-extrabold" style={{ color: "var(--t-text-primary)" }}>{sizeLabel || "\u2014"}</span>
+                            <span className="text-xs font-bold" style={{ color: "var(--t-accent-text)" }}>{asset.identifier}</span>
+                          </div>
+                          <p className="text-[11px] mt-0.5" style={{ color: waitHours > 24 ? "var(--t-error)" : "var(--t-warning)" }}>
+                            {waitHours > 0 ? `${waitHours}h waiting` : "Just arrived"}
+                          </p>
+                          {asset.staged_waste_type && <p className="text-[10px] mt-0.5" style={{ color: "var(--t-text-muted)" }}>{asset.staged_waste_type}</p>}
+                        </div>
+                        <button onClick={async (e) => {
+                          e.stopPropagation();
+                          const driverId = prompt("Driver ID for dump run (or leave empty for unassigned):");
+                          try {
+                            await api.post("/jobs/dump-run", { assetId: asset.id, assignedDriverId: driverId || undefined, scheduledDate: date });
+                            toast("success", `Dump run created for ${asset.identifier}`);
+                            fetchBoard(true);
+                            fetchYardQueue();
+                          } catch (err: any) { toast("error", err.message || "Failed to create dump run"); }
+                        }} className="shrink-0 rounded-full px-3 py-1.5 text-[10px] font-semibold"
+                          style={{ background: "rgba(217,119,6,0.1)", color: "var(--t-warning)", border: "1px solid rgba(217,119,6,0.2)" }}>
+                          Create Run
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ));
+          })()}
+          {yardQueue.length === 0 && (
+            <div className="flex flex-col items-center justify-center py-10">
+              <CheckCircle2 className="h-6 w-6 mb-2" style={{ color: "var(--t-accent)", opacity: 0.4 }} />
+              <p className="text-xs" style={{ color: "var(--t-text-muted)" }}>No assets awaiting dump</p>
+            </div>
+          )}
+        </div>
       </QuickView>
     </div>
   );
