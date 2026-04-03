@@ -37,7 +37,7 @@ const TYPE_LABELS: Record<string, string> = {
 const STATUS_COLORS: Record<string, { bg: string; text: string; border: string }> = {
   completed: { bg: "var(--t-accent-soft)", text: "var(--t-accent)", border: "var(--t-accent)" },
   scheduled: { bg: "var(--t-bg-elevated)", text: "var(--t-text-muted)", border: "var(--t-border)" },
-  in_progress: { bg: "rgba(59,130,246,0.08)", text: "#3b82f6", border: "#3b82f6" },
+  in_progress: { bg: "var(--t-info-soft)", text: "var(--t-info)", border: "var(--t-info)" },
   cancelled: { bg: "var(--t-error-soft)", text: "var(--t-error)", border: "var(--t-error)" },
 };
 

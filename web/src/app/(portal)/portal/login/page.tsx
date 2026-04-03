@@ -61,7 +61,7 @@ export default function PortalLoginPage() {
       <div className="w-full max-w-sm">
         <div className="mb-8 text-center">
           <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-[var(--t-accent)]">
-            <span className="text-xl font-bold text-black">S</span>
+            <span className="text-xl font-bold text-[var(--t-accent-on-accent)]">S</span>
           </div>
           <h1 className="text-[28px] font-bold tracking-[-1px]" style={{ color: "var(--t-frame-text)" }}>Customer Portal</h1>
           <p className="mt-2 text-sm" style={{ color: "var(--t-frame-text-muted)" }}>
@@ -107,7 +107,7 @@ export default function PortalLoginPage() {
               </div>
 
               <button type="submit" disabled={loading}
-                className="flex w-full items-center justify-center gap-2 rounded-full bg-[var(--t-accent)] px-4 py-2.5 text-sm font-semibold text-black transition-opacity hover:opacity-90 disabled:opacity-50">
+                className="flex w-full items-center justify-center gap-2 rounded-full bg-[var(--t-accent)] px-4 py-2.5 text-sm font-semibold text-[var(--t-accent-on-accent)] transition-opacity hover:opacity-90 disabled:opacity-50">
                 {loading ? (mode === "login" ? "Signing in..." : "Creating account...") : (
                   <>{mode === "login" ? "Sign In" : "Create Account"} <ArrowRight className="h-4 w-4" /></>
                 )}

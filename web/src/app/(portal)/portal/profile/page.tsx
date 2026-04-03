@@ -142,7 +142,7 @@ export default function PortalProfilePage() {
 
           <div className="flex items-center gap-3">
             <button type="submit" disabled={saving}
-              className="rounded-full bg-[var(--t-accent)] px-6 py-2.5 text-sm font-semibold text-black hover:opacity-90 disabled:opacity-50 transition-opacity">
+              className="rounded-full bg-[var(--t-accent)] px-6 py-2.5 text-sm font-semibold text-[var(--t-accent-on-accent)] hover:opacity-90 disabled:opacity-50 transition-opacity">
               {saving ? "Saving..." : "Save Changes"}
             </button>
             {saved && <span className="flex items-center gap-1 text-sm text-[var(--t-accent)]"><CheckCircle2 className="h-4 w-4" /> Saved</span>}
@@ -164,7 +164,7 @@ export default function PortalProfilePage() {
             <p className="text-xs text-[var(--t-text-muted)] mt-1">Minimum 8 characters</p>
           </div>
           <button type="submit" disabled={pwSaving}
-            className="rounded-full bg-[var(--t-accent)] px-6 py-2.5 text-sm font-semibold text-black hover:opacity-90 disabled:opacity-50 transition-opacity">
+            className="rounded-full bg-[var(--t-accent)] px-6 py-2.5 text-sm font-semibold text-[var(--t-accent-on-accent)] hover:opacity-90 disabled:opacity-50 transition-opacity">
             {pwSaving ? "Updating..." : "Update Password"}
           </button>
         </form>

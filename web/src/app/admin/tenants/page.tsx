@@ -81,8 +81,8 @@ export default function TenantsPage() {
             placeholder="Search tenants..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full rounded-[20px] py-2.5 pl-10 pr-4 text-sm placeholder-white/40 outline-none transition-colors focus:border-[var(--t-accent)] focus:ring-1 focus:ring-[var(--t-accent)]"
-            style={{ backgroundColor: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.08)", color: "var(--t-frame-text)" }}
+            className="w-full rounded-[20px] py-2.5 pl-10 pr-4 text-sm placeholder-[var(--t-text-muted)] outline-none transition-colors focus:border-[var(--t-accent)] focus:ring-1 focus:ring-[var(--t-accent)]"
+            style={{ backgroundColor: "var(--t-frame-hover)", border: "1px solid var(--t-frame-border)", color: "var(--t-frame-text)" }}
           />
         </div>
         <div className="flex gap-1">
@@ -92,7 +92,7 @@ export default function TenantsPage() {
               onClick={() => setTierFilter(t)}
               className={`rounded-full px-3 py-1.5 text-xs font-medium capitalize transition-colors ${
                 tierFilter === t
-                  ? "bg-[var(--t-accent)] text-black"
+                  ? "bg-[var(--t-accent)] text-[var(--t-accent-on-accent)]"
                   : "border border-[var(--t-border)] text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)]"
               }`}
             >

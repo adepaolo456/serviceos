@@ -74,7 +74,7 @@ export default function VehiclesPage() {
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--t-frame-text-muted)]" />
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search vehicles, drivers, plates..."
-          className="w-full rounded-[20px] border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.06)] pl-10 pr-4 py-2.5 text-sm text-[var(--t-frame-text)] placeholder-[var(--t-frame-text-muted)] outline-none focus:border-[var(--t-accent)]" />
+          className="w-full rounded-[20px] border border-[var(--t-frame-border)] bg-[var(--t-frame-hover)] pl-10 pr-4 py-2.5 text-sm text-[var(--t-frame-text)] placeholder-[var(--t-frame-text-muted)] outline-none focus:border-[var(--t-accent)]" />
       </div>
 
       {/* Vehicle List */}

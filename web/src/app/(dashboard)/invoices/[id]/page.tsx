@@ -463,7 +463,7 @@ export default function InvoiceDetailPage({
           {editing ? (
             <>
               <button onClick={saveEditing} disabled={actionLoading}
-                className="flex items-center gap-2 rounded-full bg-[var(--t-accent)] px-5 py-2.5 text-sm font-semibold text-black transition-opacity hover:opacity-90 disabled:opacity-50">
+                className="flex items-center gap-2 rounded-full bg-[var(--t-accent)] px-5 py-2.5 text-sm font-semibold text-[var(--t-accent-on-accent)] transition-opacity hover:opacity-90 disabled:opacity-50">
                 {actionLoading ? "Saving..." : "Save Changes"}
               </button>
               <button onClick={cancelEditing}
@@ -475,19 +475,19 @@ export default function InvoiceDetailPage({
             <>
               {canSend && (
                 <button onClick={handleSend} disabled={actionLoading}
-                  className="flex items-center gap-2 rounded-full bg-[var(--t-accent)] px-4 py-2 text-sm font-medium text-black transition-opacity hover:opacity-90 disabled:opacity-50">
+                  className="flex items-center gap-2 rounded-full bg-[var(--t-accent)] px-4 py-2 text-sm font-medium text-[var(--t-accent-on-accent)] transition-opacity hover:opacity-90 disabled:opacity-50">
                   <Send className="h-4 w-4" /> Send
                 </button>
               )}
               {canPay && (
                 <button onClick={() => setPaymentPanel(true)}
-                  className="flex items-center gap-2 rounded-full bg-[var(--t-accent)] px-4 py-2 text-sm font-medium text-black transition-opacity hover:opacity-90">
+                  className="flex items-center gap-2 rounded-full bg-[var(--t-accent)] px-4 py-2 text-sm font-medium text-[var(--t-accent-on-accent)] transition-opacity hover:opacity-90">
                   <CreditCard className="h-4 w-4" /> Record Payment
                 </button>
               )}
               {!isVoid && (
                 <button onClick={startEditing}
-                  className="flex items-center gap-2 px-5 py-2.5 rounded-full border border-[var(--t-accent)] text-[var(--t-accent)] hover:bg-[var(--t-accent)] hover:text-white transition-colors">
+                  className="flex items-center gap-2 px-5 py-2.5 rounded-full border border-[var(--t-accent)] text-[var(--t-accent)] hover:bg-[var(--t-accent)] hover:text-[var(--t-accent-on-accent)] transition-colors">
                   <Pencil className="h-4 w-4" /> {isPaid ? "Edit Notes" : "Edit"}
                 </button>
               )}
@@ -878,7 +878,7 @@ export default function InvoiceDetailPage({
                 Mark Disputed
               </button>
               {invoice.dispute_status === 'disputed' && (
-                <span className="text-xs font-bold px-2 py-0.5 rounded" style={{ background: "rgba(220,38,38,0.08)", color: "#DC2626" }}>DISPUTED</span>
+                <span className="text-xs font-bold px-2 py-0.5 rounded" style={{ background: "var(--t-error-soft)", color: "var(--t-error)" }}>DISPUTED</span>
               )}
             </div>
             {invoice.dispute_notes && <p className="text-xs" style={{ color: "var(--t-text-muted)" }}>Dispute: {invoice.dispute_notes}</p>}
@@ -982,7 +982,7 @@ function RecordPaymentForm({
               onClick={() => setMethod(m)}
               className={`rounded-[10px] py-2 text-sm font-medium capitalize transition-colors ${
                 method === m
-                  ? "bg-[var(--t-accent)] text-black"
+                  ? "bg-[var(--t-accent)] text-[var(--t-accent-on-accent)]"
                   : "text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)]"
               }`}
             >
@@ -1005,7 +1005,7 @@ function RecordPaymentForm({
       <button
         type="submit"
         disabled={saving}
-        className="w-full rounded-full bg-[var(--t-accent)] px-4 py-2.5 text-sm font-semibold text-black transition-opacity hover:opacity-90 disabled:opacity-50"
+        className="w-full rounded-full bg-[var(--t-accent)] px-4 py-2.5 text-sm font-semibold text-[var(--t-accent-on-accent)] transition-opacity hover:opacity-90 disabled:opacity-50"
       >
         {saving ? "Recording..." : `Record ${fmt(Number(amount))}`}
       </button>

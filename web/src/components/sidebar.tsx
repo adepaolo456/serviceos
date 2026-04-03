@@ -71,10 +71,10 @@ function NavTooltip({ label, show }: { label: string; show: boolean }) {
     <div
       className="absolute left-full ml-3 top-1/2 -translate-y-1/2 z-50 whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-medium pointer-events-none"
       style={{
-        backgroundColor: "#1A1A1A",
+        backgroundColor: "var(--t-bg-card)",
         border: "1px solid var(--t-frame-border)",
         color: "var(--t-frame-text)",
-        boxShadow: "0 4px 12px rgba(0,0,0,0.4)",
+        boxShadow: "0 4px 12px var(--t-shadow-lg)",
       }}
     >
       {label}
@@ -151,7 +151,7 @@ export default function Sidebar() {
                     color: isActive ? "var(--t-accent)" : "var(--t-frame-text-muted)",
                     backgroundColor: isActive ? "var(--t-accent-soft)" : "transparent",
                   }}
-                  onMouseEnter={(e) => { if (!isActive) { e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.06)"; e.currentTarget.style.color = "var(--t-frame-text)"; } }}
+                  onMouseEnter={(e) => { if (!isActive) { e.currentTarget.style.backgroundColor = "var(--t-frame-hover)"; e.currentTarget.style.color = "var(--t-frame-text)"; } }}
                   onMouseLeave={(e) => { if (!isActive) { e.currentTarget.style.backgroundColor = "transparent"; e.currentTarget.style.color = "var(--t-frame-text-muted)"; } }}
                 >
                   <item.icon className="h-[18px] w-[18px] shrink-0" style={{ color: isActive ? "var(--t-accent)" : "var(--t-frame-text-muted)" }} />
@@ -184,7 +184,7 @@ export default function Sidebar() {
                       color: isActive ? "var(--t-accent)" : "var(--t-frame-text-muted)",
                       backgroundColor: isActive ? "var(--t-accent-soft)" : "transparent",
                     }}
-                    onMouseEnter={(e) => { if (!isActive) { e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.06)"; e.currentTarget.style.color = "var(--t-frame-text)"; } }}
+                    onMouseEnter={(e) => { if (!isActive) { e.currentTarget.style.backgroundColor = "var(--t-frame-hover)"; e.currentTarget.style.color = "var(--t-frame-text)"; } }}
                     onMouseLeave={(e) => { if (!isActive) { e.currentTarget.style.backgroundColor = "transparent"; e.currentTarget.style.color = "var(--t-frame-text-muted)"; } }}
                   >
                     <item.icon className="h-[18px] w-[18px] shrink-0" style={{ color: isActive ? "var(--t-accent)" : "var(--t-frame-text-muted)" }} />
@@ -211,7 +211,7 @@ export default function Sidebar() {
           </div>
         )}
         <button onClick={cycleTheme} className="flex w-full items-center gap-3 rounded-[10px] px-3 py-2.5 text-sm transition-all duration-150" style={{ color: "var(--t-frame-text-muted)" }}
-          onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.06)"; e.currentTarget.style.color = "var(--t-frame-text)"; }}
+          onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--t-frame-hover)"; e.currentTarget.style.color = "var(--t-frame-text)"; }}
           onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; e.currentTarget.style.color = "var(--t-frame-text-muted)"; }}
         >
           {theme === "dark" ? <Sun className="h-[18px] w-[18px]" /> : <Moon className="h-[18px] w-[18px]" />}
@@ -270,7 +270,7 @@ export default function Sidebar() {
                   }}
                   onMouseEnter={(e) => {
                     setHoveredItem(item.name);
-                    if (!isActive) { e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.06)"; e.currentTarget.style.color = "var(--t-frame-text)"; }
+                    if (!isActive) { e.currentTarget.style.backgroundColor = "var(--t-frame-hover)"; e.currentTarget.style.color = "var(--t-frame-text)"; }
                   }}
                   onMouseLeave={(e) => {
                     setHoveredItem(null);
@@ -302,7 +302,7 @@ export default function Sidebar() {
                     }}
                     onMouseEnter={(e) => {
                       setHoveredItem(item.name);
-                      if (!isActive) { e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.06)"; e.currentTarget.style.color = "var(--t-frame-text)"; }
+                      if (!isActive) { e.currentTarget.style.backgroundColor = "var(--t-frame-hover)"; e.currentTarget.style.color = "var(--t-frame-text)"; }
                     }}
                     onMouseLeave={(e) => {
                       setHoveredItem(null);
@@ -332,7 +332,7 @@ export default function Sidebar() {
         )}
         <div className="relative" onMouseEnter={() => setHoveredItem("_theme")} onMouseLeave={() => setHoveredItem(null)}>
           <button onClick={cycleTheme} className="flex h-11 w-11 items-center justify-center rounded-[10px] transition-all duration-150" style={{ color: "var(--t-frame-text-muted)" }}
-            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.06)"; e.currentTarget.style.color = "var(--t-frame-text)"; }}
+            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--t-frame-hover)"; e.currentTarget.style.color = "var(--t-frame-text)"; }}
             onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; e.currentTarget.style.color = "var(--t-frame-text-muted)"; }}
           >
             {theme === "dark" ? <Sun className="h-[18px] w-[18px]" /> : <Moon className="h-[18px] w-[18px]" />}
@@ -407,7 +407,7 @@ export default function Sidebar() {
           onClick={toggleCollapsed}
           className="absolute -right-3 top-7 z-40 flex h-6 w-6 items-center justify-center rounded-full transition-all duration-150"
           style={{
-            backgroundColor: "#1A1A1A",
+            backgroundColor: "var(--t-bg-card)",
             border: "1px solid var(--t-frame-border)",
             color: "var(--t-frame-text-muted)",
           }}

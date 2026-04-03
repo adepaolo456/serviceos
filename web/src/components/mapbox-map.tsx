@@ -180,24 +180,20 @@ export default function MapboxMap({
       let popup: mapboxgl.Popup | undefined;
       if (marker.popupContent) {
         const pc = marker.popupContent;
-        const isDark = theme === "dark";
-        const bg = isDark ? "#1a1a1a" : "#fff";
-        const text = isDark ? "#fff" : "#0a0a0a";
-        const muted = isDark ? "#888" : "#666";
 
-        let html = `<div style="font-family:system-ui,-apple-system,sans-serif;padding:8px 4px;min-width:160px;background:${bg};color:${text}">`;
+        let html = `<div style="font-family:system-ui,-apple-system,sans-serif;padding:8px 4px;min-width:160px;background:var(--t-bg-elevated);color:var(--t-text-primary)">`;
         html += `<strong style="font-size:14px">${pc.title}</strong>`;
         if (pc.subtitle)
-          html += `<br><span style="font-size:12px;color:${muted}">${pc.subtitle}</span>`;
+          html += `<br><span style="font-size:12px;color:var(--t-text-muted)">${pc.subtitle}</span>`;
         if (pc.details?.length) {
           html += '<div style="margin-top:8px;font-size:12px">';
           for (const d of pc.details) {
-            html += `<div style="display:flex;justify-content:space-between;gap:12px;padding:2px 0"><span style="color:${muted}">${d.label}</span><span style="font-weight:500">${d.value}</span></div>`;
+            html += `<div style="display:flex;justify-content:space-between;gap:12px;padding:2px 0"><span style="color:var(--t-text-muted)">${d.label}</span><span style="font-weight:500">${d.value}</span></div>`;
           }
           html += "</div>";
         }
         if (pc.actionLabel && pc.actionUrl) {
-          html += `<a href="${pc.actionUrl}" style="display:inline-block;margin-top:8px;font-size:12px;color:#22C55E;text-decoration:none;font-weight:600">${pc.actionLabel} →</a>`;
+          html += `<a href="${pc.actionUrl}" style="display:inline-block;margin-top:8px;font-size:12px;color:var(--t-accent);text-decoration:none;font-weight:600">${pc.actionLabel} →</a>`;
         }
         html += "</div>";
 
@@ -266,16 +262,16 @@ export default function MapboxMap({
           50% { box-shadow: 0 0 0 8px rgba(59,130,246,0); }
         }
         .mapboxgl-popup-content {
-          background: ${theme === "dark" ? "#1a1a1a" : "#fff"} !important;
+          background: var(--t-bg-elevated) !important;
           border-radius: 12px !important;
           padding: 8px 12px !important;
-          box-shadow: 0 4px 20px rgba(0,0,0,0.3) !important;
-          border: 1px solid ${theme === "dark" ? "#333" : "#e5e5e5"} !important;
+          box-shadow: 0 4px 20px var(--t-shadow) !important;
+          border: 1px solid var(--t-border) !important;
         }
         .mapboxgl-popup-tip {
-          border-top-color: ${theme === "dark" ? "#1a1a1a" : "#fff"} !important;
+          border-top-color: var(--t-bg-elevated) !important;
         }
-        .mapboxgl-popup-close-button { color: ${theme === "dark" ? "#888" : "#666"} !important; }
+        .mapboxgl-popup-close-button { color: var(--t-text-muted) !important; }
       `}</style>
       <div
         ref={containerRef}

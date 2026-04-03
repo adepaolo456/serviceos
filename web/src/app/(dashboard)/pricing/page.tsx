@@ -155,7 +155,7 @@ export default function PricingPage() {
         <div className="flex items-center gap-2 shrink-0">
           <button
             onClick={() => { setEditRule(null); setEditOpen(true); }}
-            className="inline-flex items-center gap-1.5 rounded-full bg-[var(--t-accent)] px-5 py-2.5 text-sm font-semibold text-black transition-all hover:brightness-110"
+            className="inline-flex items-center gap-1.5 rounded-full bg-[var(--t-accent)] px-5 py-2.5 text-sm font-semibold text-[var(--t-accent-on-accent)] transition-all hover:brightness-110"
           >
             <Plus className="h-4 w-4" /> Add Size
           </button>
@@ -189,7 +189,7 @@ export default function PricingPage() {
                   className="rounded-full px-3.5 py-1.5 text-[13px] font-bold border transition-all"
                   style={{
                     background: quoteSize === rule.asset_subtype ? "var(--t-accent)" : "var(--t-bg-secondary)",
-                    color: quoteSize === rule.asset_subtype ? "#000" : "var(--t-text-primary)",
+                    color: quoteSize === rule.asset_subtype ? "var(--t-accent-on-accent)" : "var(--t-text-primary)",
                     borderColor: quoteSize === rule.asset_subtype ? "var(--t-accent)" : "var(--t-border)",
                   }}>
                   {rule.asset_subtype || rule.name || "Unknown"} — ${Number(rule.base_price)}
@@ -275,7 +275,7 @@ export default function PricingPage() {
             <div className="flex gap-3">
               <Link href={`/book?size=${quoteSize}&address=${encodeURIComponent(quoteAddress)}&name=${encodeURIComponent(quoteName)}&email=${encodeURIComponent(quoteEmail)}&phone=${encodeURIComponent(quotePhone)}`}
                 className="flex-1 flex items-center justify-center gap-2 rounded-full py-2.5 text-[13px] font-bold"
-                style={{ background: "var(--t-accent)", color: "#000" }}>
+                style={{ background: "var(--t-accent)", color: "var(--t-accent-on-accent)" }}>
                 <DollarSign className="h-4 w-4" /> Book Now
               </Link>
               <button onClick={sendQuote} disabled={!quoteEmail || quoteSending}
@@ -721,7 +721,7 @@ function PricingForm({
             });
           }}
           className="flex-1 rounded-full py-3 text-[13px] font-bold"
-          style={{ background: "var(--t-accent)", color: "#000" }}
+          style={{ background: "var(--t-accent)", color: "var(--t-accent-on-accent)" }}
         >
           Save
         </button>

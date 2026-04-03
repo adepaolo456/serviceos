@@ -45,7 +45,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
         <div className="mx-auto flex h-14 max-w-5xl items-center justify-between px-4">
           <Link href="/portal" className="flex items-center gap-2.5">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--t-accent)]">
-              <span className="text-sm font-bold text-black">S</span>
+              <span className="text-sm font-bold text-[var(--t-accent-on-accent)]">S</span>
             </div>
             <span className="font-semibold text-sm hidden sm:block" style={{ color: "var(--t-frame-text)" }}>ServiceOS</span>
           </Link>

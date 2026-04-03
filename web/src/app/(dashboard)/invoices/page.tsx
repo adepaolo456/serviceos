@@ -294,7 +294,7 @@ export default function InvoicesPage() {
           <button
             onClick={() => { setPanelMode("create"); setPanelOpen(true); }}
             className="flex items-center gap-2 rounded-full px-4 py-2.5 text-sm font-semibold transition-all duration-150 active:scale-95"
-            style={{ background: "var(--t-accent)", color: "#000" }}
+            style={{ background: "var(--t-accent)", color: "var(--t-accent-on-accent)" }}
           >
             <Plus className="h-4 w-4" />
             New Invoice
@@ -341,7 +341,7 @@ export default function InvoicesPage() {
               onClick={() => setTab(t)}
               className="rounded-full px-4 py-1.5 text-sm font-medium transition-all duration-150"
               style={{
-                background: isActive ? "var(--t-accent-soft)" : "rgba(255,255,255,0.06)",
+                background: isActive ? "var(--t-accent-soft)" : "var(--t-frame-hover)",
                 color: isActive ? "var(--t-accent)" : "var(--t-frame-text-muted)",
               }}
             >
@@ -372,7 +372,7 @@ export default function InvoicesPage() {
                 return next;
               });
             }}
-            className="h-4 w-4 rounded cursor-pointer accent-[#22C55E]"
+            className="h-4 w-4 rounded cursor-pointer accent-[var(--t-accent)]"
           />
           <span className="text-xs" style={{ color: "var(--t-frame-text-muted)" }}>All</span>
         </label>
@@ -383,10 +383,10 @@ export default function InvoicesPage() {
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search invoice #, customer name..."
             className="w-full rounded-[20px] border pl-10 pr-4 py-2 text-sm outline-none transition-all duration-150"
-            style={{ background: "rgba(255,255,255,0.06)", borderColor: "rgba(255,255,255,0.08)", color: "var(--t-frame-text)" }}
+            style={{ background: "var(--t-frame-hover)", borderColor: "var(--t-frame-border)", color: "var(--t-frame-text)" }}
           />
         </div>
-        <div className="flex rounded-full border overflow-hidden" style={{ borderColor: "rgba(255,255,255,0.08)" }}>
+        <div className="flex rounded-full border overflow-hidden" style={{ borderColor: "var(--t-frame-border)" }}>
           {DATE_RANGES.map((opt) => (
             <button key={opt.value} onClick={() => setDateRange(opt.value)}
               className="px-3 py-1.5 text-xs font-medium transition-all duration-150"
@@ -401,7 +401,7 @@ export default function InvoicesPage() {
         <Dropdown
           trigger={
             <button className="flex items-center gap-2 rounded-full border px-3 py-2 text-sm transition-all duration-150"
-              style={{ borderColor: "var(--t-frame-border)", background: "rgba(255,255,255,0.06)", color: "var(--t-frame-text-muted)" }}>
+              style={{ borderColor: "var(--t-frame-border)", background: "var(--t-frame-hover)", color: "var(--t-frame-text-muted)" }}>
               <ArrowDownUp className="h-3.5 w-3.5" />
               {SORT_OPTIONS.find((o) => o.value === sortBy)?.label}
             </button>
@@ -431,7 +431,7 @@ export default function InvoicesPage() {
             } catch { /* */ }
           }}
           className="flex items-center gap-2 rounded-full border px-3 py-2 text-sm transition-all duration-150"
-          style={{ borderColor: "var(--t-frame-border)", background: "rgba(255,255,255,0.06)", color: "var(--t-frame-text-muted)" }}
+          style={{ borderColor: "var(--t-frame-border)", background: "var(--t-frame-hover)", color: "var(--t-frame-text-muted)" }}
         >
           <Download className="h-3.5 w-3.5" /> CSV
         </button>
@@ -452,7 +452,7 @@ export default function InvoicesPage() {
           {!searchQuery && (
             <button onClick={() => { setPanelMode("create"); setPanelOpen(true); }}
               className="flex items-center gap-2 rounded-full px-4 py-2.5 text-sm font-semibold transition-all duration-150 active:scale-95"
-              style={{ background: "var(--t-accent)", color: "#000" }}>
+              style={{ background: "var(--t-accent)", color: "var(--t-accent-on-accent)" }}>
               <Plus className="h-4 w-4" /> New Invoice
             </button>
           )}
@@ -492,7 +492,7 @@ export default function InvoicesPage() {
                       return next;
                     });
                   }}
-                  className="shrink-0 h-4 w-4 rounded cursor-pointer accent-[#22C55E]"
+                  className="shrink-0 h-4 w-4 rounded cursor-pointer accent-[var(--t-accent)]"
                 />
                 {/* Left: Customer + invoice info */}
                 <div className="flex-1 min-w-0">
@@ -644,7 +644,7 @@ export default function InvoicesPage() {
                   fetchAllInvoices();
                 }}
                 className="rounded-full px-4 py-1.5 text-xs font-semibold transition-all duration-150 active:scale-95"
-                style={{ background: "var(--t-warning)", color: "#000" }}
+                style={{ background: "var(--t-warning)", color: "var(--t-accent-on-accent)" }}
               >
                 Send Reminders
               </button>
@@ -664,7 +664,7 @@ export default function InvoicesPage() {
                   fetchAllInvoices();
                 }}
                 className="rounded-full px-4 py-1.5 text-xs font-semibold transition-all duration-150 active:scale-95"
-                style={{ background: "var(--t-accent)", color: "#000" }}
+                style={{ background: "var(--t-accent)", color: "var(--t-accent-on-accent)" }}
               >
                 Mark as Paid
               </button>
@@ -759,7 +759,7 @@ function FromJobForm({ onSuccess }: { onSuccess: () => void }) {
 
       <button onClick={handleGenerate} disabled={!selectedJob || saving}
         className="w-full rounded-full px-4 py-2.5 text-sm font-semibold transition-all duration-150 disabled:opacity-50 active:scale-95"
-        style={{ background: "var(--t-accent)", color: "#000" }}>
+        style={{ background: "var(--t-accent)", color: "var(--t-accent-on-accent)" }}>
         {saving ? "Generating..." : "Generate Invoice"}
       </button>
     </div>
@@ -987,7 +987,7 @@ function CreateInvoiceForm({ onSuccess }: { onSuccess: () => void }) {
         </button>
         <button type="submit" onClick={() => setSaveMode("send")} disabled={saving}
           className="flex-1 rounded-full px-4 py-2.5 text-sm font-semibold transition-all duration-150 disabled:opacity-50 active:scale-95"
-          style={{ background: "var(--t-accent)", color: "#000" }}>
+          style={{ background: "var(--t-accent)", color: "var(--t-accent-on-accent)" }}>
           {saving && saveMode === "send" ? "Sending..." : "Save & Send"}
         </button>
       </div>

@@ -64,7 +64,7 @@ export default function SurchargeTemplatesPage() {
             Define surcharge items that drivers can flag on the job
           </p>
         </div>
-        <button onClick={openCreate} className="flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-semibold" style={{ background: "var(--t-accent)", color: "#000" }}>
+        <button onClick={openCreate} className="flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-semibold" style={{ background: "var(--t-accent)", color: "var(--t-accent-on-accent)" }}>
           <Plus className="h-4 w-4" /> Add Surcharge
         </button>
       </div>
@@ -80,7 +80,7 @@ export default function SurchargeTemplatesPage() {
           <Tag className="h-12 w-12 mb-4" style={{ color: "var(--t-text-muted)" }} />
           <h3 className="text-lg font-semibold mb-1" style={{ color: "var(--t-frame-text)" }}>No surcharge templates</h3>
           <p className="text-sm mb-4" style={{ color: "var(--t-frame-text-muted)" }}>Create surcharges for items like mattresses, AC units, etc.</p>
-          <button onClick={openCreate} className="rounded-full px-5 py-2.5 text-sm font-semibold" style={{ background: "var(--t-accent)", color: "#000" }}>
+          <button onClick={openCreate} className="rounded-full px-5 py-2.5 text-sm font-semibold" style={{ background: "var(--t-accent)", color: "var(--t-accent-on-accent)" }}>
             Add Surcharge
           </button>
         </div>
@@ -173,7 +173,7 @@ function SurchargeForm({ editing, onSuccess }: { editing: SurchargeTemplate | nu
         </button>
         <span className="text-sm" style={{ color: "var(--t-text-primary)" }}>Taxable</span>
       </div>
-      <button type="submit" disabled={saving} className="w-full rounded-full py-2.5 text-sm font-semibold transition-opacity hover:opacity-90 disabled:opacity-50" style={{ background: "var(--t-accent)", color: "#000" }}>
+      <button type="submit" disabled={saving} className="w-full rounded-full py-2.5 text-sm font-semibold transition-opacity hover:opacity-90 disabled:opacity-50" style={{ background: "var(--t-accent)", color: "var(--t-accent-on-accent)" }}>
         {saving ? "Saving..." : editing ? "Update Surcharge" : "Create Surcharge"}
       </button>
     </form>

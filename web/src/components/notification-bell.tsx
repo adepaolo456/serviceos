@@ -103,14 +103,14 @@ export default function NotificationBell() {
       >
         <Bell className="h-4 w-4" />
         {unreadCount > 0 && (
-          <span className="absolute -top-1 -right-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
+          <span className="absolute -top-1 -right-1 flex h-4 min-w-[16px] items-center justify-center rounded-full px-1 text-[10px] font-bold" style={{ backgroundColor: "var(--t-error)", color: "#fff" }}>
             {unreadCount}
           </span>
         )}
       </button>
 
       {open && (
-        <div className="absolute right-0 mt-2 w-96 rounded-[20px] overflow-hidden animate-fade-in" style={{ backgroundColor: "var(--t-bg-secondary)", border: "1px solid var(--t-border)", boxShadow: "0 8px 30px rgba(0,0,0,0.15)" }}>
+        <div className="absolute right-0 mt-2 w-96 rounded-[20px] overflow-hidden animate-fade-in" style={{ backgroundColor: "var(--t-bg-secondary)", border: "1px solid var(--t-border)", boxShadow: "0 8px 30px var(--t-shadow)" }}>
           <div className="px-4 py-3 flex items-center justify-between" style={{ borderBottom: "1px solid var(--t-border)" }}>
             <p className="text-sm font-semibold" style={{ color: "var(--t-text-primary)" }}>Alerts</p>
             {unreadCount > 0 && (

@@ -62,7 +62,7 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: (id: number)
       style={{
         backgroundColor: "var(--t-bg-secondary)",
         border: "1px solid var(--t-border)",
-        boxShadow: "0 4px 20px rgba(0,0,0,0.12)",
+        boxShadow: "0 4px 20px var(--t-shadow)",
       }}
     >
       <Icon className="h-5 w-5 shrink-0" style={{ color }} />

@@ -78,7 +78,7 @@ export default function TermsTemplatesPage() {
             Templates for invoice terms with dynamic pricing variables
           </p>
         </div>
-        <button onClick={() => { setEditing(null); setPanelOpen(true); }} className="flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-semibold" style={{ background: "var(--t-accent)", color: "#000" }}>
+        <button onClick={() => { setEditing(null); setPanelOpen(true); }} className="flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-semibold" style={{ background: "var(--t-accent)", color: "var(--t-accent-on-accent)" }}>
           <Plus className="h-4 w-4" /> Add Template
         </button>
       </div>
@@ -220,7 +220,7 @@ function TermsForm({ editing, onSuccess }: { editing: TermsTemplate | null; onSu
           className="w-full rounded-[20px] border px-4 py-3 text-sm outline-none transition-colors focus:border-[var(--t-accent)] resize-none"
           style={inpStyle} placeholder="Enter terms and conditions..." required />
       </div>
-      <button type="submit" disabled={saving} className="w-full rounded-full py-2.5 text-sm font-semibold transition-opacity hover:opacity-90 disabled:opacity-50" style={{ background: "var(--t-accent)", color: "#000" }}>
+      <button type="submit" disabled={saving} className="w-full rounded-full py-2.5 text-sm font-semibold transition-opacity hover:opacity-90 disabled:opacity-50" style={{ background: "var(--t-accent)", color: "var(--t-accent-on-accent)" }}>
         {saving ? "Saving..." : editing ? "Update Template" : "Create Template"}
       </button>
     </form>

@@ -177,7 +177,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
           </div>
           {/* Quick Actions */}
           <div className="flex items-center gap-2 shrink-0 flex-wrap">
-            <button onClick={() => openWizard({ customerId: id })} className="flex items-center gap-1.5 rounded-full bg-[var(--t-accent)] px-4 py-2 text-xs font-semibold text-black hover:opacity-90 transition-opacity border-none cursor-pointer"><Plus className="h-3.5 w-3.5" /> New Job</button>
+            <button onClick={() => openWizard({ customerId: id })} className="flex items-center gap-1.5 rounded-full bg-[var(--t-accent)] px-4 py-2 text-xs font-semibold text-[var(--t-accent-on-accent)] hover:opacity-90 transition-opacity border-none cursor-pointer"><Plus className="h-3.5 w-3.5" /> New Job</button>
             {customer.phone && <a href={`tel:${customer.phone}`} className="flex items-center gap-1.5 rounded-full border border-[var(--t-border)] bg-transparent px-3 py-2 text-xs font-medium text-[var(--t-text-primary)] hover:bg-[var(--t-bg-card-hover)] transition-colors"><Phone className="h-3.5 w-3.5" /> Call</a>}
             {customer.email && <a href={`mailto:${customer.email}`} className="flex items-center gap-1.5 rounded-full border border-[var(--t-border)] bg-transparent px-3 py-2 text-xs font-medium text-[var(--t-text-primary)] hover:bg-[var(--t-bg-card-hover)] transition-colors"><Mail className="h-3.5 w-3.5" /> Email</a>}
             <button onClick={() => setEditOpen(true)} className="rounded-full border border-[var(--t-border)] bg-transparent p-2 text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)] hover:bg-[var(--t-bg-card-hover)] transition-colors"><Pencil className="h-3.5 w-3.5" /></button>
@@ -402,7 +402,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
               className="flex-1 rounded-[20px] bg-[var(--t-bg-card)] border border-[var(--t-border)] px-4 py-2.5 text-sm text-[var(--t-text-primary)] placeholder-[var(--t-text-muted)] outline-none focus:border-[var(--t-accent)]"
               placeholder="Add a note..." />
             <button onClick={addNote} disabled={addingNote || !newNote.trim()}
-              className="rounded-full bg-[var(--t-accent)] px-4 py-2.5 text-sm font-semibold text-black hover:opacity-90 disabled:opacity-40 transition-opacity">
+              className="rounded-full bg-[var(--t-accent)] px-4 py-2.5 text-sm font-semibold text-[var(--t-accent-on-accent)] hover:opacity-90 disabled:opacity-40 transition-opacity">
               {addingNote ? "..." : "Add"}
             </button>
           </div>
@@ -543,7 +543,7 @@ function EditForm({ customer, onSuccess }: { customer: Customer; onSuccess: (c: 
       <input type="email" value={email} onChange={e => setEmail(e.target.value)} className={inputCls} placeholder="Email" />
       <input value={companyName} onChange={e => setCompanyName(e.target.value)} className={inputCls} placeholder="Company" />
       <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3} className={`${inputCls} resize-none`} placeholder="Notes" />
-      <button type="submit" disabled={saving} className="w-full rounded-full bg-[var(--t-accent)] py-3 text-sm font-bold text-black hover:opacity-90 disabled:opacity-50 transition-opacity">
+      <button type="submit" disabled={saving} className="w-full rounded-full bg-[var(--t-accent)] py-3 text-sm font-bold text-[var(--t-accent-on-accent)] hover:opacity-90 disabled:opacity-50 transition-opacity">
         {saving ? "Saving..." : "Save"}
       </button>
     </form>

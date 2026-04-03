@@ -120,7 +120,7 @@ export default function DumpLocationsPage() {
         </div>
         <button
           onClick={() => setAdding(true)}
-          className="flex items-center gap-2 rounded-full bg-[#22C55E] px-6 py-2.5 text-sm font-semibold text-black transition-opacity hover:opacity-90"
+          className="flex items-center gap-2 rounded-full bg-[var(--t-accent)] px-6 py-2.5 text-sm font-semibold text-[var(--t-accent-on-accent)] transition-opacity hover:opacity-90"
         >
           <Plus className="h-4 w-4" /> Add Location
         </button>
@@ -142,7 +142,7 @@ export default function DumpLocationsPage() {
           </div>
           <div className="flex gap-2">
             <button onClick={handleCreate} disabled={!newName || !newAddr}
-              className="rounded-full bg-[#22C55E] px-5 py-2 text-sm font-semibold text-black transition-opacity hover:opacity-90 disabled:opacity-50">
+              className="rounded-full bg-[var(--t-accent)] px-5 py-2 text-sm font-semibold text-[var(--t-accent-on-accent)] transition-opacity hover:opacity-90 disabled:opacity-50">
               Save
             </button>
             <button onClick={() => setAdding(false)}
@@ -283,7 +283,7 @@ function LocationCard({
               </div>
               <input value={locAddr} onChange={e => setLocAddr(e.target.value)} className={inputCls} placeholder="Address" />
               <div className="flex gap-2">
-                <button onClick={handleSaveLoc} className="rounded-full bg-[#22C55E] px-4 py-1.5 text-xs font-semibold text-black">Save</button>
+                <button onClick={handleSaveLoc} className="rounded-full bg-[var(--t-accent)] px-4 py-1.5 text-xs font-semibold text-[var(--t-accent-on-accent)]">Save</button>
                 <button onClick={() => setEditingLoc(false)} className="text-xs text-[var(--t-text-muted)]">Cancel</button>
               </div>
             </div>
@@ -424,7 +424,7 @@ function AddRateButton({ locationId, onAdded }: { locationId: string; onAdded: (
           });
           setOpen(false); setRate(""); setMin(""); onAdded();
         }}
-        className="rounded-full bg-[#22C55E] px-3 py-2 text-xs font-semibold text-black"
+        className="rounded-full bg-[var(--t-accent)] px-3 py-2 text-xs font-semibold text-[var(--t-accent-on-accent)]"
       >
         Add
       </button>
@@ -461,7 +461,7 @@ function AddSurchargeButton({ locationId, onAdded }: { locationId: string; onAdd
           });
           setOpen(false); setLabel(""); setDumpCharge(""); setCustCharge(""); onAdded();
         }}
-        className="rounded-full bg-[#22C55E] px-3 py-2 text-xs font-semibold text-black"
+        className="rounded-full bg-[var(--t-accent)] px-3 py-2 text-xs font-semibold text-[var(--t-accent-on-accent)]"
       >
         Add
       </button>
@@ -490,7 +490,7 @@ function EditRateModal({ rate, onClose, onSave }: { rate: Rate; onClose: () => v
         <input value={minVal} onChange={e => setMinVal(e.target.value)} className={inputCls} placeholder="Min charge (optional)" type="number" step="0.01" />
         <div className="flex gap-2">
           <button onClick={() => onSave({ ratePerTon: Number(rateVal), minimumCharge: minVal ? Number(minVal) : null, wasteType, wasteTypeLabel: label })}
-            className="rounded-full bg-[#22C55E] px-4 py-2 text-xs font-semibold text-black">Save</button>
+            className="rounded-full bg-[var(--t-accent)] px-4 py-2 text-xs font-semibold text-[var(--t-accent-on-accent)]">Save</button>
           <button onClick={onClose} className="text-xs text-[var(--t-text-muted)]">Cancel</button>
         </div>
       </div>
@@ -515,7 +515,7 @@ function EditSurchargeModal({ surcharge, onClose, onSave }: { surcharge: Surchar
         <input value={custCharge} onChange={e => setCustCharge(e.target.value)} className={inputCls} placeholder="We charge customer ($)" type="number" step="0.01" />
         <div className="flex gap-2">
           <button onClick={() => onSave({ label, dumpCharge: Number(dumpCharge), customerCharge: Number(custCharge) })}
-            className="rounded-full bg-[#22C55E] px-4 py-2 text-xs font-semibold text-black">Save</button>
+            className="rounded-full bg-[var(--t-accent)] px-4 py-2 text-xs font-semibold text-[var(--t-accent-on-accent)]">Save</button>
           <button onClick={onClose} className="text-xs text-[var(--t-text-muted)]">Cancel</button>
         </div>
       </div>

@@ -128,28 +128,28 @@ const TYPE_PREFIX: Record<string, string> = {
 /* ─── Status color text (no badge backgrounds) ─── */
 
 function statusColor(s: string): string {
-  if (s === "available") return "color: #22C55E";
-  if (s === "on_site" || s === "deployed") return "color: #FCD34D";
-  if (s === "reserved") return "color: #FCD34D";
-  if (s === "maintenance") return "color: #F87171";
+  if (s === "available") return "color: var(--t-accent-text)";
+  if (s === "on_site" || s === "deployed") return "color: var(--t-warning)";
+  if (s === "reserved") return "color: var(--t-warning)";
+  if (s === "maintenance") return "color: var(--t-error)";
   if (s === "in_transit") return "color: #A855F7";
   if (s === "retired") return "color: var(--t-text-muted)";
   return "color: var(--t-text-muted)";
 }
 
 function statusTextClass(s: string): string {
-  if (s === "available") return "text-[#22C55E]";
-  if (s === "on_site" || s === "deployed") return "text-[#FCD34D]";
-  if (s === "reserved") return "text-[#FCD34D]";
-  if (s === "maintenance") return "text-[#F87171]";
+  if (s === "available") return "text-[var(--t-accent-text)]";
+  if (s === "on_site" || s === "deployed") return "text-[var(--t-warning)]";
+  if (s === "reserved") return "text-[var(--t-warning)]";
+  if (s === "maintenance") return "text-[var(--t-error)]";
   if (s === "in_transit") return "text-[#A855F7]";
   return "text-[var(--t-text-muted)]";
 }
 
 function conditionTextClass(c: string): string {
-  if (c === "new" || c === "good") return "text-[#22C55E]";
-  if (c === "fair") return "text-[#FCD34D]";
-  if (c === "poor") return "text-[#F87171]";
+  if (c === "new" || c === "good") return "text-[var(--t-accent-text)]";
+  if (c === "fair") return "text-[var(--t-warning)]";
+  if (c === "poor") return "text-[var(--t-error)]";
   return "text-[var(--t-text-muted)]";
 }
 
@@ -405,7 +405,7 @@ export default function AssetsPage() {
           onClick={() => { setCreatePrefilledSize(null); setCreateOpen(true); }}
           style={{
             display: "inline-flex", alignItems: "center", gap: 8,
-            background: "#22C55E", color: "#000", fontWeight: 600, fontSize: 14,
+            background: "var(--t-accent)", color: "var(--t-accent-on-accent)", fontWeight: 600, fontSize: 14,
             padding: "10px 20px", borderRadius: 24,
             transition: "opacity 0.15s ease",
           }}
@@ -421,10 +421,10 @@ export default function AssetsPage() {
       {!loading && (
         <div className="grid grid-cols-4 gap-4 mb-8">
           {[
-            { label: "AVAILABLE", value: quickStats.available, color: "#22C55E" },
-            { label: "DEPLOYED", value: quickStats.deployed, color: "#FCD34D" },
-            { label: "STAGED", value: quickStats.staged, color: "#FCD34D" },
-            { label: "MAINTENANCE", value: quickStats.maintenanceCount, color: "#F87171" },
+            { label: "AVAILABLE", value: quickStats.available, color: "var(--t-accent-text)" },
+            { label: "DEPLOYED", value: quickStats.deployed, color: "var(--t-warning)" },
+            { label: "STAGED", value: quickStats.staged, color: "var(--t-warning)" },
+            { label: "MAINTENANCE", value: quickStats.maintenanceCount, color: "var(--t-error)" },
           ].map((kpi) => (
             <div
               key={kpi.label}
@@ -464,9 +464,9 @@ export default function AssetsPage() {
                 style={{
                   display: "inline-flex", alignItems: "center", gap: 6,
                   padding: "6px 14px", borderRadius: 24, fontSize: 13, fontWeight: 500,
-                  background: isActive ? "var(--t-accent-soft)" : "rgba(255,255,255,0.06)",
-                  color: isActive ? "#22C55E" : "var(--t-frame-text-muted)",
-                  border: isActive ? "1px solid transparent" : "1px solid rgba(255,255,255,0.08)",
+                  background: isActive ? "var(--t-accent-soft)" : "var(--t-frame-hover)",
+                  color: isActive ? "var(--t-accent-text)" : "var(--t-frame-text-muted)",
+                  border: isActive ? "1px solid transparent" : "1px solid var(--t-frame-border)",
                   transition: "all 0.15s ease", cursor: "pointer",
                 }}
               >
@@ -479,7 +479,7 @@ export default function AssetsPage() {
           {/* Size filter pills when no tile selected */}
           {sizeGroups.length > 0 && (
             <>
-              <span style={{ width: 1, background: "rgba(255,255,255,0.08)", margin: "0 4px", alignSelf: "stretch" }} />
+              <span style={{ width: 1, background: "var(--t-frame-border)", margin: "0 4px", alignSelf: "stretch" }} />
               {sizeGroups.map((g) => {
                 const isActive = selectedSize === g.size;
                 return (
@@ -489,9 +489,9 @@ export default function AssetsPage() {
                     style={{
                       display: "inline-flex", alignItems: "center", gap: 6,
                       padding: "6px 14px", borderRadius: 24, fontSize: 13, fontWeight: 500,
-                      background: isActive ? "var(--t-accent-soft)" : "rgba(255,255,255,0.06)",
-                      color: isActive ? "#22C55E" : "var(--t-frame-text-muted)",
-                      border: isActive ? "1px solid transparent" : "1px solid rgba(255,255,255,0.08)",
+                      background: isActive ? "var(--t-accent-soft)" : "var(--t-frame-hover)",
+                      color: isActive ? "var(--t-accent-text)" : "var(--t-frame-text-muted)",
+                      border: isActive ? "1px solid transparent" : "1px solid var(--t-frame-border)",
                       transition: "all 0.15s ease", cursor: "pointer",
                     }}
                   >
@@ -530,8 +530,8 @@ export default function AssetsPage() {
               style={{
                 display: "inline-flex", alignItems: "center", gap: 6,
                 padding: "6px 12px", borderRadius: 24, fontSize: 12, fontWeight: 500,
-                border: bulkMode ? "1px solid #22C55E" : "1px solid var(--t-border)",
-                color: bulkMode ? "#22C55E" : "var(--t-text-muted)",
+                border: bulkMode ? "1px solid var(--t-accent)" : "1px solid var(--t-border)",
+                color: bulkMode ? "var(--t-accent-text)" : "var(--t-text-muted)",
                 background: bulkMode ? "var(--t-accent-soft)" : "transparent",
                 transition: "all 0.15s ease", cursor: "pointer",
               }}
@@ -543,7 +543,7 @@ export default function AssetsPage() {
               style={{
                 display: "inline-flex", alignItems: "center", gap: 6,
                 padding: "6px 12px", borderRadius: 24, fontSize: 12, fontWeight: 500,
-                border: "1px solid var(--t-border)", color: "#22C55E",
+                border: "1px solid var(--t-border)", color: "var(--t-accent-text)",
                 background: "transparent", transition: "all 0.15s ease", cursor: "pointer",
               }}
             >
@@ -587,7 +587,7 @@ export default function AssetsPage() {
               className="p-2 transition-colors"
               style={{
                 background: viewMode === "list" ? "var(--t-accent-soft)" : "transparent",
-                color: viewMode === "list" ? "#22C55E" : "var(--t-text-muted)",
+                color: viewMode === "list" ? "var(--t-accent-text)" : "var(--t-text-muted)",
               }}
             >
               <List className="h-4 w-4" />
@@ -597,7 +597,7 @@ export default function AssetsPage() {
               className="p-2 transition-colors"
               style={{
                 background: viewMode === "grid" ? "var(--t-accent-soft)" : "transparent",
-                color: viewMode === "grid" ? "#22C55E" : "var(--t-text-muted)",
+                color: viewMode === "grid" ? "var(--t-accent-text)" : "var(--t-text-muted)",
               }}
             >
               <LayoutGrid className="h-4 w-4" />
@@ -610,8 +610,8 @@ export default function AssetsPage() {
                 style={{
                   display: "inline-flex", alignItems: "center", gap: 6,
                   padding: "8px 14px", borderRadius: 24, fontSize: 12, fontWeight: 500,
-                  border: bulkMode ? "1px solid #22C55E" : "1px solid var(--t-border)",
-                  color: bulkMode ? "#22C55E" : "var(--t-text-muted)",
+                  border: bulkMode ? "1px solid var(--t-accent)" : "1px solid var(--t-border)",
+                  color: bulkMode ? "var(--t-accent-text)" : "var(--t-text-muted)",
                   background: bulkMode ? "var(--t-accent-soft)" : "transparent",
                   transition: "all 0.15s ease", cursor: "pointer",
                 }}
@@ -655,7 +655,7 @@ export default function AssetsPage() {
               onClick={() => setCreateOpen(true)}
               style={{
                 display: "inline-flex", alignItems: "center", gap: 8,
-                background: "#22C55E", color: "#000", fontWeight: 600, fontSize: 14,
+                background: "var(--t-accent)", color: "var(--t-accent-on-accent)", fontWeight: 600, fontSize: 14,
                 padding: "10px 20px", borderRadius: 24, transition: "opacity 0.15s ease",
               }}
             >
@@ -677,7 +677,7 @@ export default function AssetsPage() {
           style={{ borderRadius: 24, border: "1px solid var(--t-border)", background: "var(--t-bg-card)" }}>
           <span className="text-sm font-semibold" style={{ color: "var(--t-text-primary)" }}>{selectedIds.size} selected</span>
           <button onClick={() => setBulkEditOpen(true)}
-            style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: 24, fontSize: 13, fontWeight: 600, background: "#22C55E", color: "#000", border: "none", cursor: "pointer" }}>
+            style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: 24, fontSize: 13, fontWeight: 600, background: "var(--t-accent)", color: "var(--t-accent-on-accent)", border: "none", cursor: "pointer" }}>
             <Pencil className="h-3.5 w-3.5" /> Edit Selected
           </button>
           <button onClick={bulkDelete}
@@ -757,7 +757,7 @@ function ListView({ assets, onSelect, onQuickStatus, onEdit, onDelete, bulkMode,
               {bulkMode && (
                 <th style={{ padding: "12px 8px 12px 16px", width: 36 }}>
                   <input type="checkbox" checked={selectedIds?.size === assets.length && assets.length > 0} onChange={onToggleSelectAll}
-                    className="h-4 w-4 rounded accent-[#22C55E]" />
+                    className="h-4 w-4 rounded accent-[var(--t-accent)]" />
                 </th>
               )}
               <th style={{ padding: "12px 16px", textAlign: "left", fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--t-text-muted)" }}>Identifier</th>
@@ -785,7 +785,7 @@ function ListView({ assets, onSelect, onQuickStatus, onEdit, onDelete, bulkMode,
                   {bulkMode && (
                     <td style={{ padding: "12px 8px 12px 16px", width: 36 }} onClick={e => e.stopPropagation()}>
                       <input type="checkbox" checked={selectedIds?.has(asset.id) || false} onChange={() => onToggleSelect?.(asset.id)}
-                        className="h-4 w-4 rounded accent-[#22C55E]" />
+                        className="h-4 w-4 rounded accent-[var(--t-accent)]" />
                     </td>
                   )}
                   <td style={{ padding: "12px 16px", fontWeight: 600, color: "var(--t-text-primary)" }}>{asset.identifier}</td>
@@ -834,17 +834,17 @@ function ListView({ assets, onSelect, onQuickStatus, onEdit, onDelete, bulkMode,
                         <Eye className="h-3.5 w-3.5" /> View Details
                       </button>
                       {asset.status !== "available" && (
-                        <button onClick={() => onQuickStatus(asset.id, "available")} className="flex w-full items-center gap-2 px-4 py-2 text-sm transition-colors" style={{ color: "#22C55E" }}>
+                        <button onClick={() => onQuickStatus(asset.id, "available")} className="flex w-full items-center gap-2 px-4 py-2 text-sm transition-colors" style={{ color: "var(--t-accent-text)" }}>
                           <CheckCircle2 className="h-3.5 w-3.5" /> Mark Available
                         </button>
                       )}
                       {asset.status !== "on_site" && (
-                        <button onClick={() => onQuickStatus(asset.id, "on_site")} className="flex w-full items-center gap-2 px-4 py-2 text-sm transition-colors" style={{ color: "#FCD34D" }}>
+                        <button onClick={() => onQuickStatus(asset.id, "on_site")} className="flex w-full items-center gap-2 px-4 py-2 text-sm transition-colors" style={{ color: "var(--t-warning)" }}>
                           <Truck className="h-3.5 w-3.5" /> Mark Deployed
                         </button>
                       )}
                       {asset.status !== "maintenance" && (
-                        <button onClick={() => onQuickStatus(asset.id, "maintenance")} className="flex w-full items-center gap-2 px-4 py-2 text-sm transition-colors" style={{ color: "#F87171" }}>
+                        <button onClick={() => onQuickStatus(asset.id, "maintenance")} className="flex w-full items-center gap-2 px-4 py-2 text-sm transition-colors" style={{ color: "var(--t-error)" }}>
                           <Wrench className="h-3.5 w-3.5" /> Schedule Maintenance
                         </button>
                       )}
@@ -921,7 +921,7 @@ function GridView({ assets, onSelect, onQuickStatus }: { assets: Asset[]; onSele
               {asset.status !== "available" && (
                 <button
                   onClick={() => onQuickStatus(asset.id, "available")}
-                  style={{ borderRadius: 4, padding: "2px 6px", fontSize: 9, fontWeight: 500, color: "#22C55E", transition: "opacity 0.15s ease" }}
+                  style={{ borderRadius: 4, padding: "2px 6px", fontSize: 9, fontWeight: 500, color: "var(--t-accent-text)", transition: "opacity 0.15s ease" }}
                 >
                   Avail
                 </button>
@@ -929,7 +929,7 @@ function GridView({ assets, onSelect, onQuickStatus }: { assets: Asset[]; onSele
               {asset.status !== "maintenance" && (
                 <button
                   onClick={() => onQuickStatus(asset.id, "maintenance")}
-                  style={{ borderRadius: 4, padding: "2px 6px", fontSize: 9, fontWeight: 500, color: "#F87171", transition: "opacity 0.15s ease" }}
+                  style={{ borderRadius: 4, padding: "2px 6px", fontSize: 9, fontWeight: 500, color: "var(--t-error)", transition: "opacity 0.15s ease" }}
                 >
                   Maint
                 </button>
@@ -975,7 +975,7 @@ function AssetDetail({ asset, onStatusChange, onUpdated }: { asset: Asset; onSta
                 style={{
                   padding: "6px 14px", borderRadius: 24, fontSize: 12, fontWeight: 500,
                   border: "1px solid var(--t-border)", background: "transparent",
-                  color: s === "available" ? "#22C55E" : s === "on_site" ? "#FCD34D" : "#F87171",
+                  color: s === "available" ? "var(--t-accent-text)" : s === "on_site" ? "var(--t-warning)" : "var(--t-error)",
                   transition: "all 0.15s ease", cursor: "pointer",
                 }}
               >
@@ -993,11 +993,11 @@ function AssetDetail({ asset, onStatusChange, onUpdated }: { asset: Asset; onSta
             key={tab}
             onClick={() => setActiveTab(tab)}
             className="relative px-4 py-2.5 text-sm font-medium capitalize transition-colors"
-            style={{ color: activeTab === tab ? "#22C55E" : "var(--t-text-muted)" }}
+            style={{ color: activeTab === tab ? "var(--t-accent-text)" : "var(--t-text-muted)" }}
           >
             {tab}
             {activeTab === tab && (
-              <span className="absolute inset-x-0 bottom-0 rounded-full" style={{ height: 2, background: "#22C55E" }} />
+              <span className="absolute inset-x-0 bottom-0 rounded-full" style={{ height: 2, background: "var(--t-accent)" }} />
             )}
           </button>
         ))}
@@ -1022,7 +1022,7 @@ function OverviewTab({ asset, deployed }: { asset: Asset; deployed: ReturnType<t
             {deployed.customerName && (
               <div>
                 <p style={{ fontSize: 12, color: "var(--t-text-muted)" }}>Customer</p>
-                <p style={{ fontSize: 14, fontWeight: 500, color: "#22C55E" }}>{deployed.customerName}</p>
+                <p style={{ fontSize: 14, fontWeight: 500, color: "var(--t-accent-text)" }}>{deployed.customerName}</p>
               </div>
             )}
             <div>
@@ -1094,7 +1094,7 @@ function HistoryTab({ asset }: { asset: Asset }) {
     <div className="space-y-6">
       <div className="grid grid-cols-3 gap-3">
         {[
-          { label: "LIFETIME REVENUE", value: lifetimeRevenue > 0 ? `$${Number(lifetimeRevenue).toLocaleString()}` : "\u2014", color: "#22C55E" },
+          { label: "LIFETIME REVENUE", value: lifetimeRevenue > 0 ? `$${Number(lifetimeRevenue).toLocaleString()}` : "\u2014", color: "var(--t-accent-text)" },
           { label: "DAYS DEPLOYED", value: totalDaysDeployed || "\u2014", color: "var(--t-text-primary)" },
           { label: "UTILIZATION", value: utilization > 0 ? `${utilization}%` : "\u2014", color: "var(--t-text-primary)" },
         ].map((stat) => (
@@ -1123,7 +1123,7 @@ function HistoryTab({ asset }: { asset: Asset }) {
                   <p className="truncate" style={{ fontSize: 14, fontWeight: 500, color: "var(--t-text-primary)" }}>{job.customer_name || "Customer"}</p>
                   <p style={{ fontSize: 12, color: "var(--t-text-muted)" }}>{fmtDate(job.date)} &middot; {job.duration || 0} days</p>
                 </div>
-                {job.revenue > 0 && <span style={{ fontSize: 14, fontWeight: 500, color: "#22C55E" }}>${Number(job.revenue).toLocaleString()}</span>}
+                {job.revenue > 0 && <span style={{ fontSize: 14, fontWeight: 500, color: "var(--t-accent-text)" }}>${Number(job.revenue).toLocaleString()}</span>}
               </div>
             ))}
           </div>
@@ -1190,7 +1190,7 @@ function MaintenanceTab({ asset, onUpdated }: { asset: Asset; onUpdated: () => v
           style={{
             display: "inline-flex", alignItems: "center", gap: 6,
             padding: "6px 14px", borderRadius: 24, fontSize: 12, fontWeight: 500,
-            background: "var(--t-accent-soft)", color: "#22C55E",
+            background: "var(--t-accent-soft)", color: "var(--t-accent-text)",
             border: "none", cursor: "pointer", transition: "opacity 0.15s ease",
           }}
         >
@@ -1223,7 +1223,7 @@ function MaintenanceTab({ asset, onUpdated }: { asset: Asset; onUpdated: () => v
               type="submit"
               disabled={saving}
               style={{
-                background: "#22C55E", color: "#000", fontWeight: 600, fontSize: 14,
+                background: "var(--t-accent)", color: "var(--t-accent-on-accent)", fontWeight: 600, fontSize: 14,
                 padding: "8px 20px", borderRadius: 24, border: "none",
                 transition: "opacity 0.15s ease", cursor: "pointer", opacity: saving ? 0.5 : 1,
               }}
@@ -1325,7 +1325,7 @@ function BulkEditModal({ count, onClose, onSaved }: { count: number; onClose: ()
           </div>
         </div>
         <div className="flex gap-2 mt-4">
-          <button onClick={handleSave} style={{ flex: 1, background: "#22C55E", color: "#000", fontWeight: 600, fontSize: 14, padding: "10px 20px", borderRadius: 24, border: "none", cursor: "pointer" }}>
+          <button onClick={handleSave} style={{ flex: 1, background: "var(--t-accent)", color: "var(--t-accent-on-accent)", fontWeight: 600, fontSize: 14, padding: "10px 20px", borderRadius: 24, border: "none", cursor: "pointer" }}>
             Update {count} Asset(s)
           </button>
           <button onClick={onClose} style={{ padding: "10px 20px", borderRadius: 24, fontSize: 14, border: "1px solid var(--t-border)", background: "transparent", color: "var(--t-text-muted)", cursor: "pointer" }}>
@@ -1404,7 +1404,7 @@ function EditAssetModal({ asset, onClose, onSaved }: { asset: Asset; onClose: ()
             <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} style={{ ...inp, resize: "none" as const }} placeholder="Any notes..." />
           </div>
           <div className="flex gap-2 pt-2">
-            <button type="submit" disabled={saving || !identifier} style={{ flex: 1, background: "#22C55E", color: "#000", fontWeight: 600, fontSize: 14, padding: "10px 20px", borderRadius: 24, border: "none", cursor: "pointer", transition: "opacity 0.15s ease", opacity: saving || !identifier ? 0.5 : 1 }}>
+            <button type="submit" disabled={saving || !identifier} style={{ flex: 1, background: "var(--t-accent)", color: "var(--t-accent-on-accent)", fontWeight: 600, fontSize: 14, padding: "10px 20px", borderRadius: 24, border: "none", cursor: "pointer", transition: "opacity 0.15s ease", opacity: saving || !identifier ? 0.5 : 1 }}>
               {saving ? "Saving..." : "Save Changes"}
             </button>
             <button type="button" onClick={onClose} style={{ padding: "10px 20px", borderRadius: 24, fontSize: 14, border: "1px solid var(--t-border)", background: "transparent", color: "var(--t-text-muted)", cursor: "pointer" }}>
@@ -1565,7 +1565,7 @@ function CreateAssetForm({ prefilledSize, onSuccess }: { prefilledSize: string |
         type="submit"
         disabled={saving}
         style={{
-          width: "100%", background: "#22C55E", color: "#000", fontWeight: 600, fontSize: 14,
+          width: "100%", background: "var(--t-accent)", color: "var(--t-accent-on-accent)", fontWeight: 600, fontSize: 14,
           padding: "10px 20px", borderRadius: 24, border: "none",
           cursor: "pointer", transition: "opacity 0.15s ease",
           opacity: saving ? 0.5 : 1,

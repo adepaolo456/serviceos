@@ -88,10 +88,10 @@ function getJobCoords(job: DispatchJob): [number, number] | null {
 /* ---- Constants ---- */
 
 const TYPE_CONFIG: Record<string, { label: string; letter: string; stripe: string }> = {
-  delivery: { label: "Drop Off", letter: "D", stripe: "#22C55E" },
-  pickup: { label: "Pick Up", letter: "P", stripe: "#D97706" },
+  delivery: { label: "Drop Off", letter: "D", stripe: "var(--t-accent)" },
+  pickup: { label: "Pick Up", letter: "P", stripe: "var(--t-warning)" },
   exchange: { label: "Exchange", letter: "E", stripe: "#a78bfa" },
-  dump_run: { label: "Dump Run", letter: "DR", stripe: "#DC2626" },
+  dump_run: { label: "Dump Run", letter: "DR", stripe: "var(--t-error)" },
 };
 
 const FILTER_TABS = [
@@ -440,7 +440,7 @@ export default function DispatchPage() {
               {showColumns ? <MapIcon className="h-3.5 w-3.5" /> : <LayoutDashboard className="h-3.5 w-3.5" />}
               {showColumns ? "Map View" : "Show Columns"}
             </button>
-            <button onClick={handleOptimize} disabled={optimizing} className="flex items-center gap-1.5 rounded-full px-3.5 py-2 text-xs font-semibold active:scale-95 disabled:opacity-50" style={{ background: "var(--t-accent)", color: "#000" }}>
+            <button onClick={handleOptimize} disabled={optimizing} className="flex items-center gap-1.5 rounded-full px-3.5 py-2 text-xs font-semibold active:scale-95 disabled:opacity-50" style={{ background: "var(--t-accent)", color: "var(--t-accent-on-accent)" }}>
               <Zap className={`h-3.5 w-3.5 ${optimizing ? "animate-spin" : ""}`} /> {optimizing ? "Optimizing…" : "Optimize Routes"}
             </button>
           </div>
@@ -496,9 +496,9 @@ export default function DispatchPage() {
             <div className="flex items-center justify-between px-4 py-2.5 cursor-pointer" onClick={() => setShowYardQueue(!showYardQueue)}
               style={{ borderBottom: showYardQueue ? "1px solid var(--t-border)" : "none" }}>
               <div className="flex items-center gap-2">
-                <Box className="h-4 w-4" style={{ color: "#D97706" }} />
+                <Box className="h-4 w-4" style={{ color: "var(--t-warning)" }} />
                 <span className="text-sm font-semibold" style={{ color: "var(--t-text-primary)" }}>Awaiting Dump</span>
-                <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: "rgba(217,119,6,0.1)", color: "#D97706" }}>{yardQueue.length}</span>
+                <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: "rgba(217,119,6,0.1)", color: "var(--t-warning)" }}>{yardQueue.length}</span>
               </div>
               <ChevronDown className="h-4 w-4 transition-transform" style={{ color: "var(--t-text-muted)", transform: showYardQueue ? "rotate(180deg)" : "rotate(0deg)" }} />
             </div>
@@ -526,9 +526,9 @@ export default function DispatchPage() {
                               <div>
                                 <div className="flex items-center gap-1.5">
                                   <span className="text-sm font-extrabold" style={{ color: "var(--t-text-primary)" }}>{sizeLabel || '\u2014'}</span>
-                                  <span className="text-xs font-bold" style={{ color: "#22C55E" }}>{asset.identifier}</span>
+                                  <span className="text-xs font-bold" style={{ color: "var(--t-accent-text)" }}>{asset.identifier}</span>
                                 </div>
-                                <p className="text-[11px] mt-0.5" style={{ color: waitHours > 24 ? "#DC2626" : "#D97706" }}>
+                                <p className="text-[11px] mt-0.5" style={{ color: waitHours > 24 ? "var(--t-error)" : "var(--t-warning)" }}>
                                   {waitHours > 0 ? `${waitHours}h waiting` : 'Just arrived'}
                                 </p>
                                 {asset.staged_waste_type && <p className="text-[10px]" style={{ color: "var(--t-text-muted)" }}>{asset.staged_waste_type}</p>}
@@ -543,7 +543,7 @@ export default function DispatchPage() {
                                   fetchYardQueue();
                                 } catch (err: any) { toast("error", err.message || "Failed to create dump run"); }
                               }} className="shrink-0 rounded-full px-2.5 py-1 text-[10px] font-semibold"
-                                style={{ background: "rgba(217,119,6,0.1)", color: "#D97706", border: "1px solid rgba(217,119,6,0.2)" }}>
+                                style={{ background: "rgba(217,119,6,0.1)", color: "var(--t-warning)", border: "1px solid rgba(217,119,6,0.2)" }}>
                                 Create Run
                               </button>
                             </div>
@@ -568,7 +568,7 @@ export default function DispatchPage() {
               <div className="flex items-center gap-2">
                 <AlertTriangle className="h-4 w-4" style={{ color: "var(--t-error)" }} />
                 <span className="text-sm font-semibold" style={{ color: "var(--t-text-primary)" }}>Needs Reschedule</span>
-                <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: "rgba(220,38,38,0.1)", color: "#DC2626" }}>{rescheduleQueue.length}</span>
+                <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: "rgba(220,38,38,0.1)", color: "var(--t-error)" }}>{rescheduleQueue.length}</span>
               </div>
             </div>
             {/* Cards */}
@@ -593,7 +593,7 @@ export default function DispatchPage() {
                     {addr && <p className="text-[12px] font-medium mt-0.5 truncate" style={{ color: "var(--t-text-primary)" }}>{addr}</p>}
                     {/* Line 3: Failure info */}
                     <div className="flex items-center gap-1.5 mt-1">
-                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: "rgba(220,38,38,0.08)", color: "#DC2626" }}>FAILED</span>
+                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: "rgba(220,38,38,0.08)", color: "var(--t-error)" }}>FAILED</span>
                       <span className="text-[11px] truncate" style={{ color: "var(--t-text-muted)" }}>{job.failed_reason || "No reason"}</span>
                     </div>
                     {/* Line 4: Time + Driver */}
@@ -618,7 +618,7 @@ export default function DispatchPage() {
                           fetchRescheduleQueue();
                         } catch (err: any) { toast("error", err.message || "Failed to reschedule"); }
                       }} className="flex-1 rounded-full px-2.5 py-1 text-[10px] font-semibold"
-                        style={{ background: "var(--t-accent)", color: "#000" }}>
+                        style={{ background: "var(--t-accent)", color: "var(--t-accent-on-accent)" }}>
                         Reschedule
                       </button>
                       <button onClick={() => openQuickView(job)} className="rounded-full px-2.5 py-1 text-[10px] font-medium border"
@@ -651,7 +651,7 @@ export default function DispatchPage() {
               <Truck className="h-14 w-14 mb-3" style={{ color: "var(--t-frame-text-muted)", opacity: 0.15 }} />
               <h2 className="text-base font-semibold" style={{ color: "var(--t-frame-text)" }}>No jobs for {fmtDate(date)}</h2>
               <p className="mt-1 text-xs" style={{ color: "var(--t-frame-text-muted)" }}>Schedule some deliveries!</p>
-              <Link href="/" className="mt-3 flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-semibold active:scale-95" style={{ background: "var(--t-accent)", color: "#000" }}>
+              <Link href="/" className="mt-3 flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-semibold active:scale-95" style={{ background: "var(--t-accent)", color: "var(--t-accent-on-accent)" }}>
                 <Plus className="h-3.5 w-3.5" /> New Job
               </Link>
             </div>
@@ -741,7 +741,7 @@ export default function DispatchPage() {
               <button onClick={() => setRescheduleJob(null)} className="rounded-full px-4 py-2 text-xs font-medium"
                 style={{ color: "#8A8A8A" }}>Cancel</button>
               <button onClick={handleReschedule} disabled={!rescheduleDate} className="rounded-full px-4 py-2 text-xs font-semibold disabled:opacity-40"
-                style={{ background: "var(--t-accent)", color: "#000" }}>Move Job</button>
+                style={{ background: "var(--t-accent)", color: "var(--t-accent-on-accent)" }}>Move Job</button>
             </div>
           </div>
         </div>,
@@ -755,7 +755,7 @@ export default function DispatchPage() {
         actions={quickViewJob ? <Link href={`/jobs/${quickViewJob.id}`} className="rounded-full px-3 py-1.5 text-xs font-medium" style={{ background: "var(--t-bg-card-hover)", color: "var(--t-text-primary)" }}><ExternalLink className="h-3 w-3 inline mr-1" />Full Detail</Link> : undefined}
         footer={quickViewJob ? (
           <div className="flex gap-2">
-            {quickViewJob.customer?.phone && <a href={`tel:${quickViewJob.customer.phone}`} className="flex-1 flex items-center justify-center gap-1.5 rounded-full py-2.5 text-xs font-semibold" style={{ background: "var(--t-accent)", color: "#000" }}><Phone className="h-3.5 w-3.5" /> Call</a>}
+            {quickViewJob.customer?.phone && <a href={`tel:${quickViewJob.customer.phone}`} className="flex-1 flex items-center justify-center gap-1.5 rounded-full py-2.5 text-xs font-semibold" style={{ background: "var(--t-accent)", color: "var(--t-accent-on-accent)" }}><Phone className="h-3.5 w-3.5" /> Call</a>}
             {quickViewJob.service_address && <button onClick={() => { const a = quickViewJob.service_address!; window.open(`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent([a.street, a.city, a.state].filter(Boolean).join(", "))}`, "_blank"); }}
               className="flex-1 flex items-center justify-center gap-1.5 rounded-full py-2.5 text-xs font-semibold border" style={{ borderColor: "var(--t-border)", color: "var(--t-text-primary)" }}><Navigation className="h-3.5 w-3.5" /> Navigate</button>}
           </div>
@@ -853,7 +853,7 @@ function DispatchMap({ board, activeJobId }: { board: DispatchBoard | null; acti
         <div style="display:flex;justify-content:space-between;font-size:11px;padding:2px 0"><span style="color:${mutedColor}">Status</span><span style="color:${textColor};text-transform:capitalize">${statusStr}</span></div>
         <div style="display:flex;justify-content:space-between;font-size:11px;padding:2px 0"><span style="color:${mutedColor}">Driver</span><span style="color:${textColor}">${driverName}</span></div>
         <div style="display:flex;justify-content:space-between;font-size:11px;padding:2px 0"><span style="color:${mutedColor}">Job</span><span style="color:${textColor}">${job.job_number}</span></div>
-        <a href="/jobs/${job.id}" style="display:inline-block;margin-top:8px;font-size:12px;color:#22C55E;text-decoration:none;font-weight:600">View Job →</a>
+        <a href="/jobs/${job.id}" style="display:inline-block;margin-top:8px;font-size:12px;color:var(--t-accent-text);text-decoration:none;font-weight:600">View Job →</a>
       </div>`;
 
       const popup = new mapboxgl.Popup({ offset: 15, closeButton: false, maxWidth: "260px" }).setHTML(popupHtml);
@@ -879,7 +879,7 @@ function DispatchMap({ board, activeJobId }: { board: DispatchBoard | null; acti
     return (
       <div style={{ position: "absolute", inset: 0, background: "var(--t-bg-primary)", zIndex: 0 }}>
         <div style={{ position: "absolute", inset: 0, backgroundImage: "radial-gradient(circle, var(--t-border) 1px, transparent 1px)", backgroundSize: "30px 30px", opacity: 0.5 }} />
-        <div style={{ position: "absolute", top: 16, left: "50%", transform: "translateX(-50%)", background: "rgba(217,119,6,0.15)", border: "1px solid rgba(217,119,6,0.3)", borderRadius: 12, padding: "8px 16px", fontSize: 12, color: "#D97706", zIndex: 5 }}>
+        <div style={{ position: "absolute", top: 16, left: "50%", transform: "translateX(-50%)", background: "rgba(217,119,6,0.15)", border: "1px solid rgba(217,119,6,0.3)", borderRadius: 12, padding: "8px 16px", fontSize: 12, color: "var(--t-warning)", zIndex: 5 }}>
           Add Mapbox token in Settings to enable the live dispatch map
         </div>
       </div>
@@ -990,7 +990,7 @@ function ColumnCard({ columnId, title, driver, isUnassigned, count, progress, jo
         {/* Row 1: Avatar + Full Name + Menu */}
         <div className="flex items-center gap-2.5">
           {isUnassigned ? (
-            <div className="flex h-9 w-9 items-center justify-center rounded-full shrink-0" style={{ background: "rgba(217,119,6,0.1)", color: "#D97706" }}>
+            <div className="flex h-9 w-9 items-center justify-center rounded-full shrink-0" style={{ background: "rgba(217,119,6,0.1)", color: "var(--t-warning)" }}>
               <UserPlus className="h-4 w-4" />
             </div>
           ) : (
@@ -999,7 +999,7 @@ function ColumnCard({ columnId, title, driver, isUnassigned, count, progress, jo
             </div>
           )}
           <div className="flex-1 min-w-0">
-            <p className="text-[15px] font-bold leading-tight" style={{ color: isUnassigned ? "#D97706" : "var(--t-text-primary)" }}>{title}</p>
+            <p className="text-[15px] font-bold leading-tight" style={{ color: isUnassigned ? "var(--t-warning)" : "var(--t-text-primary)" }}>{title}</p>
             {driver?.phone && <p className="text-[11px] mt-0.5" style={{ color: "#8A8A8A" }}>{formatPhone(driver.phone)}</p>}
           </div>
           {(
@@ -1045,14 +1045,14 @@ function ColumnCard({ columnId, title, driver, isUnassigned, count, progress, jo
       {!isUnassigned && jobs.length > 0 && (
         <div style={{ padding: "8px 12px", background: "var(--t-bg-card-hover)", borderBottom: "1px solid var(--t-border)", fontSize: 12 }}>
           {allDone ? (
-            <div className="flex items-center gap-1.5" style={{ color: "#22C55E" }}>
+            <div className="flex items-center gap-1.5" style={{ color: "var(--t-accent-text)" }}>
               <CheckCircle2 className="h-3.5 w-3.5" />
               <span className="font-medium">All stops complete</span>
             </div>
           ) : activeJob ? (
             <div className="flex items-center gap-1.5 min-w-0">
-              <span style={{ display: "inline-block", width: 6, height: 6, borderRadius: "50%", background: "#22C55E", animation: "pulse 2s infinite", flexShrink: 0 }} />
-              <span className="font-bold" style={{ color: "#22C55E" }}>NOW:</span>
+              <span style={{ display: "inline-block", width: 6, height: 6, borderRadius: "50%", background: "var(--t-accent)", animation: "pulse 2s infinite", flexShrink: 0 }} />
+              <span className="font-bold" style={{ color: "var(--t-accent-text)" }}>NOW:</span>
               <span className="truncate" style={{ color: "var(--t-text-primary)" }}>
                 {(activeJob.asset_subtype || activeJob.asset?.subtype || "").replace(/yd$/i, "Y").toUpperCase()}{" "}
                 {TYPE_CONFIG[activeJob.job_type]?.label.toUpperCase() || activeJob.job_type.toUpperCase()}
@@ -1167,7 +1167,7 @@ const JobTile = memo(function JobTile({ job, isUnassigned, drivers, onAssign, on
             width: 8,
             height: 8,
             borderRadius: "50%",
-            backgroundColor: job.is_failed_trip ? "#DC2626" : "#D97706",
+            backgroundColor: job.is_failed_trip ? "var(--t-error)" : "var(--t-warning)",
             zIndex: 1,
             pointerEvents: "none",
           }}
@@ -1181,7 +1181,7 @@ const JobTile = memo(function JobTile({ job, isUnassigned, drivers, onAssign, on
           <div className="flex items-baseline gap-1.5">
             {size && <span className="text-[15px] font-extrabold" style={{ color: "var(--t-text-primary)" }}>{size.replace(/yd$/i, "Y").toUpperCase()}</span>}
             <span className="text-[14px] font-extrabold uppercase" style={{ color: tc.stripe }}>{tc.label.toUpperCase()}</span>
-            {isCompleted && <CheckCircle2 className="h-3.5 w-3.5 ml-1" style={{ color: "#22C55E" }} />}
+            {isCompleted && <CheckCircle2 className="h-3.5 w-3.5 ml-1" style={{ color: "var(--t-accent-text)" }} />}
           </div>
           {/* Line 2: Address (always visible, prominent) */}
           {addrStr && <p className="text-[13px] font-medium mt-0.5 truncate" style={{ color: "var(--t-text-primary)" }}>{addrStr}</p>}
@@ -1199,15 +1199,15 @@ const JobTile = memo(function JobTile({ job, isUnassigned, drivers, onAssign, on
           {/* Line 5: Badges */}
           {(job.asset?.identifier || job.is_failed_trip || job.source === "rescheduled_from_failure" || job.is_overdue || needsYardStop || (isCompleted && (job.job_type === 'pickup' || job.job_type === 'exchange')) || job.dump_disposition === 'staged') && (
             <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-              {job.asset?.identifier && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ background: "rgba(34,197,94,0.08)", color: "#22C55E" }}>{job.asset.identifier}</span>}
-              {needsYardStop && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: "rgba(217,119,6,0.08)", color: "#D97706" }}>YARD STOP</span>}
-              {job.is_failed_trip && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: "rgba(220,38,38,0.08)", color: "#DC2626" }}>FAILED</span>}
-              {job.source === "rescheduled_from_failure" && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: "rgba(217,119,6,0.08)", color: "#D97706" }}>FROM FAILED</span>}
-              {job.is_overdue && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: "rgba(220,38,38,0.08)", color: "#DC2626" }}>OVERDUE {job.extra_days}d</span>}
+              {job.asset?.identifier && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ background: "rgba(34,197,94,0.08)", color: "var(--t-accent-text)" }}>{job.asset.identifier}</span>}
+              {needsYardStop && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: "rgba(217,119,6,0.08)", color: "var(--t-warning)" }}>YARD STOP</span>}
+              {job.is_failed_trip && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: "rgba(220,38,38,0.08)", color: "var(--t-error)" }}>FAILED</span>}
+              {job.source === "rescheduled_from_failure" && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: "rgba(217,119,6,0.08)", color: "var(--t-warning)" }}>FROM FAILED</span>}
+              {job.is_overdue && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: "rgba(220,38,38,0.08)", color: "var(--t-error)" }}>OVERDUE {job.extra_days}d</span>}
               {isCompleted && (job.job_type === 'pickup' || job.job_type === 'exchange') && (
                 job.dump_status && job.dump_status !== 'none'
-                  ? <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: "rgba(34,197,94,0.08)", color: "#22C55E" }}>DUMPED</span>
-                  : <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: "rgba(217,119,6,0.08)", color: "#D97706" }}>AWAITING DUMP</span>
+                  ? <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: "rgba(34,197,94,0.08)", color: "var(--t-accent-text)" }}>DUMPED</span>
+                  : <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: "rgba(217,119,6,0.08)", color: "var(--t-warning)" }}>AWAITING DUMP</span>
               )}
               {job.dump_disposition === 'staged' && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: "rgba(139,92,246,0.08)", color: "#8B5CF6" }}>AT YARD</span>}
             </div>
@@ -1273,7 +1273,7 @@ function StatusDropdown({ jobId, currentStatus, onStatusChange }: { jobId: strin
               style={{ color: s === currentStatus ? "var(--t-text-muted)" : "var(--t-text-primary)" }}
               onMouseEnter={e => { if (s !== currentStatus) (e.currentTarget as HTMLElement).style.background = "var(--t-bg-card-hover)"; }}
               onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}>
-              <span className="w-2 h-2 rounded-full" style={{ background: s === "completed" ? "#22C55E" : s === "failed" || s === "cancelled" ? "#DC2626" : s === "pending" ? "#D97706" : "#3B82F6" }} />
+              <span className="w-2 h-2 rounded-full" style={{ background: s === "completed" ? "var(--t-accent)" : s === "failed" || s === "cancelled" ? "var(--t-error)" : s === "pending" ? "var(--t-warning)" : "var(--t-info)" }} />
               {s.replace(/_/g, " ")}
             </button>
           ))}
@@ -1369,7 +1369,7 @@ function QVContent({ job, detail, board, onAssign, onRefresh, toast }: {
               <button
                 onClick={() => onAssign(job.id, board.drivers[0].driver.id)}
                 className="text-xs font-medium rounded-full px-3 py-1.5 transition-all duration-150 active:scale-95"
-                style={{ background: "var(--t-accent)", color: "#000", border: "none", cursor: "pointer" }}
+                style={{ background: "var(--t-accent)", color: "var(--t-accent-on-accent)", border: "none", cursor: "pointer" }}
               >
                 Assign to {board.drivers[0].driver.firstName} {board.drivers[0].driver.lastName}
               </button>
@@ -1398,16 +1398,16 @@ function QVContent({ job, detail, board, onAssign, onRefresh, toast }: {
       {!isCompleted && job.status !== "cancelled" && (
         <>
           {!rescheduleOpen ? (
-            <button onClick={() => { setRescheduleOpen(true); setNewDate(d.scheduled_date || ""); }} className="w-full rounded-full border py-2.5 text-xs font-semibold" style={{ borderColor: "var(--t-border)", color: "#3B82F6" }}>
+            <button onClick={() => { setRescheduleOpen(true); setNewDate(d.scheduled_date || ""); }} className="w-full rounded-full border py-2.5 text-xs font-semibold" style={{ borderColor: "var(--t-border)", color: "var(--t-info)" }}>
               <Calendar className="h-3.5 w-3.5 inline mr-1.5" />Reschedule
             </button>
           ) : (
             <div className="rounded-[20px] border p-4 space-y-3" style={{ borderColor: "var(--t-border)" }}>
-              <p className="text-xs font-semibold" style={{ color: "#3B82F6" }}>Reschedule Job</p>
+              <p className="text-xs font-semibold" style={{ color: "var(--t-info)" }}>Reschedule Job</p>
               <input type="date" value={newDate} onChange={e => setNewDate(e.target.value)} className="w-full rounded-[10px] border px-3 py-2 text-sm outline-none" style={{ borderColor: "var(--t-border)", color: "var(--t-text-primary)" }} />
               <input value={reason} onChange={e => setReason(e.target.value)} placeholder="Reason (optional)" className="w-full rounded-[10px] border px-3 py-2 text-sm outline-none" style={{ borderColor: "var(--t-border)", color: "var(--t-text-primary)" }} />
               <div className="flex gap-2">
-                <button onClick={handleReschedule} disabled={!newDate || rescheduling} className="flex-1 rounded-full py-2 text-xs font-semibold disabled:opacity-50" style={{ background: "#3B82F6", color: "#fff" }}>{rescheduling ? "Moving..." : "Confirm"}</button>
+                <button onClick={handleReschedule} disabled={!newDate || rescheduling} className="flex-1 rounded-full py-2 text-xs font-semibold disabled:opacity-50" style={{ background: "var(--t-info)", color: "var(--t-accent-on-accent)" }}>{rescheduling ? "Moving..." : "Confirm"}</button>
                 <button onClick={() => setRescheduleOpen(false)} className="rounded-full px-4 py-2 text-xs" style={{ background: "var(--t-bg-card-hover)", color: "var(--t-text-muted)" }}>Cancel</button>
               </div>
             </div>
