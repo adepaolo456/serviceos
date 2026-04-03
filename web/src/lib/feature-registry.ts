@@ -4,15 +4,19 @@
  */
 
 export type FeatureCategory =
-  | "navigation"
+  | "getting_started"
+  | "dashboard"
+  | "customers"
+  | "assets"
   | "operations"
   | "billing"
   | "pricing"
-  | "dispatch"
-  | "inventory"
-  | "customers"
-  | "reporting"
-  | "settings";
+  | "team"
+  | "analytics"
+  | "marketplace"
+  | "notifications"
+  | "settings"
+  | "admin";
 
 export interface FeatureDescription {
   id: string;
@@ -28,15 +32,37 @@ export interface FeatureDescription {
 }
 
 export const FEATURE_REGISTRY: Record<string, FeatureDescription> = {
-  // ── Navigation ──
+  // ── Dashboard ──
   dashboard: {
-    id: "dashboard", label: "Dashboard", category: "navigation",
+    id: "dashboard", label: "Dashboard", category: "dashboard",
     shortDescription: "Overview of your business metrics and today's activity.",
     guideDescription: "The Dashboard provides a high-level snapshot of revenue, active jobs, fleet status, and upcoming tasks. Use it as your daily starting point to understand what needs attention and track business performance over time.",
     routeOrSurface: "/", tenantOverrideKey: "dashboard",
     isUserFacing: true, isGuideEligible: true,
     keywords: ["home", "overview", "metrics", "revenue", "summary"],
   },
+
+  // ── Customers ──
+  customers: {
+    id: "customers", label: "Customers", category: "customers",
+    shortDescription: "View and manage customer accounts and contacts.",
+    guideDescription: "The Customers page stores all customer information including contact details, billing addresses, service history, and custom pricing overrides. Use it to look up customer records, edit details, or review past job and invoice history.",
+    routeOrSurface: "/customers", tenantOverrideKey: "customers",
+    isUserFacing: true, isGuideEligible: true,
+    keywords: ["client", "account", "contact", "billing", "address"],
+  },
+
+  // ── Assets ──
+  assets: {
+    id: "assets", label: "Assets", category: "assets",
+    shortDescription: "Track dumpsters, containers, and equipment.",
+    guideDescription: "The Assets page shows your fleet of dumpsters and containers with their current status, location, and assignment. Use it to check availability, find specific units by ID, and review operational history for each asset.",
+    routeOrSurface: "/assets", tenantOverrideKey: "assets",
+    isUserFacing: true, isGuideEligible: true,
+    keywords: ["dumpster", "container", "equipment", "fleet", "inventory", "unit"],
+  },
+
+  // ── Operations ──
   jobs: {
     id: "jobs", label: "Jobs", category: "operations",
     shortDescription: "Manage deliveries, pickups, exchanges, and dump runs.",
@@ -46,29 +72,71 @@ export const FEATURE_REGISTRY: Record<string, FeatureDescription> = {
     keywords: ["work", "order", "delivery", "pickup", "exchange", "dump", "task"],
   },
   dispatch_board: {
-    id: "dispatch_board", label: "Dispatch", category: "dispatch",
+    id: "dispatch_board", label: "Dispatch Board", category: "operations",
     shortDescription: "Assign and manage driver routes for the day.",
     guideDescription: "The Dispatch Board shows all drivers as columns with their assigned jobs. Drag jobs between columns to reassign, reorder stops within a route, and monitor each driver's load. Use bulk selection to assign multiple unassigned jobs at once.",
     routeOrSurface: "/dispatch", tenantOverrideKey: "dispatch_board",
     isUserFacing: true, isGuideEligible: true,
     keywords: ["route", "driver", "assign", "schedule", "board", "drag"],
   },
-  customers: {
-    id: "customers", label: "Customers", category: "customers",
-    shortDescription: "View and manage customer accounts and contacts.",
-    guideDescription: "The Customers page stores all customer information including contact details, billing addresses, service history, and custom pricing overrides. Use it to look up customer records, edit details, or review past job and invoice history.",
-    routeOrSurface: "/customers", tenantOverrideKey: "customers",
+  dump_sites: {
+    id: "dump_sites", label: "Dump Sites", category: "operations",
+    shortDescription: "Manage dump facilities, rates, and disposal locations.",
+    guideDescription: "The Dump Sites page tracks disposal facilities your drivers use, including addresses, accepted waste types, per-ton rates, and surcharges. Keep this updated so dump cost calculations and dump run scheduling stay accurate.",
+    routeOrSurface: "/dump-locations", tenantOverrideKey: "dump_sites",
     isUserFacing: true, isGuideEligible: true,
-    keywords: ["client", "account", "contact", "billing", "address"],
+    keywords: ["dump", "disposal", "facility", "landfill", "transfer", "waste"],
   },
-  assets: {
-    id: "assets", label: "Assets", category: "inventory",
-    shortDescription: "Track dumpsters, containers, and equipment.",
-    guideDescription: "The Assets page shows your fleet of dumpsters and containers with their current status, location, and assignment. Use it to check availability, find specific units by ID, and review operational history for each asset.",
-    routeOrSurface: "/assets", tenantOverrideKey: "assets",
+  new_booking: {
+    id: "new_booking", label: "New Booking", category: "getting_started",
+    shortDescription: "Create a new job booking for a customer.",
+    guideDescription: "The booking flow walks you through selecting a customer, choosing a dumpster size, setting delivery dates, and confirming pricing. Once submitted, the system creates the job, generates an invoice, and the job appears on the Dispatch Board for assignment.",
+    routeOrSurface: "/book", tenantOverrideKey: "new_booking",
     isUserFacing: true, isGuideEligible: true,
-    keywords: ["dumpster", "container", "equipment", "fleet", "inventory", "unit"],
+    keywords: ["book", "order", "create", "new", "schedule", "reserve"],
   },
+  dispatch_unassigned: {
+    id: "dispatch_unassigned", label: "Unassigned", category: "operations",
+    shortDescription: "Jobs not yet assigned to a driver.",
+    guideDescription: "The Unassigned column shows all jobs for the selected date that have no driver assigned. Drag jobs from here into driver columns to assign them, or use bulk selection to assign multiple jobs at once.",
+    routeOrSurface: "dispatch_panel", tenantOverrideKey: "dispatch_unassigned",
+    isUserFacing: true, isGuideEligible: true,
+    keywords: ["unassigned", "pending", "available", "assign", "driver"],
+  },
+  dispatch_awaiting_dump: {
+    id: "dispatch_awaiting_dump", label: "Awaiting Dump", category: "operations",
+    shortDescription: "Containers at the yard ready for dump facility runs.",
+    guideDescription: "Awaiting Dump shows containers that have been picked up and staged at the yard but not yet taken to a dump facility. Create dump runs from this list to schedule disposal trips.",
+    routeOrSurface: "dispatch_panel", tenantOverrideKey: "dispatch_awaiting_dump",
+    isUserFacing: true, isGuideEligible: true,
+    keywords: ["dump", "yard", "staged", "disposal", "facility", "waiting"],
+  },
+  dispatch_quick_view: {
+    id: "dispatch_quick_view", label: "Quick View", category: "operations",
+    shortDescription: "Preview job details without leaving the dispatch board.",
+    guideDescription: "Double-click any job card on the Dispatch Board to open Quick View. It shows customer info, address, billing status, and dispatch notes. You can edit notes and delivery instructions inline without navigating away from dispatch.",
+    routeOrSurface: "dispatch_panel", tenantOverrideKey: "dispatch_quick_view",
+    isUserFacing: true, isGuideEligible: true,
+    keywords: ["preview", "detail", "inspect", "sidebar", "panel"],
+  },
+  dispatch_filters: {
+    id: "dispatch_filters", label: "Dispatch Filters", category: "operations",
+    shortDescription: "Filter dispatch jobs by type, status, or search terms.",
+    guideDescription: "The filter bar at the top of the Dispatch Board lets you narrow visible jobs by type (deliveries, pickups, exchanges, dump runs) or search by customer name, address, or job number. Use filters to focus on specific work during busy dispatch sessions.",
+    routeOrSurface: "dispatch_panel", tenantOverrideKey: "dispatch_filters",
+    isUserFacing: true, isGuideEligible: true,
+    keywords: ["filter", "search", "type", "status", "find"],
+  },
+  dispatch_driver_columns: {
+    id: "dispatch_driver_columns", label: "Driver Columns", category: "operations",
+    shortDescription: "Each column represents a driver's route for the day.",
+    guideDescription: "Driver columns show the ordered list of stops for each driver. Drag to reorder stops within a route, check the load indicator for workload balance, and use the route time summary to see the estimated span of each driver's day.",
+    routeOrSurface: "dispatch_panel", tenantOverrideKey: "dispatch_driver_columns",
+    isUserFacing: true, isGuideEligible: true,
+    keywords: ["column", "driver", "route", "lane", "stops", "order"],
+  },
+
+  // ── Billing ──
   invoices: {
     id: "invoices", label: "Invoices", category: "billing",
     shortDescription: "Create, send, and manage customer invoices.",
@@ -85,6 +153,8 @@ export const FEATURE_REGISTRY: Record<string, FeatureDescription> = {
     isUserFacing: true, isGuideEligible: true,
     keywords: ["problem", "error", "discrepancy", "overdue", "mismatch", "fix"],
   },
+
+  // ── Pricing ──
   pricing_issues: {
     id: "pricing_issues", label: "Pricing Issues", category: "pricing",
     shortDescription: "Find and fix jobs with pricing problems or missing data.",
@@ -101,24 +171,14 @@ export const FEATURE_REGISTRY: Record<string, FeatureDescription> = {
     isUserFacing: true, isGuideEligible: true,
     keywords: ["rate", "rule", "surcharge", "fee", "configure", "setup"],
   },
-  team: {
-    id: "team", label: "Team", category: "settings",
-    shortDescription: "Manage drivers, staff, and user accounts.",
-    guideDescription: "The Team page shows all users in your organization including drivers, dispatchers, and admins. Manage roles, contact info, vehicle assignments, and track time entries. Driver profiles include real-time location and route status.",
-    routeOrSurface: "/team", tenantOverrideKey: "team",
+  price_breakdown: {
+    id: "price_breakdown", label: "Price Breakdown", category: "pricing",
+    shortDescription: "Shows how the job price was calculated.",
+    guideDescription: "This section explains how pricing was determined for a job, including distance from yard, pricing tier applied, base price, included tonnage, and any adjustments or surcharges. Use this to verify, explain, or troubleshoot job pricing.",
+    routeOrSurface: "quick_view_panel", tenantOverrideKey: "price_breakdown",
     isUserFacing: true, isGuideEligible: true,
-    keywords: ["driver", "staff", "employee", "user", "role", "account"],
+    keywords: ["pricing", "cost", "calculation", "rate", "how much", "breakdown"],
   },
-  analytics: {
-    id: "analytics", label: "Analytics", category: "reporting",
-    shortDescription: "Revenue, costs, and business performance metrics.",
-    guideDescription: "Analytics provides detailed breakdowns of revenue, dump costs, profit margins, driver performance, asset utilization, and customer activity. Use date range filters and tabs to drill into specific areas of your business.",
-    routeOrSurface: "/analytics", tenantOverrideKey: "analytics",
-    isUserFacing: true, isGuideEligible: true,
-    keywords: ["report", "revenue", "profit", "chart", "performance", "data"],
-  },
-
-  // ── Pricing Issues tiles ──
   issue_geocode_blocked: {
     id: "issue_geocode_blocked", label: "Geocode Blocked", category: "pricing",
     shortDescription: "Address exists but could not be converted to coordinates.",
@@ -184,34 +244,97 @@ export const FEATURE_REGISTRY: Record<string, FeatureDescription> = {
     keywords: ["exchange", "swap", "container", "tonnage", "pickup", "dropoff"],
   },
 
-  // ── Dispatch items ──
-  dispatch_unassigned: {
-    id: "dispatch_unassigned", label: "Unassigned", category: "dispatch",
-    shortDescription: "Jobs not yet assigned to a driver.",
-    guideDescription: "The Unassigned column shows all jobs for the selected date that have no driver assigned. Drag jobs from here into driver columns to assign them, or use bulk selection to assign multiple jobs at once.",
-    routeOrSurface: "/dispatch", tenantOverrideKey: "dispatch_unassigned",
+  // ── Team ──
+  team: {
+    id: "team", label: "Team", category: "team",
+    shortDescription: "Manage drivers, staff, and user accounts.",
+    guideDescription: "The Team page shows all users in your organization including drivers, dispatchers, and admins. Manage roles, contact info, vehicle assignments, and track time entries. Driver profiles include real-time location and route status.",
+    routeOrSurface: "/team", tenantOverrideKey: "team",
     isUserFacing: true, isGuideEligible: true,
-    keywords: ["unassigned", "pending", "available", "assign", "driver"],
+    keywords: ["driver", "staff", "employee", "user", "role", "account"],
   },
-  dispatch_awaiting_dump: {
-    id: "dispatch_awaiting_dump", label: "Awaiting Dump", category: "dispatch",
-    shortDescription: "Containers at the yard ready for dump facility runs.",
-    guideDescription: "Awaiting Dump shows containers that have been picked up and staged at the yard but not yet taken to a dump facility. Create dump runs from this list to schedule disposal trips.",
-    routeOrSurface: "/dispatch", tenantOverrideKey: "dispatch_awaiting_dump",
+  vehicles: {
+    id: "vehicles", label: "Vehicles", category: "team",
+    shortDescription: "Track trucks, trailers, and fleet vehicles.",
+    guideDescription: "The Vehicles page lists your fleet of trucks and trailers with make, model, plate numbers, and assigned drivers. Use it to manage vehicle assignments and keep fleet records current for dispatch and reporting.",
+    routeOrSurface: "/vehicles", tenantOverrideKey: "vehicles",
     isUserFacing: true, isGuideEligible: true,
-    keywords: ["dump", "yard", "staged", "disposal", "facility", "waiting"],
+    keywords: ["truck", "trailer", "fleet", "vehicle", "plate", "transport"],
   },
 
-  // ── Price Breakdown ──
-  price_breakdown: {
-    id: "price_breakdown", label: "Price Breakdown", category: "pricing",
-    shortDescription: "Shows how the job price was calculated.",
-    guideDescription: "This section explains how pricing was determined for a job, including distance from yard, pricing tier applied, base price, included tonnage, and any adjustments or surcharges. Use this to verify, explain, or troubleshoot job pricing.",
-    routeOrSurface: "quick_view_panel", tenantOverrideKey: "price_breakdown",
+  // ── Analytics ──
+  analytics: {
+    id: "analytics", label: "Analytics", category: "analytics",
+    shortDescription: "Revenue, costs, and business performance metrics.",
+    guideDescription: "Analytics provides detailed breakdowns of revenue, dump costs, profit margins, driver performance, asset utilization, and customer activity. Use date range filters and tabs to drill into specific areas of your business.",
+    routeOrSurface: "/analytics", tenantOverrideKey: "analytics",
     isUserFacing: true, isGuideEligible: true,
-    keywords: ["pricing", "cost", "calculation", "rate", "how much", "breakdown"],
+    keywords: ["report", "revenue", "profit", "chart", "performance", "data"],
+  },
+
+  // ── Marketplace ──
+  marketplace: {
+    id: "marketplace", label: "Marketplace", category: "marketplace",
+    shortDescription: "Your public-facing booking page for customers.",
+    guideDescription: "The Marketplace manages your customer-facing booking widget and public website. Customers can browse available sizes, get instant pricing, and book dumpster deliveries online. Orders flow directly into your Jobs and Invoices.",
+    routeOrSurface: "/marketplace", tenantOverrideKey: "marketplace",
+    isUserFacing: true, isGuideEligible: true,
+    keywords: ["website", "booking", "public", "online", "widget", "storefront"],
+  },
+
+  // ── Notifications ──
+  notifications: {
+    id: "notifications", label: "Notifications", category: "notifications",
+    shortDescription: "View and manage system alerts and messages.",
+    guideDescription: "The Notifications page shows alerts for job updates, billing events, overdue rentals, and system messages. Configure notification preferences to control which alerts you receive via email, SMS, or in-app.",
+    routeOrSurface: "/notifications", tenantOverrideKey: "notifications",
+    isUserFacing: true, isGuideEligible: true,
+    keywords: ["alert", "message", "email", "sms", "reminder", "notify"],
+  },
+
+  // ── Settings ──
+  settings: {
+    id: "settings", label: "Settings", category: "settings",
+    shortDescription: "Configure your account, business details, and preferences.",
+    guideDescription: "Settings lets you update your business name, address, contact info, yard locations, and operational preferences. This is also where you manage integrations like Stripe for payments and Mapbox for geocoding.",
+    routeOrSurface: "/settings", tenantOverrideKey: "settings",
+    isUserFacing: true, isGuideEligible: true,
+    keywords: ["config", "preferences", "account", "business", "setup", "yard"],
+  },
+
+  // ── Admin ──
+  help_center: {
+    id: "help_center", label: "Help Center", category: "admin",
+    shortDescription: "Find answers and learn how ServiceOS works.",
+    guideDescription: "The Help Center provides searchable documentation for every feature in ServiceOS. Browse by category or search for specific topics. Each entry explains what the feature does, where to find it, and how to use it effectively.",
+    routeOrSurface: "/help", tenantOverrideKey: "help_center",
+    isUserFacing: true, isGuideEligible: true,
+    keywords: ["help", "guide", "documentation", "learn", "how to", "support"],
   },
 };
+
+// ── Category display labels ──
+export const CATEGORY_LABELS: Record<FeatureCategory, string> = {
+  getting_started: "Getting Started",
+  dashboard: "Dashboard",
+  customers: "Customers",
+  assets: "Assets & Inventory",
+  operations: "Operations",
+  billing: "Billing",
+  pricing: "Pricing",
+  team: "Team & Vehicles",
+  analytics: "Analytics & Reports",
+  marketplace: "Marketplace",
+  notifications: "Notifications",
+  settings: "Settings",
+  admin: "Administration",
+};
+
+export const CATEGORY_ORDER: FeatureCategory[] = [
+  "getting_started", "dashboard", "operations", "customers", "assets",
+  "billing", "pricing", "team", "analytics", "marketplace",
+  "notifications", "settings", "admin",
+];
 
 // ── Lookup helpers ──
 
@@ -245,7 +368,6 @@ export function getFeatureTooltip(
 
 export function listFeaturesForGuide(
   category?: FeatureCategory,
-  tenantOverrides?: Record<string, { label?: string }>,
 ): FeatureDescription[] {
   return Object.values(FEATURE_REGISTRY)
     .filter(f => f.isGuideEligible && f.isUserFacing)
@@ -253,17 +375,10 @@ export function listFeaturesForGuide(
     .sort((a, b) => a.label.localeCompare(b.label));
 }
 
-/**
- * Dev-time validation: checks if a featureId exists in the registry.
- * Use in components to warn about unregistered IDs during development.
- */
 export function isRegisteredFeature(id: string): boolean {
   return id in FEATURE_REGISTRY;
 }
 
-/**
- * Returns all registered feature IDs for cross-checking against UI surfaces.
- */
 export function getAllFeatureIds(): string[] {
   return Object.keys(FEATURE_REGISTRY);
 }
