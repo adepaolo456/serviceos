@@ -95,6 +95,7 @@ export default function OnboardingPage() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
+  const [saveSuccess, setSaveSuccess] = useState("");
   const [suggesting, setSuggesting] = useState(false);
   const [suggestionModal, setSuggestionModal] = useState<Suggestion[] | null>(null);
   const lastFetch = useRef(0);
@@ -185,7 +186,32 @@ export default function OnboardingPage() {
       await api.patch(`/onboarding/checklist/${stepKey}`, { status });
       await fetchProgress(true);
     } catch (err) {
-      setSaveError(err instanceof Error ? err.message : "Failed to update step. Please try again.");
+      const message = err instanceof Error ? err.message : "Failed to update step. Please try again.";
+      setSaveError(message);
+      throw err instanceof Error ? err : new Error(message);
+    }
+  };
+
+  const goToNextStep = (stepKey: string) => {
+    const currentIndex = STEPS.findIndex((step) => step.key === stepKey);
+    const nextStep = STEPS[currentIndex + 1];
+    if (nextStep) {
+      setActiveStep(nextStep.key);
+    }
+  };
+
+  const skipStep = async (stepKey: string) => {
+    setSaving(true);
+    setSaveError("");
+    setSaveSuccess("");
+    try {
+      await markStep(stepKey, "skipped");
+      setSaveSuccess("Step skipped.");
+      goToNextStep(stepKey);
+    } catch {
+      // markStep sets the user-facing error
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -219,6 +245,7 @@ export default function OnboardingPage() {
     e.preventDefault();
     setSaving(true);
     setSaveError("");
+    setSaveSuccess("");
     try {
       await api.patch("/auth/profile", { companyName });
       await api.patch("/tenant-settings/branding", {
@@ -227,6 +254,8 @@ export default function OnboardingPage() {
         support_phone: supportPhone,
       });
       await markStep("company_info", "completed");
+      setSaveSuccess("Company information saved.");
+      goToNextStep("company_info");
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : "Failed to save. Please try again.");
     } finally { setSaving(false); }
@@ -236,12 +265,15 @@ export default function OnboardingPage() {
     e.preventDefault();
     setSaving(true);
     setSaveError("");
+    setSaveSuccess("");
     try {
       await api.patch("/tenant-settings", {
         driver_hourly_rate: driverRate ? Number(driverRate) : undefined,
         helper_hourly_rate: helperRate ? Number(helperRate) : undefined,
       });
       await markStep("labor_rates", "completed");
+      setSaveSuccess("Labor rates saved.");
+      goToNextStep("labor_rates");
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : "Failed to save. Please try again.");
     } finally { setSaving(false); }
@@ -251,6 +283,7 @@ export default function OnboardingPage() {
     e.preventDefault();
     setSaving(true);
     setSaveError("");
+    setSaveSuccess("");
     try {
       await api.patch("/tenant-settings/notifications", {
         sms_enabled: smsEnabled,
@@ -258,6 +291,8 @@ export default function OnboardingPage() {
         email_sender_name: emailSenderName,
       });
       await markStep("notifications", "completed");
+      setSaveSuccess("Notification settings saved.");
+      goToNextStep("notifications");
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : "Failed to save. Please try again.");
     } finally { setSaving(false); }
@@ -267,12 +302,15 @@ export default function OnboardingPage() {
     e.preventDefault();
     setSaving(true);
     setSaveError("");
+    setSaveSuccess("");
     try {
       await api.patch("/tenant-settings", {
         portal_slug: portalSlug,
         portal_name: portalName,
       });
       await markStep("portal", "completed");
+      setSaveSuccess("Portal settings saved.");
+      goToNextStep("portal");
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : "Failed to save. Please try again.");
     } finally { setSaving(false); }
@@ -326,7 +364,7 @@ export default function OnboardingPage() {
               return (
                 <button
                   key={s.key}
-                  onClick={() => { setActiveStep(s.key); setSaveError(""); }}
+                  onClick={() => { setActiveStep(s.key); setSaveError(""); setSaveSuccess(""); }}
                   className={`w-full flex items-center gap-3 rounded-[14px] px-3 py-2.5 text-left transition-all text-sm ${
                     isActive
                       ? "bg-[var(--t-accent-soft)] text-[var(--t-accent)]"
@@ -349,6 +387,12 @@ export default function OnboardingPage() {
             {saveError && (
               <div className="mb-4 rounded-[14px] bg-red-500/10 border border-red-500/30 px-4 py-3 text-sm text-red-400">
                 {saveError}
+              </div>
+            )}
+
+            {saveSuccess && (
+              <div className="mb-4 rounded-[14px] bg-[#22C55E]/10 border border-[#22C55E]/30 px-4 py-3 text-sm text-[#22C55E]">
+                {saveSuccess}
               </div>
             )}
 
@@ -387,7 +431,7 @@ export default function OnboardingPage() {
                   saving={saving}
                   suggesting={suggesting}
                   onSuggest={() => getSuggestions("company_info")}
-                  onSkip={() => markStep("company_info", "skipped")}
+                  onSkip={() => skipStep("company_info")}
                   isComplete={isComplete}
                 />
               </form>
@@ -407,7 +451,7 @@ export default function OnboardingPage() {
                     {suggesting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4 inline mr-1.5" />}
                     View Recommended Values
                   </button>
-                  <button onClick={() => markStep("pricing", "skipped")} className={btnSecondary}>Skip</button>
+                  <button onClick={() => skipStep("pricing")} className={btnSecondary}>Skip</button>
                 </div>
               </div>
             )}
@@ -422,7 +466,7 @@ export default function OnboardingPage() {
                 </p>
                 <div className="flex gap-3">
                   <a href="/settings" className={btnPrimary}>Go to Locations</a>
-                  <button onClick={() => markStep("yards", "skipped")} className={btnSecondary}>Skip</button>
+                  <button onClick={() => skipStep("yards")} className={btnSecondary}>Skip</button>
                 </div>
               </div>
             )}
@@ -441,7 +485,7 @@ export default function OnboardingPage() {
                     {suggesting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4 inline mr-1.5" />}
                     View Recommended Values
                   </button>
-                  <button onClick={() => markStep("vehicles", "skipped")} className={btnSecondary}>Skip</button>
+                  <button onClick={() => skipStep("vehicles")} className={btnSecondary}>Skip</button>
                 </div>
               </div>
             )}
@@ -462,7 +506,7 @@ export default function OnboardingPage() {
                   saving={saving}
                   suggesting={suggesting}
                   onSuggest={() => getSuggestions("labor_rates")}
-                  onSkip={() => markStep("labor_rates", "skipped")}
+                  onSkip={() => skipStep("labor_rates")}
                   isComplete={isComplete}
                 />
               </form>
@@ -494,7 +538,7 @@ export default function OnboardingPage() {
                   saving={saving}
                   suggesting={suggesting}
                   onSuggest={() => getSuggestions("notifications")}
-                  onSkip={() => markStep("notifications", "skipped")}
+                  onSkip={() => skipStep("notifications")}
                   isComplete={isComplete}
                 />
               </form>
@@ -519,7 +563,7 @@ export default function OnboardingPage() {
                   saving={saving}
                   suggesting={suggesting}
                   onSuggest={() => getSuggestions("portal")}
-                  onSkip={() => markStep("portal", "skipped")}
+                  onSkip={() => skipStep("portal")}
                   isComplete={isComplete}
                 />
               </form>
