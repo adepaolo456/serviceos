@@ -68,6 +68,12 @@ interface SearchResult {
 interface UserProfile {
   firstName: string;
   lastName: string;
+  role: string;
+  tenant: {
+    id: string;
+    name: string;
+    onboardingStatus?: string;
+  };
 }
 
 /* ---- Helpers ---- */
@@ -160,6 +166,18 @@ export default function DashboardPage() {
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [searchOpen, setSearchOpen] = useState(false);
   const searchTimeout = useRef<ReturnType<typeof setTimeout>>(null);
+
+  // Check onboarding status — redirect if incomplete
+  useEffect(() => {
+    api
+      .get<{ requiredComplete: boolean }>("/onboarding/progress")
+      .then((p) => {
+        if (!p.requiredComplete) {
+          router.replace("/onboarding");
+        }
+      })
+      .catch(() => {});
+  }, [router]);
 
   // Load dashboard data
   useEffect(() => {

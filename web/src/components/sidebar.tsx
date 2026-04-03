@@ -167,7 +167,8 @@ export default function Sidebar() {
           })}
         </ul>
 
-        {/* Admin Tools */}
+        {/* Admin Tools — only for admin/owner */}
+        {user && (user.role === "admin" || user.role === "owner") && (
         <div className="mt-2 pt-2" style={{ borderTop: "1px solid var(--t-frame-border)" }}>
           <p className="px-3 pb-1.5 text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--t-frame-text-muted)", opacity: 0.5 }}>Admin Tools</p>
           <ul className="space-y-0.5">
@@ -194,6 +195,7 @@ export default function Sidebar() {
             })}
           </ul>
         </div>
+        )}
       </nav>
 
       <div className="px-3 pb-4 pt-2 space-y-1 shrink-0" style={{ borderTop: "1px solid var(--t-frame-border)" }}>
@@ -283,7 +285,8 @@ export default function Sidebar() {
           })}
         </ul>
 
-        {/* Admin Tools — icon only in collapsed */}
+        {/* Admin Tools — icon only in collapsed, admin/owner only */}
+        {user && (user.role === "admin" || user.role === "owner") && (
         <div className="mt-2 pt-2" style={{ borderTop: "1px solid var(--t-frame-border)" }}>
           <ul className="space-y-1">
             {adminNav.map((item) => {
@@ -314,6 +317,7 @@ export default function Sidebar() {
             })}
           </ul>
         </div>
+        )}
       </nav>
 
       {/* Footer — icons only */}
