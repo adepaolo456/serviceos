@@ -869,10 +869,10 @@ export default function AnalyticsPage() {
           {/* Date inputs */}
           <div className="flex items-center gap-2">
             <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)}
-              className="rounded-[20px] border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.06)] px-2.5 py-1.5 text-xs text-[var(--t-frame-text)] focus:outline-none focus:border-[var(--t-accent)]" />
+              className="rounded-[20px] border border-[var(--t-frame-border)] bg-[var(--t-frame-hover)] px-2.5 py-1.5 text-xs text-[var(--t-frame-text)] focus:outline-none focus:border-[var(--t-accent)]" />
             <span className="text-xs text-[var(--t-frame-text-muted)]">to</span>
             <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)}
-              className="rounded-[20px] border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.06)] px-2.5 py-1.5 text-xs text-[var(--t-frame-text)] focus:outline-none focus:border-[var(--t-accent)]" />
+              className="rounded-[20px] border border-[var(--t-frame-border)] bg-[var(--t-frame-hover)] px-2.5 py-1.5 text-xs text-[var(--t-frame-text)] focus:outline-none focus:border-[var(--t-accent)]" />
           </div>
 
           {/* Export */}

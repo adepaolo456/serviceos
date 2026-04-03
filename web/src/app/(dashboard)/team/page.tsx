@@ -83,7 +83,7 @@ export default function TeamPage() {
         </div>
         <Link
           href="/settings"
-          className="flex items-center gap-2 rounded-full bg-[#22C55E] px-6 py-2.5 text-sm font-semibold text-black transition-opacity hover:opacity-90"
+          className="flex items-center gap-2 rounded-full bg-[var(--t-accent)] px-6 py-2.5 text-sm font-semibold text-[var(--t-accent-on-accent)] transition-opacity hover:opacity-90"
         >
           <Plus className="h-4 w-4" /> Add Member
         </Link>
@@ -116,14 +116,14 @@ export default function TeamPage() {
 
       {/* Week Navigation */}
       <div className="flex items-center gap-3 mb-5">
-        <button onClick={() => setWeekOf(w => addDays(w, -7))} className="rounded-full border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.06)] p-2 text-[var(--t-frame-text-muted)] hover:text-[var(--t-frame-text)] active:scale-95 transition-all">
+        <button onClick={() => setWeekOf(w => addDays(w, -7))} className="rounded-full border border-[var(--t-frame-border)] bg-[var(--t-frame-hover)] p-2 text-[var(--t-frame-text-muted)] hover:text-[var(--t-frame-text)] active:scale-95 transition-all">
           <ChevronLeft className="h-4 w-4" />
         </button>
         <p className="text-sm font-medium text-[var(--t-frame-text)] min-w-[300px] text-center">{fmtWeek(weekOf)}</p>
-        <button onClick={() => setWeekOf(w => addDays(w, 7))} className="rounded-full border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.06)] p-2 text-[var(--t-frame-text-muted)] hover:text-[var(--t-frame-text)] active:scale-95 transition-all">
+        <button onClick={() => setWeekOf(w => addDays(w, 7))} className="rounded-full border border-[var(--t-frame-border)] bg-[var(--t-frame-hover)] p-2 text-[var(--t-frame-text-muted)] hover:text-[var(--t-frame-text)] active:scale-95 transition-all">
           <ChevronRight className="h-4 w-4" />
         </button>
-        <button onClick={() => setWeekOf(getMonday(new Date()))} className={`rounded-full border px-3 py-2 text-xs font-medium transition-all active:scale-95 ${weekOf === getMonday(new Date()) ? "bg-[var(--t-accent-soft)] border-[var(--t-accent)] text-[var(--t-accent)]" : "bg-[rgba(255,255,255,0.06)] border-[rgba(255,255,255,0.08)] text-[var(--t-frame-text-muted)] hover:text-[var(--t-frame-text)]"}`}>This Week</button>
+        <button onClick={() => setWeekOf(getMonday(new Date()))} className={`rounded-full border px-3 py-2 text-xs font-medium transition-all active:scale-95 ${weekOf === getMonday(new Date()) ? "bg-[var(--t-accent-soft)] border-[var(--t-accent)] text-[var(--t-accent)]" : "bg-[var(--t-frame-hover)] border-[var(--t-frame-border)] text-[var(--t-frame-text-muted)] hover:text-[var(--t-frame-text)]"}`}>This Week</button>
       </div>
 
       {/* Filters */}

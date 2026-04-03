@@ -155,7 +155,7 @@ export default function CustomersPage() {
             alignItems: "center",
             gap: 6,
             backgroundColor: "var(--t-accent)",
-            color: "#000",
+            color: "var(--t-accent-on-accent)",
             fontSize: 14,
             fontWeight: 600,
             padding: "10px 20px",
@@ -180,8 +180,8 @@ export default function CustomersPage() {
             onChange={(e) => setSearch(e.target.value)}
             style={{
               width: "100%",
-              backgroundColor: "rgba(255,255,255,0.06)",
-              border: "1px solid rgba(255,255,255,0.08)",
+              backgroundColor: "var(--t-frame-hover)",
+              border: "1px solid var(--t-frame-border)",
               borderRadius: 24,
               padding: "10px 40px 10px 38px",
               fontSize: 14,
@@ -209,7 +209,7 @@ export default function CustomersPage() {
                 border: "none",
                 cursor: "pointer",
                 transition: "all 0.15s ease",
-                backgroundColor: typeFilter === f.key ? "var(--t-accent-soft)" : "rgba(255,255,255,0.06)",
+                backgroundColor: typeFilter === f.key ? "var(--t-accent-soft)" : "var(--t-frame-hover)",
                 color: typeFilter === f.key ? "var(--t-accent)" : "var(--t-frame-text-muted)",
               }}
             >
@@ -261,7 +261,7 @@ export default function CustomersPage() {
                           onClick={() => setPanelOpen(true)}
                           style={{
                             backgroundColor: "var(--t-accent)",
-                            color: "#000",
+                            color: "var(--t-accent-on-accent)",
                             fontSize: 13,
                             fontWeight: 600,
                             padding: "8px 20px",
@@ -607,7 +607,7 @@ function NewCustomerForm({ onSuccess }: { onSuccess: () => void }) {
                 textTransform: "capitalize",
                 border: type === t ? "none" : "1px solid var(--t-border)",
                 backgroundColor: type === t ? "var(--t-accent)" : "transparent",
-                color: type === t ? "#000" : "var(--t-text-muted)",
+                color: type === t ? "var(--t-accent-on-accent)" : "var(--t-text-muted)",
                 cursor: "pointer",
                 transition: "all 0.15s ease",
               }}>
@@ -706,7 +706,7 @@ function NewCustomerForm({ onSuccess }: { onSuccess: () => void }) {
         style={{
           width: "100%",
           backgroundColor: "var(--t-accent)",
-          color: "#000",
+          color: "var(--t-accent-on-accent)",
           fontSize: 14,
           fontWeight: 700,
           padding: "14px 0",

@@ -73,7 +73,7 @@ export default function PortalRequestPage() {
             Back to Dashboard
           </button>
           <button onClick={() => { setSubmitted(false); setSize("20yd"); setDate(""); setAddress({}); setInstructions(""); }}
-            className="rounded-full bg-[var(--t-accent)] px-4 py-2 text-sm font-semibold text-black hover:opacity-90 transition-opacity">
+            className="rounded-full bg-[var(--t-accent)] px-4 py-2 text-sm font-semibold text-[var(--t-accent-on-accent)] hover:opacity-90 transition-opacity">
             Request Another
           </button>
         </div>
@@ -157,7 +157,7 @@ export default function PortalRequestPage() {
 
         {/* Submit */}
         <button type="submit" disabled={submitting || !date || !address.street}
-          className="flex w-full items-center justify-center gap-2 rounded-full bg-[var(--t-accent)] px-4 py-3 text-sm font-semibold text-black hover:opacity-90 disabled:opacity-50 transition-opacity">
+          className="flex w-full items-center justify-center gap-2 rounded-full bg-[var(--t-accent)] px-4 py-3 text-sm font-semibold text-[var(--t-accent-on-accent)] hover:opacity-90 disabled:opacity-50 transition-opacity">
           {submitting ? "Submitting..." : <><Package className="h-4 w-4" /> Submit Request</>}
         </button>
       </form>

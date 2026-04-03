@@ -54,7 +54,7 @@ export default function Dropdown({ trigger, children, align = "left", className 
           style={{
             backgroundColor: "var(--t-bg-secondary)",
             border: "1px solid var(--t-border)",
-            boxShadow: "0 8px 30px rgba(0,0,0,0.15)",
+            boxShadow: "0 8px 30px var(--t-shadow)",
           }}
           onClick={() => setOpen(false)}
         >

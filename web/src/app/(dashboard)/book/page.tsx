@@ -219,7 +219,7 @@ export default function BookingPage() {
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
           {step < 5 && step > 1 && (
-            <button onClick={() => setStep(s => s - 1)} className="rounded-full border border-[var(--t-frame-border)] bg-[rgba(255,255,255,0.06)] p-2 text-[var(--t-frame-text-muted)] hover:text-[var(--t-frame-text)] transition-colors active:scale-95">
+            <button onClick={() => setStep(s => s - 1)} className="rounded-full border border-[var(--t-frame-border)] bg-[var(--t-frame-hover)] p-2 text-[var(--t-frame-text-muted)] hover:text-[var(--t-frame-text)] transition-colors active:scale-95">
               <ArrowLeft className="h-4 w-4" />
             </button>
           )}
@@ -238,7 +238,7 @@ export default function BookingPage() {
         <div className="flex items-center gap-2 mb-8">
           {STEPS.map((s) => (
             <div key={s.num} className="flex-1">
-              <div className={`h-1.5 rounded-full transition-colors ${step >= s.num ? "bg-[#22C55E]" : "bg-[var(--t-bg-card-hover)]"}`} />
+              <div className={`h-1.5 rounded-full transition-colors ${step >= s.num ? "bg-[var(--t-accent)]" : "bg-[var(--t-bg-card-hover)]"}`} />
             </div>
           ))}
         </div>
@@ -282,7 +282,7 @@ export default function BookingPage() {
               <div className={`grid gap-1`} style={{ gridTemplateColumns: `repeat(${Math.min(activeSizes.length || 3, 5)}, 1fr)` }}>
                 {activeSizes.map(s => (
                   <button key={s} onClick={() => setAssetSubtype(s)}
-                    className={`rounded-[20px] py-3 text-xs font-bold transition-all active:scale-95 ${assetSubtype === s ? "bg-[#22C55E] text-black" : "bg-[var(--t-bg-card)] text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)] border border-[var(--t-border)]"}`}>
+                    className={`rounded-[20px] py-3 text-xs font-bold transition-all active:scale-95 ${assetSubtype === s ? "bg-[var(--t-accent)] text-[var(--t-accent-on-accent)]" : "bg-[var(--t-bg-card)] text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)] border border-[var(--t-border)]"}`}>
                     {s}
                   </button>
                 ))}
@@ -366,7 +366,7 @@ export default function BookingPage() {
           )}
 
           <button onClick={() => setStep(2)} disabled={!quote}
-            className="w-full rounded-full bg-[#22C55E] py-3.5 text-sm font-bold text-black transition-all hover:opacity-90 active:scale-[0.98] disabled:opacity-40">
+            className="w-full rounded-full bg-[var(--t-accent)] py-3.5 text-sm font-bold text-[var(--t-accent-on-accent)] transition-all hover:opacity-90 active:scale-[0.98] disabled:opacity-40">
             Customer wants to book
           </button>
         </div>
@@ -414,7 +414,7 @@ export default function BookingPage() {
                 <label className={labelCls}>Type</label>
                 <div className="grid grid-cols-2 gap-2">
                   {(["residential", "commercial"] as const).map(t => (
-                    <button key={t} onClick={() => setCustType(t)} className={`rounded-[20px] py-2.5 text-xs font-medium capitalize transition-all ${custType === t ? "bg-[#22C55E] text-black" : "bg-[var(--t-bg-card)] text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)] border border-[var(--t-border)]"}`}>{t}</button>
+                    <button key={t} onClick={() => setCustType(t)} className={`rounded-[20px] py-2.5 text-xs font-medium capitalize transition-all ${custType === t ? "bg-[var(--t-accent)] text-[var(--t-accent-on-accent)]" : "bg-[var(--t-bg-card)] text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)] border border-[var(--t-border)]"}`}>{t}</button>
                   ))}
                 </div>
               </div>
@@ -422,7 +422,7 @@ export default function BookingPage() {
                 <div><label className={labelCls}>Company Name</label><input value={companyName} onChange={e => setCompanyName(e.target.value)} className={inputCls} /></div>
               )}
               <div className="flex items-center gap-2">
-                <input type="checkbox" checked={sameAddress} onChange={e => setSameAddress(e.target.checked)} className="h-4 w-4 rounded accent-[#22C55E]" />
+                <input type="checkbox" checked={sameAddress} onChange={e => setSameAddress(e.target.checked)} className="h-4 w-4 rounded accent-[var(--t-accent)]" />
                 <span className="text-[13px] text-[var(--t-text-muted)]">Billing address same as delivery</span>
               </div>
               {!sameAddress && <AddressAutocomplete value={billingAddress} onChange={setBillingAddress} label="Billing Address" />}
@@ -430,7 +430,7 @@ export default function BookingPage() {
           )}
 
           <button onClick={() => setStep(3)} disabled={!firstName || !lastName}
-            className="w-full rounded-full bg-[#22C55E] py-3.5 text-sm font-bold text-black transition-all hover:opacity-90 active:scale-[0.98] disabled:opacity-40">
+            className="w-full rounded-full bg-[var(--t-accent)] py-3.5 text-sm font-bold text-[var(--t-accent-on-accent)] transition-all hover:opacity-90 active:scale-[0.98] disabled:opacity-40">
             Continue to scheduling
           </button>
         </div>
@@ -475,7 +475,7 @@ export default function BookingPage() {
           </div>
 
           <button onClick={() => setStep(4)}
-            className="w-full rounded-full bg-[#22C55E] py-3.5 text-sm font-bold text-black transition-all hover:opacity-90 active:scale-[0.98]">
+            className="w-full rounded-full bg-[var(--t-accent)] py-3.5 text-sm font-bold text-[var(--t-accent-on-accent)] transition-all hover:opacity-90 active:scale-[0.98]">
             Continue to payment
           </button>
         </div>
@@ -531,7 +531,7 @@ export default function BookingPage() {
           )}
 
           <button onClick={handleSubmit} disabled={submitting}
-            className="w-full rounded-full bg-[#22C55E] py-4 text-sm font-bold text-black transition-all hover:opacity-90 active:scale-[0.98] disabled:opacity-50">
+            className="w-full rounded-full bg-[var(--t-accent)] py-4 text-sm font-bold text-[var(--t-accent-on-accent)] transition-all hover:opacity-90 active:scale-[0.98] disabled:opacity-50">
             {submitting ? (
               <span className="flex items-center justify-center gap-2">
                 <div className="h-4 w-4 animate-spin rounded-full border-2 border-black border-t-transparent" />
@@ -562,7 +562,7 @@ export default function BookingPage() {
 
           <div className="mt-8 flex flex-col gap-2 max-w-sm mx-auto">
             <button onClick={() => { setStep(1); setResult(null); setQuote(null); setCustomerId(null); setFirstName(""); setLastName(""); setAddress({ street: "", city: "", state: "", zip: "", lat: null, lng: null }); }}
-              className="rounded-full bg-[#22C55E] py-3 text-sm font-bold text-black hover:opacity-90 transition-all active:scale-[0.98]">
+              className="rounded-full bg-[var(--t-accent)] py-3 text-sm font-bold text-[var(--t-accent-on-accent)] hover:opacity-90 transition-all active:scale-[0.98]">
               Create Another Booking
             </button>
             <Link href={`/jobs/${result.deliveryJob.id}`}

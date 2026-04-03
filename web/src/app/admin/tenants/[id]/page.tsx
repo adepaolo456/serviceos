@@ -185,7 +185,7 @@ export default function TenantDetailPage({
                   disabled={updating || tenant.subscriptionTier === t}
                   className={`rounded-full py-2 text-xs font-medium capitalize transition-all disabled:opacity-40 ${
                     tenant.subscriptionTier === t
-                      ? "bg-[var(--t-accent)] text-black"
+                      ? "bg-[var(--t-accent)] text-[var(--t-accent-on-accent)]"
                       : "border border-[var(--t-border)] text-[var(--t-text-primary)] hover:bg-[var(--t-bg-card-hover)]"
                   }`}
                 >

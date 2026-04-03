@@ -40,8 +40,8 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
       style={{ backgroundColor: checked ? "var(--t-accent)" : "var(--t-border)" }}
     >
       <span
-        className="inline-block h-4 w-4 rounded-full bg-white transition-transform"
-        style={{ transform: checked ? "translateX(24px)" : "translateX(4px)" }}
+        className="inline-block h-4 w-4 rounded-full transition-transform"
+        style={{ backgroundColor: "var(--t-bg-primary)", transform: checked ? "translateX(24px)" : "translateX(4px)" }}
       />
     </button>
   );
@@ -171,7 +171,7 @@ export default function DeleteTaskModal({ open, onClose, taskId, onDeleted }: De
                 </p>
               )}
               {preview.isInProgress && (
-                <div className="mt-2 rounded-[20px] px-3 py-2 text-xs font-semibold" style={{ backgroundColor: "rgba(234, 179, 8, 0.1)", color: "#EAB308" }}>
+                <div className="mt-2 rounded-[20px] px-3 py-2 text-xs font-semibold" style={{ backgroundColor: "var(--t-warning-soft)", color: "var(--t-warning)" }}>
                   This task is currently in progress. Wait until the driver completes or cancels.
                 </div>
               )}
@@ -239,10 +239,10 @@ export default function DeleteTaskModal({ open, onClose, taskId, onDeleted }: De
             {preview.linkedInvoices.some((inv) => voidInvoices[inv.id] && Number(inv.amount_paid) > 0) && (
               <div
                 className="flex items-start gap-2 rounded-[20px] px-4 py-3"
-                style={{ backgroundColor: "rgba(234, 179, 8, 0.1)", border: "1px solid rgba(234, 179, 8, 0.3)" }}
+                style={{ backgroundColor: "var(--t-warning-soft)", border: "1px solid color-mix(in srgb, var(--t-warning) 30%, transparent)" }}
               >
-                <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" style={{ color: "#EAB308" }} />
-                <span className="text-sm" style={{ color: "#EAB308" }}>
+                <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" style={{ color: "var(--t-warning)" }} />
+                <span className="text-sm" style={{ color: "var(--t-warning)" }}>
                   A credit will be applied to the customer&apos;s account for paid amounts on voided invoices.
                 </span>
               </div>
@@ -263,7 +263,7 @@ export default function DeleteTaskModal({ open, onClose, taskId, onDeleted }: De
                 disabled={submitting || preview.isInProgress || (voidReasonRequired && !voidReason.trim())}
                 onClick={handleDelete}
                 className="flex-1 rounded-full py-3 text-sm font-semibold transition-opacity disabled:opacity-40"
-                style={{ backgroundColor: "var(--t-error)", color: "#fff" }}
+                style={{ backgroundColor: "var(--t-error)", color: "var(--t-bg-primary)" }}
               >
                 {submitting ? "Deleting..." : "Delete task"}
               </button>

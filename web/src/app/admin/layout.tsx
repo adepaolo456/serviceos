@@ -59,7 +59,7 @@ export default function AdminLayout({
         <Shield className="h-16 w-16 text-[var(--t-error)] mb-4" />
         <h1 className="text-[28px] font-bold tracking-[-1px] text-[var(--t-text-primary)]">Access Denied</h1>
         <p className="mt-2 text-[var(--t-text-muted)]">You don&apos;t have permission to access the admin panel.</p>
-        <a href="/" className="mt-6 rounded-full bg-[var(--t-accent)] px-5 py-2.5 text-sm font-semibold text-black hover:opacity-90 transition-opacity">
+        <a href="/" className="mt-6 rounded-full bg-[var(--t-accent)] px-5 py-2.5 text-sm font-semibold text-[var(--t-accent-on-accent)] hover:opacity-90 transition-opacity">
           Back to Dashboard
         </a>
       </div>
@@ -74,7 +74,7 @@ export default function AdminLayout({
           <div className="flex items-center gap-6">
             <div className="flex items-center gap-2.5">
               <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--t-accent)]">
-                <span className="text-sm font-bold text-black">S</span>
+                <span className="text-sm font-bold text-[var(--t-accent-on-accent)]">S</span>
               </div>
               <span className="text-base font-bold" style={{ color: "var(--t-frame-text)" }}>
                 ServiceOS <span className="text-xs font-medium ml-1" style={{ color: "var(--t-frame-text-muted)" }}>Admin</span>

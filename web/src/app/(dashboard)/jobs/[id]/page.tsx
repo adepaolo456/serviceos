@@ -114,12 +114,12 @@ const VALID_TRANSITIONS: Record<string, string[]> = {
 };
 
 const TRANSITION_STYLES: Record<string, { label: string; className: string; icon: typeof CheckCircle2 }> = {
-  confirmed: { label: "Confirm", className: "bg-[var(--t-accent)] text-black hover:opacity-90", icon: CheckCircle2 },
-  dispatched: { label: "Dispatch", className: "bg-[var(--t-accent)] text-black hover:opacity-90", icon: Truck },
-  en_route: { label: "En Route", className: "bg-[var(--t-accent)] text-black hover:opacity-90", icon: Truck },
-  arrived: { label: "Arrived", className: "bg-[var(--t-accent)] text-black hover:opacity-90", icon: MapPin },
-  in_progress: { label: "Start Work", className: "bg-[var(--t-accent)] text-black hover:opacity-90", icon: AlertCircle },
-  completed: { label: "Complete", className: "bg-[var(--t-accent)] text-black hover:opacity-90", icon: CheckCircle2 },
+  confirmed: { label: "Confirm", className: "bg-[var(--t-accent)] text-[var(--t-accent-on-accent)] hover:opacity-90", icon: CheckCircle2 },
+  dispatched: { label: "Dispatch", className: "bg-[var(--t-accent)] text-[var(--t-accent-on-accent)] hover:opacity-90", icon: Truck },
+  en_route: { label: "En Route", className: "bg-[var(--t-accent)] text-[var(--t-accent-on-accent)] hover:opacity-90", icon: Truck },
+  arrived: { label: "Arrived", className: "bg-[var(--t-accent)] text-[var(--t-accent-on-accent)] hover:opacity-90", icon: MapPin },
+  in_progress: { label: "Start Work", className: "bg-[var(--t-accent)] text-[var(--t-accent-on-accent)] hover:opacity-90", icon: AlertCircle },
+  completed: { label: "Complete", className: "bg-[var(--t-accent)] text-[var(--t-accent-on-accent)] hover:opacity-90", icon: CheckCircle2 },
   cancelled: { label: "Cancel", className: "border border-[var(--t-error)]/20 text-[var(--t-error)] hover:bg-[var(--t-error-soft)]", icon: XCircle },
 };
 
@@ -392,7 +392,7 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
               <p className="text-sm font-semibold" style={{ color: "var(--t-error)" }}>
                 Failed Trip
                 {job.attempt_count && job.attempt_count > 1 && (
-                  <span className="ml-2 text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: "rgba(220,38,38,0.1)", color: "#DC2626" }}>
+                  <span className="ml-2 text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: "var(--t-error-soft)", color: "var(--t-error)" }}>
                     Attempt #{job.attempt_count}
                   </span>
                 )}
@@ -416,7 +416,7 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
                 <div className="flex flex-col items-center">
                   <div className={`flex h-9 w-9 items-center justify-center rounded-full text-xs font-bold transition-colors ${
                     job.status === "cancelled" && i > statusIdx ? "bg-[var(--t-border)] text-[var(--t-text-muted)]" :
-                    isCurrent ? "bg-[var(--t-accent)] text-black ring-4 ring-[var(--t-accent)]/20" :
+                    isCurrent ? "bg-[var(--t-accent)] text-[var(--t-accent-on-accent)] ring-4 ring-[var(--t-accent)]/20" :
                     isCompleted ? "bg-[var(--t-accent)]/20 text-[var(--t-accent)]" : "bg-[var(--t-border)] text-[var(--t-text-muted)]"
                   }`}>
                     {job.status === "cancelled" && isCurrent ? (

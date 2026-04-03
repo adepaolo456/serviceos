@@ -161,7 +161,7 @@ function CompanyTab({ profile, onSaved }: { profile: Profile | null; onSaved: ()
       <div className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6">
         <h2 className="text-base font-semibold text-[var(--t-text-primary)] mb-4">Service Radius</h2>
         <div className="flex items-center gap-4">
-          <input type="range" min="5" max="200" value={radius} onChange={(e) => setRadius(e.target.value)} className="flex-1 accent-[#22C55E]" />
+          <input type="range" min="5" max="200" value={radius} onChange={(e) => setRadius(e.target.value)} className="flex-1 accent-[var(--t-accent)]" />
           <div className="w-20 text-center">
             <span className="text-xl font-bold text-[var(--t-text-primary)]">{radius}</span>
             <span className="text-[13px] text-[var(--t-text-muted)] ml-1">mi</span>
@@ -171,7 +171,7 @@ function CompanyTab({ profile, onSaved }: { profile: Profile | null; onSaved: ()
 
       {saveStatus === "success" && <div className="rounded-[20px] bg-[var(--t-accent-soft)] px-4 py-3 text-sm text-[var(--t-accent)]">Settings saved successfully.</div>}
       {saveStatus === "error" && <div className="rounded-[20px] bg-[var(--t-error-soft)] px-4 py-3 text-sm text-[var(--t-error)]">Failed to save settings.</div>}
-      <button onClick={handleSave} disabled={saving} className="rounded-full bg-[#22C55E] text-black font-semibold px-6 py-2.5 text-sm transition-opacity hover:opacity-90 disabled:opacity-50">
+      <button onClick={handleSave} disabled={saving} className="rounded-full bg-[var(--t-accent)] text-[var(--t-accent-on-accent)] font-semibold px-6 py-2.5 text-sm transition-opacity hover:opacity-90 disabled:opacity-50">
         {saving ? "Saving..." : "Save Changes"}
       </button>
     </div>
@@ -195,7 +195,7 @@ function TeamTab() {
     <div className="max-w-3xl">
       <div className="flex items-center justify-between mb-6">
         <p className="text-sm text-[var(--t-text-muted)]">{members.length} team members</p>
-        <button onClick={() => setInviteOpen(true)} className="flex items-center gap-2 rounded-full bg-[#22C55E] text-black font-semibold px-5 py-2.5 text-sm transition-opacity hover:opacity-90">
+        <button onClick={() => setInviteOpen(true)} className="flex items-center gap-2 rounded-full bg-[var(--t-accent)] text-[var(--t-accent-on-accent)] font-semibold px-5 py-2.5 text-sm transition-opacity hover:opacity-90">
           <Users className="h-4 w-4" /> Invite Member
         </button>
       </div>
@@ -274,11 +274,11 @@ function InviteForm({ onSuccess }: { onSuccess: () => void }) {
         <div className="grid grid-cols-4 gap-1">
           {(["admin", "dispatcher", "driver", "viewer"] as const).map((r) => (
             <button key={r} type="button" onClick={() => setRole(r)}
-              className={`rounded-full py-2 text-xs font-medium capitalize transition-colors ${role === r ? "bg-[#22C55E] text-black" : "text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)]"}`}>{r}</button>
+              className={`rounded-full py-2 text-xs font-medium capitalize transition-colors ${role === r ? "bg-[var(--t-accent)] text-[var(--t-accent-on-accent)]" : "text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)]"}`}>{r}</button>
           ))}
         </div>
       </div>
-      <button type="submit" disabled={saving} className="w-full rounded-full bg-[#22C55E] text-black font-semibold px-4 py-2.5 text-sm transition-opacity hover:opacity-90 disabled:opacity-50">
+      <button type="submit" disabled={saving} className="w-full rounded-full bg-[var(--t-accent)] text-[var(--t-accent-on-accent)] font-semibold px-4 py-2.5 text-sm transition-opacity hover:opacity-90 disabled:opacity-50">
         {saving ? "Inviting..." : "Send Invite"}
       </button>
     </form>
@@ -332,7 +332,7 @@ function BillingTab({ profile }: { profile: Profile | null }) {
           return (
             <div key={tier.key} className={`relative rounded-[20px] border p-6 transition-colors ${isCurrent ? "bg-[var(--t-accent-soft)] border-[var(--t-accent)]" : "bg-[var(--t-bg-card)] border-[var(--t-border)] hover:bg-[var(--t-bg-card-hover)]"}`}>
               {"popular" in tier && tier.popular && (
-                <span className="absolute -top-2.5 right-4 rounded-full bg-[#22C55E] px-3 py-0.5 text-[10px] font-bold text-black">Popular</span>
+                <span className="absolute -top-2.5 right-4 rounded-full bg-[var(--t-accent)] px-3 py-0.5 text-[10px] font-bold text-[var(--t-accent-on-accent)]">Popular</span>
               )}
               <p className="text-lg font-semibold text-[var(--t-text-primary)]">{tier.name}</p>
               <p className="mt-1"><span className="text-3xl font-bold text-[var(--t-text-primary)] tabular-nums">{tier.price}</span><span className="text-sm text-[var(--t-text-muted)]">/mo</span></p>
@@ -340,7 +340,7 @@ function BillingTab({ profile }: { profile: Profile | null }) {
                 {tier.features.map((f) => (<li key={f} className="flex items-center gap-2 text-sm"><Check className="h-3.5 w-3.5 text-[var(--t-accent)]" /><span className="text-[var(--t-text-primary)]">{f}</span></li>))}
               </ul>
               <button onClick={() => !isCurrent && handleUpgrade(tier.key)} disabled={isCurrent || upgrading === tier.key}
-                className={`mt-6 w-full rounded-full py-2.5 text-sm font-semibold transition-colors ${isCurrent ? "bg-[var(--t-bg-card-hover)] text-[var(--t-text-muted)] cursor-default" : "bg-[#22C55E] text-black hover:opacity-90"}`}>
+                className={`mt-6 w-full rounded-full py-2.5 text-sm font-semibold transition-colors ${isCurrent ? "bg-[var(--t-bg-card-hover)] text-[var(--t-text-muted)] cursor-default" : "bg-[var(--t-accent)] text-[var(--t-accent-on-accent)] hover:opacity-90"}`}>
                 {isCurrent ? "Current Plan" : upgrading === tier.key ? "Redirecting..." : "Upgrade"}
               </button>
             </div>
@@ -439,7 +439,7 @@ function LocationsTab() {
       <div className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6">
         <div className="flex items-center justify-between mb-4">
           <div><h2 className="text-base font-semibold text-[var(--t-text-primary)]">Yard Locations</h2><p className="text-[13px] text-[var(--t-text-muted)] mt-1">Primary yard used for distance pricing.</p></div>
-          <button onClick={() => setAddOpen(true)} className="flex items-center gap-2 rounded-full bg-[#22C55E] px-4 py-2 text-sm font-semibold text-black transition-opacity hover:opacity-90"><Plus className="h-4 w-4" /> Add Yard</button>
+          <button onClick={() => setAddOpen(true)} className="flex items-center gap-2 rounded-full bg-[var(--t-accent)] px-4 py-2 text-sm font-semibold text-[var(--t-accent-on-accent)] transition-opacity hover:opacity-90"><Plus className="h-4 w-4" /> Add Yard</button>
         </div>
         {loading ? (
           <div className="space-y-3">{[1,2].map(i => <div key={i} className="h-16 skeleton rounded-[20px]" />)}</div>
@@ -499,10 +499,10 @@ function AddYardForm({ onSuccess }: { onSuccess: () => void }) {
         </div>
       )}
       <div className="flex items-center gap-2">
-        <input type="checkbox" checked={isPrimary} onChange={e => setIsPrimary(e.target.checked)} className="h-4 w-4 rounded accent-[#22C55E]" />
+        <input type="checkbox" checked={isPrimary} onChange={e => setIsPrimary(e.target.checked)} className="h-4 w-4 rounded accent-[var(--t-accent)]" />
         <span className="text-sm text-[var(--t-text-muted)]">Set as primary yard (used for pricing)</span>
       </div>
-      <button type="submit" disabled={saving} className="w-full rounded-full bg-[#22C55E] py-3 text-sm font-semibold text-black transition-opacity hover:opacity-90 disabled:opacity-50">
+      <button type="submit" disabled={saving} className="w-full rounded-full bg-[var(--t-accent)] py-3 text-sm font-semibold text-[var(--t-accent-on-accent)] transition-opacity hover:opacity-90 disabled:opacity-50">
         {saving ? "Adding..." : "Add Yard"}
       </button>
     </form>
@@ -582,13 +582,13 @@ function NotificationsTab() {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div className="flex gap-2">
             <input value={testEmail} onChange={e => setTestEmail(e.target.value)} placeholder="your@email.com" className={`flex-1 ${inp}`} />
-            <button onClick={() => sendTest("email")} disabled={testSending || !testEmail} className="shrink-0 rounded-full px-4 py-2 text-xs font-semibold disabled:opacity-40" style={{ background: "var(--t-accent)", color: "#000" }}>
+            <button onClick={() => sendTest("email")} disabled={testSending || !testEmail} className="shrink-0 rounded-full px-4 py-2 text-xs font-semibold disabled:opacity-40" style={{ background: "var(--t-accent)", color: "var(--t-accent-on-accent)" }}>
               {testSending ? "..." : "Test Email"}
             </button>
           </div>
           <div className="flex gap-2">
             <input value={testPhone} onChange={e => setTestPhone(e.target.value)} placeholder="+1234567890" className={`flex-1 ${inp}`} />
-            <button onClick={() => sendTest("sms")} disabled={testSending || !testPhone} className="shrink-0 rounded-full px-4 py-2 text-xs font-semibold disabled:opacity-40" style={{ background: "var(--t-accent)", color: "#000" }}>
+            <button onClick={() => sendTest("sms")} disabled={testSending || !testPhone} className="shrink-0 rounded-full px-4 py-2 text-xs font-semibold disabled:opacity-40" style={{ background: "var(--t-accent)", color: "var(--t-accent-on-accent)" }}>
               {testSending ? "..." : "Test SMS"}
             </button>
           </div>
@@ -669,7 +669,7 @@ function NotifCard({ title, desc, children }: { title: string; desc: string; chi
 function ToggleSwitch({ label, checked, onChange }: { label: string; checked: boolean; onChange: () => void }) {
   return (
     <label className="flex items-center gap-2 cursor-pointer">
-      <button type="button" onClick={onChange} className={`relative h-5 w-9 rounded-full transition-colors ${checked ? "bg-[#22C55E]" : "bg-[var(--t-bg-card-hover)]"}`}>
+      <button type="button" onClick={onChange} className={`relative h-5 w-9 rounded-full transition-colors ${checked ? "bg-[var(--t-accent)]" : "bg-[var(--t-bg-card-hover)]"}`}>
         <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${checked ? "left-[18px]" : "left-0.5"}`} />
       </button>
       {label && <span className="text-[13px] text-[var(--t-text-muted)]">{label}</span>}
@@ -715,7 +715,7 @@ function AccountTab({ profile }: { profile: Profile | null }) {
           <div><label className={labelCls}>Current Password</label><input type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} className={inputCls} required /></div>
           <div><label className={labelCls}>New Password</label><input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className={inputCls} required /></div>
           <div><label className={labelCls}>Confirm New Password</label><input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className={inputCls} required /></div>
-          <button type="submit" disabled={passwordSaving} className="rounded-full bg-[#22C55E] px-5 py-2 text-sm font-semibold text-black transition-opacity hover:opacity-90 disabled:opacity-50">
+          <button type="submit" disabled={passwordSaving} className="rounded-full bg-[var(--t-accent)] px-5 py-2 text-sm font-semibold text-[var(--t-accent-on-accent)] transition-opacity hover:opacity-90 disabled:opacity-50">
             {passwordSaving ? "Updating..." : "Update Password"}
           </button>
         </form>
@@ -761,7 +761,7 @@ function AccountTab({ profile }: { profile: Profile | null }) {
             <p className="text-sm text-[var(--t-error)] font-medium flex items-center gap-2"><AlertTriangle className="h-4 w-4" /> Are you absolutely sure?</p>
             <p className="text-[13px] text-[var(--t-text-muted)]">This will permanently delete your company, all jobs, invoices, customers, and assets.</p>
             <div className="flex gap-2">
-              <button className="rounded-full bg-[var(--t-error)] px-4 py-2 text-sm font-semibold text-white hover:opacity-90 transition-opacity">Yes, Delete Everything</button>
+              <button className="rounded-full bg-[var(--t-error)] px-4 py-2 text-sm font-semibold text-[var(--t-accent-on-accent)] hover:opacity-90 transition-opacity">Yes, Delete Everything</button>
               <button onClick={() => setDeleteConfirm(false)} className="rounded-full border border-[var(--t-border)] px-4 py-2 text-sm text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)] transition-colors">Cancel</button>
             </div>
           </div>
@@ -816,7 +816,7 @@ function WebsiteTab({ slug }: { slug: string }) {
           <h3 className="text-sm font-semibold text-[var(--t-text-primary)]">Your Website</h3>
           <label className="flex items-center gap-2">
             <span className="text-[13px] text-[var(--t-text-muted)]">Enabled</span>
-            <button onClick={() => setConfig(c => ({ ...c, websiteEnabled: !c.websiteEnabled }))} className={`w-10 h-5 rounded-full transition-colors ${config.websiteEnabled ? "bg-[#22C55E]" : "bg-[var(--t-bg-card-hover)]"}`}>
+            <button onClick={() => setConfig(c => ({ ...c, websiteEnabled: !c.websiteEnabled }))} className={`w-10 h-5 rounded-full transition-colors ${config.websiteEnabled ? "bg-[var(--t-accent)]" : "bg-[var(--t-bg-card-hover)]"}`}>
               <span className={`block w-4 h-4 rounded-full bg-white shadow transition-transform ${config.websiteEnabled ? "translate-x-5" : "translate-x-0.5"}`} />
             </button>
           </label>
@@ -863,7 +863,7 @@ function WebsiteTab({ slug }: { slug: string }) {
           <h3 className="text-sm font-semibold text-[var(--t-text-primary)]">Embed Widget</h3>
           <label className="flex items-center gap-2">
             <span className="text-[13px] text-[var(--t-text-muted)]">Enabled</span>
-            <button onClick={() => setConfig(c => ({ ...c, widgetEnabled: !c.widgetEnabled }))} className={`w-10 h-5 rounded-full transition-colors ${config.widgetEnabled ? "bg-[#22C55E]" : "bg-[var(--t-bg-card-hover)]"}`}>
+            <button onClick={() => setConfig(c => ({ ...c, widgetEnabled: !c.widgetEnabled }))} className={`w-10 h-5 rounded-full transition-colors ${config.widgetEnabled ? "bg-[var(--t-accent)]" : "bg-[var(--t-bg-card-hover)]"}`}>
               <span className={`block w-4 h-4 rounded-full bg-white shadow transition-transform ${config.widgetEnabled ? "translate-x-5" : "translate-x-0.5"}`} />
             </button>
           </label>
@@ -880,7 +880,7 @@ function WebsiteTab({ slug }: { slug: string }) {
       </div>
 
       <div className="flex items-center gap-3">
-        <button onClick={handleSave} disabled={saving} className="rounded-full bg-[#22C55E] px-6 py-3 text-sm font-semibold text-black transition-opacity hover:opacity-90 disabled:opacity-50">
+        <button onClick={handleSave} disabled={saving} className="rounded-full bg-[var(--t-accent)] px-6 py-3 text-sm font-semibold text-[var(--t-accent-on-accent)] transition-opacity hover:opacity-90 disabled:opacity-50">
           {saving ? "Saving..." : "Save Website Settings"}
         </button>
         {saved && <span className="text-sm text-[var(--t-accent)] flex items-center gap-1"><Check className="h-4 w-4" /> Saved</span>}

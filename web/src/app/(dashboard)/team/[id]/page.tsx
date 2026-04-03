@@ -260,7 +260,7 @@ export default function EmployeeDetailPage({ params }: { params: Promise<{ id: s
             <textarea placeholder="Add a note..." rows={3}
               className="w-full bg-transparent text-sm text-[var(--t-text-primary)] placeholder-[var(--t-text-muted)] outline-none resize-none" />
             <div className="flex justify-end mt-2">
-              <button className="rounded-full bg-[#22C55E] px-5 py-2 text-xs font-semibold text-black transition-opacity hover:opacity-90">Add Note</button>
+              <button className="rounded-full bg-[var(--t-accent)] px-5 py-2 text-xs font-semibold text-[var(--t-accent-on-accent)] transition-opacity hover:opacity-90">Add Note</button>
             </div>
           </div>
           <div className="space-y-3">
@@ -387,7 +387,7 @@ function DriverRatesTab({ emp, onSave }: { emp: Employee; onSave: (e: Employee) 
         ))}
       </div>
 
-      <button onClick={handleSave} disabled={saving} className="w-full rounded-full bg-[#22C55E] py-3 text-sm font-semibold text-black transition-opacity hover:opacity-90 disabled:opacity-50">
+      <button onClick={handleSave} disabled={saving} className="w-full rounded-full bg-[var(--t-accent)] py-3 text-sm font-semibold text-[var(--t-accent-on-accent)] transition-opacity hover:opacity-90 disabled:opacity-50">
         {saving ? "Saving..." : "Update Driver Rates"}
       </button>
     </div>
@@ -430,7 +430,7 @@ function ContactTab({ emp, onSave }: { emp: Employee; onSave: (e: Employee) => v
         <Row label="Phone" value={emp.phone ? <a href={`tel:${emp.phone}`} className="hover:text-[var(--t-accent)]">{fmtPhone(emp.phone)}</a> : "\u2014"} />
         <Row label="Email" value={emp.email || "\u2014"} />
         <div className="flex items-center gap-3 mt-3 pt-3 border-t border-[var(--t-border)]">
-          <input type="checkbox" checked={smsOptIn} onChange={e => setSmsOptIn(e.target.checked)} className="h-4 w-4 rounded accent-[#22C55E]" />
+          <input type="checkbox" checked={smsOptIn} onChange={e => setSmsOptIn(e.target.checked)} className="h-4 w-4 rounded accent-[var(--t-accent)]" />
           <div>
             <p className="text-[13px] text-[var(--t-text-primary)]">SMS Notifications</p>
             <p className="text-[11px] text-[var(--t-text-muted)] leading-tight mt-0.5">By opting in, {emp.firstName} agrees to receive text messages.</p>
@@ -465,7 +465,7 @@ function ContactTab({ emp, onSave }: { emp: Employee; onSave: (e: Employee) => v
         {address.lat && <p className="text-[11px] text-[var(--t-text-muted)] mt-2">GPS: {address.lat.toFixed(4)}, {address.lng?.toFixed(4)}</p>}
       </Card>
 
-      <button onClick={handleSave} disabled={saving} className="w-full rounded-full bg-[#22C55E] py-3 text-sm font-semibold text-black transition-opacity hover:opacity-90 disabled:opacity-50">
+      <button onClick={handleSave} disabled={saving} className="w-full rounded-full bg-[var(--t-accent)] py-3 text-sm font-semibold text-[var(--t-accent-on-accent)] transition-opacity hover:opacity-90 disabled:opacity-50">
         {saving ? "Saving..." : "Save Contact Info"}
       </button>
     </div>
@@ -493,7 +493,7 @@ function AccessTab({ emp, onSave }: { emp: Employee; onSave: (e: Employee) => vo
   const Toggle = ({ label, k }: { label: string; k: string }) => (
     <div className="flex items-center justify-between py-2">
       <span className="text-sm text-[var(--t-text-primary)]">{label}</span>
-      <button onClick={() => toggle(k)} className={`w-10 h-5 rounded-full transition-colors ${perms[k] ? "bg-[#22C55E]" : "bg-[var(--t-bg-card-hover)]"}`}>
+      <button onClick={() => toggle(k)} className={`w-10 h-5 rounded-full transition-colors ${perms[k] ? "bg-[var(--t-accent)]" : "bg-[var(--t-bg-card-hover)]"}`}>
         <span className={`block w-4 h-4 rounded-full bg-white shadow transition-transform ${perms[k] ? "translate-x-5" : "translate-x-0.5"}`} />
       </button>
     </div>
@@ -524,7 +524,7 @@ function AccessTab({ emp, onSave }: { emp: Employee; onSave: (e: Employee) => vo
         <Toggle label="Weekly Hours" k="report_weekly" />
         <Toggle label="Job History" k="report_jobs" />
       </Card>
-      <button onClick={handleSave} disabled={saving} className="w-full rounded-full bg-[#22C55E] py-3 text-sm font-semibold text-black transition-opacity hover:opacity-90 disabled:opacity-50">
+      <button onClick={handleSave} disabled={saving} className="w-full rounded-full bg-[var(--t-accent)] py-3 text-sm font-semibold text-[var(--t-accent-on-accent)] transition-opacity hover:opacity-90 disabled:opacity-50">
         {saving ? "Saving..." : "Save Permissions"}
       </button>
     </div>
@@ -598,7 +598,7 @@ function EditForm({ emp, onSuccess }: { emp: Employee; onSuccess: (e: Employee) 
         <input value={ecPhone} onChange={e => setEcPhone(e.target.value)} className={inputCls} placeholder="Phone" />
         <input value={ecRel} onChange={e => setEcRel(e.target.value)} className={inputCls} placeholder="Relationship" />
       </div>
-      <button type="submit" disabled={saving} className="w-full rounded-full bg-[#22C55E] py-3 text-sm font-semibold text-black transition-opacity hover:opacity-90 disabled:opacity-50">{saving ? "Saving..." : "Save"}</button>
+      <button type="submit" disabled={saving} className="w-full rounded-full bg-[var(--t-accent)] py-3 text-sm font-semibold text-[var(--t-accent-on-accent)] transition-opacity hover:opacity-90 disabled:opacity-50">{saving ? "Saving..." : "Save"}</button>
     </form>
   );
 }

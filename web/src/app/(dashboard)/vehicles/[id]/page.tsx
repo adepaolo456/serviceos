@@ -275,7 +275,7 @@ function VehicleEditForm({ emp, onSuccess }: { emp: Employee; onSuccess: (e: Emp
       <div><label className={labelCls}>Carry Capacity</label><input value={carryCapacity} onChange={e => setCarryCapacity(e.target.value)} className={inputCls} placeholder="10yd, 15yd, 20yd, 30yd" /></div>
       <div><label className={labelCls}>In-Service Date</label><input type="date" value={inServiceDate} onChange={e => setInServiceDate(e.target.value)} className={inputCls} /></div>
 
-      <button type="submit" disabled={saving} className="w-full rounded-full bg-[#22C55E] py-3 text-sm font-semibold text-black transition-opacity hover:opacity-90 disabled:opacity-50">
+      <button type="submit" disabled={saving} className="w-full rounded-full bg-[var(--t-accent)] py-3 text-sm font-semibold text-[var(--t-accent-on-accent)] transition-opacity hover:opacity-90 disabled:opacity-50">
         {saving ? "Saving..." : "Save Vehicle"}
       </button>
     </form>

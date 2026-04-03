@@ -146,7 +146,7 @@ export default function PortalInvoicesPage() {
           {detail.status === "open" && Number(detail.balance_due) > 0 && (
             <div className="mt-6 flex justify-end">
               <button onClick={() => { setPayConfirmInvoice(detail); setPayResult(null); }}
-                className="flex items-center gap-2 rounded-full bg-[var(--t-accent)] px-6 py-2.5 text-sm font-semibold text-black hover:opacity-90 transition-opacity">
+                className="flex items-center gap-2 rounded-full bg-[var(--t-accent)] px-6 py-2.5 text-sm font-semibold text-[var(--t-accent-on-accent)] hover:opacity-90 transition-opacity">
                 <CreditCard className="h-4 w-4" /> Pay {formatCurrency(detail.balance_due)}
               </button>
             </div>
@@ -222,7 +222,7 @@ export default function PortalInvoicesPage() {
                 </div>
                 {inv.status === "open" && Number(inv.balance_due) > 0 && (
                   <span onClick={(e) => { e.stopPropagation(); setPayConfirmInvoice(inv); setPayResult(null); }}
-                    className="rounded-full bg-[var(--t-accent)] px-3 py-1.5 text-xs font-semibold text-black shrink-0 ml-2 hover:opacity-90 transition-opacity cursor-pointer">Pay Now</span>
+                    className="rounded-full bg-[var(--t-accent)] px-3 py-1.5 text-xs font-semibold text-[var(--t-accent-on-accent)] shrink-0 ml-2 hover:opacity-90 transition-opacity cursor-pointer">Pay Now</span>
                 )}
               </div>
             </button>
@@ -248,7 +248,7 @@ export default function PortalInvoicesPage() {
                 </h3>
                 <p className="text-xs text-[var(--t-text-muted)]">{payResult.message}</p>
                 <button onClick={() => { setPayConfirmInvoice(null); setPayResult(null); }}
-                  className="mt-4 rounded-full bg-[var(--t-accent)] px-5 py-2 text-sm font-semibold text-black hover:opacity-90 transition-opacity">
+                  className="mt-4 rounded-full bg-[var(--t-accent)] px-5 py-2 text-sm font-semibold text-[var(--t-accent-on-accent)] hover:opacity-90 transition-opacity">
                   Done
                 </button>
               </div>
@@ -276,7 +276,7 @@ export default function PortalInvoicesPage() {
                   <button onClick={() => { setPayConfirmInvoice(null); setPayResult(null); }}
                     className="rounded-full px-4 py-2 text-xs font-medium text-[var(--t-text-muted)]">Cancel</button>
                   <button onClick={() => handlePayInvoice(payConfirmInvoice)} disabled={paying}
-                    className="flex items-center gap-1.5 rounded-full bg-[var(--t-accent)] px-5 py-2 text-sm font-semibold text-black disabled:opacity-40 hover:opacity-90 transition-opacity">
+                    className="flex items-center gap-1.5 rounded-full bg-[var(--t-accent)] px-5 py-2 text-sm font-semibold text-[var(--t-accent-on-accent)] disabled:opacity-40 hover:opacity-90 transition-opacity">
                     <CreditCard className="h-4 w-4" />
                     {paying ? "Processing..." : `Pay ${formatCurrency(payConfirmInvoice.balance_due)}`}
                   </button>

@@ -43,18 +43,27 @@ export default function QuickView({
         className="fixed inset-0 bg-black/50 backdrop-blur-sm animate-fade-in"
         onClick={onClose}
       />
-      <div className="relative w-full max-w-2xl bg-dark-secondary shadow-2xl animate-slide-in-right flex flex-col">
+      <div
+        className="relative w-full max-w-2xl shadow-2xl animate-slide-in-right flex flex-col"
+        style={{ backgroundColor: "var(--t-bg-secondary)" }}
+      >
         {/* Header */}
-        <div className="flex items-start justify-between gap-4 border-b border-[#1E2D45] px-6 py-4 shrink-0">
+        <div
+          className="flex items-start justify-between gap-4 px-6 py-4 shrink-0"
+          style={{ borderBottom: "1px solid var(--t-border)" }}
+        >
           <div className="min-w-0">
-            <h2 className="font-display text-lg font-semibold text-white truncate">{title}</h2>
-            {subtitle && <p className="mt-0.5 text-xs text-muted truncate">{subtitle}</p>}
+            <h2 className="font-display text-lg font-semibold truncate" style={{ color: "var(--t-text-primary)" }}>{title}</h2>
+            {subtitle && <p className="mt-0.5 text-xs truncate" style={{ color: "var(--t-text-muted)" }}>{subtitle}</p>}
           </div>
           <div className="flex items-center gap-2 shrink-0">
             {actions}
             <button
               onClick={onClose}
-              className="rounded-lg p-1.5 text-muted transition-all hover:bg-dark-card hover:text-white active:scale-90"
+              className="rounded-lg p-1.5 transition-all active:scale-90"
+              style={{ color: "var(--t-text-muted)" }}
+              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--t-bg-card-hover)"; e.currentTarget.style.color = "var(--t-text-primary)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; e.currentTarget.style.color = "var(--t-text-muted)"; }}
             >
               <X className="h-5 w-5" />
             </button>
@@ -68,7 +77,7 @@ export default function QuickView({
 
         {/* Footer */}
         {footer && (
-          <div className="border-t border-[#1E2D45] px-6 py-3 shrink-0">
+          <div className="px-6 py-3 shrink-0" style={{ borderTop: "1px solid var(--t-border)" }}>
             {footer}
           </div>
         )}

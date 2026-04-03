@@ -1042,7 +1042,7 @@ export default function BookingWizard({
                     {priceQuote.distanceCharge > 0 ? (
                       <div className="flex justify-between text-sm">
                         <span style={{ color: "var(--t-text-muted)" }}>Distance charge ({priceQuote.distanceMiles} mi)</span>
-                        <span style={{ color: "var(--t-warning, #D97706)" }}>{formatCurrency(priceQuote.distanceCharge)}</span>
+                        <span style={{ color: "var(--t-warning)" }}>{formatCurrency(priceQuote.distanceCharge)}</span>
                       </div>
                     ) : priceQuote.distanceMiles > 0 ? (
                       <div className="flex justify-between text-sm">

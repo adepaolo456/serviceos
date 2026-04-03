@@ -119,7 +119,7 @@ export default function BillingIssuesPage() {
           <button
             onClick={handleDetect}
             disabled={detecting}
-            className="inline-flex items-center gap-1.5 rounded-full bg-[var(--t-accent)] px-5 py-2.5 text-sm font-semibold text-black transition-all hover:brightness-110 disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 rounded-full bg-[var(--t-accent)] px-5 py-2.5 text-sm font-semibold text-[var(--t-accent-on-accent)] transition-all hover:brightness-110 disabled:opacity-50"
           >
             <RefreshCw className={`h-4 w-4 ${detecting ? "animate-spin" : ""}`} />
             {detecting ? "Scanning..." : "Detect Issues"}

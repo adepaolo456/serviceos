@@ -85,12 +85,12 @@ const STATUS_LABELS: Record<string, string> = {
 /* ─── Status text colors (no badge backgrounds) ─── */
 
 function statusTextClass(s: string): string {
-  if (s === "completed") return "text-[#22C55E]";
-  if (s === "confirmed") return "text-[#22C55E]";
-  if (s === "overdue" || s === "cancelled") return "text-[#F87171]";
-  if (s === "pending") return "text-[#FCD34D]";
-  if (s === "dispatched") return "text-[#FCD34D]";
-  if (s === "en_route") return "text-[#FCD34D]";
+  if (s === "completed") return "text-[var(--t-accent-text)]";
+  if (s === "confirmed") return "text-[var(--t-accent-text)]";
+  if (s === "overdue" || s === "cancelled") return "text-[var(--t-error)]";
+  if (s === "pending") return "text-[var(--t-warning)]";
+  if (s === "dispatched") return "text-[var(--t-warning)]";
+  if (s === "en_route") return "text-[var(--t-warning)]";
   if (s === "in_progress") return "text-[#3B82F6]";
   return "text-[var(--t-text-muted)]";
 }
@@ -278,7 +278,7 @@ export default function JobsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <div className="flex overflow-hidden rounded-full border border-[rgba(255,255,255,0.08)]">
+          <div className="flex overflow-hidden rounded-full border border-[var(--t-frame-border)]">
             {DATE_RANGE_OPTIONS.map((opt) => (
               <button
                 key={opt.value}
@@ -295,7 +295,7 @@ export default function JobsPage() {
           </div>
           <button
             onClick={() => openWizard()}
-            className="inline-flex items-center gap-1.5 rounded-full bg-[var(--t-accent)] px-5 py-2.5 text-sm font-semibold text-black transition-all hover:brightness-110"
+            className="inline-flex items-center gap-1.5 rounded-full bg-[var(--t-accent)] px-5 py-2.5 text-sm font-semibold text-[var(--t-accent-on-accent)] transition-all hover:brightness-110"
           >
             <Plus className="h-4 w-4" />
             New Booking
@@ -314,9 +314,9 @@ export default function JobsPage() {
               style={{
                 display: "inline-flex", alignItems: "center", gap: 6,
                 padding: "6px 14px", borderRadius: 24, fontSize: 13, fontWeight: 500,
-                background: isActive ? "var(--t-accent-soft)" : "rgba(255,255,255,0.06)",
-                color: isActive ? "#22C55E" : "var(--t-frame-text-muted)",
-                border: isActive ? "1px solid transparent" : "1px solid rgba(255,255,255,0.08)",
+                background: isActive ? "var(--t-accent-soft)" : "var(--t-frame-hover)",
+                color: isActive ? "var(--t-accent-text)" : "var(--t-frame-text-muted)",
+                border: isActive ? "1px solid transparent" : "1px solid var(--t-frame-border)",
                 transition: "all 0.15s ease", cursor: "pointer",
               }}
             >
@@ -336,8 +336,8 @@ export default function JobsPage() {
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search job #, customer, phone, address..."
             style={{
-              width: "100%", borderRadius: 14, border: "1px solid rgba(255,255,255,0.08)",
-              background: "rgba(255,255,255,0.06)", padding: "10px 16px 10px 40px",
+              width: "100%", borderRadius: 14, border: "1px solid var(--t-frame-border)",
+              background: "var(--t-frame-hover)", padding: "10px 16px 10px 40px",
               fontSize: 14, color: "var(--t-frame-text)", outline: "none",
               transition: "border 0.15s ease",
             }}
@@ -365,7 +365,7 @@ export default function JobsPage() {
               onClick={() => setSortBy(opt.value)}
               className="block w-full px-4 py-2 text-left text-sm transition-colors"
               style={{
-                color: sortBy === opt.value ? "#22C55E" : "var(--t-text-primary)",
+                color: sortBy === opt.value ? "var(--t-accent-text)" : "var(--t-text-primary)",
                 background: sortBy === opt.value ? "var(--t-accent-soft)" : "transparent",
               }}
             >
@@ -396,7 +396,7 @@ export default function JobsPage() {
               onClick={() => setPanelOpen(true)}
               style={{
                 display: "inline-flex", alignItems: "center", gap: 8,
-                background: "#22C55E", color: "#000", fontWeight: 600, fontSize: 14,
+                background: "var(--t-accent)", color: "var(--t-accent-on-accent)", fontWeight: 600, fontSize: 14,
                 padding: "10px 20px", borderRadius: 24,
                 transition: "opacity 0.15s ease", cursor: "pointer", border: "none",
               }}
@@ -428,7 +428,7 @@ export default function JobsPage() {
                           return next;
                         });
                       }}
-                      className="h-4 w-4 rounded cursor-pointer accent-[#22C55E]"
+                      className="h-4 w-4 rounded cursor-pointer accent-[var(--t-accent)]"
                     />
                   </th>
                   <th style={{ padding: "12px 16px", textAlign: "left", fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--t-text-muted)" }}>Size</th>
@@ -476,7 +476,7 @@ export default function JobsPage() {
                               return next;
                             });
                           }}
-                          className="h-4 w-4 rounded cursor-pointer accent-[#22C55E]"
+                          className="h-4 w-4 rounded cursor-pointer accent-[var(--t-accent)]"
                         />
                       </td>
                       {/* Size — prominent bold badge */}
@@ -533,7 +533,7 @@ export default function JobsPage() {
                             {job.assigned_driver.first_name} {job.assigned_driver.last_name}
                           </span>
                         ) : (
-                          <span style={{ fontSize: 11, fontWeight: 600, color: "#FCD34D" }}>Unassigned</span>
+                          <span style={{ fontSize: 11, fontWeight: 600, color: "var(--t-warning)" }}>Unassigned</span>
                         )}
                       </td>
 
@@ -548,7 +548,7 @@ export default function JobsPage() {
                           </p>
                         )}
                         {job.rescheduled_by_customer && (
-                          <p style={{ fontSize: 10, fontWeight: 500, color: "#FCD34D", marginTop: 2 }}>
+                          <p style={{ fontSize: 10, fontWeight: 500, color: "var(--t-warning)", marginTop: 2 }}>
                             Rescheduled by customer
                           </p>
                         )}
@@ -702,7 +702,7 @@ export default function JobsPage() {
                   fetchJobs();
                 }}
                 className="rounded-full px-4 py-1.5 text-xs font-semibold transition-all duration-150 active:scale-95"
-                style={{ background: "var(--t-warning)", color: "#000" }}
+                style={{ background: "var(--t-warning)", color: "var(--t-accent-on-accent)" }}
               >
                 Assign Driver
               </button>
@@ -720,7 +720,7 @@ export default function JobsPage() {
                   fetchJobs();
                 }}
                 className="rounded-full px-4 py-1.5 text-xs font-semibold transition-all duration-150 active:scale-95"
-                style={{ background: "var(--t-accent)", color: "#000" }}
+                style={{ background: "var(--t-accent)", color: "var(--t-accent-on-accent)" }}
               >
                 Mark Complete
               </button>
@@ -903,8 +903,8 @@ function NewJobForm({ onSuccess }: { onSuccess: () => void }) {
               className="flex-1 py-2 text-sm font-medium"
               style={{
                 borderRadius: 10, border: "none", cursor: "pointer",
-                background: assetSubtype === s ? "#22C55E" : "transparent",
-                color: assetSubtype === s ? "#000" : "var(--t-text-muted)",
+                background: assetSubtype === s ? "var(--t-accent)" : "transparent",
+                color: assetSubtype === s ? "var(--t-accent-on-accent)" : "var(--t-text-muted)",
                 transition: "all 0.15s ease",
               }}
             >
@@ -972,7 +972,7 @@ function NewJobForm({ onSuccess }: { onSuccess: () => void }) {
           )}
           <div className="flex justify-between text-sm pt-2 mt-2" style={{ borderTop: "1px solid var(--t-border)" }}>
             <span style={{ fontWeight: 600, color: "var(--t-text-primary)" }}>Total</span>
-            <span className="tabular-nums" style={{ fontWeight: 700, color: "#22C55E" }}>${priceQuote.breakdown.total.toFixed(2)}</span>
+            <span className="tabular-nums" style={{ fontWeight: 700, color: "var(--t-accent-text)" }}>${priceQuote.breakdown.total.toFixed(2)}</span>
           </div>
         </div>
       )}
@@ -981,7 +981,7 @@ function NewJobForm({ onSuccess }: { onSuccess: () => void }) {
         type="submit"
         disabled={saving}
         style={{
-          width: "100%", background: "#22C55E", color: "#000", fontWeight: 600, fontSize: 14,
+          width: "100%", background: "var(--t-accent)", color: "var(--t-accent-on-accent)", fontWeight: 600, fontSize: 14,
           padding: "10px 20px", borderRadius: 24, border: "none",
           cursor: "pointer", transition: "opacity 0.15s ease",
           opacity: saving ? 0.5 : 1,

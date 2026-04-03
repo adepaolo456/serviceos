@@ -164,7 +164,7 @@ export default function PortalHomePage() {
             <p className="text-xs text-[var(--t-text-muted)] mt-0.5">{unpaidInvoices.length} unpaid invoice{unpaidInvoices.length !== 1 ? "s" : ""}</p>
           </div>
           <Link href="/portal/invoices"
-            className="flex items-center gap-2 rounded-full bg-[var(--t-accent)] px-5 py-2.5 text-sm font-semibold text-black hover:opacity-90 transition-opacity">
+            className="flex items-center gap-2 rounded-full bg-[var(--t-accent)] px-5 py-2.5 text-sm font-semibold text-[var(--t-accent-on-accent)] hover:opacity-90 transition-opacity">
             <CreditCard className="h-4 w-4" /> Pay Now <ArrowUpRight className="h-3.5 w-3.5" />
           </Link>
         </div>
@@ -309,7 +309,7 @@ export default function PortalHomePage() {
             <div className="flex gap-2 justify-end">
               <button onClick={() => setExtendJobId(null)} className="rounded-full px-4 py-2 text-xs font-medium text-[var(--t-text-muted)]">Cancel</button>
               <button onClick={handleExtend} disabled={!extendDate || actionLoading}
-                className="rounded-full bg-[var(--t-accent)] px-4 py-2 text-xs font-semibold text-black disabled:opacity-40">
+                className="rounded-full bg-[var(--t-accent)] px-4 py-2 text-xs font-semibold text-[var(--t-accent-on-accent)] disabled:opacity-40">
                 {actionLoading ? "Extending..." : "Confirm Extension"}
               </button>
             </div>
@@ -329,7 +329,7 @@ export default function PortalHomePage() {
                 <h3 className="text-sm font-semibold text-[var(--t-text-primary)] mb-1">Issue Reported</h3>
                 <p className="text-xs text-[var(--t-text-muted)]">Our office has been notified and will follow up shortly.</p>
                 <button onClick={() => { setIssueOpen(false); setIssueSuccess(false); }}
-                  className="mt-4 rounded-full bg-[var(--t-accent)] px-5 py-2 text-sm font-semibold text-black hover:opacity-90 transition-opacity">
+                  className="mt-4 rounded-full bg-[var(--t-accent)] px-5 py-2 text-sm font-semibold text-[var(--t-accent-on-accent)] hover:opacity-90 transition-opacity">
                   Done
                 </button>
               </div>
@@ -368,7 +368,7 @@ export default function PortalHomePage() {
                 <div className="flex gap-2 justify-end mt-4">
                   <button onClick={() => setIssueOpen(false)} className="rounded-full px-4 py-2 text-xs font-medium text-[var(--t-text-muted)]">Cancel</button>
                   <button onClick={handleIssueSubmit} disabled={!issueReason || issueSubmitting}
-                    className="rounded-full bg-[var(--t-accent)] px-4 py-2 text-xs font-semibold text-black disabled:opacity-40 hover:opacity-90 transition-opacity">
+                    className="rounded-full bg-[var(--t-accent)] px-4 py-2 text-xs font-semibold text-[var(--t-accent-on-accent)] disabled:opacity-40 hover:opacity-90 transition-opacity">
                     {issueSubmitting ? "Submitting..." : "Submit Report"}
                   </button>
                 </div>
