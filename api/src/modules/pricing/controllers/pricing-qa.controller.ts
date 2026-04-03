@@ -4,6 +4,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { TenantId } from '../../../common/decorators';
 import { Job } from '../../jobs/entities/job.entity';
+import { PricingRule } from '../entities/pricing-rule.entity';
 import { PricingSnapshot } from '../entities/pricing-snapshot.entity';
 import { JobPricingAudit } from '../../jobs/entities/job-pricing-audit.entity';
 import { Invoice } from '../../billing/entities/invoice.entity';
@@ -43,6 +44,9 @@ interface PricingQaRow {
   // Eligibility fields (additive)
   can_generate_snapshot: boolean;
   can_fix_address: boolean;
+  can_change_subtype: boolean;
+  has_pricing_rule: boolean;
+  supported_subtypes: string[];
   action_blockers: string[];
 }
 
@@ -60,6 +64,7 @@ interface SnapshotResult {
 export class PricingQaController {
   constructor(
     @InjectRepository(Job) private jobRepo: Repository<Job>,
+    @InjectRepository(PricingRule) private pricingRuleRepo: Repository<PricingRule>,
     @InjectRepository(PricingSnapshot) private snapshotRepo: Repository<PricingSnapshot>,
     @InjectRepository(JobPricingAudit) private auditRepo: Repository<JobPricingAudit>,
     @InjectRepository(Invoice) private invoiceRepo: Repository<Invoice>,
@@ -97,12 +102,21 @@ export class PricingQaController {
       if (!auditByJob.has(a.job_id)) auditByJob.set(a.job_id, a.recalculation_reasons);
     }
 
+    // Load tenant's active priced subtypes for rule validation
+    const activeRules = await this.pricingRuleRepo.find({
+      where: { tenant_id: tenantId, is_active: true },
+      select: ['asset_subtype'],
+    });
+    const pricedSubtypes = new Set(activeRules.map(r => r.asset_subtype).filter(Boolean));
+    const supportedSubtypes = Array.from(pricedSubtypes).sort();
+
     let lockedCount = 0;
     let recalcCount = 0;
     let exchangeCount = 0;
     let geocodeBlockedCount = 0;
     let missingSnapshotCount = 0;
     let reviewQueueCount = 0;
+    let missingRuleCount = 0;
 
     const rows: PricingQaRow[] = [];
 
@@ -120,6 +134,7 @@ export class PricingQaController {
       const blockers: string[] = [];
       const hasAddress = !!addr && !!(addr.street || addr.city);
       const hasSubtype = !!job.asset_subtype;
+      const hasPricingRule = hasSubtype && pricedSubtypes.has(job.asset_subtype!);
 
       if (!validCoords && hasAddress) {
         issues.push({ type: 'geocode_blocked', severity: 'critical' });
@@ -132,6 +147,12 @@ export class PricingQaController {
       }
 
       if (!hasSubtype) blockers.push('missing_asset_subtype');
+
+      if (hasSubtype && !hasPricingRule) {
+        issues.push({ type: 'missing_pricing_rule', severity: 'warning' });
+        missingRuleCount++;
+        blockers.push('missing_pricing_rule');
+      }
 
       if (!hasSnapshot && job.base_price) {
         issues.push({ type: 'pricing_snapshot_missing', severity: 'warning' });
@@ -162,8 +183,9 @@ export class PricingQaController {
       const snapshot = job.pricing_snapshot as Record<string, any> | null;
       const breakdown = snapshot?.breakdown || {};
 
-      const canGenerate = !hasSnapshot && validCoords && hasSubtype && blockers.length === 0;
+      const canGenerate = !hasSnapshot && validCoords && hasSubtype && hasPricingRule && blockers.length === 0;
       const canFixAddress = !validCoords;
+      const canChangeSubtype = hasSubtype && !hasPricingRule && supportedSubtypes.length > 0;
 
       const primaryIssue = issues.length > 0 ? issues.sort((a, b) => {
         const order = { critical: 0, warning: 1, info: 2 };
@@ -197,6 +219,9 @@ export class PricingQaController {
           updated_at: job.updated_at.toISOString(),
           can_generate_snapshot: canGenerate,
           can_fix_address: canFixAddress,
+          can_change_subtype: canChangeSubtype,
+          has_pricing_rule: hasPricingRule,
+          supported_subtypes: supportedSubtypes,
           action_blockers: blockers,
         });
       }
@@ -218,6 +243,7 @@ export class PricingQaController {
         geocode_blocked: geocodeBlockedCount,
         missing_address: reviewQueueCount,
         missing_snapshots: missingSnapshotCount,
+        missing_pricing_rules: missingRuleCount,
       },
       rows,
     };
@@ -431,6 +457,39 @@ export class PricingQaController {
       lng: geo.lng,
       has_valid_coordinates: true,
       can_generate_snapshot: !!job.asset_subtype && !job.pricing_snapshot,
+    };
+  }
+
+  @Patch('change-subtype/:jobId')
+  @ApiOperation({ summary: 'Change job asset subtype (for pricing rule resolution)' })
+  async changeSubtype(
+    @TenantId() tenantId: string,
+    @Param('jobId', ParseUUIDPipe) jobId: string,
+    @Body() body: { asset_subtype: string },
+  ) {
+    const job = await this.jobRepo.findOne({ where: { id: jobId, tenant_id: tenantId } });
+    if (!job) return { status: 'failed', reason: 'job_not_found' };
+
+    // Validate the new subtype has an active pricing rule for this tenant
+    const rule = await this.pricingRuleRepo.findOne({
+      where: { tenant_id: tenantId, asset_subtype: body.asset_subtype, is_active: true },
+    });
+    if (!rule) return { status: 'failed', reason: 'no_active_pricing_rule_for_subtype' };
+
+    job.asset_subtype = body.asset_subtype;
+    // Clear stale snapshot since subtype changed
+    job.pricing_snapshot = null;
+    job.pricing_locked_at = null;
+    job.pricing_config_version_id = null;
+    job.pricing_snapshot_id = null;
+    await this.jobRepo.save(job);
+
+    const validCoords = hasValidServiceCoordinates(job.service_address as Record<string, unknown>);
+    return {
+      status: 'saved',
+      asset_subtype: body.asset_subtype,
+      has_pricing_rule: true,
+      can_generate_snapshot: validCoords && !job.pricing_snapshot,
     };
   }
 }

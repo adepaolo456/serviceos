@@ -40,6 +40,9 @@ interface PricingQaRow {
   updated_at: string;
   can_generate_snapshot: boolean;
   can_fix_address: boolean;
+  can_change_subtype: boolean;
+  has_pricing_rule: boolean;
+  supported_subtypes: string[];
   action_blockers: string[];
 }
 
@@ -51,6 +54,7 @@ interface Summary {
   geocode_blocked: number;
   missing_address: number;
   missing_snapshots: number;
+  missing_pricing_rules: number;
 }
 
 interface ReviewQueueItem {
@@ -78,6 +82,7 @@ const ISSUE_CONFIG: Record<string, { label: string; icon: typeof Shield; color: 
   pricing_locked_snapshot: { label: "Locked", icon: Lock, color: "var(--t-accent)" },
   pricing_recalculated: { label: "Recalculated", icon: RefreshCw, color: "var(--t-info)" },
   exchange_job: { label: "Exchange", icon: ArrowLeftRight, color: "#a78bfa" },
+  missing_pricing_rule: { label: "No Pricing Rule", icon: FileX, color: "var(--t-error)" },
 };
 
 const SEVERITY_CONFIG = {
@@ -90,6 +95,7 @@ const STAT_CARDS = [
   { key: "geocode_blocked", label: "Geocode Blocked", color: "var(--t-error)", field: "geocode_blocked" as const },
   { key: "missing_address", label: "Missing Address", color: "var(--t-error)", field: "missing_address" as const },
   { key: "missing_snapshots", label: "No Snapshot", color: "var(--t-warning)", field: "missing_snapshots" as const },
+  { key: "missing_pricing_rules", label: "No Pricing Rule", color: "var(--t-error)", field: "missing_pricing_rules" as const },
   { key: "exchange_jobs", label: "Exchange Jobs", color: "#a78bfa", field: "exchange_jobs" as const },
   { key: "recalculations", label: "Recalculated", color: "var(--t-info)", field: "recalculations" as const },
   { key: "locked_snapshots", label: "Locked", color: "var(--t-accent)", field: "locked_snapshots" as const },
@@ -174,12 +180,24 @@ export default function PricingQaPage() {
     } catch { /* */ } finally { setLoading(false); }
   }, []);
 
-  const refreshAfterPanelAction = useCallback(async (jobId: string) => {
+  const refreshAfterPanelAction = useCallback(async (jobId: string): Promise<"resolved" | "updated"> => {
     await fetchData();
     try {
-      const updated = (await api.get<{ rows: PricingQaRow[] }>("/pricing-qa/overview")).rows.find(r => r.job_id === jobId);
-      if (updated) setSelectedRow(updated);
-    } catch { /* row may have been resolved off the list */ }
+      const freshData = await api.get<{ rows: PricingQaRow[] }>("/pricing-qa/overview");
+      const updated = freshData.rows.find(r => r.job_id === jobId);
+      if (updated) {
+        // Row still has issues — keep panel open with updated data
+        setSelectedRow(updated);
+        return "updated";
+      } else {
+        // Row fully resolved — no longer in QA result set
+        // Auto-close after brief success moment
+        setTimeout(() => { setSelectedRow(null); setAuditHistory([]); }, 1000);
+        return "resolved";
+      }
+    } catch {
+      return "updated";
+    }
   }, [fetchData]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
@@ -491,12 +509,13 @@ function PanelContent({ row, auditHistory, auditLoading, onRefresh, onCopyId }: 
   row: PricingQaRow;
   auditHistory: AuditEntry[];
   auditLoading: boolean;
-  onRefresh: (jobId: string) => Promise<void>;
+  onRefresh: (jobId: string) => Promise<"resolved" | "updated">;
   onCopyId: (id: string) => void;
 }) {
   const { toast } = useToast();
   const sev = SEVERITY_CONFIG[row.severity];
   const issue = ISSUE_CONFIG[row.issue_type] || { label: row.issue_type, icon: Shield, color: "var(--t-text-muted)" };
+  const [resolved, setResolved] = useState(false);
 
   // ── ALL editing state is local — parent re-renders cannot reset it ──
   const [addrDraft, setAddrDraft] = useState({
@@ -548,8 +567,9 @@ function PanelContent({ row, auditHistory, auditLoading, onRefresh, onCopyId }: 
       } else {
         toast("success", "Address saved");
       }
-      draftInitRef.current = null; // allow re-init from refreshed row data
-      await onRefresh(row.job_id);
+      draftInitRef.current = null;
+      const outcome = await onRefresh(row.job_id);
+      if (outcome === "resolved") { setResolved(true); toast("success", "Issue fully resolved"); }
     } catch { toast("error", "Failed to save address"); }
     finally { setSaving(false); }
   };
@@ -577,11 +597,33 @@ function PanelContent({ row, auditHistory, auditLoading, onRefresh, onCopyId }: 
       if (result.status === "success") {
         toast("success", "Snapshot generated");
         draftInitRef.current = null;
-        await onRefresh(row.job_id);
+        const outcome = await onRefresh(row.job_id);
+        if (outcome === "resolved") { setResolved(true); toast("success", "Issue fully resolved"); }
       } else {
         toast("error", `Snapshot failed: ${(result.reason || "failed").replace(/_/g, " ")}`);
       }
     } catch { toast("error", "Snapshot generation failed"); }
+  };
+
+  // Change dumpster size
+  const [selectedSubtype, setSelectedSubtype] = useState(row.asset_subtype || "");
+  const [changingSub, setChangingSub] = useState(false);
+
+  const handleChangeSubtype = async () => {
+    if (!selectedSubtype || selectedSubtype === row.asset_subtype) return;
+    setChangingSub(true);
+    try {
+      const result = await api.patch<{ status: string; reason?: string }>(`/pricing-qa/change-subtype/${row.job_id}`, { asset_subtype: selectedSubtype });
+      if (result.status === "saved") {
+        toast("success", `Changed to ${selectedSubtype}`);
+        draftInitRef.current = null;
+        const outcome = await onRefresh(row.job_id);
+        if (outcome === "resolved") { setResolved(true); toast("success", "Issue fully resolved"); }
+      } else {
+        toast("error", `Failed: ${(result.reason || "unknown").replace(/_/g, " ")}`);
+      }
+    } catch { toast("error", "Failed to change subtype"); }
+    finally { setChangingSub(false); }
   };
 
   const CheckItem = ({ label, done, blocked, blockerText, children }: { label: string; done: boolean; blocked?: boolean; blockerText?: string; children?: React.ReactNode }) => (
@@ -600,6 +642,17 @@ function PanelContent({ row, auditHistory, auditLoading, onRefresh, onCopyId }: 
 
   return (
     <div className="space-y-3">
+      {/* Resolved banner */}
+      {resolved && (
+        <div className="rounded-[14px] px-4 py-3 flex items-center gap-2" style={{ background: "var(--t-accent-soft)", border: "1px solid var(--t-accent)" }}>
+          <CheckCircle2 className="h-5 w-5" style={{ color: "var(--t-accent)" }} />
+          <div>
+            <p className="text-sm font-semibold" style={{ color: "var(--t-accent)" }}>Issue Resolved</p>
+            <p className="text-[11px]" style={{ color: "var(--t-text-muted)" }}>Closing panel...</p>
+          </div>
+        </div>
+      )}
+
       {/* Header badges */}
       <div className="flex items-center gap-2 flex-wrap">
         <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: sev.bg, color: sev.color }}>
@@ -678,6 +731,38 @@ function PanelContent({ row, auditHistory, auditLoading, onRefresh, onCopyId }: 
           <p className="text-xs mt-1" style={{ color: "var(--t-accent)" }}>Valid coordinates on file</p>
         )}
       </CheckItem>
+
+      {/* 2b. Pricing Rule / Dumpster Size */}
+      {(row.can_change_subtype || !row.has_pricing_rule) && (
+        <CheckItem label="Pricing Rule" done={row.has_pricing_rule} blocked={false}>
+          <div className="mt-2">
+            <p className="text-[10px] mb-1.5" style={{ color: "var(--t-text-muted)" }}>
+              {row.asset_subtype ? `"${row.asset_subtype}" has no active pricing rule.` : "No dumpster size set."}
+              {row.supported_subtypes.length > 0 ? " Change to a supported size:" : " No priced sizes available for this tenant."}
+            </p>
+            {row.supported_subtypes.length > 0 && (
+              <div className="flex items-center gap-2">
+                <select value={selectedSubtype} onChange={e => setSelectedSubtype(e.target.value)}
+                  className="rounded-lg border px-2.5 py-1.5 text-xs outline-none flex-1"
+                  style={{ borderColor: "var(--t-border)", color: "var(--t-text-primary)", background: "var(--t-bg-input)" }}>
+                  {row.asset_subtype && !row.supported_subtypes.includes(row.asset_subtype) && (
+                    <option value={row.asset_subtype} disabled>{row.asset_subtype} (no rule)</option>
+                  )}
+                  {row.supported_subtypes.map(s => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+                <button onClick={handleChangeSubtype}
+                  disabled={changingSub || !selectedSubtype || selectedSubtype === row.asset_subtype}
+                  className="inline-flex items-center gap-1 rounded-full px-3 py-1 text-[11px] font-semibold disabled:opacity-50 shrink-0"
+                  style={{ background: "var(--t-accent)", color: "var(--t-accent-on-accent)" }}>
+                  {changingSub ? "Saving..." : "Change Size"}
+                </button>
+              </div>
+            )}
+          </div>
+        </CheckItem>
+      )}
 
       {/* 3. Pricing Snapshot */}
       <CheckItem
