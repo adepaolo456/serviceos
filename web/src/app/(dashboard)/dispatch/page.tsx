@@ -1426,15 +1426,6 @@ const JobTile = memo(function JobTile({ job, isUnassigned, drivers, onAssign, on
         </div>
         {/* Quick actions — visible on hover */}
         <div className="shrink-0 flex flex-col gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity" data-no-select>
-          {/* Info button — opens QuickView */}
-          <button onClick={(e) => { e.stopPropagation(); onQuickView(); }}
-            className="flex items-center justify-center w-5 h-5 rounded transition-all"
-            title="Quick view"
-            style={{ color: "var(--t-text-muted)" }}
-            onMouseEnter={e => { e.currentTarget.style.background = "var(--t-bg-card-hover)"; e.currentTarget.style.color = "var(--t-accent)"; }}
-            onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "var(--t-text-muted)"; }}>
-            <Eye className="h-3.5 w-3.5" />
-          </button>
           {onMoveToTop && (
             <button onClick={(e) => { e.stopPropagation(); onMoveToTop(); }}
               className="flex items-center justify-center w-5 h-5 rounded transition-all"
