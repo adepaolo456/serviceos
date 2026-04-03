@@ -143,23 +143,25 @@ export default function OnboardingPage() {
       const data = await api.get<Profile>("/auth/profile");
       setProfile(data);
       setCompanyName(data.tenant.name || "");
-      if (!portalSlug) {
-        setPortalSlug(
-          data.tenant.slug ||
-            data.tenant.name
-              .toLowerCase()
-              .replace(/[^a-z0-9]+/g, "-")
-              .replace(/^-|-$/g, ""),
-        );
-      }
+      setPortalSlug((prev) =>
+        prev ||
+        data.tenant.slug ||
+        data.tenant.name
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-|-$/g, ""),
+      );
     } catch {}
-  }, [portalSlug]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
+  // Load once on mount
   useEffect(() => {
     fetchProgress();
     fetchSettings();
     fetchProfile();
-  }, [fetchProgress, fetchSettings, fetchProfile]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Re-fetch on focus / visibility change (debounced)
   useEffect(() => {
