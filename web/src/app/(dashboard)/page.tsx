@@ -78,7 +78,7 @@ interface UserProfile {
 /* ---- Helpers ---- */
 
 async function getGettingStartedStatus(): Promise<Record<string, boolean>> {
-  const res = await api.get<{ steps: { stepKey: string; status: string }[] }>("/onboarding/progress");
+  const res = await api.get<{ steps: { stepKey: string; status: string }[] }>("/setup/status");
   const result: Record<string, boolean> = {};
   for (const step of res.steps) {
     result[step.stepKey] = step.status === "completed" || step.status === "auto_completed" || step.status === "skipped";

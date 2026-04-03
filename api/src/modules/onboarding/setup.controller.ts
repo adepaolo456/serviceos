@@ -15,28 +15,33 @@ import { UpdateChecklistStepDto } from './dto/onboarding.dto';
 import { CurrentUser, TenantId, Roles } from '../../common/decorators';
 import { RolesGuard } from '../../common/guards';
 
-/** @deprecated Use /setup/* routes instead. Kept as backward-compatible alias. */
-@ApiTags('Onboarding (deprecated)')
-@Controller('onboarding')
+@ApiTags('Setup')
+@Controller('setup')
 @ApiBearerAuth()
-export class OnboardingController {
-  constructor(private readonly onboardingService: OnboardingService) {}
+export class SetupController {
+  constructor(private readonly setupService: OnboardingService) {}
+
+  @Get('status')
+  @ApiOperation({ summary: 'Get setup status with data-derived completion' })
+  getStatus(@TenantId() tenantId: string) {
+    return this.setupService.getOnboardingProgress(tenantId);
+  }
 
   @Get('checklist')
-  @ApiOperation({ summary: 'Get onboarding checklist with derived status' })
+  @ApiOperation({ summary: 'Get setup checklist' })
   getChecklist(@TenantId() tenantId: string) {
-    return this.onboardingService.getChecklist(tenantId);
+    return this.setupService.getChecklist(tenantId);
   }
 
   @Patch('checklist/:stepKey')
-  @ApiOperation({ summary: 'Update a checklist step status' })
-  updateChecklistStep(
+  @ApiOperation({ summary: 'Update a setup step status' })
+  updateStep(
     @TenantId() tenantId: string,
     @CurrentUser('id') userId: string,
     @Param('stepKey') stepKey: string,
     @Body() dto: UpdateChecklistStepDto,
   ) {
-    return this.onboardingService.updateChecklistStep(
+    return this.setupService.updateChecklistStep(
       tenantId,
       stepKey,
       dto.status,
@@ -44,18 +49,12 @@ export class OnboardingController {
     );
   }
 
-  @Get('progress')
-  @ApiOperation({ summary: 'Get onboarding progress summary' })
-  getProgress(@TenantId() tenantId: string) {
-    return this.onboardingService.getOnboardingProgress(tenantId);
-  }
-
   @Post('reset')
   @UseGuards(RolesGuard)
   @Roles('admin')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Reset onboarding checklist (admin only)' })
+  @ApiOperation({ summary: 'Reset setup checklist (admin only)' })
   resetChecklist(@TenantId() tenantId: string) {
-    return this.onboardingService.resetChecklist(tenantId);
+    return this.setupService.resetChecklist(tenantId);
   }
 }
