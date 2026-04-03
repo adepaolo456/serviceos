@@ -77,15 +77,6 @@ interface UserProfile {
 
 /* ---- Helpers ---- */
 
-async function getGettingStartedStatus(): Promise<Record<string, boolean>> {
-  const res = await api.get<{ steps: { stepKey: string; status: string }[] }>("/setup/status");
-  const result: Record<string, boolean> = {};
-  for (const step of res.steps) {
-    result[step.stepKey] = step.status === "completed" || step.status === "auto_completed" || step.status === "skipped";
-  }
-  return result;
-}
-
 const JOB_TYPE_COLOR: Record<string, string> = {
   delivery: "var(--t-accent)",
   pickup: "var(--t-warning)",
@@ -175,10 +166,26 @@ export default function DashboardPage() {
   const [searchOpen, setSearchOpen] = useState(false);
   const searchTimeout = useRef<ReturnType<typeof setTimeout>>(null);
 
-  // Getting Started — lightweight setup status check
-  const [setupStatus, setSetupStatus] = useState<Record<string, boolean> | null>(null);
+  // Detect missing configuration for contextual hints
+  // Backend derives these from real data: pricing rule count, asset count, tenant name + support email
+  const [configHints, setConfigHints] = useState<{ key: string; title: string; desc: string; cta: string; href: string }[]>([]);
   useEffect(() => {
-    getGettingStartedStatus().then(setSetupStatus).catch(() => {});
+    api.get<{ steps: { stepKey: string; status: string }[] }>("/setup/status").then((res) => {
+      const missing: typeof configHints = [];
+      // A step is "data present" if its status is anything other than "pending".
+      // The backend syncs status from live data queries:
+      //   pricing: count(pricing_rules where is_active) > 0
+      //   vehicles: count(assets) > 0
+      //   company_info: tenant.name is set AND tenant_settings.support_email is set
+      const hasData = (key: string) => {
+        const s = res.steps.find((st) => st.stepKey === key);
+        return s ? s.status !== "pending" : false;
+      };
+      if (!hasData("pricing")) missing.push({ key: "pricing", title: "No pricing added yet", desc: "Add dumpster sizes and pricing so jobs can be quoted correctly.", cta: "Manage Pricing", href: "/pricing" });
+      if (!hasData("vehicles")) missing.push({ key: "vehicles", title: "No dumpsters added yet", desc: "Add your dumpsters to track inventory and availability.", cta: "Manage Assets", href: "/assets" });
+      if (!hasData("company_info")) missing.push({ key: "company_info", title: "Business settings incomplete", desc: "Add your company details and support email.", cta: "Open Settings", href: "/settings" });
+      setConfigHints(missing);
+    }).catch(() => {});
   }, []);
 
   // Load dashboard data
@@ -406,54 +413,6 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* ---- Getting Started ---- */}
-      {setupStatus && (() => {
-        const cards = [
-          { key: "pricing", title: "Set Your Pricing", desc: "Add dumpster sizes and pricing to start accepting jobs", btn: "Go to Pricing", href: "/pricing" },
-          { key: "vehicles", title: "Add Your Dumpsters", desc: "Track your inventory and availability", btn: "Add Dumpsters", href: "/assets" },
-          { key: "company_info", title: "Configure Business Settings", desc: "Set your company info, service area, and branding", btn: "Open Settings", href: "/settings" },
-        ];
-        const allDone = cards.every((c) => setupStatus[c.key]);
-        if (allDone) return null;
-        return (
-          <div style={{ marginBottom: 24 }}>
-            <p className="text-[13px] font-semibold uppercase tracking-wide mb-3" style={{ color: "var(--t-frame-text-muted)" }}>Getting Started</p>
-            <div style={{ display: "grid", gap: 12 }} className="grid-cols-1 md:grid-cols-3">
-              {cards.map((c) => {
-                const done = setupStatus[c.key];
-                return (
-                  <Link
-                    key={c.key}
-                    href={c.href}
-                    className="rounded-[16px] border p-5 transition-all hover:border-[var(--t-accent)]"
-                    style={{
-                      backgroundColor: "var(--t-bg-secondary)",
-                      borderColor: done ? "var(--t-accent)" : "var(--t-border)",
-                      textDecoration: "none",
-                      opacity: done ? 0.6 : 1,
-                    }}
-                  >
-                    <div className="flex items-start justify-between mb-2">
-                      <p className="text-[15px] font-semibold" style={{ color: "var(--t-text-primary)" }}>{c.title}</p>
-                      {done && <CheckCircle2 className="h-5 w-5 shrink-0 text-[var(--t-accent)]" />}
-                    </div>
-                    <p className="text-[13px] mb-3" style={{ color: "var(--t-text-muted)" }}>{c.desc}</p>
-                    {!done && (
-                      <span className="inline-block rounded-full bg-[var(--t-accent)] px-4 py-1.5 text-[12px] font-semibold text-black">
-                        {c.btn}
-                      </span>
-                    )}
-                    {done && (
-                      <span className="text-[12px] font-medium text-[var(--t-accent)]">Completed</span>
-                    )}
-                  </Link>
-                );
-              })}
-            </div>
-          </div>
-        );
-      })()}
-
       {/* ---- KPI Cards ---- */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 12, marginBottom: 24 }} className="lg:!grid-cols-4">
         {kpis.map((kpi) => (
@@ -540,6 +499,39 @@ export default function DashboardPage() {
           </Link>
         ))}
       </div>
+
+      {/* ---- Missing config notices ---- */}
+      {configHints.length > 0 && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 16 }}>
+          {configHints.map((h) => (
+            <Link
+              key={h.key}
+              href={h.href}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                backgroundColor: "var(--t-bg-card)",
+                border: "1px solid var(--t-border)",
+                borderRadius: 12,
+                padding: "10px 14px",
+                textDecoration: "none",
+                transition: "border-color 0.15s ease",
+                flex: "1 1 auto",
+                minWidth: 240,
+              }}
+              className="hover:!border-[var(--t-accent)]"
+            >
+              <AlertTriangle style={{ width: 14, height: 14, color: "var(--t-warning)", flexShrink: 0 }} />
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <p style={{ fontSize: 13, fontWeight: 600, color: "var(--t-text-primary)", lineHeight: 1.3 }}>{h.title}</p>
+                <p style={{ fontSize: 11, color: "var(--t-text-muted)", lineHeight: 1.3 }}>{h.desc}</p>
+              </div>
+              <span style={{ fontSize: 11, fontWeight: 600, color: "var(--t-accent)", whiteSpace: "nowrap", flexShrink: 0 }}>{h.cta} &rarr;</span>
+            </Link>
+          ))}
+        </div>
+      )}
 
       {/* ---- Overdue Alerts ---- */}
       {overdueJobs.length > 0 && (
