@@ -55,6 +55,7 @@ interface Summary {
   missing_address: number;
   missing_snapshots: number;
   missing_pricing_rules: number;
+  missing_asset_subtypes: number;
 }
 
 interface ReviewQueueItem {
@@ -82,7 +83,8 @@ const ISSUE_CONFIG: Record<string, { label: string; icon: typeof Shield; color: 
   pricing_locked_snapshot: { label: "Locked", icon: Lock, color: "var(--t-accent)" },
   pricing_recalculated: { label: "Recalculated", icon: RefreshCw, color: "var(--t-info)" },
   exchange_job: { label: "Exchange", icon: ArrowLeftRight, color: "#a78bfa" },
-  missing_pricing_rule: { label: "No Pricing Rule", icon: FileX, color: "var(--t-error)" },
+  missing_pricing_rule: { label: "Unsupported Size", icon: FileX, color: "var(--t-error)" },
+  missing_asset_subtype: { label: "No Size Set", icon: FileX, color: "var(--t-warning)" },
 };
 
 const SEVERITY_CONFIG = {
@@ -95,7 +97,8 @@ const STAT_CARDS = [
   { key: "geocode_blocked", label: "Geocode Blocked", color: "var(--t-error)", field: "geocode_blocked" as const },
   { key: "missing_address", label: "Missing Address", color: "var(--t-error)", field: "missing_address" as const },
   { key: "missing_snapshots", label: "No Snapshot", color: "var(--t-warning)", field: "missing_snapshots" as const },
-  { key: "missing_pricing_rules", label: "No Pricing Rule", color: "var(--t-error)", field: "missing_pricing_rules" as const },
+  { key: "missing_pricing_rules", label: "Unsupported Size", color: "var(--t-error)", field: "missing_pricing_rules" as const },
+  { key: "missing_asset_subtypes", label: "No Size Set", color: "var(--t-warning)", field: "missing_asset_subtypes" as const },
   { key: "exchange_jobs", label: "Exchange Jobs", color: "#a78bfa", field: "exchange_jobs" as const },
   { key: "recalculations", label: "Recalculated", color: "var(--t-info)", field: "recalculations" as const },
   { key: "locked_snapshots", label: "Locked", color: "var(--t-accent)", field: "locked_snapshots" as const },
@@ -732,19 +735,32 @@ function PanelContent({ row, auditHistory, auditLoading, onRefresh, onCopyId }: 
         )}
       </CheckItem>
 
-      {/* 2b. Pricing Rule / Dumpster Size */}
-      {(row.can_change_subtype || !row.has_pricing_rule) && (
-        <CheckItem label="Pricing Rule" done={row.has_pricing_rule} blocked={false}>
+      {/* 2b. Dumpster Size — missing subtype OR unsupported subtype */}
+      {(row.can_change_subtype || !row.has_pricing_rule || !row.asset_subtype) && (
+        <CheckItem
+          label={!row.asset_subtype ? "Dumpster Size Required" : "Pricing Configuration"}
+          done={!!row.asset_subtype && row.has_pricing_rule}
+          blocked={false}
+        >
           <div className="mt-2">
-            <p className="text-[10px] mb-1.5" style={{ color: "var(--t-text-muted)" }}>
-              {row.asset_subtype ? `"${row.asset_subtype}" has no active pricing rule.` : "No dumpster size set."}
-              {row.supported_subtypes.length > 0 ? " Change to a supported size:" : " No priced sizes available for this tenant."}
-            </p>
-            {row.supported_subtypes.length > 0 && (
+            {!row.asset_subtype ? (
+              /* Missing subtype — no size assigned at all */
+              <p className="text-[10px] mb-1.5" style={{ color: "var(--t-text-muted)" }}>
+                This job does not have a dumpster size assigned. Pricing cannot be generated until a size is selected.
+              </p>
+            ) : !row.has_pricing_rule ? (
+              /* Has subtype but no active pricing rule */
+              <p className="text-[10px] mb-1.5" style={{ color: "var(--t-text-muted)" }}>
+                Current size <strong style={{ color: "var(--t-text-primary)" }}>{row.asset_subtype}</strong> has no active pricing rule. Change to a supported size.
+              </p>
+            ) : null}
+
+            {row.supported_subtypes.length > 0 ? (
               <div className="flex items-center gap-2">
                 <select value={selectedSubtype} onChange={e => setSelectedSubtype(e.target.value)}
                   className="rounded-lg border px-2.5 py-1.5 text-xs outline-none flex-1"
                   style={{ borderColor: "var(--t-border)", color: "var(--t-text-primary)", background: "var(--t-bg-input)" }}>
+                  {!row.asset_subtype && <option value="" disabled>Select dumpster size...</option>}
                   {row.asset_subtype && !row.supported_subtypes.includes(row.asset_subtype) && (
                     <option value={row.asset_subtype} disabled>{row.asset_subtype} (no rule)</option>
                   )}
@@ -756,9 +772,11 @@ function PanelContent({ row, auditHistory, auditLoading, onRefresh, onCopyId }: 
                   disabled={changingSub || !selectedSubtype || selectedSubtype === row.asset_subtype}
                   className="inline-flex items-center gap-1 rounded-full px-3 py-1 text-[11px] font-semibold disabled:opacity-50 shrink-0"
                   style={{ background: "var(--t-accent)", color: "var(--t-accent-on-accent)" }}>
-                  {changingSub ? "Saving..." : "Change Size"}
+                  {changingSub ? "Saving..." : !row.asset_subtype ? "Assign Size" : "Change Size"}
                 </button>
               </div>
+            ) : (
+              <p className="text-[10px]" style={{ color: "var(--t-text-tertiary)" }}>No supported sizes available for this tenant.</p>
             )}
           </div>
         </CheckItem>
@@ -768,8 +786,8 @@ function PanelContent({ row, auditHistory, auditLoading, onRefresh, onCopyId }: 
       <CheckItem
         label="Pricing Snapshot"
         done={row.has_locked_snapshot}
-        blocked={!row.has_valid_coordinates || !row.asset_subtype}
-        blockerText={!row.has_valid_coordinates ? "Valid coordinates required" : !row.asset_subtype ? "Asset subtype required" : undefined}
+        blocked={!row.has_valid_coordinates || !row.asset_subtype || !row.has_pricing_rule}
+        blockerText={!row.has_valid_coordinates ? "Valid coordinates required" : !row.asset_subtype ? "Dumpster size required" : !row.has_pricing_rule ? "Supported size required" : undefined}
       >
         {row.has_locked_snapshot ? (
           <div className="mt-1 space-y-1 text-xs">
