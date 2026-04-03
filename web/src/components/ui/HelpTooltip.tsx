@@ -120,18 +120,44 @@ export default function HelpTooltip({
     setEffectivePlacement(p);
   }, [placement]);
 
-  const show = () => {
+  const closeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Hovercard open/close — delayed close with cancel-on-re-enter
+  const openTooltip = useCallback(() => {
+    if (closeTimeoutRef.current) { clearTimeout(closeTimeoutRef.current); closeTimeoutRef.current = null; }
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
     timeoutRef.current = setTimeout(() => {
       computePosition();
       setVisible(true);
     }, 200);
-  };
+  }, [computePosition]);
 
-  const hide = () => {
-    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+  const scheduleClose = useCallback(() => {
+    if (timeoutRef.current) { clearTimeout(timeoutRef.current); timeoutRef.current = null; }
+    if (closeTimeoutRef.current) clearTimeout(closeTimeoutRef.current);
+    closeTimeoutRef.current = setTimeout(() => {
+      setVisible(false);
+      closeTimeoutRef.current = null;
+    }, 200);
+  }, []);
+
+  const cancelClose = useCallback(() => {
+    if (closeTimeoutRef.current) { clearTimeout(closeTimeoutRef.current); closeTimeoutRef.current = null; }
+  }, []);
+
+  const forceClose = useCallback(() => {
+    if (timeoutRef.current) { clearTimeout(timeoutRef.current); timeoutRef.current = null; }
+    if (closeTimeoutRef.current) { clearTimeout(closeTimeoutRef.current); closeTimeoutRef.current = null; }
     setVisible(false);
-  };
+  }, []);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      if (closeTimeoutRef.current) clearTimeout(closeTimeoutRef.current);
+    };
+  }, []);
 
   // Dismiss on outside click (mobile tap-away)
   useEffect(() => {
@@ -141,17 +167,17 @@ export default function HelpTooltip({
         triggerRef.current && !triggerRef.current.contains(e.target as Node) &&
         tooltipRef.current && !tooltipRef.current.contains(e.target as Node)
       ) {
-        setVisible(false);
+        forceClose();
       }
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
-  }, [visible]);
+  }, [visible, forceClose]);
 
   // Dismiss on scroll, reposition on resize
   useEffect(() => {
     if (!visible) return;
-    const onScroll = () => setVisible(false);
+    const onScroll = () => forceClose();
     const onResize = () => computePosition();
     window.addEventListener("scroll", onScroll, true);
     window.addEventListener("resize", onResize);
@@ -159,7 +185,7 @@ export default function HelpTooltip({
       window.removeEventListener("scroll", onScroll, true);
       window.removeEventListener("resize", onResize);
     };
-  }, [visible, computePosition]);
+  }, [visible, computePosition, forceClose]);
 
   return (
     <>
@@ -169,11 +195,11 @@ export default function HelpTooltip({
           type="button"
           aria-label="Help"
           aria-describedby={visible ? tooltipId : undefined}
-          onMouseEnter={show}
-          onMouseLeave={hide}
-          onFocus={show}
-          onBlur={hide}
-          onClick={() => { if (visible) hide(); else { computePosition(); setVisible(true); } }}
+          onMouseEnter={openTooltip}
+          onMouseLeave={scheduleClose}
+          onFocus={openTooltip}
+          onBlur={scheduleClose}
+          onClick={() => { if (visible) forceClose(); else { computePosition(); setVisible(true); } }}
           className="inline-flex items-center justify-center w-4 h-4 rounded-full text-[9px] font-bold transition-all focus:outline-none focus:ring-1 focus:ring-[var(--t-accent)]"
           style={{
             background: "var(--t-bg-elevated)",
@@ -190,6 +216,8 @@ export default function HelpTooltip({
           ref={tooltipRef}
           id={tooltipId}
           role="tooltip"
+          onMouseEnter={cancelClose}
+          onMouseLeave={scheduleClose}
           style={{
             position: "fixed",
             top: pos.top,
