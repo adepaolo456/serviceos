@@ -153,8 +153,46 @@ export default function DispatchPage() {
   const [showYardPanel, setShowYardPanel] = useState(false);
   const [rescheduleQueue, setRescheduleQueue] = useState<DispatchJob[]>([]);
   const [unassignedRail, setUnassignedRail] = useState(false);
+  const [selectedJobs, setSelectedJobs] = useState<Set<string>>(new Set());
+  const lastClickedRef = useRef<string | null>(null);
   const saveOrderTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { toast } = useToast();
+
+  // Bulk selection handlers
+  const toggleSelectJob = useCallback((jobId: string, shiftKey: boolean) => {
+    if (!board) return;
+    if (shiftKey && lastClickedRef.current) {
+      // Range select: find all jobs between last clicked and current in the same column
+      const allJobsFlat = [
+        ...board.unassigned,
+        ...board.drivers.flatMap(d => d.jobs),
+      ];
+      const lastIdx = allJobsFlat.findIndex(j => j.id === lastClickedRef.current);
+      const curIdx = allJobsFlat.findIndex(j => j.id === jobId);
+      if (lastIdx >= 0 && curIdx >= 0) {
+        const from = Math.min(lastIdx, curIdx);
+        const to = Math.max(lastIdx, curIdx);
+        setSelectedJobs(prev => {
+          const next = new Set(prev);
+          for (let i = from; i <= to; i++) next.add(allJobsFlat[i].id);
+          return next;
+        });
+        lastClickedRef.current = jobId;
+        return;
+      }
+    }
+    setSelectedJobs(prev => {
+      const next = new Set(prev);
+      if (next.has(jobId)) next.delete(jobId); else next.add(jobId);
+      return next;
+    });
+    lastClickedRef.current = jobId;
+  }, [board]);
+
+  const clearSelection = useCallback(() => {
+    setSelectedJobs(new Set());
+    lastClickedRef.current = null;
+  }, []);
 
   // Load saved column order on mount
   useEffect(() => {
@@ -261,7 +299,7 @@ export default function DispatchPage() {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-      if (e.key === "Escape") { setQuickViewJob(null); setCtxMenu(null); setRescheduleJob(null); setShowYardPanel(false); }
+      if (e.key === "Escape") { setQuickViewJob(null); setCtxMenu(null); setRescheduleJob(null); setShowYardPanel(false); clearSelection(); }
       else if (e.key === "ArrowLeft") setDate(d => shiftDate(d, -1));
       else if (e.key === "ArrowRight") setDate(d => shiftDate(d, 1));
       else if (e.key === "t" || e.key === "T") setDate(today());
@@ -286,7 +324,13 @@ export default function DispatchPage() {
     return "unassigned";
   };
 
-  const handleDragStart = (event: DragStartEvent) => { setActiveId(event.active.id as string); };
+  const handleDragStart = (event: DragStartEvent) => {
+    const draggedId = event.active.id as string;
+    setActiveId(draggedId);
+    // If dragging an unselected job, clear selection (single-drag mode)
+    if (!selectedJobs.has(draggedId)) clearSelection();
+  };
+
   const handleDragEnd = async (event: DragEndEvent) => {
     setActiveId(null);
     const { active, over } = event;
@@ -296,11 +340,18 @@ export default function DispatchPage() {
     const overId = over.id as string;
     const columnIds = ["unassigned", ...board.drivers.map(d => d.driver.id)];
     const sourceCol = findColumnForJob(activeJobId);
-
-    // Determine target column: if overId is a column, use it; otherwise find which column that job belongs to
     const targetCol = columnIds.includes(overId) ? overId : findColumnForJob(overId);
-    if (sourceCol === targetCol && !columnIds.includes(overId)) {
-      // ── Same column reorder ──
+
+    // Determine which jobs are being moved (bulk or single)
+    const movingIds = selectedJobs.has(activeJobId) && selectedJobs.size > 1
+      ? selectedJobs
+      : new Set([activeJobId]);
+
+    // Save board snapshot for rollback
+    const snapshot = JSON.parse(JSON.stringify(board)) as DispatchBoard;
+
+    if (sourceCol === targetCol && !columnIds.includes(overId) && movingIds.size === 1) {
+      // ── Same column reorder (single job only) ──
       const getJobs = (col: string) => col === "unassigned" ? board.unassigned : (board.drivers.find(d => d.driver.id === col)?.jobs || []);
       const colJobs = [...getJobs(sourceCol)];
       const oldIndex = colJobs.findIndex(j => j.id === activeJobId);
@@ -309,7 +360,6 @@ export default function DispatchPage() {
 
       const reordered = arrayMove(colJobs, oldIndex, newIndex);
 
-      // Optimistic update
       setBoard(prev => {
         if (!prev) return prev;
         if (sourceCol === "unassigned") return { ...prev, unassigned: reordered };
@@ -322,47 +372,56 @@ export default function DispatchPage() {
         await api.patch("/jobs/bulk-reorder", { jobIds: reordered.map(j => j.id) });
       } catch {
         toast("error", "Failed to save order");
-        fetchBoard(true);
+        setBoard(snapshot);
       }
-    } else if (sourceCol !== targetCol) {
-      // ── Cross-column move ──
+    } else if (sourceCol !== targetCol || (movingIds.size > 1 && sourceCol !== targetCol)) {
+      // ── Cross-column move (single or bulk) ──
       const newBoard = JSON.parse(JSON.stringify(board)) as DispatchBoard;
+      const targetDriverId = targetCol === "unassigned" ? null : targetCol;
 
-      // Remove from source
-      const srcJobs = sourceCol === "unassigned" ? newBoard.unassigned : (newBoard.drivers.find(d => d.driver.id === sourceCol)?.jobs || []);
-      const srcIdx = srcJobs.findIndex((j: DispatchJob) => j.id === activeJobId);
-      if (srcIdx === -1) return;
-      const [movedJob] = srcJobs.splice(srcIdx, 1);
+      // Collect all moving jobs from their source columns, preserving relative order
+      const movingJobs: DispatchJob[] = [];
+      const allJobsFlat = [...newBoard.unassigned, ...newBoard.drivers.flatMap(d => d.jobs)];
+      for (const j of allJobsFlat) {
+        if (movingIds.has(j.id)) movingJobs.push(j);
+      }
 
-      // Insert into target
+      // Remove moving jobs from all source columns
+      newBoard.unassigned = newBoard.unassigned.filter((j: DispatchJob) => !movingIds.has(j.id));
+      for (const d of newBoard.drivers) {
+        d.jobs = d.jobs.filter((j: DispatchJob) => !movingIds.has(j.id));
+      }
+
+      // Insert into target column
       const dstJobs = targetCol === "unassigned" ? newBoard.unassigned : (newBoard.drivers.find(d => d.driver.id === targetCol)?.jobs || []);
-      // If dropped on a specific job, insert at that position; otherwise append
       if (!columnIds.includes(overId)) {
         const dstIdx = dstJobs.findIndex((j: DispatchJob) => j.id === overId);
-        dstJobs.splice(dstIdx >= 0 ? dstIdx : dstJobs.length, 0, movedJob);
+        dstJobs.splice(dstIdx >= 0 ? dstIdx : dstJobs.length, 0, ...movingJobs);
       } else {
-        dstJobs.push(movedJob);
+        dstJobs.push(...movingJobs);
       }
 
       // Update counts
-      for (const d of newBoard.drivers) {
-        d.jobCount = d.jobs.length;
-      }
+      for (const d of newBoard.drivers) d.jobCount = d.jobs.length;
 
       // Optimistic update
       setBoard(newBoard);
 
-      const targetDriverId = targetCol === "unassigned" ? null : targetCol;
       const driverName = targetDriverId ? board.drivers.find(d => d.driver.id === targetDriverId)?.driver : null;
-      toast("success", targetDriverId ? `Moved to ${driverName?.firstName}'s route` : "Moved to Unassigned");
+      const countLabel = movingJobs.length > 1 ? `${movingJobs.length} jobs` : movingJobs[0]?.job_number || "Job";
+      toast("success", targetDriverId ? `${countLabel} → ${driverName?.firstName}'s route` : `${countLabel} → Unassigned`);
 
       try {
-        await api.patch(`/jobs/${activeJobId}/assign`, { assignedDriverId: targetDriverId });
-        // Also persist the new route order in the destination column
+        // Assign all moving jobs to target driver
+        await Promise.all(movingJobs.map(j =>
+          api.patch(`/jobs/${j.id}/assign`, { assignedDriverId: targetDriverId })
+        ));
+        // Persist the new route order in the destination column
         await api.patch("/jobs/bulk-reorder", { jobIds: dstJobs.map((j: DispatchJob) => j.id) });
+        clearSelection();
       } catch (err) {
-        toast("error", err instanceof Error ? err.message : "Failed to move job");
-        fetchBoard(true);
+        toast("error", err instanceof Error ? err.message : "Failed to move job(s)");
+        setBoard(snapshot);
       }
     }
   };
@@ -503,6 +562,22 @@ export default function DispatchPage() {
         </div>
       </div>
 
+      {/* ── Selection bar ── */}
+      {selectedJobs.size > 0 && (
+        <div className="shrink-0 flex items-center gap-3 px-4 py-2 mb-2 rounded-[14px] border"
+          style={{ background: "var(--t-accent-soft)", borderColor: "var(--t-accent)", color: "var(--t-accent)" }}>
+          <CheckCircle2 className="h-4 w-4" />
+          <span className="text-xs font-bold">{selectedJobs.size} job{selectedJobs.size > 1 ? "s" : ""} selected</span>
+          <span className="text-[10px]" style={{ color: "var(--t-text-muted)" }}>Drag to assign · Esc to clear</span>
+          <button onClick={clearSelection} className="ml-auto rounded-full p-1 transition-all"
+            style={{ color: "var(--t-text-muted)" }}
+            onMouseEnter={e => { e.currentTarget.style.background = "var(--t-bg-card-hover)"; }}
+            onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}>
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
+
       {/* ── Board ── */}
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
         <div className="flex-1 min-h-0 overflow-hidden relative">
@@ -559,7 +634,8 @@ export default function DispatchPage() {
                       onStatusChange={async (jid, s) => { try { await api.patch(`/jobs/${jid}/status`, { status: s, cancellationReason: s === "failed" ? "Dispatcher override" : undefined }); toast("success", `Status → ${s.replace(/_/g, " ")}`); await fetchBoard(true); } catch { toast("error", "Failed"); } }}
                       collapsed={collapsedCols.has("unassigned")} onToggleCollapse={() => toggleCollapse("unassigned")}
                       onHide={() => setUnassignedRail(true)}
-                      driverJobCities={driverJobCities} />
+                      driverJobCities={driverJobCities}
+                      selectedJobs={selectedJobs} onToggleSelect={toggleSelectJob} />
                   </div>
                 )
               )}
@@ -574,6 +650,7 @@ export default function DispatchPage() {
                   collapsed={collapsedCols.has(col.driver.id)} onToggleCollapse={() => toggleCollapse(col.driver.id)}
                   onHide={() => hideColumn(col.driver.id)}
                   onColumnDrag={makeColumnDrag(col.driver.id)}
+                  selectedJobs={selectedJobs} onToggleSelect={toggleSelectJob}
                 />
               ))}
             </div>
@@ -581,7 +658,7 @@ export default function DispatchPage() {
             </div>
           </div>
         </div>
-        <DragOverlay>{activeJob ? <JobTileGhost job={activeJob} /> : null}</DragOverlay>
+        <DragOverlay>{activeJob ? <JobTileGhost job={activeJob} bulkCount={selectedJobs.has(activeJob.id) ? selectedJobs.size : 1} /> : null}</DragOverlay>
       </DndContext>
 
       {/* ── Bottom bar ── */}
@@ -889,7 +966,7 @@ function DispatchMap({ board, activeJobId }: { board: DispatchBoard | null; acti
    Column Card — white card with accordion collapse
    ═══════════════════════════════════════════════════ */
 
-function ColumnCard({ columnId, title, driver, isUnassigned, count, progress, jobs, drivers, onAssign, onUnassign, onQuickView, onStatusChange, onCtxMenu, activeId, collapsed, onToggleCollapse, onHide, onColumnDrag, driverJobCities }: {
+function ColumnCard({ columnId, title, driver, isUnassigned, count, progress, jobs, drivers, onAssign, onUnassign, onQuickView, onStatusChange, onCtxMenu, activeId, collapsed, onToggleCollapse, onHide, onColumnDrag, driverJobCities, selectedJobs, onToggleSelect }: {
   columnId: string; title: string; driver?: Driver; isUnassigned?: boolean;
   count: number; progress?: { completed: number; total: number };
   jobs: DispatchJob[]; drivers?: Driver[];
@@ -902,6 +979,8 @@ function ColumnCard({ columnId, title, driver, isUnassigned, count, progress, jo
   collapsed: boolean; onToggleCollapse: () => void; onHide?: () => void;
   onColumnDrag?: { onDragStart: (e: React.DragEvent) => void; onDragOver: (e: React.DragEvent) => void; onDrop: (e: React.DragEvent) => void; onDragEnd: (e: React.DragEvent) => void };
   driverJobCities?: Array<{ driverName: string; cities: string[] }>;
+  selectedJobs?: Set<string>;
+  onToggleSelect?: (jobId: string, shiftKey: boolean) => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: columnId });
   const completedCount = progress?.completed || 0;
@@ -1082,7 +1161,9 @@ function ColumnCard({ columnId, title, driver, isUnassigned, count, progress, jo
                     onAssign={onAssign} onUnassign={onUnassign} onQuickView={() => onQuickView(job)}
                     onStatusChange={onStatusChange} onCtxMenu={onCtxMenu}
                     needsYardStop={!!needsYardStop}
-                    proximitySuggestion={getSuggestion(job)} />
+                    proximitySuggestion={getSuggestion(job)}
+                    isSelected={selectedJobs?.has(job.id) || false}
+                    onToggleSelect={onToggleSelect} />
                 );
               })}
             </div>
@@ -1105,7 +1186,7 @@ function ColumnCard({ columnId, title, driver, isUnassigned, count, progress, jo
    Job Tile — white card, entire tile draggable
    ═══════════════════════════════════════════════════ */
 
-const JobTile = memo(function JobTile({ job, isUnassigned, drivers, onAssign, onUnassign, onQuickView, onStatusChange, onCtxMenu, needsYardStop, proximitySuggestion }: {
+const JobTile = memo(function JobTile({ job, isUnassigned, drivers, onAssign, onUnassign, onQuickView, onStatusChange, onCtxMenu, needsYardStop, proximitySuggestion, isSelected, onToggleSelect }: {
   job: DispatchJob; isUnassigned: boolean; drivers?: Driver[];
   onAssign?: (jobId: string, driverId: string | null) => void;
   onUnassign?: (jobId: string) => void;
@@ -1114,6 +1195,8 @@ const JobTile = memo(function JobTile({ job, isUnassigned, drivers, onAssign, on
   onCtxMenu?: (e: React.MouseEvent, job: DispatchJob) => void;
   needsYardStop?: boolean;
   proximitySuggestion?: string;
+  isSelected?: boolean;
+  onToggleSelect?: (jobId: string, shiftKey: boolean) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: job.id });
   const isCompleted = job.status === "completed";
@@ -1127,11 +1210,11 @@ const JobTile = memo(function JobTile({ job, isUnassigned, drivers, onAssign, on
       style={{
         transform: CSS.Transform.toString(transform), transition,
         opacity: isDragging ? 0.3 : 1,
-        border: "1px solid var(--t-border)",
-        boxShadow: isDragging ? "0 8px 24px rgba(0,0,0,0.15)" : "0 1px 3px rgba(0,0,0,0.06)",
+        border: isSelected ? "1.5px solid var(--t-accent)" : "1px solid var(--t-border)",
+        boxShadow: isDragging ? "0 8px 24px rgba(0,0,0,0.15)" : isSelected ? "0 0 0 1px var(--t-accent)" : "0 1px 3px rgba(0,0,0,0.06)",
         cursor: isDragging ? "grabbing" : "grab",
         touchAction: "none",
-        backgroundColor: isCompleted ? "var(--t-bg-card-hover)" : "var(--t-bg-card)",
+        backgroundColor: isSelected ? "var(--t-accent-soft)" : isCompleted ? "var(--t-bg-card-hover)" : "var(--t-bg-card)",
       }}
       className="group relative rounded-[14px]"
       onClick={onQuickView}
@@ -1157,7 +1240,18 @@ const JobTile = memo(function JobTile({ job, isUnassigned, drivers, onAssign, on
         />
       )}
 
-      <div className="py-2.5 pl-4.5 pr-3 flex items-center gap-2.5">
+      <div className="py-2.5 pl-2 pr-3 flex items-center gap-2">
+        {/* Selection checkbox */}
+        <button
+          onClick={(e) => { e.stopPropagation(); onToggleSelect?.(job.id, e.shiftKey); }}
+          className="shrink-0 flex items-center justify-center w-5 h-5 rounded-md border transition-all"
+          style={{
+            borderColor: isSelected ? "var(--t-accent)" : "var(--t-border-strong)",
+            background: isSelected ? "var(--t-accent)" : "transparent",
+            color: isSelected ? "var(--t-accent-on-accent)" : "transparent",
+          }}>
+          {isSelected && <CheckCircle2 className="h-3 w-3" />}
+        </button>
         {/* Content */}
         <div className="flex-1 min-w-0">
           {/* Line 1: Size + Type (tight row) */}
@@ -1267,7 +1361,7 @@ function StatusDropdown({ jobId, currentStatus, onStatusChange }: { jobId: strin
   );
 }
 
-function JobTileGhost({ job }: { job: DispatchJob }) {
+function JobTileGhost({ job, bulkCount = 1 }: { job: DispatchJob; bulkCount?: number }) {
   const tc = TYPE_CONFIG[job.job_type] || { label: job.job_type, letter: "?", stripe: "#8A8A8A" };
   const size = job.asset_subtype || job.asset?.subtype || "";
   return (
@@ -1278,6 +1372,12 @@ function JobTileGhost({ job }: { job: DispatchJob }) {
         <span className="text-[13px] font-extrabold uppercase" style={{ color: tc.stripe }}>{tc.label.toUpperCase()}</span>
         <span className="text-[12px] font-medium" style={{ color: "#666" }}>{job.customer ? `${job.customer.first_name} ${job.customer.last_name}` : job.job_number}</span>
       </div>
+      {bulkCount > 1 && (
+        <div className="absolute -top-2.5 -right-2.5 flex items-center justify-center w-6 h-6 rounded-full text-[11px] font-bold"
+          style={{ background: "var(--t-accent)", color: "var(--t-accent-on-accent)", boxShadow: "0 2px 8px rgba(0,0,0,0.2)" }}>
+          {bulkCount}
+        </div>
+      )}
     </div>
   );
 }
