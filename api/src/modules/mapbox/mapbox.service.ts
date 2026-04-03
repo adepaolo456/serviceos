@@ -38,11 +38,13 @@ export class MapboxService {
         types: 'address',
         language: 'en',
       });
-      const res = await fetch(
-        `https://api.mapbox.com/search/geocode/v6/forward?${params}`,
-      );
+      const url = `https://api.mapbox.com/search/geocode/v6/forward?${params}`;
+      const res = await fetch(url, {
+        headers: { 'Referer': 'https://serviceos-api.vercel.app' },
+      });
       if (!res.ok) {
-        if (res.status === 401) this.logger.error('Mapbox token invalid');
+        const body = await res.text().catch(() => '');
+        this.logger.error(`Mapbox geocode HTTP ${res.status}: ${body.slice(0, 200)}`);
         return null;
       }
       const data = await res.json();
@@ -82,6 +84,7 @@ export class MapboxService {
       });
       const res = await fetch(
         `https://api.mapbox.com/search/geocode/v6/reverse?${params}`,
+        { headers: { 'Referer': 'https://serviceos-api.vercel.app' } },
       );
       if (!res.ok) return null;
       const data = await res.json();
