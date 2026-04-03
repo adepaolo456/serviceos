@@ -403,7 +403,8 @@ export default function DispatchPage() {
   return (
     <div className="flex h-[calc(100vh-5rem)] flex-col">
       {/* ── Top bar ── */}
-      <div className="shrink-0 mb-3">
+      <div className="shrink-0 mb-4">
+        <h1 className="text-[28px] font-bold tracking-[-1px] text-[var(--t-frame-text)] mb-3">Dispatch</h1>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-1">

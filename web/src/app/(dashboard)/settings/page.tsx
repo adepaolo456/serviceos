@@ -50,13 +50,15 @@ export default function SettingsPage() {
 
   return (
     <div>
-      <div className="mb-8">
-        <h1 className="text-[28px] font-bold tracking-[-1px] text-[var(--t-frame-text)]">Settings</h1>
-        <p className="mt-1 text-[13px] text-[var(--t-frame-text-muted)]">Manage your account and preferences</p>
+      <div className="flex items-start justify-between gap-4 mb-8">
+        <div>
+          <h1 className="text-[28px] font-bold tracking-[-1px] text-[var(--t-frame-text)]">Settings</h1>
+          <p className="mt-1 text-[13px] text-[var(--t-frame-text-muted)]">Manage your account and preferences</p>
+        </div>
       </div>
 
       {/* Tabs */}
-      <div className="mb-8 flex gap-1 overflow-x-auto pb-1">
+      <div className="mb-6 flex gap-1 overflow-x-auto pb-1">
         {TABS.map((t) => {
           const Icon = t.icon;
           return (

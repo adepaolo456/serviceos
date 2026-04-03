@@ -146,36 +146,24 @@ export default function PricingPage() {
 
   return (
     <div>
-      {/* Header on dark frame */}
-      <div className="flex items-center justify-between mb-6">
+      {/* Header */}
+      <div className="flex items-start justify-between gap-4 mb-8">
         <div>
-          <h1
-            className="text-xl font-bold"
-            style={{ color: "var(--t-frame-text)" }}
-          >
-            Pricing
-          </h1>
-          <p
-            className="text-sm mt-1"
-            style={{ color: "var(--t-frame-text-muted)" }}
-          >
-            {rules.length} pricing rules
-          </p>
+          <h1 className="text-[28px] font-bold tracking-[-1px] text-[var(--t-frame-text)]">Pricing</h1>
+          <p className="mt-1 text-[13px] text-[var(--t-frame-text-muted)]">{rules.length} pricing rule{rules.length !== 1 ? "s" : ""}</p>
         </div>
-        <button
-          onClick={() => {
-            setEditRule(null);
-            setEditOpen(true);
-          }}
-          className="flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-semibold"
-          style={{ background: "var(--t-accent)", color: "#000" }}
-        >
-          <Plus className="h-3.5 w-3.5" /> Add Size
-        </button>
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            onClick={() => { setEditRule(null); setEditOpen(true); }}
+            className="inline-flex items-center gap-1.5 rounded-full bg-[var(--t-accent)] px-5 py-2.5 text-sm font-semibold text-black transition-all hover:brightness-110"
+          >
+            <Plus className="h-4 w-4" /> Add Size
+          </button>
+        </div>
       </div>
 
-      {/* Quick links */}
-      <div className="flex gap-3 mb-6">
+      {/* Controls */}
+      <div className="flex items-center gap-3 mb-6">
         <Link href="/pricing/surcharges" className="flex items-center gap-2 rounded-[16px] border px-4 py-2.5 text-sm font-medium transition-colors hover:bg-[var(--t-bg-card-hover)]"
           style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)", color: "var(--t-text-primary)" }}>
           <DollarSign className="h-4 w-4" style={{ color: "var(--t-accent)" }} /> Surcharge Templates
@@ -191,7 +179,7 @@ export default function PricingPage() {
         <p className="text-[11px] font-extrabold uppercase tracking-[1.2px] mb-1" style={{ color: "var(--t-frame-text-muted)" }}>QUICK QUOTE</p>
         <p className="text-[13px] mb-3" style={{ color: "var(--t-frame-text-muted)" }}>Instant quote for phone inquiries</p>
 
-        <div className="rounded-[20px] border p-5" style={{ background: "var(--t-bg-secondary)", borderColor: "var(--t-border)", boxShadow: "0 2px 12px var(--t-shadow)" }}>
+        <div className="rounded-[14px] border p-5" style={{ background: "var(--t-bg-secondary)", borderColor: "var(--t-border)", boxShadow: "0 2px 12px var(--t-shadow)" }}>
           {/* Size pills */}
           <div className="mb-4">
             <p className="text-[11px] font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--t-text-muted)" }}>Dumpster Size</p>
@@ -246,7 +234,7 @@ export default function PricingPage() {
 
           {/* Quote result */}
           {selectedRule && (
-            <div className="rounded-[20px] border-l-4 p-5 mb-4 animate-fade-in"
+            <div className="rounded-[14px] border-l-4 p-5 mb-4 animate-fade-in"
               style={{ background: "var(--t-bg-card)", borderColor: "var(--t-accent)", borderTop: "1px solid var(--t-border)", borderRight: "1px solid var(--t-border)", borderBottom: "1px solid var(--t-border)" }}>
               <div className="flex items-center justify-between mb-3">
                 <p className="text-[15px] font-bold" style={{ color: "var(--t-text-primary)" }}>{selectedRule.asset_subtype?.replace("yd", " Yard") || selectedRule.name || "Unknown"} Dumpster</p>
@@ -304,14 +292,14 @@ export default function PricingPage() {
       <p className="text-[11px] font-extrabold uppercase tracking-[1.2px] mb-3" style={{ color: "var(--t-frame-text-muted)" }}>PRICING RULES</p>
       {loading ? (
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3.5">
-          {[1, 2, 3, 4].map((i) => <div key={i} className="h-28 skeleton rounded-[20px]" />)}
+          {[1, 2, 3, 4].map((i) => <div key={i} className="h-28 skeleton rounded-[14px]" />)}
         </div>
       ) : (
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3.5">
           {rules.map((rule) => (
             <div
               key={rule.id}
-              className="group relative text-left rounded-[20px] border p-5 transition-all duration-150 cursor-pointer hover:-translate-y-0.5"
+              className="group relative text-left rounded-[14px] border p-5 transition-all duration-150 cursor-pointer hover:-translate-y-0.5"
               style={{
                 background: "var(--t-bg-secondary)",
                 borderColor: "var(--t-border)",
@@ -360,7 +348,7 @@ export default function PricingPage() {
               setEditRule(null);
               setEditOpen(true);
             }}
-            className="rounded-[20px] border border-dashed p-5 transition-all duration-150 flex flex-col items-center justify-center cursor-pointer"
+            className="rounded-[14px] border border-dashed p-5 transition-all duration-150 flex flex-col items-center justify-center cursor-pointer"
             style={{
               borderColor: "var(--t-border)",
               color: "var(--t-text-muted)",
@@ -387,7 +375,7 @@ export default function PricingPage() {
         <p className="text-[13px] mb-4" style={{ color: "var(--t-frame-text-muted)" }}>Distance-based delivery surcharges from your yard</p>
 
         {/* Yard Location Card */}
-        <div className="rounded-[20px] border p-5 mb-4" style={{ background: "var(--t-bg-secondary)", borderColor: "var(--t-border)", boxShadow: "0 2px 12px var(--t-shadow)" }}>
+        <div className="rounded-[14px] border p-5 mb-4" style={{ background: "var(--t-bg-secondary)", borderColor: "var(--t-border)", boxShadow: "0 2px 12px var(--t-shadow)" }}>
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
               <MapPin className="h-4 w-4" style={{ color: "var(--t-accent)" }} />
@@ -426,7 +414,7 @@ export default function PricingPage() {
         </div>
 
         {/* Zone Table */}
-        <div className="rounded-[20px] border overflow-hidden" style={{ background: "var(--t-bg-secondary)", borderColor: "var(--t-border)", boxShadow: "0 2px 12px var(--t-shadow)" }}>
+        <div className="rounded-[14px] border overflow-hidden" style={{ background: "var(--t-bg-secondary)", borderColor: "var(--t-border)", boxShadow: "0 2px 12px var(--t-shadow)" }}>
           <table className="w-full text-sm">
             <thead>
               <tr style={{ borderBottom: "1px solid var(--t-border)" }}>
