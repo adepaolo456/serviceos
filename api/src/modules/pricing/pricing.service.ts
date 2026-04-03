@@ -16,6 +16,7 @@ import {
   ListPricingRulesQueryDto,
   CalculatePriceDto,
 } from './dto/pricing.dto';
+import { isValidCoordinatePair } from '../../common/helpers/coordinate-validator';
 
 @Injectable()
 export class PricingService {
@@ -207,6 +208,12 @@ export class PricingService {
       }
     }
 
+    // Validate coordinates before distance calculation
+    const customerCoordsValid = isValidCoordinatePair(dto.customerLat, dto.customerLng);
+    const yardCoordsValid = isValidCoordinatePair(yardLat, yardLng);
+    const geocodeStatus = customerCoordsValid ? 'existing_coordinates' : 'invalid';
+    const coordinateSource = customerCoordsValid ? 'stored' : 'missing';
+
     // Distance-band model
     const distanceBand = this.calculateDistanceCharge(yardLat, yardLng, dto.customerLat, dto.customerLng);
 
@@ -346,6 +353,10 @@ export class PricingService {
         yardId,
         pricingConfigVersionId: rule.version_id,
         engineVersion: 'v2',
+        // Geocode audit (additive)
+        geocode_status: geocodeStatus,
+        coordinate_source: coordinateSource,
+        has_valid_coordinates: customerCoordsValid && yardCoordsValid,
       },
     };
 
@@ -439,10 +450,13 @@ export class PricingService {
     customerLat: number,
     customerLng: number,
   ): { distanceMiles: number; extraMiles: number; bands: number; distanceCharge: number } {
-    if (!yardLat || !yardLng) {
-      throw new BadRequestException('Yard address not geocoded — cannot calculate distance pricing');
+    if (!isValidCoordinatePair(yardLat, yardLng)) {
+      throw new BadRequestException('Yard address not geocoded or has invalid coordinates — cannot calculate distance pricing');
     }
-    const distanceMiles = this.haversine(customerLat, customerLng, yardLat, yardLng);
+    if (!isValidCoordinatePair(customerLat, customerLng)) {
+      throw new BadRequestException('Customer address not geocoded or has invalid coordinates (0,0 is not valid) — cannot calculate distance pricing');
+    }
+    const distanceMiles = this.haversine(customerLat, customerLng, yardLat!, yardLng!);
     const rounded = Math.round(distanceMiles * 100) / 100;
     const extraMiles = Math.max(rounded - 15, 0);
     const bands = Math.ceil(extraMiles / 5);
