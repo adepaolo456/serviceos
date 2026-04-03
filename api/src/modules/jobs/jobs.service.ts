@@ -22,6 +22,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { PricingService } from '../pricing/pricing.service';
 import { JobPricingAudit } from './entities/job-pricing-audit.entity';
 import { hasPricingRelevantChanges } from './helpers/pricing-change-detector';
+import { extractCoordinates, buildAddressString } from '../../common/helpers/coordinate-validator';
 import {
   CreateJobDto,
   UpdateJobDto,
@@ -304,15 +305,25 @@ export class JobsService {
       const previousSnapshotId = job.pricing_snapshot_id;
 
       try {
-        // Build calculate request from current job state (with updates applied)
+        // Extract valid coordinates — NEVER fall back to 0,0
         const addr = job.service_address as Record<string, unknown> | null;
+        const coords = extractCoordinates(addr);
+        if (!coords) {
+          const addrStr = buildAddressString(addr);
+          throw new BadRequestException(
+            addrStr
+              ? `Service address "${addrStr}" has no valid coordinates. Geocode the address before pricing.`
+              : 'Service address missing or has no valid coordinates. Cannot calculate distance-based pricing.',
+          );
+        }
+
         const calcResult = await this.pricingService.calculate(tenantId, {
           serviceType: job.service_type || 'dumpster_rental',
           assetSubtype: dto.assetSubtype || job.asset_subtype || '',
           jobType: job.job_type || 'delivery',
           customerType: dto.rentalType || undefined,
-          customerLat: addr?.lat ? Number(addr.lat) : 0,
-          customerLng: addr?.lng ? Number(addr.lng) : 0,
+          customerLat: coords.lat,
+          customerLng: coords.lng,
           yardId: dto.yardId || undefined,
           rentalDays: job.rental_days || undefined,
           rentalType: dto.rentalType || undefined,

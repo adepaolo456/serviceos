@@ -1,0 +1,26 @@
+-- ============================================================================
+-- Geocode Hardening Migration
+-- No new tables required — geocode metadata stored inside existing JSONB
+-- service_address fields (jobs.service_address, customers.billing_address).
+--
+-- This migration is documentation-only. The geocode metadata fields
+-- (geocoded_at, geocode_source, coordinates_verified) are stored as keys
+-- in the existing JSONB columns, not as separate columns.
+--
+-- Coordinate validation is enforced at the application layer via
+-- isValidCoordinatePair() and extractCoordinates() helpers.
+-- ============================================================================
+
+-- No DDL changes needed. Geocode metadata is stored in JSONB.
+-- Example stored structure after backfill:
+-- {
+--   "street": "340 Bedford Street",
+--   "city": "Bridgewater",
+--   "state": "MA",
+--   "zip": "02324",
+--   "lat": 41.9901,
+--   "lng": -70.9718,
+--   "geocoded_at": "2026-04-03T17:00:00.000Z",
+--   "geocode_source": "mapbox",
+--   "coordinates_verified": false
+-- }

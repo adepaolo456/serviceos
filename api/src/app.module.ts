@@ -72,6 +72,7 @@ import { MapboxModule } from './modules/mapbox/mapbox.module';
 import { OnboardingModule } from './modules/onboarding/onboarding.module';
 import { TenantSettingsModule } from './modules/tenant-settings/tenant-settings.module';
 import { AiModule } from './modules/ai/ai.module';
+import { GeocodingModule } from './modules/geocoding/geocoding.module';
 import { SetupChecklist } from './modules/onboarding/entities/setup-checklist.entity';
 import { TenantSettings } from './modules/tenant-settings/entities/tenant-settings.entity';
 import { AiSuggestionLog } from './modules/ai/entities/ai-suggestion-log.entity';
@@ -173,6 +174,7 @@ import { RateLimitLog } from './common/entities/rate-limit-log.entity';
     OnboardingModule,
     TenantSettingsModule,
     AiModule,
+    GeocodingModule,
   ],
   controllers: [AppController],
   providers: [
