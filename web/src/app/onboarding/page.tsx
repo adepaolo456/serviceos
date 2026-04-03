@@ -112,10 +112,14 @@ export default function OnboardingPage() {
   const [portalSlug, setPortalSlug] = useState("");
   const [portalName, setPortalName] = useState("");
 
-  const fetchProgress = useCallback(async () => {
-    const now = Date.now();
-    if (now - lastFetch.current < 1000) return;
-    lastFetch.current = now;
+  const fetchProgress = useCallback(async (force = false) => {
+    if (!force) {
+      const now = Date.now();
+      if (now - lastFetch.current < 1000) return;
+      lastFetch.current = now;
+    } else {
+      lastFetch.current = Date.now();
+    }
     try {
       const data = await api.get<ProgressResponse>("/onboarding/progress");
       setProgress(data);
@@ -178,7 +182,7 @@ export default function OnboardingPage() {
 
   const markStep = async (stepKey: string, status: "completed" | "skipped") => {
     await api.patch(`/onboarding/checklist/${stepKey}`, { status });
-    await fetchProgress();
+    await fetchProgress(true);
   };
 
   const getSuggestions = async (section: string) => {
