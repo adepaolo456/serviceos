@@ -1,18 +1,19 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import Link from "next/link";
+import { useSearchParams, useRouter } from "next/navigation";
 import { Search, ExternalLink, X } from "lucide-react";
 import {
   getFeature,
-  getGuideEligibleFeatures,
+  getVisibleGuideFeatures,
+  getRelatedFeatures,
   CATEGORY_ORDER,
   CATEGORY_LABELS,
   type FeatureDescription,
   type FeatureCategory,
 } from "@/lib/feature-registry";
 
-/* ── Routes that have real pages (verified) ── */
 const NAVIGABLE_ROUTES = new Set([
   "/", "/jobs", "/dispatch", "/customers", "/assets", "/invoices",
   "/billing-issues", "/pricing-qa", "/pricing", "/team", "/vehicles",
@@ -26,24 +27,26 @@ function isNavigableRoute(route: string): boolean {
 
 const POPULAR_IDS = ["new_booking", "dashboard", "jobs", "dispatch_board", "pricing_issues"];
 
-/* ── Search matching ── */
 function matchesSearch(f: FeatureDescription, query: string): boolean {
   const q = query.toLowerCase();
-  if (f.label.toLowerCase().includes(q)) return true;
-  if (f.shortDescription.toLowerCase().includes(q)) return true;
-  if (f.guideDescription.toLowerCase().includes(q)) return true;
-  if (f.keywords.some(k => k.toLowerCase().includes(q))) return true;
-  return false;
+  return f.label.toLowerCase().includes(q)
+    || f.shortDescription.toLowerCase().includes(q)
+    || f.guideDescription.toLowerCase().includes(q)
+    || f.keywords.some(k => k.toLowerCase().includes(q));
 }
 
-/* ── Page ── */
 export default function HelpCenterPage() {
   const [search, setSearch] = useState("");
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const selectedRef = useRef<HTMLDivElement>(null);
 
-  const allFeatures = useMemo(() => getGuideEligibleFeatures(), []);
+  const selectedId = searchParams.get("feature") || null;
+
+  const allFeatures = useMemo(() => getVisibleGuideFeatures(), []);
 
   const filtered = useMemo(() => {
-    if (search.length < 2) return null; // show default view
+    if (search.length < 2) return null;
     return allFeatures.filter(f => matchesSearch(f, search));
   }, [allFeatures, search]);
 
@@ -61,28 +64,43 @@ export default function HelpCenterPage() {
     POPULAR_IDS.map(id => getFeature(id)).filter((f): f is FeatureDescription => !!f && f.isGuideEligible && f.isUserFacing),
   []);
 
+  const selectedFeature = selectedId ? getFeature(selectedId) : null;
+  const relatedTopics = useMemo(() =>
+    selectedId ? getRelatedFeatures(selectedId) : [],
+  [selectedId]);
+
+  // Scroll selected into view on deep-link
+  useEffect(() => {
+    if (selectedId && selectedRef.current) {
+      setTimeout(() => selectedRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }), 100);
+    }
+  }, [selectedId]);
+
+  const selectFeature = (id: string) => {
+    router.replace(`/help?feature=${id}`, { scroll: false });
+  };
+
+  const clearSelection = () => {
+    router.replace("/help", { scroll: false });
+  };
+
+  // If search hides the selected feature, don't show related
+  const selectedVisibleInSearch = !filtered || (selectedFeature && filtered.some(f => f.id === selectedId));
+
   return (
     <div>
-      {/* Header */}
       <div className="mb-8">
-        <h1 className="text-[28px] font-bold tracking-[-1px]" style={{ color: "var(--t-frame-text)" }}>
-          Help Center
-        </h1>
-        <p className="mt-1 text-[13px]" style={{ color: "var(--t-frame-text-muted)" }}>
-          Find answers and learn how ServiceOS works.
-        </p>
+        <h1 className="text-[28px] font-bold tracking-[-1px]" style={{ color: "var(--t-frame-text)" }}>Help Center</h1>
+        <p className="mt-1 text-[13px]" style={{ color: "var(--t-frame-text-muted)" }}>Find answers and learn how ServiceOS works.</p>
       </div>
 
       {/* Search */}
       <div className="relative max-w-xl mx-auto mb-10">
         <Search className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2" style={{ color: "var(--t-text-muted)" }} />
-        <input
-          value={search}
-          onChange={e => setSearch(e.target.value)}
+        <input value={search} onChange={e => setSearch(e.target.value)}
           placeholder="Search help topics..."
           className="w-full rounded-[20px] border py-3.5 pl-12 pr-12 text-sm outline-none transition-colors focus:border-[var(--t-accent)] focus:ring-1 focus:ring-[var(--t-accent)]"
-          style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)", color: "var(--t-text-primary)" }}
-        />
+          style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)", color: "var(--t-text-primary)" }} />
         {search && (
           <button onClick={() => setSearch("")} className="absolute right-4 top-1/2 -translate-y-1/2 p-1 rounded-full" style={{ color: "var(--t-text-muted)" }}>
             <X className="h-4 w-4" />
@@ -100,12 +118,18 @@ export default function HelpCenterPage() {
           </p>
           {filtered.length > 0 && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {filtered.map(f => <TopicCard key={f.id} feature={f} />)}
+              {filtered.map(f => (
+                <div key={f.id} ref={f.id === selectedId ? selectedRef : undefined}>
+                  <TopicCard feature={f} isSelected={f.id === selectedId} onSelect={selectFeature} />
+                  {f.id === selectedId && selectedVisibleInSearch && relatedTopics.length > 0 && (
+                    <RelatedSection topics={relatedTopics} onSelect={selectFeature} />
+                  )}
+                </div>
+              ))}
             </div>
           )}
         </div>
       ) : (
-        /* Default view */
         <div>
           {/* Popular Topics */}
           {popularTopics.length > 0 && (
@@ -113,16 +137,11 @@ export default function HelpCenterPage() {
               <h2 className="text-[15px] font-bold tracking-[-0.3px] mb-3" style={{ color: "var(--t-frame-text)" }}>Popular Topics</h2>
               <div className="flex flex-wrap gap-2">
                 {popularTopics.map(f => (
-                  <Link
-                    key={f.id}
-                    href={isNavigableRoute(f.routeOrSurface) ? f.routeOrSurface : "#"}
+                  <button key={f.id} onClick={() => selectFeature(f.id)}
                     className="rounded-full border px-4 py-2 text-sm font-medium transition-all"
-                    style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)", color: "var(--t-text-primary)" }}
-                    onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--t-accent)"; e.currentTarget.style.color = "var(--t-accent)"; }}
-                    onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--t-border)"; e.currentTarget.style.color = "var(--t-text-primary)"; }}
-                  >
+                    style={{ background: selectedId === f.id ? "var(--t-accent-soft)" : "var(--t-bg-card)", borderColor: selectedId === f.id ? "var(--t-accent)" : "var(--t-border)", color: selectedId === f.id ? "var(--t-accent)" : "var(--t-text-primary)" }}>
                     {f.label}
-                  </Link>
+                  </button>
                 ))}
               </div>
             </div>
@@ -139,7 +158,12 @@ export default function HelpCenterPage() {
                 </h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {features.sort((a, b) => a.label.localeCompare(b.label)).map(f => (
-                    <TopicCard key={f.id} feature={f} />
+                    <div key={f.id} ref={f.id === selectedId ? selectedRef : undefined}>
+                      <TopicCard feature={f} isSelected={f.id === selectedId} onSelect={selectFeature} />
+                      {f.id === selectedId && relatedTopics.length > 0 && (
+                        <RelatedSection topics={relatedTopics} onSelect={selectFeature} />
+                      )}
+                    </div>
                   ))}
                 </div>
               </div>
@@ -147,19 +171,35 @@ export default function HelpCenterPage() {
           })}
         </div>
       )}
+
+      {/* Clear selection hint */}
+      {selectedId && (
+        <div className="fixed bottom-6 right-6 z-50">
+          <button onClick={clearSelection}
+            className="rounded-full border px-4 py-2 text-xs font-medium shadow-lg transition-all"
+            style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)", color: "var(--t-text-muted)" }}>
+            <X className="h-3 w-3 inline mr-1" /> Clear selection
+          </button>
+        </div>
+      )}
     </div>
   );
 }
 
 /* ── Topic Card ── */
-function TopicCard({ feature }: { feature: FeatureDescription }) {
+function TopicCard({ feature, isSelected, onSelect }: { feature: FeatureDescription; isSelected?: boolean; onSelect?: (id: string) => void }) {
   const hasRoute = isNavigableRoute(feature.routeOrSurface);
   return (
     <div
-      className="rounded-[14px] border p-4 transition-all"
-      style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)" }}
-      onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--t-border-strong)"; e.currentTarget.style.boxShadow = "0 2px 8px var(--t-shadow)"; }}
-      onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--t-border)"; e.currentTarget.style.boxShadow = ""; }}
+      onClick={() => onSelect?.(feature.id)}
+      className="rounded-[14px] border p-4 transition-all cursor-pointer"
+      style={{
+        background: isSelected ? "var(--t-bg-elevated)" : "var(--t-bg-card)",
+        borderColor: isSelected ? "var(--t-accent)" : "var(--t-border)",
+        boxShadow: isSelected ? "0 0 0 1px var(--t-accent)" : "",
+      }}
+      onMouseEnter={e => { if (!isSelected) { e.currentTarget.style.borderColor = "var(--t-border-strong)"; e.currentTarget.style.boxShadow = "0 2px 8px var(--t-shadow)"; } }}
+      onMouseLeave={e => { if (!isSelected) { e.currentTarget.style.borderColor = "var(--t-border)"; e.currentTarget.style.boxShadow = ""; } }}
     >
       <div className="flex items-start justify-between gap-2 mb-2">
         <h3 className="text-sm font-semibold" style={{ color: "var(--t-text-primary)" }}>{feature.label}</h3>
@@ -171,10 +211,39 @@ function TopicCard({ feature }: { feature: FeatureDescription }) {
         {feature.guideDescription}
       </p>
       {hasRoute && (
-        <Link href={feature.routeOrSurface} className="inline-flex items-center gap-1 text-xs font-medium" style={{ color: "var(--t-accent)" }}>
+        <Link href={feature.routeOrSurface} onClick={e => e.stopPropagation()}
+          className="inline-flex items-center gap-1 text-xs font-medium" style={{ color: "var(--t-accent)" }}>
           Open <ExternalLink className="h-3 w-3" />
         </Link>
       )}
+    </div>
+  );
+}
+
+/* ── Related Topics Section ── */
+function RelatedSection({ topics, onSelect }: { topics: FeatureDescription[]; onSelect: (id: string) => void }) {
+  return (
+    <div className="mt-3 mb-2">
+      <p className="text-[11px] font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--t-text-muted)" }}>Related Topics</p>
+      <div className="flex gap-3 overflow-x-auto">
+        {topics.map(f => (
+          <button key={f.id} onClick={() => onSelect(f.id)}
+            className="shrink-0 rounded-[12px] border p-3 text-left transition-all"
+            style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border-subtle)", minWidth: 180, maxWidth: 220 }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--t-border-strong)"; }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--t-border-subtle)"; }}
+          >
+            <p className="text-xs font-semibold mb-1" style={{ color: "var(--t-text-primary)" }}>{f.label}</p>
+            <p className="text-[11px] leading-snug line-clamp-2" style={{ color: "var(--t-text-muted)" }}>{f.shortDescription}</p>
+            {isNavigableRoute(f.routeOrSurface) && (
+              <Link href={f.routeOrSurface} onClick={e => e.stopPropagation()}
+                className="inline-flex items-center gap-0.5 text-[10px] font-medium mt-1.5" style={{ color: "var(--t-accent)" }}>
+                Open <ExternalLink className="h-2.5 w-2.5" />
+              </Link>
+            )}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
