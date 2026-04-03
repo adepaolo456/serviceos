@@ -13,9 +13,11 @@ import { InvoiceLineItem } from '../billing/entities/invoice-line-item.entity';
 import { DumpLocation, DumpLocationRate, DumpLocationSurcharge } from '../dump-locations/entities/dump-location.entity';
 import { DumpTicket } from '../dump-locations/entities/dump-ticket.entity';
 import { DeliveryZone } from '../pricing/entities/delivery-zone.entity';
+import { SetupChecklist } from '../onboarding/entities/setup-checklist.entity';
+import { TenantSettings } from '../tenant-settings/entities/tenant-settings.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Tenant, User, Job, Customer, Asset, Invoice, InvoiceLineItem, DumpLocation, DumpLocationRate, DumpLocationSurcharge, DumpTicket, DeliveryZone])],
+  imports: [TypeOrmModule.forFeature([Tenant, User, Job, Customer, Asset, Invoice, InvoiceLineItem, DumpLocation, DumpLocationRate, DumpLocationSurcharge, DumpTicket, DeliveryZone, SetupChecklist, TenantSettings])],
   controllers: [AdminController, SeedController],
   providers: [AdminService],
 })

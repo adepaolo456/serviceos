@@ -15,6 +15,7 @@ import {
   LoginDto,
   RefreshTokenDto,
   InviteUserDto,
+  LookupTenantsDto,
 } from './dto/auth.dto';
 
 @Injectable()
@@ -88,8 +89,43 @@ export class AuthService {
   }
 
   async login(dto: LoginDto) {
+    let tenantId = dto.tenantId;
+
+    // If no tenantId provided, look up tenants for this email
+    if (!tenantId) {
+      const users = await this.usersRepository.find({
+        where: { email: dto.email },
+        select: ['id', 'tenant_id'],
+      });
+
+      if (users.length === 0) {
+        throw new UnauthorizedException('Invalid credentials');
+      }
+
+      if (users.length === 1) {
+        tenantId = users[0].tenant_id;
+      } else {
+        // Multiple tenants — need selection
+        const tenants = await this.tenantsRepository
+          .createQueryBuilder('t')
+          .select(['t.id', 't.name', 't.website_logo_url'])
+          .where('t.id IN (:...ids)', { ids: users.map((u) => u.tenant_id) })
+          .getMany();
+
+        throw new UnauthorizedException({
+          statusCode: 400,
+          error: 'tenant_selection_required',
+          tenants: tenants.map((t) => ({
+            id: t.id,
+            name: t.name,
+            logo_url: t.website_logo_url || null,
+          })),
+        });
+      }
+    }
+
     const user = await this.usersRepository.findOne({
-      where: { email: dto.email, tenant_id: dto.tenantId },
+      where: { email: dto.email, tenant_id: tenantId },
       select: [
         'id',
         'email',
@@ -133,6 +169,40 @@ export class AuthService {
       },
       ...tokens,
     };
+  }
+
+  async lookupTenants(email: string) {
+    const start = Date.now();
+
+    const users = await this.usersRepository.find({
+      where: { email },
+      select: ['id', 'tenant_id'],
+    });
+
+    let tenants: { id: string; name: string; logo_url: string | null }[] = [];
+
+    if (users.length > 0) {
+      const tenantRows = await this.tenantsRepository
+        .createQueryBuilder('t')
+        .select(['t.id', 't.name', 't.website_logo_url'])
+        .where('t.id IN (:...ids)', { ids: users.map((u) => u.tenant_id) })
+        .getMany();
+
+      tenants = tenantRows.map((t) => ({
+        id: t.id,
+        name: t.name,
+        logo_url: t.website_logo_url || null,
+      }));
+    }
+
+    // Timing-safe: ensure consistent response time
+    const elapsed = Date.now() - start;
+    const floor = 200;
+    if (elapsed < floor) {
+      await new Promise((r) => setTimeout(r, floor - elapsed));
+    }
+
+    return { tenants };
   }
 
   async refreshToken(dto: RefreshTokenDto) {
@@ -355,26 +425,53 @@ export class AuthService {
     email: string;
     firstName: string;
     lastName: string;
+    tenantId?: string;
   }) {
-    // TODO: Google OAuth needs tenant context (subdomain or pre-login selection)
-    // Currently matches any user with this email globally. For single-tenant
-    // deployments this is safe, but for multi-tenant it needs a tenant selector
-    // before the OAuth redirect.
-    let user = await this.usersRepository.findOne({
+    // Find all users with this email
+    const existingUsers = await this.usersRepository.find({
       where: { email: googleUser.email },
+      select: ['id', 'email', 'first_name', 'last_name', 'role', 'tenant_id'],
     });
 
-    let isNew = false;
+    if (existingUsers.length > 0) {
+      let user: User | undefined;
 
-    if (user) {
-      // Existing user — just generate tokens
+      if (googleUser.tenantId) {
+        // Tenant was selected before OAuth — use it
+        user = existingUsers.find((u) => u.tenant_id === googleUser.tenantId);
+        if (!user) {
+          throw new UnauthorizedException('User does not belong to the selected tenant');
+        }
+      } else if (existingUsers.length === 1) {
+        // Single tenant — auto-select
+        user = existingUsers[0];
+      } else {
+        // Multiple tenants, no selection — return tenants for picker
+        const tenantIds = existingUsers.map((u) => u.tenant_id);
+        const tenants = await this.tenantsRepository
+          .createQueryBuilder('t')
+          .select(['t.id', 't.name', 't.website_logo_url'])
+          .where('t.id IN (:...ids)', { ids: tenantIds })
+          .getMany();
+
+        // For OAuth callback, redirect with tenant_required flag
+        throw new UnauthorizedException({
+          statusCode: 400,
+          error: 'tenant_selection_required',
+          tenants: tenants.map((t) => ({
+            id: t.id,
+            name: t.name,
+            logo_url: t.website_logo_url || null,
+          })),
+        });
+      }
+
       const tokens = await this.generateTokens(user, user.tenant_id);
       await this.updateRefreshTokenHash(user.id, tokens.refreshToken);
       return { ...tokens, isNew: false };
     }
 
     // New user — create tenant + user
-    isNew = true;
     const companyName = `${googleUser.firstName}'s Company`;
     const slug = companyName
       .toLowerCase()
@@ -388,9 +485,8 @@ export class AuthService {
     });
     const savedTenant = await this.tenantsRepository.save(tenant);
 
-    // Create user with a random password (they'll use Google to login)
     const randomPass = await bcrypt.hash(Math.random().toString(36), 12);
-    user = this.usersRepository.create({
+    const user = this.usersRepository.create({
       tenant_id: savedTenant.id,
       email: googleUser.email,
       password_hash: randomPass,
@@ -403,7 +499,7 @@ export class AuthService {
     const tokens = await this.generateTokens(savedUser, savedTenant.id);
     await this.updateRefreshTokenHash(savedUser.id, tokens.refreshToken);
 
-    return { ...tokens, isNew };
+    return { ...tokens, isNew: true };
   }
 
   private async generateTokens(user: User, tenantId: string) {

@@ -66,6 +66,13 @@ import { DumpTicket } from './modules/dump-locations/entities/dump-ticket.entity
 import { SubscriptionPlan } from './modules/subscriptions/entities/subscription-plan.entity';
 import { RentalChainsModule } from './modules/rental-chains/rental-chains.module';
 import { MapboxModule } from './modules/mapbox/mapbox.module';
+import { OnboardingModule } from './modules/onboarding/onboarding.module';
+import { TenantSettingsModule } from './modules/tenant-settings/tenant-settings.module';
+import { AiModule } from './modules/ai/ai.module';
+import { SetupChecklist } from './modules/onboarding/entities/setup-checklist.entity';
+import { TenantSettings } from './modules/tenant-settings/entities/tenant-settings.entity';
+import { AiSuggestionLog } from './modules/ai/entities/ai-suggestion-log.entity';
+import { RateLimitLog } from './common/entities/rate-limit-log.entity';
 
 @Module({
   imports: [
@@ -119,6 +126,10 @@ import { MapboxModule } from './modules/mapbox/mapbox.module';
             SubscriptionPlan,
             Quote,
             DeliveryZone,
+            SetupChecklist,
+            TenantSettings,
+            AiSuggestionLog,
+            RateLimitLog,
           ],
           synchronize: true,
           ssl: {
@@ -153,6 +164,9 @@ import { MapboxModule } from './modules/mapbox/mapbox.module';
     QuotesModule,
     RentalChainsModule,
     MapboxModule,
+    OnboardingModule,
+    TenantSettingsModule,
+    AiModule,
   ],
   controllers: [AppController],
   providers: [

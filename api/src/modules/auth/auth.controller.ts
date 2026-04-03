@@ -14,15 +14,18 @@ import {
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request, Response } from 'express';
 import { ConfigService } from '@nestjs/config';
+import { DataSource } from 'typeorm';
 import { AuthService } from './auth.service';
 import {
   RegisterDto,
   LoginDto,
   RefreshTokenDto,
   InviteUserDto,
+  LookupTenantsDto,
 } from './dto/auth.dto';
 import { Public, CurrentUser, TenantId, Roles } from '../../common/decorators';
 import { RolesGuard } from '../../common/guards';
+import { checkRateLimit } from '../../common/rate-limiter';
 
 @ApiTags('Auth')
 @Controller('auth')
@@ -30,6 +33,7 @@ export class AuthController {
   constructor(
     private readonly authService: AuthService,
     private readonly configService: ConfigService,
+    private readonly dataSource: DataSource,
   ) {}
 
   @Public()
@@ -133,6 +137,55 @@ export class AuthController {
   }
 
   @Public()
+  @Post('lookup-tenants')
+  @ApiOperation({ summary: 'Look up tenants for an email (timing-safe, rate-limited)' })
+  async lookupTenants(
+    @Body() dto: LookupTenantsDto,
+    @Req() req: Request,
+    @Res() res: Response,
+  ) {
+    const start = Date.now();
+    const floor = 200;
+
+    const ip =
+      (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ||
+      req.ip ||
+      'unknown';
+
+    const rateResult = await checkRateLimit(
+      this.dataSource,
+      ip,
+      '/auth/lookup-tenants',
+      10,
+      1,
+    );
+
+    if (!rateResult.allowed) {
+      // Wait for timing floor before returning 429
+      const elapsed = Date.now() - start;
+      if (elapsed < floor) {
+        await new Promise((r) => setTimeout(r, floor - elapsed));
+      }
+      return res
+        .status(429)
+        .set('X-RateLimit-Remaining', '0')
+        .json({
+          statusCode: 429,
+          message: 'Too many requests. Try again later.',
+          retryAfter: rateResult.retryAfterSeconds,
+        });
+    }
+
+    const result = await this.authService.lookupTenants(dto.email);
+
+    // Timing floor is inside lookupTenants, but add header
+    return res
+      .status(200)
+      .set('X-RateLimit-Remaining', String(rateResult.remaining))
+      .json(result);
+  }
+
+  @Public()
   @Get('google')
   @ApiOperation({ summary: 'Initiate Google OAuth login' })
   googleLogin(@Req() req: Request, @Res() res: Response) {
@@ -148,6 +201,11 @@ export class AuthController {
         );
       }
 
+      // Pass tenant_id through OAuth state parameter
+      const tenantId = (req.query as Record<string, string>).tenant_id || '';
+      const statePayload = JSON.stringify({ tenantId });
+      const state = Buffer.from(statePayload).toString('base64');
+
       const callbackUrl =
         this.configService.get<string>('GOOGLE_CALLBACK_URL') ||
         'https://serviceos-api.vercel.app/auth/google/callback';
@@ -158,6 +216,7 @@ export class AuthController {
         scope: 'email profile',
         access_type: 'offline',
         prompt: 'consent',
+        state,
       });
       return res.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`);
     } catch (err) {
@@ -223,11 +282,22 @@ export class AuthController {
         return res.redirect(`${frontendUrl}/login?error=no_email`);
       }
 
+      // Extract tenant_id from OAuth state
+      let oauthTenantId = '';
+      const stateParam = (req.query as Record<string, string>).state;
+      if (stateParam) {
+        try {
+          const decoded = JSON.parse(Buffer.from(stateParam, 'base64').toString());
+          oauthTenantId = decoded.tenantId || '';
+        } catch { /* ignore invalid state */ }
+      }
+
       const result = await this.authService.googleLogin({
         googleId: profile.id || '',
         email: profile.email,
         firstName: profile.given_name || profile.name || '',
         lastName: profile.family_name || '',
+        tenantId: oauthTenantId,
       });
 
       return res.redirect(

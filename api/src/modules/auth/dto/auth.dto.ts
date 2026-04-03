@@ -54,10 +54,16 @@ export class LoginDto {
   @IsNotEmpty()
   password: string;
 
-  @ApiProperty({ description: 'Tenant ID (company) the user belongs to' })
+  @ApiPropertyOptional({ description: 'Tenant ID — required if user belongs to multiple tenants' })
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
-  tenantId: string;
+  tenantId?: string;
+}
+
+export class LookupTenantsDto {
+  @ApiProperty({ example: 'owner@acme.com' })
+  @IsEmail()
+  email: string;
 }
 
 export class RefreshTokenDto {
