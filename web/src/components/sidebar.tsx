@@ -52,7 +52,7 @@ const navigation = [
   { name: "Dump Sites", href: "/dump-locations", icon: Trash2, module: "dump_locations" },
   { name: "Invoices", href: "/invoices", icon: FileText },
   { name: "Billing Issues", href: "/billing-issues", icon: AlertTriangle },
-  { name: "Pricing QA", href: "/pricing-qa", icon: Shield },
+  { name: "Pricing Issues", href: "/pricing-qa", icon: Shield },
   { name: "Notifications", href: "/notifications", icon: Bell },
   { name: "Pricing", href: "/pricing", icon: DollarSign },
   { name: "Team", href: "/team", icon: Users },
@@ -171,7 +171,7 @@ export default function Sidebar() {
                       {billingIssueCount}
                     </span>
                   )}
-                  {item.name === "Pricing QA" && pricingQaCount > 0 && (
+                  {item.name === "Pricing Issues" && pricingQaCount > 0 && (
                     <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-bold text-white" style={{ background: "var(--t-warning)" }}>
                       {pricingQaCount}
                     </span>

@@ -11,6 +11,7 @@ import { api } from "@/lib/api";
 import { useToast } from "@/components/toast";
 import QuickView from "@/components/quick-view";
 import AddressAutocomplete, { type AddressValue } from "@/components/address-autocomplete";
+import HelpTooltip from "@/components/ui/HelpTooltip";
 
 /* ── Types ── */
 
@@ -278,7 +279,9 @@ export default function PricingQaPage() {
       {/* Header */}
       <div className="flex items-start justify-between gap-4 mb-8">
         <div>
-          <h1 className="text-[28px] font-bold tracking-[-1px] text-[var(--t-frame-text)]">Pricing QA</h1>
+          <h1 className="text-[28px] font-bold tracking-[-1px] text-[var(--t-frame-text)] inline-flex items-center gap-2">
+            Pricing Issues <HelpTooltip featureId="pricing_issues" />
+          </h1>
           <p className="mt-1 text-[13px] text-[var(--t-frame-text-muted)]">
             {summary ? `${computeActionableCount(summary)} actionable issue${computeActionableCount(summary) !== 1 ? "s" : ""}` : "Loading..."}
           </p>
