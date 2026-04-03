@@ -77,6 +77,7 @@ import { SetupChecklist } from './modules/onboarding/entities/setup-checklist.en
 import { TenantSettings } from './modules/tenant-settings/entities/tenant-settings.entity';
 import { AiSuggestionLog } from './modules/ai/entities/ai-suggestion-log.entity';
 import { RateLimitLog } from './common/entities/rate-limit-log.entity';
+import { HelpAnalyticsEvent } from './modules/analytics/entities/help-analytics-event.entity';
 
 @Module({
   imports: [
@@ -137,6 +138,7 @@ import { RateLimitLog } from './common/entities/rate-limit-log.entity';
             TenantSettings,
             AiSuggestionLog,
             RateLimitLog,
+            HelpAnalyticsEvent,
           ],
           synchronize: true,
           ssl: {

@@ -1,10 +1,11 @@
 /**
  * Help Center usage tracking — fire-and-forget, registry-enforced.
  * All feature metadata resolved from FEATURE_REGISTRY — never hardcoded.
- * Logs to console in dev, ready to wire to real analytics backend.
+ * Events persist to POST /help-analytics/events.
  */
 
 import { getFeature } from "./feature-registry";
+import { api } from "./api";
 
 export type HelpAnalyticsSource =
   | "direct"
@@ -30,7 +31,15 @@ function track(event: string, payload: HelpAnalyticsPayload): void {
     if (process.env.NODE_ENV === "development") {
       console.debug(`[HelpAnalytics] ${event}`, payload);
     }
-    // TODO: Wire to real analytics backend (e.g., api.post("/analytics/events", { event, ...payload }))
+    // Persist to backend — fire-and-forget
+    api.post("/help-analytics/events", {
+      eventName: event,
+      featureId: payload.featureId,
+      relatedFeatureId: payload.relatedFeatureId,
+      pagePath: payload.pagePath,
+      source: payload.source,
+      searchQuery: payload.searchQuery,
+    }).catch(() => {}); // silent failure
   } catch {
     // Fire-and-forget — never break the UI
   }
@@ -46,7 +55,7 @@ export function trackHelpTopicViewed(payload: {
   tenantId?: string; userId?: string; featureId: string; pagePath?: string; source?: HelpAnalyticsSource;
 }): void {
   const feature = getFeature(payload.featureId);
-  if (!feature) return; // Unregistered — do not fire
+  if (!feature) return;
   track("help_topic_viewed", { ...payload, category: feature.category });
 }
 
@@ -69,12 +78,9 @@ export function trackHelpRelatedTopicClicked(payload: {
 }): void {
   const from = getFeature(payload.featureId);
   const to = getFeature(payload.relatedFeatureId);
-  if (!from || !to) return; // Both must resolve
+  if (!from || !to) return;
   track("help_related_topic_clicked", {
-    ...payload,
-    category: from.category,
-    relatedCategory: to.category,
-    source: "related_topics",
+    ...payload, category: from.category, relatedCategory: to.category, source: "related_topics",
   });
 }
 
