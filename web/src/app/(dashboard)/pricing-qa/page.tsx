@@ -159,6 +159,81 @@ export default function PricingQaPage() {
     setSelectedIds(new Set(eligible));
   };
 
+  // Panel resolution state
+  const [panelAddr, setPanelAddr] = useState<Record<string, string>>({});
+  const [panelAddrSaving, setPanelAddrSaving] = useState(false);
+  const [panelGeoStatus, setPanelGeoStatus] = useState<{ status: string; reason?: string } | null>(null);
+  const [panelSnapStatus, setPanelSnapStatus] = useState<{ status: string; reason?: string } | null>(null);
+
+  const handlePanelSaveAddress = async (jobId: string, addr: Record<string, string>) => {
+    setPanelAddrSaving(true);
+    setPanelGeoStatus(null);
+    setPanelSnapStatus(null);
+    try {
+      const result = await api.patch<{ status: string; has_valid_coordinates: boolean; can_generate_snapshot: boolean; geocode: { status: string } | null }>(`/pricing-qa/update-address/${jobId}`, { ...addr, geocode: true });
+      if (result.geocode?.status === "success") {
+        setPanelGeoStatus({ status: "success" });
+        toast("success", "Address saved and geocoded");
+      } else if (result.geocode?.status === "failed") {
+        setPanelGeoStatus({ status: "failed", reason: "Geocoding failed for this address" });
+        toast("warning", "Address saved but geocoding failed");
+      } else {
+        toast("success", "Address saved");
+      }
+      await fetchData();
+      // Refresh the selected row
+      const updated = (await api.get<{ rows: PricingQaRow[] }>("/pricing-qa/overview")).rows.find(r => r.job_id === jobId);
+      if (updated) setSelectedRow(updated);
+    } catch { toast("error", "Failed to save address"); }
+    finally { setPanelAddrSaving(false); }
+  };
+
+  const handlePanelRetryGeocode = async (jobId: string) => {
+    setPanelGeoStatus(null);
+    try {
+      const result = await api.post<{ status: string; reason?: string; can_generate_snapshot?: boolean }>(`/pricing-qa/retry-geocode/${jobId}`);
+      setPanelGeoStatus(result);
+      if (result.status === "success") {
+        toast("success", "Geocoding succeeded");
+        await fetchData();
+        const updated = (await api.get<{ rows: PricingQaRow[] }>("/pricing-qa/overview")).rows.find(r => r.job_id === jobId);
+        if (updated) setSelectedRow(updated);
+      } else {
+        toast("error", `Geocoding failed: ${(result.reason || "unknown").replace(/_/g, " ")}`);
+      }
+    } catch { toast("error", "Geocoding request failed"); }
+  };
+
+  const handlePanelGenerateSnapshot = async (jobId: string) => {
+    setPanelSnapStatus(null);
+    try {
+      const result = await api.post<{ status: string; reason?: string; snapshot_id?: string }>(`/pricing-qa/generate-snapshot/${jobId}`);
+      setPanelSnapStatus(result);
+      if (result.status === "success") {
+        toast("success", "Snapshot generated");
+        await fetchData();
+        const updated = (await api.get<{ rows: PricingQaRow[] }>("/pricing-qa/overview")).rows.find(r => r.job_id === jobId);
+        if (updated) setSelectedRow(updated);
+      } else {
+        toast("error", `Snapshot failed: ${(result.reason || "unknown").replace(/_/g, " ")}`);
+      }
+    } catch { toast("error", "Snapshot generation failed"); }
+  };
+
+  // Initialize panel address when row is selected
+  useEffect(() => {
+    if (selectedRow) {
+      const parts = selectedRow.service_address_summary.split(", ");
+      setPanelAddr({
+        street: parts[0] === "No address" ? "" : parts[0] || "",
+        city: parts[1] || "",
+        state: parts[2] || "",
+      });
+      setPanelGeoStatus(null);
+      setPanelSnapStatus(null);
+    }
+  }, [selectedRow?.job_id]);
+
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
@@ -445,10 +520,10 @@ export default function PricingQaPage() {
         </div>
       )}
 
-      {/* Detail Panel */}
+      {/* Issue Resolution Panel */}
       <QuickView
         isOpen={!!selectedRow}
-        onClose={() => { setSelectedRow(null); setAuditHistory([]); }}
+        onClose={() => { setSelectedRow(null); setAuditHistory([]); setPanelAddr({}); setPanelAddrSaving(false); setPanelGeoStatus(null); setPanelSnapStatus(null); }}
         title={selectedRow?.job_number || ""}
         subtitle={selectedRow?.customer_name}
         actions={selectedRow ? (
@@ -459,122 +534,236 @@ export default function PricingQaPage() {
         ) : undefined}
       >
         {selectedRow && (
-          <div className="space-y-4">
-            {/* Severity + Issue */}
-            <div className="flex items-center gap-2 flex-wrap">
-              {(() => { const s = SEVERITY_CONFIG[selectedRow.severity]; return (
-                <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: s.bg, color: s.color }}>
-                  <s.icon className="h-3 w-3" /> {s.label}
-                </span>
-              ); })()}
-              {(() => { const i = getIssueInfo(selectedRow.issue_type); return (
-                <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: "var(--t-bg-elevated)", color: i.color }}>
-                  <i.icon className="h-3 w-3" /> {i.label}
-                </span>
-              ); })()}
-              <span className="text-xs capitalize" style={{ color: "var(--t-text-muted)" }}>{selectedRow.status}</span>
-            </div>
-
-            {/* Job Info */}
-            <div className="rounded-[14px] border p-4" style={{ borderColor: "var(--t-border)" }}>
-              <p className="text-[11px] uppercase tracking-wider mb-2" style={{ color: "var(--t-text-muted)" }}>Job</p>
-              <div className="space-y-1.5 text-sm">
-                <div className="flex justify-between"><span style={{ color: "var(--t-text-muted)" }}>Type</span><span style={{ color: "var(--t-text-primary)" }}>{selectedRow.job_type} {selectedRow.asset_subtype || ""}</span></div>
-                <div className="flex justify-between"><span style={{ color: "var(--t-text-muted)" }}>Address</span><span className="text-right max-w-[200px] truncate" style={{ color: selectedRow.has_valid_coordinates ? "var(--t-text-primary)" : "var(--t-error)" }}>{selectedRow.service_address_summary}</span></div>
-                {selectedRow.invoice_id && (
-                  <div className="flex justify-between"><span style={{ color: "var(--t-text-muted)" }}>Invoice</span><Link href={`/invoices/${selectedRow.invoice_id}`} className="text-xs" style={{ color: "var(--t-accent)" }}>{selectedRow.invoice_status} →</Link></div>
-                )}
-              </div>
-            </div>
-
-            {/* Pricing State */}
-            <div className="rounded-[14px] border p-4" style={{ borderColor: "var(--t-border)" }}>
-              <p className="text-[11px] uppercase tracking-wider mb-2" style={{ color: "var(--t-text-muted)" }}>Pricing State</p>
-              <div className="space-y-1.5 text-sm">
-                <div className="flex justify-between"><span style={{ color: "var(--t-text-muted)" }}>Locked Snapshot</span><span style={{ color: selectedRow.has_locked_snapshot ? "var(--t-accent)" : "var(--t-text-muted)" }}>{selectedRow.has_locked_snapshot ? "Yes" : "No"}</span></div>
-                {selectedRow.pricing_locked_at && (
-                  <div className="flex justify-between"><span style={{ color: "var(--t-text-muted)" }}>Locked At</span><span style={{ color: "var(--t-text-primary)" }}>{new Date(selectedRow.pricing_locked_at).toLocaleString()}</span></div>
-                )}
-                {selectedRow.pricing_snapshot_id && (
-                  <div className="flex justify-between items-center"><span style={{ color: "var(--t-text-muted)" }}>Snapshot ID</span>
-                    <button onClick={() => copyId(selectedRow.pricing_snapshot_id!)} className="flex items-center gap-1 text-xs font-mono" style={{ color: "var(--t-text-muted)" }}>
-                      {selectedRow.pricing_snapshot_id.slice(0, 12)}... <Copy className="h-3 w-3" />
-                    </button>
-                  </div>
-                )}
-                {selectedRow.pricing_config_version_id && (
-                  <div className="flex justify-between items-center"><span style={{ color: "var(--t-text-muted)" }}>Config Version</span>
-                    <button onClick={() => copyId(selectedRow.pricing_config_version_id!)} className="flex items-center gap-1 text-xs font-mono" style={{ color: "var(--t-text-muted)" }}>
-                      {selectedRow.pricing_config_version_id.slice(0, 12)}... <Copy className="h-3 w-3" />
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Exchange Info */}
-            {selectedRow.is_exchange && (
-              <div className="rounded-[14px] border p-4" style={{ borderColor: "var(--t-border)" }}>
-                <p className="text-[11px] uppercase tracking-wider mb-2" style={{ color: "#a78bfa" }}>Exchange Details</p>
-                <div className="space-y-1.5 text-sm">
-                  <div className="flex justify-between"><span style={{ color: "var(--t-text-muted)" }}>Pickup</span><span style={{ color: "var(--t-text-primary)" }}>{selectedRow.exchange_pickup_subtype || "—"}</span></div>
-                  <div className="flex justify-between"><span style={{ color: "var(--t-text-muted)" }}>Dropoff</span><span style={{ color: "var(--t-text-primary)" }}>{selectedRow.exchange_dropoff_subtype || "—"}</span></div>
-                  <div className="flex justify-between"><span style={{ color: "var(--t-text-muted)" }}>Tonnage Source</span><span style={{ color: "var(--t-warning)" }}>Pickup container</span></div>
-                </div>
-              </div>
-            )}
-
-            {/* Geocoding */}
-            <div className="rounded-[14px] border p-4" style={{ borderColor: "var(--t-border)" }}>
-              <p className="text-[11px] uppercase tracking-wider mb-2" style={{ color: "var(--t-text-muted)" }}>Geocoding</p>
-              <div className="space-y-1.5 text-sm">
-                <div className="flex justify-between"><span style={{ color: "var(--t-text-muted)" }}>Valid Coordinates</span>
-                  <span style={{ color: selectedRow.has_valid_coordinates ? "var(--t-accent)" : "var(--t-error)" }}>
-                    {selectedRow.has_valid_coordinates ? "Yes" : "No"}
-                  </span>
-                </div>
-                {selectedRow.geocode_blocked && (
-                  <p className="text-xs mt-1" style={{ color: "var(--t-error)" }}>
-                    Pricing blocked — address needs geocoding before distance calculation
-                  </p>
-                )}
-              </div>
-            </div>
-
-            {/* Audit History */}
-            <div className="rounded-[14px] border p-4" style={{ borderColor: "var(--t-border)" }}>
-              <p className="text-[11px] uppercase tracking-wider mb-2" style={{ color: "var(--t-text-muted)" }}>Recalculation History</p>
-              {auditLoading ? (
-                <div className="h-12 skeleton rounded-lg" />
-              ) : auditHistory.length === 0 ? (
-                <p className="text-xs" style={{ color: "var(--t-text-tertiary)" }}>No recalculations recorded</p>
-              ) : (
-                <div className="space-y-2">
-                  {auditHistory.map(a => (
-                    <div key={a.id} className="flex items-start gap-2 text-xs">
-                      <RefreshCw className="h-3 w-3 mt-0.5 shrink-0" style={{ color: "var(--t-info)" }} />
-                      <div>
-                        <p style={{ color: "var(--t-text-primary)" }}>{a.recalculation_reasons.join(", ")}</p>
-                        <p style={{ color: "var(--t-text-muted)" }}>{new Date(a.created_at).toLocaleString()}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Quick Links */}
-            <div className="flex gap-2 flex-wrap">
-              <Link href={`/jobs/${selectedRow.job_id}`} className="text-xs font-medium rounded-full border px-3 py-1.5"
-                style={{ borderColor: "var(--t-border)", color: "var(--t-text-muted)" }}>Open Job</Link>
-              {selectedRow.invoice_id && (
-                <Link href={`/invoices/${selectedRow.invoice_id}`} className="text-xs font-medium rounded-full border px-3 py-1.5"
-                  style={{ borderColor: "var(--t-border)", color: "var(--t-text-muted)" }}>Open Invoice</Link>
-              )}
-            </div>
-          </div>
+          <PanelContent
+            row={selectedRow}
+            auditHistory={auditHistory}
+            auditLoading={auditLoading}
+            panelAddr={panelAddr}
+            setPanelAddr={setPanelAddr}
+            panelAddrSaving={panelAddrSaving}
+            panelGeoStatus={panelGeoStatus}
+            panelSnapStatus={panelSnapStatus}
+            onSaveAddress={handlePanelSaveAddress}
+            onRetryGeocode={handlePanelRetryGeocode}
+            onGenerateSnapshot={handlePanelGenerateSnapshot}
+            onCopyId={copyId}
+          />
         )}
       </QuickView>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════
+   Panel Content — Resolution Checklist
+   ═══════════════════════════════════════════════════ */
+
+function PanelContent({ row, auditHistory, auditLoading, panelAddr, setPanelAddr, panelAddrSaving, panelGeoStatus, panelSnapStatus, onSaveAddress, onRetryGeocode, onGenerateSnapshot, onCopyId }: {
+  row: PricingQaRow;
+  auditHistory: AuditEntry[];
+  auditLoading: boolean;
+  panelAddr: Record<string, string>;
+  setPanelAddr: (v: Record<string, string>) => void;
+  panelAddrSaving: boolean;
+  panelGeoStatus: { status: string; reason?: string } | null;
+  panelSnapStatus: { status: string; reason?: string } | null;
+  onSaveAddress: (jobId: string, addr: Record<string, string>) => void;
+  onRetryGeocode: (jobId: string) => void;
+  onGenerateSnapshot: (jobId: string) => void;
+  onCopyId: (id: string) => void;
+}) {
+  const sev = SEVERITY_CONFIG[row.severity];
+  const issue = ISSUE_CONFIG[row.issue_type] || { label: row.issue_type, icon: Shield, color: "var(--t-text-muted)" };
+  const isMissingAddr = row.issue_type === "missing_address";
+  const isGeoBlocked = row.issue_type === "geocode_blocked";
+  const isNoSnapshot = row.issue_type === "pricing_snapshot_missing";
+  const isLocked = row.issue_type === "pricing_locked_snapshot";
+  const isRecalc = row.issue_type === "pricing_recalculated";
+
+  const CheckItem = ({ label, done, blocked, blockerText, children }: { label: string; done: boolean; blocked?: boolean; blockerText?: string; children?: React.ReactNode }) => (
+    <div className="rounded-[12px] border p-3" style={{ borderColor: done ? "var(--t-accent)" : blocked ? "var(--t-border)" : "var(--t-warning)", borderLeftWidth: 3, borderLeftColor: done ? "var(--t-accent)" : blocked ? "var(--t-text-muted)" : "var(--t-warning)", background: "var(--t-bg-card)" }}>
+      <div className="flex items-center gap-2 mb-1">
+        {done ? <CheckCircle2 className="h-3.5 w-3.5 shrink-0" style={{ color: "var(--t-accent)" }} />
+              : blocked ? <Lock className="h-3.5 w-3.5 shrink-0" style={{ color: "var(--t-text-muted)" }} />
+              : <AlertTriangle className="h-3.5 w-3.5 shrink-0" style={{ color: "var(--t-warning)" }} />}
+        <span className="text-xs font-semibold" style={{ color: done ? "var(--t-accent)" : "var(--t-text-primary)" }}>{label}</span>
+        {done && <span className="text-[10px] ml-auto" style={{ color: "var(--t-accent)" }}>Done</span>}
+        {blocked && blockerText && <span className="text-[10px] ml-auto" style={{ color: "var(--t-text-muted)" }}>{blockerText}</span>}
+      </div>
+      {children}
+    </div>
+  );
+
+  return (
+    <div className="space-y-3">
+      {/* Header badges */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: sev.bg, color: sev.color }}>
+          <sev.icon className="h-3 w-3" /> {sev.label}
+        </span>
+        <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: "var(--t-bg-elevated)", color: issue.color }}>
+          <issue.icon className="h-3 w-3" /> {issue.label}
+        </span>
+        <span className="text-xs" style={{ color: "var(--t-text-muted)" }}>{row.job_type} {row.asset_subtype || ""} · {row.status}</span>
+      </div>
+
+      {/* ── Resolution Checklist ── */}
+      <p className="text-[11px] uppercase tracking-wider font-semibold" style={{ color: "var(--t-text-muted)" }}>Resolution Checklist</p>
+
+      {/* 1. Address */}
+      <CheckItem label="Service Address" done={!row.can_fix_address && row.service_address_summary !== "No address"} blocked={false}>
+        {(isMissingAddr || isGeoBlocked || row.can_fix_address) ? (
+          <div className="mt-2 space-y-2">
+            <div className="grid grid-cols-2 gap-2">
+              <input value={panelAddr.street || ""} onChange={e => setPanelAddr({ ...panelAddr, street: e.target.value })}
+                placeholder="Street" className="col-span-2 rounded-lg border px-2.5 py-1.5 text-xs outline-none"
+                style={{ borderColor: "var(--t-border)", color: "var(--t-text-primary)", background: "var(--t-bg-input)" }} />
+              <input value={panelAddr.city || ""} onChange={e => setPanelAddr({ ...panelAddr, city: e.target.value })}
+                placeholder="City" className="rounded-lg border px-2.5 py-1.5 text-xs outline-none"
+                style={{ borderColor: "var(--t-border)", color: "var(--t-text-primary)", background: "var(--t-bg-input)" }} />
+              <div className="flex gap-2">
+                <input value={panelAddr.state || ""} onChange={e => setPanelAddr({ ...panelAddr, state: e.target.value })}
+                  placeholder="State" className="w-16 rounded-lg border px-2.5 py-1.5 text-xs outline-none"
+                  style={{ borderColor: "var(--t-border)", color: "var(--t-text-primary)", background: "var(--t-bg-input)" }} />
+                <input value={panelAddr.zip || ""} onChange={e => setPanelAddr({ ...panelAddr, zip: e.target.value })}
+                  placeholder="ZIP" className="flex-1 rounded-lg border px-2.5 py-1.5 text-xs outline-none"
+                  style={{ borderColor: "var(--t-border)", color: "var(--t-text-primary)", background: "var(--t-bg-input)" }} />
+              </div>
+            </div>
+            <button onClick={() => onSaveAddress(row.job_id, panelAddr)} disabled={panelAddrSaving || !panelAddr.street}
+              className="inline-flex items-center gap-1 rounded-full px-3 py-1 text-[11px] font-semibold disabled:opacity-50"
+              style={{ background: "var(--t-accent)", color: "var(--t-accent-on-accent)" }}>
+              {panelAddrSaving ? "Saving..." : "Save & Geocode"}
+            </button>
+          </div>
+        ) : (
+          <p className="text-xs mt-1" style={{ color: "var(--t-text-muted)" }}>{row.service_address_summary}</p>
+        )}
+      </CheckItem>
+
+      {/* 2. Coordinates / Geocoding */}
+      <CheckItem
+        label="Coordinates"
+        done={row.has_valid_coordinates}
+        blocked={!row.service_address_summary || row.service_address_summary === "No address"}
+        blockerText={row.service_address_summary === "No address" ? "Add address first" : undefined}
+      >
+        {!row.has_valid_coordinates && row.service_address_summary !== "No address" && (
+          <div className="mt-2">
+            {panelGeoStatus?.status === "success" ? (
+              <p className="text-xs" style={{ color: "var(--t-accent)" }}>Geocoded successfully</p>
+            ) : (
+              <>
+                <button onClick={() => onRetryGeocode(row.job_id)}
+                  className="inline-flex items-center gap-1 rounded-full border px-3 py-1 text-[11px] font-medium"
+                  style={{ borderColor: "var(--t-info)", color: "var(--t-info)" }}>
+                  <MapPin className="h-3 w-3" /> Retry Geocoding
+                </button>
+                {panelGeoStatus?.status === "failed" && (
+                  <p className="text-[10px] mt-1" style={{ color: "var(--t-error)" }}>{panelGeoStatus.reason || "Geocoding failed"}</p>
+                )}
+              </>
+            )}
+          </div>
+        )}
+        {row.has_valid_coordinates && (
+          <p className="text-xs mt-1" style={{ color: "var(--t-accent)" }}>Valid coordinates on file</p>
+        )}
+      </CheckItem>
+
+      {/* 3. Pricing Snapshot */}
+      <CheckItem
+        label="Pricing Snapshot"
+        done={row.has_locked_snapshot}
+        blocked={!row.has_valid_coordinates || !row.asset_subtype}
+        blockerText={!row.has_valid_coordinates ? "Valid coordinates required" : !row.asset_subtype ? "Asset subtype required" : undefined}
+      >
+        {row.has_locked_snapshot ? (
+          <div className="mt-1 space-y-1 text-xs">
+            {row.pricing_locked_at && <p style={{ color: "var(--t-text-muted)" }}>Locked: {new Date(row.pricing_locked_at).toLocaleString()}</p>}
+            {row.pricing_snapshot_id && (
+              <button onClick={() => onCopyId(row.pricing_snapshot_id!)} className="flex items-center gap-1 font-mono text-[10px]" style={{ color: "var(--t-text-muted)" }}>
+                {row.pricing_snapshot_id.slice(0, 16)}... <Copy className="h-3 w-3" />
+              </button>
+            )}
+          </div>
+        ) : row.can_generate_snapshot ? (
+          <div className="mt-2">
+            {panelSnapStatus?.status === "success" ? (
+              <p className="text-xs" style={{ color: "var(--t-accent)" }}>Snapshot generated successfully</p>
+            ) : (
+              <>
+                <button onClick={() => onGenerateSnapshot(row.job_id)}
+                  className="inline-flex items-center gap-1 rounded-full px-3 py-1 text-[11px] font-semibold"
+                  style={{ background: "var(--t-accent)", color: "var(--t-accent-on-accent)" }}>
+                  <Zap className="h-3 w-3" /> Generate Snapshot
+                </button>
+                {panelSnapStatus?.status === "failed" && (
+                  <p className="text-[10px] mt-1" style={{ color: "var(--t-error)" }}>{(panelSnapStatus.reason || "failed").replace(/_/g, " ")}</p>
+                )}
+              </>
+            )}
+          </div>
+        ) : (
+          <p className="text-[10px] mt-1" style={{ color: "var(--t-text-muted)" }}>
+            {row.action_blockers.length > 0 ? `Blocked: ${row.action_blockers.join(", ").replace(/_/g, " ")}` : "Snapshot not applicable"}
+          </p>
+        )}
+      </CheckItem>
+
+      {/* ── Supporting Details ── */}
+
+      {/* Exchange */}
+      {row.is_exchange && (
+        <div className="rounded-[12px] border p-3" style={{ borderColor: "var(--t-border)", background: "var(--t-bg-card)" }}>
+          <p className="text-[11px] uppercase tracking-wider mb-1 font-semibold" style={{ color: "#a78bfa" }}>Exchange</p>
+          <div className="text-xs space-y-1">
+            <div className="flex justify-between"><span style={{ color: "var(--t-text-muted)" }}>Pickup</span><span>{row.exchange_pickup_subtype || "—"}</span></div>
+            <div className="flex justify-between"><span style={{ color: "var(--t-text-muted)" }}>Dropoff</span><span>{row.exchange_dropoff_subtype || "—"}</span></div>
+            <div className="flex justify-between"><span style={{ color: "var(--t-text-muted)" }}>Tonnage</span><span style={{ color: "var(--t-warning)" }}>Pickup container</span></div>
+          </div>
+        </div>
+      )}
+
+      {/* Config Version */}
+      {row.pricing_config_version_id && (
+        <div className="flex items-center gap-2 text-[10px]" style={{ color: "var(--t-text-muted)" }}>
+          <span>Config:</span>
+          <button onClick={() => onCopyId(row.pricing_config_version_id!)} className="font-mono flex items-center gap-1">
+            {row.pricing_config_version_id.slice(0, 16)}... <Copy className="h-3 w-3" />
+          </button>
+        </div>
+      )}
+
+      {/* Audit History */}
+      {(auditHistory.length > 0 || auditLoading) && (
+        <div className="rounded-[12px] border p-3" style={{ borderColor: "var(--t-border)", background: "var(--t-bg-card)" }}>
+          <p className="text-[11px] uppercase tracking-wider mb-1.5 font-semibold" style={{ color: "var(--t-text-muted)" }}>Recalculation History</p>
+          {auditLoading ? <div className="h-8 skeleton rounded-lg" /> : (
+            <div className="space-y-1.5">
+              {auditHistory.slice(0, 5).map(a => (
+                <div key={a.id} className="flex items-start gap-2 text-[11px]">
+                  <RefreshCw className="h-3 w-3 mt-0.5 shrink-0" style={{ color: "var(--t-info)" }} />
+                  <div>
+                    <p style={{ color: "var(--t-text-primary)" }}>{a.recalculation_reasons.join(", ")}</p>
+                    <p style={{ color: "var(--t-text-muted)" }}>{new Date(a.created_at).toLocaleString()}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Quick Links */}
+      <div className="flex gap-2 flex-wrap pt-1">
+        <Link href={`/jobs/${row.job_id}`} className="text-xs font-medium rounded-full border px-3 py-1.5"
+          style={{ borderColor: "var(--t-border)", color: "var(--t-text-muted)" }}>Open Job</Link>
+        {row.invoice_id && (
+          <Link href={`/invoices/${row.invoice_id}`} className="text-xs font-medium rounded-full border px-3 py-1.5"
+            style={{ borderColor: "var(--t-border)", color: "var(--t-text-muted)" }}>Open Invoice</Link>
+        )}
+      </div>
     </div>
   );
 }

@@ -23,9 +23,11 @@ import { PricingQaController } from './controllers/pricing-qa.controller';
 import { Job } from '../jobs/entities/job.entity';
 import { JobPricingAudit } from '../jobs/entities/job-pricing-audit.entity';
 import { Invoice } from '../billing/entities/invoice.entity';
+import { MapboxModule } from '../mapbox/mapbox.module';
 
 @Module({
   imports: [
+    MapboxModule,
     TypeOrmModule.forFeature([
       PricingRule,
       PricingTemplate,
