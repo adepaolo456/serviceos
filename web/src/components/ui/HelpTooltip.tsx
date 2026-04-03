@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useId, useCallback } from "react";
 import { createPortal } from "react-dom";
+import Link from "next/link";
 import { getFeature, isRegisteredFeature } from "@/lib/feature-registry";
 
 interface HelpTooltipProps {
@@ -91,8 +92,10 @@ export default function HelpTooltip({
     console.warn(`[HelpTooltip] featureId "${featureId}" not found in FEATURE_REGISTRY`);
   }
 
-  const content = text || (featureId ? getFeature(featureId)?.shortDescription : "") || "";
+  const feature = featureId ? getFeature(featureId) : undefined;
+  const content = text || feature?.shortDescription || "";
   if (!content) return null;
+  const showLearnMore = featureId && feature?.isGuideEligible;
 
   const computePosition = useCallback(() => {
     if (!triggerRef.current) return;
@@ -192,7 +195,6 @@ export default function HelpTooltip({
             left: pos.left,
             transform: TRANSFORM[effectivePlacement],
             zIndex: 99999,
-            pointerEvents: "none",
           }}
         >
           <div
@@ -207,6 +209,16 @@ export default function HelpTooltip({
             }}
           >
             {content}
+            {showLearnMore && (
+              <Link
+                href={`/help?feature=${featureId}`}
+                onClick={() => setVisible(false)}
+                className="block text-[11px] font-medium mt-1.5"
+                style={{ color: "var(--t-accent)" }}
+              >
+                Learn more →
+              </Link>
+            )}
             <div
               className="absolute w-2.5 h-2.5"
               style={{
