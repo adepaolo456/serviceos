@@ -299,7 +299,7 @@ export default function PricingQaPage() {
 
       {/* Stat Cards */}
       {summary && (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3 mb-6">
           {STAT_CARDS.map(s => {
             const count = summary[s.field];
             const active = issueFilter === s.issueType;
@@ -316,8 +316,14 @@ export default function PricingQaPage() {
                     else setShowResolved(false);
                   }
                 }}
-                className={`rounded-[16px] border p-3 text-left transition-all cursor-pointer ${active ? "ring-2 ring-[var(--t-accent)]" : "hover:border-[var(--t-border-strong)]"}`}
-                style={{ background: active ? "var(--t-bg-elevated)" : "var(--t-bg-card)", borderColor: active ? "var(--t-accent)" : "var(--t-border)" }}>
+                className={`rounded-[16px] border p-3 text-left cursor-pointer select-none ${active ? "ring-2 ring-[var(--t-accent)]" : ""}`}
+                style={{
+                  background: active ? "var(--t-bg-elevated)" : "var(--t-bg-card)",
+                  borderColor: active ? "var(--t-accent)" : "var(--t-border)",
+                  transition: "all 0.15s ease",
+                }}
+                onMouseEnter={e => { if (!active) { e.currentTarget.style.transform = "translateY(-1px)"; e.currentTarget.style.borderColor = "var(--t-border-strong)"; e.currentTarget.style.boxShadow = "0 2px 8px var(--t-shadow)"; } }}
+                onMouseLeave={e => { if (!active) { e.currentTarget.style.transform = ""; e.currentTarget.style.borderColor = "var(--t-border)"; e.currentTarget.style.boxShadow = ""; } }}>
                 <p className="text-lg font-bold tabular-nums" style={{ color: count > 0 ? s.color : "var(--t-text-muted)" }}>
                   {count}
                 </p>
@@ -717,12 +723,12 @@ function PanelContent({ row, auditHistory, auditLoading, onRefresh, onCopyId }: 
         </div>
       )}
 
-      {/* Header badges */}
-      <div className="flex items-center gap-2 flex-wrap">
-        <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: sev.bg, color: sev.color }}>
+      {/* Header badges — static labels, not clickable */}
+      <div className="flex items-center gap-2 flex-wrap" style={{ pointerEvents: "none" }}>
+        <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: sev.bg, color: sev.color, cursor: "default" }}>
           <sev.icon className="h-3 w-3" /> {sev.label}
         </span>
-        <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: "var(--t-bg-elevated)", color: issue.color }}>
+        <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: "var(--t-bg-elevated)", color: issue.color, cursor: "default" }}>
           <issue.icon className="h-3 w-3" /> {issue.label}
         </span>
         <span className="text-xs" style={{ color: "var(--t-text-muted)" }}>{row.job_type} {row.asset_subtype || ""} · {row.status}</span>
