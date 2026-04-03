@@ -96,11 +96,18 @@ export default function PricingPage() {
   const distanceCharge = distanceInfo?.distanceCharge || 0;
   const totalQuoted = selectedRule ? Number(selectedRule.base_price) + distanceCharge : 0;
 
-  const saveRule = async (data: Partial<PricingRule>) => {
-    if (!editRule) return;
+  const saveRule = async (data: Record<string, unknown>) => {
     try {
-      await api.patch(`/pricing/${editRule.id}`, data);
-      toast("success", `${editRule.asset_subtype} pricing updated`);
+      if (editRule) {
+        await api.patch(`/pricing/${editRule.id}`, data);
+        toast("success", `${editRule.asset_subtype || "Rule"} pricing updated`);
+      } else {
+        await api.post("/pricing", {
+          serviceType: "dumpster_rental",
+          ...data,
+        });
+        toast("success", `${data.assetSubtype || "New"} pricing created`);
+      }
       setEditOpen(false);
       fetchRules();
     } catch {
@@ -197,7 +204,7 @@ export default function PricingPage() {
                     color: quoteSize === rule.asset_subtype ? "#000" : "var(--t-text-primary)",
                     borderColor: quoteSize === rule.asset_subtype ? "var(--t-accent)" : "var(--t-border)",
                   }}>
-                  {rule.asset_subtype} — ${Number(rule.base_price)}
+                  {rule.asset_subtype || rule.name || "Unknown"} — ${Number(rule.base_price)}
                 </button>
               ))}
             </div>
@@ -242,7 +249,7 @@ export default function PricingPage() {
             <div className="rounded-[20px] border-l-4 p-5 mb-4 animate-fade-in"
               style={{ background: "var(--t-bg-card)", borderColor: "var(--t-accent)", borderTop: "1px solid var(--t-border)", borderRight: "1px solid var(--t-border)", borderBottom: "1px solid var(--t-border)" }}>
               <div className="flex items-center justify-between mb-3">
-                <p className="text-[15px] font-bold" style={{ color: "var(--t-text-primary)" }}>{selectedRule.asset_subtype?.replace("yd", " Yard")} Dumpster</p>
+                <p className="text-[15px] font-bold" style={{ color: "var(--t-text-primary)" }}>{selectedRule.asset_subtype?.replace("yd", " Yard") || selectedRule.name || "Unknown"} Dumpster</p>
                 <p className="text-[24px] font-extrabold tracking-tight" style={{ color: distanceInfo?.outsideServiceArea ? "var(--t-error)" : "var(--t-accent)" }}>
                   ${totalQuoted.toLocaleString()}
                 </p>
@@ -334,7 +341,7 @@ export default function PricingPage() {
                 </button>
               </div>
               <p className="text-[11px] font-extrabold uppercase tracking-[1.2px]" style={{ color: "var(--t-text-tertiary)" }}>
-                {rule.asset_subtype?.replace("yd", " Yard") || rule.name}
+                {rule.asset_subtype?.replace("yd", " Yard") || rule.name || "Unknown Size"}
               </p>
               <p className="text-[28px] font-extrabold tracking-tight mt-1" style={{ color: "var(--t-text-primary)", letterSpacing: "-1px" }}>
                 ${Number(rule.base_price).toLocaleString()}
@@ -560,7 +567,7 @@ export default function PricingPage() {
         open={editOpen}
         onClose={() => setEditOpen(false)}
         title={
-          editRule ? `Edit ${editRule.asset_subtype} Pricing` : "Add New Size"
+          editRule ? `Edit ${editRule.asset_subtype || editRule.name || ""} Pricing` : "Add New Size"
         }
       >
         <PricingForm
@@ -580,9 +587,10 @@ function PricingForm({
   onClose,
 }: {
   rule: PricingRule | null;
-  onSave: (data: Partial<PricingRule>) => void;
+  onSave: (data: Record<string, unknown>) => void;
   onClose: () => void;
 }) {
+  const [sizeName, setSizeName] = useState(rule?.asset_subtype || "");
   const [basePrice, setBasePrice] = useState(
     rule ? String(Number(rule.base_price)) : ""
   );
@@ -598,6 +606,7 @@ function PricingForm({
   const [extraDayRate, setExtraDayRate] = useState(
     rule ? String(Number(rule.extra_day_rate)) : ""
   );
+  const [sizeError, setSizeError] = useState("");
   const inputStyle = {
     background: "var(--t-bg-card)",
     borderColor: "var(--t-border)",
@@ -644,6 +653,29 @@ function PricingForm({
 
   return (
     <div className="space-y-5">
+      {/* Size Name — required */}
+      <div>
+        <label
+          className="block text-[12px] font-semibold uppercase tracking-wide mb-1.5"
+          style={{ color: "var(--t-text-muted)" }}
+        >
+          Size Name <span style={{ color: "var(--t-error, #ef4444)" }}>*</span>
+        </label>
+        <input
+          value={sizeName}
+          onChange={(e) => { setSizeName(e.target.value); setSizeError(""); }}
+          placeholder="e.g. 10yd, 20yd, 30yd, Compactor"
+          className="w-full rounded-[14px] border px-4 py-2.5 text-sm outline-none transition-colors focus:border-[var(--t-accent)]"
+          style={{
+            ...inputStyle,
+            borderColor: sizeError ? "var(--t-error, #ef4444)" : inputStyle.borderColor,
+          }}
+        />
+        {sizeError && (
+          <p className="mt-1 text-xs" style={{ color: "var(--t-error, #ef4444)" }}>{sizeError}</p>
+        )}
+      </div>
+
       {fields.map((field) => (
         <div key={field.label}>
           <label
@@ -685,15 +717,21 @@ function PricingForm({
 
       <div className="flex gap-3 pt-4">
         <button
-          onClick={() =>
+          onClick={() => {
+            if (!sizeName.trim()) {
+              setSizeError("Size Name is required");
+              return;
+            }
             onSave({
+              name: `${sizeName.trim()} Dumpster`,
+              assetSubtype: sizeName.trim(),
               basePrice: Number(basePrice),
               includedTons: Number(includedTons),
               overagePerTon: Number(overageRate),
               rentalPeriodDays: Number(rentalDays),
               extraDayRate: Number(extraDayRate),
-            } as any)
-          }
+            });
+          }}
           className="flex-1 rounded-full py-3 text-[13px] font-bold"
           style={{ background: "var(--t-accent)", color: "#000" }}
         >

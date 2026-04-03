@@ -34,11 +34,10 @@ export class CreatePricingRuleDto {
   @IsIn(SERVICE_TYPES)
   serviceType: string;
 
-  @ApiPropertyOptional({ enum: ASSET_SUBTYPES, example: '20yd' })
-  @IsOptional()
+  @ApiProperty({ example: '20yd', description: 'Size name (e.g. 10yd, 20yd, 30yd, Compactor)' })
   @IsString()
-  @IsIn(ASSET_SUBTYPES)
-  assetSubtype?: string;
+  @IsNotEmpty()
+  assetSubtype: string;
 
   @ApiPropertyOptional({
     enum: ['residential', 'commercial'],
@@ -146,10 +145,9 @@ export class ListPricingRulesQueryDto {
   @IsIn(SERVICE_TYPES)
   serviceType?: string;
 
-  @ApiPropertyOptional({ enum: ASSET_SUBTYPES })
+  @ApiPropertyOptional({ description: 'Filter by size name' })
   @IsOptional()
   @IsString()
-  @IsIn(ASSET_SUBTYPES)
   assetSubtype?: string;
 
   @ApiPropertyOptional({ default: 1 })
@@ -173,9 +171,9 @@ export class CalculatePriceDto {
   @IsIn(SERVICE_TYPES)
   serviceType: string;
 
-  @ApiProperty({ enum: ASSET_SUBTYPES, example: '20yd' })
+  @ApiProperty({ example: '20yd', description: 'Size name' })
   @IsString()
-  @IsIn(ASSET_SUBTYPES)
+  @IsNotEmpty()
   assetSubtype: string;
 
   @ApiProperty({
