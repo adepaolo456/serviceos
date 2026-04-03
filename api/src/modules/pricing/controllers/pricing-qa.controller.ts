@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Param, Body, Query, ParseUUIDPipe } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Param, Body, Query, ParseUUIDPipe } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -8,10 +8,12 @@ import { PricingSnapshot } from '../entities/pricing-snapshot.entity';
 import { JobPricingAudit } from '../../jobs/entities/job-pricing-audit.entity';
 import { Invoice } from '../../billing/entities/invoice.entity';
 import { PricingService } from '../pricing.service';
+import { MapboxService } from '../../mapbox/mapbox.service';
 import {
   hasValidServiceCoordinates,
   extractCoordinates,
   buildAddressString,
+  isValidCoordinatePair,
 } from '../../../common/helpers/coordinate-validator';
 
 interface PricingQaRow {
@@ -62,6 +64,7 @@ export class PricingQaController {
     @InjectRepository(JobPricingAudit) private auditRepo: Repository<JobPricingAudit>,
     @InjectRepository(Invoice) private invoiceRepo: Repository<Invoice>,
     private pricingService: PricingService,
+    private mapboxService: MapboxService,
   ) {}
 
   @Get('overview')
@@ -343,5 +346,91 @@ export class PricingQaController {
       order: { created_at: 'DESC' },
       take: 20,
     });
+  }
+
+  @Patch('update-address/:jobId')
+  @ApiOperation({ summary: 'Update job service address and optionally geocode it' })
+  async updateAddress(
+    @TenantId() tenantId: string,
+    @Param('jobId', ParseUUIDPipe) jobId: string,
+    @Body() body: { street?: string; city?: string; state?: string; zip?: string; geocode?: boolean },
+  ) {
+    const job = await this.jobRepo.findOne({ where: { id: jobId, tenant_id: tenantId } });
+    if (!job) return { status: 'failed', reason: 'job_not_found' };
+
+    const addr = (job.service_address || {}) as Record<string, unknown>;
+    if (body.street !== undefined) addr.street = body.street;
+    if (body.city !== undefined) addr.city = body.city;
+    if (body.state !== undefined) addr.state = body.state;
+    if (body.zip !== undefined) addr.zip = body.zip;
+
+    // Invalidate stale coordinates when address fields change
+    delete addr.lat;
+    delete addr.lng;
+    delete addr.geocoded_at;
+    delete addr.geocode_source;
+
+    let geocodeResult: { lat: number; lng: number; status: string } | null = null;
+
+    if (body.geocode !== false) {
+      const addrStr = buildAddressString(addr);
+      if (addrStr) {
+        const geo = await this.mapboxService.geocodeAddress(addrStr);
+        if (geo && isValidCoordinatePair(geo.lat, geo.lng)) {
+          addr.lat = geo.lat;
+          addr.lng = geo.lng;
+          addr.geocoded_at = new Date().toISOString();
+          addr.geocode_source = 'mapbox';
+          geocodeResult = { lat: geo.lat, lng: geo.lng, status: 'success' };
+        } else {
+          geocodeResult = { lat: 0, lng: 0, status: 'failed' };
+        }
+      }
+    }
+
+    job.service_address = addr as Record<string, any>;
+    await this.jobRepo.save(job);
+
+    return {
+      status: 'saved',
+      address: addr,
+      has_valid_coordinates: hasValidServiceCoordinates(addr),
+      geocode: geocodeResult,
+      can_generate_snapshot: hasValidServiceCoordinates(addr) && !!job.asset_subtype && !job.pricing_snapshot,
+    };
+  }
+
+  @Post('retry-geocode/:jobId')
+  @ApiOperation({ summary: 'Retry geocoding for a job service address' })
+  async retryGeocode(
+    @TenantId() tenantId: string,
+    @Param('jobId', ParseUUIDPipe) jobId: string,
+  ) {
+    const job = await this.jobRepo.findOne({ where: { id: jobId, tenant_id: tenantId } });
+    if (!job) return { status: 'failed', reason: 'job_not_found' };
+
+    const addr = (job.service_address || {}) as Record<string, unknown>;
+    const addrStr = buildAddressString(addr);
+    if (!addrStr) return { status: 'failed', reason: 'no_geocodable_address' };
+
+    const geo = await this.mapboxService.geocodeAddress(addrStr);
+    if (!geo || !isValidCoordinatePair(geo.lat, geo.lng)) {
+      return { status: 'failed', reason: 'geocode_failed', address: addrStr };
+    }
+
+    addr.lat = geo.lat;
+    addr.lng = geo.lng;
+    addr.geocoded_at = new Date().toISOString();
+    addr.geocode_source = 'mapbox';
+    job.service_address = addr as Record<string, any>;
+    await this.jobRepo.save(job);
+
+    return {
+      status: 'success',
+      lat: geo.lat,
+      lng: geo.lng,
+      has_valid_coordinates: true,
+      can_generate_snapshot: !!job.asset_subtype && !job.pricing_snapshot,
+    };
   }
 }
