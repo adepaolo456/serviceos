@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import {
   Shield, Lock, RefreshCw, ArrowLeftRight, MapPinOff, FileX, Eye,
@@ -10,6 +10,7 @@ import {
 import { api } from "@/lib/api";
 import { useToast } from "@/components/toast";
 import QuickView from "@/components/quick-view";
+import AddressAutocomplete, { type AddressValue } from "@/components/address-autocomplete";
 
 /* ── Types ── */
 
@@ -159,81 +160,6 @@ export default function PricingQaPage() {
     setSelectedIds(new Set(eligible));
   };
 
-  // Panel resolution state
-  const [panelAddr, setPanelAddr] = useState<Record<string, string>>({});
-  const [panelAddrSaving, setPanelAddrSaving] = useState(false);
-  const [panelGeoStatus, setPanelGeoStatus] = useState<{ status: string; reason?: string } | null>(null);
-  const [panelSnapStatus, setPanelSnapStatus] = useState<{ status: string; reason?: string } | null>(null);
-
-  const handlePanelSaveAddress = async (jobId: string, addr: Record<string, string>) => {
-    setPanelAddrSaving(true);
-    setPanelGeoStatus(null);
-    setPanelSnapStatus(null);
-    try {
-      const result = await api.patch<{ status: string; has_valid_coordinates: boolean; can_generate_snapshot: boolean; geocode: { status: string } | null }>(`/pricing-qa/update-address/${jobId}`, { ...addr, geocode: true });
-      if (result.geocode?.status === "success") {
-        setPanelGeoStatus({ status: "success" });
-        toast("success", "Address saved and geocoded");
-      } else if (result.geocode?.status === "failed") {
-        setPanelGeoStatus({ status: "failed", reason: "Geocoding failed for this address" });
-        toast("warning", "Address saved but geocoding failed");
-      } else {
-        toast("success", "Address saved");
-      }
-      await fetchData();
-      // Refresh the selected row
-      const updated = (await api.get<{ rows: PricingQaRow[] }>("/pricing-qa/overview")).rows.find(r => r.job_id === jobId);
-      if (updated) setSelectedRow(updated);
-    } catch { toast("error", "Failed to save address"); }
-    finally { setPanelAddrSaving(false); }
-  };
-
-  const handlePanelRetryGeocode = async (jobId: string) => {
-    setPanelGeoStatus(null);
-    try {
-      const result = await api.post<{ status: string; reason?: string; can_generate_snapshot?: boolean }>(`/pricing-qa/retry-geocode/${jobId}`);
-      setPanelGeoStatus(result);
-      if (result.status === "success") {
-        toast("success", "Geocoding succeeded");
-        await fetchData();
-        const updated = (await api.get<{ rows: PricingQaRow[] }>("/pricing-qa/overview")).rows.find(r => r.job_id === jobId);
-        if (updated) setSelectedRow(updated);
-      } else {
-        toast("error", `Geocoding failed: ${(result.reason || "unknown").replace(/_/g, " ")}`);
-      }
-    } catch { toast("error", "Geocoding request failed"); }
-  };
-
-  const handlePanelGenerateSnapshot = async (jobId: string) => {
-    setPanelSnapStatus(null);
-    try {
-      const result = await api.post<{ status: string; reason?: string; snapshot_id?: string }>(`/pricing-qa/generate-snapshot/${jobId}`);
-      setPanelSnapStatus(result);
-      if (result.status === "success") {
-        toast("success", "Snapshot generated");
-        await fetchData();
-        const updated = (await api.get<{ rows: PricingQaRow[] }>("/pricing-qa/overview")).rows.find(r => r.job_id === jobId);
-        if (updated) setSelectedRow(updated);
-      } else {
-        toast("error", `Snapshot failed: ${(result.reason || "unknown").replace(/_/g, " ")}`);
-      }
-    } catch { toast("error", "Snapshot generation failed"); }
-  };
-
-  // Initialize panel address when row is selected
-  useEffect(() => {
-    if (selectedRow) {
-      const parts = selectedRow.service_address_summary.split(", ");
-      setPanelAddr({
-        street: parts[0] === "No address" ? "" : parts[0] || "",
-        city: parts[1] || "",
-        state: parts[2] || "",
-      });
-      setPanelGeoStatus(null);
-      setPanelSnapStatus(null);
-    }
-  }, [selectedRow?.job_id]);
-
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
@@ -247,6 +173,14 @@ export default function PricingQaPage() {
       setReviewQueue(queue);
     } catch { /* */ } finally { setLoading(false); }
   }, []);
+
+  const refreshAfterPanelAction = useCallback(async (jobId: string) => {
+    await fetchData();
+    try {
+      const updated = (await api.get<{ rows: PricingQaRow[] }>("/pricing-qa/overview")).rows.find(r => r.job_id === jobId);
+      if (updated) setSelectedRow(updated);
+    } catch { /* row may have been resolved off the list */ }
+  }, [fetchData]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -523,7 +457,7 @@ export default function PricingQaPage() {
       {/* Issue Resolution Panel */}
       <QuickView
         isOpen={!!selectedRow}
-        onClose={() => { setSelectedRow(null); setAuditHistory([]); setPanelAddr({}); setPanelAddrSaving(false); setPanelGeoStatus(null); setPanelSnapStatus(null); }}
+        onClose={() => { setSelectedRow(null); setAuditHistory([]); }}
         title={selectedRow?.job_number || ""}
         subtitle={selectedRow?.customer_name}
         actions={selectedRow ? (
@@ -538,14 +472,7 @@ export default function PricingQaPage() {
             row={selectedRow}
             auditHistory={auditHistory}
             auditLoading={auditLoading}
-            panelAddr={panelAddr}
-            setPanelAddr={setPanelAddr}
-            panelAddrSaving={panelAddrSaving}
-            panelGeoStatus={panelGeoStatus}
-            panelSnapStatus={panelSnapStatus}
-            onSaveAddress={handlePanelSaveAddress}
-            onRetryGeocode={handlePanelRetryGeocode}
-            onGenerateSnapshot={handlePanelGenerateSnapshot}
+            onRefresh={refreshAfterPanelAction}
             onCopyId={copyId}
           />
         )}
@@ -556,29 +483,106 @@ export default function PricingQaPage() {
 
 /* ═══════════════════════════════════════════════════
    Panel Content — Resolution Checklist
+   All editing state is LOCAL to prevent parent re-renders from
+   interrupting typing or resetting form fields.
    ═══════════════════════════════════════════════════ */
 
-function PanelContent({ row, auditHistory, auditLoading, panelAddr, setPanelAddr, panelAddrSaving, panelGeoStatus, panelSnapStatus, onSaveAddress, onRetryGeocode, onGenerateSnapshot, onCopyId }: {
+function PanelContent({ row, auditHistory, auditLoading, onRefresh, onCopyId }: {
   row: PricingQaRow;
   auditHistory: AuditEntry[];
   auditLoading: boolean;
-  panelAddr: Record<string, string>;
-  setPanelAddr: (v: Record<string, string>) => void;
-  panelAddrSaving: boolean;
-  panelGeoStatus: { status: string; reason?: string } | null;
-  panelSnapStatus: { status: string; reason?: string } | null;
-  onSaveAddress: (jobId: string, addr: Record<string, string>) => void;
-  onRetryGeocode: (jobId: string) => void;
-  onGenerateSnapshot: (jobId: string) => void;
+  onRefresh: (jobId: string) => Promise<void>;
   onCopyId: (id: string) => void;
 }) {
+  const { toast } = useToast();
   const sev = SEVERITY_CONFIG[row.severity];
   const issue = ISSUE_CONFIG[row.issue_type] || { label: row.issue_type, icon: Shield, color: "var(--t-text-muted)" };
-  const isMissingAddr = row.issue_type === "missing_address";
-  const isGeoBlocked = row.issue_type === "geocode_blocked";
-  const isNoSnapshot = row.issue_type === "pricing_snapshot_missing";
-  const isLocked = row.issue_type === "pricing_locked_snapshot";
-  const isRecalc = row.issue_type === "pricing_recalculated";
+
+  // ── ALL editing state is local — parent re-renders cannot reset it ──
+  const [addrDraft, setAddrDraft] = useState({
+    street: "", city: "", state: "", zip: "",
+  });
+  const [saving, setSaving] = useState(false);
+  const [geoStatus, setGeoStatus] = useState<{ status: string; reason?: string } | null>(null);
+  const [snapStatus, setSnapStatus] = useState<{ status: string; reason?: string } | null>(null);
+  const draftInitRef = useRef<string | null>(null);
+
+  // Initialize draft ONCE per job_id, not on every render
+  useEffect(() => {
+    if (row.job_id !== draftInitRef.current) {
+      draftInitRef.current = row.job_id;
+      const parts = row.service_address_summary.split(", ");
+      setAddrDraft({
+        street: parts[0] === "No address" ? "" : parts[0] || "",
+        city: parts[1] || "",
+        state: parts[2] || "",
+        zip: "",
+      });
+      setGeoStatus(null);
+      setSnapStatus(null);
+    }
+  }, [row.job_id, row.service_address_summary]);
+
+  // Handle autocomplete selection — populates all fields at once
+  const handleAutocompleteSelect = (addr: AddressValue) => {
+    setAddrDraft({
+      street: addr.street || "",
+      city: addr.city || "",
+      state: addr.state || "",
+      zip: addr.zip || "",
+    });
+  };
+
+  const handleSaveAddress = async () => {
+    setSaving(true);
+    setGeoStatus(null);
+    setSnapStatus(null);
+    try {
+      const result = await api.patch<{ status: string; has_valid_coordinates: boolean; can_generate_snapshot: boolean; geocode: { status: string } | null }>(`/pricing-qa/update-address/${row.job_id}`, { ...addrDraft, geocode: true });
+      if (result.geocode?.status === "success") {
+        setGeoStatus({ status: "success" });
+        toast("success", "Address saved and geocoded");
+      } else if (result.geocode?.status === "failed") {
+        setGeoStatus({ status: "failed", reason: "Geocoding failed for this address" });
+        toast("warning", "Address saved but geocoding failed");
+      } else {
+        toast("success", "Address saved");
+      }
+      draftInitRef.current = null; // allow re-init from refreshed row data
+      await onRefresh(row.job_id);
+    } catch { toast("error", "Failed to save address"); }
+    finally { setSaving(false); }
+  };
+
+  const handleRetryGeocode = async () => {
+    setGeoStatus(null);
+    try {
+      const result = await api.post<{ status: string; reason?: string }>(`/pricing-qa/retry-geocode/${row.job_id}`);
+      setGeoStatus(result);
+      if (result.status === "success") {
+        toast("success", "Geocoding succeeded");
+        draftInitRef.current = null;
+        await onRefresh(row.job_id);
+      } else {
+        toast("error", `Geocoding failed: ${(result.reason || "unknown").replace(/_/g, " ")}`);
+      }
+    } catch { toast("error", "Geocoding request failed"); }
+  };
+
+  const handleGenerateSnapshot = async () => {
+    setSnapStatus(null);
+    try {
+      const result = await api.post<{ status: string; reason?: string; snapshot_id?: string }>(`/pricing-qa/generate-snapshot/${row.job_id}`);
+      setSnapStatus(result);
+      if (result.status === "success") {
+        toast("success", "Snapshot generated");
+        draftInitRef.current = null;
+        await onRefresh(row.job_id);
+      } else {
+        toast("error", `Snapshot failed: ${(result.reason || "failed").replace(/_/g, " ")}`);
+      }
+    } catch { toast("error", "Snapshot generation failed"); }
+  };
 
   const CheckItem = ({ label, done, blocked, blockerText, children }: { label: string; done: boolean; blocked?: boolean; blockerText?: string; children?: React.ReactNode }) => (
     <div className="rounded-[12px] border p-3" style={{ borderColor: done ? "var(--t-accent)" : blocked ? "var(--t-border)" : "var(--t-warning)", borderLeftWidth: 3, borderLeftColor: done ? "var(--t-accent)" : blocked ? "var(--t-text-muted)" : "var(--t-warning)", background: "var(--t-bg-card)" }}>
@@ -607,33 +611,37 @@ function PanelContent({ row, auditHistory, auditLoading, panelAddr, setPanelAddr
         <span className="text-xs" style={{ color: "var(--t-text-muted)" }}>{row.job_type} {row.asset_subtype || ""} · {row.status}</span>
       </div>
 
-      {/* ── Resolution Checklist ── */}
       <p className="text-[11px] uppercase tracking-wider font-semibold" style={{ color: "var(--t-text-muted)" }}>Resolution Checklist</p>
 
-      {/* 1. Address */}
+      {/* 1. Address — with Mapbox autocomplete */}
       <CheckItem label="Service Address" done={!row.can_fix_address && row.service_address_summary !== "No address"} blocked={false}>
-        {(isMissingAddr || isGeoBlocked || row.can_fix_address) ? (
-          <div className="mt-2 space-y-2">
+        {row.can_fix_address ? (
+          <div className="mt-2 space-y-2" onClick={e => e.stopPropagation()}>
+            {/* Autocomplete for street — populates all fields on selection */}
+            <AddressAutocomplete
+              value={{ street: addrDraft.street, city: addrDraft.city, state: addrDraft.state, zip: addrDraft.zip, lat: null, lng: null }}
+              onChange={handleAutocompleteSelect}
+              placeholder="Search address..."
+              className="w-full rounded-lg border px-2.5 py-1.5 text-xs outline-none"
+            />
+            {/* Manual field overrides */}
             <div className="grid grid-cols-2 gap-2">
-              <input value={panelAddr.street || ""} onChange={e => setPanelAddr({ ...panelAddr, street: e.target.value })}
-                placeholder="Street" className="col-span-2 rounded-lg border px-2.5 py-1.5 text-xs outline-none"
-                style={{ borderColor: "var(--t-border)", color: "var(--t-text-primary)", background: "var(--t-bg-input)" }} />
-              <input value={panelAddr.city || ""} onChange={e => setPanelAddr({ ...panelAddr, city: e.target.value })}
+              <input value={addrDraft.city} onChange={e => setAddrDraft(d => ({ ...d, city: e.target.value }))}
                 placeholder="City" className="rounded-lg border px-2.5 py-1.5 text-xs outline-none"
                 style={{ borderColor: "var(--t-border)", color: "var(--t-text-primary)", background: "var(--t-bg-input)" }} />
               <div className="flex gap-2">
-                <input value={panelAddr.state || ""} onChange={e => setPanelAddr({ ...panelAddr, state: e.target.value })}
+                <input value={addrDraft.state} onChange={e => setAddrDraft(d => ({ ...d, state: e.target.value }))}
                   placeholder="State" className="w-16 rounded-lg border px-2.5 py-1.5 text-xs outline-none"
                   style={{ borderColor: "var(--t-border)", color: "var(--t-text-primary)", background: "var(--t-bg-input)" }} />
-                <input value={panelAddr.zip || ""} onChange={e => setPanelAddr({ ...panelAddr, zip: e.target.value })}
+                <input value={addrDraft.zip} onChange={e => setAddrDraft(d => ({ ...d, zip: e.target.value }))}
                   placeholder="ZIP" className="flex-1 rounded-lg border px-2.5 py-1.5 text-xs outline-none"
                   style={{ borderColor: "var(--t-border)", color: "var(--t-text-primary)", background: "var(--t-bg-input)" }} />
               </div>
             </div>
-            <button onClick={() => onSaveAddress(row.job_id, panelAddr)} disabled={panelAddrSaving || !panelAddr.street}
+            <button onClick={handleSaveAddress} disabled={saving || !addrDraft.street}
               className="inline-flex items-center gap-1 rounded-full px-3 py-1 text-[11px] font-semibold disabled:opacity-50"
               style={{ background: "var(--t-accent)", color: "var(--t-accent-on-accent)" }}>
-              {panelAddrSaving ? "Saving..." : "Save & Geocode"}
+              {saving ? "Saving..." : "Save & Geocode"}
             </button>
           </div>
         ) : (
@@ -641,7 +649,7 @@ function PanelContent({ row, auditHistory, auditLoading, panelAddr, setPanelAddr
         )}
       </CheckItem>
 
-      {/* 2. Coordinates / Geocoding */}
+      {/* 2. Coordinates */}
       <CheckItem
         label="Coordinates"
         done={row.has_valid_coordinates}
@@ -650,17 +658,17 @@ function PanelContent({ row, auditHistory, auditLoading, panelAddr, setPanelAddr
       >
         {!row.has_valid_coordinates && row.service_address_summary !== "No address" && (
           <div className="mt-2">
-            {panelGeoStatus?.status === "success" ? (
+            {geoStatus?.status === "success" ? (
               <p className="text-xs" style={{ color: "var(--t-accent)" }}>Geocoded successfully</p>
             ) : (
               <>
-                <button onClick={() => onRetryGeocode(row.job_id)}
+                <button onClick={handleRetryGeocode}
                   className="inline-flex items-center gap-1 rounded-full border px-3 py-1 text-[11px] font-medium"
                   style={{ borderColor: "var(--t-info)", color: "var(--t-info)" }}>
                   <MapPin className="h-3 w-3" /> Retry Geocoding
                 </button>
-                {panelGeoStatus?.status === "failed" && (
-                  <p className="text-[10px] mt-1" style={{ color: "var(--t-error)" }}>{panelGeoStatus.reason || "Geocoding failed"}</p>
+                {geoStatus?.status === "failed" && (
+                  <p className="text-[10px] mt-1" style={{ color: "var(--t-error)" }}>{geoStatus.reason || "Geocoding failed"}</p>
                 )}
               </>
             )}
@@ -689,17 +697,17 @@ function PanelContent({ row, auditHistory, auditLoading, panelAddr, setPanelAddr
           </div>
         ) : row.can_generate_snapshot ? (
           <div className="mt-2">
-            {panelSnapStatus?.status === "success" ? (
+            {snapStatus?.status === "success" ? (
               <p className="text-xs" style={{ color: "var(--t-accent)" }}>Snapshot generated successfully</p>
             ) : (
               <>
-                <button onClick={() => onGenerateSnapshot(row.job_id)}
+                <button onClick={handleGenerateSnapshot}
                   className="inline-flex items-center gap-1 rounded-full px-3 py-1 text-[11px] font-semibold"
                   style={{ background: "var(--t-accent)", color: "var(--t-accent-on-accent)" }}>
                   <Zap className="h-3 w-3" /> Generate Snapshot
                 </button>
-                {panelSnapStatus?.status === "failed" && (
-                  <p className="text-[10px] mt-1" style={{ color: "var(--t-error)" }}>{(panelSnapStatus.reason || "failed").replace(/_/g, " ")}</p>
+                {snapStatus?.status === "failed" && (
+                  <p className="text-[10px] mt-1" style={{ color: "var(--t-error)" }}>{(snapStatus.reason || "failed").replace(/_/g, " ")}</p>
                 )}
               </>
             )}
@@ -713,7 +721,6 @@ function PanelContent({ row, auditHistory, auditLoading, panelAddr, setPanelAddr
 
       {/* ── Supporting Details ── */}
 
-      {/* Exchange */}
       {row.is_exchange && (
         <div className="rounded-[12px] border p-3" style={{ borderColor: "var(--t-border)", background: "var(--t-bg-card)" }}>
           <p className="text-[11px] uppercase tracking-wider mb-1 font-semibold" style={{ color: "#a78bfa" }}>Exchange</p>
@@ -725,7 +732,6 @@ function PanelContent({ row, auditHistory, auditLoading, panelAddr, setPanelAddr
         </div>
       )}
 
-      {/* Config Version */}
       {row.pricing_config_version_id && (
         <div className="flex items-center gap-2 text-[10px]" style={{ color: "var(--t-text-muted)" }}>
           <span>Config:</span>
@@ -735,7 +741,6 @@ function PanelContent({ row, auditHistory, auditLoading, panelAddr, setPanelAddr
         </div>
       )}
 
-      {/* Audit History */}
       {(auditHistory.length > 0 || auditLoading) && (
         <div className="rounded-[12px] border p-3" style={{ borderColor: "var(--t-border)", background: "var(--t-bg-card)" }}>
           <p className="text-[11px] uppercase tracking-wider mb-1.5 font-semibold" style={{ color: "var(--t-text-muted)" }}>Recalculation History</p>
@@ -755,7 +760,6 @@ function PanelContent({ row, auditHistory, auditLoading, panelAddr, setPanelAddr
         </div>
       )}
 
-      {/* Quick Links */}
       <div className="flex gap-2 flex-wrap pt-1">
         <Link href={`/jobs/${row.job_id}`} className="text-xs font-medium rounded-full border px-3 py-1.5"
           style={{ borderColor: "var(--t-border)", color: "var(--t-text-muted)" }}>Open Job</Link>
