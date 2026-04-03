@@ -165,6 +165,37 @@ export class PricingRule {
   @Column({ name: 'effective_until', type: 'date', nullable: true })
   effective_until!: string;
 
+  // ── Config versioning (Step 2) ──
+
+  @Column({ name: 'version_id', type: 'uuid', nullable: true, default: () => 'gen_random_uuid()' })
+  version_id!: string;
+
+  @Column({ name: 'published_at', type: 'timestamptz', nullable: true })
+  published_at!: Date | null;
+
+  @Column({ name: 'superseded_by', type: 'uuid', nullable: true })
+  superseded_by!: string | null;
+
+  @Column({ name: 'created_by', type: 'uuid', nullable: true })
+  created_by!: string | null;
+
+  // ── Commercial vs residential rental policies (Step 6) ──
+
+  @Column({ name: 'residential_included_days', type: 'int', nullable: true, default: 14 })
+  residential_included_days!: number | null;
+
+  @Column({ name: 'commercial_included_days', type: 'int', nullable: true, default: 14 })
+  commercial_included_days!: number | null;
+
+  @Column({ name: 'residential_extra_day_rate', type: 'decimal', precision: 10, scale: 2, nullable: true })
+  residential_extra_day_rate!: number | null;
+
+  @Column({ name: 'commercial_extra_day_rate', type: 'decimal', precision: 10, scale: 2, nullable: true })
+  commercial_extra_day_rate!: number | null;
+
+  @Column({ name: 'commercial_unlimited_days', default: false })
+  commercial_unlimited_days!: boolean;
+
   @CreateDateColumn({ name: 'created_at' })
   created_at!: Date;
 

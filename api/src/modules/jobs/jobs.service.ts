@@ -19,6 +19,9 @@ import { BillingService } from '../billing/billing.service';
 import { BillingIssueDetectorService } from '../billing/services/billing-issue-detector.service';
 import { RentalChainsService } from '../rental-chains/rental-chains.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { PricingService } from '../pricing/pricing.service';
+import { JobPricingAudit } from './entities/job-pricing-audit.entity';
+import { hasPricingRelevantChanges } from './helpers/pricing-change-detector';
 import {
   CreateJobDto,
   UpdateJobDto,
@@ -59,10 +62,13 @@ export class JobsService {
     private rentalChainRepo: Repository<RentalChain>,
     @InjectRepository(TaskChainLink)
     private taskChainLinkRepo: Repository<TaskChainLink>,
+    @InjectRepository(JobPricingAudit)
+    private pricingAuditRepo: Repository<JobPricingAudit>,
     private billingService: BillingService,
     private billingIssueDetector: BillingIssueDetectorService,
     private rentalChainsService: RentalChainsService,
     private notificationsService: NotificationsService,
+    private pricingService: PricingService,
   ) {}
 
   async create(tenantId: string, dto: CreateJobDto): Promise<Job> {
@@ -247,9 +253,10 @@ export class JobsService {
     return job;
   }
 
-  async update(tenantId: string, id: string, dto: UpdateJobDto): Promise<Job> {
+  async update(tenantId: string, id: string, dto: UpdateJobDto): Promise<Record<string, unknown>> {
     const job = await this.findOne(tenantId, id);
 
+    // ── Apply non-pricing field updates ──
     if (dto.customerId !== undefined) job.customer_id = dto.customerId;
     if (dto.assetId !== undefined) job.asset_id = dto.assetId;
     if (dto.assignedDriverId !== undefined)
@@ -271,12 +278,104 @@ export class JobsService {
     if (dto.rentalEndDate !== undefined)
       job.rental_end_date = dto.rentalEndDate;
     if (dto.rentalDays !== undefined) job.rental_days = dto.rentalDays;
-    if (dto.basePrice !== undefined) job.base_price = dto.basePrice;
-    if (dto.totalPrice !== undefined) job.total_price = dto.totalPrice;
-    if (dto.depositAmount !== undefined) job.deposit_amount = dto.depositAmount;
     if (dto.source !== undefined) job.source = dto.source;
 
-    return this.jobsRepository.save(job);
+    // ── Pricing lock enforcement ──
+    const hasLockedPricing = job.pricing_snapshot && job.pricing_locked_at;
+    const pricingChange = hasPricingRelevantChanges(job, dto as Record<string, unknown>);
+
+    let pricingMeta: Record<string, unknown> = {};
+
+    if (hasLockedPricing && !pricingChange.changed) {
+      // No pricing-relevant fields changed — return locked snapshot, skip recalculation
+      // Allow explicit base_price/total_price overrides if provided (manual price edit)
+      if (dto.basePrice !== undefined) job.base_price = dto.basePrice;
+      if (dto.totalPrice !== undefined) job.total_price = dto.totalPrice;
+      if (dto.depositAmount !== undefined) job.deposit_amount = dto.depositAmount;
+
+      pricingMeta = {
+        used_locked_snapshot: true,
+        recalculation_skipped_reason: 'no_pricing_fields_changed',
+        pricing_snapshot_id: job.pricing_snapshot_id,
+        pricing_config_version_id: job.pricing_config_version_id,
+      };
+    } else if (pricingChange.changed) {
+      // Pricing-relevant field changed or explicit recalculate — recalculate
+      const previousSnapshotId = job.pricing_snapshot_id;
+
+      try {
+        // Build calculate request from current job state (with updates applied)
+        const addr = job.service_address as Record<string, unknown> | null;
+        const calcResult = await this.pricingService.calculate(tenantId, {
+          serviceType: job.service_type || 'dumpster_rental',
+          assetSubtype: dto.assetSubtype || job.asset_subtype || '',
+          jobType: job.job_type || 'delivery',
+          customerType: dto.rentalType || undefined,
+          customerLat: addr?.lat ? Number(addr.lat) : 0,
+          customerLng: addr?.lng ? Number(addr.lng) : 0,
+          yardId: dto.yardId || undefined,
+          rentalDays: job.rental_days || undefined,
+          rentalType: dto.rentalType || undefined,
+          exchange_context: dto.exchange_context ? {
+            pickup_asset_subtype: dto.exchange_context.pickup_asset_subtype || '',
+            dropoff_asset_subtype: dto.exchange_context.dropoff_asset_subtype || '',
+          } : undefined,
+          persist_snapshot: true,
+          jobId: job.id,
+        });
+
+        const breakdown = (calcResult as Record<string, unknown>).breakdown as Record<string, unknown>;
+
+        // Update job pricing fields from new calculation
+        job.base_price = breakdown.basePrice as number;
+        job.total_price = breakdown.total as number;
+        job.deposit_amount = breakdown.depositAmount as number;
+        job.pricing_snapshot = calcResult as unknown as Record<string, unknown>;
+        job.pricing_locked_at = new Date();
+        job.pricing_config_version_id = (breakdown.pricingConfigVersionId as string) || null;
+        job.pricing_snapshot_id = (calcResult as Record<string, unknown>).snapshot_id as string || null;
+
+        // Write audit row
+        await this.pricingAuditRepo.save(this.pricingAuditRepo.create({
+          tenant_id: tenantId,
+          job_id: job.id,
+          previous_pricing_snapshot_id: previousSnapshotId || null,
+          new_pricing_snapshot_id: job.pricing_snapshot_id,
+          recalculation_reasons: pricingChange.reasons,
+          triggered_by: null, // TODO: pass userId when available
+        }));
+
+        pricingMeta = {
+          used_locked_snapshot: false,
+          recalculation_reasons: pricingChange.reasons,
+          pricing_snapshot_id: job.pricing_snapshot_id,
+          pricing_config_version_id: job.pricing_config_version_id,
+        };
+      } catch (err) {
+        // If pricing calculation fails, preserve existing pricing and warn
+        if (dto.basePrice !== undefined) job.base_price = dto.basePrice;
+        if (dto.totalPrice !== undefined) job.total_price = dto.totalPrice;
+        if (dto.depositAmount !== undefined) job.deposit_amount = dto.depositAmount;
+
+        pricingMeta = {
+          used_locked_snapshot: true,
+          recalculation_skipped_reason: 'pricing_calculation_failed',
+          recalculation_error: err instanceof Error ? err.message : 'Unknown error',
+        };
+      }
+    } else {
+      // No locked pricing yet — allow direct field updates (backward compatible)
+      if (dto.basePrice !== undefined) job.base_price = dto.basePrice;
+      if (dto.totalPrice !== undefined) job.total_price = dto.totalPrice;
+      if (dto.depositAmount !== undefined) job.deposit_amount = dto.depositAmount;
+
+      pricingMeta = {};
+    }
+
+    const saved = await this.jobsRepository.save(job);
+
+    // Return job with pricing metadata (additive, backward compatible)
+    return { ...saved, ...pricingMeta } as Record<string, unknown>;
   }
 
   async changeStatus(
