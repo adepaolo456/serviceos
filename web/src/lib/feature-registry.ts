@@ -382,3 +382,62 @@ export function isRegisteredFeature(id: string): boolean {
 export function getAllFeatureIds(): string[] {
   return Object.keys(FEATURE_REGISTRY);
 }
+
+/**
+ * Shared visibility filter — single source of truth for all Help Center views.
+ * Respects admin-only gating and guide eligibility.
+ */
+export function getVisibleGuideFeatures(
+  options?: { isAdmin?: boolean },
+): FeatureDescription[] {
+  return Object.values(FEATURE_REGISTRY)
+    .filter(f => f.isUserFacing && f.isGuideEligible)
+    .filter(f => f.category !== "admin" || options?.isAdmin);
+}
+
+/**
+ * Related topics — scores other features by category overlap + shared keywords.
+ * Deterministic: same input always produces same output. No randomness.
+ */
+export function getRelatedFeatures(
+  featureId: string,
+  options?: { max?: number; isAdmin?: boolean },
+): FeatureDescription[] {
+  const feature = FEATURE_REGISTRY[featureId];
+  if (!feature) return [];
+
+  const max = Math.min(options?.max || 3, 5);
+  const pool = getVisibleGuideFeatures({ isAdmin: options?.isAdmin })
+    .filter(f => f.id !== featureId);
+
+  const featureKeywords = new Set(feature.keywords.map(k => k.toLowerCase()));
+
+  const scored = pool.map(candidate => {
+    let score = 0;
+    if (candidate.category === feature.category) score += 10;
+    for (const kw of candidate.keywords) {
+      if (featureKeywords.has(kw.toLowerCase())) score += 3;
+    }
+    return { feature: candidate, score };
+  });
+
+  // Dev warnings
+  if (typeof window !== "undefined" && process.env.NODE_ENV === "development") {
+    if (feature.keywords.length < 3) {
+      console.warn(`[Registry Quality] "${featureId}" has only ${feature.keywords.length} keywords — may produce weak related topics`);
+    }
+  }
+
+  // Filter by minimum score, sort by score desc then label asc
+  const results = scored
+    .filter(s => s.score >= 3)
+    .sort((a, b) => b.score - a.score || a.feature.label.localeCompare(b.feature.label))
+    .slice(0, max)
+    .map(s => s.feature);
+
+  if (typeof window !== "undefined" && process.env.NODE_ENV === "development" && results.length === 0) {
+    console.warn(`[Registry Quality] "${featureId}" has no strong related matches — consider improving keywords`);
+  }
+
+  return results;
+}
