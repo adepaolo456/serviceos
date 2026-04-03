@@ -117,6 +117,7 @@ export class PricingQaController {
     let missingSnapshotCount = 0;
     let reviewQueueCount = 0;
     let missingRuleCount = 0;
+    let missingSubtypeCount = 0;
 
     const rows: PricingQaRow[] = [];
 
@@ -146,7 +147,11 @@ export class PricingQaController {
         blockers.push('missing_address');
       }
 
-      if (!hasSubtype) blockers.push('missing_asset_subtype');
+      if (!hasSubtype) {
+        issues.push({ type: 'missing_asset_subtype', severity: 'warning' });
+        missingSubtypeCount++;
+        blockers.push('missing_asset_subtype');
+      }
 
       if (hasSubtype && !hasPricingRule) {
         issues.push({ type: 'missing_pricing_rule', severity: 'warning' });
@@ -185,7 +190,7 @@ export class PricingQaController {
 
       const canGenerate = !hasSnapshot && validCoords && hasSubtype && hasPricingRule && blockers.length === 0;
       const canFixAddress = !validCoords;
-      const canChangeSubtype = hasSubtype && !hasPricingRule && supportedSubtypes.length > 0;
+      const canChangeSubtype = ((!hasSubtype) || (hasSubtype && !hasPricingRule)) && supportedSubtypes.length > 0;
 
       const primaryIssue = issues.length > 0 ? issues.sort((a, b) => {
         const order = { critical: 0, warning: 1, info: 2 };
@@ -244,6 +249,7 @@ export class PricingQaController {
         missing_address: reviewQueueCount,
         missing_snapshots: missingSnapshotCount,
         missing_pricing_rules: missingRuleCount,
+        missing_asset_subtypes: missingSubtypeCount,
       },
       rows,
     };
