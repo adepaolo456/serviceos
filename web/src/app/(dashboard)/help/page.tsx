@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect, useRef } from "react";
+import { useState, useMemo, useEffect, useRef, Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Search, ExternalLink, X } from "lucide-react";
@@ -35,7 +35,15 @@ function matchesSearch(f: FeatureDescription, query: string): boolean {
     || f.keywords.some(k => k.toLowerCase().includes(q));
 }
 
-export default function HelpCenterPage() {
+export default function HelpCenterPageWrapper() {
+  return (
+    <Suspense fallback={<div className="py-20 text-center text-sm" style={{ color: "var(--t-text-muted)" }}>Loading Help Center...</div>}>
+      <HelpCenterPage />
+    </Suspense>
+  );
+}
+
+function HelpCenterPage() {
   const [search, setSearch] = useState("");
   const searchParams = useSearchParams();
   const router = useRouter();
