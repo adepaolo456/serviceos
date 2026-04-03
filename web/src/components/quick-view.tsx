@@ -2,6 +2,7 @@
 
 import { useEffect, type ReactNode } from "react";
 import { X } from "lucide-react";
+import HelpTooltip from "./ui/HelpTooltip";
 
 interface QuickViewProps {
   isOpen: boolean;
@@ -11,6 +12,7 @@ interface QuickViewProps {
   actions?: ReactNode;
   footer?: ReactNode;
   children: ReactNode;
+  featureId?: string;
 }
 
 export default function QuickView({
@@ -21,6 +23,7 @@ export default function QuickView({
   actions,
   footer,
   children,
+  featureId,
 }: QuickViewProps) {
   useEffect(() => {
     if (!isOpen) return;
@@ -53,7 +56,10 @@ export default function QuickView({
           style={{ borderBottom: "1px solid var(--t-border)" }}
         >
           <div className="min-w-0">
-            <h2 className="font-display text-lg font-semibold truncate" style={{ color: "var(--t-text-primary)" }}>{title}</h2>
+            <h2 className="font-display text-lg font-semibold truncate inline-flex items-center gap-1.5" style={{ color: "var(--t-text-primary)" }}>
+              {title}
+              {featureId && <HelpTooltip featureId={featureId} />}
+            </h2>
             {subtitle && <p className="mt-0.5 text-xs truncate" style={{ color: "var(--t-text-muted)" }}>{subtitle}</p>}
           </div>
           <div className="flex items-center gap-2 shrink-0">

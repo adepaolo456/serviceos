@@ -252,3 +252,18 @@ export function listFeaturesForGuide(
     .filter(f => !category || f.category === category)
     .sort((a, b) => a.label.localeCompare(b.label));
 }
+
+/**
+ * Dev-time validation: checks if a featureId exists in the registry.
+ * Use in components to warn about unregistered IDs during development.
+ */
+export function isRegisteredFeature(id: string): boolean {
+  return id in FEATURE_REGISTRY;
+}
+
+/**
+ * Returns all registered feature IDs for cross-checking against UI surfaces.
+ */
+export function getAllFeatureIds(): string[] {
+  return Object.keys(FEATURE_REGISTRY);
+}

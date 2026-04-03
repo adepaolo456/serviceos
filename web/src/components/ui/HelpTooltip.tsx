@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useId } from "react";
-import { getFeature } from "@/lib/feature-registry";
+import { getFeature, isRegisteredFeature } from "@/lib/feature-registry";
 
 interface HelpTooltipProps {
   featureId?: string;
@@ -20,6 +20,11 @@ export default function HelpTooltip({
   const tooltipId = useId();
   const triggerRef = useRef<HTMLButtonElement>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Dev-time warning for unregistered feature IDs
+  if (featureId && typeof window !== "undefined" && process.env.NODE_ENV === "development" && !isRegisteredFeature(featureId)) {
+    console.warn(`[HelpTooltip] featureId "${featureId}" not found in FEATURE_REGISTRY`);
+  }
 
   const content = text || (featureId ? getFeature(featureId)?.shortDescription : "") || "";
   if (!content) return null;
