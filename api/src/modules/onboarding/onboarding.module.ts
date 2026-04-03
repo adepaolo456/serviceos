@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { OnboardingController } from './onboarding.controller';
+import { SetupController } from './setup.controller';
 import { OnboardingService } from './onboarding.service';
 import { SetupChecklist } from './entities/setup-checklist.entity';
 import { Tenant } from '../tenants/entities/tenant.entity';
@@ -20,7 +21,7 @@ import { Asset } from '../assets/entities/asset.entity';
       Asset,
     ]),
   ],
-  controllers: [OnboardingController],
+  controllers: [SetupController, OnboardingController],
   providers: [OnboardingService],
   exports: [OnboardingService],
 })
