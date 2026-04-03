@@ -493,6 +493,7 @@ export default function DispatchPage() {
 
   const totalJobs = board ? board.unassigned.length + board.drivers.reduce((s, d) => s + d.jobs.length, 0) : 0;
   const driverCount = board?.drivers.length || 0;
+  const avgJobCount = driverCount > 0 ? board!.drivers.reduce((s, d) => s + d.jobs.length, 0) / driverCount : 0;
   const unassignedCount = board?.unassigned.length || 0;
   const completedJobs = allJobs.filter(j => j.status === "completed").length;
   const activeJob = activeId ? allJobs.find(j => j.id === activeId) : null;
@@ -716,7 +717,7 @@ export default function DispatchPage() {
                   onHide={() => hideColumn(col.driver.id)}
                   onColumnDrag={makeColumnDrag(col.driver.id)}
                   selectedJobs={selectedJobs} onSelectJob={handleSelectJob} onCheckboxToggle={handleCheckboxToggle}
-                  onMoveJob={handleMoveJob}
+                  onMoveJob={handleMoveJob} avgJobCount={avgJobCount}
                 />
               ))}
             </div>
@@ -1032,7 +1033,7 @@ function DispatchMap({ board, activeJobId }: { board: DispatchBoard | null; acti
    Column Card — white card with accordion collapse
    ═══════════════════════════════════════════════════ */
 
-function ColumnCard({ columnId, title, driver, isUnassigned, count, progress, jobs, drivers, onAssign, onUnassign, onQuickView, onStatusChange, onCtxMenu, activeId, collapsed, onToggleCollapse, onHide, onColumnDrag, driverJobCities, selectedJobs, onSelectJob, onCheckboxToggle, onMoveJob }: {
+function ColumnCard({ columnId, title, driver, isUnassigned, count, progress, jobs, drivers, onAssign, onUnassign, onQuickView, onStatusChange, onCtxMenu, activeId, collapsed, onToggleCollapse, onHide, onColumnDrag, driverJobCities, selectedJobs, onSelectJob, onCheckboxToggle, onMoveJob, avgJobCount }: {
   columnId: string; title: string; driver?: Driver; isUnassigned?: boolean;
   count: number; progress?: { completed: number; total: number };
   jobs: DispatchJob[]; drivers?: Driver[];
@@ -1049,6 +1050,7 @@ function ColumnCard({ columnId, title, driver, isUnassigned, count, progress, jo
   onSelectJob?: (jobId: string, e: { shiftKey: boolean; metaKey: boolean; ctrlKey: boolean }) => void;
   onCheckboxToggle?: (jobId: string, e: { shiftKey: boolean }) => void;
   onMoveJob?: (jobId: string, position: "top" | "bottom") => void;
+  avgJobCount?: number;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: columnId });
   const completedCount = progress?.completed || 0;
@@ -1079,6 +1081,28 @@ function ColumnCard({ columnId, title, driver, isUnassigned, count, progress, jo
   // Load indicator
   const loadLevel = totalCount <= 3 ? "light" : totalCount <= 6 ? "medium" : "heavy";
   const loadColor = loadLevel === "light" ? "var(--t-accent)" : loadLevel === "medium" ? "var(--t-warning)" : "var(--t-error)";
+  const loadPercent = Math.min(totalCount / 10, 1); // 10 jobs = full bar
+
+  // Route time span
+  const jobTimes = jobs
+    .filter(j => j.scheduled_window_start && j.status !== "cancelled")
+    .map(j => j.scheduled_window_start)
+    .sort();
+  const jobEndTimes = jobs
+    .filter(j => j.scheduled_window_end && j.status !== "cancelled")
+    .map(j => j.scheduled_window_end)
+    .sort();
+  const firstTime = jobTimes[0] || null;
+  const lastTime = jobEndTimes[jobEndTimes.length - 1] || jobTimes[jobTimes.length - 1] || null;
+
+  // Needs review: heavy load OR significantly above average OR wide time spread (>8h)
+  const timeSpreadHours = firstTime && lastTime
+    ? (() => { const [h1, m1] = firstTime.split(":").map(Number); const [h2, m2] = lastTime.split(":").map(Number); return (h2 + m2 / 60) - (h1 + m1 / 60); })()
+    : 0;
+  const isOverloaded = !isUnassigned && totalCount >= 8;
+  const isImbalanced = !isUnassigned && avgJobCount != null && avgJobCount > 0 && totalCount > avgJobCount * 1.5 && totalCount >= 4;
+  const isWideSpread = !isUnassigned && timeSpreadHours > 8;
+  const needsReview = isOverloaded || isImbalanced || isWideSpread;
 
   return (
     <div ref={setNodeRef}
@@ -1143,20 +1167,28 @@ function ColumnCard({ columnId, title, driver, isUnassigned, count, progress, jo
             </Dropdown>
           )}
         </div>
-        {/* Row 2: Progress + Load + Type breakdown + Chevron */}
+        {/* Row 2: Load bar + stops + type breakdown + review badge */}
         <div className="flex items-center gap-2 mt-2">
+          {/* Load bar (segmented feel) */}
+          {!isUnassigned && count > 0 && (
+            <div className="flex items-center gap-1.5">
+              <div className="w-12 h-1.5 rounded-full overflow-hidden" style={{ background: "var(--t-bg-card-hover)" }}>
+                <div className="h-full rounded-full transition-all duration-300" style={{ width: `${loadPercent * 100}%`, background: loadColor }} />
+              </div>
+            </div>
+          )}
           <span className="rounded-full px-2 py-0.5 text-[10px] font-bold tabular-nums"
             style={{ background: "var(--t-bg-card-hover)", color: "var(--t-text-secondary)" }}>
             {completedCount > 0 ? `${completedCount}/${totalCount} done` : count === 1 ? "1 stop" : `${count} stops`}
           </span>
-          {!isUnassigned && count > 0 && (
-            <span className="rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase" style={{ background: loadLevel === "heavy" ? "var(--t-error-soft)" : loadLevel === "medium" ? "var(--t-warning-soft)" : "var(--t-accent-soft)", color: loadColor }}>
-              {loadLevel}
-            </span>
-          )}
           {(deliveryCount > 0 || pickupCount > 0 || exchangeCount > 0) && (
             <span className="text-[10px] tabular-nums" style={{ color: "var(--t-text-muted)" }}>
               {deliveryCount > 0 && `${deliveryCount}D`}{pickupCount > 0 && ` ${pickupCount}P`}{exchangeCount > 0 && ` ${exchangeCount}X`}
+            </span>
+          )}
+          {needsReview && (
+            <span className="rounded-full px-1.5 py-0.5 text-[9px] font-bold" style={{ background: "var(--t-warning-soft)", color: "var(--t-warning)" }}>
+              {isOverloaded ? "HEAVY" : isWideSpread ? "SPREAD" : "IMBAL"}
             </span>
           )}
           {progress && progress.total > 0 && (
@@ -1169,6 +1201,15 @@ function ColumnCard({ columnId, title, driver, isUnassigned, count, progress, jo
             <ChevronDown className="h-4 w-4 transition-transform duration-200" style={{ transform: collapsed ? "rotate(0deg)" : "rotate(180deg)" }} />
           </button>
         </div>
+        {/* Row 3: Route time summary */}
+        {!isUnassigned && (firstTime || lastTime) && (
+          <div className="flex items-center gap-1.5 mt-1.5 text-[10px] tabular-nums" style={{ color: "var(--t-text-muted)" }}>
+            <Clock className="h-3 w-3 shrink-0" />
+            <span>{fmtTime(firstTime)}</span>
+            {lastTime && firstTime !== lastTime && <><span>→</span><span>{fmtTime(lastTime)}</span></>}
+            {timeSpreadHours > 0 && <span style={{ color: timeSpreadHours > 8 ? "var(--t-warning)" : "var(--t-text-muted)" }}>({Math.round(timeSpreadHours)}h)</span>}
+          </div>
+        )}
       </div>
 
       {/* ── Next Stop Preview ── */}
