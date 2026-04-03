@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useRef, useEffect, useId } from "react";
+import { useState, useRef, useEffect, useId, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { getFeature, isRegisteredFeature } from "@/lib/feature-registry";
 
 interface HelpTooltipProps {
@@ -10,6 +11,67 @@ interface HelpTooltipProps {
   className?: string;
 }
 
+type Placement = "top" | "right" | "bottom" | "left";
+
+const MARGIN = 10; // px from viewport edges
+const TOOLTIP_W = 280; // max-width estimate for clamping
+const TOOLTIP_H = 60; // approximate height estimate
+const GAP = 8;
+
+const FLIP: Record<Placement, Placement> = { top: "bottom", bottom: "top", left: "right", right: "left" };
+
+function computeAnchor(rect: DOMRect, p: Placement): { top: number; left: number } {
+  if (p === "top") return { top: rect.top - GAP, left: rect.left + rect.width / 2 };
+  if (p === "bottom") return { top: rect.bottom + GAP, left: rect.left + rect.width / 2 };
+  if (p === "left") return { top: rect.top + rect.height / 2, left: rect.left - GAP };
+  return { top: rect.top + rect.height / 2, left: rect.right + GAP };
+}
+
+function fitsViewport(anchor: { top: number; left: number }, p: Placement): boolean {
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  if (p === "top") return anchor.top - TOOLTIP_H > MARGIN;
+  if (p === "bottom") return anchor.top + TOOLTIP_H < vh - MARGIN;
+  if (p === "left") return anchor.left - TOOLTIP_W > MARGIN;
+  return anchor.left + TOOLTIP_W < vw - MARGIN;
+}
+
+function clamp(anchor: { top: number; left: number }, p: Placement): { top: number; left: number } {
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  let { top, left } = anchor;
+
+  // Horizontal clamping for top/bottom placements
+  if (p === "top" || p === "bottom") {
+    const halfW = TOOLTIP_W / 2;
+    if (left - halfW < MARGIN) left = MARGIN + halfW;
+    if (left + halfW > vw - MARGIN) left = vw - MARGIN - halfW;
+  }
+
+  // Vertical clamping for left/right placements
+  if (p === "left" || p === "right") {
+    const halfH = TOOLTIP_H / 2;
+    if (top - halfH < MARGIN) top = MARGIN + halfH;
+    if (top + halfH > vh - MARGIN) top = vh - MARGIN - halfH;
+  }
+
+  return { top, left };
+}
+
+const TRANSFORM: Record<Placement, string> = {
+  top: "translate(-50%, -100%)",
+  bottom: "translate(-50%, 0)",
+  left: "translate(-100%, -50%)",
+  right: "translate(0, -50%)",
+};
+
+const ARROW: Record<Placement, React.CSSProperties> = {
+  top: { bottom: -5, left: "50%", transform: "translateX(-50%) rotate(45deg)" },
+  bottom: { top: -5, left: "50%", transform: "translateX(-50%) rotate(45deg)" },
+  left: { right: -5, top: "50%", transform: "translateY(-50%) rotate(45deg)" },
+  right: { left: -5, top: "50%", transform: "translateY(-50%) rotate(45deg)" },
+};
+
 export default function HelpTooltip({
   featureId,
   text,
@@ -17,8 +79,11 @@ export default function HelpTooltip({
   className,
 }: HelpTooltipProps) {
   const [visible, setVisible] = useState(false);
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  const [effectivePlacement, setEffectivePlacement] = useState<Placement>(placement);
   const tooltipId = useId();
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const tooltipRef = useRef<HTMLDivElement>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Dev-time warning for unregistered feature IDs
@@ -29,9 +94,34 @@ export default function HelpTooltip({
   const content = text || (featureId ? getFeature(featureId)?.shortDescription : "") || "";
   if (!content) return null;
 
+  const computePosition = useCallback(() => {
+    if (!triggerRef.current) return;
+    const rect = triggerRef.current.getBoundingClientRect();
+
+    // Try preferred placement, flip if it doesn't fit
+    let p: Placement = placement;
+    let anchor = computeAnchor(rect, p);
+    if (!fitsViewport(anchor, p)) {
+      const flipped = FLIP[p];
+      const flippedAnchor = computeAnchor(rect, flipped);
+      if (fitsViewport(flippedAnchor, flipped)) {
+        p = flipped;
+        anchor = flippedAnchor;
+      }
+      // If neither fits, keep preferred and clamp
+    }
+
+    const clamped = clamp(anchor, p);
+    setPos(clamped);
+    setEffectivePlacement(p);
+  }, [placement]);
+
   const show = () => {
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
-    timeoutRef.current = setTimeout(() => setVisible(true), 200);
+    timeoutRef.current = setTimeout(() => {
+      computePosition();
+      setVisible(true);
+    }, 200);
   };
 
   const hide = () => {
@@ -43,7 +133,10 @@ export default function HelpTooltip({
   useEffect(() => {
     if (!visible) return;
     const handler = (e: MouseEvent) => {
-      if (triggerRef.current && !triggerRef.current.contains(e.target as Node)) {
+      if (
+        triggerRef.current && !triggerRef.current.contains(e.target as Node) &&
+        tooltipRef.current && !tooltipRef.current.contains(e.target as Node)
+      ) {
         setVisible(false);
       }
     };
@@ -51,49 +144,56 @@ export default function HelpTooltip({
     return () => document.removeEventListener("mousedown", handler);
   }, [visible]);
 
-  // Arrow position
-  const arrowStyle: Record<string, React.CSSProperties> = {
-    top: { bottom: -5, left: "50%", transform: "translateX(-50%) rotate(45deg)" },
-    bottom: { top: -5, left: "50%", transform: "translateX(-50%) rotate(45deg)" },
-    left: { right: -5, top: "50%", transform: "translateY(-50%) rotate(45deg)" },
-    right: { left: -5, top: "50%", transform: "translateY(-50%) rotate(45deg)" },
-  };
-
-  const tooltipPosition: Record<string, string> = {
-    top: "bottom-full left-1/2 -translate-x-1/2 mb-2",
-    bottom: "top-full left-1/2 -translate-x-1/2 mt-2",
-    left: "right-full top-1/2 -translate-y-1/2 mr-2",
-    right: "left-full top-1/2 -translate-y-1/2 ml-2",
-  };
+  // Dismiss on scroll, reposition on resize
+  useEffect(() => {
+    if (!visible) return;
+    const onScroll = () => setVisible(false);
+    const onResize = () => computePosition();
+    window.addEventListener("scroll", onScroll, true);
+    window.addEventListener("resize", onResize);
+    return () => {
+      window.removeEventListener("scroll", onScroll, true);
+      window.removeEventListener("resize", onResize);
+    };
+  }, [visible, computePosition]);
 
   return (
-    <span className={`relative inline-flex ${className || ""}`}>
-      <button
-        ref={triggerRef}
-        type="button"
-        aria-label="Help"
-        aria-describedby={visible ? tooltipId : undefined}
-        onMouseEnter={show}
-        onMouseLeave={hide}
-        onFocus={show}
-        onBlur={hide}
-        onClick={() => setVisible(v => !v)}
-        className="inline-flex items-center justify-center w-4 h-4 rounded-full text-[9px] font-bold transition-all focus:outline-none focus:ring-1 focus:ring-[var(--t-accent)]"
-        style={{
-          background: "var(--t-bg-elevated)",
-          color: "var(--t-text-muted)",
-          border: "1px solid var(--t-border)",
-          cursor: "help",
-        }}
-      >
-        ?
-      </button>
-      {visible && (
+    <>
+      <span className={`inline-flex ${className || ""}`}>
+        <button
+          ref={triggerRef}
+          type="button"
+          aria-label="Help"
+          aria-describedby={visible ? tooltipId : undefined}
+          onMouseEnter={show}
+          onMouseLeave={hide}
+          onFocus={show}
+          onBlur={hide}
+          onClick={() => { if (visible) hide(); else { computePosition(); setVisible(true); } }}
+          className="inline-flex items-center justify-center w-4 h-4 rounded-full text-[9px] font-bold transition-all focus:outline-none focus:ring-1 focus:ring-[var(--t-accent)]"
+          style={{
+            background: "var(--t-bg-elevated)",
+            color: "var(--t-text-muted)",
+            border: "1px solid var(--t-border)",
+            cursor: "help",
+          }}
+        >
+          ?
+        </button>
+      </span>
+      {visible && pos && typeof document !== "undefined" && createPortal(
         <div
+          ref={tooltipRef}
           id={tooltipId}
           role="tooltip"
-          className={`absolute z-[9999] ${tooltipPosition[placement]}`}
-          style={{ pointerEvents: "none" }}
+          style={{
+            position: "fixed",
+            top: pos.top,
+            left: pos.left,
+            transform: TRANSFORM[effectivePlacement],
+            zIndex: 99999,
+            pointerEvents: "none",
+          }}
         >
           <div
             className="relative rounded-[10px] px-3 py-2 text-[12px] leading-relaxed"
@@ -102,7 +202,7 @@ export default function HelpTooltip({
               color: "var(--t-text-primary)",
               border: "1px solid var(--t-border)",
               boxShadow: "0 4px 16px var(--t-shadow)",
-              maxWidth: 280,
+              maxWidth: TOOLTIP_W,
               minWidth: 160,
             }}
           >
@@ -113,12 +213,13 @@ export default function HelpTooltip({
                 background: "var(--t-bg-elevated)",
                 borderRight: "1px solid var(--t-border)",
                 borderBottom: "1px solid var(--t-border)",
-                ...arrowStyle[placement],
+                ...ARROW[effectivePlacement],
               }}
             />
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
-    </span>
+    </>
   );
 }
