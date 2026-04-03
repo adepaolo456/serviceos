@@ -72,11 +72,19 @@ interface UserProfile {
   tenant: {
     id: string;
     name: string;
-    onboardingStatus?: string;
   };
 }
 
 /* ---- Helpers ---- */
+
+async function getGettingStartedStatus(): Promise<Record<string, boolean>> {
+  const res = await api.get<{ steps: { stepKey: string; status: string }[] }>("/onboarding/progress");
+  const result: Record<string, boolean> = {};
+  for (const step of res.steps) {
+    result[step.stepKey] = step.status === "completed" || step.status === "auto_completed" || step.status === "skipped";
+  }
+  return result;
+}
 
 const JOB_TYPE_COLOR: Record<string, string> = {
   delivery: "var(--t-accent)",
@@ -167,17 +175,11 @@ export default function DashboardPage() {
   const [searchOpen, setSearchOpen] = useState(false);
   const searchTimeout = useRef<ReturnType<typeof setTimeout>>(null);
 
-  // Check onboarding status — redirect if incomplete
+  // Getting Started — lightweight setup status check
+  const [setupStatus, setSetupStatus] = useState<Record<string, boolean> | null>(null);
   useEffect(() => {
-    api
-      .get<{ requiredComplete: boolean }>("/onboarding/progress")
-      .then((p) => {
-        if (!p.requiredComplete) {
-          router.replace("/onboarding");
-        }
-      })
-      .catch(() => {});
-  }, [router]);
+    getGettingStartedStatus().then(setSetupStatus).catch(() => {});
+  }, []);
 
   // Load dashboard data
   useEffect(() => {
@@ -403,6 +405,54 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
+
+      {/* ---- Getting Started ---- */}
+      {setupStatus && (() => {
+        const cards = [
+          { key: "pricing", title: "Set Your Pricing", desc: "Add dumpster sizes and pricing to start accepting jobs", btn: "Go to Pricing", href: "/pricing" },
+          { key: "vehicles", title: "Add Your Dumpsters", desc: "Track your inventory and availability", btn: "Add Dumpsters", href: "/assets" },
+          { key: "company_info", title: "Configure Business Settings", desc: "Set your company info, service area, and branding", btn: "Open Settings", href: "/settings" },
+        ];
+        const allDone = cards.every((c) => setupStatus[c.key]);
+        if (allDone) return null;
+        return (
+          <div style={{ marginBottom: 24 }}>
+            <p className="text-[13px] font-semibold uppercase tracking-wide mb-3" style={{ color: "var(--t-frame-text-muted)" }}>Getting Started</p>
+            <div style={{ display: "grid", gap: 12 }} className="grid-cols-1 md:grid-cols-3">
+              {cards.map((c) => {
+                const done = setupStatus[c.key];
+                return (
+                  <Link
+                    key={c.key}
+                    href={c.href}
+                    className="rounded-[16px] border p-5 transition-all hover:border-[var(--t-accent)]"
+                    style={{
+                      backgroundColor: "var(--t-bg-secondary)",
+                      borderColor: done ? "var(--t-accent)" : "var(--t-border)",
+                      textDecoration: "none",
+                      opacity: done ? 0.6 : 1,
+                    }}
+                  >
+                    <div className="flex items-start justify-between mb-2">
+                      <p className="text-[15px] font-semibold" style={{ color: "var(--t-text-primary)" }}>{c.title}</p>
+                      {done && <CheckCircle2 className="h-5 w-5 shrink-0 text-[var(--t-accent)]" />}
+                    </div>
+                    <p className="text-[13px] mb-3" style={{ color: "var(--t-text-muted)" }}>{c.desc}</p>
+                    {!done && (
+                      <span className="inline-block rounded-full bg-[var(--t-accent)] px-4 py-1.5 text-[12px] font-semibold text-black">
+                        {c.btn}
+                      </span>
+                    )}
+                    {done && (
+                      <span className="text-[12px] font-medium text-[var(--t-accent)]">Completed</span>
+                    )}
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ---- KPI Cards ---- */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 12, marginBottom: 24 }} className="lg:!grid-cols-4">
