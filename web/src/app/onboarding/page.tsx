@@ -94,6 +94,7 @@ export default function OnboardingPage() {
   const [settings, setSettings] = useState<TenantSettings | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
   const [suggesting, setSuggesting] = useState(false);
   const [suggestionModal, setSuggestionModal] = useState<Suggestion[] | null>(null);
   const lastFetch = useRef(0);
@@ -176,10 +177,8 @@ export default function OnboardingPage() {
   }, [fetchProgress]);
 
   const markStep = async (stepKey: string, status: "completed" | "skipped") => {
-    try {
-      await api.patch(`/onboarding/checklist/${stepKey}`, { status });
-      await fetchProgress();
-    } catch {}
+    await api.patch(`/onboarding/checklist/${stepKey}`, { status });
+    await fetchProgress();
   };
 
   const getSuggestions = async (section: string) => {
@@ -211,6 +210,7 @@ export default function OnboardingPage() {
   const saveCompanyInfo = async (e: FormEvent) => {
     e.preventDefault();
     setSaving(true);
+    setSaveError("");
     try {
       await api.patch("/auth/profile", { companyName });
       await api.patch("/tenant-settings/branding", {
@@ -219,24 +219,30 @@ export default function OnboardingPage() {
         support_phone: supportPhone,
       });
       await markStep("company_info", "completed");
-    } catch {} finally { setSaving(false); }
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : "Failed to save. Please try again.");
+    } finally { setSaving(false); }
   };
 
   const saveLaborRates = async (e: FormEvent) => {
     e.preventDefault();
     setSaving(true);
+    setSaveError("");
     try {
       await api.patch("/tenant-settings", {
         driver_hourly_rate: driverRate ? Number(driverRate) : undefined,
         helper_hourly_rate: helperRate ? Number(helperRate) : undefined,
       });
       await markStep("labor_rates", "completed");
-    } catch {} finally { setSaving(false); }
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : "Failed to save. Please try again.");
+    } finally { setSaving(false); }
   };
 
   const saveNotifications = async (e: FormEvent) => {
     e.preventDefault();
     setSaving(true);
+    setSaveError("");
     try {
       await api.patch("/tenant-settings/notifications", {
         sms_enabled: smsEnabled,
@@ -244,19 +250,24 @@ export default function OnboardingPage() {
         email_sender_name: emailSenderName,
       });
       await markStep("notifications", "completed");
-    } catch {} finally { setSaving(false); }
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : "Failed to save. Please try again.");
+    } finally { setSaving(false); }
   };
 
   const savePortal = async (e: FormEvent) => {
     e.preventDefault();
     setSaving(true);
+    setSaveError("");
     try {
       await api.patch("/tenant-settings", {
         portal_slug: portalSlug,
         portal_name: portalName,
       });
       await markStep("portal", "completed");
-    } catch {} finally { setSaving(false); }
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : "Failed to save. Please try again.");
+    } finally { setSaving(false); }
   };
 
   const currentStepData = progress?.steps.find((s) => s.stepKey === activeStep);
@@ -307,7 +318,7 @@ export default function OnboardingPage() {
               return (
                 <button
                   key={s.key}
-                  onClick={() => setActiveStep(s.key)}
+                  onClick={() => { setActiveStep(s.key); setSaveError(""); }}
                   className={`w-full flex items-center gap-3 rounded-[14px] px-3 py-2.5 text-left transition-all text-sm ${
                     isActive
                       ? "bg-[var(--t-accent-soft)] text-[var(--t-accent)]"
@@ -326,6 +337,13 @@ export default function OnboardingPage() {
         {/* Main content area */}
         <div className="flex-1 min-w-0">
           <div className="rounded-[20px] border border-[var(--t-border)] p-8" style={{ backgroundColor: "var(--t-bg-secondary)" }}>
+            {/* Save error banner */}
+            {saveError && (
+              <div className="mb-4 rounded-[14px] bg-red-500/10 border border-red-500/30 px-4 py-3 text-sm text-red-400">
+                {saveError}
+              </div>
+            )}
+
             {/* Auto-completed badge */}
             {currentStepData?.status === "auto_completed" && (
               <div className="mb-4 flex items-center gap-2 rounded-full bg-[#22C55E]/10 px-4 py-2 text-sm text-[#22C55E] w-fit">
