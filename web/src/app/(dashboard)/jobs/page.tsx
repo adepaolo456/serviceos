@@ -264,34 +264,30 @@ export default function JobsPage() {
   return (
     <div>
       {/* Header */}
-      <div className="flex items-center justify-between mb-8">
+      <div className="flex items-start justify-between gap-4 mb-8">
         <div>
-          <h1 style={{ fontSize: 28, fontWeight: 700, letterSpacing: "-1px", color: "var(--t-frame-text)" }}>
-            Jobs
-          </h1>
-          <p style={{ fontSize: 14, color: "var(--t-frame-text-muted)", marginTop: 4 }}>
+          <h1 className="text-[28px] font-bold tracking-[-1px] text-[var(--t-frame-text)]">Jobs</h1>
+          <p className="mt-1 text-[13px] text-[var(--t-frame-text-muted)]">
             {totalCount} total &middot;{" "}
-            <span style={{ color: "var(--t-frame-text)" }}>{todayCount} today</span> &middot;{" "}
+            <span className="text-[var(--t-frame-text)]">{todayCount} today</span> &middot;{" "}
             {unassignedCount > 0 ? (
-              <span style={{ color: "var(--t-error)" }}>{unassignedCount} unassigned</span>
+              <span className="text-[var(--t-error)]">{unassignedCount} unassigned</span>
             ) : (
-              <span style={{ color: "#22C55E" }}>All assigned</span>
+              <span className="text-[var(--t-accent)]">All assigned</span>
             )}
           </p>
         </div>
-        <div className="flex items-center gap-3">
-          {/* Date range pills */}
-          <div className="flex overflow-hidden" style={{ borderRadius: 24, border: "1px solid rgba(255,255,255,0.08)" }}>
+        <div className="flex items-center gap-2 shrink-0">
+          <div className="flex overflow-hidden rounded-full border border-[rgba(255,255,255,0.08)]">
             {DATE_RANGE_OPTIONS.map((opt) => (
               <button
                 key={opt.value}
                 onClick={() => setDateRange(opt.value)}
-                style={{
-                  padding: "6px 14px", fontSize: 12, fontWeight: 500,
-                  background: dateRange === opt.value ? "var(--t-accent-soft)" : "transparent",
-                  color: dateRange === opt.value ? "#22C55E" : "var(--t-frame-text-muted)",
-                  border: "none", cursor: "pointer", transition: "all 0.15s ease",
-                }}
+                className={`px-3.5 py-1.5 text-xs font-medium transition-all ${
+                  dateRange === opt.value
+                    ? "bg-[var(--t-accent-soft)] text-[var(--t-accent)]"
+                    : "text-[var(--t-frame-text-muted)]"
+                }`}
               >
                 {opt.label}
               </button>
@@ -299,14 +295,7 @@ export default function JobsPage() {
           </div>
           <button
             onClick={() => openWizard()}
-            style={{
-              display: "inline-flex", alignItems: "center", gap: 8,
-              background: "#22C55E", color: "#000", fontWeight: 600, fontSize: 14,
-              padding: "10px 20px", borderRadius: 24,
-              transition: "opacity 0.15s ease", cursor: "pointer", border: "none",
-            }}
-            onMouseOver={(e) => (e.currentTarget.style.opacity = "0.9")}
-            onMouseOut={(e) => (e.currentTarget.style.opacity = "1")}
+            className="inline-flex items-center gap-1.5 rounded-full bg-[var(--t-accent)] px-5 py-2.5 text-sm font-semibold text-black transition-all hover:brightness-110"
           >
             <Plus className="h-4 w-4" />
             New Booking

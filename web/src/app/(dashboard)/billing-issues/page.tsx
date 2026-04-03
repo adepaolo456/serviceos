@@ -110,24 +110,21 @@ export default function BillingIssuesPage() {
   return (
     <div>
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-start justify-between gap-4 mb-8">
         <div>
-          <h1 className="text-[28px] font-bold tracking-[-1px]" style={{ color: "var(--t-frame-text)" }}>
-            Billing Issues
-          </h1>
-          <p className="text-sm mt-1" style={{ color: "var(--t-frame-text-muted)" }}>
-            {summary.total} open issue{summary.total !== 1 ? "s" : ""}
-          </p>
+          <h1 className="text-[28px] font-bold tracking-[-1px] text-[var(--t-frame-text)]">Billing Issues</h1>
+          <p className="mt-1 text-[13px] text-[var(--t-frame-text-muted)]">{summary.total} open issue{summary.total !== 1 ? "s" : ""}</p>
         </div>
-        <button
-          onClick={handleDetect}
-          disabled={detecting}
-          className="flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-semibold transition-opacity hover:opacity-90 disabled:opacity-50"
-          style={{ background: "var(--t-accent)", color: "#000" }}
-        >
-          <RefreshCw className={`h-4 w-4 ${detecting ? "animate-spin" : ""}`} />
-          {detecting ? "Scanning..." : "Detect Issues"}
-        </button>
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            onClick={handleDetect}
+            disabled={detecting}
+            className="inline-flex items-center gap-1.5 rounded-full bg-[var(--t-accent)] px-5 py-2.5 text-sm font-semibold text-black transition-all hover:brightness-110 disabled:opacity-50"
+          >
+            <RefreshCw className={`h-4 w-4 ${detecting ? "animate-spin" : ""}`} />
+            {detecting ? "Scanning..." : "Detect Issues"}
+          </button>
+        </div>
       </div>
 
       {/* Summary Cards */}
@@ -154,7 +151,7 @@ export default function BillingIssuesPage() {
       </div>
 
       {/* Filters */}
-      <div className="flex items-center gap-3 mb-5">
+      <div className="flex items-center gap-3 mb-6">
         <select
           value={statusFilter}
           onChange={e => setStatusFilter(e.target.value)}
@@ -207,8 +204,8 @@ export default function BillingIssuesPage() {
             return (
               <div
                 key={issue.id}
-                className="rounded-[20px] border p-5"
-                style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)" }}
+                className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-4"
+                style={{ borderLeftWidth: 3, borderLeftColor: typeInfo.color }}
               >
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex-1 min-w-0">

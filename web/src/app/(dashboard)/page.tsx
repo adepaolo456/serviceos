@@ -283,63 +283,36 @@ export default function DashboardPage() {
 
   return (
     <div>
-      {/* ---- Greeting + Quick Actions ---- */}
-      <div style={{ marginBottom: 32 }}>
-        <h1 style={{
-          fontSize: 28,
-          fontWeight: 700,
-          letterSpacing: "-1px",
-          color: "var(--t-frame-text)",
-          lineHeight: 1.2,
-          marginBottom: 4,
-        }}>
-          {getGreeting()}, {user?.firstName || "Anthony"}
-        </h1>
-        <p style={{ fontSize: 14, color: "var(--t-frame-text-muted)", marginBottom: 20 }}>
-          {fmtLongDate(today())} &middot; {todayJobs.length} job{todayJobs.length !== 1 ? "s" : ""} today
-        </p>
-
-        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+      {/* ---- Header ---- */}
+      <div className="flex items-start justify-between gap-4 mb-8">
+        <div>
+          <h1 className="text-[28px] font-bold tracking-[-1px] text-[var(--t-frame-text)]">
+            {getGreeting()}, {user?.firstName || "Anthony"}
+          </h1>
+          <p className="mt-1 text-[13px] text-[var(--t-frame-text-muted)]">
+            {fmtLongDate(today())} &middot; {todayJobs.length} job{todayJobs.length !== 1 ? "s" : ""} today
+          </p>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
           <button
             onClick={() => openWizard()}
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 6,
-              backgroundColor: "var(--t-accent)",
-              color: "#000",
-              fontSize: 14,
-              fontWeight: 600,
-              padding: "10px 20px",
-              borderRadius: 24,
-              border: "none",
-              cursor: "pointer",
-              transition: "opacity 0.15s ease",
-            }}
+            className="inline-flex items-center gap-1.5 rounded-full bg-[var(--t-accent)] px-5 py-2.5 text-sm font-semibold text-black transition-all hover:brightness-110"
           >
-            <Plus style={{ width: 16, height: 16 }} strokeWidth={2.5} />
+            <Plus className="h-4 w-4" strokeWidth={2.5} />
             New Booking
           </button>
           <Link
             href="/customers"
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 6,
-              backgroundColor: "transparent",
-              color: "var(--t-frame-text)",
-              fontSize: 14,
-              fontWeight: 600,
-              padding: "10px 20px",
-              borderRadius: 24,
-              border: "1px solid var(--t-frame-border)",
-              textDecoration: "none",
-              transition: "all 0.15s ease",
-            }}
+            className="inline-flex items-center gap-1.5 rounded-full border border-[var(--t-frame-border)] px-5 py-2.5 text-sm font-semibold text-[var(--t-frame-text)] transition-all hover:bg-[rgba(255,255,255,0.06)]"
           >
-            <UserPlus style={{ width: 16, height: 16, color: "var(--t-frame-text-muted)" }} />
+            <UserPlus className="h-4 w-4 text-[var(--t-frame-text-muted)]" />
             New Customer
           </Link>
+        </div>
+      </div>
+
+      {/* ---- Controls ---- */}
+      <div className="flex items-center gap-2 flex-wrap mb-6">
 
           {/* Search */}
           <div style={{ position: "relative", flex: 1, maxWidth: 340, marginLeft: "auto" }}>
@@ -410,48 +383,17 @@ export default function DashboardPage() {
               </div>
             )}
           </div>
-        </div>
       </div>
 
       {/* ---- KPI Cards ---- */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 12, marginBottom: 24 }} className="lg:!grid-cols-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
         {kpis.map((kpi) => (
-          <Link key={kpi.label} href="/analytics" style={{
-            backgroundColor: "var(--t-bg-card)",
-            border: "1px solid var(--t-border)",
-            borderRadius: 14,
-            padding: "18px 16px",
-            textDecoration: "none",
-            transition: "background 0.15s ease",
-          }} className="hover:bg-dark-card-hover">
-            <p style={{
-              fontSize: 12,
-              fontWeight: 600,
-              textTransform: "uppercase",
-              letterSpacing: "0.5px",
-              color: "var(--t-text-muted)",
-              marginBottom: 6,
-            }}>
-              {kpi.label}
-            </p>
-            <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-              <span style={{
-                fontSize: 24,
-                fontWeight: 700,
-                letterSpacing: "-0.5px",
-                color: "var(--t-text-primary)",
-                fontVariantNumeric: "tabular-nums",
-              }}>
-                {kpi.value}
-              </span>
+          <Link key={kpi.label} href="/analytics" className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-[18px] no-underline transition-colors hover:bg-[var(--t-bg-card-hover)]">
+            <p className="text-[12px] font-semibold uppercase tracking-wide text-[var(--t-text-muted)] mb-1.5">{kpi.label}</p>
+            <div className="flex items-baseline gap-2">
+              <span className="text-2xl font-bold tracking-tight text-[var(--t-text-primary)] tabular-nums">{kpi.value}</span>
               {kpi.trend && (
-                <span style={{
-                  fontSize: 12,
-                  fontWeight: 600,
-                  color: kpi.positive ? "var(--t-accent)" : "var(--t-error)",
-                }}>
-                  {kpi.trend}
-                </span>
+                <span className={`text-[12px] font-semibold ${kpi.positive ? "text-[var(--t-accent)]" : "text-[var(--t-error)]"}`}>{kpi.trend}</span>
               )}
             </div>
           </Link>
@@ -459,42 +401,29 @@ export default function DashboardPage() {
       </div>
 
       {/* ---- Needs Attention ---- */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 16 }}>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
         {[
           { label: "Overdue Invoices", count: attentionOverdue, icon: FileWarning, color: "var(--t-error)", href: "/invoices" },
           { label: "Review Pickups", count: attentionPickups, icon: Truck, color: "var(--t-warning)", href: "/jobs" },
           { label: "Unassigned Today", count: attentionUnassigned, icon: CalendarX, color: "var(--t-warning)", href: "/dispatch" },
           { label: "Needs Reschedule", count: attentionReschedule, icon: AlertTriangle, color: "var(--t-error)", href: "/dispatch" },
         ].map((item) => (
-          <Link key={item.label} href={item.href} style={{
-            backgroundColor: "var(--t-bg-card)",
-            border: `1px solid ${item.count > 0 ? item.color : "var(--t-border)"}`,
-            borderRadius: 14,
-            padding: "14px 16px",
-            textDecoration: "none",
-            transition: "background 0.15s ease",
-            display: "flex",
-            alignItems: "center",
-            gap: 12,
-          }} className="hover:bg-dark-card-hover">
+          <Link
+            key={item.label}
+            href={item.href}
+            className="flex items-center gap-3 rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-3.5 no-underline transition-colors hover:bg-[var(--t-bg-card-hover)]"
+            style={item.count > 0 ? { borderLeftWidth: 3, borderLeftColor: item.color } : undefined}
+          >
             {item.count > 0 ? (
-              <item.icon style={{ width: 20, height: 20, color: item.color, flexShrink: 0 }} />
+              <item.icon className="h-5 w-5 shrink-0" style={{ color: item.color }} />
             ) : (
-              <CheckCircle2 style={{ width: 20, height: 20, color: "var(--t-accent)", flexShrink: 0 }} />
+              <CheckCircle2 className="h-5 w-5 shrink-0 text-[var(--t-accent)]" />
             )}
             <div>
-              <p style={{
-                fontSize: 22,
-                fontWeight: 700,
-                color: item.count > 0 ? item.color : "var(--t-accent)",
-                fontVariantNumeric: "tabular-nums",
-                lineHeight: 1.1,
-              }}>
+              <p className="text-[22px] font-bold tabular-nums leading-none" style={{ color: item.count > 0 ? item.color : "var(--t-accent)" }}>
                 {item.count}
               </p>
-              <p style={{ fontSize: 11, fontWeight: 600, color: "var(--t-text-muted)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                {item.label}
-              </p>
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--t-text-muted)]">{item.label}</p>
             </div>
           </Link>
         ))}
@@ -502,32 +431,20 @@ export default function DashboardPage() {
 
       {/* ---- Missing config notices ---- */}
       {configHints.length > 0 && (
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 16 }}>
+        <div className="flex flex-wrap gap-4 mb-8">
           {configHints.map((h) => (
             <Link
               key={h.key}
               href={h.href}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-                backgroundColor: "var(--t-bg-card)",
-                border: "1px solid var(--t-border)",
-                borderRadius: 12,
-                padding: "10px 14px",
-                textDecoration: "none",
-                transition: "border-color 0.15s ease",
-                flex: "1 1 auto",
-                minWidth: 240,
-              }}
-              className="hover:!border-[var(--t-accent)]"
+              className="flex flex-1 items-center gap-3 rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-4 no-underline transition-colors hover:border-[var(--t-accent)]"
+              style={{ minWidth: 240, borderLeftWidth: 3, borderLeftColor: "var(--t-warning)" }}
             >
-              <AlertTriangle style={{ width: 14, height: 14, color: "var(--t-warning)", flexShrink: 0 }} />
-              <div style={{ minWidth: 0, flex: 1 }}>
-                <p style={{ fontSize: 13, fontWeight: 600, color: "var(--t-text-primary)", lineHeight: 1.3 }}>{h.title}</p>
-                <p style={{ fontSize: 11, color: "var(--t-text-muted)", lineHeight: 1.3 }}>{h.desc}</p>
+              <AlertTriangle className="h-4 w-4 shrink-0 text-[var(--t-warning)]" />
+              <div className="min-w-0 flex-1">
+                <p className="text-[13px] font-semibold text-[var(--t-text-primary)] leading-tight">{h.title}</p>
+                <p className="text-[11px] text-[var(--t-text-muted)] leading-tight">{h.desc}</p>
               </div>
-              <span style={{ fontSize: 11, fontWeight: 600, color: "var(--t-accent)", whiteSpace: "nowrap", flexShrink: 0 }}>{h.cta} &rarr;</span>
+              <span className="text-[11px] font-semibold text-[var(--t-accent)] whitespace-nowrap shrink-0">{h.cta} &rarr;</span>
             </Link>
           ))}
         </div>
@@ -535,19 +452,13 @@ export default function DashboardPage() {
 
       {/* ---- Overdue Alerts ---- */}
       {overdueJobs.length > 0 && (
-        <div style={{
-          backgroundColor: "var(--t-error-soft)",
-          border: "1px solid var(--t-border)",
-          borderRadius: 14,
-          padding: "14px 16px",
-          marginBottom: 16,
-        }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-            <span style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: "var(--t-error)", flexShrink: 0 }} />
-            <span style={{ fontSize: 13, fontWeight: 600, color: "var(--t-error)" }}>
+        <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-4 mb-6" style={{ borderLeftWidth: 3, borderLeftColor: "var(--t-error)" }}>
+          <div className="flex items-center gap-2 mb-4">
+            <span className="h-2 w-2 rounded-full bg-[var(--t-error)] shrink-0" />
+            <span className="text-[13px] font-semibold text-[var(--t-error)]">
               {overdueJobs.length} Overdue Rental{overdueJobs.length > 1 ? "s" : ""}
             </span>
-            <span style={{ fontSize: 12, color: "var(--t-text-muted)" }}>
+            <span className="text-[12px] text-[var(--t-text-muted)]">
               &mdash; ${overdueJobs.reduce((s: number, j: any) => s + Number(j.extra_day_charges || 0), 0).toFixed(2)} in extra charges
             </span>
           </div>
@@ -593,16 +504,10 @@ export default function DashboardPage() {
 
       {/* ---- Reschedule Alerts ---- */}
       {rescheduledJobs.length > 0 && (
-        <div style={{
-          backgroundColor: "var(--t-warning-soft)",
-          border: "1px solid var(--t-border)",
-          borderRadius: 14,
-          padding: "14px 16px",
-          marginBottom: 16,
-        }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-            <span style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: "var(--t-warning)", flexShrink: 0 }} />
-            <span style={{ fontSize: 13, fontWeight: 600, color: "var(--t-warning)" }}>
+        <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-4 mb-8" style={{ borderLeftWidth: 3, borderLeftColor: "var(--t-warning)" }}>
+          <div className="flex items-center gap-2 mb-4">
+            <span className="h-2 w-2 rounded-full bg-[var(--t-warning)] shrink-0" />
+            <span className="text-[13px] font-semibold text-[var(--t-warning)]">
               {rescheduledJobs.length} Customer Reschedule{rescheduledJobs.length > 1 ? "s" : ""}
             </span>
           </div>
@@ -634,9 +539,9 @@ export default function DashboardPage() {
       )}
 
       {/* ---- Today's Schedule + Sidebar ---- */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 20, marginBottom: 32 }} className="lg:!grid-cols-5">
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-5 mb-8">
         {/* Schedule */}
-        <div className="lg:col-span-3" style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+        <div className="lg:col-span-3 flex flex-col gap-5">
           <div style={{
             backgroundColor: "var(--t-bg-card)",
             border: "1px solid var(--t-border)",
@@ -824,7 +729,7 @@ export default function DashboardPage() {
         </div>
 
         {/* Sidebar: Week View + Unassigned */}
-        <div className="lg:col-span-2" style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+        <div className="lg:col-span-2 flex flex-col gap-5">
           {/* This Week */}
           <div style={{
             backgroundColor: "var(--t-bg-card)",
