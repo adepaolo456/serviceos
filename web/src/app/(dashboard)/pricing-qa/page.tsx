@@ -115,6 +115,7 @@ export default function PricingQaPage() {
   const [severityFilter, setSeverityFilter] = useState("");
   const [reviewQueue, setReviewQueue] = useState<ReviewQueueItem[]>([]);
   const [selectedRow, setSelectedRow] = useState<PricingQaRow | null>(null);
+  const [originalIssue, setOriginalIssue] = useState<{ type: string; severity: string } | null>(null);
   const [auditHistory, setAuditHistory] = useState<AuditEntry[]>([]);
   const [auditLoading, setAuditLoading] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -188,20 +189,36 @@ export default function PricingQaPage() {
     try {
       const freshData = await api.get<{ rows: PricingQaRow[] }>("/pricing-qa/overview");
       const updated = freshData.rows.find(r => r.job_id === jobId);
-      if (updated) {
-        // Row still has issues — keep panel open with updated data
-        setSelectedRow(updated);
-        return "updated";
-      } else {
-        // Row fully resolved — no longer in QA result set
-        // Auto-close after brief success moment
-        setTimeout(() => { setSelectedRow(null); setAuditHistory([]); }, 1000);
+
+      if (!updated) {
+        // Row completely gone from QA — definitely resolved
+        setTimeout(() => { setSelectedRow(null); setOriginalIssue(null); setAuditHistory([]); }, 1000);
         return "resolved";
       }
+
+      // Row still exists — check if the ORIGINAL actionable issue is resolved
+      const actionableIssueTypes = new Set([
+        "missing_address", "geocode_blocked", "pricing_snapshot_missing",
+        "missing_asset_subtype", "missing_pricing_rule",
+      ]);
+      const originalWasActionable = originalIssue && actionableIssueTypes.has(originalIssue.type);
+      const currentIsActionable = actionableIssueTypes.has(updated.issue_type);
+      const hasRemainingActions = updated.can_fix_address || updated.can_generate_snapshot || updated.can_change_subtype;
+
+      if (originalWasActionable && !currentIsActionable && !hasRemainingActions) {
+        // Original issue resolved, only informational state remains (e.g. Locked, Info)
+        setSelectedRow(updated);
+        setTimeout(() => { setSelectedRow(null); setOriginalIssue(null); setAuditHistory([]); }, 1000);
+        return "resolved";
+      }
+
+      // Still has actionable items — keep open
+      setSelectedRow(updated);
+      return "updated";
     } catch {
       return "updated";
     }
-  }, [fetchData]);
+  }, [fetchData, originalIssue]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -215,6 +232,7 @@ export default function PricingQaPage() {
 
   const openDetail = async (row: PricingQaRow) => {
     setSelectedRow(row);
+    setOriginalIssue({ type: row.issue_type, severity: row.severity });
     setAuditLoading(true);
     try {
       const history = await api.get<AuditEntry[]>(`/pricing-qa/audit-history?jobId=${row.job_id}`);
@@ -478,7 +496,7 @@ export default function PricingQaPage() {
       {/* Issue Resolution Panel */}
       <QuickView
         isOpen={!!selectedRow}
-        onClose={() => { setSelectedRow(null); setAuditHistory([]); }}
+        onClose={() => { setSelectedRow(null); setOriginalIssue(null); setAuditHistory([]); }}
         title={selectedRow?.job_number || ""}
         subtitle={selectedRow?.customer_name}
         actions={selectedRow ? (
