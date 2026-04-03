@@ -181,8 +181,12 @@ export default function OnboardingPage() {
   }, [fetchProgress]);
 
   const markStep = async (stepKey: string, status: "completed" | "skipped") => {
-    await api.patch(`/onboarding/checklist/${stepKey}`, { status });
-    await fetchProgress(true);
+    try {
+      await api.patch(`/onboarding/checklist/${stepKey}`, { status });
+      await fetchProgress(true);
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : "Failed to update step. Please try again.");
+    }
   };
 
   const getSuggestions = async (section: string) => {
