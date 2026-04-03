@@ -119,6 +119,15 @@ export class Tenant {
   @Column({ name: 'is_active', default: true })
   is_active!: boolean;
 
+  @Column({ name: 'onboarding_status', default: 'pending' })
+  onboarding_status!: string;
+
+  @Column({ name: 'onboarding_started_at', type: 'timestamptz', nullable: true })
+  onboarding_started_at!: Date | null;
+
+  @Column({ name: 'onboarding_completed_at', type: 'timestamptz', nullable: true })
+  onboarding_completed_at!: Date | null;
+
   @CreateDateColumn({ name: 'created_at' })
   created_at!: Date;
 

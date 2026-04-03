@@ -1,11 +1,14 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import * as bcrypt from 'bcrypt';
 import { Tenant } from '../tenants/entities/tenant.entity';
 import { User } from '../auth/entities/user.entity';
 import { Job } from '../jobs/entities/job.entity';
 import { Customer } from '../customers/entities/customer.entity';
 import { Asset } from '../assets/entities/asset.entity';
+import { SetupChecklist } from '../onboarding/entities/setup-checklist.entity';
+import { TenantSettings } from '../tenant-settings/entities/tenant-settings.entity';
 
 @Injectable()
 export class AdminService {
@@ -15,6 +18,8 @@ export class AdminService {
     @InjectRepository(Job) private jobsRepo: Repository<Job>,
     @InjectRepository(Customer) private customersRepo: Repository<Customer>,
     @InjectRepository(Asset) private assetsRepo: Repository<Asset>,
+    @InjectRepository(SetupChecklist) private checklistRepo: Repository<SetupChecklist>,
+    @InjectRepository(TenantSettings) private settingsRepo: Repository<TenantSettings>,
   ) {}
 
   async getDashboard() {
@@ -276,5 +281,108 @@ export class AdminService {
         createdAt: t.created_at,
       })),
     };
+  }
+
+  async seedDemoTenant(data: {
+    name: string;
+    admin_email: string;
+    admin_password: string;
+  }) {
+    // Check email not already taken
+    const existing = await this.usersRepo.findOne({
+      where: { email: data.admin_email },
+    });
+    if (existing) {
+      throw new BadRequestException('Email already registered');
+    }
+
+    // Create tenant
+    const slug =
+      data.name
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-|-$/g, '') +
+      '-' +
+      Date.now().toString(36);
+
+    const tenant = this.tenantsRepo.create({
+      name: data.name,
+      slug,
+      onboarding_status: 'pending',
+      trial_ends_at: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
+    });
+    const savedTenant = await this.tenantsRepo.save(tenant);
+
+    // Create admin user
+    const passwordHash = await bcrypt.hash(data.admin_password, 12);
+    const user = this.usersRepo.create({
+      tenant_id: savedTenant.id,
+      email: data.admin_email,
+      password_hash: passwordHash,
+      first_name: 'Admin',
+      last_name: 'User',
+      role: 'owner',
+    });
+    const savedUser = await this.usersRepo.save(user);
+
+    // Create default tenant_settings
+    const settings = this.settingsRepo.create({ tenant_id: savedTenant.id });
+    await this.settingsRepo.save(settings);
+
+    // Seed empty checklist
+    const stepKeys = [
+      'company_info',
+      'pricing',
+      'yards',
+      'vehicles',
+      'labor_rates',
+      'notifications',
+      'portal',
+    ];
+    const items = stepKeys.map((key) =>
+      this.checklistRepo.create({
+        tenant_id: savedTenant.id,
+        step_key: key,
+        status: 'pending',
+      }),
+    );
+    await this.checklistRepo.save(items);
+
+    return {
+      tenant_id: savedTenant.id,
+      admin_user_id: savedUser.id,
+      login_url: `/login`,
+    };
+  }
+
+  async deleteDemoTenant(tenantId: string) {
+    const tenant = await this.tenantsRepo.findOne({
+      where: { id: tenantId },
+    });
+    if (!tenant) {
+      throw new BadRequestException('Tenant not found');
+    }
+
+    // Safety: don't delete the first tenant created (production tenant)
+    const firstTenant = await this.tenantsRepo
+      .createQueryBuilder('t')
+      .orderBy('t.created_at', 'ASC')
+      .limit(1)
+      .getOne();
+
+    if (firstTenant && firstTenant.id === tenantId) {
+      throw new BadRequestException(
+        'Cannot delete the primary production tenant',
+      );
+    }
+
+    // Cascade delete — settings and checklist have ON DELETE CASCADE in SQL
+    // For TypeORM-managed tables without cascade, delete manually
+    await this.settingsRepo.delete({ tenant_id: tenantId });
+    await this.checklistRepo.delete({ tenant_id: tenantId });
+    await this.usersRepo.delete({ tenant_id: tenantId });
+    await this.tenantsRepo.delete(tenantId);
+
+    return { deleted: true };
   }
 }

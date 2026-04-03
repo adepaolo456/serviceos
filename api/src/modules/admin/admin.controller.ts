@@ -1,12 +1,15 @@
 import {
   Controller,
   Get,
+  Post,
   Patch,
   Param,
   Body,
   Query,
   UseGuards,
   NotFoundException,
+  HttpCode,
+  HttpStatus,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { SuperAdminGuard } from './admin.guard';
@@ -62,5 +65,19 @@ export class AdminController {
   @Get('subscriptions')
   async getSubscriptions() {
     return this.adminService.getSubscriptions();
+  }
+
+  @Post('seed-demo-tenant')
+  @HttpCode(HttpStatus.CREATED)
+  async seedDemoTenant(
+    @Body() body: { name: string; admin_email: string; admin_password: string },
+  ) {
+    return this.adminService.seedDemoTenant(body);
+  }
+
+  @Post('delete-demo-tenant')
+  @HttpCode(HttpStatus.OK)
+  async deleteDemoTenant(@Body() body: { tenant_id: string }) {
+    return this.adminService.deleteDemoTenant(body.tenant_id);
   }
 }
