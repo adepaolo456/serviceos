@@ -266,6 +266,14 @@ export default function InvoiceDetailPage({
     return parts.join(" — ");
   };
 
+  const buildNotesForRule = (rule: PricingRule) => {
+    const parts = [`Your ${rule.asset_subtype} dumpster rental includes a ${rule.rental_period_days}-day rental period`];
+    if (Number(rule.included_tons) > 0) parts.push(`${rule.included_tons} tons of disposal`);
+    if (Number(rule.extra_day_rate) > 0) parts.push(`Extra days are billed at ${fmt(rule.extra_day_rate)}/day`);
+    if (Number(rule.overage_per_ton) > 0) parts.push(`Weight overage is ${fmt(rule.overage_per_ton)}/ton`);
+    return parts.join(". ") + ".";
+  };
+
   const handleSizeChange = (size: string) => {
     if (!size || size === currentSubtype) { setNewAssetSubtype(null); return; }
     if (!confirm(`Changing from ${currentSubtype || "current"} to ${size} will update pricing, job details, and asset assignment. Continue?`)) return;
@@ -284,6 +292,8 @@ export default function InvoiceDetailPage({
       items.push({ description: "Delivery Fee", quantity: 1, unitPrice: Number(rule.delivery_fee) });
     }
     setEditItems([...items, ...manualItems]);
+    // Sync notes to reflect the new dumpster size
+    setEditNotes(buildNotesForRule(rule));
   };
 
   const addPredefinedItem = (type: string) => {
@@ -318,28 +328,22 @@ export default function InvoiceDetailPage({
     if (!invoice) return;
     setActionLoading(true);
     try {
-      const body: Record<string, unknown> = { notes: editNotes };
+      const body: Record<string, unknown> = { summary_of_work: editNotes };
       if (!isPaid) {
-        body.lineItems = editItems;
-        body.dueDate = editDueDate;
-        body.discountAmount = Number(editDiscount) || 0;
+        body.line_items = editItems.map((li, i) => ({
+          line_type: li.unitPrice < 0 ? "discount" : "service",
+          name: li.description,
+          description: li.description,
+          quantity: li.quantity,
+          unit_rate: li.unitPrice,
+          sort_order: i,
+        }));
+        body.due_date = editDueDate;
       }
-      if (newAssetSubtype) body.newAssetSubtype = newAssetSubtype;
-      const result = await api.patch<any>(`/invoices/${invoice.id}/edit`, body);
+      await api.put<any>(`/invoices/${invoice.id}`, body);
       setEditing(false);
       setNewAssetSubtype(null);
-      if (result?.cascade) {
-        const c = result.cascade;
-        const msg = c.upgrade
-          ? `Upgraded to ${newAssetSubtype} — Price increased by ${fmt(c.difference)}. New balance: ${fmt(c.newBalanceDue)}`
-          : c.downgrade
-            ? `Downgraded to ${newAssetSubtype} — ${fmt(c.credit)} credit applied`
-            : "Invoice updated";
-        toast("success", msg);
-        if (c.assetWarning) toast("error", c.assetWarning);
-      } else {
-        toast("success", "Invoice updated");
-      }
+      toast("success", "Invoice updated");
       await fetchData();
       await fetchHistory();
     } catch { toast("error", "Failed to save"); }

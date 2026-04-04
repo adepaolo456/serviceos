@@ -187,14 +187,29 @@ export default function InvoicesPage() {
   const fetchInvoices = useCallback(async () => {
     setLoading(true);
     try {
-      const params = new URLSearchParams({ page: String(page), limit: "30" });
-      if (tab !== "all") params.set("status", tab);
-      const range = getDateRange(dateRange);
-      if (range.dateFrom) params.set("dateFrom", range.dateFrom);
-      if (range.dateTo) params.set("dateTo", range.dateTo);
-      const res = await api.get<InvoicesResponse>(`/invoices?${params.toString()}`);
-      setInvoices(res.data);
-      setTotal(res.meta.total);
+      if (tab === "outstanding") {
+        // Outstanding = open + overdue
+        const range = getDateRange(dateRange);
+        const fetchStatus = (status: string) => {
+          const params = new URLSearchParams({ page: "1", limit: "100", status });
+          if (range.dateFrom) params.set("dateFrom", range.dateFrom);
+          if (range.dateTo) params.set("dateTo", range.dateTo);
+          return api.get<InvoicesResponse>(`/invoices?${params.toString()}`);
+        };
+        const [open, overdue] = await Promise.all([fetchStatus("open"), fetchStatus("overdue")]);
+        const merged = [...open.data, ...overdue.data];
+        setInvoices(merged);
+        setTotal(open.meta.total + overdue.meta.total);
+      } else {
+        const params = new URLSearchParams({ page: String(page), limit: "30" });
+        if (tab !== "all") params.set("status", tab);
+        const range = getDateRange(dateRange);
+        if (range.dateFrom) params.set("dateFrom", range.dateFrom);
+        if (range.dateTo) params.set("dateTo", range.dateTo);
+        const res = await api.get<InvoicesResponse>(`/invoices?${params.toString()}`);
+        setInvoices(res.data);
+        setTotal(res.meta.total);
+      }
     } catch { /* */ } finally { setLoading(false); }
   }, [page, tab, dateRange]);
 
@@ -269,10 +284,10 @@ export default function InvoicesPage() {
 
   /* --- KPI cards data --- */
   const kpis = [
-    { label: "Total", value: fmt(totalInvoiced) },
-    { label: "Collected", value: fmt(collectedTotal), color: "var(--t-accent)" },
-    { label: "Outstanding", value: fmt(outstandingTotal), color: "var(--t-warning)" },
-    { label: "Overdue", value: fmt(overdueTotal), color: "var(--t-error)" },
+    { label: "Total", value: fmt(totalInvoiced), filter: "all" as string },
+    { label: "Collected", value: fmt(collectedTotal), color: "var(--t-accent)", filter: "paid" as string },
+    { label: "Outstanding", value: fmt(outstandingTotal), color: "var(--t-warning)", filter: "outstanding" as string },
+    { label: "Overdue", value: fmt(overdueTotal), color: "var(--t-error)", filter: "overdue" as string },
   ];
 
   return (
@@ -304,13 +319,22 @@ export default function InvoicesPage() {
 
       {/* KPI Row */}
       <div className="grid grid-cols-4 gap-3 mb-6">
-        {kpis.map((kpi) => (
-          <div key={kpi.label} className="rounded-[20px] border p-4"
-            style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)" }}>
-            <p className="uppercase tracking-wider mb-1" style={{ fontSize: 13, color: "var(--t-text-muted)" }}>{kpi.label}</p>
-            <p className="font-bold tabular-nums" style={{ fontSize: 24, color: kpi.color || "var(--t-text-primary)" }}>{kpi.value}</p>
-          </div>
-        ))}
+        {kpis.map((kpi) => {
+          const isActive = tab === kpi.filter;
+          return (
+            <button key={kpi.label} onClick={() => { setTab(kpi.filter); setDateRange("all"); }}
+              className="rounded-[20px] border p-4 text-left transition-all"
+              style={{
+                background: isActive ? "var(--t-bg-elevated)" : "var(--t-bg-card)",
+                borderColor: isActive ? "var(--t-accent)" : "var(--t-border)",
+                boxShadow: isActive ? "0 0 0 1px var(--t-accent)" : "",
+                cursor: "pointer",
+              }}>
+              <p className="uppercase tracking-wider mb-1" style={{ fontSize: 13, color: isActive ? "var(--t-accent)" : "var(--t-text-muted)" }}>{kpi.label}</p>
+              <p className="font-bold tabular-nums" style={{ fontSize: 24, color: kpi.color || "var(--t-text-primary)" }}>{kpi.value}</p>
+            </button>
+          );
+        })}
       </div>
 
       {/* Overdue Alert */}
@@ -447,9 +471,15 @@ export default function InvoicesPage() {
       ) : filteredInvoices.length === 0 ? (
         <div className="py-24 flex flex-col items-center justify-center text-center">
           <FileText size={48} className="mb-4" style={{ color: "var(--t-text-muted)", opacity: 0.3 }} />
-          <h2 className="text-lg font-semibold mb-1" style={{ color: "var(--t-text-primary)" }}>{searchQuery ? "No matching invoices" : "No invoices yet"}</h2>
-          <p className="text-sm mb-6" style={{ color: "var(--t-text-muted)" }}>{searchQuery ? "Try a different search" : "Create an invoice or generate one from a completed job"}</p>
-          {!searchQuery && (
+          <h2 className="text-lg font-semibold mb-1" style={{ color: "var(--t-text-primary)" }}>{(tab !== "all" || searchQuery) ? "No matching invoices" : "No invoices yet"}</h2>
+          <p className="text-sm mb-6" style={{ color: "var(--t-text-muted)" }}>{(tab !== "all" || searchQuery) ? "Try adjusting your filters or search" : "Create an invoice or generate one from a completed job"}</p>
+          {(tab !== "all" || searchQuery) ? (
+            <button onClick={() => { setTab("all"); setSearchQuery(""); setDateRange("all"); }}
+              className="inline-flex items-center gap-1.5 rounded-full border px-4 py-2 text-sm font-medium transition-colors"
+              style={{ borderColor: "var(--t-border)", color: "var(--t-text-muted)" }}>
+              Clear Filters
+            </button>
+          ) : (
             <button onClick={() => { setPanelMode("create"); setPanelOpen(true); }}
               className="flex items-center gap-2 rounded-full px-4 py-2.5 text-sm font-semibold transition-all duration-150 active:scale-95"
               style={{ background: "var(--t-accent)", color: "var(--t-accent-on-accent)" }}>

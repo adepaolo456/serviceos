@@ -843,19 +843,40 @@ export default function DispatchPage() {
                           </p>
                           {asset.staged_waste_type && <p className="text-[10px] mt-0.5" style={{ color: "var(--t-text-muted)" }}>{asset.staged_waste_type}</p>}
                         </div>
-                        <button onClick={async (e) => {
-                          e.stopPropagation();
-                          const driverId = prompt("Driver ID for dump run (or leave empty for unassigned):");
-                          try {
-                            await api.post("/jobs/dump-run", { assetId: asset.id, assignedDriverId: driverId || undefined, scheduledDate: date });
-                            toast("success", `Dump run created for ${asset.identifier}`);
-                            fetchBoard(true);
-                            fetchYardQueue();
-                          } catch (err: any) { toast("error", err.message || "Failed to create dump run"); }
-                        }} className="shrink-0 rounded-full px-3 py-1.5 text-[10px] font-semibold"
-                          style={{ background: "rgba(217,119,6,0.1)", color: "var(--t-warning)", border: "1px solid rgba(217,119,6,0.2)" }}>
-                          Create Run
-                        </button>
+                        <Dropdown
+                          trigger={
+                            <button onClick={e => e.stopPropagation()} className="shrink-0 rounded-full px-3 py-1.5 text-[10px] font-semibold"
+                              style={{ background: "rgba(217,119,6,0.1)", color: "var(--t-warning)", border: "1px solid rgba(217,119,6,0.2)" }}>
+                              Create Run
+                            </button>
+                          }
+                          align="right"
+                        >
+                          <p className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--t-text-muted)" }}>Assign Driver</p>
+                          <button onClick={async () => {
+                            try {
+                              await api.post("/jobs/dump-run", { assetIds: [asset.id], scheduledDate: date });
+                              toast("success", `Dump run created for ${asset.identifier} (unassigned)`);
+                              fetchBoard(true); fetchYardQueue();
+                            } catch (err: any) { toast("error", err.message || "Failed to create dump run"); }
+                          }} className="flex w-full items-center gap-2 px-3 py-2 text-xs whitespace-nowrap" style={{ color: "var(--t-text-muted)" }}>
+                            Unassigned
+                          </button>
+                          {board?.drivers.map(col => (
+                            <button key={col.driver.id} onClick={async () => {
+                              try {
+                                await api.post("/jobs/dump-run", { assetIds: [asset.id], assignedDriverId: col.driver.id, scheduledDate: date });
+                                toast("success", `Dump run created for ${asset.identifier} → ${col.driver.firstName} ${col.driver.lastName}`);
+                                fetchBoard(true); fetchYardQueue();
+                              } catch (err: any) { toast("error", err.message || "Failed to create dump run"); }
+                            }} className="flex w-full items-center gap-2 px-3 py-2 text-xs whitespace-nowrap" style={{ color: "var(--t-text-primary)" }}>
+                              <div className="flex h-5 w-5 items-center justify-center rounded-full text-[8px] font-bold" style={{ background: "var(--t-accent-soft)", color: "var(--t-accent)" }}>
+                                {col.driver.firstName[0]}{col.driver.lastName[0]}
+                              </div>
+                              {col.driver.firstName} {col.driver.lastName}
+                            </button>
+                          ))}
+                        </Dropdown>
                       </div>
                     );
                   })}
