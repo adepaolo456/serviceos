@@ -150,6 +150,22 @@ export class InvoiceController {
     return this.invoiceService.updateCollections(tenantId, id, body);
   }
 
+  @Get('credit-memos/by-customer/:customerId')
+  getCustomerCreditMemos(
+    @TenantId() tenantId: string,
+    @Param('customerId', ParseUUIDPipe) customerId: string,
+  ) {
+    return this.invoiceService.getCustomerCreditMemos(tenantId, customerId);
+  }
+
+  @Get(':id/credit-memos')
+  getCreditMemos(
+    @TenantId() tenantId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.invoiceService.getCreditMemos(tenantId, id);
+  }
+
   @Post('find-price')
   findPrice(@TenantId() tenantId: string, @Body() dto: FindPriceDto) {
     return this.invoiceService.findPrice(tenantId, dto);
