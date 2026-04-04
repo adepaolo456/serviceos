@@ -188,6 +188,12 @@ export default function JobsPage() {
   const [selectedJobIds, setSelectedJobIds] = useState<Set<string>>(new Set());
   const [bulkProgress, setBulkProgress] = useState<string | null>(null);
 
+  // Multi-status KPI groups: tile filter value → actual API statuses
+  const MULTI_STATUS: Record<string, string[]> = {
+    unassigned: ["pending", "confirmed"],
+    active: ["in_progress", "en_route"],
+  };
+
   const fetchJobs = useCallback(async () => {
     setLoading(true);
     try {
@@ -195,6 +201,21 @@ export default function JobsPage() {
         const overdueJobs = await api.get<any[]>("/automation/overdue");
         setJobs(overdueJobs as unknown as Job[]);
         setTotal(overdueJobs.length);
+      } else if (MULTI_STATUS[statusFilter]) {
+        // Multi-status KPI tiles: fetch each status in parallel and merge
+        const statuses = MULTI_STATUS[statusFilter];
+        const range = getDateRange(dateRange);
+        const results = await Promise.all(
+          statuses.map(s => {
+            const params = new URLSearchParams({ page: "1", limit: "50", status: s });
+            if (range.dateFrom) params.set("dateFrom", range.dateFrom);
+            if (range.dateTo) params.set("dateTo", range.dateTo);
+            return api.get<JobsResponse>(`/jobs?${params.toString()}`);
+          })
+        );
+        const merged = results.flatMap(r => r.data);
+        setJobs(merged);
+        setTotal(results.reduce((sum, r) => sum + r.meta.total, 0));
       } else {
         const params = new URLSearchParams({ page: String(page), limit: "30" });
         if (statusFilter !== "all") params.set("status", statusFilter);
@@ -286,14 +307,14 @@ export default function JobsPage() {
       {/* ─── Stat strip ─── */}
       <div className="grid grid-cols-4 gap-3 mb-6">
         {[
-          { label: "Unassigned", value: unassignedCount, color: unassignedCount > 0 ? "var(--t-warning)" : "var(--t-accent)", bg: unassignedCount > 0 ? "var(--t-warning-soft)" : undefined, filter: "pending", icon: AlertCircle },
-          { label: "Today", value: todayCount, color: "var(--t-text-primary)", filter: "all", icon: Calendar },
-          { label: "In Progress", value: inProgressCount, color: "var(--t-info)", filter: "in_progress", icon: Truck },
-          { label: "Completed", value: completedCount, color: "var(--t-accent)", filter: "completed", icon: CheckCircle2 },
+          { label: "Unassigned", value: unassignedCount, color: unassignedCount > 0 ? "var(--t-warning)" : "var(--t-accent)", bg: unassignedCount > 0 ? "var(--t-warning-soft)" : undefined, filter: "unassigned", dateRange: "all", icon: AlertCircle },
+          { label: "Today", value: todayCount, color: "var(--t-text-primary)", filter: "all", dateRange: "today", icon: Calendar },
+          { label: "In Progress", value: inProgressCount, color: "var(--t-info)", filter: "active", dateRange: "all", icon: Truck },
+          { label: "Completed", value: completedCount, color: "var(--t-accent)", filter: "completed", dateRange: "all", icon: CheckCircle2 },
         ].map((stat) => (
           <button
             key={stat.label}
-            onClick={() => { setStatusFilter(stat.filter); if (stat.label === "Today") setDateRange("today"); }}
+            onClick={() => { setStatusFilter(stat.filter); setDateRange(stat.dateRange); }}
             className="surface-card card-hover text-left px-4 py-3"
             style={stat.bg ? { backgroundColor: stat.bg } : undefined}
           >

@@ -284,7 +284,7 @@ export default function PricingQaPage() {
             Pricing Issues <HelpTooltip featureId="pricing_issues" />
           </h1>
           <p className="mt-1 text-[13px] text-[var(--t-frame-text-muted)]">
-            {summary ? `${computeActionableCount(summary)} actionable issue${computeActionableCount(summary) !== 1 ? "s" : ""}` : "Loading..."}
+            {summary ? (() => { const c = rows.filter(r => ACTIONABLE_TYPES.has(r.issue_type)).length; return `${c} actionable issue${c !== 1 ? "s" : ""}`; })() : "Loading..."}
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -306,7 +306,9 @@ export default function PricingQaPage() {
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-9 gap-3 mb-6">
           {STAT_CARDS.map(s => {
             const isAll = s.key === "all";
-            const count = isAll ? computeActionableCount(summary) : summary[s.field!];
+            const count = isAll
+              ? rows.filter(r => ACTIONABLE_TYPES.has(r.issue_type)).length
+              : rows.filter(r => r.issue_type === s.issueType).length;
             const active = isAll
               ? issueFilter === "" && !showResolved
               : issueFilter === s.issueType;
