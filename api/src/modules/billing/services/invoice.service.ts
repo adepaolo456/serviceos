@@ -509,6 +509,20 @@ export class InvoiceService {
     };
   }
 
+  async getCreditMemos(tenantId: string, invoiceId: string) {
+    return this.creditMemoRepo.find({
+      where: { original_invoice_id: invoiceId, tenant_id: tenantId },
+      order: { created_at: 'DESC' },
+    });
+  }
+
+  async getCustomerCreditMemos(tenantId: string, customerId: string) {
+    return this.creditMemoRepo.find({
+      where: { customer_id: customerId, tenant_id: tenantId },
+      order: { created_at: 'DESC' },
+    });
+  }
+
   async findOne(tenantId: string, invoiceId: string): Promise<Invoice> {
     const invoice = await this.invoiceRepo.findOne({
       where: { id: invoiceId, tenant_id: tenantId },

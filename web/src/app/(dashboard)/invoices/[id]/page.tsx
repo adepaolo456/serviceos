@@ -158,6 +158,7 @@ export default function InvoiceDetailPage({
   const [pricingRules, setPricingRules] = useState<PricingRule[]>([]);
   const [addMenuOpen, setAddMenuOpen] = useState(false);
   const [linkedJobStatus, setLinkedJobStatus] = useState<string | null>(null);
+  const [creditMemos, setCreditMemos] = useState<{ id: string; amount: number; reason: string; status: string; created_at: string }[]>([]);
   const { toast } = useToast();
 
   const fetchData = async () => {
@@ -165,6 +166,9 @@ export default function InvoiceDetailPage({
       const inv = await api.get<Invoice>(`/invoices/${id}`);
       setInvoice(inv);
       setPayments((inv.payments as Payment[]) || []);
+      // Fetch credit memos for this invoice
+      api.get<{ id: string; amount: number; reason: string; status: string; created_at: string }[]>(`/invoices/${id}/credit-memos`)
+        .then(setCreditMemos).catch(() => setCreditMemos([]));
     } catch {
       /* handled */
     } finally {
@@ -847,6 +851,19 @@ export default function InvoiceDetailPage({
               })()}
             </div>
           </div>
+
+          {/* Credit Memos */}
+          {!editing && creditMemos.length > 0 && (
+            <div className="rounded-[20px] border p-5" style={{ background: "var(--t-accent-soft)", borderColor: "var(--t-accent)" }}>
+              <h3 className="text-sm font-semibold mb-2" style={{ color: "var(--t-accent)" }}>Customer Credit</h3>
+              {creditMemos.map(memo => (
+                <div key={memo.id} className="flex items-center justify-between text-sm">
+                  <span style={{ color: "var(--t-text-primary)" }}>{memo.reason}</span>
+                  <span className="font-bold tabular-nums" style={{ color: "var(--t-accent)" }}>{fmt(memo.amount)}</span>
+                </div>
+              ))}
+            </div>
+          )}
 
           {/* Notes */}
           <div className={`rounded-[20px] bg-[var(--t-bg-card)] border p-6 ${editing ? "border-[var(--t-accent)]/30" : "border-[var(--t-border)]"}`}>

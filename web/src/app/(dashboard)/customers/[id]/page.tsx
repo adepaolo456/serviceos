@@ -93,6 +93,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
   const [jobs, setJobs] = useState<Job[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [notes, setNotes] = useState<Note[]>([]);
+  const [creditMemos, setCreditMemos] = useState<{ id: string; amount: number; reason: string; status: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<Tab>("overview");
   const [editOpen, setEditOpen] = useState(false);
@@ -109,6 +110,8 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
           api.get<Note[]>(`/customers/${id}/notes`).catch(() => []),
         ]);
         setCustomer(c); setJobs(j.data); setInvoices(i.data); setNotes(n);
+        api.get<{ id: string; amount: number; reason: string; status: string }[]>(`/invoices/credit-memos/by-customer/${id}`)
+          .then(setCreditMemos).catch(() => setCreditMemos([]));
       } catch { /* */ }
       finally { setLoading(false); }
     }
@@ -140,6 +143,8 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
 
   const activeJobs = jobs.filter(j => !["completed", "cancelled"].includes(j.status));
   const unpaidBalance = invoices.reduce((s, i) => s + Number(i.balance_due), 0);
+  const totalCredits = creditMemos.filter(m => m.status === "issued").reduce((s, m) => s + Number(m.amount), 0);
+  const netBalance = Math.round((unpaidBalance - totalCredits) * 100) / 100;
   const avgValue = customer.total_jobs > 0 ? Math.round(Number(customer.lifetime_revenue) / customer.total_jobs) : 0;
   const lastJob = jobs[0];
   const daysSinceLastJob = lastJob ? Math.floor((Date.now() - new Date(lastJob.scheduled_date || lastJob.created_at).getTime()) / 86400000) : null;
@@ -163,12 +168,13 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
                 <h1 className="text-[28px] font-bold tracking-[-1px] text-[var(--t-text-primary)]">{customer.first_name} {customer.last_name}</h1>
                 <span className={`text-xs font-medium capitalize ${customer.type === "commercial" ? "text-purple-400" : "text-blue-400"}`}>{customer.type}</span>
                 {activeJobs.length > 0 && <span className="text-xs font-medium text-yellow-500">Active Rental</span>}
-                {unpaidBalance > 0 && <span className="text-xs font-medium text-[var(--t-error)]">Balance Due</span>}
+                {netBalance > 0 && <span className="text-xs font-medium text-[var(--t-error)]">Balance Due</span>}
+                {netBalance < 0 && <span className="text-xs font-medium text-[var(--t-accent)]">Credit</span>}
               </div>
               {customer.company_name && <p className="text-xs text-[var(--t-text-muted)] mt-0.5">{customer.company_name}</p>}
               <div className="flex items-center gap-3 mt-1.5 text-xs text-[var(--t-text-muted)] flex-wrap">
                 {customer.account_id && <span>ID: {customer.account_id}</span>}
-                <span>Balance: <span className={unpaidBalance > 0 ? "text-[var(--t-error)] font-medium" : "text-[var(--t-accent)]"}>{fmtMoney(unpaidBalance)}</span></span>
+                <span>Balance: <span className={netBalance > 0 ? "text-[var(--t-error)] font-medium" : "text-[var(--t-accent)]"}>{netBalance < 0 ? `-${fmtMoney(Math.abs(netBalance))} credit` : fmtMoney(netBalance)}</span></span>
                 <span className={`inline-flex items-center gap-1 ${customer.is_active ? "text-[var(--t-accent)]" : "text-[var(--t-error)]"}`}>
                   <span className={`h-1.5 w-1.5 rounded-full ${customer.is_active ? "bg-[var(--t-accent)]" : "bg-[var(--t-error)]"}`} />{customer.is_active ? "Active" : "Inactive"}
                 </span>
@@ -299,7 +305,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
       {tab === "billing" && (
         <div className="space-y-4 max-w-2xl">
           <div className="grid grid-cols-2 gap-4">
-            <Card title="Current Balance"><p className={`text-2xl font-bold tabular-nums ${unpaidBalance > 0 ? "text-[var(--t-error)]" : "text-[var(--t-accent)]"}`}>{fmtMoney(unpaidBalance)}</p></Card>
+            <Card title="Current Balance"><p className={`text-2xl font-bold tabular-nums ${netBalance > 0 ? "text-[var(--t-error)]" : "text-[var(--t-accent)]"}`}>{netBalance < 0 ? `-${fmtMoney(Math.abs(netBalance))}` : fmtMoney(netBalance)}</p>{totalCredits > 0 && <p className="text-xs mt-1" style={{ color: "var(--t-accent)" }}>{fmtMoney(totalCredits)} credit available</p>}</Card>
             <Card title="Lifetime Revenue"><p className="text-2xl font-bold text-[var(--t-text-primary)] tabular-nums">{fmtMoney(customer.lifetime_revenue)}</p></Card>
           </div>
           <Card title="Payment History">
