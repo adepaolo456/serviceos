@@ -270,7 +270,19 @@ export default function InvoiceDetailPage({
 
   const cancelEditing = () => { setEditing(false); setNewAssetSubtype(null); };
 
-  const currentSubtype = invoice?.job?.asset_subtype || invoice?.job?.asset?.subtype || null;
+  // Derive the active subtype from the actual rental line, not stale job metadata
+  const deriveSubtypeFromItems = (items: { description: string; lineType: string }[]) => {
+    const rentalLine = items.find(li => li.lineType === "rental");
+    if (!rentalLine) return null;
+    const match = pricingRules.find(r => rentalLine.description.includes(r.asset_subtype));
+    return match?.asset_subtype || null;
+  };
+
+  const jobSubtype = invoice?.job?.asset_subtype || invoice?.job?.asset?.subtype || null;
+  const rentalLineSubtype = editing
+    ? deriveSubtypeFromItems(editItems)
+    : invoice?.line_items ? deriveSubtypeFromItems(invoice.line_items.map(li => ({ description: li.name, lineType: li.line_type }))) : null;
+  const currentSubtype = rentalLineSubtype || jobSubtype;
   const currentRule = pricingRules.find(r => r.asset_subtype === currentSubtype);
   const activeRule = newAssetSubtype ? pricingRules.find(r => r.asset_subtype === newAssetSubtype) : currentRule;
 
