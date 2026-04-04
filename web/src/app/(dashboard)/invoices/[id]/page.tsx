@@ -290,8 +290,9 @@ export default function InvoiceDetailPage({
   };
 
   const handleSizeChange = (size: string) => {
-    if (!size || size === currentSubtype) { setNewAssetSubtype(null); return; }
-    if (!confirm(`Changing from ${currentSubtype || "current"} to ${size} will update pricing, job details, and asset assignment. Continue?`)) return;
+    const effectiveSubtype = newAssetSubtype ?? currentSubtype;
+    if (!size || size === effectiveSubtype) return;
+    if (!confirm(`Changing from ${effectiveSubtype || "current"} to ${size} will update pricing, job details, and asset assignment. Continue?`)) return;
     const rule = pricingRules.find(r => r.asset_subtype === size);
     if (!rule) return;
     setNewAssetSubtype(size);
