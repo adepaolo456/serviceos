@@ -12,6 +12,8 @@ import {
   ArrowLeftRight,
   ChevronRight,
   MessageSquare,
+  BarChart3,
+  BookOpen,
 } from "lucide-react";
 import { api } from "@/lib/api";
 
@@ -28,6 +30,8 @@ const nav = [
   { name: "Tenants", href: "/admin/tenants", icon: Building2 },
   { name: "Subscriptions", href: "/admin/subscriptions", icon: CreditCard },
   { name: "Demos", href: "/admin/demos", icon: MessageSquare },
+  { name: "Help Analytics", href: "/admin/help-analytics", icon: BarChart3 },
+  { name: "Admin Guide", href: "/admin/admin-guide", icon: BookOpen },
 ];
 
 export default function AdminLayout({

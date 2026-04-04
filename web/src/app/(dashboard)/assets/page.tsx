@@ -421,29 +421,37 @@ export default function AssetsPage() {
       {!loading && (
         <div className="grid grid-cols-4 gap-4 mb-8">
           {[
-            { label: "AVAILABLE", value: quickStats.available, color: "var(--t-accent-text)" },
-            { label: "DEPLOYED", value: quickStats.deployed, color: "var(--t-warning)" },
-            { label: "STAGED", value: quickStats.staged, color: "var(--t-warning)" },
-            { label: "MAINTENANCE", value: quickStats.maintenanceCount, color: "var(--t-error)" },
-          ].map((kpi) => (
-            <div
-              key={kpi.label}
-              style={{
-                borderRadius: 14, border: "1px solid var(--t-border)",
-                background: "var(--t-bg-card)", padding: "18px 16px",
-                transition: "background 0.15s ease",
-              }}
-              onMouseOver={(e) => (e.currentTarget.style.background = "var(--t-bg-card-hover)")}
-              onMouseOut={(e) => (e.currentTarget.style.background = "var(--t-bg-card)")}
-            >
-              <p style={{ fontSize: 13, fontWeight: 600, textTransform: "uppercase", color: "var(--t-text-muted)", letterSpacing: "0.05em" }}>
-                {kpi.label}
-              </p>
-              <p style={{ fontSize: 24, fontWeight: 700, color: kpi.value > 0 ? kpi.color : "var(--t-text-primary)", marginTop: 4 }} className="tabular-nums">
-                {kpi.value}
-              </p>
-            </div>
-          ))}
+            { label: "AVAILABLE", value: quickStats.available, color: "var(--t-accent-text)", filter: "available" },
+            { label: "DEPLOYED", value: quickStats.deployed, color: "var(--t-warning)", filter: "on_site" },
+            { label: "STAGED", value: quickStats.staged, color: "var(--t-warning)", filter: "reserved" },
+            { label: "MAINTENANCE", value: quickStats.maintenanceCount, color: "var(--t-error)", filter: "maintenance" },
+          ].map((kpi) => {
+            const isActive = statusFilter === kpi.filter;
+            return (
+              <button
+                key={kpi.label}
+                onClick={() => { setStatusFilter(isActive ? "all" : kpi.filter); setSelectedSize(null); }}
+                style={{
+                  borderRadius: 14,
+                  border: isActive ? "2px solid var(--t-accent)" : "1px solid var(--t-border)",
+                  background: isActive ? "var(--t-bg-elevated)" : "var(--t-bg-card)",
+                  padding: "18px 16px",
+                  transition: "all 0.15s ease",
+                  textAlign: "left",
+                  cursor: "pointer",
+                }}
+                onMouseOver={(e) => { if (!isActive) e.currentTarget.style.background = "var(--t-bg-card-hover)"; }}
+                onMouseOut={(e) => { if (!isActive) e.currentTarget.style.background = "var(--t-bg-card)"; }}
+              >
+                <p style={{ fontSize: 13, fontWeight: 600, textTransform: "uppercase", color: isActive ? "var(--t-accent)" : "var(--t-text-muted)", letterSpacing: "0.05em" }}>
+                  {kpi.label}
+                </p>
+                <p style={{ fontSize: 24, fontWeight: 700, color: kpi.value > 0 ? kpi.color : "var(--t-text-primary)", marginTop: 4 }} className="tabular-nums">
+                  {kpi.value}
+                </p>
+              </button>
+            );
+          })}
         </div>
       )}
 

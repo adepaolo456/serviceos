@@ -302,7 +302,25 @@ export const FEATURE_REGISTRY: Record<string, FeatureDescription> = {
     keywords: ["config", "preferences", "account", "business", "setup", "yard"],
   },
 
+  // ── Fleet ──
+  fleet: {
+    id: "fleet", label: "Fleet", category: "assets",
+    shortDescription: "Manage company vehicles, equipment, and related operating records.",
+    guideDescription: "Fleet is where you manage your company's vehicles and equipment. Use it to keep a complete record of each vehicle including details and specifications, purchase information, insurance coverage, maintenance history and service logs, fuel logs, and day-to-day operational tracking. Fleet helps you stay on top of compliance, cost tracking, and scheduled maintenance so nothing falls through the cracks.",
+    routeOrSurface: "/vehicles", tenantOverrideKey: "fleet",
+    isUserFacing: true, isGuideEligible: true,
+    keywords: ["vehicle", "truck", "equipment", "maintenance", "fuel", "insurance", "fleet", "purchase", "service", "repair"],
+  },
+
   // ── Admin ──
+  help_analytics: {
+    id: "help_analytics", label: "Help Analytics", category: "admin",
+    shortDescription: "Usage analytics for Help Center and tooltip interactions.",
+    guideDescription: "Help Analytics provides internal usage data for Help Center and tooltip help discovery. View topic views, tooltip clicks, search queries, related topic navigation, and identify unregistered feature references. Use it to understand which help content is most accessed and where documentation gaps exist.",
+    routeOrSurface: "/admin/help-analytics", tenantOverrideKey: "help_analytics",
+    isUserFacing: true, isGuideEligible: false,
+    keywords: ["analytics", "help", "usage", "tracking", "admin", "internal"],
+  },
   help_center: {
     id: "help_center", label: "Help Center", category: "admin",
     shortDescription: "Find answers and learn how ServiceOS works.",
