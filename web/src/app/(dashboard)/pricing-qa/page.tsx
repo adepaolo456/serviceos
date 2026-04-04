@@ -95,15 +95,16 @@ const SEVERITY_CONFIG = {
 };
 
 // Stat card key → issue_type mapping (key is summary field name, issueType is backend row value)
-const STAT_CARDS = [
-  { key: "geocode_blocked", issueType: "geocode_blocked", label: "Geocode Blocked", color: "var(--t-error)", field: "geocode_blocked" as const },
-  { key: "missing_address", issueType: "missing_address", label: "Missing Address", color: "var(--t-error)", field: "missing_address" as const },
-  { key: "missing_snapshots", issueType: "pricing_snapshot_missing", label: "No Snapshot", color: "var(--t-warning)", field: "missing_snapshots" as const },
-  { key: "missing_pricing_rules", issueType: "missing_pricing_rule", label: "Unsupported Size", color: "var(--t-error)", field: "missing_pricing_rules" as const },
-  { key: "missing_asset_subtypes", issueType: "missing_asset_subtype", label: "No Size Set", color: "var(--t-warning)", field: "missing_asset_subtypes" as const },
-  { key: "exchange_jobs", issueType: "exchange_job", label: "Exchange Jobs", color: "#a78bfa", field: "exchange_jobs" as const },
-  { key: "recalculations", issueType: "pricing_recalculated", label: "Recalculated", color: "var(--t-info)", field: "recalculations" as const },
-  { key: "locked_snapshots", issueType: "pricing_locked_snapshot", label: "Locked", color: "var(--t-accent)", field: "locked_snapshots" as const },
+const STAT_CARDS: Array<{ key: string; issueType: string; label: string; color: string; field: keyof Summary | null }> = [
+  { key: "all", issueType: "", label: "All", color: "var(--t-text-primary)", field: null },
+  { key: "geocode_blocked", issueType: "geocode_blocked", label: "Geocode Blocked", color: "var(--t-error)", field: "geocode_blocked" },
+  { key: "missing_address", issueType: "missing_address", label: "Missing Address", color: "var(--t-error)", field: "missing_address" },
+  { key: "missing_snapshots", issueType: "pricing_snapshot_missing", label: "No Snapshot", color: "var(--t-warning)", field: "missing_snapshots" },
+  { key: "missing_pricing_rules", issueType: "missing_pricing_rule", label: "Unsupported Size", color: "var(--t-error)", field: "missing_pricing_rules" },
+  { key: "missing_asset_subtypes", issueType: "missing_asset_subtype", label: "No Size Set", color: "var(--t-warning)", field: "missing_asset_subtypes" },
+  { key: "exchange_jobs", issueType: "exchange_job", label: "Exchange Jobs", color: "#a78bfa", field: "exchange_jobs" },
+  { key: "recalculations", issueType: "pricing_recalculated", label: "Recalculated", color: "var(--t-info)", field: "recalculations" },
+  { key: "locked_snapshots", issueType: "pricing_locked_snapshot", label: "Locked", color: "var(--t-accent)", field: "locked_snapshots" },
 ];
 
 /* ── Actionable vs informational ── */
@@ -302,17 +303,21 @@ export default function PricingQaPage() {
 
       {/* Stat Cards */}
       {summary && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3 mb-6">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-9 gap-3 mb-6">
           {STAT_CARDS.map(s => {
-            const count = summary[s.field];
-            const active = issueFilter === s.issueType;
-            const isInfoType = INFO_TYPES.has(s.issueType);
+            const isAll = s.key === "all";
+            const count = isAll ? computeActionableCount(summary) : summary[s.field!];
+            const active = isAll
+              ? issueFilter === "" && !showResolved
+              : issueFilter === s.issueType;
+            const isInfoType = !isAll && INFO_TYPES.has(s.issueType);
             return (
               <button key={s.key}
                 onClick={() => {
-                  if (active) {
-                    setIssueFilter("");
-                    setShowResolved(false);
+                  if (isAll) {
+                    setIssueFilter(""); setSeverityFilter(""); setShowResolved(false);
+                  } else if (active) {
+                    setIssueFilter(""); setShowResolved(false);
                   } else {
                     setIssueFilter(s.issueType);
                     if (isInfoType) setShowResolved(true);

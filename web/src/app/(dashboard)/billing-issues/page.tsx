@@ -32,6 +32,7 @@ interface BillingIssue {
 interface Summary { total: number; by_type: Record<string, number> }
 
 const ISSUE_TYPES = [
+  { key: "all", label: "All", icon: AlertTriangle, color: "var(--t-text-primary)" },
   { key: "overdue_days", label: "Overdue Days", icon: Clock, color: "var(--t-warning)" },
   { key: "weight_overage", label: "Weight Overage", icon: Scale, color: "var(--t-warning)" },
   { key: "missing_dump_slip", label: "Missing Dump Slip", icon: FileX, color: "var(--t-text-muted)" },
@@ -128,21 +129,23 @@ export default function BillingIssuesPage() {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3 mb-6">
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3 mb-6">
         {ISSUE_TYPES.map(t => {
-          const count = summary.by_type[t.key] || 0;
+          const isAll = t.key === "all";
+          const count = isAll ? summary.total : (summary.by_type[t.key] || 0);
+          const active = isAll ? typeFilter === "" : typeFilter === t.key;
           return (
             <button
               key={t.key}
-              onClick={() => setTypeFilter(typeFilter === t.key ? "" : t.key)}
-              className={`rounded-[16px] border p-3 text-left transition-all ${typeFilter === t.key ? "ring-2 ring-[var(--t-accent)]" : ""}`}
-              style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)" }}
+              onClick={() => setTypeFilter(active && !isAll ? "" : isAll ? "" : t.key)}
+              className={`rounded-[16px] border p-3 text-left transition-all ${active ? "ring-2 ring-[var(--t-accent)]" : ""}`}
+              style={{ background: active ? "var(--t-bg-elevated)" : "var(--t-bg-card)", borderColor: active ? "var(--t-accent)" : "var(--t-border)" }}
             >
               <t.icon className="h-4 w-4 mb-1.5" style={{ color: count > 0 ? t.color : "var(--t-text-muted)" }} />
               <p className="text-lg font-bold tabular-nums" style={{ color: count > 0 ? t.color : "var(--t-text-muted)" }}>
                 {count}
               </p>
-              <p className="text-[11px] font-medium" style={{ color: "var(--t-text-muted)" }}>
+              <p className="text-[11px] font-medium" style={{ color: active ? "var(--t-text-primary)" : "var(--t-text-muted)" }}>
                 {t.label}
               </p>
             </button>
@@ -167,7 +170,7 @@ export default function BillingIssuesPage() {
           style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)", color: "var(--t-text-primary)" }}
         >
           <option value="">All Types</option>
-          {ISSUE_TYPES.map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
+          {ISSUE_TYPES.filter(t => t.key !== "all").map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
         </select>
         {(statusFilter || typeFilter) && (
           <button onClick={() => { setStatusFilter(""); setTypeFilter(""); }}
@@ -187,13 +190,25 @@ export default function BillingIssuesPage() {
       ) : issues.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-24 text-center">
           <CheckCircle2 className="h-12 w-12 mb-4" style={{ color: "var(--t-accent)" }} />
-          <h3 className="text-lg font-semibold mb-1" style={{ color: "var(--t-frame-text)" }}>All clear!</h3>
-          <p className="text-sm mb-4" style={{ color: "var(--t-frame-text-muted)" }}>No billing issues found.</p>
-          <button onClick={handleDetect} disabled={detecting}
-            className="rounded-full px-5 py-2.5 text-sm font-medium border transition-colors"
-            style={{ borderColor: "var(--t-border)", color: "var(--t-frame-text-muted)" }}>
-            Run Detection
-          </button>
+          <h3 className="text-lg font-semibold mb-1" style={{ color: "var(--t-frame-text)" }}>
+            {(statusFilter || typeFilter) ? "No matching issues" : "All clear!"}
+          </h3>
+          <p className="text-sm mb-4" style={{ color: "var(--t-frame-text-muted)" }}>
+            {(statusFilter || typeFilter) ? "No billing issues match the current filters." : "No billing issues found."}
+          </p>
+          {(statusFilter || typeFilter) ? (
+            <button onClick={() => { setStatusFilter(""); setTypeFilter(""); }}
+              className="rounded-full px-5 py-2.5 text-sm font-medium border transition-colors"
+              style={{ borderColor: "var(--t-border)", color: "var(--t-frame-text-muted)" }}>
+              Clear Filters
+            </button>
+          ) : (
+            <button onClick={handleDetect} disabled={detecting}
+              className="rounded-full px-5 py-2.5 text-sm font-medium border transition-colors"
+              style={{ borderColor: "var(--t-border)", color: "var(--t-frame-text-muted)" }}>
+              Run Detection
+            </button>
+          )}
         </div>
       ) : (
         <div className="space-y-3">

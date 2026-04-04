@@ -426,14 +426,20 @@ export default function JobsPage() {
         <div className="surface-card py-20 flex flex-col items-center justify-center text-center">
           <Briefcase size={44} style={{ color: "var(--t-text-tertiary)" }} className="mb-3" />
           <h2 style={{ fontSize: 17, fontWeight: 600, color: "var(--t-text-primary)" }} className="mb-1">
-            {searchQuery ? "No matching jobs" : "No jobs yet"}
+            {(statusFilter !== "all" || dateRange !== "all" || searchQuery) ? "No matching jobs" : "No jobs yet"}
           </h2>
           <p style={{ fontSize: 13, color: "var(--t-text-muted)" }} className="mb-5">
-            {searchQuery ? "Try a different search" : "Create your first job to get started"}
+            {(statusFilter !== "all" || dateRange !== "all" || searchQuery) ? "Try adjusting your filters or search" : "Create your first job to get started"}
           </p>
-          {!searchQuery && (
-            <button onClick={() => setPanelOpen(true)} className="btn-primary inline-flex items-center gap-2 text-sm">
-              <Plus className="h-4 w-4" /> New Job
+          {(statusFilter !== "all" || dateRange !== "all" || searchQuery) ? (
+            <button onClick={() => { setStatusFilter("all"); setDateRange("all"); setSearchQuery(""); }}
+              className="inline-flex items-center gap-1.5 rounded-full border px-4 py-2 text-sm font-medium transition-colors"
+              style={{ borderColor: "var(--t-border)", color: "var(--t-text-muted)" }}>
+              Clear Filters
+            </button>
+          ) : (
+            <button onClick={() => openWizard()} className="btn-primary inline-flex items-center gap-2 text-sm">
+              <Plus className="h-4 w-4" /> New Booking
             </button>
           )}
         </div>
