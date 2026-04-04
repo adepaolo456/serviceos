@@ -148,7 +148,7 @@ export default function InvoiceDetailPage({
   const [actionLoading, setActionLoading] = useState(false);
   const [paymentPanel, setPaymentPanel] = useState(false);
   const [editing, setEditing] = useState(false);
-  const [editItems, setEditItems] = useState<{ description: string; quantity: number; unitPrice: number }[]>([]);
+  const [editItems, setEditItems] = useState<{ description: string; quantity: number; unitPrice: number; lineType: string }[]>([]);
   const [editDueDate, setEditDueDate] = useState("");
   const [editDiscount, setEditDiscount] = useState("");
   const [editNotes, setEditNotes] = useState("");
@@ -157,6 +157,7 @@ export default function InvoiceDetailPage({
   const [newAssetSubtype, setNewAssetSubtype] = useState<string | null>(null);
   const [pricingRules, setPricingRules] = useState<PricingRule[]>([]);
   const [addMenuOpen, setAddMenuOpen] = useState(false);
+  const [linkedJobStatus, setLinkedJobStatus] = useState<string | null>(null);
   const { toast } = useToast();
 
   const fetchData = async () => {
@@ -191,6 +192,15 @@ export default function InvoiceDetailPage({
     api.get<{ data: PricingRule[] }>("/pricing").then(r => setPricingRules(r.data || [])).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
+
+  // Fetch linked job status for paid-invoice editability check
+  useEffect(() => {
+    if (invoice?.job?.id && invoice.status === "paid") {
+      api.get<{ status: string }>(`/jobs/${invoice.job.id}`).then(j => setLinkedJobStatus(j.status)).catch(() => setLinkedJobStatus(null));
+    } else {
+      setLinkedJobStatus(null);
+    }
+  }, [invoice?.job?.id, invoice?.status]);
 
   const handleSend = async () => {
     if (!invoice || actionLoading) return;
@@ -239,9 +249,14 @@ export default function InvoiceDetailPage({
   const isPaid = invoice?.status === "paid";
   const isVoid = invoice?.status === "voided" || invoice?.status === "void";
 
+  // Allow line item editing for paid invoices only when linked job is pre-delivery
+  const PRE_DELIVERY_STATUSES = new Set(["pending", "confirmed", "dispatched"]);
+  const isPreDelivery = !!(invoice?.job?.id && linkedJobStatus && PRE_DELIVERY_STATUSES.has(linkedJobStatus));
+  const canEditLineItems = !isPaid || isPreDelivery;
+
   const startEditing = () => {
     if (!invoice) return;
-    setEditItems(invoice.line_items.map(li => ({ description: li.name, quantity: Number(li.quantity), unitPrice: Number(li.unit_rate) })));
+    setEditItems(invoice.line_items.map(li => ({ description: li.name, quantity: Number(li.quantity), unitPrice: Number(li.unit_rate), lineType: li.line_type })));
     setEditDueDate(invoice.due_date || "");
     setEditDiscount("0");
     setEditNotes(invoice.summary_of_work || "");
@@ -280,16 +295,16 @@ export default function InvoiceDetailPage({
     const rule = pricingRules.find(r => r.asset_subtype === size);
     if (!rule) return;
     setNewAssetSubtype(size);
-    // Replace auto-generated lines, keep manual ones (custom charges, discounts)
+    // Replace auto-generated rental/delivery lines, keep manual ones
     const manualItems = editItems.filter(li =>
-      !li.description.includes("Dumpster Rental") && !li.description.includes("Delivery") &&
+      li.lineType !== "rental" && li.lineType !== "delivery" &&
       li.description !== "" && li.unitPrice !== 0
     );
-    const items: { description: string; quantity: number; unitPrice: number }[] = [
-      { description: buildRentalDesc(rule), quantity: 1, unitPrice: Number(rule.base_price) },
+    const items: { description: string; quantity: number; unitPrice: number; lineType: string }[] = [
+      { description: buildRentalDesc(rule), quantity: 1, unitPrice: Number(rule.base_price), lineType: "rental" },
     ];
     if (Number(rule.delivery_fee) > 0) {
-      items.push({ description: "Delivery Fee", quantity: 1, unitPrice: Number(rule.delivery_fee) });
+      items.push({ description: "Delivery Fee", quantity: 1, unitPrice: Number(rule.delivery_fee), lineType: "delivery" });
     }
     setEditItems([...items, ...manualItems]);
     // Sync notes to reflect the new dumpster size
@@ -301,25 +316,25 @@ export default function InvoiceDetailPage({
     setAddMenuOpen(false);
     switch (type) {
       case "rental":
-        setEditItems(prev => [...prev, { description: rule ? buildRentalDesc(rule) : "Dumpster Rental", quantity: 1, unitPrice: Number(rule?.base_price || 0) }]);
+        setEditItems(prev => [...prev, { description: rule ? buildRentalDesc(rule) : "Dumpster Rental", quantity: 1, unitPrice: Number(rule?.base_price || 0), lineType: "rental" }]);
         break;
       case "delivery":
-        setEditItems(prev => [...prev, { description: "Delivery Fee", quantity: 1, unitPrice: Number(rule?.delivery_fee || 0) }]);
+        setEditItems(prev => [...prev, { description: "Delivery Fee", quantity: 1, unitPrice: Number(rule?.delivery_fee || 0), lineType: "delivery" }]);
         break;
       case "extra_days":
-        setEditItems(prev => [...prev, { description: `Extra days @ ${fmt(rule?.extra_day_rate || 0)}/day`, quantity: 1, unitPrice: Number(rule?.extra_day_rate || 0) }]);
+        setEditItems(prev => [...prev, { description: `Extra days @ ${fmt(rule?.extra_day_rate || 0)}/day`, quantity: 1, unitPrice: Number(rule?.extra_day_rate || 0), lineType: "service" }]);
         break;
       case "overage":
-        setEditItems(prev => [...prev, { description: `Weight overage @ ${fmt(rule?.overage_per_ton || 0)}/ton`, quantity: 1, unitPrice: Number(rule?.overage_per_ton || 0) }]);
+        setEditItems(prev => [...prev, { description: `Weight overage @ ${fmt(rule?.overage_per_ton || 0)}/ton`, quantity: 1, unitPrice: Number(rule?.overage_per_ton || 0), lineType: "service" }]);
         break;
       case "discount": {
         const amt = prompt("Discount amount (enter as positive number):");
         if (!amt) return;
-        setEditItems(prev => [...prev, { description: "Discount", quantity: 1, unitPrice: -Math.abs(Number(amt)) }]);
+        setEditItems(prev => [...prev, { description: "Discount", quantity: 1, unitPrice: -Math.abs(Number(amt)), lineType: "discount" }]);
         break;
       }
       case "custom":
-        setEditItems(prev => [...prev, { description: "", quantity: 1, unitPrice: 0 }]);
+        setEditItems(prev => [...prev, { description: "", quantity: 1, unitPrice: 0, lineType: "service" }]);
         break;
     }
   };
@@ -329,9 +344,9 @@ export default function InvoiceDetailPage({
     setActionLoading(true);
     try {
       const body: Record<string, unknown> = { summary_of_work: editNotes };
-      if (!isPaid) {
+      if (canEditLineItems) {
         body.line_items = editItems.map((li, i) => ({
-          line_type: li.unitPrice < 0 ? "discount" : "service",
+          line_type: li.lineType || (li.unitPrice < 0 ? "discount" : "service"),
           name: li.description,
           description: li.description,
           quantity: li.quantity,
@@ -340,10 +355,16 @@ export default function InvoiceDetailPage({
         }));
         body.due_date = editDueDate;
       }
+      const preDelta = isPaid && isPreDelivery ? editTotal - Number(invoice.amount_paid) : 0;
       await api.put<any>(`/invoices/${invoice.id}`, body);
       setEditing(false);
       setNewAssetSubtype(null);
-      toast("success", "Invoice updated");
+      if (isPaid && isPreDelivery && Math.abs(preDelta) >= 0.01) {
+        if (preDelta > 0) toast("success", `Invoice updated — additional ${fmt(preDelta)} due`);
+        else toast("success", `Invoice updated — ${fmt(Math.abs(preDelta))} credit memo created`);
+      } else {
+        toast("success", "Invoice updated");
+      }
       await fetchData();
       await fetchHistory();
     } catch { toast("error", "Failed to save"); }
@@ -353,7 +374,7 @@ export default function InvoiceDetailPage({
   const updateEditItem = (i: number, field: string, value: string) => {
     setEditItems(prev => prev.map((li, idx) => idx === i ? { ...li, [field]: field === "description" ? value : Number(value) || 0 } : li));
   };
-  const addEditItem = () => setEditItems(prev => [...prev, { description: "", quantity: 1, unitPrice: 0 }]);
+  const addEditItem = () => setEditItems(prev => [...prev, { description: "", quantity: 1, unitPrice: 0, lineType: "service" }]);
   const removeEditItem = (i: number) => setEditItems(prev => prev.filter((_, idx) => idx !== i));
 
   // Computed totals for edit mode — negative unitPrice items are discounts
@@ -492,7 +513,7 @@ export default function InvoiceDetailPage({
               {!isVoid && (
                 <button onClick={startEditing}
                   className="flex items-center gap-2 px-5 py-2.5 rounded-full border border-[var(--t-accent)] text-[var(--t-accent)] hover:bg-[var(--t-accent)] hover:text-[var(--t-accent-on-accent)] transition-colors">
-                  <Pencil className="h-4 w-4" /> {isPaid ? "Edit Notes" : "Edit"}
+                  <Pencil className="h-4 w-4" /> {isPaid && !isPreDelivery ? "Edit Notes" : "Edit"}
                 </button>
               )}
               <button onClick={handleDuplicate} disabled={actionLoading}
@@ -545,7 +566,7 @@ export default function InvoiceDetailPage({
                   Due Date
                 </span>
               </div>
-              {editing && !isPaid ? (
+              {editing && canEditLineItems ? (
                 <input type="date" value={editDueDate} onChange={e => setEditDueDate(e.target.value)} className={inp} />
               ) : (
                 <p className="text-sm font-medium text-[var(--t-text-primary)]">{invoice.due_date || "Not set"}</p>
@@ -563,7 +584,7 @@ export default function InvoiceDetailPage({
           </div>
 
           {/* Line items */}
-          <div className={`rounded-[20px] bg-[var(--t-bg-card)] border overflow-hidden ${editing && !isPaid ? "border-[var(--t-accent)]/30" : "border-[var(--t-border)]"}`}>
+          <div className={`rounded-[20px] bg-[var(--t-bg-card)] border overflow-hidden ${editing && canEditLineItems ? "border-[var(--t-accent)]/30" : "border-[var(--t-border)]"}`}>
             <div className="px-6 py-4 border-b border-[var(--t-border)]">
               <div className="flex items-center justify-between">
                 <h2 className="text-base font-semibold text-[var(--t-text-primary)]">Line Items</h2>
@@ -571,7 +592,7 @@ export default function InvoiceDetailPage({
                   <span className="text-xs font-medium text-[var(--t-text-muted)]">{currentSubtype} Dumpster</span>
                 )}
               </div>
-              {editing && !isPaid && invoice.job && (
+              {editing && canEditLineItems && invoice.job && (
                 <div className="mt-3 flex items-center gap-3 flex-wrap">
                   <span className="text-xs text-[var(--t-text-muted)]">Dumpster Size:</span>
                   <select value={newAssetSubtype || currentSubtype || ""} onChange={e => handleSizeChange(e.target.value)}
@@ -596,11 +617,11 @@ export default function InvoiceDetailPage({
                   <th className="w-[10%] px-3 py-3 text-right text-xs font-medium uppercase tracking-wider text-[var(--t-text-muted)]">Qty</th>
                   <th className="w-[15%] px-3 py-3 text-right text-xs font-medium uppercase tracking-wider text-[var(--t-text-muted)]">Unit Price</th>
                   <th className="w-[15%] px-3 py-3 text-right text-xs font-medium uppercase tracking-wider text-[var(--t-text-muted)]">Amount</th>
-                  {editing && !isPaid && <th className="w-[10%] px-3 py-3"></th>}
+                  {editing && canEditLineItems && <th className="w-[10%] px-3 py-3"></th>}
                 </tr>
               </thead>
               <tbody>
-                {editing && !isPaid ? (
+                {editing && canEditLineItems ? (
                   <>
                     {editItems.map((item, i) => {
                       const amt = item.quantity * item.unitPrice;
@@ -762,9 +783,9 @@ export default function InvoiceDetailPage({
             <div className="space-y-2.5 text-sm tabular-nums">
               <div className="flex justify-between text-[var(--t-text-primary)]">
                 <span className="text-[var(--t-text-muted)]">Subtotal</span>
-                <span>{fmt(editing && !isPaid ? editSubtotal : invoice.subtotal)}</span>
+                <span>{fmt(editing && canEditLineItems ? editSubtotal : invoice.subtotal)}</span>
               </div>
-              {editing && !isPaid ? (
+              {editing && canEditLineItems ? (
                 editDiscountNum > 0 ? (
                   <div className="flex justify-between text-[var(--t-text-primary)]">
                     <span className="text-[var(--t-text-muted)]">Discounts</span>
@@ -780,7 +801,7 @@ export default function InvoiceDetailPage({
               )}
               <div className="flex justify-between border-t border-[var(--t-border)] pt-2.5 font-semibold text-[var(--t-text-primary)]">
                 <span>Total</span>
-                <span>{fmt(editing && !isPaid ? editTotal : invoice.total)}</span>
+                <span>{fmt(editing && canEditLineItems ? editTotal : invoice.total)}</span>
               </div>
               <div className="flex justify-between text-[var(--t-text-primary)]">
                 <span className="text-[var(--t-text-muted)]">Paid</span>
@@ -793,11 +814,33 @@ export default function InvoiceDetailPage({
                 </div>
               )}
               {(() => {
-                const bd = editing && !isPaid ? editBalanceDue : Number(invoice.balance_due);
+                const bd = editing && canEditLineItems ? editBalanceDue : Number(invoice.balance_due);
                 return (
                   <div className={`flex justify-between border-t border-[var(--t-border)] pt-2.5 font-bold text-base ${bd <= 0 ? "text-emerald-400" : invoice.status === "overdue" ? "text-[var(--t-error)]" : "text-[var(--t-text-primary)]"}`}>
                     <span>Balance Due</span>
                     <span>{bd <= 0 ? "PAID" : fmt(bd)}</span>
+                  </div>
+                );
+              })()}
+              {/* Payment delta for paid pre-delivery adjustments */}
+              {editing && isPaid && isPreDelivery && (() => {
+                const delta = editTotal - Number(invoice.amount_paid);
+                if (Math.abs(delta) < 0.01) return null;
+                return (
+                  <div className="mt-3 rounded-xl border px-4 py-3 text-sm"
+                    style={{
+                      borderColor: delta > 0 ? "var(--t-warning)" : "var(--t-accent)",
+                      background: delta > 0 ? "var(--t-warning-soft)" : "var(--t-accent-soft)",
+                    }}>
+                    {delta > 0 ? (
+                      <p style={{ color: "var(--t-warning)" }}>
+                        <span className="font-semibold">Additional {fmt(delta)} due</span> — collect payment after saving
+                      </p>
+                    ) : (
+                      <p style={{ color: "var(--t-accent)" }}>
+                        <span className="font-semibold">Customer overpaid by {fmt(Math.abs(delta))}</span> — credit memo will be created on save
+                      </p>
+                    )}
                   </div>
                 );
               })()}
