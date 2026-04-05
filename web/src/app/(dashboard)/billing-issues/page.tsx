@@ -110,6 +110,7 @@ const UI_LABELS = {
   surchargeGuidance: "The driver flagged surcharge items during the job. Review and add them to the invoice if applicable.",
   missingRuleGuidance: "No matching pricing rule found for this configuration. Create a rule on the Pricing page, then recalculate.",
   recalculateDisabled: "A matching pricing rule is required before recalculating. Create one on the Pricing page first.",
+  invoiceCreateMissingPricing: "Cannot create invoice — no valid pricing found for this job configuration.",
   pricingPage: "Go to Pricing",
   jobConfig: "Job Configuration",
 };
@@ -297,8 +298,9 @@ export default function BillingIssuesPage() {
       if (action?.key === "create_invoice" && jobDetail) {
         // Create invoice from job data via existing endpoint
         const rule = pricingRules.find(r => r.asset_subtype === jobDetail.asset_subtype);
-        const basePrice = rule?.base_price || jobDetail.base_price || 0;
-        const deliveryFee = rule?.delivery_fee || 0;
+        const basePrice = Number(rule?.base_price) || Number(jobDetail.base_price) || 0;
+        const deliveryFee = Number(rule?.delivery_fee) || 0;
+        if (!isFinite(basePrice) || basePrice <= 0) { toast("error", UI_LABELS.invoiceCreateMissingPricing); setResolving(false); return; }
         const lineItems: { line_type: string; name: string; quantity: number; unit_rate: number }[] = [
           { line_type: "rental", name: `${jobDetail.asset_subtype || "Dumpster"} Rental`, quantity: 1, unit_rate: basePrice },
         ];
@@ -572,10 +574,14 @@ export default function BillingIssuesPage() {
           const action = config?.actions.find(a => a.key === selectedAction);
           const recalcSubtype = invoiceDetail?.job?.asset_subtype;
           const recalcRule = recalcSubtype ? pricingRules.find(r => r.asset_subtype === recalcSubtype) : null;
-          const hasValidPricingRule = !!(recalcRule && recalcRule.base_price > 0);
+          const hasValidPricingRule = !!(recalcRule && Number(recalcRule.base_price) > 0);
+
+          const createRule = jobDetail?.asset_subtype ? pricingRules.find(r => r.asset_subtype === jobDetail.asset_subtype) : null;
+          const createBasePrice = Number(createRule?.base_price) || Number(jobDetail?.base_price) || 0;
+          const hasValidCreatePayload = !!(jobDetail && jobDetail.customer?.id && isFinite(createBasePrice) && createBasePrice > 0);
 
           const canConfirm = isGuided
-            ? (selectedAction === "create_invoice" && jobDetail)
+            ? (selectedAction === "create_invoice" && hasValidCreatePayload)
               || (selectedAction === "link_invoice" && selectedInvoiceId)
               || (selectedAction === "recalculate_pricing" && invoiceDetail && hasValidPricingRule)
               || (selectedAction === "add_surcharges" && invoiceDetail)
@@ -647,6 +653,11 @@ export default function BillingIssuesPage() {
                             {rule && <div className="flex justify-between"><span style={{ color: "var(--t-text-muted)" }}>{UI_LABELS.previewRentalPeriod}</span><span style={{ color: "var(--t-text-primary)" }}>{rule.rental_period_days} days</span></div>}
                             {rule && Number(rule.included_tons) > 0 && <div className="flex justify-between"><span style={{ color: "var(--t-text-muted)" }}>{UI_LABELS.previewIncludedTons}</span><span style={{ color: "var(--t-text-primary)" }}>{rule.included_tons}</span></div>}
                             {rule && Number(rule.delivery_fee) > 0 && <div className="flex justify-between"><span style={{ color: "var(--t-text-muted)" }}>{UI_LABELS.previewDeliveryFee}</span><span style={{ color: "var(--t-text-primary)" }}>{fmt(rule.delivery_fee)}</span></div>}
+                            {!hasValidCreatePayload && (
+                              <div className="mt-3 rounded-lg border px-3 py-2" style={{ borderColor: "var(--t-error)", background: "var(--t-error-soft)" }}>
+                                <p className="text-xs font-medium" style={{ color: "var(--t-error)" }}>{UI_LABELS.invoiceCreateMissingPricing}</p>
+                              </div>
+                            )}
                           </div>
                         );
                       })() : (
