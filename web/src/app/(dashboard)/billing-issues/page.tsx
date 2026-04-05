@@ -109,6 +109,7 @@ const UI_LABELS = {
   surchargeItems: "Flagged Surcharge Items",
   surchargeGuidance: "The driver flagged surcharge items during the job. Review and add them to the invoice if applicable.",
   missingRuleGuidance: "No matching pricing rule found for this configuration. Create a rule on the Pricing page, then recalculate.",
+  recalculateDisabled: "A matching pricing rule is required before recalculating. Create one on the Pricing page first.",
   pricingPage: "Go to Pricing",
   jobConfig: "Job Configuration",
 };
@@ -569,10 +570,14 @@ export default function BillingIssuesPage() {
           const config = getResolutionConfig(resolveTarget.issue_type);
           const isGuided = !!config;
           const action = config?.actions.find(a => a.key === selectedAction);
+          const recalcSubtype = invoiceDetail?.job?.asset_subtype;
+          const recalcRule = recalcSubtype ? pricingRules.find(r => r.asset_subtype === recalcSubtype) : null;
+          const hasValidPricingRule = !!(recalcRule && recalcRule.base_price > 0);
+
           const canConfirm = isGuided
             ? (selectedAction === "create_invoice" && jobDetail)
               || (selectedAction === "link_invoice" && selectedInvoiceId)
-              || (selectedAction === "recalculate_pricing" && invoiceDetail)
+              || (selectedAction === "recalculate_pricing" && invoiceDetail && hasValidPricingRule)
               || (selectedAction === "add_surcharges" && invoiceDetail)
               || (selectedAction === "dismiss" && resolveReason)
             : !!resolveReason;
@@ -706,7 +711,11 @@ export default function BillingIssuesPage() {
                               <span className="font-semibold" style={{ color: "var(--t-text-primary)" }}>{UI_LABELS.priceDifference}</span>
                               <span className="font-bold" style={{ color: delta > 0 ? "var(--t-accent)" : delta < 0 ? "var(--t-error)" : "var(--t-text-muted)" }}>{delta > 0 ? "+" : ""}{fmt(delta)}</span>
                             </div>
-                            {!rule && <p className="text-xs mt-2" style={{ color: "var(--t-error)" }}>{UI_LABELS.missingRuleGuidance}</p>}
+                            {!rule && (
+                              <div className="mt-3 rounded-lg border px-3 py-2" style={{ borderColor: "var(--t-error)", background: "var(--t-error-soft)" }}>
+                                <p className="text-xs font-medium" style={{ color: "var(--t-error)" }}>{UI_LABELS.recalculateDisabled}</p>
+                              </div>
+                            )}
                           </div>
                         );
                       })()}
