@@ -72,7 +72,7 @@ interface Invoice {
   voided_at: string;
   created_at: string;
   customer: { id: string; first_name: string; last_name: string; email: string; company_name?: string } | null;
-  job: { id: string; job_number: string; asset_subtype?: string; service_type?: string; rental_days?: number; base_price?: number; total_price?: number; extra_day_rate?: number; asset?: { id: string; identifier: string; subtype?: string } } | null;
+  job: { id: string; job_number: string; job_type?: string; asset_subtype?: string; service_type?: string; service_address?: Record<string, string> | null; scheduled_date?: string; rental_days?: number; base_price?: number; total_price?: number; extra_day_rate?: number; asset?: { id: string; identifier: string; subtype?: string } } | null;
   payments?: Array<{ id: string; amount: number; payment_method: string; applied_at: string; notes?: string }>;
   revisions?: Array<{ id: string; revision_number: number; change_summary: string; changed_at: string }>;
   last_contacted_at?: string;
@@ -589,13 +589,21 @@ export default function InvoiceDetailPage({
                 <p className="text-sm font-medium text-[var(--t-text-primary)]">{invoice.due_date || "Not set"}</p>
               )}
               {invoice.job && (
-                <Link
-                  href={`/jobs/${invoice.job.id}`}
-                  className="flex items-center gap-1 mt-1 text-xs text-[var(--t-accent)] hover:underline"
-                >
-                  <FileText className="h-3 w-3" />
-                  Job {invoice.job.job_number}
-                </Link>
+                <div className="mt-2 pt-2 border-t border-[var(--t-border)] space-y-1">
+                  <Link
+                    href={`/jobs/${invoice.job.id}`}
+                    className="flex items-center gap-1 text-xs font-medium text-[var(--t-accent)] hover:underline"
+                  >
+                    <FileText className="h-3 w-3" />
+                    Job #{invoice.job.job_number}
+                    {invoice.job.job_type && <span className="capitalize text-[var(--t-text-muted)]">· {invoice.job.job_type.replace(/_/g, " ")}</span>}
+                  </Link>
+                  {invoice.job.service_address && (invoice.job.service_address.street || invoice.job.service_address.city) && (
+                    <p className="text-[11px] text-[var(--t-text-muted)]">
+                      {[invoice.job.service_address.street, invoice.job.service_address.city, invoice.job.service_address.state].filter(Boolean).join(", ")}
+                    </p>
+                  )}
+                </div>
               )}
             </div>
           </div>
