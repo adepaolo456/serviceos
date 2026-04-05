@@ -69,20 +69,20 @@ const UI_LABELS = {
   cancel: "Cancel",
   resolving: "Resolving...",
   confirmResolution: "Confirm Resolution",
-  actionPrompt: "{UI_LABELS.actionPrompt}",
-  recommended: "{UI_LABELS.recommended}",
-  invoicePreview: "{UI_LABELS.invoicePreview}",
-  noJobData: "{UI_LABELS.noJobData}",
+  actionPrompt: "How would you like to resolve this?",
+  recommended: "Recommended",
+  invoicePreview: "Invoice Preview",
+  noJobData: "No linked job data available",
   searchPlaceholder: "Search by invoice #, customer...",
-  searching: "{UI_LABELS.searching}",
-  noInvoicesFound: "{UI_LABELS.noInvoicesFound}",
-  reasonLabel: "{UI_LABELS.reasonLabel}",
-  reasonPlaceholder: "{UI_LABELS.reasonPlaceholder}",
-  notesLabel: "{UI_LABELS.notesLabel}",
+  searching: "Searching...",
+  noInvoicesFound: "No invoices found",
+  reasonLabel: "Resolution Reason *",
+  reasonPlaceholder: "Select a reason...",
+  notesLabel: "Notes (optional)",
   notesPlaceholder: "Additional context...",
-  fallbackGuided: "{UI_LABELS.fallbackGuided}",
+  fallbackGuided: "Guided resolution is not yet available for this issue type. Select a reason below.",
   suggested: "Suggested:",
-  viewInvoice: "{UI_LABELS.viewInvoice}",
+  viewInvoice: "View Invoice",
   issueResolved: "Issue resolved",
   failedToResolve: "Failed to resolve",
   previewCustomer: "Customer",
@@ -100,6 +100,17 @@ const UI_LABELS = {
   runDetection: "Run Detection",
   prev: "Prev",
   next: "Next",
+  // Pricing resolution labels
+  pricingComparison: "Pricing Comparison",
+  currentInvoiceRate: "Current Invoice Rate",
+  correctPricingRate: "Correct Pricing Rate",
+  priceDifference: "Difference",
+  recalculating: "Recalculating...",
+  surchargeItems: "Flagged Surcharge Items",
+  surchargeGuidance: "The driver flagged surcharge items during the job. Review and add them to the invoice if applicable.",
+  missingRuleGuidance: "No matching pricing rule found for this configuration. Create a rule on the Pricing page, then recalculate.",
+  pricingPage: "Go to Pricing",
+  jobConfig: "Job Configuration",
 };
 
 /* ── Guided Resolution Config ── */
@@ -127,6 +138,20 @@ const GUIDED_RESOLUTIONS: IssueResolutionConfig[] = [
       { key: "dismiss", label: "No Invoice Required", description: "Mark as resolved without creating an invoice", type: "dismiss", autoReason: "", confirmLabel: "Confirm Resolution", successMessage: "Issue resolved" },
     ],
   },
+  {
+    issueType: "price_mismatch",
+    actions: [
+      { key: "recalculate_pricing", label: "Recalculate from Current Pricing", description: "Update the invoice rental line to match the current pricing rule", type: "primary", autoReason: "pricing_recalculated", confirmLabel: "Recalculate & Resolve", successMessage: "Pricing corrected & issue resolved" },
+      { key: "dismiss", label: "Keep Current Pricing", description: "Accept the current invoice pricing as-is", type: "dismiss", autoReason: "pricing_accepted", confirmLabel: "Confirm Resolution", successMessage: "Issue resolved" },
+    ],
+  },
+  {
+    issueType: "surcharge_gap",
+    actions: [
+      { key: "add_surcharges", label: "Add Surcharge Items", description: "Add the flagged surcharge items to the invoice", type: "primary", autoReason: "surcharges_added", confirmLabel: "Add & Resolve", successMessage: "Surcharges added & issue resolved" },
+      { key: "dismiss", label: "No Surcharges Needed", description: "Dismiss — surcharge items are not billable", type: "dismiss", autoReason: "surcharges_dismissed", confirmLabel: "Confirm Resolution", successMessage: "Issue resolved" },
+    ],
+  },
 ];
 
 function getResolutionConfig(issueType: string): IssueResolutionConfig | null {
@@ -145,6 +170,12 @@ interface JobDetail {
 interface InvoiceSearchResult {
   id: string; invoice_number: number; status: string; total: number; balance_due: number;
   customer: { first_name: string; last_name: string } | null;
+}
+
+interface InvoiceDetail {
+  id: string; invoice_number: number; total: number; balance_due: number; status: string;
+  line_items: { id: string; line_type: string; name: string; quantity: number; unit_rate: number; amount: number; sort_order: number }[];
+  job: { id: string; asset_subtype: string; dump_overage_items?: any[] } | null;
 }
 
 export default function BillingIssuesPage() {
@@ -168,6 +199,7 @@ export default function BillingIssuesPage() {
   const [invoiceSearching, setInvoiceSearching] = useState(false);
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<string | null>(null);
   const [pricingRules, setPricingRules] = useState<{ asset_subtype: string; base_price: number; rental_period_days: number; included_tons: number; delivery_fee: number }[]>([]);
+  const [invoiceDetail, setInvoiceDetail] = useState<InvoiceDetail | null>(null);
   const { toast } = useToast();
 
   const fetchData = useCallback(async () => {
@@ -206,6 +238,7 @@ export default function BillingIssuesPage() {
     setResolveNotes("");
     setSelectedAction("");
     setJobDetail(null);
+    setInvoiceDetail(null);
     setInvoiceSearch("");
     setInvoiceResults([]);
     setSelectedInvoiceId(null);
@@ -217,6 +250,10 @@ export default function BillingIssuesPage() {
         setJobDetail(job);
       } catch { /* */ }
       finally { setJobLoading(false); }
+    }
+    // Load invoice detail for pricing issues
+    if (issue.invoice_id) {
+      api.get<InvoiceDetail>(`/invoices/${issue.invoice_id}`).then(setInvoiceDetail).catch(() => {});
     }
   };
 
@@ -240,6 +277,8 @@ export default function BillingIssuesPage() {
     if (action) {
       if (action.key === "create_invoice" && !jobDetail) return;
       if (action.key === "link_invoice" && !selectedInvoiceId) return;
+      if (action.key === "recalculate_pricing" && !invoiceDetail) return;
+      if (action.key === "add_surcharges" && !invoiceDetail) return;
       if (action.key === "dismiss" && !resolveReason) return;
     } else {
       // Fallback: require reason
@@ -275,6 +314,34 @@ export default function BillingIssuesPage() {
         // Link existing invoice to job by updating the invoice's job_id
         await api.put(`/invoices/${selectedInvoiceId}`, { job_id: resolveTarget.job_id });
         linkedInvoiceId = selectedInvoiceId;
+      }
+
+      if (action?.key === "recalculate_pricing" && invoiceDetail) {
+        // Update the rental line item to the correct pricing, then save via PUT (triggers recalculateTotals → reconcileBalance)
+        const subtype = invoiceDetail.job?.asset_subtype;
+        const rule = pricingRules.find(r => r.asset_subtype === subtype);
+        if (!rule) { toast("error", "No matching pricing rule found"); setResolving(false); return; }
+        const updatedLineItems = invoiceDetail.line_items.map(li => ({
+          line_type: li.line_type,
+          name: li.line_type === "rental" ? `${rule.asset_subtype} Rental` : li.name,
+          quantity: li.quantity,
+          unit_rate: li.line_type === "rental" ? rule.base_price : li.unit_rate,
+        }));
+        await api.put(`/invoices/${invoiceDetail.id}`, { line_items: updatedLineItems });
+        linkedInvoiceId = invoiceDetail.id;
+      }
+
+      if (action?.key === "add_surcharges" && invoiceDetail && jobDetail) {
+        // Append surcharge line items from job.dump_overage_items to the invoice
+        const existingItems = invoiceDetail.line_items.map(li => ({
+          line_type: li.line_type, name: li.name, quantity: li.quantity, unit_rate: li.unit_rate,
+        }));
+        const surchargeItems = (jobDetail as any).dump_overage_items || [];
+        const newItems = surchargeItems.map((item: any) => ({
+          line_type: "surcharge", name: item.description || item.type || "Surcharge", quantity: 1, unit_rate: Number(item.amount || item.price || 0),
+        }));
+        await api.put(`/invoices/${invoiceDetail.id}`, { line_items: [...existingItems, ...newItems] });
+        linkedInvoiceId = invoiceDetail.id;
       }
 
       // Resolve the billing issue
@@ -502,6 +569,8 @@ export default function BillingIssuesPage() {
           const canConfirm = isGuided
             ? (selectedAction === "create_invoice" && jobDetail)
               || (selectedAction === "link_invoice" && selectedInvoiceId)
+              || (selectedAction === "recalculate_pricing" && invoiceDetail)
+              || (selectedAction === "add_surcharges" && invoiceDetail)
               || (selectedAction === "dismiss" && resolveReason)
             : !!resolveReason;
 
@@ -613,7 +682,49 @@ export default function BillingIssuesPage() {
                     </div>
                   )}
 
-                  {/* Option C: Dismiss — reason required */}
+                  {/* Pricing: Recalculate comparison */}
+                  {selectedAction === "recalculate_pricing" && invoiceDetail && (
+                    <div className="rounded-xl border p-4" style={{ background: "var(--t-bg-card)", borderColor: "var(--t-accent)" }}>
+                      <p className="text-xs font-semibold mb-3" style={{ color: "var(--t-accent)" }}>{UI_LABELS.pricingComparison}</p>
+                      {(() => {
+                        const rentalLine = invoiceDetail.line_items.find(li => li.line_type === "rental");
+                        const subtype = invoiceDetail.job?.asset_subtype;
+                        const rule = pricingRules.find(r => r.asset_subtype === subtype);
+                        const currentRate = rentalLine ? rentalLine.unit_rate : 0;
+                        const correctRate = rule?.base_price || 0;
+                        const delta = correctRate - currentRate;
+                        return (
+                          <div className="space-y-2 text-xs">
+                            <div className="flex justify-between"><span style={{ color: "var(--t-text-muted)" }}>{UI_LABELS.previewSize}</span><span className="font-medium" style={{ color: "var(--t-text-primary)" }}>{subtype || "—"}</span></div>
+                            <div className="flex justify-between"><span style={{ color: "var(--t-text-muted)" }}>{UI_LABELS.currentInvoiceRate}</span><span className="font-medium" style={{ color: "var(--t-error)" }}>{fmt(currentRate)}</span></div>
+                            <div className="flex justify-between"><span style={{ color: "var(--t-text-muted)" }}>{UI_LABELS.correctPricingRate}</span><span className="font-bold" style={{ color: "var(--t-accent)" }}>{fmt(correctRate)}</span></div>
+                            {rule && <div className="flex justify-between"><span style={{ color: "var(--t-text-muted)" }}>{UI_LABELS.previewRentalPeriod}</span><span style={{ color: "var(--t-text-primary)" }}>{rule.rental_period_days} days</span></div>}
+                            <div className="flex justify-between border-t pt-2" style={{ borderColor: "var(--t-border)" }}>
+                              <span className="font-semibold" style={{ color: "var(--t-text-primary)" }}>{UI_LABELS.priceDifference}</span>
+                              <span className="font-bold" style={{ color: delta > 0 ? "var(--t-accent)" : delta < 0 ? "var(--t-error)" : "var(--t-text-muted)" }}>{delta > 0 ? "+" : ""}{fmt(delta)}</span>
+                            </div>
+                            {!rule && <p className="text-xs mt-2" style={{ color: "var(--t-error)" }}>{UI_LABELS.missingRuleGuidance}</p>}
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  )}
+
+                  {/* Pricing: Surcharge gap */}
+                  {selectedAction === "add_surcharges" && (
+                    <div className="rounded-xl border p-4" style={{ background: "var(--t-bg-card)", borderColor: "var(--t-warning)" }}>
+                      <p className="text-xs font-semibold mb-2" style={{ color: "var(--t-warning)" }}>{UI_LABELS.surchargeItems}</p>
+                      <p className="text-xs mb-3" style={{ color: "var(--t-text-muted)" }}>{UI_LABELS.surchargeGuidance}</p>
+                      {jobDetail && (jobDetail as any).dump_overage_items?.map((item: any, i: number) => (
+                        <div key={i} className="flex justify-between text-xs py-1.5" style={{ borderTop: i > 0 ? "1px solid var(--t-border)" : undefined }}>
+                          <span style={{ color: "var(--t-text-primary)" }}>{item.description || item.type || "Surcharge item"}</span>
+                          <span className="font-medium tabular-nums" style={{ color: "var(--t-warning)" }}>{fmt(item.amount || item.price || 0)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Dismiss — reason required */}
                   {selectedAction === "dismiss" && (
                     <div>
                       <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-text-primary)" }}>{UI_LABELS.reasonLabel}</label>
