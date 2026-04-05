@@ -131,6 +131,32 @@ const UI_LABELS = {
   pastDueBalanceDue: "Balance Due",
   pastDueDaysOverdue: "Days Overdue",
   pastDueDueDate: "Due Date",
+  // Guided resolution action labels
+  createInvoiceLabel: "Create Invoice",
+  createInvoiceDesc: "Generate an invoice from the linked job data",
+  linkInvoiceLabel: "Link Existing Invoice",
+  linkInvoiceDesc: "Connect an existing invoice to this job",
+  noInvoiceRequiredLabel: "No Invoice Required",
+  noInvoiceRequiredDesc: "Mark as resolved without creating an invoice",
+  recalculateLabel: "Recalculate from Current Pricing",
+  recalculateDesc: "Update the invoice rental line to match the current pricing rule",
+  keepPricingLabel: "Keep Current Pricing",
+  keepPricingDesc: "Accept the current invoice pricing as-is",
+  addSurchargesLabel: "Add Surcharge Items",
+  addSurchargesDesc: "Add the flagged surcharge items to the invoice",
+  noSurchargesLabel: "No Surcharges Needed",
+  noSurchargesDesc: "Dismiss — surcharge items are not billable",
+  // Shared confirm / success labels
+  confirmResolutionLabel: "Confirm Resolution",
+  createAndResolve: "Create & Resolve",
+  linkAndResolve: "Link & Resolve",
+  recalculateAndResolve: "Recalculate & Resolve",
+  addAndResolve: "Add & Resolve",
+  markPaidAndResolve: "Mark Paid & Resolve",
+  invoiceCreatedResolved: "Invoice created & issue resolved",
+  invoiceLinkedResolved: "Invoice linked & issue resolved",
+  pricingCorrectedResolved: "Pricing corrected & issue resolved",
+  surchargesAddedResolved: "Surcharges added & issue resolved",
 };
 
 /* ── Guided Resolution Config ── */
@@ -153,31 +179,31 @@ const GUIDED_RESOLUTIONS: IssueResolutionConfig[] = [
   {
     issueType: "no_invoice",
     actions: [
-      { key: "create_invoice", label: "Create Invoice", description: "Generate an invoice from the linked job data", type: "primary", autoReason: "invoice_created", confirmLabel: "Create & Resolve", successMessage: "Invoice created & issue resolved" },
-      { key: "link_invoice", label: "Link Existing Invoice", description: "Connect an existing invoice to this job", type: "secondary", autoReason: "invoice_linked", confirmLabel: "Link & Resolve", successMessage: "Invoice linked & issue resolved" },
-      { key: "dismiss", label: "No Invoice Required", description: "Mark as resolved without creating an invoice", type: "dismiss", autoReason: "", confirmLabel: "Confirm Resolution", successMessage: "Issue resolved" },
+      { key: "create_invoice", label: UI_LABELS.createInvoiceLabel, description: UI_LABELS.createInvoiceDesc, type: "primary", autoReason: "invoice_created", confirmLabel: UI_LABELS.createAndResolve, successMessage: UI_LABELS.invoiceCreatedResolved },
+      { key: "link_invoice", label: UI_LABELS.linkInvoiceLabel, description: UI_LABELS.linkInvoiceDesc, type: "secondary", autoReason: "invoice_linked", confirmLabel: UI_LABELS.linkAndResolve, successMessage: UI_LABELS.invoiceLinkedResolved },
+      { key: "dismiss", label: UI_LABELS.noInvoiceRequiredLabel, description: UI_LABELS.noInvoiceRequiredDesc, type: "dismiss", autoReason: "", confirmLabel: UI_LABELS.confirmResolutionLabel, successMessage: UI_LABELS.issueResolved },
     ],
   },
   {
     issueType: "price_mismatch",
     actions: [
-      { key: "recalculate_pricing", label: "Recalculate from Current Pricing", description: "Update the invoice rental line to match the current pricing rule", type: "primary", autoReason: "pricing_recalculated", confirmLabel: "Recalculate & Resolve", successMessage: "Pricing corrected & issue resolved" },
-      { key: "dismiss", label: "Keep Current Pricing", description: "Accept the current invoice pricing as-is", type: "dismiss", autoReason: "pricing_accepted", confirmLabel: "Confirm Resolution", successMessage: "Issue resolved" },
+      { key: "recalculate_pricing", label: UI_LABELS.recalculateLabel, description: UI_LABELS.recalculateDesc, type: "primary", autoReason: "pricing_recalculated", confirmLabel: UI_LABELS.recalculateAndResolve, successMessage: UI_LABELS.pricingCorrectedResolved },
+      { key: "dismiss", label: UI_LABELS.keepPricingLabel, description: UI_LABELS.keepPricingDesc, type: "dismiss", autoReason: "pricing_accepted", confirmLabel: UI_LABELS.confirmResolutionLabel, successMessage: UI_LABELS.issueResolved },
     ],
   },
   {
     issueType: "surcharge_gap",
     actions: [
-      { key: "add_surcharges", label: "Add Surcharge Items", description: "Add the flagged surcharge items to the invoice", type: "primary", autoReason: "surcharges_added", confirmLabel: "Add & Resolve", successMessage: "Surcharges added & issue resolved" },
-      { key: "dismiss", label: "No Surcharges Needed", description: "Dismiss — surcharge items are not billable", type: "dismiss", autoReason: "surcharges_dismissed", confirmLabel: "Confirm Resolution", successMessage: "Issue resolved" },
+      { key: "add_surcharges", label: UI_LABELS.addSurchargesLabel, description: UI_LABELS.addSurchargesDesc, type: "primary", autoReason: "surcharges_added", confirmLabel: UI_LABELS.addAndResolve, successMessage: UI_LABELS.surchargesAddedResolved },
+      { key: "dismiss", label: UI_LABELS.noSurchargesLabel, description: UI_LABELS.noSurchargesDesc, type: "dismiss", autoReason: "surcharges_dismissed", confirmLabel: UI_LABELS.confirmResolutionLabel, successMessage: UI_LABELS.issueResolved },
     ],
   },
   {
     issueType: "past_due_payment",
     actions: [
-      { key: "mark_paid", label: UI_LABELS.pastDueMarkPaid, description: UI_LABELS.pastDueMarkPaidDesc, type: "primary", autoReason: "payment_confirmed", confirmLabel: "Mark Paid & Resolve", successMessage: UI_LABELS.pastDueMarkedPaid },
-      { key: "send_reminder", label: UI_LABELS.pastDueSendReminder, description: UI_LABELS.pastDueSendReminderDesc, type: "secondary", autoReason: "", confirmLabel: "Send Reminder", successMessage: UI_LABELS.pastDueReminderSent },
-      { key: "dismiss", label: UI_LABELS.pastDueNoAction, description: UI_LABELS.pastDueNoActionDesc, type: "dismiss", autoReason: "", confirmLabel: "Confirm Resolution", successMessage: "Issue resolved" },
+      { key: "mark_paid", label: UI_LABELS.pastDueMarkPaid, description: UI_LABELS.pastDueMarkPaidDesc, type: "primary", autoReason: "payment_confirmed", confirmLabel: UI_LABELS.markPaidAndResolve, successMessage: UI_LABELS.pastDueMarkedPaid },
+      { key: "send_reminder", label: UI_LABELS.pastDueSendReminder, description: UI_LABELS.pastDueSendReminderDesc, type: "secondary", autoReason: "", confirmLabel: UI_LABELS.pastDueSendReminder, successMessage: UI_LABELS.pastDueReminderSent },
+      { key: "dismiss", label: UI_LABELS.pastDueNoAction, description: UI_LABELS.pastDueNoActionDesc, type: "dismiss", autoReason: "", confirmLabel: UI_LABELS.confirmResolutionLabel, successMessage: UI_LABELS.issueResolved },
     ],
   },
 ];
