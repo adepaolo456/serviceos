@@ -213,7 +213,7 @@ export class BillingIssueDetectorService {
   // RESOLVE / DISMISS
   // ─────────────────────────────────────────────────────────
 
-  async resolveIssue(tenantId: string, issueId: string, userId: string, reason?: string, notes?: string) {
+  async resolveIssue(tenantId: string, issueId: string, userId: string, reason?: string, notes?: string, linkedInvoiceId?: string) {
     const issue = await this.issueRepo.findOne({
       where: { id: issueId, tenant_id: tenantId },
     });
@@ -224,7 +224,17 @@ export class BillingIssueDetectorService {
     issue.resolved_at = new Date();
     if (reason) issue.resolution_reason = reason;
     if (notes) issue.resolution_notes = notes;
+    if (linkedInvoiceId) issue.invoice_id = linkedInvoiceId;
     return this.issueRepo.save(issue);
+  }
+
+  async getIssueDetail(tenantId: string, issueId: string) {
+    const issue = await this.issueRepo.findOne({
+      where: { id: issueId, tenant_id: tenantId },
+      relations: ['job', 'job.customer', 'invoice'],
+    });
+    if (!issue) throw new NotFoundException(`Billing issue ${issueId} not found`);
+    return issue;
   }
 
   async dismissIssue(tenantId: string, issueId: string, userId: string) {

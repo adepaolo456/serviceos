@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import {
   AlertTriangle, Clock, Scale, FileX, Tag, DollarSign, FileText,
-  RefreshCw, CheckCircle2, XCircle, Ban,
+  RefreshCw, CheckCircle2, XCircle, Ban, Search, Plus, LinkIcon,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useToast } from "@/components/toast";
@@ -61,6 +61,92 @@ const RESOLUTION_REASONS = [
   { value: "manual_review", label: "Manual review completed" },
 ];
 
+/* ── UI Labels — single source for all user-facing strings ── */
+const UI_LABELS = {
+  panelTitle: "Resolve Issue",
+  resolve: "Resolve",
+  dismiss: "Dismiss",
+  cancel: "Cancel",
+  resolving: "Resolving...",
+  confirmResolution: "Confirm Resolution",
+  actionPrompt: "{UI_LABELS.actionPrompt}",
+  recommended: "{UI_LABELS.recommended}",
+  invoicePreview: "{UI_LABELS.invoicePreview}",
+  noJobData: "{UI_LABELS.noJobData}",
+  searchPlaceholder: "Search by invoice #, customer...",
+  searching: "{UI_LABELS.searching}",
+  noInvoicesFound: "{UI_LABELS.noInvoicesFound}",
+  reasonLabel: "{UI_LABELS.reasonLabel}",
+  reasonPlaceholder: "{UI_LABELS.reasonPlaceholder}",
+  notesLabel: "{UI_LABELS.notesLabel}",
+  notesPlaceholder: "Additional context...",
+  fallbackGuided: "{UI_LABELS.fallbackGuided}",
+  suggested: "Suggested:",
+  viewInvoice: "{UI_LABELS.viewInvoice}",
+  issueResolved: "Issue resolved",
+  failedToResolve: "Failed to resolve",
+  previewCustomer: "Customer",
+  previewAddress: "Address",
+  previewSize: "Size",
+  previewBasePrice: "Base Price",
+  previewRentalPeriod: "Rental Period",
+  previewIncludedTons: "Included Tons",
+  previewDeliveryFee: "Delivery Fee",
+  emptyFilterTitle: "No matching issues",
+  emptyAllTitle: "All clear!",
+  emptyFilterDesc: "No billing issues match the current filters.",
+  emptyAllDesc: "No billing issues found.",
+  clearFilters: "Clear Filters",
+  runDetection: "Run Detection",
+  prev: "Prev",
+  next: "Next",
+};
+
+/* ── Guided Resolution Config ── */
+interface ResolutionAction {
+  key: string;
+  label: string;
+  description: string;
+  type: "primary" | "secondary" | "dismiss";
+  autoReason: string;
+  confirmLabel: string;
+  successMessage: string;
+}
+
+interface IssueResolutionConfig {
+  issueType: string;
+  actions: ResolutionAction[];
+}
+
+const GUIDED_RESOLUTIONS: IssueResolutionConfig[] = [
+  {
+    issueType: "no_invoice",
+    actions: [
+      { key: "create_invoice", label: "Create Invoice", description: "Generate an invoice from the linked job data", type: "primary", autoReason: "invoice_created", confirmLabel: "Create & Resolve", successMessage: "Invoice created & issue resolved" },
+      { key: "link_invoice", label: "Link Existing Invoice", description: "Connect an existing invoice to this job", type: "secondary", autoReason: "invoice_linked", confirmLabel: "Link & Resolve", successMessage: "Invoice linked & issue resolved" },
+      { key: "dismiss", label: "No Invoice Required", description: "Mark as resolved without creating an invoice", type: "dismiss", autoReason: "", confirmLabel: "Confirm Resolution", successMessage: "Issue resolved" },
+    ],
+  },
+];
+
+function getResolutionConfig(issueType: string): IssueResolutionConfig | null {
+  return GUIDED_RESOLUTIONS.find(c => c.issueType === issueType) || null;
+}
+
+/* ── Types for guided resolution ── */
+interface JobDetail {
+  id: string; job_number: string; status: string; job_type: string;
+  asset_subtype: string | null; base_price: number; total_price: number;
+  rental_days: number; scheduled_date: string;
+  service_address: Record<string, string> | null;
+  customer: { id: string; first_name: string; last_name: string } | null;
+}
+
+interface InvoiceSearchResult {
+  id: string; invoice_number: number; status: string; total: number; balance_due: number;
+  customer: { first_name: string; last_name: string } | null;
+}
+
 export default function BillingIssuesPage() {
   const [issues, setIssues] = useState<BillingIssue[]>([]);
   const [summary, setSummary] = useState<Summary>({ total: 0, by_type: {} });
@@ -74,6 +160,14 @@ export default function BillingIssuesPage() {
   const [resolveReason, setResolveReason] = useState("");
   const [resolveNotes, setResolveNotes] = useState("");
   const [resolving, setResolving] = useState(false);
+  const [selectedAction, setSelectedAction] = useState<string>("");
+  const [jobDetail, setJobDetail] = useState<JobDetail | null>(null);
+  const [jobLoading, setJobLoading] = useState(false);
+  const [invoiceSearch, setInvoiceSearch] = useState("");
+  const [invoiceResults, setInvoiceResults] = useState<InvoiceSearchResult[]>([]);
+  const [invoiceSearching, setInvoiceSearching] = useState(false);
+  const [selectedInvoiceId, setSelectedInvoiceId] = useState<string | null>(null);
+  const [pricingRules, setPricingRules] = useState<{ asset_subtype: string; base_price: number; rental_period_days: number; included_tons: number; delivery_fee: number }[]>([]);
   const { toast } = useToast();
 
   const fetchData = useCallback(async () => {
@@ -94,6 +188,7 @@ export default function BillingIssuesPage() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
   useEffect(() => { setPage(1); }, [statusFilter, typeFilter]);
+  useEffect(() => { api.get<{ data: typeof pricingRules }>("/pricing").then(r => setPricingRules(r.data || [])).catch(() => {}); }, []);
 
   const handleDetect = async () => {
     setDetecting(true);
@@ -105,24 +200,94 @@ export default function BillingIssuesPage() {
     finally { setDetecting(false); }
   };
 
-  const openResolvePanel = (issue: BillingIssue) => {
+  const openResolvePanel = async (issue: BillingIssue) => {
     setResolveTarget(issue);
     setResolveReason("");
     setResolveNotes("");
+    setSelectedAction("");
+    setJobDetail(null);
+    setInvoiceSearch("");
+    setInvoiceResults([]);
+    setSelectedInvoiceId(null);
+    // Load job detail for guided resolution if job_id exists
+    if (issue.job_id) {
+      setJobLoading(true);
+      try {
+        const job = await api.get<JobDetail>(`/jobs/${issue.job_id}`);
+        setJobDetail(job);
+      } catch { /* */ }
+      finally { setJobLoading(false); }
+    }
+  };
+
+  const searchInvoices = async (q: string) => {
+    setInvoiceSearch(q);
+    if (q.length < 2) { setInvoiceResults([]); return; }
+    setInvoiceSearching(true);
+    try {
+      const res = await api.get<{ data: InvoiceSearchResult[] }>(`/invoices?search=${encodeURIComponent(q)}&limit=10`);
+      setInvoiceResults(res.data);
+    } catch { setInvoiceResults([]); }
+    finally { setInvoiceSearching(false); }
   };
 
   const confirmResolve = async () => {
-    if (!resolveTarget || !resolveReason) return;
+    if (!resolveTarget) return;
+    const config = getResolutionConfig(resolveTarget.issue_type);
+    const action = config?.actions.find(a => a.key === selectedAction);
+
+    // For guided actions, validate based on action type
+    if (action) {
+      if (action.key === "create_invoice" && !jobDetail) return;
+      if (action.key === "link_invoice" && !selectedInvoiceId) return;
+      if (action.key === "dismiss" && !resolveReason) return;
+    } else {
+      // Fallback: require reason
+      if (!resolveReason) return;
+    }
+
     setResolving(true);
     try {
+      let linkedInvoiceId: string | undefined;
+      const reason = action?.autoReason || resolveReason;
+
+      if (action?.key === "create_invoice" && jobDetail) {
+        // Create invoice from job data via existing endpoint
+        const rule = pricingRules.find(r => r.asset_subtype === jobDetail.asset_subtype);
+        const basePrice = rule?.base_price || jobDetail.base_price || 0;
+        const deliveryFee = rule?.delivery_fee || 0;
+        const lineItems: { line_type: string; name: string; quantity: number; unit_rate: number }[] = [
+          { line_type: "rental", name: `${jobDetail.asset_subtype || "Dumpster"} Rental`, quantity: 1, unit_rate: basePrice },
+        ];
+        if (deliveryFee > 0) lineItems.push({ line_type: "delivery", name: "Delivery Fee", quantity: 1, unit_rate: deliveryFee });
+
+        const inv = await api.post<{ id: string; invoice_number: number }>("/invoices", {
+          customer_id: jobDetail.customer?.id,
+          job_id: jobDetail.id,
+          service_date: jobDetail.scheduled_date,
+          line_items: lineItems,
+        });
+        linkedInvoiceId = inv.id;
+        toast("success", `Invoice #${inv.invoice_number} created`);
+      }
+
+      if (action?.key === "link_invoice" && selectedInvoiceId) {
+        // Link existing invoice to job by updating the invoice's job_id
+        await api.put(`/invoices/${selectedInvoiceId}`, { job_id: resolveTarget.job_id });
+        linkedInvoiceId = selectedInvoiceId;
+      }
+
+      // Resolve the billing issue
       await api.put(`/billing-issues/${resolveTarget.id}/resolve`, {
-        reason: resolveReason,
+        reason,
         notes: resolveNotes || undefined,
+        linkedInvoiceId,
       });
-      toast("success", "Issue resolved");
+
+      toast("success", action?.successMessage || UI_LABELS.issueResolved);
       setResolveTarget(null);
       await fetchData();
-    } catch { toast("error", "Failed to resolve"); }
+    } catch (err: any) { toast("error", err?.message || UI_LABELS.failedToResolve); }
     finally { setResolving(false); }
   };
 
@@ -203,7 +368,7 @@ export default function BillingIssuesPage() {
         {(statusFilter || typeFilter) && (
           <button onClick={() => { setStatusFilter(""); setTypeFilter(""); }}
             className="text-xs text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)]">
-            Clear Filters
+            {UI_LABELS.clearFilters}
           </button>
         )}
       </div>
@@ -219,22 +384,22 @@ export default function BillingIssuesPage() {
         <div className="flex flex-col items-center justify-center py-24 text-center">
           <CheckCircle2 className="h-12 w-12 mb-4" style={{ color: "var(--t-accent)" }} />
           <h3 className="text-lg font-semibold mb-1" style={{ color: "var(--t-frame-text)" }}>
-            {(statusFilter || typeFilter) ? "No matching issues" : "All clear!"}
+            {(statusFilter || typeFilter) ? UI_LABELS.emptyFilterTitle : UI_LABELS.emptyAllTitle}
           </h3>
           <p className="text-sm mb-4" style={{ color: "var(--t-frame-text-muted)" }}>
-            {(statusFilter || typeFilter) ? "No billing issues match the current filters." : "No billing issues found."}
+            {(statusFilter || typeFilter) ? UI_LABELS.emptyFilterDesc : UI_LABELS.emptyAllDesc}
           </p>
           {(statusFilter || typeFilter) ? (
             <button onClick={() => { setStatusFilter(""); setTypeFilter(""); }}
               className="rounded-full px-5 py-2.5 text-sm font-medium border transition-colors"
               style={{ borderColor: "var(--t-border)", color: "var(--t-frame-text-muted)" }}>
-              Clear Filters
+              {UI_LABELS.clearFilters}
             </button>
           ) : (
             <button onClick={handleDetect} disabled={detecting}
               className="rounded-full px-5 py-2.5 text-sm font-medium border transition-colors"
               style={{ borderColor: "var(--t-border)", color: "var(--t-frame-text-muted)" }}>
-              Run Detection
+              {UI_LABELS.runDetection}
             </button>
           )}
         </div>
@@ -273,7 +438,7 @@ export default function BillingIssuesPage() {
                     <div className="flex items-center gap-4 text-xs" style={{ color: "var(--t-text-muted)" }}>
                       {issue.invoice_id && (
                         <Link href={`/invoices/${issue.invoice_id}`} className="hover:text-[var(--t-accent)]">
-                          View Invoice
+                          {UI_LABELS.viewInvoice}
                         </Link>
                       )}
                       {issue.calculated_amount != null && (
@@ -294,14 +459,14 @@ export default function BillingIssuesPage() {
                         className="flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors hover:bg-[var(--t-accent-soft)]"
                         style={{ borderColor: "var(--t-accent)", color: "var(--t-accent)" }}
                       >
-                        <CheckCircle2 className="h-3 w-3" /> Resolve
+                        <CheckCircle2 className="h-3 w-3" /> {UI_LABELS.resolve}
                       </button>
                       <button
                         onClick={() => handleDismiss(issue.id)}
                         className="flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors hover:bg-[var(--t-bg-card-hover)]"
                         style={{ borderColor: "var(--t-border)", color: "var(--t-text-muted)" }}
                       >
-                        <Ban className="h-3 w-3" /> Dismiss
+                        <Ban className="h-3 w-3" /> {UI_LABELS.dismiss}
                       </button>
                     </div>
                   )}
@@ -319,18 +484,27 @@ export default function BillingIssuesPage() {
           <div className="flex gap-2">
             <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1}
               className="rounded-full border px-4 py-1.5 text-sm disabled:opacity-30"
-              style={{ borderColor: "var(--t-border)" }}>Prev</button>
+              style={{ borderColor: "var(--t-border)" }}>{UI_LABELS.prev}</button>
             <button onClick={() => setPage(p => p + 1)} disabled={page * 25 >= total}
               className="rounded-full border px-4 py-1.5 text-sm disabled:opacity-30"
-              style={{ borderColor: "var(--t-border)" }}>Next</button>
+              style={{ borderColor: "var(--t-border)" }}>{UI_LABELS.next}</button>
           </div>
         </div>
       )}
 
       {/* Resolve Workflow Panel */}
-      <SlideOver open={!!resolveTarget} onClose={() => setResolveTarget(null)} title="Resolve Issue">
+      <SlideOver open={!!resolveTarget} onClose={() => setResolveTarget(null)} title={UI_LABELS.panelTitle}>
         {resolveTarget && (() => {
           const typeInfo = getTypeInfo(resolveTarget.issue_type);
+          const config = getResolutionConfig(resolveTarget.issue_type);
+          const isGuided = !!config;
+          const action = config?.actions.find(a => a.key === selectedAction);
+          const canConfirm = isGuided
+            ? (selectedAction === "create_invoice" && jobDetail)
+              || (selectedAction === "link_invoice" && selectedInvoiceId)
+              || (selectedAction === "dismiss" && resolveReason)
+            : !!resolveReason;
+
           return (
             <div className="space-y-5">
               {/* Issue summary */}
@@ -341,69 +515,158 @@ export default function BillingIssuesPage() {
                 </div>
                 <p className="text-sm font-medium" style={{ color: "var(--t-text-primary)" }}>{resolveTarget.description}</p>
                 <div className="flex items-center gap-3 mt-2 text-xs" style={{ color: "var(--t-text-muted)" }}>
-                  {resolveTarget.calculated_amount != null && (
-                    <span className="font-medium tabular-nums" style={{ color: typeInfo.color }}>{fmt(resolveTarget.calculated_amount)}</span>
-                  )}
+                  {resolveTarget.calculated_amount != null && <span className="font-medium tabular-nums" style={{ color: typeInfo.color }}>{fmt(resolveTarget.calculated_amount)}</span>}
                   {resolveTarget.days_overdue != null && <span>{resolveTarget.days_overdue} days overdue</span>}
                   <span>{new Date(resolveTarget.created_at).toLocaleDateString()}</span>
                 </div>
                 {resolveTarget.invoice_id && (
-                  <Link href={`/invoices/${resolveTarget.invoice_id}`} className="inline-flex items-center gap-1 text-xs font-medium mt-2" style={{ color: "var(--t-accent)" }}>
-                    View Invoice
-                  </Link>
+                  <Link href={`/invoices/${resolveTarget.invoice_id}`} className="inline-flex items-center gap-1 text-xs font-medium mt-2" style={{ color: "var(--t-accent)" }}>{UI_LABELS.viewInvoice}</Link>
                 )}
               </div>
 
               {resolveTarget.suggested_action && (
                 <div className="rounded-xl border p-3 text-xs" style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)", color: "var(--t-text-muted)" }}>
-                  <span className="font-semibold" style={{ color: "var(--t-text-primary)" }}>Suggested:</span> {resolveTarget.suggested_action}
+                  <span className="font-semibold" style={{ color: "var(--t-text-primary)" }}>{UI_LABELS.suggested}</span> {resolveTarget.suggested_action}
                 </div>
               )}
 
-              {/* Resolution reason */}
-              <div>
-                <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-text-primary)" }}>Resolution Reason *</label>
-                <select
-                  value={resolveReason}
-                  onChange={e => setResolveReason(e.target.value)}
-                  className="w-full rounded-[14px] border px-3 py-2.5 text-sm outline-none focus:border-[var(--t-accent)]"
-                  style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)", color: "var(--t-text-primary)" }}
-                >
-                  <option value="">Select a reason...</option>
-                  {RESOLUTION_REASONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
-                </select>
-              </div>
+              {/* Guided resolution: action selection */}
+              {isGuided ? (
+                <>
+                  <div>
+                    <p className="text-xs font-semibold mb-2" style={{ color: "var(--t-text-primary)" }}>{UI_LABELS.actionPrompt}</p>
+                    <div className="space-y-2">
+                      {config.actions.map(a => (
+                        <button key={a.key} onClick={() => { setSelectedAction(a.key); setSelectedInvoiceId(null); setInvoiceSearch(""); setInvoiceResults([]); if (a.autoReason) setResolveReason(a.autoReason); else setResolveReason(""); }}
+                          className={`w-full rounded-xl border p-3 text-left transition-all ${selectedAction === a.key ? "ring-2 ring-[var(--t-accent)]" : ""}`}
+                          style={{ background: selectedAction === a.key ? "var(--t-bg-elevated)" : "var(--t-bg-card)", borderColor: selectedAction === a.key ? "var(--t-accent)" : "var(--t-border)" }}>
+                          <div className="flex items-center gap-2">
+                            {a.type === "primary" ? <Plus className="h-3.5 w-3.5" style={{ color: "var(--t-accent)" }} /> : a.type === "secondary" ? <LinkIcon className="h-3.5 w-3.5" style={{ color: "var(--t-text-muted)" }} /> : <Ban className="h-3.5 w-3.5" style={{ color: "var(--t-text-muted)" }} />}
+                            <span className="text-sm font-semibold" style={{ color: "var(--t-text-primary)" }}>{a.label}</span>
+                            {a.type === "primary" && <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full" style={{ background: "var(--t-accent-soft)", color: "var(--t-accent)" }}>{UI_LABELS.recommended}</span>}
+                          </div>
+                          <p className="text-xs mt-1" style={{ color: "var(--t-text-muted)" }}>{a.description}</p>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
 
-              {/* Optional notes */}
-              <div>
-                <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-text-primary)" }}>Notes (optional)</label>
-                <textarea
-                  value={resolveNotes}
-                  onChange={e => setResolveNotes(e.target.value)}
-                  rows={3}
-                  className="w-full rounded-[14px] border px-3 py-2.5 text-sm outline-none focus:border-[var(--t-accent)] resize-none"
-                  style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)", color: "var(--t-text-primary)" }}
-                  placeholder="Additional context..."
-                />
-              </div>
+                  {/* Option A: Create Invoice preview */}
+                  {selectedAction === "create_invoice" && (
+                    <div className="rounded-xl border p-4" style={{ background: "var(--t-bg-card)", borderColor: "var(--t-accent)" }}>
+                      <p className="text-xs font-semibold mb-3" style={{ color: "var(--t-accent)" }}>{UI_LABELS.invoicePreview}</p>
+                      {jobLoading ? (
+                        <div className="h-20 animate-pulse rounded-lg" style={{ background: "var(--t-bg-elevated)" }} />
+                      ) : jobDetail ? (() => {
+                        const rule = pricingRules.find(r => r.asset_subtype === jobDetail.asset_subtype);
+                        const price = rule?.base_price || jobDetail.base_price || 0;
+                        const addr = jobDetail.service_address;
+                        return (
+                          <div className="space-y-2 text-xs">
+                            <div className="flex justify-between"><span style={{ color: "var(--t-text-muted)" }}>{UI_LABELS.previewCustomer}</span><span className="font-medium" style={{ color: "var(--t-text-primary)" }}>{jobDetail.customer ? `${jobDetail.customer.first_name} ${jobDetail.customer.last_name}` : "—"}</span></div>
+                            {addr && <div className="flex justify-between"><span style={{ color: "var(--t-text-muted)" }}>{UI_LABELS.previewAddress}</span><span className="font-medium truncate ml-4" style={{ color: "var(--t-text-primary)" }}>{[addr.street, addr.city, addr.state].filter(Boolean).join(", ")}</span></div>}
+                            <div className="flex justify-between"><span style={{ color: "var(--t-text-muted)" }}>{UI_LABELS.previewSize}</span><span className="font-medium" style={{ color: "var(--t-text-primary)" }}>{jobDetail.asset_subtype || "—"}</span></div>
+                            <div className="flex justify-between"><span style={{ color: "var(--t-text-muted)" }}>{UI_LABELS.previewBasePrice}</span><span className="font-bold" style={{ color: "var(--t-accent)" }}>{fmt(price)}</span></div>
+                            {rule && <div className="flex justify-between"><span style={{ color: "var(--t-text-muted)" }}>{UI_LABELS.previewRentalPeriod}</span><span style={{ color: "var(--t-text-primary)" }}>{rule.rental_period_days} days</span></div>}
+                            {rule && Number(rule.included_tons) > 0 && <div className="flex justify-between"><span style={{ color: "var(--t-text-muted)" }}>{UI_LABELS.previewIncludedTons}</span><span style={{ color: "var(--t-text-primary)" }}>{rule.included_tons}</span></div>}
+                            {rule && Number(rule.delivery_fee) > 0 && <div className="flex justify-between"><span style={{ color: "var(--t-text-muted)" }}>{UI_LABELS.previewDeliveryFee}</span><span style={{ color: "var(--t-text-primary)" }}>{fmt(rule.delivery_fee)}</span></div>}
+                          </div>
+                        );
+                      })() : (
+                        <p className="text-xs" style={{ color: "var(--t-text-muted)" }}>{UI_LABELS.noJobData}</p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Option B: Link Existing Invoice */}
+                  {selectedAction === "link_invoice" && (
+                    <div className="space-y-3">
+                      <div className="relative">
+                        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" style={{ color: "var(--t-text-muted)" }} />
+                        <input value={invoiceSearch} onChange={e => searchInvoices(e.target.value)}
+                          placeholder={UI_LABELS.searchPlaceholder}
+                          className="w-full rounded-[14px] border py-2.5 pl-10 pr-3 text-sm outline-none focus:border-[var(--t-accent)]"
+                          style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)", color: "var(--t-text-primary)" }} />
+                      </div>
+                      {invoiceSearching && <p className="text-xs" style={{ color: "var(--t-text-muted)" }}>{UI_LABELS.searching}</p>}
+                      {invoiceResults.length > 0 && (
+                        <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                          {invoiceResults.map(inv => (
+                            <button key={inv.id} onClick={() => setSelectedInvoiceId(inv.id)}
+                              className={`w-full rounded-lg border p-3 text-left text-xs transition-all ${selectedInvoiceId === inv.id ? "ring-2 ring-[var(--t-accent)]" : ""}`}
+                              style={{ background: selectedInvoiceId === inv.id ? "var(--t-bg-elevated)" : "var(--t-bg-card)", borderColor: selectedInvoiceId === inv.id ? "var(--t-accent)" : "var(--t-border)" }}>
+                              <div className="flex justify-between">
+                                <span className="font-semibold" style={{ color: "var(--t-text-primary)" }}>#{inv.invoice_number}</span>
+                                <span className="font-medium tabular-nums" style={{ color: "var(--t-text-primary)" }}>{fmt(inv.total)}</span>
+                              </div>
+                              <div className="flex justify-between mt-0.5" style={{ color: "var(--t-text-muted)" }}>
+                                <span>{inv.customer ? `${inv.customer.first_name} ${inv.customer.last_name}` : "—"}</span>
+                                <span>{inv.status}</span>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      {invoiceSearch.length >= 2 && !invoiceSearching && invoiceResults.length === 0 && (
+                        <p className="text-xs text-center py-3" style={{ color: "var(--t-text-muted)" }}>{UI_LABELS.noInvoicesFound}</p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Option C: Dismiss — reason required */}
+                  {selectedAction === "dismiss" && (
+                    <div>
+                      <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-text-primary)" }}>{UI_LABELS.reasonLabel}</label>
+                      <select value={resolveReason} onChange={e => setResolveReason(e.target.value)}
+                        className="w-full rounded-[14px] border px-3 py-2.5 text-sm outline-none focus:border-[var(--t-accent)]"
+                        style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)", color: "var(--t-text-primary)" }}>
+                        <option value="">{UI_LABELS.reasonPlaceholder}</option>
+                        {RESOLUTION_REASONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+                      </select>
+                    </div>
+                  )}
+                </>
+              ) : (
+                /* Fallback: reason-only flow for unsupported issue types */
+                <>
+                  <div className="rounded-xl border p-3 text-xs" style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)", color: "var(--t-text-muted)" }}>
+                    {UI_LABELS.fallbackGuided}
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-text-primary)" }}>{UI_LABELS.reasonLabel}</label>
+                    <select value={resolveReason} onChange={e => setResolveReason(e.target.value)}
+                      className="w-full rounded-[14px] border px-3 py-2.5 text-sm outline-none focus:border-[var(--t-accent)]"
+                      style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)", color: "var(--t-text-primary)" }}>
+                      <option value="">{UI_LABELS.reasonPlaceholder}</option>
+                      {RESOLUTION_REASONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+                    </select>
+                  </div>
+                </>
+              )}
+
+              {/* Notes (always available) */}
+              {(selectedAction || !isGuided) && (
+                <div>
+                  <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-text-primary)" }}>{UI_LABELS.notesLabel}</label>
+                  <textarea value={resolveNotes} onChange={e => setResolveNotes(e.target.value)} rows={2}
+                    className="w-full rounded-[14px] border px-3 py-2.5 text-sm outline-none focus:border-[var(--t-accent)] resize-none"
+                    style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)", color: "var(--t-text-primary)" }}
+                    placeholder={UI_LABELS.notesPlaceholder} />
+                </div>
+              )}
 
               {/* Actions */}
               <div className="flex gap-2 pt-2">
-                <button
-                  onClick={confirmResolve}
-                  disabled={!resolveReason || resolving}
+                <button onClick={confirmResolve} disabled={!canConfirm || resolving}
                   className="flex-1 flex items-center justify-center gap-2 rounded-full py-2.5 text-sm font-semibold transition-all disabled:opacity-40"
-                  style={{ background: "var(--t-accent)", color: "var(--t-accent-on-accent)" }}
-                >
+                  style={{ background: "var(--t-accent)", color: "var(--t-accent-on-accent)" }}>
                   <CheckCircle2 className="h-4 w-4" />
-                  {resolving ? "Resolving..." : "Confirm Resolution"}
+                  {resolving ? UI_LABELS.resolving : action?.confirmLabel || UI_LABELS.confirmResolution}
                 </button>
-                <button
-                  onClick={() => setResolveTarget(null)}
+                <button onClick={() => setResolveTarget(null)}
                   className="rounded-full border px-4 py-2.5 text-sm font-medium transition-colors"
-                  style={{ borderColor: "var(--t-border)", color: "var(--t-text-muted)" }}
-                >
-                  Cancel
+                  style={{ borderColor: "var(--t-border)", color: "var(--t-text-muted)" }}>
+                  {UI_LABELS.cancel}
                 </button>
               </div>
             </div>
