@@ -113,6 +113,9 @@ const UI_LABELS = {
   invoiceCreateMissingPricing: "Cannot create invoice — no valid pricing found for this job configuration.",
   pricingPage: "Go to Pricing",
   jobConfig: "Job Configuration",
+  showResolved: "Show Resolved",
+  resolvedBadge: "Resolved",
+  dismissedBadge: "Dismissed",
 };
 
 /* ── Guided Resolution Config ── */
@@ -190,6 +193,7 @@ export default function BillingIssuesPage() {
   const [detecting, setDetecting] = useState(false);
   const [statusFilter, setStatusFilter] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
+  const [showResolved, setShowResolved] = useState(false);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [resolveTarget, setResolveTarget] = useState<BillingIssue | null>(null);
@@ -212,6 +216,7 @@ export default function BillingIssuesPage() {
     try {
       const params = new URLSearchParams({ page: String(page), limit: "25" });
       if (statusFilter) params.set("status", statusFilter);
+      else if (showResolved) params.set("status", "all");
       if (typeFilter) params.set("issueType", typeFilter);
       const [res, sum] = await Promise.all([
         api.get<{ data: BillingIssue[]; meta: { total: number } }>(`/billing-issues?${params}`),
@@ -221,10 +226,10 @@ export default function BillingIssuesPage() {
       setTotal(res.meta.total);
       setSummary(sum);
     } catch { /* */ } finally { setLoading(false); }
-  }, [page, statusFilter, typeFilter]);
+  }, [page, statusFilter, typeFilter, showResolved]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
-  useEffect(() => { setPage(1); }, [statusFilter, typeFilter]);
+  useEffect(() => { setPage(1); }, [statusFilter, typeFilter, showResolved]);
   useEffect(() => { api.get<{ data: typeof pricingRules }>("/pricing").then(r => setPricingRules(r.data || [])).catch(() => {}); }, []);
 
   const handleDetect = async () => {
@@ -434,6 +439,15 @@ export default function BillingIssuesPage() {
           <option value="">All Types</option>
           {ISSUE_TYPES.filter(t => t.key !== "all").map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
         </select>
+        <label className="flex items-center gap-2 text-xs cursor-pointer select-none" style={{ color: "var(--t-text-muted)" }}>
+          <input
+            type="checkbox"
+            checked={showResolved}
+            onChange={e => setShowResolved(e.target.checked)}
+            className="accent-[var(--t-accent)]"
+          />
+          {UI_LABELS.showResolved}
+        </label>
         {(statusFilter || typeFilter) && (
           <button onClick={() => { setStatusFilter(""); setTypeFilter(""); }}
             className="text-xs text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)]">
@@ -478,17 +492,20 @@ export default function BillingIssuesPage() {
             const typeInfo = getTypeInfo(issue.issue_type);
             const isOpen = issue.status === "open";
             const isAutoResolved = issue.status === "auto_resolved";
+            const isActionable = isOpen || isAutoResolved;
+            const isResolved = issue.status === "manually_resolved";
+            const isDismissed = issue.status === "dismissed";
             return (
               <div
                 key={issue.id}
                 className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-4"
-                style={{ borderLeftWidth: 3, borderLeftColor: typeInfo.color }}
+                style={{ borderLeftWidth: 3, borderLeftColor: isActionable ? typeInfo.color : "var(--t-border)", opacity: isActionable ? 1 : 0.6 }}
               >
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1.5">
-                      <typeInfo.icon className="h-4 w-4 shrink-0" style={{ color: typeInfo.color }} />
-                      <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: typeInfo.color }}>
+                      <typeInfo.icon className="h-4 w-4 shrink-0" style={{ color: isActionable ? typeInfo.color : "var(--t-text-muted)" }} />
+                      <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: isActionable ? typeInfo.color : "var(--t-text-muted)" }}>
                         {typeInfo.label}
                       </span>
                       <span
@@ -498,10 +515,10 @@ export default function BillingIssuesPage() {
                           color: isOpen ? "var(--t-error)" : isAutoResolved ? "var(--t-accent)" : "var(--t-text-muted)",
                         }}
                       >
-                        {issue.status.replace(/_/g, " ")}
+                        {isResolved ? UI_LABELS.resolvedBadge : isDismissed ? UI_LABELS.dismissedBadge : issue.status.replace(/_/g, " ")}
                       </span>
                     </div>
-                    <p className="text-sm font-medium mb-1" style={{ color: "var(--t-text-primary)" }}>
+                    <p className="text-sm font-medium mb-1" style={{ color: isActionable ? "var(--t-text-primary)" : "var(--t-text-muted)" }}>
                       {issue.description}
                     </p>
                     <div className="flex items-center gap-4 text-xs" style={{ color: "var(--t-text-muted)" }}>
@@ -511,7 +528,7 @@ export default function BillingIssuesPage() {
                         </Link>
                       )}
                       {issue.calculated_amount != null && (
-                        <span className="tabular-nums font-medium" style={{ color: typeInfo.color }}>
+                        <span className="tabular-nums font-medium" style={{ color: isActionable ? typeInfo.color : "var(--t-text-muted)" }}>
                           {fmt(issue.calculated_amount)}
                         </span>
                       )}
