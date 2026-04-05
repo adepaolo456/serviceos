@@ -791,33 +791,45 @@ export default function BillingIssuesPage() {
               )}
 
               {/* Linked job context for PRICE_MISMATCH traceability */}
-              {resolveTarget.issue_type === "price_mismatch" && jobDetail && (
+              {resolveTarget.issue_type === "price_mismatch" && (() => {
+                // Use jobDetail if available, otherwise fall back to invoiceDetail.job
+                const linkedJob = jobDetail || (invoiceDetail?.job ? {
+                  id: invoiceDetail.job.id,
+                  job_number: invoiceDetail.job.job_number || "",
+                  job_type: invoiceDetail.job.job_type || "",
+                  asset_subtype: invoiceDetail.job.asset_subtype || null,
+                  service_address: invoiceDetail.job.service_address || null,
+                  scheduled_date: invoiceDetail.job.scheduled_date || "",
+                } : null);
+                if (!linkedJob?.id) return null;
+                return (
                 <div className="rounded-xl border p-4" style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)" }}>
                   <div className="flex items-center justify-between mb-2">
                     <p className="text-xs font-semibold" style={{ color: "var(--t-text-primary)" }}>{UI_LABELS.linkedJob}</p>
-                    <Link href={`/jobs/${jobDetail.id}`} className="inline-flex items-center gap-1 text-[10px] font-medium" style={{ color: "var(--t-accent)" }}>
+                    <Link href={`/jobs/${linkedJob.id}`} className="inline-flex items-center gap-1 text-[10px] font-medium" style={{ color: "var(--t-accent)" }}>
                       {UI_LABELS.viewJob} <ExternalLink className="h-3 w-3" />
                     </Link>
                   </div>
                   <div className="space-y-1.5 text-xs">
-                    <div className="flex justify-between"><span style={{ color: "var(--t-text-muted)" }}>{UI_LABELS.linkedJob}</span><span className="font-medium" style={{ color: "var(--t-text-primary)" }}>#{jobDetail.job_number}</span></div>
-                    <div className="flex justify-between"><span style={{ color: "var(--t-text-muted)" }}>{UI_LABELS.linkedJobType}</span><span className="font-medium capitalize" style={{ color: "var(--t-text-primary)" }}>{jobDetail.job_type?.replace(/_/g, " ") || "—"}</span></div>
-                    {jobDetail.service_address && (jobDetail.service_address.street || jobDetail.service_address.city) && (
-                      <div className="flex justify-between"><span style={{ color: "var(--t-text-muted)" }}>{UI_LABELS.linkedJobAddress}</span><span className="font-medium truncate ml-4 text-right" style={{ color: "var(--t-text-primary)" }}>{[jobDetail.service_address.street, jobDetail.service_address.city, jobDetail.service_address.state].filter(Boolean).join(", ")}</span></div>
+                    {linkedJob.job_number && <div className="flex justify-between"><span style={{ color: "var(--t-text-muted)" }}>{UI_LABELS.linkedJob}</span><span className="font-medium" style={{ color: "var(--t-text-primary)" }}>#{linkedJob.job_number}</span></div>}
+                    {linkedJob.job_type && <div className="flex justify-between"><span style={{ color: "var(--t-text-muted)" }}>{UI_LABELS.linkedJobType}</span><span className="font-medium capitalize" style={{ color: "var(--t-text-primary)" }}>{linkedJob.job_type.replace(/_/g, " ")}</span></div>}
+                    {linkedJob.service_address && (linkedJob.service_address.street || linkedJob.service_address.city) && (
+                      <div className="flex justify-between"><span style={{ color: "var(--t-text-muted)" }}>{UI_LABELS.linkedJobAddress}</span><span className="font-medium truncate ml-4 text-right" style={{ color: "var(--t-text-primary)" }}>{[linkedJob.service_address.street, linkedJob.service_address.city, linkedJob.service_address.state].filter(Boolean).join(", ")}</span></div>
                     )}
-                    {jobDetail.scheduled_date && <div className="flex justify-between"><span style={{ color: "var(--t-text-muted)" }}>{UI_LABELS.linkedJobDate}</span><span style={{ color: "var(--t-text-primary)" }}>{new Date(jobDetail.scheduled_date + "T12:00:00").toLocaleDateString()}</span></div>}
+                    {linkedJob.scheduled_date && <div className="flex justify-between"><span style={{ color: "var(--t-text-muted)" }}>{UI_LABELS.linkedJobDate}</span><span style={{ color: "var(--t-text-primary)" }}>{new Date(linkedJob.scheduled_date + "T12:00:00").toLocaleDateString()}</span></div>}
                     {/* Pricing basis explanation */}
                     {(() => {
-                      const size = jobDetail.asset_subtype || invoiceDetail?.job?.asset_subtype;
+                      const size = linkedJob.asset_subtype || invoiceDetail?.job?.asset_subtype;
                       const custType = invoiceDetail?.customer_type;
-                      const addr = jobDetail.service_address;
+                      const addr = linkedJob.service_address;
                       const parts = [size, custType, addr?.city || addr?.state].filter(Boolean);
                       if (!parts.length) return null;
                       return <div className="flex justify-between border-t pt-1.5 mt-1.5" style={{ borderColor: "var(--t-border)" }}><span style={{ color: "var(--t-text-muted)" }}>{UI_LABELS.pricingBasis}</span><span className="font-medium text-right truncate ml-4" style={{ color: "var(--t-accent)" }}>{parts.join(" · ")}</span></div>;
                     })()}
                   </div>
                 </div>
-              )}
+                );
+              })()}
 
               {/* Guided resolution: action selection */}
               {isGuided ? (
@@ -916,14 +928,16 @@ export default function BillingIssuesPage() {
                   )}
 
                   {/* Pricing: Missing service address banner */}
-                  {resolveTarget.issue_type === "price_mismatch" && selectedAction && resolveTarget.job_id && (() => {
-                    const jobAddr = jobDetail?.service_address;
+                  {resolveTarget.issue_type === "price_mismatch" && selectedAction && (() => {
+                    const linkedJobId = resolveTarget.job_id || jobDetail?.id || invoiceDetail?.job?.id;
+                    if (!linkedJobId) return null;
+                    const jobAddr = jobDetail?.service_address || invoiceDetail?.job?.service_address;
                     const hasValidAddr = !!(jobAddr && jobAddr.street && jobAddr.lat && jobAddr.lng);
                     if (hasValidAddr) return null;
                     return (
                       <div className="rounded-xl border p-4" style={{ borderColor: "var(--t-warning)", background: "var(--t-warning-soft, var(--t-bg-elevated))" }}>
                         <p className="text-xs font-semibold mb-2" style={{ color: "var(--t-warning)" }}>{UI_LABELS.pricingAddressMissing}</p>
-                        <Link href={`/jobs/${resolveTarget.job_id}`} className="inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors hover:bg-[var(--t-accent-soft)]" style={{ borderColor: "var(--t-accent)", color: "var(--t-accent)" }}>
+                        <Link href={`/jobs/${linkedJobId}`} className="inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors hover:bg-[var(--t-accent-soft)]" style={{ borderColor: "var(--t-accent)", color: "var(--t-accent)" }}>
                           <MapPin className="h-3 w-3" /> {UI_LABELS.editServiceAddress}
                         </Link>
                       </div>
