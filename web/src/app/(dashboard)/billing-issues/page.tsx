@@ -9,6 +9,7 @@ import {
 import { api } from "@/lib/api";
 import { useToast } from "@/components/toast";
 import { formatCurrency } from "@/lib/utils";
+import SlideOver from "@/components/slide-over";
 
 const fmt = (n: number | null | undefined) => formatCurrency(n as number);
 
@@ -50,6 +51,16 @@ const STATUS_FILTERS = [
   { value: "dismissed", label: "Dismissed" },
 ];
 
+const RESOLUTION_REASONS = [
+  { value: "invoice_corrected", label: "Invoice corrected" },
+  { value: "payment_matched", label: "Payment matched" },
+  { value: "duplicate_dismissed", label: "Duplicate dismissed" },
+  { value: "false_positive", label: "False positive / not an issue" },
+  { value: "customer_contacted", label: "Customer contacted" },
+  { value: "resolved_externally", label: "Resolved externally" },
+  { value: "manual_review", label: "Manual review completed" },
+];
+
 export default function BillingIssuesPage() {
   const [issues, setIssues] = useState<BillingIssue[]>([]);
   const [summary, setSummary] = useState<Summary>({ total: 0, by_type: {} });
@@ -59,6 +70,10 @@ export default function BillingIssuesPage() {
   const [typeFilter, setTypeFilter] = useState("");
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
+  const [resolveTarget, setResolveTarget] = useState<BillingIssue | null>(null);
+  const [resolveReason, setResolveReason] = useState("");
+  const [resolveNotes, setResolveNotes] = useState("");
+  const [resolving, setResolving] = useState(false);
   const { toast } = useToast();
 
   const fetchData = useCallback(async () => {
@@ -90,12 +105,25 @@ export default function BillingIssuesPage() {
     finally { setDetecting(false); }
   };
 
-  const handleResolve = async (id: string) => {
+  const openResolvePanel = (issue: BillingIssue) => {
+    setResolveTarget(issue);
+    setResolveReason("");
+    setResolveNotes("");
+  };
+
+  const confirmResolve = async () => {
+    if (!resolveTarget || !resolveReason) return;
+    setResolving(true);
     try {
-      await api.put(`/billing-issues/${id}/resolve`);
+      await api.put(`/billing-issues/${resolveTarget.id}/resolve`, {
+        reason: resolveReason,
+        notes: resolveNotes || undefined,
+      });
       toast("success", "Issue resolved");
+      setResolveTarget(null);
       await fetchData();
     } catch { toast("error", "Failed to resolve"); }
+    finally { setResolving(false); }
   };
 
   const handleDismiss = async (id: string) => {
@@ -262,7 +290,7 @@ export default function BillingIssuesPage() {
                   {isOpen && (
                     <div className="flex gap-2 shrink-0">
                       <button
-                        onClick={() => handleResolve(issue.id)}
+                        onClick={() => openResolvePanel(issue)}
                         className="flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors hover:bg-[var(--t-accent-soft)]"
                         style={{ borderColor: "var(--t-accent)", color: "var(--t-accent)" }}
                       >
@@ -298,6 +326,90 @@ export default function BillingIssuesPage() {
           </div>
         </div>
       )}
+
+      {/* Resolve Workflow Panel */}
+      <SlideOver open={!!resolveTarget} onClose={() => setResolveTarget(null)} title="Resolve Issue">
+        {resolveTarget && (() => {
+          const typeInfo = getTypeInfo(resolveTarget.issue_type);
+          return (
+            <div className="space-y-5">
+              {/* Issue summary */}
+              <div className="rounded-xl border p-4" style={{ background: "var(--t-bg-elevated)", borderColor: "var(--t-border)", borderLeftWidth: 3, borderLeftColor: typeInfo.color }}>
+                <div className="flex items-center gap-2 mb-2">
+                  <typeInfo.icon className="h-4 w-4" style={{ color: typeInfo.color }} />
+                  <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: typeInfo.color }}>{typeInfo.label}</span>
+                </div>
+                <p className="text-sm font-medium" style={{ color: "var(--t-text-primary)" }}>{resolveTarget.description}</p>
+                <div className="flex items-center gap-3 mt-2 text-xs" style={{ color: "var(--t-text-muted)" }}>
+                  {resolveTarget.calculated_amount != null && (
+                    <span className="font-medium tabular-nums" style={{ color: typeInfo.color }}>{fmt(resolveTarget.calculated_amount)}</span>
+                  )}
+                  {resolveTarget.days_overdue != null && <span>{resolveTarget.days_overdue} days overdue</span>}
+                  <span>{new Date(resolveTarget.created_at).toLocaleDateString()}</span>
+                </div>
+                {resolveTarget.invoice_id && (
+                  <Link href={`/invoices/${resolveTarget.invoice_id}`} className="inline-flex items-center gap-1 text-xs font-medium mt-2" style={{ color: "var(--t-accent)" }}>
+                    View Invoice
+                  </Link>
+                )}
+              </div>
+
+              {resolveTarget.suggested_action && (
+                <div className="rounded-xl border p-3 text-xs" style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)", color: "var(--t-text-muted)" }}>
+                  <span className="font-semibold" style={{ color: "var(--t-text-primary)" }}>Suggested:</span> {resolveTarget.suggested_action}
+                </div>
+              )}
+
+              {/* Resolution reason */}
+              <div>
+                <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-text-primary)" }}>Resolution Reason *</label>
+                <select
+                  value={resolveReason}
+                  onChange={e => setResolveReason(e.target.value)}
+                  className="w-full rounded-[14px] border px-3 py-2.5 text-sm outline-none focus:border-[var(--t-accent)]"
+                  style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)", color: "var(--t-text-primary)" }}
+                >
+                  <option value="">Select a reason...</option>
+                  {RESOLUTION_REASONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+                </select>
+              </div>
+
+              {/* Optional notes */}
+              <div>
+                <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-text-primary)" }}>Notes (optional)</label>
+                <textarea
+                  value={resolveNotes}
+                  onChange={e => setResolveNotes(e.target.value)}
+                  rows={3}
+                  className="w-full rounded-[14px] border px-3 py-2.5 text-sm outline-none focus:border-[var(--t-accent)] resize-none"
+                  style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)", color: "var(--t-text-primary)" }}
+                  placeholder="Additional context..."
+                />
+              </div>
+
+              {/* Actions */}
+              <div className="flex gap-2 pt-2">
+                <button
+                  onClick={confirmResolve}
+                  disabled={!resolveReason || resolving}
+                  className="flex-1 flex items-center justify-center gap-2 rounded-full py-2.5 text-sm font-semibold transition-all disabled:opacity-40"
+                  style={{ background: "var(--t-accent)", color: "var(--t-accent-on-accent)" }}
+                >
+                  <CheckCircle2 className="h-4 w-4" />
+                  {resolving ? "Resolving..." : "Confirm Resolution"}
+                </button>
+                <button
+                  onClick={() => setResolveTarget(null)}
+                  className="rounded-full border px-4 py-2.5 text-sm font-medium transition-colors"
+                  style={{ borderColor: "var(--t-border)", color: "var(--t-text-muted)" }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          );
+        })()}
+      </SlideOver>
     </div>
   );
 }

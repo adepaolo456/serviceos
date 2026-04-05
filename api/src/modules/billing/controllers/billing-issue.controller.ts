@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Put,
+  Body,
   Query,
   Param,
   ParseUUIDPipe,
@@ -46,8 +47,9 @@ export class BillingIssueController {
     @TenantId() tenantId: string,
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser('id') userId: string,
+    @Body() body: { reason?: string; notes?: string },
   ) {
-    return this.detector.resolveIssue(tenantId, id, userId);
+    return this.detector.resolveIssue(tenantId, id, userId, body.reason, body.notes);
   }
 
   @Put(':id/dismiss')

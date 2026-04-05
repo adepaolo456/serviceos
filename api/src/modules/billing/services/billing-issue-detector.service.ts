@@ -213,7 +213,7 @@ export class BillingIssueDetectorService {
   // RESOLVE / DISMISS
   // ─────────────────────────────────────────────────────────
 
-  async resolveIssue(tenantId: string, issueId: string, userId: string) {
+  async resolveIssue(tenantId: string, issueId: string, userId: string, reason?: string, notes?: string) {
     const issue = await this.issueRepo.findOne({
       where: { id: issueId, tenant_id: tenantId },
     });
@@ -222,6 +222,8 @@ export class BillingIssueDetectorService {
     issue.status = 'manually_resolved';
     issue.resolved_by = userId;
     issue.resolved_at = new Date();
+    if (reason) issue.resolution_reason = reason;
+    if (notes) issue.resolution_notes = notes;
     return this.issueRepo.save(issue);
   }
 
