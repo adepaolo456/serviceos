@@ -65,6 +65,12 @@ export class BillingIssue {
   @Column({ name: 'resolved_at', type: 'timestamptz', nullable: true })
   resolved_at!: Date;
 
+  @Column({ name: 'resolution_reason', type: 'text', nullable: true })
+  resolution_reason!: string;
+
+  @Column({ name: 'resolution_notes', type: 'text', nullable: true })
+  resolution_notes!: string;
+
   @Column({ name: 'created_at', type: 'timestamptz', default: () => 'NOW()' })
   created_at!: Date;
 }
