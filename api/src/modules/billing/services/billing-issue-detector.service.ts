@@ -88,7 +88,9 @@ export class BillingIssueDetectorService {
     }
 
     // ── CHECK 3: Missing dump slip (FLAG) ──
-    if (job && job.status === 'completed') {
+    // Only check on job types that involve dumping — not delivery/drop-off
+    const DUMP_ELIGIBLE_TYPES = ['pick_up', 'dump_and_return', 'haul', 'swap', 'exchange'];
+    if (job && job.status === 'completed' && DUMP_ELIGIBLE_TYPES.includes(job.job_type)) {
       const issue = await this.checkMissingDumpSlip(
         tenantId,
         invoiceId,
@@ -357,6 +359,24 @@ export class BillingIssueDetectorService {
       issue.status = 'auto_resolved';
       issue.resolved_at = new Date();
       issue.resolution_reason = 'auto_cleared_invoice_closed';
+      await this.issueRepo.save(issue);
+    }
+
+    // Find open missing_dump_slip issues on non-dump-eligible job types (false positives)
+    const dumpEligible = ['pick_up', 'dump_and_return', 'haul', 'swap', 'exchange'];
+    const staleDumpSlip = await this.issueRepo
+      .createQueryBuilder('bi')
+      .innerJoin(Job, 'j', 'j.id = bi.job_id')
+      .where('bi.tenant_id = :tenantId', { tenantId })
+      .andWhere('bi.issue_type = :type', { type: 'missing_dump_slip' })
+      .andWhere('bi.status IN (:...statuses)', { statuses: ['open', 'auto_resolved'] })
+      .andWhere('j.job_type NOT IN (:...dumpTypes)', { dumpTypes: dumpEligible })
+      .getMany();
+
+    for (const issue of staleDumpSlip) {
+      issue.status = 'auto_resolved';
+      issue.resolved_at = new Date();
+      issue.resolution_reason = 'auto_cleared_not_dump_eligible';
       await this.issueRepo.save(issue);
     }
   }
