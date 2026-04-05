@@ -159,12 +159,15 @@ function getResolutionConfig(issueType: string): IssueResolutionConfig | null {
 }
 
 /* ── Types for guided resolution ── */
+interface DumpOverageItem { type: string; label: string; quantity: number; chargePerUnit: number; total: number }
+
 interface JobDetail {
   id: string; job_number: string; status: string; job_type: string;
   asset_subtype: string | null; base_price: number; total_price: number;
   rental_days: number; scheduled_date: string;
   service_address: Record<string, string> | null;
   customer: { id: string; first_name: string; last_name: string } | null;
+  dump_overage_items?: DumpOverageItem[];
 }
 
 interface InvoiceSearchResult {
@@ -336,9 +339,9 @@ export default function BillingIssuesPage() {
         const existingItems = invoiceDetail.line_items.map(li => ({
           line_type: li.line_type, name: li.name, quantity: li.quantity, unit_rate: li.unit_rate,
         }));
-        const surchargeItems = (jobDetail as any).dump_overage_items || [];
-        const newItems = surchargeItems.map((item: any) => ({
-          line_type: "surcharge", name: item.description || item.type || "Surcharge", quantity: 1, unit_rate: Number(item.amount || item.price || 0),
+        const surchargeItems = jobDetail.dump_overage_items || [];
+        const newItems = surchargeItems.map((item) => ({
+          line_type: "surcharge", name: item.label || item.type, quantity: item.quantity, unit_rate: item.chargePerUnit,
         }));
         await api.put(`/invoices/${invoiceDetail.id}`, { line_items: [...existingItems, ...newItems] });
         linkedInvoiceId = invoiceDetail.id;
@@ -715,10 +718,10 @@ export default function BillingIssuesPage() {
                     <div className="rounded-xl border p-4" style={{ background: "var(--t-bg-card)", borderColor: "var(--t-warning)" }}>
                       <p className="text-xs font-semibold mb-2" style={{ color: "var(--t-warning)" }}>{UI_LABELS.surchargeItems}</p>
                       <p className="text-xs mb-3" style={{ color: "var(--t-text-muted)" }}>{UI_LABELS.surchargeGuidance}</p>
-                      {jobDetail && (jobDetail as any).dump_overage_items?.map((item: any, i: number) => (
+                      {jobDetail?.dump_overage_items?.map((item, i) => (
                         <div key={i} className="flex justify-between text-xs py-1.5" style={{ borderTop: i > 0 ? "1px solid var(--t-border)" : undefined }}>
-                          <span style={{ color: "var(--t-text-primary)" }}>{item.description || item.type || "Surcharge item"}</span>
-                          <span className="font-medium tabular-nums" style={{ color: "var(--t-warning)" }}>{fmt(item.amount || item.price || 0)}</span>
+                          <span style={{ color: "var(--t-text-primary)" }}>{item.label || item.type} {item.quantity > 1 ? `×${item.quantity}` : ""}</span>
+                          <span className="font-medium tabular-nums" style={{ color: "var(--t-warning)" }}>{fmt(item.total)}</span>
                         </div>
                       ))}
                     </div>
