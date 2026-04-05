@@ -47,9 +47,17 @@ export class BillingIssueController {
     @TenantId() tenantId: string,
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser('id') userId: string,
-    @Body() body: { reason?: string; notes?: string },
+    @Body() body: { reason?: string; notes?: string; linkedInvoiceId?: string },
   ) {
-    return this.detector.resolveIssue(tenantId, id, userId, body.reason, body.notes);
+    return this.detector.resolveIssue(tenantId, id, userId, body.reason, body.notes, body.linkedInvoiceId);
+  }
+
+  @Get(':id/detail')
+  getDetail(
+    @TenantId() tenantId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.detector.getIssueDetail(tenantId, id);
   }
 
   @Put(':id/dismiss')
