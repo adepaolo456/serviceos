@@ -270,8 +270,16 @@ export class BillingIssueDetectorService {
       .createQueryBuilder('bi')
       .where('bi.tenant_id = :tenantId', { tenantId });
 
-    if (query.status)
+    if (query.status === 'all') {
+      // No status filter — return every status
+    } else if (query.status) {
       qb.andWhere('bi.status = :status', { status: query.status });
+    } else {
+      // Default: actionable issues only
+      qb.andWhere('bi.status IN (:...statuses)', {
+        statuses: ['open', 'auto_resolved'],
+      });
+    }
     if (query.issueType)
       qb.andWhere('bi.issue_type = :issueType', {
         issueType: query.issueType,
@@ -292,7 +300,7 @@ export class BillingIssueDetectorService {
       .select('bi.issue_type', 'issue_type')
       .addSelect('COUNT(*)::int', 'count')
       .where('bi.tenant_id = :tenantId', { tenantId })
-      .andWhere('bi.status = :status', { status: 'open' })
+      .andWhere('bi.status IN (:...statuses)', { statuses: ['open', 'auto_resolved'] })
       .groupBy('bi.issue_type')
       .getRawMany<{ issue_type: string; count: number }>();
 
