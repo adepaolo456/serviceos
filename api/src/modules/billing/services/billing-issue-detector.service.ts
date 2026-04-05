@@ -167,6 +167,9 @@ export class BillingIssueDetectorService {
   // ─────────────────────────────────────────────────────────
 
   async detectAllForTenant(tenantId: string) {
+    // Auto-resolve stale issues before detecting new ones
+    await this.resolveStaleIssues(tenantId);
+
     // Invoice-level checks
     const invoices = await this.invoiceRepo.find({
       where: {
@@ -295,6 +298,9 @@ export class BillingIssueDetectorService {
   }
 
   async getSummary(tenantId: string) {
+    // Clean up stale issues before counting
+    await this.resolveStaleIssues(tenantId);
+
     const rows = await this.issueRepo
       .createQueryBuilder('bi')
       .select('bi.issue_type', 'issue_type')
@@ -309,6 +315,50 @@ export class BillingIssueDetectorService {
     for (const r of rows) byType[r.issue_type] = Number(r.count);
 
     return { total, by_type: byType };
+  }
+
+  // ─────────────────────────────────────────────────────────
+  // PRIVATE: Auto-resolve stale issues
+  // ─────────────────────────────────────────────────────────
+
+  private async resolveStaleIssues(tenantId: string): Promise<void> {
+    // Find open past_due_payment issues whose invoice is now paid or zero-balance
+    const stalePastDue = await this.issueRepo
+      .createQueryBuilder('bi')
+      .innerJoin(Invoice, 'inv', 'inv.id = bi.invoice_id')
+      .where('bi.tenant_id = :tenantId', { tenantId })
+      .andWhere('bi.issue_type = :type', { type: 'past_due_payment' })
+      .andWhere('bi.status IN (:...statuses)', { statuses: ['open', 'auto_resolved'] })
+      .andWhere('(inv.balance_due <= 0 OR inv.status IN (:...paidStatuses))', {
+        paidStatuses: ['paid', 'voided'],
+      })
+      .getMany();
+
+    for (const issue of stalePastDue) {
+      issue.status = 'auto_resolved';
+      issue.resolved_at = new Date();
+      issue.resolution_reason = 'auto_cleared_balance_paid';
+      await this.issueRepo.save(issue);
+    }
+
+    // Find open price_mismatch issues whose invoice pricing now matches
+    const stalePriceMismatch = await this.issueRepo
+      .createQueryBuilder('bi')
+      .innerJoin(Invoice, 'inv', 'inv.id = bi.invoice_id')
+      .where('bi.tenant_id = :tenantId', { tenantId })
+      .andWhere('bi.issue_type = :type', { type: 'price_mismatch' })
+      .andWhere('bi.status IN (:...statuses)', { statuses: ['open', 'auto_resolved'] })
+      .andWhere('(inv.status IN (:...closedStatuses))', {
+        closedStatuses: ['paid', 'voided'],
+      })
+      .getMany();
+
+    for (const issue of stalePriceMismatch) {
+      issue.status = 'auto_resolved';
+      issue.resolved_at = new Date();
+      issue.resolution_reason = 'auto_cleared_invoice_closed';
+      await this.issueRepo.save(issue);
+    }
   }
 
   // ─────────────────────────────────────────────────────────
