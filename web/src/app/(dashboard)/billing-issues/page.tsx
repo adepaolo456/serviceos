@@ -296,21 +296,17 @@ export default function BillingIssuesPage() {
       const reason = action?.autoReason || resolveReason;
 
       if (action?.key === "create_invoice" && jobDetail) {
-        // Create invoice from job data via existing endpoint
+        // Create invoice via the standard job-linked flow — omit line_items so
+        // the backend auto-creates pricing-aware rental lines from PriceResolutionService
+        // (same path normal invoices use: pricing snapshot, rental chain, source tracking)
         const rule = pricingRules.find(r => r.asset_subtype === jobDetail.asset_subtype);
-        const basePrice = Number(rule?.base_price) || Number(jobDetail.base_price) || 0;
-        const deliveryFee = Number(rule?.delivery_fee) || 0;
-        if (!isFinite(basePrice) || basePrice <= 0) { toast("error", UI_LABELS.invoiceCreateMissingPricing); setResolving(false); return; }
-        const lineItems: { line_type: string; name: string; quantity: number; unit_rate: number }[] = [
-          { line_type: "rental", name: `${jobDetail.asset_subtype || "Dumpster"} Rental`, quantity: 1, unit_rate: basePrice },
-        ];
-        if (deliveryFee > 0) lineItems.push({ line_type: "delivery", name: "Delivery Fee", quantity: 1, unit_rate: deliveryFee });
+        const createBasePrice = Number(rule?.base_price) || Number(jobDetail.base_price) || 0;
+        if (!isFinite(createBasePrice) || createBasePrice <= 0) { toast("error", UI_LABELS.invoiceCreateMissingPricing); setResolving(false); return; }
 
         const inv = await api.post<{ id: string; invoice_number: number }>("/invoices", {
           customer_id: jobDetail.customer?.id,
           job_id: jobDetail.id,
           service_date: jobDetail.scheduled_date,
-          line_items: lineItems,
         });
         linkedInvoiceId = inv.id;
         toast("success", `Invoice #${inv.invoice_number} created`);
