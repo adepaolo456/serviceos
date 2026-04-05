@@ -10,6 +10,18 @@ import { PriceResolutionService, ResolvedPrice } from '../../pricing/services/pr
 
 @Injectable()
 export class BillingIssueDetectorService {
+  private staleCleanupLastRun = new Map<string, number>();
+  private readonly STALE_CLEANUP_COOLDOWN_MS = 60_000; // 1 minute
+
+  private shouldRunStaleCleanup(tenantId: string): boolean {
+    const lastRun = this.staleCleanupLastRun.get(tenantId) || 0;
+    return Date.now() - lastRun >= this.STALE_CLEANUP_COOLDOWN_MS;
+  }
+
+  private markStaleCleanupRun(tenantId: string): void {
+    this.staleCleanupLastRun.set(tenantId, Date.now());
+  }
+
   constructor(
     @InjectRepository(BillingIssue)
     private issueRepo: Repository<BillingIssue>,
@@ -169,8 +181,8 @@ export class BillingIssueDetectorService {
   // ─────────────────────────────────────────────────────────
 
   async detectAllForTenant(tenantId: string) {
-    // Auto-resolve stale issues before detecting new ones
-    await this.resolveStaleIssues(tenantId);
+    // Auto-resolve stale issues before detecting new ones (force — always run on explicit detect)
+    await this.resolveStaleIssues(tenantId, true);
 
     // Invoice-level checks
     const invoices = await this.invoiceRepo.find({
@@ -300,7 +312,7 @@ export class BillingIssueDetectorService {
   }
 
   async getSummary(tenantId: string) {
-    // Clean up stale issues before counting
+    // Clean up stale issues before counting (throttled — at most once per minute per tenant)
     await this.resolveStaleIssues(tenantId);
 
     const rows = await this.issueRepo
@@ -323,62 +335,103 @@ export class BillingIssueDetectorService {
   // PRIVATE: Auto-resolve stale issues
   // ─────────────────────────────────────────────────────────
 
-  private async resolveStaleIssues(tenantId: string): Promise<void> {
-    // Find open past_due_payment issues whose invoice is now paid or zero-balance
-    const stalePastDue = await this.issueRepo
-      .createQueryBuilder('bi')
-      .innerJoin(Invoice, 'inv', 'inv.id = bi.invoice_id')
-      .where('bi.tenant_id = :tenantId', { tenantId })
-      .andWhere('bi.issue_type = :type', { type: 'past_due_payment' })
-      .andWhere('bi.status IN (:...statuses)', { statuses: ['open', 'auto_resolved'] })
-      .andWhere('(inv.balance_due <= 0 OR inv.status IN (:...paidStatuses))', {
+  private async resolveStaleIssues(tenantId: string, force = false): Promise<void> {
+    if (!force && !this.shouldRunStaleCleanup(tenantId)) return;
+
+    const openStatuses = ['open', 'auto_resolved'];
+
+    // Pass 1: Stale past_due_payment — invoice balance paid or zero
+    await this.issueRepo
+      .createQueryBuilder()
+      .update(BillingIssue)
+      .set({
+        status: 'auto_resolved',
+        resolved_at: () => 'NOW()',
+        resolution_reason: 'auto_cleared_balance_paid',
+      })
+      .where(
+        'id IN (' +
+          this.issueRepo
+            .createQueryBuilder('bi')
+            .select('bi.id')
+            .innerJoin(Invoice, 'inv', 'inv.id = bi.invoice_id')
+            .where('bi.tenant_id = :tenantId')
+            .andWhere('bi.issue_type = :pastDueType')
+            .andWhere('bi.status IN (:...openStatuses)')
+            .andWhere('(inv.balance_due <= 0 OR inv.status IN (:...paidStatuses))')
+            .getQuery() +
+          ')',
+      )
+      .setParameters({
+        tenantId,
+        pastDueType: 'past_due_payment',
+        openStatuses,
         paidStatuses: ['paid', 'voided'],
       })
-      .getMany();
+      .execute();
 
-    for (const issue of stalePastDue) {
-      issue.status = 'auto_resolved';
-      issue.resolved_at = new Date();
-      issue.resolution_reason = 'auto_cleared_balance_paid';
-      await this.issueRepo.save(issue);
-    }
-
-    // Find open price_mismatch issues whose invoice pricing now matches
-    const stalePriceMismatch = await this.issueRepo
-      .createQueryBuilder('bi')
-      .innerJoin(Invoice, 'inv', 'inv.id = bi.invoice_id')
-      .where('bi.tenant_id = :tenantId', { tenantId })
-      .andWhere('bi.issue_type = :type', { type: 'price_mismatch' })
-      .andWhere('bi.status IN (:...statuses)', { statuses: ['open', 'auto_resolved'] })
-      .andWhere('(inv.status IN (:...closedStatuses))', {
+    // Pass 2: Stale price_mismatch — invoice closed
+    await this.issueRepo
+      .createQueryBuilder()
+      .update(BillingIssue)
+      .set({
+        status: 'auto_resolved',
+        resolved_at: () => 'NOW()',
+        resolution_reason: 'auto_cleared_invoice_closed',
+      })
+      .where(
+        'id IN (' +
+          this.issueRepo
+            .createQueryBuilder('bi')
+            .select('bi.id')
+            .innerJoin(Invoice, 'inv', 'inv.id = bi.invoice_id')
+            .where('bi.tenant_id = :tenantId')
+            .andWhere('bi.issue_type = :mismatchType')
+            .andWhere('bi.status IN (:...openStatuses)')
+            .andWhere('inv.status IN (:...closedStatuses)')
+            .getQuery() +
+          ')',
+      )
+      .setParameters({
+        tenantId,
+        mismatchType: 'price_mismatch',
+        openStatuses,
         closedStatuses: ['paid', 'voided'],
       })
-      .getMany();
+      .execute();
 
-    for (const issue of stalePriceMismatch) {
-      issue.status = 'auto_resolved';
-      issue.resolved_at = new Date();
-      issue.resolution_reason = 'auto_cleared_invoice_closed';
-      await this.issueRepo.save(issue);
-    }
-
-    // Find open missing_dump_slip issues on non-dump-eligible job types (false positives)
+    // Pass 3: False-positive missing_dump_slip — non-dump-eligible job types
     const dumpEligible = ['pick_up', 'dump_and_return', 'haul', 'swap', 'exchange'];
-    const staleDumpSlip = await this.issueRepo
-      .createQueryBuilder('bi')
-      .innerJoin(Job, 'j', 'j.id = bi.job_id')
-      .where('bi.tenant_id = :tenantId', { tenantId })
-      .andWhere('bi.issue_type = :type', { type: 'missing_dump_slip' })
-      .andWhere('bi.status IN (:...statuses)', { statuses: ['open', 'auto_resolved'] })
-      .andWhere('j.job_type NOT IN (:...dumpTypes)', { dumpTypes: dumpEligible })
-      .getMany();
+    await this.issueRepo
+      .createQueryBuilder()
+      .update(BillingIssue)
+      .set({
+        status: 'auto_resolved',
+        resolved_at: () => 'NOW()',
+        resolution_reason: 'auto_cleared_not_dump_eligible',
+      })
+      .where(
+        'id IN (' +
+          this.issueRepo
+            .createQueryBuilder('bi')
+            .select('bi.id')
+            .innerJoin(Job, 'j', 'j.id = bi.job_id')
+            .where('bi.tenant_id = :tenantId')
+            .andWhere('bi.issue_type = :dumpSlipType')
+            .andWhere('bi.status IN (:...openStatuses)')
+            .andWhere('j.job_type NOT IN (:...dumpTypes)')
+            .getQuery() +
+          ')',
+      )
+      .setParameters({
+        tenantId,
+        dumpSlipType: 'missing_dump_slip',
+        openStatuses,
+        dumpTypes: dumpEligible,
+      })
+      .execute();
 
-    for (const issue of staleDumpSlip) {
-      issue.status = 'auto_resolved';
-      issue.resolved_at = new Date();
-      issue.resolution_reason = 'auto_cleared_not_dump_eligible';
-      await this.issueRepo.save(issue);
-    }
+    this.markStaleCleanupRun(tenantId);
   }
 
   // ─────────────────────────────────────────────────────────
