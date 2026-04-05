@@ -32,6 +32,7 @@ import { api } from "@/lib/api";
 import Dropdown from "@/components/dropdown";
 import { useToast } from "@/components/toast";
 import MapboxMap from "@/components/mapbox-map";
+import AddressAutocomplete, { type AddressValue } from "@/components/address-autocomplete";
 
 /* --- Types --- */
 
@@ -176,6 +177,9 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
   const [showRevisions, setShowRevisions] = useState<string | null>(null);
   const [invoice, setInvoice] = useState<{ id: string; invoice_number: number; status: string; total: number; balance_due: number } | null>(null);
   const [invoiceOpen, setInvoiceOpen] = useState(true);
+  const [editingAddress, setEditingAddress] = useState(false);
+  const [editAddress, setEditAddress] = useState<AddressValue>({ street: "", city: "", state: "", zip: "", lat: null, lng: null });
+  const [savingAddress, setSavingAddress] = useState(false);
 
   const fetchJob = async () => {
     try {
@@ -241,6 +245,27 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
       toast("success", `${type.replace(/_/g, " ")} scheduled for ${scheduledDate}`);
       await fetchJob();
     } catch { toast("error", "Failed to schedule"); } finally { setActionLoading(false); }
+  };
+
+  const startEditAddress = () => {
+    const a = job?.service_address;
+    setEditAddress({
+      street: a?.street || "", city: a?.city || "", state: a?.state || "", zip: a?.zip || "",
+      lat: a?.lat ? Number(a.lat) : null, lng: a?.lng ? Number(a.lng) : null,
+    });
+    setEditingAddress(true);
+  };
+
+  const saveAddress = async () => {
+    if (!editAddress.lat || !editAddress.lng) { toast("error", "Address must be geocoded with coordinates"); return; }
+    setSavingAddress(true);
+    try {
+      await api.patch(`/jobs/${id}`, { serviceAddress: editAddress });
+      toast("success", "Service address updated");
+      setEditingAddress(false);
+      await fetchJob();
+    } catch (err: any) { toast("error", err?.message || "Failed to update address"); }
+    finally { setSavingAddress(false); }
   };
 
   if (loading) {
@@ -466,26 +491,55 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
               <Field label="Asset" value={job.asset ? `${job.asset.identifier} (${job.asset.subtype})` : "None assigned"} />
               <Field label="Priority" value={job.priority} capitalize />
             </div>
-            {addr && (addr.street || addr.city) && (
-              <div className="mt-4 pt-4 border-t border-[var(--t-border)]">
-                <p className="text-xs text-[var(--t-text-muted)] mb-1">Service Address</p>
-                <p className="text-sm text-[var(--t-text-primary)]">{[addr.street, addr.city, addr.state, addr.zip].filter(Boolean).join(", ")}</p>
-                {job.placement_notes && <p className="mt-1 text-xs text-[var(--t-text-muted)] italic">Placement: {job.placement_notes}</p>}
-                {addr.lat && addr.lng && (
-                  <div className="mt-3">
-                    <MapboxMap
-                      markers={[{ id: job.id, lat: Number(addr.lat), lng: Number(addr.lng), type: job.job_type as any, label: job.asset?.subtype?.replace("yd","") || "" }]}
-                      center={{ lat: Number(addr.lat), lng: Number(addr.lng) }}
-                      zoom={14}
-                      interactive={false}
-                      showControls={false}
-                      fitBounds={false}
-                      style={{ height: 180, width: "100%" }}
-                    />
-                  </div>
+            <div className="mt-4 pt-4 border-t border-[var(--t-border)]">
+              <div className="flex items-center justify-between mb-1">
+                <p className="text-xs text-[var(--t-text-muted)]">Service Address</p>
+                {!editingAddress && (
+                  <button onClick={startEditAddress} className="flex items-center gap-1 text-[10px] font-medium text-[var(--t-accent)] hover:opacity-80">
+                    <Pencil className="h-3 w-3" /> Edit
+                  </button>
                 )}
               </div>
-            )}
+              {editingAddress ? (
+                <div className="space-y-3">
+                  <AddressAutocomplete value={editAddress} onChange={setEditAddress} placeholder="Search address..." />
+                  {editAddress.street && (
+                    <p className="text-xs text-[var(--t-text-muted)]">
+                      {[editAddress.street, editAddress.city, editAddress.state, editAddress.zip].filter(Boolean).join(", ")}
+                      {editAddress.lat && editAddress.lng ? " ✓ Geocoded" : " — Missing coordinates"}
+                    </p>
+                  )}
+                  <div className="flex gap-2">
+                    <button onClick={saveAddress} disabled={savingAddress} className="rounded-full px-4 py-1.5 text-xs font-semibold bg-[var(--t-accent)] text-[var(--t-accent-on-accent)] disabled:opacity-50">
+                      {savingAddress ? "Saving..." : "Save Address"}
+                    </button>
+                    <button onClick={() => setEditingAddress(false)} className="rounded-full px-4 py-1.5 text-xs font-medium border border-[var(--t-border)] text-[var(--t-text-muted)]">
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : addr && (addr.street || addr.city) ? (
+                <>
+                  <p className="text-sm text-[var(--t-text-primary)]">{[addr.street, addr.city, addr.state, addr.zip].filter(Boolean).join(", ")}</p>
+                  {job.placement_notes && <p className="mt-1 text-xs text-[var(--t-text-muted)] italic">Placement: {job.placement_notes}</p>}
+                  {addr.lat && addr.lng && (
+                    <div className="mt-3">
+                      <MapboxMap
+                        markers={[{ id: job.id, lat: Number(addr.lat), lng: Number(addr.lng), type: job.job_type as any, label: job.asset?.subtype?.replace("yd","") || "" }]}
+                        center={{ lat: Number(addr.lat), lng: Number(addr.lng) }}
+                        zoom={14}
+                        interactive={false}
+                        showControls={false}
+                        fitBounds={false}
+                        style={{ height: 180, width: "100%" }}
+                      />
+                    </div>
+                  )}
+                </>
+              ) : (
+                <p className="text-xs text-[var(--t-text-muted)]">No address set — <button onClick={startEditAddress} className="text-[var(--t-accent)] hover:underline">add one</button></p>
+              )}
+            </div>
           </Card>
 
           {/* Scheduling */}

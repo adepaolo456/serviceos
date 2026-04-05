@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import {
   AlertTriangle, Clock, Scale, FileX, Tag, DollarSign, FileText,
-  RefreshCw, CheckCircle2, XCircle, Ban, Search, Plus, LinkIcon,
+  RefreshCw, CheckCircle2, XCircle, Ban, Search, Plus, LinkIcon, MapPin,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useToast } from "@/components/toast";
@@ -171,6 +171,11 @@ const UI_LABELS = {
   createRuleAndResolveDesc: "Create a pricing rule for this configuration, then recalculate",
   suggestedRuleCurrentRate: "Current Invoice Rate",
   suggestedRuleSource: "Based on nearest rule",
+  // Service address labels
+  editServiceAddress: "Edit Service Address",
+  serviceAddress: "Service Address",
+  pricingAddressMissing: "Service address is missing or incomplete — update it on the job to enable distance-based pricing.",
+  viewJob: "View Job",
 };
 
 /* ── Pricing Rule Suggestion Helper ── */
@@ -867,6 +872,21 @@ export default function BillingIssuesPage() {
                       )}
                     </div>
                   )}
+
+                  {/* Pricing: Missing service address banner */}
+                  {resolveTarget.issue_type === "price_mismatch" && selectedAction && resolveTarget.job_id && (() => {
+                    const jobAddr = jobDetail?.service_address;
+                    const hasValidAddr = !!(jobAddr && jobAddr.street && jobAddr.lat && jobAddr.lng);
+                    if (hasValidAddr) return null;
+                    return (
+                      <div className="rounded-xl border p-4" style={{ borderColor: "var(--t-warning)", background: "var(--t-warning-soft, var(--t-bg-elevated))" }}>
+                        <p className="text-xs font-semibold mb-2" style={{ color: "var(--t-warning)" }}>{UI_LABELS.pricingAddressMissing}</p>
+                        <Link href={`/jobs/${resolveTarget.job_id}`} className="inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors hover:bg-[var(--t-accent-soft)]" style={{ borderColor: "var(--t-accent)", color: "var(--t-accent)" }}>
+                          <MapPin className="h-3 w-3" /> {UI_LABELS.editServiceAddress}
+                        </Link>
+                      </div>
+                    );
+                  })()}
 
                   {/* Pricing: Recalculate comparison */}
                   {selectedAction === "recalculate_pricing" && invoiceDetail && (
