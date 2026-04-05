@@ -116,6 +116,21 @@ const UI_LABELS = {
   showResolved: "Show Resolved",
   resolvedBadge: "Resolved",
   dismissedBadge: "Dismissed",
+  // Past-due resolution labels
+  pastDueMarkPaid: "Mark as Paid",
+  pastDueMarkPaidDesc: "Record payment and close this issue",
+  pastDueSendReminder: "Send Reminder",
+  pastDueSendReminderDesc: "Send a payment reminder to the customer",
+  pastDueNoAction: "No Action Required",
+  pastDueNoActionDesc: "Dismiss this issue with a reason",
+  pastDueHelperText: "This invoice is past due. Choose how to handle it.",
+  pastDueReminderSent: "Payment reminder sent",
+  pastDueMarkedPaid: "Invoice marked as paid — issue resolved",
+  pastDueInvoiceNumber: "Invoice",
+  pastDueCustomer: "Customer",
+  pastDueBalanceDue: "Balance Due",
+  pastDueDaysOverdue: "Days Overdue",
+  pastDueDueDate: "Due Date",
 };
 
 /* ── Guided Resolution Config ── */
@@ -157,6 +172,14 @@ const GUIDED_RESOLUTIONS: IssueResolutionConfig[] = [
       { key: "dismiss", label: "No Surcharges Needed", description: "Dismiss — surcharge items are not billable", type: "dismiss", autoReason: "surcharges_dismissed", confirmLabel: "Confirm Resolution", successMessage: "Issue resolved" },
     ],
   },
+  {
+    issueType: "past_due_payment",
+    actions: [
+      { key: "mark_paid", label: UI_LABELS.pastDueMarkPaid, description: UI_LABELS.pastDueMarkPaidDesc, type: "primary", autoReason: "payment_confirmed", confirmLabel: "Mark Paid & Resolve", successMessage: UI_LABELS.pastDueMarkedPaid },
+      { key: "send_reminder", label: UI_LABELS.pastDueSendReminder, description: UI_LABELS.pastDueSendReminderDesc, type: "secondary", autoReason: "", confirmLabel: "Send Reminder", successMessage: UI_LABELS.pastDueReminderSent },
+      { key: "dismiss", label: UI_LABELS.pastDueNoAction, description: UI_LABELS.pastDueNoActionDesc, type: "dismiss", autoReason: "", confirmLabel: "Confirm Resolution", successMessage: "Issue resolved" },
+    ],
+  },
 ];
 
 function getResolutionConfig(issueType: string): IssueResolutionConfig | null {
@@ -182,6 +205,8 @@ interface InvoiceSearchResult {
 
 interface InvoiceDetail {
   id: string; invoice_number: number; total: number; balance_due: number; status: string;
+  due_date: string | null;
+  customer: { id: string; first_name: string; last_name: string } | null;
   line_items: { id: string; line_type: string; name: string; quantity: number; unit_rate: number; amount: number; sort_order: number }[];
   job: { id: string; asset_subtype: string; dump_overage_items?: any[] } | null;
 }
@@ -349,6 +374,30 @@ export default function BillingIssuesPage() {
         }));
         await api.put(`/invoices/${invoiceDetail.id}`, { line_items: [...existingItems, ...newItems] });
         linkedInvoiceId = invoiceDetail.id;
+      }
+
+      if (action?.key === "mark_paid" && invoiceDetail) {
+        // Record full payment via existing billing pipeline (triggers reconcileBalance)
+        const balance = Number(invoiceDetail.balance_due);
+        if (!balance || balance <= 0) { toast("error", "No balance to pay"); setResolving(false); return; }
+        await api.post(`/invoices/${invoiceDetail.id}/payments`, {
+          amount: balance,
+          payment_method: "manual",
+          notes: resolveNotes || "Marked as paid from billing issues",
+        });
+        linkedInvoiceId = invoiceDetail.id;
+      }
+
+      if (action?.key === "send_reminder" && invoiceDetail) {
+        // Send payment reminder via notification dispatch — does NOT resolve the issue
+        await api.post("/notifications/dispatch", {
+          customerId: invoiceDetail.customer?.id,
+          notificationType: "invoice_reminder",
+          invoiceId: invoiceDetail.id,
+        });
+        toast("success", UI_LABELS.pastDueReminderSent);
+        setResolving(false);
+        return; // Do not resolve — issue stays open
       }
 
       // Resolve the billing issue
@@ -598,6 +647,8 @@ export default function BillingIssuesPage() {
               || (selectedAction === "link_invoice" && selectedInvoiceId)
               || (selectedAction === "recalculate_pricing" && invoiceDetail && hasValidPricingRule)
               || (selectedAction === "add_surcharges" && invoiceDetail)
+              || (selectedAction === "mark_paid" && invoiceDetail && Number(invoiceDetail.balance_due) > 0)
+              || (selectedAction === "send_reminder" && invoiceDetail)
               || (selectedAction === "dismiss" && resolveReason)
             : !!resolveReason;
 
@@ -757,6 +808,25 @@ export default function BillingIssuesPage() {
                           <span className="font-medium tabular-nums" style={{ color: "var(--t-warning)" }}>{fmt(item.total)}</span>
                         </div>
                       ))}
+                    </div>
+                  )}
+
+                  {/* Past-due: invoice context */}
+                  {(selectedAction === "mark_paid" || selectedAction === "send_reminder") && invoiceDetail && (
+                    <div className="rounded-xl border p-4" style={{ background: "var(--t-bg-card)", borderColor: "var(--t-error)" }}>
+                      <p className="text-xs font-semibold mb-3" style={{ color: "var(--t-error)" }}>{UI_LABELS.pastDueHelperText}</p>
+                      <div className="space-y-2 text-xs">
+                        <div className="flex justify-between"><span style={{ color: "var(--t-text-muted)" }}>{UI_LABELS.pastDueInvoiceNumber}</span><span className="font-medium" style={{ color: "var(--t-text-primary)" }}>#{invoiceDetail.invoice_number}</span></div>
+                        {invoiceDetail.customer && <div className="flex justify-between"><span style={{ color: "var(--t-text-muted)" }}>{UI_LABELS.pastDueCustomer}</span><span className="font-medium" style={{ color: "var(--t-text-primary)" }}>{invoiceDetail.customer.first_name} {invoiceDetail.customer.last_name}</span></div>}
+                        <div className="flex justify-between"><span style={{ color: "var(--t-text-muted)" }}>{UI_LABELS.pastDueBalanceDue}</span><span className="font-bold" style={{ color: "var(--t-error)" }}>{fmt(invoiceDetail.balance_due)}</span></div>
+                        {resolveTarget.days_overdue != null && (
+                          <div className="flex justify-between">
+                            <span style={{ color: "var(--t-text-muted)" }}>{UI_LABELS.pastDueDaysOverdue}</span>
+                            <span className="font-medium" style={{ color: resolveTarget.days_overdue > 30 ? "var(--t-error)" : "var(--t-warning)" }}>{resolveTarget.days_overdue}</span>
+                          </div>
+                        )}
+                        {invoiceDetail.due_date && <div className="flex justify-between"><span style={{ color: "var(--t-text-muted)" }}>{UI_LABELS.pastDueDueDate}</span><span style={{ color: "var(--t-text-primary)" }}>{new Date(invoiceDetail.due_date).toLocaleDateString()}</span></div>}
+                      </div>
                     </div>
                   )}
 
