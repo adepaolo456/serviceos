@@ -157,7 +157,63 @@ const UI_LABELS = {
   invoiceLinkedResolved: "Invoice linked & issue resolved",
   pricingCorrectedResolved: "Pricing corrected & issue resolved",
   surchargesAddedResolved: "Surcharges added & issue resolved",
+  // Pricing rule suggestion labels
+  suggestedRuleTitle: "Suggested Pricing Rule",
+  suggestedRuleHelper: "Based on your existing pricing, this rule would cover the missing configuration.",
+  suggestedRuleUnavailable: "Not enough data to suggest a pricing rule. Create one manually on the Pricing page.",
+  createPricingRule: "Create Pricing Rule",
+  suggestedBasePrice: "Suggested Base Price",
+  suggestedIncludedTons: "Suggested Included Tons",
+  suggestedRentalPeriod: "Suggested Rental Period",
+  suggestedCustomerType: "Customer Type",
+  suggestedSize: "Dumpster Size",
+  manualReviewRequired: "Manual Review",
+  createRuleAndResolveDesc: "Create a pricing rule for this configuration, then recalculate",
+  suggestedRuleCurrentRate: "Current Invoice Rate",
+  suggestedRuleSource: "Based on nearest rule",
 };
+
+/* ── Pricing Rule Suggestion Helper ── */
+type PricingRule = { asset_subtype: string; base_price: number; rental_period_days: number; included_tons: number; delivery_fee: number; customer_type?: string; service_type?: string };
+
+function findBestMatchingRule(
+  rules: PricingRule[],
+  targetSubtype: string | null,
+  targetCustomerType: string | null,
+): PricingRule | null {
+  if (!rules.length || !targetSubtype) return null;
+
+  // Parse numeric size from subtype (e.g., "20yd" → 20)
+  const parseSize = (s: string) => { const m = s.match(/(\d+)/); return m ? Number(m[1]) : 0; };
+  const targetSize = parseSize(targetSubtype);
+
+  const scored = rules
+    .filter(r => r.asset_subtype !== targetSubtype) // exclude exact match (already checked by hasValidPricingRule)
+    .map(r => {
+      let score = 0;
+      // Customer type match: +100
+      if (targetCustomerType && r.customer_type && r.customer_type === targetCustomerType) score += 100;
+      // Size proximity: +200 for same size family, scaled down by distance
+      const ruleSize = parseSize(r.asset_subtype);
+      if (targetSize > 0 && ruleSize > 0) {
+        const sizeDiff = Math.abs(targetSize - ruleSize);
+        if (sizeDiff === 0) score += 200;
+        else if (sizeDiff <= 5) score += 150;
+        else if (sizeDiff <= 10) score += 100;
+        else if (sizeDiff <= 20) score += 50;
+        // >20 size difference: no size-proximity bonus
+      }
+      return { rule: r, score };
+    });
+
+  scored.sort((a, b) => b.score - a.score);
+  const best = scored[0];
+
+  // Minimum quality: must have at least customer type OR reasonable size proximity
+  if (!best || best.score < 50) return null;
+
+  return best.rule;
+}
 
 /* ── Guided Resolution Config ── */
 interface ResolutionAction {
@@ -188,6 +244,7 @@ const GUIDED_RESOLUTIONS: IssueResolutionConfig[] = [
     issueType: "price_mismatch",
     actions: [
       { key: "recalculate_pricing", label: UI_LABELS.recalculateLabel, description: UI_LABELS.recalculateDesc, type: "primary", autoReason: "pricing_recalculated", confirmLabel: UI_LABELS.recalculateAndResolve, successMessage: UI_LABELS.pricingCorrectedResolved },
+      { key: "create_pricing_rule", label: UI_LABELS.createPricingRule, description: UI_LABELS.createRuleAndResolveDesc, type: "secondary", autoReason: "", confirmLabel: UI_LABELS.createPricingRule, successMessage: "" },
       { key: "dismiss", label: UI_LABELS.keepPricingLabel, description: UI_LABELS.keepPricingDesc, type: "dismiss", autoReason: "pricing_accepted", confirmLabel: UI_LABELS.confirmResolutionLabel, successMessage: UI_LABELS.issueResolved },
     ],
   },
@@ -232,6 +289,7 @@ interface InvoiceSearchResult {
 interface InvoiceDetail {
   id: string; invoice_number: number; total: number; balance_due: number; status: string;
   due_date: string | null;
+  customer_type: string | null;
   customer: { id: string; first_name: string; last_name: string } | null;
   line_items: { id: string; line_type: string; name: string; quantity: number; unit_rate: number; amount: number; sort_order: number }[];
   job: { id: string; asset_subtype: string; dump_overage_items?: any[] } | null;
@@ -258,7 +316,7 @@ export default function BillingIssuesPage() {
   const [invoiceResults, setInvoiceResults] = useState<InvoiceSearchResult[]>([]);
   const [invoiceSearching, setInvoiceSearching] = useState(false);
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<string | null>(null);
-  const [pricingRules, setPricingRules] = useState<{ asset_subtype: string; base_price: number; rental_period_days: number; included_tons: number; delivery_fee: number }[]>([]);
+  const [pricingRules, setPricingRules] = useState<{ asset_subtype: string; base_price: number; rental_period_days: number; included_tons: number; delivery_fee: number; customer_type?: string; service_type?: string }[]>([]);
   const [invoiceDetail, setInvoiceDetail] = useState<InvoiceDetail | null>(null);
   const { toast } = useToast();
 
@@ -424,6 +482,16 @@ export default function BillingIssuesPage() {
         toast("success", UI_LABELS.pastDueReminderSent);
         setResolving(false);
         return; // Do not resolve — issue stays open
+      }
+
+      if (action?.key === "create_pricing_rule") {
+        // Navigate to pricing page — does NOT resolve the issue
+        const subtype = invoiceDetail?.job?.asset_subtype;
+        const params = subtype ? `?highlight=${encodeURIComponent(subtype)}` : "";
+        setResolving(false);
+        setResolveTarget(null);
+        window.location.href = `/pricing${params}`;
+        return;
       }
 
       // Resolve the billing issue
@@ -675,6 +743,7 @@ export default function BillingIssuesPage() {
               || (selectedAction === "add_surcharges" && invoiceDetail)
               || (selectedAction === "mark_paid" && invoiceDetail && Number(invoiceDetail.balance_due) > 0)
               || (selectedAction === "send_reminder" && invoiceDetail)
+              || (selectedAction === "create_pricing_rule" && invoiceDetail)
               || (selectedAction === "dismiss" && resolveReason)
             : !!resolveReason;
 
@@ -709,18 +778,26 @@ export default function BillingIssuesPage() {
                   <div>
                     <p className="text-xs font-semibold mb-2" style={{ color: "var(--t-text-primary)" }}>{UI_LABELS.actionPrompt}</p>
                     <div className="space-y-2">
-                      {config.actions.map(a => (
+                      {config.actions.map(a => {
+                        // Hide recalculate when no valid rule; hide create_pricing_rule when valid rule exists
+                        const isPriceMismatch = resolveTarget.issue_type === "price_mismatch";
+                        if (isPriceMismatch && a.key === "recalculate_pricing" && !hasValidPricingRule) return null;
+                        if (isPriceMismatch && a.key === "create_pricing_rule" && hasValidPricingRule) return null;
+                        const showRecommended = a.type === "primary" || (isPriceMismatch && a.key === "create_pricing_rule" && !hasValidPricingRule);
+                        const badgeLabel = (isPriceMismatch && a.key === "create_pricing_rule") ? UI_LABELS.manualReviewRequired : UI_LABELS.recommended;
+                        return (
                         <button key={a.key} onClick={() => { setSelectedAction(a.key); setSelectedInvoiceId(null); setInvoiceSearch(""); setInvoiceResults([]); if (a.autoReason) setResolveReason(a.autoReason); else setResolveReason(""); }}
                           className={`w-full rounded-xl border p-3 text-left transition-all ${selectedAction === a.key ? "ring-2 ring-[var(--t-accent)]" : ""}`}
                           style={{ background: selectedAction === a.key ? "var(--t-bg-elevated)" : "var(--t-bg-card)", borderColor: selectedAction === a.key ? "var(--t-accent)" : "var(--t-border)" }}>
                           <div className="flex items-center gap-2">
                             {a.type === "primary" ? <Plus className="h-3.5 w-3.5" style={{ color: "var(--t-accent)" }} /> : a.type === "secondary" ? <LinkIcon className="h-3.5 w-3.5" style={{ color: "var(--t-text-muted)" }} /> : <Ban className="h-3.5 w-3.5" style={{ color: "var(--t-text-muted)" }} />}
                             <span className="text-sm font-semibold" style={{ color: "var(--t-text-primary)" }}>{a.label}</span>
-                            {a.type === "primary" && <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full" style={{ background: "var(--t-accent-soft)", color: "var(--t-accent)" }}>{UI_LABELS.recommended}</span>}
+                            {showRecommended && <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full" style={{ background: "var(--t-accent-soft)", color: "var(--t-accent)" }}>{badgeLabel}</span>}
                           </div>
                           <p className="text-xs mt-1" style={{ color: "var(--t-text-muted)" }}>{a.description}</p>
                         </button>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
 
@@ -822,6 +899,41 @@ export default function BillingIssuesPage() {
                       })()}
                     </div>
                   )}
+
+                  {/* Pricing: Suggested rule panel (no matching rule) */}
+                  {selectedAction === "create_pricing_rule" && invoiceDetail && (() => {
+                    const subtype = invoiceDetail.job?.asset_subtype || null;
+                    const customerType = invoiceDetail.customer_type || null;
+                    const rentalLine = invoiceDetail.line_items.find(li => li.line_type === "rental");
+                    const currentRate = rentalLine ? rentalLine.unit_rate : 0;
+                    const sourceRule = findBestMatchingRule(pricingRules, subtype, customerType);
+                    return (
+                      <div className="rounded-xl border p-4" style={{ background: "var(--t-bg-card)", borderColor: "var(--t-warning)" }}>
+                        <p className="text-xs font-semibold mb-3" style={{ color: "var(--t-warning)" }}>{UI_LABELS.suggestedRuleTitle}</p>
+                        {sourceRule ? (
+                          <>
+                            <p className="text-xs mb-3" style={{ color: "var(--t-text-muted)" }}>{UI_LABELS.suggestedRuleHelper}</p>
+                            <div className="space-y-2 text-xs">
+                              <div className="flex justify-between"><span style={{ color: "var(--t-text-muted)" }}>{UI_LABELS.suggestedSize}</span><span className="font-medium" style={{ color: "var(--t-text-primary)" }}>{subtype || "—"}</span></div>
+                              <div className="flex justify-between"><span style={{ color: "var(--t-text-muted)" }}>{UI_LABELS.suggestedBasePrice}</span><span className="font-bold" style={{ color: "var(--t-accent)" }}>{fmt(sourceRule.base_price)}</span></div>
+                              <div className="flex justify-between"><span style={{ color: "var(--t-text-muted)" }}>{UI_LABELS.suggestedRentalPeriod}</span><span style={{ color: "var(--t-text-primary)" }}>{sourceRule.rental_period_days} days</span></div>
+                              {Number(sourceRule.included_tons) > 0 && <div className="flex justify-between"><span style={{ color: "var(--t-text-muted)" }}>{UI_LABELS.suggestedIncludedTons}</span><span style={{ color: "var(--t-text-primary)" }}>{sourceRule.included_tons}</span></div>}
+                              {customerType && <div className="flex justify-between"><span style={{ color: "var(--t-text-muted)" }}>{UI_LABELS.suggestedCustomerType}</span><span style={{ color: "var(--t-text-primary)" }}>{customerType}</span></div>}
+                              <div className="flex justify-between border-t pt-2" style={{ borderColor: "var(--t-border)" }}>
+                                <span style={{ color: "var(--t-text-muted)" }}>{UI_LABELS.suggestedRuleSource}</span>
+                                <span style={{ color: "var(--t-text-muted)" }}>{sourceRule.asset_subtype}</span>
+                              </div>
+                              {currentRate > 0 && (
+                                <div className="flex justify-between"><span style={{ color: "var(--t-text-muted)" }}>{UI_LABELS.suggestedRuleCurrentRate}</span><span className="font-medium" style={{ color: "var(--t-error)" }}>{fmt(currentRate)}</span></div>
+                              )}
+                            </div>
+                          </>
+                        ) : (
+                          <p className="text-xs" style={{ color: "var(--t-text-muted)" }}>{UI_LABELS.suggestedRuleUnavailable}</p>
+                        )}
+                      </div>
+                    );
+                  })()}
 
                   {/* Pricing: Surcharge gap */}
                   {selectedAction === "add_surcharges" && (
