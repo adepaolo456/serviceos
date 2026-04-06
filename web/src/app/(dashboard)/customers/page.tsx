@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, type FormEvent } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useBooking } from "@/components/booking-provider";
 import {
   Plus, Search, Users, MoreHorizontal, Trash2, Phone as PhoneIcon,
@@ -96,6 +96,7 @@ const CUSTOMER_LABELS = {
 
 export default function CustomersPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { openWizard } = useBooking();
   const { toast } = useToast();
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -107,6 +108,14 @@ export default function CustomersPage() {
   const [panelOpen, setPanelOpen] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey>("name");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
+
+  // Auto-open SlideOver when navigated with ?new=true
+  useEffect(() => {
+    if (searchParams.get("new") === "true") {
+      setPanelOpen(true);
+      router.replace("/customers", { scroll: false });
+    }
+  }, [searchParams, router]);
 
   const fetchCustomers = useCallback(async () => {
     setLoading(true);
@@ -611,9 +620,10 @@ function NewCustomerForm({ onOrchestrated, onClose }: { onOrchestrated: (result:
   const [schedPickupDate, setSchedPickupDate] = useState("");
   const [schedPickupTBD, setSchedPickupTBD] = useState(false);
   const [schedSiteAddress, setSchedSiteAddress] = useState<AddressValue>({ street: "", city: "", state: "", zip: "", lat: null, lng: null });
-  const [schedBillingSameAsSite, setSchedBillingSameAsSite] = useState(false);
+  const [schedBillingSameAsSite, setSchedBillingSameAsSite] = useState(true);
   const [schedPaymentMethod, setSchedPaymentMethod] = useState<"card" | "cash" | "check">("card");
-  const [sizeOptions, setSizeOptions] = useState<{ id: string; asset_subtype: string; base_price: number }[]>([]);
+  const [sizeOptions, setSizeOptions] = useState<{ id: string; asset_subtype: string; base_price: number; rental_period_days?: number }[]>([]);
+  const [pickupManuallySet, setPickupManuallySet] = useState(false);
   const [sizesLoading, setSizesLoading] = useState(false);
 
   // Fetch tenant-scoped size options when scheduling is selected
@@ -621,7 +631,7 @@ function NewCustomerForm({ onOrchestrated, onClose }: { onOrchestrated: (result:
     if (nextStep !== "schedule") return;
     if (sizeOptions.length > 0) return; // already fetched
     setSizesLoading(true);
-    api.get<{ data: { id: string; asset_subtype: string; base_price: number }[] }>("/pricing?limit=100")
+    api.get<{ data: { id: string; asset_subtype: string; base_price: number; rental_period_days?: number }[] }>("/pricing?limit=100")
       .then((res) => {
         const opts = res.data || [];
         setSizeOptions(opts);
@@ -634,6 +644,16 @@ function NewCustomerForm({ onOrchestrated, onClose }: { onOrchestrated: (result:
       .finally(() => setSizesLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nextStep]);
+
+  // Auto-calculate pickup date from delivery date + rental period
+  useEffect(() => {
+    if (pickupManuallySet || schedPickupTBD || !schedDeliveryDate || !schedDumpsterSize) return;
+    const sizeOpt = sizeOptions.find(o => o.asset_subtype === schedDumpsterSize);
+    const days = sizeOpt?.rental_period_days || 14;
+    const d = new Date(schedDeliveryDate);
+    d.setDate(d.getDate() + days);
+    setSchedPickupDate(d.toISOString().split("T")[0]);
+  }, [schedDeliveryDate, schedDumpsterSize, sizeOptions, schedPickupTBD, pickupManuallySet]);
 
   const inputStyle: React.CSSProperties = {
     width: "100%",
@@ -818,7 +838,7 @@ function NewCustomerForm({ onOrchestrated, onClose }: { onOrchestrated: (result:
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
         <div>
           <label style={labelStyle}>Phone</label>
-          <input type="tel" value={phone} onChange={e => setPhone(e.target.value)} style={inputStyle} placeholder="(508) 631-8884" />
+          <input type="tel" value={phone} onChange={e => setPhone(e.target.value)} style={inputStyle} placeholder="(555) 555-5555" />
         </div>
         <div>
           <label style={labelStyle}>Email</label>
@@ -830,32 +850,36 @@ function NewCustomerForm({ onOrchestrated, onClose }: { onOrchestrated: (result:
       <p style={sectionStyle}>Billing Address</p>
       <AddressAutocomplete value={billingAddress} onChange={setBillingAddress} placeholder="Search address..." />
 
-      {/* Service Addresses */}
-      <p style={sectionStyle}>Service Addresses</p>
-      {serviceAddresses.map((addr, i) => (
-        <div key={i} style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
-          <div style={{ flex: 1 }}>
-            <AddressAutocomplete value={addr} onChange={(v) => setServiceAddresses(prev => { const n = [...prev]; n[i] = v; return n; })} placeholder={`Service address ${i + 1}`} />
-          </div>
-          <button type="button" onClick={() => setServiceAddresses(prev => prev.filter((_, j) => j !== i))}
-            style={{
-              padding: 8,
-              color: "var(--t-text-muted)",
-              backgroundColor: "transparent",
-              border: "none",
-              cursor: "pointer",
-              fontSize: 16,
-              marginTop: 4,
-              transition: "color 0.15s ease",
-            }}>
-            &times;
+      {/* Service Addresses — only shown when scheduling (scheduling section has its own site address) */}
+      {nextStep === "schedule" && (
+        <>
+          <p style={sectionStyle}>Service Addresses</p>
+          {serviceAddresses.map((addr, i) => (
+            <div key={i} style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+              <div style={{ flex: 1 }}>
+                <AddressAutocomplete value={addr} onChange={(v) => setServiceAddresses(prev => { const n = [...prev]; n[i] = v; return n; })} placeholder={`Service address ${i + 1}`} />
+              </div>
+              <button type="button" onClick={() => setServiceAddresses(prev => prev.filter((_, j) => j !== i))}
+                style={{
+                  padding: 8,
+                  color: "var(--t-text-muted)",
+                  backgroundColor: "transparent",
+                  border: "none",
+                  cursor: "pointer",
+                  fontSize: 16,
+                  marginTop: 4,
+                  transition: "color 0.15s ease",
+                }}>
+                &times;
+              </button>
+            </div>
+          ))}
+          <button type="button" onClick={() => setServiceAddresses(prev => [...prev, { street: "", city: "", state: "", zip: "", lat: null, lng: null }])}
+            style={{ fontSize: 12, color: "var(--t-accent)", backgroundColor: "transparent", border: "none", cursor: "pointer", textAlign: "left", transition: "opacity 0.15s ease" }}>
+            + Add service address
           </button>
-        </div>
-      ))}
-      <button type="button" onClick={() => setServiceAddresses(prev => [...prev, { street: "", city: "", state: "", zip: "", lat: null, lng: null }])}
-        style={{ fontSize: 12, color: "var(--t-accent)", backgroundColor: "transparent", border: "none", cursor: "pointer", textAlign: "left", transition: "opacity 0.15s ease" }}>
-        + Add service address
-      </button>
+        </>
+      )}
 
       {/* Account */}
       <p style={sectionStyle}>Account</p>
@@ -930,7 +954,7 @@ function NewCustomerForm({ onOrchestrated, onClose }: { onOrchestrated: (result:
             </div>
             <div>
               <label style={labelStyle}>{CUSTOMER_LABELS.pickupDate}</label>
-              <input type="date" value={schedPickupDate} onChange={e => setSchedPickupDate(e.target.value)} disabled={schedPickupTBD} style={{ ...inputStyle, opacity: schedPickupTBD ? 0.5 : 1 }} />
+              <input type="date" value={schedPickupDate} onChange={e => { setSchedPickupDate(e.target.value); setPickupManuallySet(true); }} disabled={schedPickupTBD} style={{ ...inputStyle, opacity: schedPickupTBD ? 0.5 : 1 }} />
             </div>
           </div>
 
