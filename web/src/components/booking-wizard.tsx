@@ -226,8 +226,12 @@ export default function BookingWizard({
   const [billingAddress, setBillingAddress] = useState<AddressFields>({ street: "", street2: "", city: "", state: "", zip: "", county: "" });
 
   // Step 3 — Schedule
-  const [taskType, setTaskType] = useState<"drop_off" | "delivery">("drop_off");
+  const [taskType, setTaskType] = useState<"drop_off" | "delivery" | "exchange">("drop_off");
   const [dumpsterSize, setDumpsterSize] = useState("");
+  // Exchange state
+  const [activeRentals, setActiveRentals] = useState<Array<{ id: string; dumpster_size: string; drop_off_date: string; asset_id: string | null; customer_id: string; status: string; links?: Array<{ job_id: string; task_type: string; status: string }>; asset?: { id: string; identifier: string } | null }>>([]);
+  const [selectedRentalForExchange, setSelectedRentalForExchange] = useState<string>("");
+  const [exchangeReplacementSize, setExchangeReplacementSize] = useState("");
   const [deliveryDate, setDeliveryDate] = useState(prefillDate || getNextBusinessDay());
   const [rentalLength, setRentalLength] = useState(14);
   const [priority, setPriority] = useState("Normal");
@@ -285,6 +289,9 @@ export default function BookingWizard({
       setNewServiceAddress({ street: "", city: "", state: "", zip: "" });
       setBillingAddress({ street: "", street2: "", city: "", state: "", zip: "", county: "" });
       setTaskType("drop_off");
+      setActiveRentals([]);
+      setSelectedRentalForExchange("");
+      setExchangeReplacementSize("");
       setDumpsterSize(initialSchedule?.dumpsterSize || "");
       setDeliveryDate(initialSchedule?.deliveryDate || prefillDate || getNextBusinessDay());
       setRentalLength(14);
@@ -332,6 +339,19 @@ export default function BookingWizard({
           if (opts.length > 0 && !dumpsterSize) setDumpsterSize(opts[0].asset_subtype);
         })
         .catch(() => {});
+      // Fetch active rentals for customer to detect exchange opportunities
+      if (selectedCustomer?.id) {
+        api.get<any[]>(`/rental-chains?customerId=${selectedCustomer.id}&status=active`)
+          .then((chains) => {
+            const active = (Array.isArray(chains) ? chains : []).filter(
+              (c: any) => c.status === "active" && !c.actual_pickup_date,
+            );
+            setActiveRentals(active);
+          })
+          .catch(() => setActiveRentals([]));
+      } else {
+        setActiveRentals([]);
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step]);
@@ -342,13 +362,22 @@ export default function BookingWizard({
     setQuoteLoading(true);
     try {
       const svcAddr = resolvedServiceAddress();
+      const isExchange = taskType === "exchange" && selectedRentalForExchange;
+      const exchangeRental = isExchange ? activeRentals.find((r) => r.id === selectedRentalForExchange) : null;
+      const calcSize = isExchange ? (exchangeReplacementSize || dumpsterSize) : dumpsterSize;
       const res = await api.post<{ breakdown: { basePrice: number; total: number; includedTons: number; overagePerTon: number; distanceMiles: number; distanceSurcharge: number } }>("/pricing/calculate", {
         serviceType: "dumpster_rental",
-        assetSubtype: dumpsterSize,
-        jobType: "delivery",
+        assetSubtype: calcSize,
+        jobType: isExchange ? "exchange" : "delivery",
         customerLat: svcAddr.lat || 42.0834,
         customerLng: svcAddr.lng || -71.0184,
         rentalDays: rentalLength,
+        ...(isExchange && exchangeRental ? {
+          exchange_context: {
+            pickup_asset_subtype: exchangeRental.dumpster_size,
+            dropoff_asset_subtype: calcSize,
+          },
+        } : {}),
       });
       const quote: PriceQuote = {
         base_price: res.breakdown.basePrice,
@@ -368,7 +397,7 @@ export default function BookingWizard({
 
   useEffect(() => {
     if (step === 3 && dumpsterSize) fetchQuote();
-  }, [step, dumpsterSize, rentalLength, deliveryDate, fetchQuote]);
+  }, [step, dumpsterSize, rentalLength, deliveryDate, taskType, selectedRentalForExchange, exchangeReplacementSize, fetchQuote]);
 
   // Fetch availability
   useEffect(() => {
@@ -439,6 +468,31 @@ export default function BookingWizard({
     const pickupDateStr = addDays(deliveryDate, rentalLength);
     const resolvedMethod = collectPayment ? "card" : preferredPaymentMethod === "card" ? "card" : preferredPaymentMethod;
     try {
+      // Exchange path — schedule exchange via JobsService
+      if (taskType === "exchange" && selectedRentalForExchange) {
+        const rental = activeRentals.find((r) => r.id === selectedRentalForExchange);
+        // Find the delivery job from the rental chain to use as parent
+        const deliveryLink = rental?.links?.find((l) => l.task_type === "drop_off" && l.status === "completed");
+        const parentJobId = deliveryLink?.job_id;
+        if (!parentJobId) {
+          toast("error", "Could not find the original delivery job for this rental");
+          setSubmitting(false);
+          return;
+        }
+        await api.post(`/jobs/${parentJobId}/schedule-next`, {
+          type: "exchange",
+          scheduledDate: deliveryDate,
+          timeWindow: "any",
+          newAssetSubtype: exchangeReplacementSize || dumpsterSize,
+          exchangeFee: priceQuote?.total || priceQuote?.base_price || 0,
+        });
+        toast("success", "Exchange scheduled successfully");
+        onComplete?.();
+        onClose();
+        return;
+      }
+
+      // Standard delivery path — existing BookingCompletionService flow
       await api.post("/bookings/complete", {
         customerId: selectedCustomer?.id || undefined,
         customer: selectedCustomer ? undefined : {
@@ -976,46 +1030,127 @@ export default function BookingWizard({
               </div>
 
               <h3 className="text-base font-semibold" style={{ color: "var(--t-text-primary)" }}>
-                Schedule Delivery
+                {taskType === "exchange" ? "Schedule Exchange" : "Schedule Delivery"}
               </h3>
 
               {/* Task type */}
               <div>
-                <label className={LABEL_CLASS} style={{ color: "var(--t-text-muted)" }}>Task Type</label>
+                <label className={LABEL_CLASS} style={{ color: "var(--t-text-muted)" }}>Job Type</label>
                 <div className="flex gap-3">
                   <TileButton
                     selected={taskType === "drop_off"}
-                    onClick={() => setTaskType("drop_off")}
-                    title="Drop Off"
-                    subtitle="Leave on site"
+                    onClick={() => { setTaskType("drop_off"); setSelectedRentalForExchange(""); }}
+                    title="New Delivery"
+                    subtitle="Deliver dumpster"
                   />
-                  <TileButton
-                    selected={taskType === "delivery"}
-                    onClick={() => setTaskType("delivery")}
-                    title="Delivery"
-                    subtitle="Deliver to customer"
-                  />
+                  {activeRentals.length > 0 && (
+                    <TileButton
+                      selected={taskType === "exchange"}
+                      onClick={() => {
+                        setTaskType("exchange");
+                        if (activeRentals.length === 1) setSelectedRentalForExchange(activeRentals[0].id);
+                      }}
+                      title="Exchange"
+                      subtitle="Swap existing dumpster"
+                    />
+                  )}
                 </div>
               </div>
 
-              <SectionDivider label="Booking Details" />
+              {/* Exchange: active rentals on site */}
+              {taskType === "exchange" && activeRentals.length > 0 && (
+                <div className="space-y-3">
+                  <SectionDivider label="Dumpster Being Removed" />
+                  {activeRentals.length === 1 ? (
+                    <div
+                      className="rounded-[20px] border px-4 py-3"
+                      style={{ backgroundColor: "var(--t-accent-soft)", borderColor: "var(--t-accent)" }}
+                    >
+                      <span className="text-sm font-medium" style={{ color: "var(--t-text-primary)" }}>
+                        {activeRentals[0].dumpster_size?.replace("yd", " Yard") || "Unknown"} Dumpster
+                      </span>
+                      {activeRentals[0].asset?.identifier && (
+                        <span className="ml-2 text-xs" style={{ color: "var(--t-text-muted)" }}>
+                          #{activeRentals[0].asset.identifier}
+                        </span>
+                      )}
+                      <span className="block text-xs mt-0.5" style={{ color: "var(--t-text-muted)" }}>
+                        Delivered {activeRentals[0].drop_off_date}
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {activeRentals.map((rental) => (
+                        <button
+                          key={rental.id}
+                          type="button"
+                          onClick={() => setSelectedRentalForExchange(rental.id)}
+                          className="w-full rounded-[20px] border px-4 py-3 text-left transition-colors"
+                          style={{
+                            backgroundColor: selectedRentalForExchange === rental.id ? "var(--t-accent-soft)" : "var(--t-bg-card)",
+                            borderColor: selectedRentalForExchange === rental.id ? "var(--t-accent)" : "var(--t-border)",
+                          }}
+                        >
+                          <span className="text-sm font-medium" style={{ color: "var(--t-text-primary)" }}>
+                            {rental.dumpster_size?.replace("yd", " Yard") || "Unknown"} Dumpster
+                          </span>
+                          {rental.asset?.identifier && (
+                            <span className="ml-2 text-xs" style={{ color: "var(--t-text-muted)" }}>
+                              #{rental.asset.identifier}
+                            </span>
+                          )}
+                          <span className="block text-xs mt-0.5" style={{ color: "var(--t-text-muted)" }}>
+                            Delivered {rental.drop_off_date}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
 
-              {/* Dumpster size */}
-              <div>
-                <label className={LABEL_CLASS} style={{ color: "var(--t-text-muted)" }}>Dumpster Size</label>
-                <select
-                  value={dumpsterSize}
-                  onChange={(e) => setDumpsterSize(e.target.value)}
-                  className="w-full rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-3 text-sm outline-none transition-colors focus:border-[var(--t-accent)] focus:ring-1 focus:ring-[var(--t-accent)]"
-                  style={{ color: "var(--t-text-primary)" }}
-                >
-                  {pricingOptions.map((p) => (
-                    <option key={p.id} value={p.asset_subtype}>
-                      {p.asset_subtype} — {formatCurrency(p.base_price)}
-                    </option>
-                  ))}
-                </select>
-              </div>
+                  {/* Replacement size */}
+                  {selectedRentalForExchange && (
+                    <>
+                      <SectionDivider label="Replacement Dumpster" />
+                      <div>
+                        <label className={LABEL_CLASS} style={{ color: "var(--t-text-muted)" }}>Replacement Size</label>
+                        <select
+                          value={exchangeReplacementSize || dumpsterSize}
+                          onChange={(e) => setExchangeReplacementSize(e.target.value)}
+                          className="w-full rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-3 text-sm outline-none transition-colors focus:border-[var(--t-accent)] focus:ring-1 focus:ring-[var(--t-accent)]"
+                          style={{ color: "var(--t-text-primary)" }}
+                        >
+                          {pricingOptions.map((p) => (
+                            <option key={p.id} value={p.asset_subtype}>
+                              {p.asset_subtype} — {formatCurrency(p.base_price)}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+
+              <SectionDivider label={taskType === "exchange" ? "Exchange Details" : "Booking Details"} />
+
+              {/* Dumpster size — hidden when exchange (replacement size chosen above) */}
+              {taskType !== "exchange" && (
+                <div>
+                  <label className={LABEL_CLASS} style={{ color: "var(--t-text-muted)" }}>Dumpster Size</label>
+                  <select
+                    value={dumpsterSize}
+                    onChange={(e) => setDumpsterSize(e.target.value)}
+                    className="w-full rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-3 text-sm outline-none transition-colors focus:border-[var(--t-accent)] focus:ring-1 focus:ring-[var(--t-accent)]"
+                    style={{ color: "var(--t-text-primary)" }}
+                  >
+                    {pricingOptions.map((p) => (
+                      <option key={p.id} value={p.asset_subtype}>
+                        {p.asset_subtype} — {formatCurrency(p.base_price)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
               {/* Date + Rental + Priority */}
               <div className="grid grid-cols-3 gap-3">

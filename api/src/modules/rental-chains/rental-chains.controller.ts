@@ -5,6 +5,7 @@ import {
   Put,
   Body,
   Param,
+  Query,
   ParseUUIDPipe,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
@@ -19,8 +20,12 @@ export class RentalChainsController {
   constructor(private readonly service: RentalChainsService) {}
 
   @Get()
-  findAll(@TenantId() tenantId: string) {
-    return this.service.findAll(tenantId);
+  findAll(
+    @TenantId() tenantId: string,
+    @Query('customerId') customerId?: string,
+    @Query('status') status?: string,
+  ) {
+    return this.service.findAll(tenantId, { customerId, status });
   }
 
   @Get(':id/lifecycle')
