@@ -25,6 +25,7 @@ import { TaskChainLink } from '../rental-chains/entities/task-chain-link.entity'
 import { NotificationsModule } from '../notifications/notifications.module';
 import { PricingModule } from '../pricing/pricing.module';
 import { OrchestrationService } from './services/orchestration.service';
+import { BookingCompletionService } from './services/booking-completion.service';
 
 @Module({
   imports: [
@@ -49,7 +50,7 @@ import { OrchestrationService } from './services/orchestration.service';
     PricingModule,
   ],
   controllers: [InvoiceController, BillingIssueController, PaymentsController, BookingsController],
-  providers: [InvoiceService, BillingIssueDetectorService, BillingService, OrchestrationService],
-  exports: [InvoiceService, BillingService, BillingIssueDetectorService, OrchestrationService],
+  providers: [InvoiceService, BillingIssueDetectorService, BillingService, OrchestrationService, BookingCompletionService],
+  exports: [InvoiceService, BillingService, BillingIssueDetectorService, OrchestrationService, BookingCompletionService],
 })
 export class BillingModule {}

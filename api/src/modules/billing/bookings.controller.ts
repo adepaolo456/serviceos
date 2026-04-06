@@ -15,6 +15,7 @@ import { PricingRule } from '../pricing/entities/pricing-rule.entity';
 import { Payment } from './entities/payment.entity';
 import { NotificationsService } from '../notifications/notifications.service';
 import { OrchestrationService } from './services/orchestration.service';
+import { BookingCompletionService } from './services/booking-completion.service';
 import { CreateWithBookingDto } from './dto/create-with-booking.dto';
 
 @ApiTags('Bookings')
@@ -35,6 +36,7 @@ export class BookingsController {
     private dataSource: DataSource,
     private notificationsService: NotificationsService,
     private orchestrationService: OrchestrationService,
+    private bookingCompletionService: BookingCompletionService,
   ) {}
 
   @Post('create-with-booking')
@@ -142,125 +144,14 @@ export class BookingsController {
       }
     }
 
-    // 2. Generate job number
-    const dateStr = body.deliveryDate.replace(/-/g, '');
-    const rand = Math.random().toString(36).slice(2, 5).toUpperCase();
-    const deliveryNumber = `JOB-${dateStr}-${rand}`;
-    const pickupNumber = `JOB-${body.pickupDate.replace(/-/g, '')}-${rand}P`;
-
-    // 3. Check availability and auto-approve
-    let autoApproved = false;
-    let assignedAsset: { id: string; identifier: string } | null = null;
-    let assetWarning: string | null = null;
-    let jobStatus = 'pending';
-
-    try {
-      const availableAsset = await this.assetsRepo.findOne({
-        where: { tenant_id: tenantId, subtype: body.assetSubtype, status: 'available' },
-      });
-
-      if (availableAsset) {
-        autoApproved = true;
-        jobStatus = 'confirmed';
-        assignedAsset = { id: availableAsset.id, identifier: availableAsset.identifier };
-        await this.assetsRepo.update(availableAsset.id, { status: 'reserved' });
-      } else {
-        const pickupCount = await this.jobsRepo
-          .createQueryBuilder('j')
-          .where('j.tenant_id = :tenantId', { tenantId })
-          .andWhere('j.job_type = :type', { type: 'pickup' })
-          .andWhere('j.status NOT IN (:...ex)', { ex: ['completed', 'cancelled'] })
-          .andWhere('j.scheduled_date <= :date', { date: body.deliveryDate })
-          .getCount();
-
-        if (pickupCount > 0) {
-          autoApproved = true;
-          jobStatus = 'confirmed';
-          assetWarning = `Auto-confirmed — ${body.assetSubtype} will be available via scheduled pickup before ${body.deliveryDate}.`;
-        } else {
-          assetWarning = `No ${body.assetSubtype} dumpsters projected available for ${body.deliveryDate}. Job needs manual approval.`;
-        }
-      }
-    } catch { /* non-fatal */ }
-
-    // 3b. Create delivery job
-    const deliveryJob = this.jobsRepo.create({
-      tenant_id: tenantId,
-      customer_id: customerId,
-      job_number: deliveryNumber,
-      job_type: 'delivery',
-      service_type: body.serviceType,
-      asset_subtype: body.assetSubtype,
-      status: jobStatus,
-      priority: 'normal',
-      source: 'phone',
-      scheduled_date: body.deliveryDate,
-      scheduled_window_start: body.scheduledWindowStart,
-      scheduled_window_end: body.scheduledWindowEnd,
-      service_address: body.serviceAddress as Record<string, string>,
-      placement_notes: body.placementNotes,
-      base_price: body.basePrice,
-      total_price: body.totalPrice,
-      rental_days: body.rentalDays,
-      ...(assignedAsset ? { asset_id: assignedAsset.id } : {}),
-    } as Partial<Job> as Job);
-    const savedDelivery = await this.jobsRepo.save(deliveryJob);
-
-    // 4. Create pickup job
-    const pickupJob = this.jobsRepo.create({
-      tenant_id: tenantId,
-      customer_id: customerId,
-      job_number: pickupNumber,
-      job_type: 'pickup',
-      service_type: body.serviceType,
-      asset_subtype: body.assetSubtype,
-      status: 'pending',
-      priority: 'normal',
-      source: 'phone',
-      scheduled_date: body.pickupDate,
-      service_address: body.serviceAddress as Record<string, string>,
-      base_price: 0,
-      total_price: 0,
-      ...(assignedAsset ? { asset_id: assignedAsset.id } : {}),
-    } as Partial<Job> as Job);
-    const savedPickup = await this.jobsRepo.save(pickupJob);
-
-    // 5. Generate invoice
-    const invoiceNumber = await this.dataSource.query(
-      `SELECT next_invoice_number($1) as num`, [tenantId],
-    );
-    const invNum = invoiceNumber[0].num;
-    const isPaid = body.paymentMethod === 'card';
-    const today = new Date().toISOString().split('T')[0];
-    const taxAmt = body.taxAmount || 0;
-
-    const invoice = this.invoicesRepo.create({
-      tenant_id: tenantId,
-      customer_id: customerId,
-      job_id: savedDelivery.id,
-      invoice_number: invNum,
-      status: 'open',
-      customer_type: 'residential',
-      invoice_date: today,
-      due_date: body.deliveryDate,
-      service_date: body.deliveryDate,
-      subtotal: body.basePrice + body.deliveryFee,
-      tax_amount: taxAmt,
-      total: body.totalPrice,
-      amount_paid: 0,
-      balance_due: body.totalPrice,
-      summary_of_work: `${body.assetSubtype} ${body.serviceType.replace(/_/g, ' ')} — ${body.rentalDays}-day rental`,
-      rental_chain_id: null,
-    } as Partial<Invoice> as Invoice);
-    const savedInvoice = await this.invoicesRepo.save(invoice);
-
-    // Pricing snapshot for historical accuracy
+    // 2. Build pricing snapshot (BW receives pre-calculated prices from frontend)
+    let pricingSnapshot: Record<string, any> | undefined;
     try {
       const pricingRule = await this.dataSource.getRepository(PricingRule).findOne({
         where: { tenant_id: tenantId, asset_subtype: body.assetSubtype, is_active: true },
       });
       if (pricingRule) {
-        const snapshot = {
+        pricingSnapshot = {
           capturedAt: new Date().toISOString(),
           pricingRuleId: pricingRule.id,
           pricingRuleName: pricingRule.name,
@@ -273,30 +164,34 @@ export class BookingsController {
           taxRate: Number(pricingRule.tax_rate),
           taxEnabled: Number(pricingRule.tax_rate) > 0,
           distanceCharge: body.deliveryFee || 0,
-          distanceMiles: 0, // Haversine distance not passed from frontend; charge is accurate
+          distanceMiles: 0,
         };
-        await this.invoicesRepo.update(savedInvoice.id, {
-          pricing_rule_snapshot: snapshot,
-          pricing_tier_used: 'global',
-        } as Partial<Invoice>);
       }
     } catch { /* non-fatal */ }
 
-    // Single rental line item — distance surcharge folded into amount
-    const rentalTotal = body.basePrice + (body.deliveryFee || 0);
-    const rentalItem = this.lineItemRepo.create({
-      invoice_id: savedInvoice.id,
-      sort_order: 0,
-      line_type: 'rental',
-      name: `${body.assetSubtype} ${body.serviceType.replace(/_/g, ' ')} — ${body.rentalDays}-day rental`,
-      quantity: 1,
-      unit_rate: rentalTotal,
-      amount: rentalTotal,
-      net_amount: rentalTotal,
+    // 3. Shared booking completion (jobs, invoice, line items, rental chain)
+    const completion = await this.bookingCompletionService.completeBooking({
+      tenantId,
+      customerId: customerId!,
+      dumpsterSize: body.assetSubtype,
+      serviceType: body.serviceType,
+      deliveryDate: body.deliveryDate,
+      pickupDate: body.pickupDate,
+      rentalDays: body.rentalDays,
+      siteAddress: body.serviceAddress as Record<string, any>,
+      basePrice: body.basePrice,
+      distanceSurcharge: body.deliveryFee || 0,
+      totalPrice: body.totalPrice,
+      taxAmount: body.taxAmount || 0,
+      placementNotes: body.placementNotes,
+      pricingSnapshot,
+      pricingTierUsed: 'global',
     });
-    await this.lineItemRepo.save(rentalItem);
 
-    // 5b. If paid by card, create a Payment record and reconcile
+    const { deliveryJob: savedDelivery, pickupJob: savedPickup, invoice: savedInvoice, rentalChainId, autoApproved, assignedAsset } = completion;
+
+    // 4. Payment recording (caller-specific)
+    const isPaid = body.paymentMethod === 'card';
     if (isPaid) {
       const paymentRepo = this.dataSource.getRepository(Payment);
       await paymentRepo.save(paymentRepo.create({
@@ -308,11 +203,9 @@ export class BookingsController {
       }));
     }
 
-    // 5c. Opt-in invoice send — only if explicitly requested and not card-paid
+    // 5. Opt-in invoice send (caller-specific — BW only)
     if (!isPaid && body.sendInvoiceNow) {
       await this.invoicesRepo.update(savedInvoice.id, { sent_at: new Date(), sent_method: 'email' });
-
-      // Send email to customer if they have one
       const customer = await this.customersRepo.findOne({ where: { id: customerId } });
       if (customer?.email) {
         try {
@@ -320,23 +213,22 @@ export class BookingsController {
             channel: 'email',
             type: 'invoice_sent',
             recipient: customer.email,
-            subject: `Invoice #${invNum} from your service provider`,
-            body: `<p>Hello ${customer.first_name},</p><p>Invoice <strong>#${invNum}</strong> for <strong>$${body.totalPrice.toFixed(2)}</strong> has been sent to you.</p><p>Due date: ${body.deliveryDate}</p><p>Summary: ${body.assetSubtype} ${body.serviceType.replace(/_/g, ' ')} — ${body.rentalDays}-day rental</p>`,
+            subject: `Invoice #${savedInvoice.invoice_number} from your service provider`,
+            body: `<p>Hello ${customer.first_name},</p><p>Invoice <strong>#${savedInvoice.invoice_number}</strong> for <strong>$${body.totalPrice.toFixed(2)}</strong> has been sent to you.</p><p>Due date: ${body.deliveryDate}</p><p>Summary: ${body.assetSubtype} ${body.serviceType.replace(/_/g, ' ')} — ${body.rentalDays}-day rental</p>`,
             customerId: customerId,
           });
         } catch (err) {
-          this.logger.warn(`Failed to send invoice email for #${invNum}: ${err}`);
+          this.logger.warn(`Failed to send invoice email for #${savedInvoice.invoice_number}: ${err}`);
         }
       }
     }
 
-    // Derive status/balance from payment records (reconcileBalance pattern)
+    // 6. Reconcile balance (caller-specific — BW handles payment inline)
     {
       const paymentRepo = this.dataSource.getRepository(Payment);
       const payments = await paymentRepo.find({ where: { invoice_id: savedInvoice.id, status: 'completed' } });
       const totalPaid = payments.reduce((sum, p) => sum + Number(p.amount), 0);
       const balanceDue = Math.max(Math.round((body.totalPrice - totalPaid) * 100) / 100, 0);
-      const inv = await this.invoicesRepo.findOneOrFail({ where: { id: savedInvoice.id, tenant_id: tenantId } });
       let status: string;
       if (totalPaid >= body.totalPrice && totalPaid > 0) status = 'paid';
       else if (totalPaid > 0) status = 'partial';
@@ -349,52 +241,6 @@ export class BookingsController {
       });
     }
 
-    // 6. Create RentalChain and TaskChainLinks
-    let rentalChainId: string | null = null;
-    try {
-      const rentalChain = this.rentalChainRepo.create({
-        tenant_id: tenantId,
-        customer_id: customerId,
-        drop_off_date: body.deliveryDate,
-        expected_pickup_date: body.pickupDate,
-        dumpster_size: body.assetSubtype,
-        rental_days: body.rentalDays,
-        status: 'active',
-      });
-      const savedChain = await this.rentalChainRepo.save(rentalChain);
-      rentalChainId = savedChain.id;
-
-      // Link invoice to rental chain
-      await this.invoicesRepo.update(savedInvoice.id, { rental_chain_id: savedChain.id });
-
-      const deliveryLink = this.taskChainLinkRepo.create({
-        rental_chain_id: savedChain.id,
-        job_id: savedDelivery.id,
-        sequence_number: 1,
-        task_type: 'drop_off',
-        status: 'scheduled',
-        scheduled_date: body.deliveryDate,
-      });
-      const savedDeliveryLink = await this.taskChainLinkRepo.save(deliveryLink);
-
-      const pickupLink = this.taskChainLinkRepo.create({
-        rental_chain_id: savedChain.id,
-        job_id: savedPickup.id,
-        sequence_number: 2,
-        task_type: 'pick_up',
-        status: 'scheduled',
-        scheduled_date: body.pickupDate,
-        previous_link_id: savedDeliveryLink.id,
-      });
-      await this.taskChainLinkRepo.save(pickupLink);
-
-      // Update delivery link with next_link_id
-      await this.taskChainLinkRepo.update(savedDeliveryLink.id, { next_link_id: pickupLink.id });
-    } catch {
-      this.logger.warn(`Failed to create rental chain for booking — non-fatal`);
-    }
-
-    // 7. Schedule delivery reminder notification (best-effort)
     this.logger.log(
       `Booking complete: delivery ${savedDelivery.job_number} scheduled for ${body.deliveryDate}, pickup ${savedPickup.job_number} for ${body.pickupDate}. Customer: ${customerId}`,
     );
@@ -408,7 +254,7 @@ export class BookingsController {
       rentalChainId,
       autoApproved,
       asset: assignedAsset,
-      assetWarning,
+      assetWarning: null,
     };
   }
 }
