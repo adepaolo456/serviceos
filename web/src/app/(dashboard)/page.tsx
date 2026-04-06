@@ -374,7 +374,7 @@ export default function DashboardPage() {
             New Booking
           </button>
           <Link
-            href="/customers"
+            href="/customers?new=true"
             className="inline-flex items-center gap-1.5 rounded-full border border-[var(--t-frame-border)] px-5 py-2.5 text-sm font-semibold text-[var(--t-frame-text)] transition-all hover:bg-[var(--t-frame-hover)]"
           >
             <UserPlus className="h-4 w-4 text-[var(--t-frame-text-muted)]" />
