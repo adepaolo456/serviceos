@@ -9,9 +9,8 @@ import { InvoiceLineItem } from '../entities/invoice-line-item.entity';
 import { Payment } from '../entities/payment.entity';
 import { RentalChain } from '../../rental-chains/entities/rental-chain.entity';
 import { TaskChainLink } from '../../rental-chains/entities/task-chain-link.entity';
-import { PricingRule } from '../../pricing/entities/pricing-rule.entity';
 import { NotificationsService } from '../../notifications/notifications.service';
-import { PriceResolutionService } from '../../pricing/services/price-resolution.service';
+import { PricingService } from '../../pricing/pricing.service';
 import { CreateWithBookingDto } from '../dto/create-with-booking.dto';
 
 export interface OrchestrationResult {
@@ -37,7 +36,7 @@ export class OrchestrationService {
     @InjectRepository(TaskChainLink) private taskChainLinkRepo: Repository<TaskChainLink>,
     private dataSource: DataSource,
     private notificationsService: NotificationsService,
-    private priceResolutionService: PriceResolutionService,
+    private pricingService: PricingService,
   ) {}
 
   async createWithBooking(tenantId: string, dto: CreateWithBookingDto): Promise<OrchestrationResult> {
@@ -149,14 +148,20 @@ export class OrchestrationService {
       const savedCustomer = await customerRepo.save(customer);
       customerId = savedCustomer.id;
 
-      // 1b. Resolve tenant-scoped pricing for this size + customer
-      const resolvedPrice = await this.priceResolutionService.resolvePrice(
-        tenantId,
-        customerId,
-        dto.dumpsterSize!,
-      );
-      const basePrice = resolvedPrice.base_price;
-      const totalPrice = basePrice; // distance surcharge calculated separately if needed
+      // 1b. Calculate full tenant-scoped pricing (base + distance surcharge)
+      const siteAddr = dto.siteAddress || dto.billingAddress || {};
+      const priceResult = await this.pricingService.calculate(tenantId, {
+        serviceType: 'dumpster_rental',
+        assetSubtype: dto.dumpsterSize!,
+        jobType: 'delivery',
+        customerType: dto.type || 'residential',
+        customerLat: Number(siteAddr.lat) || 0,
+        customerLng: Number(siteAddr.lng) || 0,
+        rentalDays: rentalDays,
+      } as any);
+      const basePrice = priceResult.breakdown.basePrice;
+      const distanceSurcharge = priceResult.breakdown.distanceSurcharge || 0;
+      const totalPrice = priceResult.breakdown.total;
 
       // 2. Job numbers
       const dateStr = dto.deliveryDate.replace(/-/g, '');
@@ -194,7 +199,6 @@ export class OrchestrationService {
       } catch { /* non-fatal */ }
 
       // 4. Create delivery job
-      const siteAddr = dto.siteAddress || dto.billingAddress || {};
       const deliveryJob = jobRepo.create({
         tenant_id: tenantId,
         customer_id: customerId,
@@ -250,7 +254,7 @@ export class OrchestrationService {
         invoice_date: today,
         due_date: dto.deliveryDate,
         service_date: dto.deliveryDate,
-        subtotal: basePrice,
+        subtotal: basePrice + distanceSurcharge,
         tax_amount: 0,
         total: totalPrice,
         amount_paid: 0,
@@ -272,6 +276,24 @@ export class OrchestrationService {
         net_amount: basePrice,
       });
       await lineItemRepo.save(rentalItem);
+
+      // 7b. Create distance surcharge line item (if applicable)
+      if (distanceSurcharge > 0) {
+        const distanceItem = lineItemRepo.create({
+          invoice_id: savedInvoice.id,
+          sort_order: 1,
+          line_type: 'fee',
+          name: 'Distance charge',
+          quantity: 1,
+          unit_rate: distanceSurcharge,
+          amount: distanceSurcharge,
+          net_amount: distanceSurcharge,
+          is_taxable: false,
+          tax_rate: 0,
+          tax_amount: 0,
+        });
+        await lineItemRepo.save(distanceItem);
+      }
 
       // 8. Create rental chain + task chain links
       try {
@@ -315,22 +337,21 @@ export class OrchestrationService {
         this.logger.warn('Failed to create rental chain — non-fatal');
       }
 
-      // Pricing snapshot — use resolved price data (includes client override info)
+      // Pricing snapshot — capture full calculation result
       try {
         const snapshot = {
           capturedAt: new Date().toISOString(),
-          pricingRuleId: resolvedPrice.pricing_rule_id,
-          basePrice: resolvedPrice.base_price,
-          includedTons: resolvedPrice.weight_allowance_tons,
-          overagePerTon: resolvedPrice.overage_per_ton,
-          extraDayRate: resolvedPrice.daily_overage_rate,
-          rentalPeriodDays: resolvedPrice.rental_days,
-          tierUsed: resolvedPrice.tier_used,
-          overrideId: resolvedPrice.override_id,
+          pricingRuleId: priceResult.rule.id,
+          pricingRuleName: priceResult.rule.name,
+          basePrice,
+          distanceMiles: priceResult.breakdown.distanceMiles,
+          distanceSurcharge,
+          rentalDays,
+          total: totalPrice,
         };
         await invoiceRepo.update(savedInvoice.id, {
           pricing_rule_snapshot: snapshot,
-          pricing_tier_used: resolvedPrice.tier_used,
+          pricing_tier_used: 'global',
         } as Partial<Invoice>);
       } catch { /* non-fatal */ }
 
