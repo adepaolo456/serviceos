@@ -41,7 +41,7 @@ export async function calculatePriceForCustomer(
 
   // Check customer overrides
   if (customerId) {
-    const customer = await customerRepo.findOne({ where: { id: customerId } });
+    const customer = await customerRepo.findOne({ where: { id: customerId, tenant_id: tenantId } });
     if (customer) {
       // Custom per-size pricing
       if (customer.custom_pricing && customer.custom_pricing[assetSubtype]) {

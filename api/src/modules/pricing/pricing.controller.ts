@@ -75,13 +75,13 @@ export class PricingController {
   @Patch('pricing-templates/:id')
   @ApiOperation({ summary: 'Update pricing template' })
   updateTemplate(@TenantId() tenantId: string, @Param('id') id: string, @Body() body: Record<string, unknown>) {
-    return this.pricingService.updateTemplate(id, body);
+    return this.pricingService.updateTemplate(tenantId, id, body);
   }
 
   @Delete('pricing-templates/:id')
   @ApiOperation({ summary: 'Delete pricing template' })
   deleteTemplate(@TenantId() tenantId: string, @Param('id') id: string) {
-    return this.pricingService.deleteTemplate(id);
+    return this.pricingService.deleteTemplate(tenantId, id);
   }
 
   // ── Delivery Zones ──
