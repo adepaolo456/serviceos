@@ -18,6 +18,7 @@ export interface InitialSchedule {
   pickupTBD?: boolean;
   siteAddress?: { street: string; city: string; state: string; zip: string; lat?: number | null; lng?: number | null };
   paymentMethod?: "card" | "cash" | "check";
+  lockSiteAddress?: boolean;
 }
 
 interface BookingWizardProps {
@@ -217,6 +218,7 @@ export default function BookingWizard({
   const [serviceAddressMode, setServiceAddressMode] = useState<"same" | "different" | "existing">("same");
   const [selectedAddressIdx, setSelectedAddressIdx] = useState(0);
   const [newServiceAddress, setNewServiceAddress] = useState<AddressFields>({ street: "", city: "", state: "", zip: "" });
+  const [siteAddressLocked, setSiteAddressLocked] = useState(false);
   const searchRef = useRef<HTMLDivElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -294,6 +296,8 @@ export default function BookingWizard({
       setSubmitting(false);
       setPreferredPaymentMethod(initialSchedule?.paymentMethod || "invoice");
       // Hydrate from initialSchedule if provided
+      const locked = !!(initialSchedule?.lockSiteAddress && initialSchedule?.siteAddress);
+      setSiteAddressLocked(locked);
       if (initialSchedule?.siteAddress) {
         setServiceAddressMode("different");
         setNewServiceAddress({
@@ -403,7 +407,10 @@ export default function BookingWizard({
     if (c.billing_address) {
       setBillingAddress({ ...c.billing_address, street2: c.billing_address.street2 || "", county: c.billing_address.county || "" });
     }
-    if (c.service_addresses && c.service_addresses.length > 0) {
+    // When a quote-sourced address is locked, do NOT auto-switch to the customer's
+    // saved addresses. Keep the quote address active; customer addresses will be
+    // shown as selectable alternatives in the UI.
+    if (!siteAddressLocked && c.service_addresses && c.service_addresses.length > 0) {
       setServiceAddressMode("existing");
       setSelectedAddressIdx(0);
     }
@@ -721,7 +728,50 @@ export default function BookingWizard({
               {/* Service address */}
               <SectionDivider label="Service Address" />
 
-              {selectedCustomer && selectedCustomer.service_addresses && selectedCustomer.service_addresses.length > 0 ? (
+              {/* Locked quote address — show it as active, customer addresses as alternatives */}
+              {siteAddressLocked && serviceAddressMode === "different" ? (
+                <div className="space-y-2">
+                  <div
+                    className="w-full rounded-[20px] border px-4 py-3"
+                    style={{ backgroundColor: "var(--t-accent-soft)", borderColor: "var(--t-accent)" }}
+                  >
+                    <div className="flex items-center gap-2">
+                      <MapPin className="h-4 w-4 shrink-0" style={{ color: "var(--t-accent)" }} />
+                      <div>
+                        <span className="text-sm font-medium" style={{ color: "var(--t-text-primary)" }}>
+                          {formatAddr(newServiceAddress)}
+                        </span>
+                        <span className="ml-2 text-[11px] font-semibold uppercase" style={{ color: "var(--t-accent)" }}>
+                          From quote
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  {selectedCustomer?.service_addresses && selectedCustomer.service_addresses.length > 0 && (
+                    <>
+                      <p className="text-[11px] font-semibold uppercase tracking-wide pt-1" style={{ color: "var(--t-text-muted)" }}>
+                        Or use a saved address
+                      </p>
+                      {selectedCustomer.service_addresses.map((addr, i) => (
+                        <button
+                          key={i}
+                          type="button"
+                          onClick={() => { setSiteAddressLocked(false); setServiceAddressMode("existing"); setSelectedAddressIdx(i); }}
+                          className="w-full rounded-[20px] border px-4 py-3 text-left transition-colors"
+                          style={{ backgroundColor: "var(--t-bg-card)", borderColor: "var(--t-border)" }}
+                          onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--t-accent)"; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--t-border)"; }}
+                        >
+                          <div className="flex items-center gap-2">
+                            <MapPin className="h-4 w-4 shrink-0" style={{ color: "var(--t-text-muted)" }} />
+                            <span className="text-sm" style={{ color: "var(--t-text-primary)" }}>{formatAddr(addr)}</span>
+                          </div>
+                        </button>
+                      ))}
+                    </>
+                  )}
+                </div>
+              ) : selectedCustomer && selectedCustomer.service_addresses && selectedCustomer.service_addresses.length > 0 ? (
                 <div className="space-y-2">
                   {selectedCustomer.service_addresses.map((addr, i) => (
                     <button
@@ -755,7 +805,7 @@ export default function BookingWizard({
                       <AddressAutocomplete
                         label="New Service Address"
                         value={newServiceAddress}
-                        onChange={(a) => setNewServiceAddress({ street: a.street, city: a.city, state: a.state, zip: a.zip })}
+                        onChange={(a) => { setNewServiceAddress({ street: a.street, city: a.city, state: a.state, zip: a.zip, lat: a.lat, lng: a.lng }); if (siteAddressLocked) setSiteAddressLocked(false); }}
                       />
                     </div>
                   )}
@@ -787,7 +837,7 @@ export default function BookingWizard({
                       <AddressAutocomplete
                         label="Service Address"
                         value={newServiceAddress}
-                        onChange={(a) => setNewServiceAddress({ street: a.street, city: a.city, state: a.state, zip: a.zip })}
+                        onChange={(a) => { setNewServiceAddress({ street: a.street, city: a.city, state: a.state, zip: a.zip, lat: a.lat, lng: a.lng }); if (siteAddressLocked) setSiteAddressLocked(false); }}
                       />
                     </div>
                   )}

@@ -137,6 +137,7 @@ export default function QuickQuoteDrawer() {
     openWizard({
       initialSchedule: {
         dumpsterSize: selectedSize,
+        lockSiteAddress: !!address,
         ...(address ? {
           siteAddress: {
             street: address.street,
