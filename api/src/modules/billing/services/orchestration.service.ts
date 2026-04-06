@@ -2,15 +2,11 @@ import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import { Customer } from '../../customers/entities/customer.entity';
-import { Job } from '../../jobs/entities/job.entity';
-import { Asset } from '../../assets/entities/asset.entity';
 import { Invoice } from '../entities/invoice.entity';
-import { InvoiceLineItem } from '../entities/invoice-line-item.entity';
 import { Payment } from '../entities/payment.entity';
-import { RentalChain } from '../../rental-chains/entities/rental-chain.entity';
-import { TaskChainLink } from '../../rental-chains/entities/task-chain-link.entity';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { PricingService } from '../../pricing/pricing.service';
+import { BookingCompletionService } from './booking-completion.service';
 import { CreateWithBookingDto } from '../dto/create-with-booking.dto';
 
 export interface OrchestrationResult {
@@ -28,15 +24,11 @@ export class OrchestrationService {
 
   constructor(
     @InjectRepository(Customer) private customersRepo: Repository<Customer>,
-    @InjectRepository(Job) private jobsRepo: Repository<Job>,
-    @InjectRepository(Asset) private assetsRepo: Repository<Asset>,
     @InjectRepository(Invoice) private invoicesRepo: Repository<Invoice>,
-    @InjectRepository(InvoiceLineItem) private lineItemRepo: Repository<InvoiceLineItem>,
-    @InjectRepository(RentalChain) private rentalChainRepo: Repository<RentalChain>,
-    @InjectRepository(TaskChainLink) private taskChainLinkRepo: Repository<TaskChainLink>,
     private dataSource: DataSource,
     private notificationsService: NotificationsService,
     private pricingService: PricingService,
+    private bookingCompletionService: BookingCompletionService,
   ) {}
 
   async createWithBooking(tenantId: string, dto: CreateWithBookingDto): Promise<OrchestrationResult> {
@@ -122,18 +114,11 @@ export class OrchestrationService {
     await queryRunner.startTransaction();
 
     let customerId: string;
-    let savedDelivery: Job;
-    let savedPickup: Job;
     let savedInvoice: Invoice;
-    let rentalChainId: string | null = null;
+    let completionResult: Awaited<ReturnType<BookingCompletionService['completeBooking']>>;
 
     try {
       const customerRepo = queryRunner.manager.getRepository(Customer);
-      const jobRepo = queryRunner.manager.getRepository(Job);
-      const invoiceRepo = queryRunner.manager.getRepository(Invoice);
-      const lineItemRepo = queryRunner.manager.getRepository(InvoiceLineItem);
-      const rentalChainRepo = queryRunner.manager.getRepository(RentalChain);
-      const taskChainLinkRepo = queryRunner.manager.getRepository(TaskChainLink);
 
       // 1. Create customer
       const customer = customerRepo.create({
@@ -153,7 +138,7 @@ export class OrchestrationService {
       const savedCustomer = await customerRepo.save(customer);
       customerId = savedCustomer.id;
 
-      // 1b. Calculate full tenant-scoped pricing (base + distance surcharge)
+      // 2. Calculate full tenant-scoped pricing (base + distance surcharge)
       const siteAddr = dto.siteAddress || dto.billingAddress || {};
       const priceResult = await this.pricingService.calculate(tenantId, {
         serviceType: 'dumpster_rental',
@@ -168,167 +153,20 @@ export class OrchestrationService {
       const distanceSurcharge = priceResult.breakdown.distanceSurcharge || 0;
       const totalPrice = priceResult.breakdown.total;
 
-      // 2. Job numbers
-      const dateStr = dto.deliveryDate.replace(/-/g, '');
-      const rand = Math.random().toString(36).slice(2, 5).toUpperCase();
-      const deliveryNumber = `JOB-${dateStr}-${rand}`;
-      const pickupNumber = `JOB-${pickupDate.replace(/-/g, '')}-${rand}P`;
-
-      // 3. Asset availability check
-      let autoApproved = false;
-      let assignedAsset: { id: string; identifier: string } | null = null;
-      let jobStatus = 'pending';
-
-      try {
-        const availableAsset = await queryRunner.manager.getRepository(Asset).findOne({
-          where: { tenant_id: tenantId, subtype: dto.dumpsterSize, status: 'available' },
-        });
-        if (availableAsset) {
-          autoApproved = true;
-          jobStatus = 'confirmed';
-          assignedAsset = { id: availableAsset.id, identifier: availableAsset.identifier };
-          await queryRunner.manager.getRepository(Asset).update(availableAsset.id, { status: 'reserved' });
-        } else {
-          const pickupCount = await jobRepo
-            .createQueryBuilder('j')
-            .where('j.tenant_id = :tenantId', { tenantId })
-            .andWhere('j.job_type = :type', { type: 'pickup' })
-            .andWhere('j.status NOT IN (:...ex)', { ex: ['completed', 'cancelled'] })
-            .andWhere('j.scheduled_date <= :date', { date: dto.deliveryDate })
-            .getCount();
-          if (pickupCount > 0) {
-            autoApproved = true;
-            jobStatus = 'confirmed';
-          }
-        }
-      } catch { /* non-fatal */ }
-
-      // 4. Create delivery job
-      const deliveryJob = jobRepo.create({
-        tenant_id: tenantId,
-        customer_id: customerId,
-        job_number: deliveryNumber,
-        job_type: 'delivery',
-        service_type: 'dumpster_rental',
-        asset_subtype: dto.dumpsterSize,
-        status: jobStatus,
-        priority: 'normal',
-        source: 'phone',
-        scheduled_date: dto.deliveryDate,
-        service_address: siteAddr as Record<string, string>,
-        base_price: basePrice,
-        total_price: totalPrice,
-        rental_days: rentalDays,
-        ...(assignedAsset ? { asset_id: assignedAsset.id } : {}),
-      } as Partial<Job> as Job);
-      savedDelivery = await jobRepo.save(deliveryJob);
-
-      // 5. Create pickup job
-      const pickupJob = jobRepo.create({
-        tenant_id: tenantId,
-        customer_id: customerId,
-        job_number: pickupNumber,
-        job_type: 'pickup',
-        service_type: 'dumpster_rental',
-        asset_subtype: dto.dumpsterSize,
-        status: 'pending',
-        priority: 'normal',
-        source: 'phone',
-        scheduled_date: pickupDate,
-        service_address: siteAddr as Record<string, string>,
-        base_price: 0,
-        total_price: 0,
-        ...(assignedAsset ? { asset_id: assignedAsset.id } : {}),
-      } as Partial<Job> as Job);
-      savedPickup = await jobRepo.save(pickupJob);
-
-      // 6. Generate invoice
-      const invoiceNumber = await queryRunner.query(
-        `SELECT next_invoice_number($1) as num`, [tenantId],
-      );
-      const invNum = invoiceNumber[0].num;
-      const today = new Date().toISOString().split('T')[0];
-
-      const invoice = invoiceRepo.create({
-        tenant_id: tenantId,
-        customer_id: customerId,
-        job_id: savedDelivery.id,
-        invoice_number: invNum,
-        status: 'open',
-        customer_type: 'residential',
-        invoice_date: today,
-        due_date: dto.deliveryDate,
-        service_date: dto.deliveryDate,
-        subtotal: basePrice + distanceSurcharge,
-        tax_amount: 0,
-        total: totalPrice,
-        amount_paid: 0,
-        balance_due: totalPrice,
-        summary_of_work: `${dto.dumpsterSize} dumpster rental — ${rentalDays}-day rental`,
-        rental_chain_id: null,
-      } as Partial<Invoice> as Invoice);
-      savedInvoice = await invoiceRepo.save(invoice);
-
-      // 7. Create rental line item
-      // Single rental line item — distance surcharge folded into amount
-      const rentalTotal = basePrice + distanceSurcharge;
-      const rentalItem = lineItemRepo.create({
-        invoice_id: savedInvoice.id,
-        sort_order: 0,
-        line_type: 'rental',
-        name: `${dto.dumpsterSize} dumpster rental — ${rentalDays}-day rental`,
-        quantity: 1,
-        unit_rate: rentalTotal,
-        amount: rentalTotal,
-        net_amount: rentalTotal,
-      });
-      await lineItemRepo.save(rentalItem);
-
-      // 8. Create rental chain + task chain links
-      try {
-        const rentalChain = rentalChainRepo.create({
-          tenant_id: tenantId,
-          customer_id: customerId,
-          drop_off_date: dto.deliveryDate,
-          expected_pickup_date: pickupDate,
-          dumpster_size: dto.dumpsterSize,
-          rental_days: rentalDays,
-          status: 'active',
-        });
-        const savedChain = await rentalChainRepo.save(rentalChain);
-        rentalChainId = savedChain.id;
-
-        await invoiceRepo.update(savedInvoice.id, { rental_chain_id: savedChain.id });
-
-        const deliveryLink = taskChainLinkRepo.create({
-          rental_chain_id: savedChain.id,
-          job_id: savedDelivery.id,
-          sequence_number: 1,
-          task_type: 'drop_off',
-          status: 'scheduled',
-          scheduled_date: dto.deliveryDate,
-        });
-        const savedDeliveryLink = await taskChainLinkRepo.save(deliveryLink);
-
-        const pickupLink = taskChainLinkRepo.create({
-          rental_chain_id: savedChain.id,
-          job_id: savedPickup.id,
-          sequence_number: 2,
-          task_type: 'pick_up',
-          status: 'scheduled',
-          scheduled_date: pickupDate,
-          previous_link_id: savedDeliveryLink.id,
-        });
-        const savedPickupLink = await taskChainLinkRepo.save(pickupLink);
-
-        await taskChainLinkRepo.update(savedDeliveryLink.id, { next_link_id: savedPickupLink.id });
-      } catch {
-        this.logger.warn('Failed to create rental chain — non-fatal');
-      }
-
-      // Pricing snapshot — capture full calculation result
-      try {
-        const snapshot = {
+      // 3. Shared booking completion (jobs, invoice, line items, rental chain)
+      completionResult = await this.bookingCompletionService.completeBooking({
+        tenantId,
+        customerId,
+        dumpsterSize: dto.dumpsterSize!,
+        serviceType: 'dumpster_rental',
+        deliveryDate: dto.deliveryDate!,
+        pickupDate,
+        rentalDays,
+        siteAddress: siteAddr as Record<string, any>,
+        basePrice,
+        distanceSurcharge,
+        totalPrice,
+        pricingSnapshot: {
           capturedAt: new Date().toISOString(),
           pricingRuleId: priceResult.rule.id,
           pricingRuleName: priceResult.rule.name,
@@ -337,12 +175,11 @@ export class OrchestrationService {
           distanceSurcharge,
           rentalDays,
           total: totalPrice,
-        };
-        await invoiceRepo.update(savedInvoice.id, {
-          pricing_rule_snapshot: snapshot,
-          pricing_tier_used: 'global',
-        } as Partial<Invoice>);
-      } catch { /* non-fatal */ }
+        },
+        pricingTierUsed: 'global',
+      }, queryRunner.manager);
+
+      savedInvoice = completionResult.invoice;
 
       await queryRunner.commitTransaction();
     } catch (err) {
@@ -387,7 +224,7 @@ export class OrchestrationService {
 
     const result: OrchestrationResult = {
       customerId,
-      jobId: savedDelivery.id,
+      jobId: completionResult.deliveryJob.id,
       invoiceId: savedInvoice.id,
       status: paymentStatus,
       nextAction,
@@ -396,7 +233,7 @@ export class OrchestrationService {
     await this.storeIdempotencyResult(tenantId, dto.idempotencyKey, result);
 
     this.logger.log(
-      `Orchestration complete: customer ${customerId}, delivery ${savedDelivery.job_number}, status ${paymentStatus}`,
+      `Orchestration complete: customer ${customerId}, delivery ${completionResult.deliveryJob.job_number}, status ${paymentStatus}`,
     );
 
     return result;
