@@ -14,6 +14,8 @@ import { TaskChainLink } from '../rental-chains/entities/task-chain-link.entity'
 import { PricingRule } from '../pricing/entities/pricing-rule.entity';
 import { Payment } from './entities/payment.entity';
 import { NotificationsService } from '../notifications/notifications.service';
+import { OrchestrationService } from './services/orchestration.service';
+import { CreateWithBookingDto } from './dto/create-with-booking.dto';
 
 @ApiTags('Bookings')
 @ApiBearerAuth()
@@ -32,7 +34,17 @@ export class BookingsController {
     @InjectRepository(TaskChainLink) private taskChainLinkRepo: Repository<TaskChainLink>,
     private dataSource: DataSource,
     private notificationsService: NotificationsService,
+    private orchestrationService: OrchestrationService,
   ) {}
+
+  @Post('create-with-booking')
+  async createWithBooking(
+    @Req() req: Request,
+    @Body() dto: CreateWithBookingDto,
+  ) {
+    const user = req.user as { tenantId: string; sub: string };
+    return this.orchestrationService.createWithBooking(user.tenantId, dto);
+  }
 
   @Post('complete')
   async completeBooking(
