@@ -32,8 +32,10 @@ export class DispatchService {
       .createQueryBuilder('j')
       .leftJoinAndSelect('j.customer', 'customer')
       .leftJoinAndSelect('j.asset', 'asset')
+      .leftJoin('invoices', 'inv', 'inv.job_id = j.id')
       .where('j.tenant_id = :tenantId', { tenantId })
       .andWhere('j.scheduled_date = :date', { date })
+      .andWhere('(inv.id IS NULL OR inv.status IN (:...paidStatuses))', { paidStatuses: ['paid', 'partial'] })
       .orderBy('j.route_order', 'ASC', 'NULLS LAST')
       .addOrderBy('j.scheduled_window_start', 'ASC', 'NULLS LAST')
       .getMany();
@@ -134,15 +136,18 @@ export class DispatchService {
   }
 
   async getUnassigned(tenantId: string) {
-    return this.jobsRepository.find({
-      where: {
-        tenant_id: tenantId,
-        assigned_driver_id: IsNull(),
-        status: In(['pending', 'confirmed']),
-      },
-      relations: ['customer', 'asset'],
-      order: { scheduled_date: 'ASC', created_at: 'DESC' },
-    });
+    return this.jobsRepository
+      .createQueryBuilder('j')
+      .leftJoinAndSelect('j.customer', 'customer')
+      .leftJoinAndSelect('j.asset', 'asset')
+      .leftJoin('invoices', 'inv', 'inv.job_id = j.id')
+      .where('j.tenant_id = :tenantId', { tenantId })
+      .andWhere('j.assigned_driver_id IS NULL')
+      .andWhere('j.status IN (:...statuses)', { statuses: ['pending', 'confirmed'] })
+      .andWhere('(inv.id IS NULL OR inv.status IN (:...paidStatuses))', { paidStatuses: ['paid', 'partial'] })
+      .orderBy('j.scheduled_date', 'ASC')
+      .addOrderBy('j.created_at', 'DESC')
+      .getMany();
   }
 
   async optimizeRoute(tenantId: string, driverId: string, date: string) {
