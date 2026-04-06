@@ -83,9 +83,9 @@ export class OrchestrationService {
 
     // Case A: customer_only
     if (dto.intent === 'customer_only') {
-      const customer = await this.createCustomer(tenantId, dto);
+      const cid = dto.customerId || (await this.createCustomer(tenantId, dto)).id;
       const result: OrchestrationResult = {
-        customerId: customer.id,
+        customerId: cid,
         status: 'customer_only',
         nextAction: 'go_to_customer',
       };
@@ -120,23 +120,30 @@ export class OrchestrationService {
     try {
       const customerRepo = queryRunner.manager.getRepository(Customer);
 
-      // 1. Create customer
-      const customer = customerRepo.create({
-        tenant_id: tenantId,
-        type: dto.type || 'residential',
-        first_name: dto.firstName,
-        last_name: dto.lastName,
-        email: dto.email,
-        phone: dto.phone,
-        company_name: dto.companyName,
-        billing_address: dto.billingAddress as Record<string, string>,
-        service_addresses: dto.siteAddress ? [dto.siteAddress as Record<string, any>] : [],
-        notes: dto.notes,
-        tags: dto.tags,
-        lead_source: dto.leadSource,
-      });
-      const savedCustomer = await customerRepo.save(customer);
-      customerId = savedCustomer.id;
+      // 1. Use existing customer or create new
+      if (dto.customerId) {
+        // Verify customer belongs to this tenant
+        const existing = await customerRepo.findOne({ where: { id: dto.customerId, tenant_id: tenantId } });
+        if (!existing) throw new BadRequestException('Customer not found');
+        customerId = existing.id;
+      } else {
+        const customer = customerRepo.create({
+          tenant_id: tenantId,
+          type: dto.type || 'residential',
+          first_name: dto.firstName,
+          last_name: dto.lastName,
+          email: dto.email,
+          phone: dto.phone,
+          company_name: dto.companyName,
+          billing_address: dto.billingAddress as Record<string, string>,
+          service_addresses: dto.siteAddress ? [dto.siteAddress as Record<string, any>] : [],
+          notes: dto.notes,
+          tags: dto.tags,
+          lead_source: dto.leadSource,
+        });
+        const savedCustomer = await customerRepo.save(customer);
+        customerId = savedCustomer.id;
+      }
 
       // 2. Calculate full tenant-scoped pricing (base + distance surcharge)
       const siteAddr = dto.siteAddress || dto.billingAddress || {};
