@@ -612,7 +612,7 @@ function NewCustomerForm({ onOrchestrated, onClose }: { onOrchestrated: (result:
 
   // Customer autocomplete
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
-  const [searchResults, setSearchResults] = useState<{ id: string; first_name: string; last_name: string; email: string; phone: string; billing_address?: Record<string, string> }[]>([]);
+  const [searchResults, setSearchResults] = useState<{ id: string; first_name: string; last_name: string; email: string; phone: string; billing_address?: Record<string, any> }[]>([]);
   const [showDropdown, setShowDropdown] = useState(false);
   const searchDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -640,7 +640,7 @@ function NewCustomerForm({ onOrchestrated, onClose }: { onOrchestrated: (result:
     if (q.length < 2) { setSearchResults([]); setShowDropdown(false); return; }
     if (searchDebounce.current) clearTimeout(searchDebounce.current);
     searchDebounce.current = setTimeout(() => {
-      api.get<{ id: string; first_name: string; last_name: string; email: string; phone: string; billing_address?: Record<string, string> }[]>(`/customers/search?q=${encodeURIComponent(q)}&limit=5`)
+      api.get<{ id: string; first_name: string; last_name: string; email: string; phone: string; billing_address?: Record<string, any> }[]>(`/customers/search?q=${encodeURIComponent(q)}&limit=5`)
         .then(results => { setSearchResults(results); setShowDropdown(results.length > 0); })
         .catch(() => { setSearchResults([]); setShowDropdown(false); });
     }, 250);
@@ -653,7 +653,15 @@ function NewCustomerForm({ onOrchestrated, onClose }: { onOrchestrated: (result:
     setEmail(c.email || "");
     setPhone(c.phone || "");
     if (c.billing_address) {
-      setBillingAddress({ street: c.billing_address.street || "", city: c.billing_address.city || "", state: c.billing_address.state || "", zip: c.billing_address.zip || "", lat: null, lng: null });
+      const addr = c.billing_address as Record<string, any>;
+      setBillingAddress({
+        street: addr.street || "",
+        city: addr.city || "",
+        state: addr.state || "",
+        zip: addr.zip || "",
+        lat: addr.lat != null ? Number(addr.lat) : null,
+        lng: addr.lng != null ? Number(addr.lng) : null,
+      });
     }
     setShowDropdown(false);
     setDuplicateChecked(true); // skip duplicate warning for existing customer
