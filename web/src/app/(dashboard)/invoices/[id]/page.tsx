@@ -143,6 +143,7 @@ const INVOICE_LABELS = {
   chargeSuccess: "Payment charged successfully",
   chargeFailed: "Failed to charge card",
   noCardOnFile: "No card on file for this customer",
+  payNow: "Pay Now",
 };
 
 export default function InvoiceDetailPage({
@@ -549,14 +550,21 @@ export default function InvoiceDetailPage({
               )}
               {canPay && (
                 <button onClick={() => setPaymentPanel(true)}
-                  className="flex items-center gap-2 rounded-full bg-[var(--t-accent)] px-4 py-2 text-sm font-medium text-[var(--t-accent-on-accent)] transition-opacity hover:opacity-90">
+                  className="flex items-center gap-2 rounded-full bg-[var(--t-accent)] px-5 py-2.5 text-sm font-semibold text-[var(--t-accent-on-accent)] transition-opacity hover:opacity-90"
+                  style={{ boxShadow: "0 2px 8px rgba(0,0,0,0.15)" }}>
+                  <DollarSign className="h-4 w-4" /> {INVOICE_LABELS.payNow}
+                </button>
+              )}
+              {canPay && (
+                <button onClick={() => setPaymentPanel(true)}
+                  className="flex items-center gap-2 rounded-full border border-[var(--t-border)] px-4 py-2 text-sm font-medium text-[var(--t-text-primary)] transition-colors hover:bg-[var(--t-frame-hover)]">
                   <CreditCard className="h-4 w-4" /> Record Payment
                 </button>
               )}
               {canPay && (
                 <button onClick={handleChargeCard} disabled={chargingCard || actionLoading}
-                  className="flex items-center gap-2 rounded-full border border-[var(--t-accent)] px-4 py-2 text-sm font-medium text-[var(--t-accent)] transition-colors hover:bg-[var(--t-accent)] hover:text-[var(--t-accent-on-accent)] disabled:opacity-50">
-                  <DollarSign className="h-4 w-4" /> {chargingCard ? INVOICE_LABELS.chargingCard : INVOICE_LABELS.chargeCardOnFile}
+                  className="flex items-center gap-2 rounded-full border border-[var(--t-border)] px-4 py-2 text-sm font-medium text-[var(--t-text-muted)] transition-colors hover:text-[var(--t-text-primary)] disabled:opacity-50">
+                  <CreditCard className="h-4 w-4" /> {chargingCard ? INVOICE_LABELS.chargingCard : INVOICE_LABELS.chargeCardOnFile}
                 </button>
               )}
               {!isVoid && (
