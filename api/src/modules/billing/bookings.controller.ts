@@ -282,35 +282,19 @@ export class BookingsController {
       }
     } catch { /* non-fatal */ }
 
-    // Create line items
+    // Single rental line item — distance surcharge folded into amount
+    const rentalTotal = body.basePrice + (body.deliveryFee || 0);
     const rentalItem = this.lineItemRepo.create({
       invoice_id: savedInvoice.id,
       sort_order: 0,
       line_type: 'rental',
       name: `${body.assetSubtype} ${body.serviceType.replace(/_/g, ' ')} — ${body.rentalDays}-day rental`,
       quantity: 1,
-      unit_rate: body.basePrice,
-      amount: body.basePrice,
-      net_amount: body.basePrice,
+      unit_rate: rentalTotal,
+      amount: rentalTotal,
+      net_amount: rentalTotal,
     });
     await this.lineItemRepo.save(rentalItem);
-
-    if (body.deliveryFee > 0) {
-      const distanceItem = this.lineItemRepo.create({
-        invoice_id: savedInvoice.id,
-        sort_order: 1,
-        line_type: 'fee',
-        name: 'Distance charge',
-        quantity: 1,
-        unit_rate: body.deliveryFee,
-        amount: body.deliveryFee,
-        net_amount: body.deliveryFee,
-        is_taxable: false,
-        tax_rate: 0,
-        tax_amount: 0,
-      });
-      await this.lineItemRepo.save(distanceItem);
-    }
 
     // 5b. If paid by card, create a Payment record and reconcile
     if (isPaid) {
