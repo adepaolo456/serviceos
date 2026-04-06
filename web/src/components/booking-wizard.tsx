@@ -11,12 +11,22 @@ import AddressAutocomplete, { type AddressValue } from "@/components/address-aut
 /*  Types                                                              */
 /* ------------------------------------------------------------------ */
 
+export interface InitialSchedule {
+  dumpsterSize?: string;
+  deliveryDate?: string;
+  pickupDate?: string | null;
+  pickupTBD?: boolean;
+  siteAddress?: { street: string; city: string; state: string; zip: string; lat?: number | null; lng?: number | null };
+  paymentMethod?: "card" | "cash" | "check";
+}
+
 interface BookingWizardProps {
   open: boolean;
   onClose: () => void;
   onComplete?: () => void;
   prefillCustomerId?: string;
   prefillDate?: string;
+  initialSchedule?: InitialSchedule;
 }
 
 interface CustomerSearchResult {
@@ -188,6 +198,7 @@ export default function BookingWizard({
   onComplete,
   prefillCustomerId,
   prefillDate,
+  initialSchedule,
 }: BookingWizardProps) {
   const { toast } = useToast();
   const [step, setStep] = useState(1);
@@ -226,6 +237,7 @@ export default function BookingWizard({
   const [quoteLoading, setQuoteLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [sendInvoiceNow, setSendInvoiceNow] = useState(false);
+  const [preferredPaymentMethod, setPreferredPaymentMethod] = useState<"card" | "cash" | "check" | "invoice">("invoice");
 
   // Lock body scroll
   useEffect(() => {
@@ -271,17 +283,30 @@ export default function BookingWizard({
       setNewServiceAddress({ street: "", city: "", state: "", zip: "" });
       setBillingAddress({ street: "", street2: "", city: "", state: "", zip: "", county: "" });
       setTaskType("drop_off");
-      setDumpsterSize("");
-      setDeliveryDate(prefillDate || getNextBusinessDay());
+      setDumpsterSize(initialSchedule?.dumpsterSize || "");
+      setDeliveryDate(initialSchedule?.deliveryDate || prefillDate || getNextBusinessDay());
       setRentalLength(14);
       setPriority("Normal");
-      setAutoSchedulePickup(true);
+      setAutoSchedulePickup(initialSchedule?.pickupTBD ? false : true);
       setDriverNotes("");
       setPriceQuote(null);
       setAvailability(null);
       setSubmitting(false);
+      setPreferredPaymentMethod(initialSchedule?.paymentMethod || "invoice");
+      // Hydrate from initialSchedule if provided
+      if (initialSchedule?.siteAddress) {
+        setServiceAddressMode("different");
+        setNewServiceAddress({
+          street: initialSchedule.siteAddress.street,
+          city: initialSchedule.siteAddress.city,
+          state: initialSchedule.siteAddress.state,
+          zip: initialSchedule.siteAddress.zip,
+          lat: initialSchedule.siteAddress.lat,
+          lng: initialSchedule.siteAddress.lng,
+        });
+      }
     }
-  }, [open, prefillDate]);
+  }, [open, prefillDate, initialSchedule]);
 
   // Prefill customer
   useEffect(() => {
@@ -405,6 +430,7 @@ export default function BookingWizard({
     setSubmitting(true);
     const svcAddr = resolvedServiceAddress();
     const pickupDateStr = addDays(deliveryDate, rentalLength);
+    const resolvedMethod = collectPayment ? "card" : preferredPaymentMethod === "card" ? "card" : preferredPaymentMethod;
     try {
       await api.post("/bookings/complete", {
         customerId: selectedCustomer?.id || undefined,
@@ -430,8 +456,8 @@ export default function BookingWizard({
         deliveryFee: priceQuote?.distanceCharge || 0,
         taxAmount: 0,
         totalPrice: priceQuote?.total || priceQuote?.base_price || 0,
-        paymentMethod: collectPayment ? "card" as const : "invoice" as const,
-        sendInvoiceNow: !collectPayment && sendInvoiceNow ? true : undefined,
+        paymentMethod: resolvedMethod,
+        sendInvoiceNow: resolvedMethod === "invoice" && sendInvoiceNow ? true : undefined,
       });
       toast("success", "Booking created successfully");
       onComplete?.();
