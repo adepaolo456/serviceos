@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, type FormEvent } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { useBooking } from "@/components/booking-provider";
 import {
   Plus, Search, Users, MoreHorizontal, Trash2, Phone as PhoneIcon,
@@ -96,7 +96,6 @@ const CUSTOMER_LABELS = {
 
 export default function CustomersPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const { openWizard } = useBooking();
   const { toast } = useToast();
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -111,11 +110,12 @@ export default function CustomersPage() {
 
   // Auto-open SlideOver when navigated with ?new=true
   useEffect(() => {
-    if (searchParams.get("new") === "true") {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("new") === "true") {
       setPanelOpen(true);
-      router.replace("/customers", { scroll: false });
+      window.history.replaceState({}, "", "/customers");
     }
-  }, [searchParams, router]);
+  }, []);
 
   const fetchCustomers = useCallback(async () => {
     setLoading(true);
