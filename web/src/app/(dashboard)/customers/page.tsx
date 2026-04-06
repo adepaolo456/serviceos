@@ -57,6 +57,12 @@ const CUSTOMER_LABELS = {
   continueToBooking: "Continue to Booking",
   viewCustomer: "View Customer",
   returnToCustomers: "Return to Customers",
+  saveCustomerOnly: "Save Customer Only",
+  saveAndSchedule: "Save & Schedule Job",
+  saveCustomer: "Save Customer",
+  saveAndContinue: "Save & Continue to Scheduling",
+  nextStep: "After Creating",
+  creatingCustomer: "Creating customer...",
 };
 
 /* ---- Page ---- */
@@ -72,7 +78,6 @@ export default function CustomersPage() {
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [panelOpen, setPanelOpen] = useState(false);
-  const [createdCustomerId, setCreatedCustomerId] = useState<string | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>("name");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
 
@@ -505,34 +510,17 @@ export default function CustomersPage() {
       )}
 
       {/* Create Slide-over */}
-      <SlideOver open={panelOpen} onClose={() => { setPanelOpen(false); setCreatedCustomerId(null); }} title="New Customer">
-        {createdCustomerId ? (
-          <div className="flex flex-col items-center justify-center py-8 text-center space-y-4">
-            <div className="h-12 w-12 rounded-full flex items-center justify-center" style={{ background: "var(--t-accent-soft)" }}>
-              <Users className="h-6 w-6" style={{ color: "var(--t-accent)" }} />
-            </div>
-            <p className="text-sm font-semibold" style={{ color: "var(--t-text-primary)" }}>{CUSTOMER_LABELS.customerCreatedSuccess}</p>
-            <div className="flex flex-col gap-2 w-full max-w-xs">
-              <button onClick={() => { setPanelOpen(false); setCreatedCustomerId(null); openWizard({ customerId: createdCustomerId }); }}
-                className="w-full rounded-full py-2.5 text-sm font-semibold"
-                style={{ background: "var(--t-accent)", color: "var(--t-accent-on-accent)" }}>
-                {CUSTOMER_LABELS.continueToBooking}
-              </button>
-              <button onClick={() => { setPanelOpen(false); setCreatedCustomerId(null); router.push(`/customers/${createdCustomerId}`); }}
-                className="w-full rounded-full py-2.5 text-sm font-medium border"
-                style={{ borderColor: "var(--t-border)", color: "var(--t-text-muted)" }}>
-                {CUSTOMER_LABELS.viewCustomer}
-              </button>
-              <button onClick={() => { setPanelOpen(false); setCreatedCustomerId(null); }}
-                className="text-xs font-medium mt-1"
-                style={{ color: "var(--t-text-muted)" }}>
-                {CUSTOMER_LABELS.returnToCustomers}
-              </button>
-            </div>
-          </div>
-        ) : (
-          <NewCustomerForm onSuccess={(id) => { setCreatedCustomerId(id); fetchCustomers(); }} />
-        )}
+      <SlideOver open={panelOpen} onClose={() => { setPanelOpen(false); }} title="New Customer">
+        <NewCustomerForm onSuccess={(id, nextStep) => {
+          setPanelOpen(false);
+          fetchCustomers();
+          toast("success", CUSTOMER_LABELS.customerCreatedSuccess);
+          if (nextStep === "schedule") {
+            openWizard({ customerId: id });
+          } else {
+            router.push(`/customers/${id}`);
+          }
+        }} />
       </SlideOver>
     </div>
   );
@@ -542,7 +530,9 @@ export default function CustomersPage() {
    Create Customer Form
    ============================================================ */
 
-function NewCustomerForm({ onSuccess }: { onSuccess: (customerId: string) => void }) {
+type NextStep = "save" | "schedule";
+
+function NewCustomerForm({ onSuccess }: { onSuccess: (customerId: string, nextStep: NextStep) => void }) {
   const [type, setType] = useState<"residential" | "commercial">("residential");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -556,6 +546,7 @@ function NewCustomerForm({ onSuccess }: { onSuccess: (customerId: string) => voi
   const [leadSource, setLeadSource] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [nextStep, setNextStep] = useState<NextStep>("save");
 
   const inputStyle: React.CSSProperties = {
     width: "100%",
@@ -606,7 +597,7 @@ function NewCustomerForm({ onSuccess }: { onSuccess: (customerId: string) => voi
         tags: tags ? tags.split(",").map(t => t.trim()).filter(Boolean) : undefined,
         leadSource: leadSource || undefined,
       });
-      onSuccess(created.id);
+      onSuccess(created.id, nextStep);
     } catch (err) { setError(err instanceof Error ? err.message : "Failed to create"); }
     finally { setSaving(false); }
   };
@@ -737,6 +728,32 @@ function NewCustomerForm({ onSuccess }: { onSuccess: (customerId: string) => voi
         <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} style={{ ...inputStyle, resize: "none" }} placeholder="Internal notes..." />
       </div>
 
+      {/* After Creating — next step selector */}
+      <div style={{ marginTop: 8 }}>
+        <label style={labelStyle}>{CUSTOMER_LABELS.nextStep}</label>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+          {([
+            { key: "save" as const, label: CUSTOMER_LABELS.saveCustomerOnly },
+            { key: "schedule" as const, label: CUSTOMER_LABELS.saveAndSchedule },
+          ]).map(opt => (
+            <button key={opt.key} type="button" onClick={() => setNextStep(opt.key)}
+              style={{
+                padding: "10px 0",
+                borderRadius: 10,
+                fontSize: 13,
+                fontWeight: 600,
+                border: nextStep === opt.key ? "none" : "1px solid var(--t-border)",
+                backgroundColor: nextStep === opt.key ? "var(--t-accent)" : "transparent",
+                color: nextStep === opt.key ? "var(--t-accent-on-accent)" : "var(--t-text-muted)",
+                cursor: "pointer",
+                transition: "all 0.15s ease",
+              }}>
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
       <button type="submit" disabled={saving}
         style={{
           width: "100%",
@@ -752,7 +769,7 @@ function NewCustomerForm({ onSuccess }: { onSuccess: (customerId: string) => voi
           transition: "opacity 0.15s ease",
           marginTop: 8,
         }}>
-        {saving ? "Creating..." : "Create Customer"}
+        {saving ? CUSTOMER_LABELS.creatingCustomer : nextStep === "schedule" ? CUSTOMER_LABELS.saveAndContinue : CUSTOMER_LABELS.saveCustomer}
       </button>
     </form>
   );
