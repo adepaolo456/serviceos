@@ -136,6 +136,15 @@ const PAYMENT_STATUS: Record<string, string> = {
 import { formatCurrency } from "@/lib/utils";
 const fmt = (n: number | null | undefined) => formatCurrency(n as number);
 
+/* ── UI Labels ── */
+const INVOICE_LABELS = {
+  chargeCardOnFile: "Charge Card on File",
+  chargingCard: "Charging...",
+  chargeSuccess: "Payment charged successfully",
+  chargeFailed: "Failed to charge card",
+  noCardOnFile: "No card on file for this customer",
+};
+
 export default function InvoiceDetailPage({
   params,
 }: {
@@ -232,6 +241,23 @@ export default function InvoiceDetailPage({
       toast("error", "Failed to void invoice");
     } finally {
       setActionLoading(false);
+    }
+  };
+
+  const [chargingCard, setChargingCard] = useState(false);
+
+  const handleChargeCard = async () => {
+    if (!invoice || chargingCard || actionLoading) return;
+    setChargingCard(true);
+    try {
+      await api.post(`/stripe/charge-invoice/${id}`);
+      toast("success", INVOICE_LABELS.chargeSuccess);
+      await fetchData();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : INVOICE_LABELS.chargeFailed;
+      toast("error", msg);
+    } finally {
+      setChargingCard(false);
     }
   };
 
@@ -525,6 +551,12 @@ export default function InvoiceDetailPage({
                 <button onClick={() => setPaymentPanel(true)}
                   className="flex items-center gap-2 rounded-full bg-[var(--t-accent)] px-4 py-2 text-sm font-medium text-[var(--t-accent-on-accent)] transition-opacity hover:opacity-90">
                   <CreditCard className="h-4 w-4" /> Record Payment
+                </button>
+              )}
+              {canPay && (
+                <button onClick={handleChargeCard} disabled={chargingCard || actionLoading}
+                  className="flex items-center gap-2 rounded-full border border-[var(--t-accent)] px-4 py-2 text-sm font-medium text-[var(--t-accent)] transition-colors hover:bg-[var(--t-accent)] hover:text-[var(--t-accent-on-accent)] disabled:opacity-50">
+                  <DollarSign className="h-4 w-4" /> {chargingCard ? INVOICE_LABELS.chargingCard : INVOICE_LABELS.chargeCardOnFile}
                 </button>
               )}
               {!isVoid && (

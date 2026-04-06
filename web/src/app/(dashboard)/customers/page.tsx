@@ -80,6 +80,13 @@ const CUSTOMER_LABELS = {
   schedulingRequired: "Please fill in all required scheduling fields",
   noSizesAvailable: "No sizes available",
   loadingSizes: "Loading sizes...",
+  duplicateCustomerFound: "Possible duplicate customer found",
+  matchingEmail: "Matching email",
+  matchingPhone: "Matching phone",
+  continueCreatingCustomer: "Continue Creating New Customer",
+  viewExistingCustomer: "View Existing Customer",
+  cancelCreateCustomer: "Cancel",
+  checkingDuplicate: "Checking for existing customers...",
 };
 
 /* ---- Page ---- */
@@ -528,7 +535,7 @@ export default function CustomersPage() {
 
       {/* Create Slide-over */}
       <SlideOver open={panelOpen} onClose={() => { setPanelOpen(false); }} title="New Customer">
-        <NewCustomerForm onSuccess={(id, nextStep, schedule) => {
+        <NewCustomerForm onClose={() => setPanelOpen(false)} onSuccess={(id, nextStep, schedule) => {
           setPanelOpen(false);
           fetchCustomers();
           toast("success", CUSTOMER_LABELS.customerCreatedSuccess);
@@ -549,7 +556,10 @@ export default function CustomersPage() {
 
 type NextStep = "save" | "schedule";
 
-function NewCustomerForm({ onSuccess }: { onSuccess: (customerId: string, nextStep: NextStep, schedule?: InitialSchedule) => void }) {
+interface DuplicateMatch { id: string; first_name: string; last_name: string; email: string; phone: string; matchField: "email" | "phone" }
+
+function NewCustomerForm({ onSuccess, onClose }: { onSuccess: (customerId: string, nextStep: NextStep, schedule?: InitialSchedule) => void; onClose: () => void }) {
+  const router = useRouter();
   const [type, setType] = useState<"residential" | "commercial">("residential");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -564,6 +574,11 @@ function NewCustomerForm({ onSuccess }: { onSuccess: (customerId: string, nextSt
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [nextStep, setNextStep] = useState<NextStep>("save");
+
+  // Duplicate detection
+  const [duplicateMatch, setDuplicateMatch] = useState<DuplicateMatch | null>(null);
+  const [duplicateChecked, setDuplicateChecked] = useState(false);
+  const [checkingDuplicate, setCheckingDuplicate] = useState(false);
 
   // Scheduling fields (visible when nextStep === "schedule")
   const [schedDumpsterSize, setSchedDumpsterSize] = useState("");
@@ -641,6 +656,35 @@ function NewCustomerForm({ onSuccess }: { onSuccess: (customerId: string, nextSt
       }
     }
 
+    // Duplicate detection — check before creating (skip if already confirmed)
+    if (!duplicateChecked) {
+      const normalizedPhone = phone.replace(/\D/g, "");
+      const normalizedEmail = email.trim().toLowerCase();
+      if (normalizedPhone || normalizedEmail) {
+        setCheckingDuplicate(true);
+        try {
+          // Check by phone first, then email
+          for (const [field, val] of [["phone", normalizedPhone], ["email", normalizedEmail]] as const) {
+            if (!val) continue;
+            const res = await api.get<{ data: { id: string; first_name: string; last_name: string; email: string; phone: string }[]; meta: { total: number } }>(`/customers?search=${encodeURIComponent(val)}&limit=1`);
+            if (res.meta.total > 0) {
+              const match = res.data[0];
+              // Verify it's an actual match (not a fuzzy substring hit)
+              const matchedPhone = field === "phone" && match.phone?.replace(/\D/g, "") === normalizedPhone;
+              const matchedEmail = field === "email" && match.email?.trim().toLowerCase() === normalizedEmail;
+              if (matchedPhone || matchedEmail) {
+                setDuplicateMatch({ ...match, matchField: field });
+                setCheckingDuplicate(false);
+                return;
+              }
+            }
+          }
+        } catch { /* proceed if check fails */ }
+        setCheckingDuplicate(false);
+      }
+      setDuplicateChecked(true);
+    }
+
     setSaving(true);
     try {
       const addr = billingAddress.street ? { street: billingAddress.street, city: billingAddress.city, state: billingAddress.state, zip: billingAddress.zip, lat: billingAddress.lat, lng: billingAddress.lng } : undefined;
@@ -685,6 +729,39 @@ function NewCustomerForm({ onSuccess }: { onSuccess: (customerId: string, nextSt
           color: "var(--t-error)",
         }}>
           {error}
+        </div>
+      )}
+
+      {/* Duplicate warning */}
+      {duplicateMatch && (
+        <div style={{
+          backgroundColor: "var(--t-accent-soft)",
+          border: "1px solid var(--t-accent)",
+          borderRadius: 10,
+          padding: "16px",
+          fontSize: 13,
+        }}>
+          <p style={{ fontWeight: 600, color: "var(--t-text-primary)", marginBottom: 4 }}>{CUSTOMER_LABELS.duplicateCustomerFound}</p>
+          <p style={{ color: "var(--t-text-muted)", marginBottom: 2 }}>
+            {duplicateMatch.first_name} {duplicateMatch.last_name}
+          </p>
+          <p style={{ color: "var(--t-text-muted)", marginBottom: 12, fontSize: 12 }}>
+            {duplicateMatch.matchField === "email" ? CUSTOMER_LABELS.matchingEmail : CUSTOMER_LABELS.matchingPhone}: {duplicateMatch.matchField === "email" ? duplicateMatch.email : duplicateMatch.phone}
+          </p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <button type="button" onClick={() => { setDuplicateMatch(null); setDuplicateChecked(true); }}
+              style={{ width: "100%", padding: "10px 0", borderRadius: 24, fontSize: 13, fontWeight: 600, backgroundColor: "var(--t-accent)", color: "var(--t-accent-on-accent)", border: "none", cursor: "pointer" }}>
+              {CUSTOMER_LABELS.continueCreatingCustomer}
+            </button>
+            <button type="button" onClick={() => { onClose(); router.push(`/customers/${duplicateMatch.id}`); }}
+              style={{ width: "100%", padding: "10px 0", borderRadius: 24, fontSize: 13, fontWeight: 600, backgroundColor: "transparent", color: "var(--t-text-primary)", border: "1px solid var(--t-border)", cursor: "pointer" }}>
+              {CUSTOMER_LABELS.viewExistingCustomer}
+            </button>
+            <button type="button" onClick={() => setDuplicateMatch(null)}
+              style={{ fontSize: 12, color: "var(--t-text-muted)", backgroundColor: "transparent", border: "none", cursor: "pointer" }}>
+              {CUSTOMER_LABELS.cancelCreateCustomer}
+            </button>
+          </div>
         </div>
       )}
 
@@ -895,7 +972,7 @@ function NewCustomerForm({ onSuccess }: { onSuccess: (customerId: string, nextSt
         </>
       )}
 
-      <button type="submit" disabled={saving}
+      <button type="submit" disabled={saving || checkingDuplicate}
         style={{
           width: "100%",
           backgroundColor: "var(--t-accent)",
@@ -905,12 +982,12 @@ function NewCustomerForm({ onSuccess }: { onSuccess: (customerId: string, nextSt
           padding: "14px 0",
           borderRadius: 24,
           border: "none",
-          cursor: saving ? "default" : "pointer",
-          opacity: saving ? 0.5 : 1,
+          cursor: saving || checkingDuplicate ? "default" : "pointer",
+          opacity: saving || checkingDuplicate ? 0.5 : 1,
           transition: "opacity 0.15s ease",
           marginTop: 8,
         }}>
-        {saving ? CUSTOMER_LABELS.creatingCustomer : nextStep === "schedule" ? CUSTOMER_LABELS.saveAndContinue : CUSTOMER_LABELS.saveCustomer}
+        {checkingDuplicate ? CUSTOMER_LABELS.checkingDuplicate : saving ? CUSTOMER_LABELS.creatingCustomer : nextStep === "schedule" ? CUSTOMER_LABELS.saveAndContinue : CUSTOMER_LABELS.saveCustomer}
       </button>
     </form>
   );
