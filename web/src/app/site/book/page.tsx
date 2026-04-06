@@ -57,6 +57,49 @@ function BookingWizardContent() {
   const [customerName, setCustomerName] = useState("");
   const [customerEmail, setCustomerEmail] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
+  const [quoteId, setQuoteId] = useState<string | null>(null);
+  const [quoteSubtype, setQuoteSubtype] = useState<string | null>(null);
+  const [quoteLoading, setQuoteLoading] = useState(false);
+  const [quoteError, setQuoteError] = useState("");
+
+  // Hydrate from quote token if present in URL
+  useEffect(() => {
+    const quoteToken = searchParams.get("quote");
+    if (!quoteToken || !tenant) return;
+    setQuoteLoading(true);
+    fetch(`${API}/public/tenant/${tenant.slug}/quote/${encodeURIComponent(quoteToken)}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (!data.valid) {
+          setQuoteError(data.message || "This quote is no longer available.");
+          return;
+        }
+        setQuoteId(data.quoteId);
+        // Prefill customer info
+        if (data.customerName) setCustomerName(data.customerName);
+        if (data.customerEmail) setCustomerEmail(data.customerEmail);
+        if (data.customerPhone) setCustomerPhone(data.customerPhone);
+        // Prefill address
+        if (data.deliveryAddress) {
+          setAddress({
+            street: data.deliveryAddress.street || "",
+            city: data.deliveryAddress.city || "",
+            state: data.deliveryAddress.state || "",
+            zip: data.deliveryAddress.zip || "",
+            lat: data.deliveryAddress.lat || null,
+            lng: data.deliveryAddress.lng || null,
+          });
+        }
+        if (data.rentalDays) setRentalDays(data.rentalDays);
+        // Size will be matched after services load — store in a ref-like state
+        if (data.size) {
+          setSelectedType("dumpster_rental");
+          setQuoteSubtype(data.size);
+        }
+      })
+      .catch(() => setQuoteError("Unable to load quote. Please try booking directly."))
+      .finally(() => setQuoteLoading(false));
+  }, [tenant, searchParams]);
 
   useEffect(() => {
     if (!tenant) return;
@@ -70,6 +113,20 @@ function BookingWizardContent() {
       })
       .catch(() => {});
   }, [tenant]);
+
+  // Auto-select service from quote subtype after services load
+  useEffect(() => {
+    if (!quoteSubtype || !Object.keys(services).length) return;
+    for (const [type, svcList] of Object.entries(services)) {
+      const match = svcList.find((s) => s.subtype === quoteSubtype);
+      if (match) {
+        setSelectedType(type);
+        setSelectedServiceId(match.id);
+        setQuoteSubtype(null);
+        break;
+      }
+    }
+  }, [services, quoteSubtype]);
 
   const types = Object.keys(services);
   const currentServices = selectedType ? services[selectedType] || [] : [];
@@ -140,6 +197,7 @@ function BookingWizardContent() {
           customerName: customerName.trim(),
           customerEmail: customerEmail.trim(),
           customerPhone: customerPhone.trim(),
+          ...(quoteId ? { quoteId } : {}),
         }),
       });
       if (!res.ok) {
@@ -160,6 +218,29 @@ function BookingWizardContent() {
   }
 
   if (!tenant) return null;
+
+  if (quoteLoading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="h-6 w-6 animate-spin" style={{ color: "var(--t-accent)" }} />
+        <span className="ml-2 text-sm" style={{ color: "var(--t-text-muted)" }}>Loading your quote...</span>
+      </div>
+    );
+  }
+
+  if (quoteError) {
+    return (
+      <div className="mx-auto max-w-md px-4 py-20 text-center">
+        <p className="text-lg font-semibold mb-2" style={{ color: "var(--t-text-primary)" }}>Quote Unavailable</p>
+        <p className="text-sm mb-6" style={{ color: "var(--t-text-muted)" }}>{quoteError}</p>
+        <a href={`/site/book${embed ? "?embed=true" : ""}`}
+          className="inline-block rounded-full px-6 py-2.5 text-sm font-semibold"
+          style={{ background: "var(--t-accent)", color: "#fff" }}>
+          Start a New Booking
+        </a>
+      </div>
+    );
+  }
 
   const inputClass =
     "w-full rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-3 text-sm text-[var(--t-text-primary)] placeholder-[var(--t-text-muted)] outline-none transition-colors focus:border-[var(--t-accent)] focus:ring-1 focus:ring-[var(--t-accent)]";

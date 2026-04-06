@@ -6,6 +6,7 @@ import { PricingRule } from '../pricing/entities/pricing-rule.entity';
 import { Asset } from '../assets/entities/asset.entity';
 import { Job } from '../jobs/entities/job.entity';
 import { Customer } from '../customers/entities/customer.entity';
+import { Quote } from '../quotes/quote.entity';
 import { BillingService } from '../billing/billing.service';
 import { CreatePublicBookingDto } from './dto/public-booking.dto';
 import { haversineDistance } from '../pricing/pricing.utils';
@@ -18,6 +19,7 @@ export class PublicService {
     @InjectRepository(Asset) private assetRepo: Repository<Asset>,
     @InjectRepository(Job) private jobRepo: Repository<Job>,
     @InjectRepository(Customer) private customerRepo: Repository<Customer>,
+    @InjectRepository(Quote) private quoteRepo: Repository<Quote>,
     private billingService: BillingService,
     private dataSource: DataSource,
   ) {}
@@ -348,6 +350,45 @@ export class PublicService {
       primaryColor: t.website_primary_color,
       phone: t.website_phone,
       services,
+    };
+  }
+
+  /**
+   * Look up a quote by token for booking hydration.
+   * Validates that the quote belongs to the tenant identified by slug.
+   * Returns only safe fields needed for booking — no internal IDs or PII leakage across tenants.
+   */
+  async getQuoteByToken(slug: string, token: string) {
+    const tenant = await this.findTenant(slug);
+
+    const quote = await this.quoteRepo.findOne({ where: { token } });
+
+    // If quote doesn't exist or belongs to a different tenant, return same generic error
+    // to prevent cross-tenant enumeration
+    if (!quote || quote.tenant_id !== tenant.id) {
+      throw new NotFoundException('This quote is no longer available.');
+    }
+
+    if (new Date() > quote.expires_at) {
+      return { valid: false, expired: true, message: 'This quote has expired.' };
+    }
+
+    if (quote.status === 'converted') {
+      return { valid: false, converted: true, message: 'This quote has already been booked.' };
+    }
+
+    return {
+      valid: true,
+      quoteId: quote.id,
+      size: quote.asset_subtype,
+      deliveryAddress: quote.delivery_address,
+      customerName: quote.customer_name,
+      customerEmail: quote.customer_email,
+      customerPhone: quote.customer_phone,
+      totalQuoted: Number(quote.total_quoted),
+      rentalDays: quote.rental_days,
+      includedTons: Number(quote.included_tons),
+      expiresAt: quote.expires_at,
     };
   }
 }

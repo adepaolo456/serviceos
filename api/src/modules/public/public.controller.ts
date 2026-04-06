@@ -50,4 +50,13 @@ export class PublicController {
   ) {
     return this.publicService.getWidgetConfig(slug, origin);
   }
+
+  @Get(':slug/quote/:token')
+  @ApiOperation({ summary: 'Look up a quote by token for booking hydration' })
+  getQuoteByToken(
+    @Param('slug') slug: string,
+    @Param('token') token: string,
+  ) {
+    return this.publicService.getQuoteByToken(slug, token);
+  }
 }

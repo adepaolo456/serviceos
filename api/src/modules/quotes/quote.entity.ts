@@ -21,7 +21,7 @@ export class Quote {
   customer_phone!: string;
 
   @Column({ name: 'delivery_address', type: 'jsonb', nullable: true })
-  delivery_address!: Record<string, string> | null;
+  delivery_address!: Record<string, any> | null;
 
   @Column({ name: 'asset_subtype' })
   asset_subtype!: string;
@@ -41,11 +41,17 @@ export class Quote {
   @Column({ name: 'extra_day_rate', type: 'decimal', precision: 10, scale: 2, default: 0 })
   extra_day_rate!: number;
 
+  @Column({ name: 'distance_surcharge', type: 'decimal', precision: 10, scale: 2, default: 0 })
+  distance_surcharge!: number;
+
   @Column({ name: 'total_quoted', type: 'decimal', precision: 10, scale: 2, default: 0 })
   total_quoted!: number;
 
-  @Column({ default: 'sent' })
+  @Column({ default: 'draft' })
   status!: string;
+
+  @Column({ nullable: true, unique: true })
+  token!: string | null;
 
   @Column({ name: 'expires_at', type: 'timestamptz' })
   expires_at!: Date;

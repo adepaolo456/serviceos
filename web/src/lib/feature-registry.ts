@@ -329,6 +329,48 @@ export const FEATURE_REGISTRY: Record<string, FeatureDescription> = {
     isUserFacing: true, isGuideEligible: true,
     keywords: ["help", "guide", "documentation", "learn", "how to", "support"],
   },
+
+  // ── Quick Quote ──
+  quick_quote: {
+    id: "quick_quote", label: "Quick Quote", category: "operations",
+    shortDescription: "Generate an instant dumpster rental quote for phone inquiries.",
+    guideDescription: "Quick Quote lets you generate a price estimate in seconds from the sidebar. Select a dumpster size and enter a delivery address to get a full quote powered by your pricing rules, distance surcharges, and tenant fees. From the quote, you can Book Now to continue into the full booking flow, or Email Quote to send the customer a branded email with a one-click Book Now link.",
+    routeOrSurface: "sidebar_drawer", tenantOverrideKey: "quick_quote",
+    isUserFacing: true, isGuideEligible: true,
+    keywords: ["quote", "estimate", "price", "phone", "inquiry", "quick", "instant"],
+  },
+  quick_quote_email: {
+    id: "quick_quote_email", label: "Email Quote", category: "operations",
+    shortDescription: "Send a branded quote email with a Book Now link.",
+    guideDescription: "Email Quote sends the customer a branded email containing the quote summary, pricing breakdown, and a secure Book Now button. Clicking that link takes the customer to your tenant website booking wizard with the quote details pre-filled. Quotes expire after 30 days.",
+    routeOrSurface: "sidebar_drawer", tenantOverrideKey: "quick_quote_email",
+    isUserFacing: true, isGuideEligible: true,
+    keywords: ["email", "send", "quote", "customer", "link", "book"],
+  },
+  quick_quote_book_now: {
+    id: "quick_quote_book_now", label: "Book Now", category: "operations",
+    shortDescription: "Continue a quick quote directly into the booking flow.",
+    guideDescription: "Book Now takes the dumpster size and delivery address from your quick quote and pre-fills them into the standard New Booking wizard. The booking follows all normal pricing, payment, and dispatch rules — no shortcuts or parallel booking path.",
+    routeOrSurface: "sidebar_drawer", tenantOverrideKey: "quick_quote_book_now",
+    isUserFacing: true, isGuideEligible: true,
+    keywords: ["book", "reserve", "schedule", "convert", "quote", "order"],
+  },
+  quick_quote_dumpster_size: {
+    id: "quick_quote_dumpster_size", label: "Dumpster Size", category: "operations",
+    shortDescription: "Select dumpster size from your active pricing rules.",
+    guideDescription: "The dumpster size selector shows all active pricing rules for your tenant. Each pill displays the size name and base price. Selecting a size begins the quote calculation.",
+    routeOrSurface: "sidebar_drawer", tenantOverrideKey: "quick_quote_dumpster_size",
+    isUserFacing: true, isGuideEligible: false,
+    keywords: ["size", "dumpster", "yard", "container", "select"],
+  },
+  quick_quote_delivery_address: {
+    id: "quick_quote_delivery_address", label: "Delivery Address", category: "operations",
+    shortDescription: "Enter delivery address for distance-based pricing.",
+    guideDescription: "The delivery address field uses Mapbox autocomplete to resolve a full address with coordinates. Once entered, the system calculates the full quote including distance surcharges, tenant fees, and tax using your pricing engine.",
+    routeOrSurface: "sidebar_drawer", tenantOverrideKey: "quick_quote_delivery_address",
+    isUserFacing: true, isGuideEligible: false,
+    keywords: ["address", "delivery", "location", "distance", "zone", "map"],
+  },
 };
 
 // ── Category display labels ──
