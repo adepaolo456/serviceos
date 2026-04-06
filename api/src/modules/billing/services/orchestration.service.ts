@@ -106,7 +106,12 @@ export class OrchestrationService {
       throw new BadRequestException('Dumpster size and delivery date are required for scheduling');
     }
 
-    const rentalDays = dto.rentalDays || 14;
+    // Resolve tenant-scoped default rental period from pricing rule (no hardcoded fallback)
+    const pricingRule = await this.dataSource.getRepository('PricingRule').findOne({
+      where: { tenant_id: tenantId, asset_subtype: dto.dumpsterSize, is_active: true },
+    }) as { rental_period_days?: number } | null;
+    const tenantDefaultDays = pricingRule?.rental_period_days || 7;
+    const rentalDays = dto.rentalDays || tenantDefaultDays;
     const pickupDate = dto.pickupTBD
       ? this.addDays(dto.deliveryDate, rentalDays)
       : (dto.pickupDate || this.addDays(dto.deliveryDate, rentalDays));

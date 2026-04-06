@@ -35,7 +35,7 @@ export async function calculatePriceForCustomer(
   let includedTons = rule ? Number(rule.included_tons) : 0;
   let overageRate = rule ? Number(rule.overage_per_ton) : 0;
   let extraDayRate = rule ? Number(rule.extra_day_rate) : 0;
-  let includedRentalDays = rule ? rule.rental_period_days : 14;
+  let includedRentalDays = rule ? rule.rental_period_days : 7;
   let discountPercentage = 0;
   let isExemptExtraDays = false;
 
