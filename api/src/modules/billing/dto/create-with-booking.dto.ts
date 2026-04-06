@@ -11,16 +11,23 @@ import {
 } from 'class-validator';
 
 export class CreateWithBookingDto {
-  // Customer fields
+  // Existing customer (if selected from autocomplete)
+  @IsOptional()
+  @IsUUID()
+  customerId?: string;
+
+  // Customer fields (used when creating new)
   @IsOptional()
   @IsIn(['residential', 'commercial'])
   type?: string;
 
+  @IsOptional()
   @IsString()
-  firstName: string;
+  firstName?: string;
 
+  @IsOptional()
   @IsString()
-  lastName: string;
+  lastName?: string;
 
   @IsOptional()
   @IsEmail()

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, type FormEvent } from "react";
+import { useState, useEffect, useCallback, useRef, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { useBooking } from "@/components/booking-provider";
 import {
@@ -90,6 +90,8 @@ const CUSTOMER_LABELS = {
   paymentSucceeded: "Payment processed successfully",
   paymentFailed: "Payment could not be processed",
   bookingUnpaid: "Job scheduled — invoice unpaid",
+  continueAsNewCustomer: "Continue as new customer",
+  existingCustomerSelected: "Existing customer selected",
 };
 
 /* ---- Page ---- */
@@ -608,7 +610,14 @@ function NewCustomerForm({ onOrchestrated, onClose }: { onOrchestrated: (result:
   const [saving, setSaving] = useState(false);
   const [nextStep, setNextStep] = useState<NextStep>("schedule");
 
-  // Duplicate detection
+  // Customer autocomplete
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
+  const [searchResults, setSearchResults] = useState<{ id: string; first_name: string; last_name: string; email: string; phone: string; billing_address?: Record<string, string> }[]>([]);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const searchDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Duplicate detection (fallback safety)
   const [duplicateMatch, setDuplicateMatch] = useState<DuplicateMatch | null>(null);
   const [duplicateChecked, setDuplicateChecked] = useState(false);
   const [checkingDuplicate, setCheckingDuplicate] = useState(false);
@@ -624,6 +633,43 @@ function NewCustomerForm({ onOrchestrated, onClose }: { onOrchestrated: (result:
   const [sizeOptions, setSizeOptions] = useState<{ id: string; asset_subtype: string; base_price: number; rental_period_days?: number }[]>([]);
   const [pickupManuallySet, setPickupManuallySet] = useState(false);
   const [sizesLoading, setSizesLoading] = useState(false);
+
+  // Customer autocomplete search
+  const handleNameSearch = useCallback((first: string, last: string) => {
+    const q = `${first} ${last}`.trim();
+    if (q.length < 2) { setSearchResults([]); setShowDropdown(false); return; }
+    if (searchDebounce.current) clearTimeout(searchDebounce.current);
+    searchDebounce.current = setTimeout(() => {
+      api.get<{ id: string; first_name: string; last_name: string; email: string; phone: string; billing_address?: Record<string, string> }[]>(`/customers/search?q=${encodeURIComponent(q)}&limit=5`)
+        .then(results => { setSearchResults(results); setShowDropdown(results.length > 0); })
+        .catch(() => { setSearchResults([]); setShowDropdown(false); });
+    }, 250);
+  }, []);
+
+  const selectExistingCustomer = (c: typeof searchResults[0]) => {
+    setSelectedCustomerId(c.id);
+    setFirstName(c.first_name);
+    setLastName(c.last_name);
+    setEmail(c.email || "");
+    setPhone(c.phone || "");
+    if (c.billing_address) {
+      setBillingAddress({ street: c.billing_address.street || "", city: c.billing_address.city || "", state: c.billing_address.state || "", zip: c.billing_address.zip || "", lat: null, lng: null });
+    }
+    setShowDropdown(false);
+    setDuplicateChecked(true); // skip duplicate warning for existing customer
+  };
+
+  const clearSelectedCustomer = () => {
+    if (selectedCustomerId) { setSelectedCustomerId(null); setDuplicateChecked(false); }
+  };
+
+  // Close dropdown on click outside
+  useEffect(() => {
+    if (!showDropdown) return;
+    const handler = (e: MouseEvent) => { if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) setShowDropdown(false); };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [showDropdown]);
 
   // Fetch tenant-scoped size options when scheduling is selected
   useEffect(() => {
@@ -735,6 +781,7 @@ function NewCustomerForm({ onOrchestrated, onClose }: { onOrchestrated: (result:
       const siteAddr = schedBillingSameAsSite ? billingAddress : schedSiteAddress;
 
       const result = await api.post<OrchestrationResult>("/bookings/create-with-booking", {
+        ...(selectedCustomerId ? { customerId: selectedCustomerId } : {}),
         type,
         firstName,
         lastName,
@@ -823,15 +870,44 @@ function NewCustomerForm({ onOrchestrated, onClose }: { onOrchestrated: (result:
         </div>
       )}
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-        <div>
-          <label style={labelStyle}>First Name</label>
-          <input value={firstName} onChange={e => setFirstName(e.target.value)} required style={inputStyle} placeholder="Jane" />
+      <div style={{ position: "relative" }} ref={dropdownRef}>
+        {selectedCustomerId && (
+          <div style={{ backgroundColor: "var(--t-accent-soft)", borderRadius: 8, padding: "8px 12px", marginBottom: 8, fontSize: 12, color: "var(--t-accent)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span>{CUSTOMER_LABELS.existingCustomerSelected}</span>
+            <button type="button" onClick={() => { clearSelectedCustomer(); setFirstName(""); setLastName(""); setEmail(""); setPhone(""); }} style={{ background: "none", border: "none", color: "var(--t-accent)", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>&times;</button>
+          </div>
+        )}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <div>
+            <label style={labelStyle}>First Name</label>
+            <input value={firstName} onChange={e => { setFirstName(e.target.value); clearSelectedCustomer(); handleNameSearch(e.target.value, lastName); }} required style={inputStyle} placeholder="Jane" autoComplete="off" />
+          </div>
+          <div>
+            <label style={labelStyle}>Last Name</label>
+            <input value={lastName} onChange={e => { setLastName(e.target.value); clearSelectedCustomer(); handleNameSearch(firstName, e.target.value); }} required style={inputStyle} placeholder="Smith" autoComplete="off" />
+          </div>
         </div>
-        <div>
-          <label style={labelStyle}>Last Name</label>
-          <input value={lastName} onChange={e => setLastName(e.target.value)} required style={inputStyle} placeholder="Smith" />
-        </div>
+        {showDropdown && searchResults.length > 0 && (
+          <div style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 50, backgroundColor: "var(--t-bg-card)", border: "1px solid var(--t-border)", borderRadius: 10, marginTop: 4, boxShadow: "0 4px 12px rgba(0,0,0,0.15)", maxHeight: 220, overflowY: "auto" }}>
+            {searchResults.map(c => (
+              <button key={c.id} type="button" onClick={() => selectExistingCustomer(c)}
+                style={{ display: "block", width: "100%", textAlign: "left", padding: "10px 14px", border: "none", borderBottom: "1px solid var(--t-border)", backgroundColor: "transparent", cursor: "pointer", fontSize: 13 }}
+                onMouseEnter={e => (e.currentTarget.style.backgroundColor = "var(--t-frame-hover)")}
+                onMouseLeave={e => (e.currentTarget.style.backgroundColor = "transparent")}>
+                <div style={{ fontWeight: 600, color: "var(--t-text-primary)" }}>{c.first_name} {c.last_name}</div>
+                {(c.phone || c.email) && (
+                  <div style={{ fontSize: 11, color: "var(--t-text-muted)", marginTop: 2 }}>
+                    {c.phone}{c.phone && c.email ? " · " : ""}{c.email}
+                  </div>
+                )}
+              </button>
+            ))}
+            <button type="button" onClick={() => setShowDropdown(false)}
+              style={{ display: "block", width: "100%", textAlign: "left", padding: "10px 14px", border: "none", backgroundColor: "transparent", cursor: "pointer", fontSize: 13, color: "var(--t-accent)", fontWeight: 600 }}>
+              {CUSTOMER_LABELS.continueAsNewCustomer}
+            </button>
+          </div>
+        )}
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
