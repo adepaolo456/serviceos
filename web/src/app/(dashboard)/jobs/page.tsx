@@ -2,9 +2,8 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { useBooking } from "@/components/booking-provider";
+import { useQuickQuote } from "@/components/quick-quote-provider";
 import {
-  Plus,
   Briefcase,
   Search,
   Truck,
@@ -172,7 +171,7 @@ function getDateRange(range: string): { dateFrom?: string; dateTo?: string } {
 
 export default function JobsPage() {
   const router = useRouter();
-  const { openWizard } = useBooking();
+  const { openQuickQuote } = useQuickQuote();
   const { toast } = useToast();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [total, setTotal] = useState(0);
@@ -299,9 +298,6 @@ export default function JobsPage() {
             {totalCount} total{unassignedCount > 0 && <> &middot; <span style={{ fontWeight: 600, color: "var(--t-warning)" }}>{unassignedCount} unassigned</span></>}
           </p>
         </div>
-        <button onClick={() => openWizard()} className="btn-primary inline-flex items-center gap-1.5 text-sm shrink-0">
-          <Plus className="h-4 w-4" strokeWidth={2.5} /> New Booking
-        </button>
       </div>
 
       {/* ─── Stat strip ─── */}
@@ -459,8 +455,8 @@ export default function JobsPage() {
               Clear Filters
             </button>
           ) : (
-            <button onClick={() => openWizard()} className="btn-primary inline-flex items-center gap-2 text-sm">
-              <Plus className="h-4 w-4" /> New Booking
+            <button onClick={() => openQuickQuote()} className="btn-primary inline-flex items-center gap-2 text-sm">
+              <DollarSign className="h-4 w-4" /> Quick Quote
             </button>
           )}
         </div>

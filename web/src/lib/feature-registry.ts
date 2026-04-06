@@ -88,12 +88,12 @@ export const FEATURE_REGISTRY: Record<string, FeatureDescription> = {
     keywords: ["dump", "disposal", "facility", "landfill", "transfer", "waste"],
   },
   new_booking: {
-    id: "new_booking", label: "New Booking", category: "getting_started",
-    shortDescription: "Create a new job booking for a customer.",
-    guideDescription: "The booking flow walks you through selecting a customer, choosing a dumpster size, setting delivery dates, and confirming pricing. Once submitted, the system creates the job, generates an invoice, and the job appears on the Dispatch Board for assignment.",
-    routeOrSurface: "/book", tenantOverrideKey: "new_booking",
-    isUserFacing: true, isGuideEligible: true,
-    keywords: ["book", "order", "create", "new", "schedule", "reserve"],
+    id: "new_booking", label: "New Booking", category: "operations",
+    shortDescription: "Internal booking wizard used by customer-scoped New Job and Quick Quote Book Now.",
+    guideDescription: "The booking wizard is accessed from the customer dashboard (New Job) or via Quick Quote's Book Now button. It walks through customer selection, address, dumpster size, delivery dates, and pricing. For new bookings, use Quick Quote from the sidebar. For repeat customer work, use New Job from the customer dashboard.",
+    routeOrSurface: "wizard_internal", tenantOverrideKey: "new_booking",
+    isUserFacing: false, isGuideEligible: false,
+    keywords: ["book", "order", "create", "schedule", "wizard", "internal"],
   },
   dispatch_unassigned: {
     id: "dispatch_unassigned", label: "Unassigned", category: "operations",

@@ -3,9 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useBooking } from "@/components/booking-provider";
 import {
-  Plus,
   UserPlus,
   Search,
   Clock,
@@ -131,7 +129,6 @@ function fmtLongDate(d: string): string {
 
 export default function DashboardPage() {
   const router = useRouter();
-  const { openWizard } = useBooking();
   const [user, setUser] = useState<UserProfile | null>(null);
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
   const [todayJobs, setTodayJobs] = useState<TodayJob[]>([]);
@@ -366,13 +363,6 @@ export default function DashboardPage() {
               </div>
             )}
           </div>
-          <button
-            onClick={() => openWizard()}
-            className="inline-flex items-center gap-1.5 rounded-full bg-[var(--t-accent)] px-5 py-2.5 text-sm font-semibold text-black transition-all hover:brightness-110"
-          >
-            <Plus className="h-4 w-4" strokeWidth={2.5} />
-            New Booking
-          </button>
           <Link
             href="/customers?new=true"
             className="inline-flex items-center gap-1.5 rounded-full border border-[var(--t-frame-border)] px-5 py-2.5 text-sm font-semibold text-[var(--t-frame-text)] transition-all hover:bg-[var(--t-frame-hover)]"

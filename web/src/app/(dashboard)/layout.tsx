@@ -6,23 +6,23 @@ import { SidebarProvider, useSidebar } from "@/components/sidebar-context";
 import { ToastProvider } from "@/components/toast";
 import KeyboardShortcuts from "@/components/keyboard-shortcuts";
 import NotificationBell from "@/components/notification-bell";
-import { BookingProvider, useBooking } from "@/components/booking-provider";
-import { QuickQuoteProvider } from "@/components/quick-quote-provider";
+import { BookingProvider } from "@/components/booking-provider";
+import { QuickQuoteProvider, useQuickQuote } from "@/components/quick-quote-provider";
 
 function DashboardContent({ children }: { children: React.ReactNode }) {
   const { collapsed } = useSidebar();
-  const { openWizard } = useBooking();
+  const { openQuickQuote } = useQuickQuote();
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) return;
       if (e.key === "?" && !e.ctrlKey && !e.metaKey) { e.preventDefault(); setShortcutsOpen(true); }
-      if (e.key === "b" || e.key === "B") { if (!e.ctrlKey && !e.metaKey) { e.preventDefault(); openWizard(); } }
+      if (e.key === "b" || e.key === "B") { if (!e.ctrlKey && !e.metaKey) { e.preventDefault(); openQuickQuote(); } }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [openWizard]);
+  }, [openQuickQuote]);
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: "var(--t-bg-primary)" }}>

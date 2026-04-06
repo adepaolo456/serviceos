@@ -34,7 +34,7 @@ function isNavigableRoute(route: string): boolean {
   return NAVIGABLE_ROUTES.has(route);
 }
 
-const POPULAR_IDS = ["new_booking", "dashboard", "jobs", "dispatch_board", "pricing_issues"];
+const POPULAR_IDS = ["quick_quote", "dashboard", "jobs", "dispatch_board", "pricing_issues"];
 
 function matchesSearch(f: FeatureDescription, query: string): boolean {
   const q = query.toLowerCase();
