@@ -110,7 +110,7 @@ export class BookingsController {
       customerId = saved.id;
     } else if (customerId) {
       // Existing customer — store additional contacts and service address
-      const existingCustomer = await this.customersRepo.findOne({ where: { id: customerId } });
+      const existingCustomer = await this.customersRepo.findOne({ where: { id: customerId, tenant_id: tenantId } });
       if (existingCustomer) {
         let updated = false;
 
@@ -336,7 +336,7 @@ export class BookingsController {
       const payments = await paymentRepo.find({ where: { invoice_id: savedInvoice.id, status: 'completed' } });
       const totalPaid = payments.reduce((sum, p) => sum + Number(p.amount), 0);
       const balanceDue = Math.max(Math.round((body.totalPrice - totalPaid) * 100) / 100, 0);
-      const inv = await this.invoicesRepo.findOneOrFail({ where: { id: savedInvoice.id } });
+      const inv = await this.invoicesRepo.findOneOrFail({ where: { id: savedInvoice.id, tenant_id: tenantId } });
       let status: string;
       if (totalPaid >= body.totalPrice && totalPaid > 0) status = 'paid';
       else if (totalPaid > 0) status = 'partial';

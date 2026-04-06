@@ -426,8 +426,8 @@ export class PricingService {
     return this.templateRepo.save(template);
   }
 
-  async updateTemplate(id: string, body: Record<string, unknown>) {
-    const template = await this.templateRepo.findOneBy({ id });
+  async updateTemplate(tenantId: string, id: string, body: Record<string, unknown>) {
+    const template = await this.templateRepo.findOneBy({ id, tenant_id: tenantId });
     if (!template) throw new NotFoundException('Template not found');
     if (body.name !== undefined) template.name = body.name as string;
     if (body.discountPercentage !== undefined) template.discount_percentage = Number(body.discountPercentage);
@@ -436,8 +436,11 @@ export class PricingService {
     return this.templateRepo.save(template);
   }
 
-  async deleteTemplate(id: string) {
-    await this.templateRepo.update(id, { is_active: false });
+  async deleteTemplate(tenantId: string, id: string) {
+    const template = await this.templateRepo.findOneBy({ id, tenant_id: tenantId });
+    if (!template) throw new NotFoundException('Template not found');
+    template.is_active = false;
+    await this.templateRepo.save(template);
     return { message: 'Deleted' };
   }
 
