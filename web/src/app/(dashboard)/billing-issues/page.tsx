@@ -59,6 +59,9 @@ const RESOLUTION_REASONS = [
   { value: "customer_contacted", label: "Customer contacted" },
   { value: "resolved_externally", label: "Resolved externally" },
   { value: "manual_review", label: "Manual review completed" },
+  { value: "discount_applied", label: "Discount applied" },
+  { value: "manual_pricing_approved", label: "Manual pricing approved" },
+  { value: "customer_deal", label: "Customer-specific deal" },
 ];
 
 /* ── UI Labels — single source for all user-facing strings ── */
