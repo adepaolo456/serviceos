@@ -28,7 +28,6 @@ import {
   Moon,
   ChevronLeft,
   ChevronRight,
-  DollarSign,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useTheme } from "@/components/theme-provider";

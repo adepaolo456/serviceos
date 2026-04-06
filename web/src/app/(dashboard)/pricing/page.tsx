@@ -6,6 +6,7 @@ import Link from "next/link";
 import { api } from "@/lib/api";
 import SlideOver from "@/components/slide-over";
 import { useToast } from "@/components/toast";
+import AddressAutocomplete from "@/components/address-autocomplete";
 
 interface PricingRule {
   id: string;
