@@ -83,7 +83,7 @@ export default function AdminGuidePage() {
 
       {/* Booking Flow */}
       <Card title="Booking Flow">
-        <Li>Always use <strong>New Booking</strong> (BookingWizard) from sidebar or keyboard B</Li>
+        <Li>Use <strong>Quick Quote</strong> from the sidebar (or keyboard B) for new bookings, or <strong>New Job</strong> from a customer dashboard for repeat work</Li>
         <Li>System auto-creates: Job &rarr; Invoice (draft) &rarr; Pricing snapshot &rarr; Rental chain &rarr; Task chain links</Li>
         <Li>Distance charge added automatically if &gt; 15 miles from yard ($25 per 5-mile band)</Li>
         <Li>Card payments create a Payment record and set status to &ldquo;paid&rdquo;</Li>

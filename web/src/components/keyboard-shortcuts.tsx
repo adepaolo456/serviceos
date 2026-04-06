@@ -4,7 +4,7 @@ import { useEffect } from "react";
 import { X } from "lucide-react";
 
 const SHORTCUTS = [
-  { key: "B", description: "New Booking" },
+  { key: "B", description: "Quick Quote" },
   { key: "←  →", description: "Navigate dates (dispatch/schedule)" },
   { key: "T", description: "Jump to today" },
   { key: "?", description: "Show this guide" },
