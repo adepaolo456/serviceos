@@ -553,7 +553,7 @@ export class BillingService {
       invoice_number: invoiceNumber,
       customer_id: params.customerId,
       job_id: params.jobId || null,
-      status: params.status || 'draft',
+      status: params.status || 'open',
       invoice_date: today,
       due_date: params.dueDate || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
       summary_of_work: params.notes,

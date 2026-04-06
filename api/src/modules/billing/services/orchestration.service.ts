@@ -245,7 +245,7 @@ export class OrchestrationService {
         customer_id: customerId,
         job_id: savedDelivery.id,
         invoice_number: invNum,
-        status: 'draft',
+        status: 'open',
         customer_type: 'residential',
         invoice_date: today,
         due_date: dto.deliveryDate,
@@ -422,7 +422,7 @@ export class OrchestrationService {
     let status: string;
     if (totalPaid >= total && totalPaid > 0) status = 'paid';
     else if (totalPaid > 0) status = 'partial';
-    else status = 'draft';
+    else status = 'open';
     await this.invoicesRepo.update(invoiceId, {
       amount_paid: Math.round(totalPaid * 100) / 100,
       balance_due: balanceDue,

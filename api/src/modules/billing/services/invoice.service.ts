@@ -599,7 +599,7 @@ export class InvoiceService {
       tenant_id: tenantId,
       invoice_number: numResult[0].num,
       revision: 1,
-      status: 'draft',
+      status: 'open',
       customer_id: original.customer_id,
       customer_type: original.customer_type,
       billing_address: original.billing_address,
@@ -841,10 +841,8 @@ export class InvoiceService {
       status = 'paid';
     } else if (totalPaid > 0) {
       status = 'partial';
-    } else if (invoice.sent_at) {
-      status = 'open';
     } else {
-      status = 'draft';
+      status = 'open';
     }
 
     // Handle overpayment — idempotent credit memo
