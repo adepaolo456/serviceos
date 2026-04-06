@@ -601,7 +601,6 @@ function NewCustomerForm({ onOrchestrated, onClose }: { onOrchestrated: (result:
   const [phone, setPhone] = useState("");
   const [companyName, setCompanyName] = useState("");
   const [billingAddress, setBillingAddress] = useState<AddressValue>({ street: "", city: "", state: "", zip: "", lat: null, lng: null });
-  const [serviceAddresses, setServiceAddresses] = useState<AddressValue[]>([]);
   const [notes, setNotes] = useState("");
   const [tags, setTags] = useState("");
   const [leadSource, setLeadSource] = useState("");
@@ -616,7 +615,7 @@ function NewCustomerForm({ onOrchestrated, onClose }: { onOrchestrated: (result:
 
   // Scheduling fields (visible when nextStep === "schedule")
   const [schedDumpsterSize, setSchedDumpsterSize] = useState("");
-  const [schedDeliveryDate, setSchedDeliveryDate] = useState("");
+  const [schedDeliveryDate, setSchedDeliveryDate] = useState(() => new Date().toISOString().split("T")[0]);
   const [schedPickupDate, setSchedPickupDate] = useState("");
   const [schedPickupTBD, setSchedPickupTBD] = useState(false);
   const [schedSiteAddress, setSchedSiteAddress] = useState<AddressValue>({ street: "", city: "", state: "", zip: "", lat: null, lng: null });
@@ -850,37 +849,6 @@ function NewCustomerForm({ onOrchestrated, onClose }: { onOrchestrated: (result:
       <p style={sectionStyle}>Billing Address</p>
       <AddressAutocomplete value={billingAddress} onChange={setBillingAddress} placeholder="Search address..." />
 
-      {/* Service Addresses — only shown when scheduling (scheduling section has its own site address) */}
-      {nextStep === "schedule" && (
-        <>
-          <p style={sectionStyle}>Service Addresses</p>
-          {serviceAddresses.map((addr, i) => (
-            <div key={i} style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
-              <div style={{ flex: 1 }}>
-                <AddressAutocomplete value={addr} onChange={(v) => setServiceAddresses(prev => { const n = [...prev]; n[i] = v; return n; })} placeholder={`Service address ${i + 1}`} />
-              </div>
-              <button type="button" onClick={() => setServiceAddresses(prev => prev.filter((_, j) => j !== i))}
-                style={{
-                  padding: 8,
-                  color: "var(--t-text-muted)",
-                  backgroundColor: "transparent",
-                  border: "none",
-                  cursor: "pointer",
-                  fontSize: 16,
-                  marginTop: 4,
-                  transition: "color 0.15s ease",
-                }}>
-                &times;
-              </button>
-            </div>
-          ))}
-          <button type="button" onClick={() => setServiceAddresses(prev => [...prev, { street: "", city: "", state: "", zip: "", lat: null, lng: null }])}
-            style={{ fontSize: 12, color: "var(--t-accent)", backgroundColor: "transparent", border: "none", cursor: "pointer", textAlign: "left", transition: "opacity 0.15s ease" }}>
-            + Add service address
-          </button>
-        </>
-      )}
-
       {/* Account */}
       <p style={sectionStyle}>Account</p>
       <div>
@@ -950,11 +918,11 @@ function NewCustomerForm({ onOrchestrated, onClose }: { onOrchestrated: (result:
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             <div>
               <label style={labelStyle}>{CUSTOMER_LABELS.deliveryDate}</label>
-              <input type="date" value={schedDeliveryDate} onChange={e => setSchedDeliveryDate(e.target.value)} style={inputStyle} />
+              <input type="date" value={schedDeliveryDate} onChange={e => setSchedDeliveryDate(e.target.value)} onClick={e => (e.target as HTMLInputElement).showPicker?.()} style={inputStyle} />
             </div>
             <div>
               <label style={labelStyle}>{CUSTOMER_LABELS.pickupDate}</label>
-              <input type="date" value={schedPickupDate} onChange={e => { setSchedPickupDate(e.target.value); setPickupManuallySet(true); }} disabled={schedPickupTBD} style={{ ...inputStyle, opacity: schedPickupTBD ? 0.5 : 1 }} />
+              <input type="date" value={schedPickupDate} onChange={e => { setSchedPickupDate(e.target.value); setPickupManuallySet(true); }} onClick={e => { if (!schedPickupTBD) (e.target as HTMLInputElement).showPicker?.(); }} disabled={schedPickupTBD} style={{ ...inputStyle, opacity: schedPickupTBD ? 0.5 : 1 }} />
             </div>
           </div>
 

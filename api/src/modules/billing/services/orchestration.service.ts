@@ -11,6 +11,7 @@ import { RentalChain } from '../../rental-chains/entities/rental-chain.entity';
 import { TaskChainLink } from '../../rental-chains/entities/task-chain-link.entity';
 import { PricingRule } from '../../pricing/entities/pricing-rule.entity';
 import { NotificationsService } from '../../notifications/notifications.service';
+import { PriceResolutionService } from '../../pricing/services/price-resolution.service';
 import { CreateWithBookingDto } from '../dto/create-with-booking.dto';
 
 export interface OrchestrationResult {
@@ -36,6 +37,7 @@ export class OrchestrationService {
     @InjectRepository(TaskChainLink) private taskChainLinkRepo: Repository<TaskChainLink>,
     private dataSource: DataSource,
     private notificationsService: NotificationsService,
+    private priceResolutionService: PriceResolutionService,
   ) {}
 
   async createWithBooking(tenantId: string, dto: CreateWithBookingDto): Promise<OrchestrationResult> {
@@ -147,6 +149,15 @@ export class OrchestrationService {
       const savedCustomer = await customerRepo.save(customer);
       customerId = savedCustomer.id;
 
+      // 1b. Resolve tenant-scoped pricing for this size + customer
+      const resolvedPrice = await this.priceResolutionService.resolvePrice(
+        tenantId,
+        customerId,
+        dto.dumpsterSize!,
+      );
+      const basePrice = resolvedPrice.base_price;
+      const totalPrice = basePrice; // distance surcharge calculated separately if needed
+
       // 2. Job numbers
       const dateStr = dto.deliveryDate.replace(/-/g, '');
       const rand = Math.random().toString(36).slice(2, 5).toUpperCase();
@@ -196,8 +207,8 @@ export class OrchestrationService {
         source: 'phone',
         scheduled_date: dto.deliveryDate,
         service_address: siteAddr as Record<string, string>,
-        base_price: 0,
-        total_price: 0,
+        base_price: basePrice,
+        total_price: totalPrice,
         rental_days: rentalDays,
         ...(assignedAsset ? { asset_id: assignedAsset.id } : {}),
       } as Partial<Job> as Job);
@@ -239,11 +250,11 @@ export class OrchestrationService {
         invoice_date: today,
         due_date: dto.deliveryDate,
         service_date: dto.deliveryDate,
-        subtotal: 0,
+        subtotal: basePrice,
         tax_amount: 0,
-        total: 0,
+        total: totalPrice,
         amount_paid: 0,
-        balance_due: 0,
+        balance_due: totalPrice,
         summary_of_work: `${dto.dumpsterSize} dumpster rental — ${rentalDays}-day rental`,
         rental_chain_id: null,
       } as Partial<Invoice> as Invoice);
@@ -256,9 +267,9 @@ export class OrchestrationService {
         line_type: 'rental',
         name: `${dto.dumpsterSize} dumpster rental — ${rentalDays}-day rental`,
         quantity: 1,
-        unit_rate: 0,
-        amount: 0,
-        net_amount: 0,
+        unit_rate: basePrice,
+        amount: basePrice,
+        net_amount: basePrice,
       });
       await lineItemRepo.save(rentalItem);
 
@@ -304,27 +315,23 @@ export class OrchestrationService {
         this.logger.warn('Failed to create rental chain — non-fatal');
       }
 
-      // Pricing snapshot
+      // Pricing snapshot — use resolved price data (includes client override info)
       try {
-        const pricingRule = await queryRunner.manager.getRepository(PricingRule).findOne({
-          where: { tenant_id: tenantId, asset_subtype: dto.dumpsterSize, is_active: true },
-        });
-        if (pricingRule) {
-          const snapshot = {
-            capturedAt: new Date().toISOString(),
-            pricingRuleId: pricingRule.id,
-            pricingRuleName: pricingRule.name,
-            basePrice: Number(pricingRule.base_price),
-            includedTons: Number(pricingRule.included_tons),
-            overagePerTon: Number(pricingRule.overage_per_ton),
-            extraDayRate: Number(pricingRule.extra_day_rate),
-            rentalPeriodDays: pricingRule.rental_period_days,
-          };
-          await invoiceRepo.update(savedInvoice.id, {
-            pricing_rule_snapshot: snapshot,
-            pricing_tier_used: 'global',
-          } as Partial<Invoice>);
-        }
+        const snapshot = {
+          capturedAt: new Date().toISOString(),
+          pricingRuleId: resolvedPrice.pricing_rule_id,
+          basePrice: resolvedPrice.base_price,
+          includedTons: resolvedPrice.weight_allowance_tons,
+          overagePerTon: resolvedPrice.overage_per_ton,
+          extraDayRate: resolvedPrice.daily_overage_rate,
+          rentalPeriodDays: resolvedPrice.rental_days,
+          tierUsed: resolvedPrice.tier_used,
+          overrideId: resolvedPrice.override_id,
+        };
+        await invoiceRepo.update(savedInvoice.id, {
+          pricing_rule_snapshot: snapshot,
+          pricing_tier_used: resolvedPrice.tier_used,
+        } as Partial<Invoice>);
       } catch { /* non-fatal */ }
 
       await queryRunner.commitTransaction();
