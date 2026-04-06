@@ -239,7 +239,7 @@ export class BookingsController {
       customer_id: customerId,
       job_id: savedDelivery.id,
       invoice_number: invNum,
-      status: 'draft',
+      status: 'open',
       customer_type: 'residential',
       invoice_date: today,
       due_date: body.deliveryDate,
@@ -356,8 +356,7 @@ export class BookingsController {
       let status: string;
       if (totalPaid >= body.totalPrice && totalPaid > 0) status = 'paid';
       else if (totalPaid > 0) status = 'partial';
-      else if (inv.sent_at) status = 'open';
-      else status = 'draft';
+      else status = 'open';
       await this.invoicesRepo.update(savedInvoice.id, {
         amount_paid: Math.round(totalPaid * 100) / 100,
         balance_due: balanceDue,

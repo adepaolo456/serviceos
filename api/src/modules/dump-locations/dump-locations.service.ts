@@ -367,7 +367,7 @@ export class DumpLocationsService {
       const today = new Date().toISOString().split('T')[0];
       const invoice = this.invoiceRepo.create({
         tenant_id: tenantId, invoice_number: invNum, customer_id: job.customer_id,
-        job_id: jobId, status: 'draft', invoice_date: today,
+        job_id: jobId, status: 'open', invoice_date: today,
         due_date: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0],
         subtotal: customerCharges, total: customerCharges, balance_due: customerCharges,
         tax_amount: 0,
