@@ -555,18 +555,18 @@ export default function CustomersPage() {
               toast("success", CUSTOMER_LABELS.customerCreatedSuccess);
               router.push(`/customers/${result.customerId}`);
               break;
-            case "booking_created":
-            case "invoice_unpaid":
-              toast("success", CUSTOMER_LABELS.bookingUnpaid);
-              router.push(`/customers/${result.customerId}`);
-              break;
             case "payment_succeeded":
               toast("success", CUSTOMER_LABELS.bookingCreatedSuccess);
               router.push(`/customers/${result.customerId}`);
               break;
+            case "booking_created":
+            case "invoice_unpaid":
+              toast("success", CUSTOMER_LABELS.bookingUnpaid);
+              router.push(result.invoiceId ? `/invoices/${result.invoiceId}` : `/customers/${result.customerId}`);
+              break;
             case "payment_failed":
               toast("error", CUSTOMER_LABELS.paymentFailed);
-              router.push(`/customers/${result.customerId}`);
+              router.push(result.invoiceId ? `/invoices/${result.invoiceId}` : `/customers/${result.customerId}`);
               break;
           }
         }} />
@@ -607,7 +607,7 @@ function NewCustomerForm({ onOrchestrated, onClose }: { onOrchestrated: (result:
   const [leadSource, setLeadSource] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
-  const [nextStep, setNextStep] = useState<NextStep>("save");
+  const [nextStep, setNextStep] = useState<NextStep>("schedule");
 
   // Duplicate detection
   const [duplicateMatch, setDuplicateMatch] = useState<DuplicateMatch | null>(null);
@@ -911,8 +911,8 @@ function NewCustomerForm({ onOrchestrated, onClose }: { onOrchestrated: (result:
         <label style={labelStyle}>{CUSTOMER_LABELS.nextStep}</label>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
           {([
-            { key: "save" as const, label: CUSTOMER_LABELS.saveCustomerOnly },
             { key: "schedule" as const, label: CUSTOMER_LABELS.saveAndSchedule },
+            { key: "save" as const, label: CUSTOMER_LABELS.saveCustomerOnly },
           ]).map(opt => (
             <button key={opt.key} type="button" onClick={() => setNextStep(opt.key)}
               style={{
