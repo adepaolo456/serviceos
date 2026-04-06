@@ -265,35 +265,19 @@ export class OrchestrationService {
       savedInvoice = await invoiceRepo.save(invoice);
 
       // 7. Create rental line item
+      // Single rental line item — distance surcharge folded into amount
+      const rentalTotal = basePrice + distanceSurcharge;
       const rentalItem = lineItemRepo.create({
         invoice_id: savedInvoice.id,
         sort_order: 0,
         line_type: 'rental',
         name: `${dto.dumpsterSize} dumpster rental — ${rentalDays}-day rental`,
         quantity: 1,
-        unit_rate: basePrice,
-        amount: basePrice,
-        net_amount: basePrice,
+        unit_rate: rentalTotal,
+        amount: rentalTotal,
+        net_amount: rentalTotal,
       });
       await lineItemRepo.save(rentalItem);
-
-      // 7b. Create distance surcharge line item (if applicable)
-      if (distanceSurcharge > 0) {
-        const distanceItem = lineItemRepo.create({
-          invoice_id: savedInvoice.id,
-          sort_order: 1,
-          line_type: 'fee',
-          name: 'Distance charge',
-          quantity: 1,
-          unit_rate: distanceSurcharge,
-          amount: distanceSurcharge,
-          net_amount: distanceSurcharge,
-          is_taxable: false,
-          tax_rate: 0,
-          tax_amount: 0,
-        });
-        await lineItemRepo.save(distanceItem);
-      }
 
       // 8. Create rental chain + task chain links
       try {
