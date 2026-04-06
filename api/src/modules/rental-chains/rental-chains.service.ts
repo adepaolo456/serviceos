@@ -263,9 +263,12 @@ export class RentalChainsService {
   // QUERIES
   // ─────────────────────────────────────────────────────────
 
-  async findAll(tenantId: string) {
+  async findAll(tenantId: string, filters?: { customerId?: string; status?: string }) {
+    const where: Record<string, any> = { tenant_id: tenantId };
+    if (filters?.customerId) where.customer_id = filters.customerId;
+    if (filters?.status) where.status = filters.status;
     return this.chainRepo.find({
-      where: { tenant_id: tenantId },
+      where,
       relations: ['links', 'links.job', 'customer', 'asset'],
       order: { created_at: 'DESC' },
     });
