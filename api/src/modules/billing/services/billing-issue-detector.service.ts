@@ -673,13 +673,31 @@ export class BillingIssueDetectorService {
     lineItems: InvoiceLineItem[],
     resolved: ResolvedPrice,
   ): Promise<BillingIssue | null> {
-    if (invoice.pricing_tier_used === 'invoice') return null; // manually overridden
+    // Skip intentional pricing overrides
+    if (invoice.pricing_tier_used === 'invoice') return null;
 
     const rentalLine = lineItems.find((li) => li.line_type === 'rental');
     if (!rentalLine) return null;
 
+    // Skip manually created line items (no pricing engine source)
+    if (!rentalLine.source && !rentalLine.source_id && !invoice.pricing_rule_snapshot) return null;
+
+    // Skip lines with intentional discounts applied
+    if (Number(rentalLine.discount_amount) > 0) return null;
+
     const invoiceRate = Number(rentalLine.unit_rate);
     if (invoiceRate === resolved.base_price) return null;
+
+    // Check if this mismatch was previously resolved/dismissed — do not re-create
+    const previouslyResolved = await this.issueRepo.findOne({
+      where: {
+        tenant_id: tenantId,
+        issue_type: 'price_mismatch',
+        invoice_id: invoiceId,
+        status: In(['manually_resolved', 'dismissed']),
+      },
+    });
+    if (previouslyResolved) return null;
 
     return this.createIssueIfNotExists(tenantId, {
       issue_type: 'price_mismatch',
