@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { useBooking } from "@/components/booking-provider";
+import type { InitialSchedule } from "@/components/booking-wizard";
 import {
   Plus, Search, Users, MoreHorizontal, Trash2, Phone as PhoneIcon,
   Mail, Briefcase, FileText, ArrowUpDown, Pencil,
@@ -63,6 +64,20 @@ const CUSTOMER_LABELS = {
   saveAndContinue: "Save & Continue to Scheduling",
   nextStep: "After Creating",
   creatingCustomer: "Creating customer...",
+  schedulingDetails: "Scheduling Details",
+  dumpsterSize: "Dumpster Size",
+  deliveryDate: "Delivery Date",
+  pickupDate: "Pickup Date",
+  pickupTBD: "Pickup TBD",
+  siteAddress: "Site Address",
+  billingSameAsSite: "Same as billing address",
+  paymentMethod: "Payment Method",
+  creditCard: "Credit Card",
+  cash: "Cash",
+  check: "Check",
+  selectSize: "Select size",
+  selectPaymentMethod: "Select payment method",
+  schedulingRequired: "Please fill in all required scheduling fields",
 };
 
 /* ---- Page ---- */
@@ -511,12 +526,12 @@ export default function CustomersPage() {
 
       {/* Create Slide-over */}
       <SlideOver open={panelOpen} onClose={() => { setPanelOpen(false); }} title="New Customer">
-        <NewCustomerForm onSuccess={(id, nextStep) => {
+        <NewCustomerForm onSuccess={(id, nextStep, schedule) => {
           setPanelOpen(false);
           fetchCustomers();
           toast("success", CUSTOMER_LABELS.customerCreatedSuccess);
           if (nextStep === "schedule") {
-            openWizard({ customerId: id });
+            openWizard({ customerId: id, initialSchedule: schedule });
           } else {
             router.push(`/customers/${id}`);
           }
@@ -532,7 +547,7 @@ export default function CustomersPage() {
 
 type NextStep = "save" | "schedule";
 
-function NewCustomerForm({ onSuccess }: { onSuccess: (customerId: string, nextStep: NextStep) => void }) {
+function NewCustomerForm({ onSuccess }: { onSuccess: (customerId: string, nextStep: NextStep, schedule?: InitialSchedule) => void }) {
   const [type, setType] = useState<"residential" | "commercial">("residential");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -547,6 +562,15 @@ function NewCustomerForm({ onSuccess }: { onSuccess: (customerId: string, nextSt
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [nextStep, setNextStep] = useState<NextStep>("save");
+
+  // Scheduling fields (visible when nextStep === "schedule")
+  const [schedDumpsterSize, setSchedDumpsterSize] = useState("");
+  const [schedDeliveryDate, setSchedDeliveryDate] = useState("");
+  const [schedPickupDate, setSchedPickupDate] = useState("");
+  const [schedPickupTBD, setSchedPickupTBD] = useState(false);
+  const [schedSiteAddress, setSchedSiteAddress] = useState<AddressValue>({ street: "", city: "", state: "", zip: "", lat: null, lng: null });
+  const [schedBillingSameAsSite, setSchedBillingSameAsSite] = useState(false);
+  const [schedPaymentMethod, setSchedPaymentMethod] = useState<"card" | "cash" | "check">("card");
 
   const inputStyle: React.CSSProperties = {
     width: "100%",
@@ -584,7 +608,17 @@ function NewCustomerForm({ onSuccess }: { onSuccess: (customerId: string, nextSt
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    setError(""); setSaving(true);
+    setError("");
+
+    // Validate scheduling fields when scheduling is selected
+    if (nextStep === "schedule") {
+      if (!schedDumpsterSize || !schedDeliveryDate || (!schedPickupDate && !schedPickupTBD)) {
+        setError(CUSTOMER_LABELS.schedulingRequired);
+        return;
+      }
+    }
+
+    setSaving(true);
     try {
       const addr = billingAddress.street ? { street: billingAddress.street, city: billingAddress.city, state: billingAddress.state, zip: billingAddress.zip, lat: billingAddress.lat, lng: billingAddress.lng } : undefined;
       const created = await api.post<{ id: string }>("/customers", {
@@ -597,7 +631,21 @@ function NewCustomerForm({ onSuccess }: { onSuccess: (customerId: string, nextSt
         tags: tags ? tags.split(",").map(t => t.trim()).filter(Boolean) : undefined,
         leadSource: leadSource || undefined,
       });
-      onSuccess(created.id, nextStep);
+
+      if (nextStep === "schedule") {
+        const siteAddr = schedBillingSameAsSite ? billingAddress : schedSiteAddress;
+        const schedule: InitialSchedule = {
+          dumpsterSize: schedDumpsterSize,
+          deliveryDate: schedDeliveryDate,
+          pickupDate: schedPickupTBD ? null : schedPickupDate,
+          pickupTBD: schedPickupTBD,
+          siteAddress: siteAddr.street ? { street: siteAddr.street, city: siteAddr.city, state: siteAddr.state, zip: siteAddr.zip, lat: siteAddr.lat, lng: siteAddr.lng } : undefined,
+          paymentMethod: schedPaymentMethod,
+        };
+        onSuccess(created.id, nextStep, schedule);
+      } else {
+        onSuccess(created.id, nextStep);
+      }
     } catch (err) { setError(err instanceof Error ? err.message : "Failed to create"); }
     finally { setSaving(false); }
   };
@@ -753,6 +801,78 @@ function NewCustomerForm({ onSuccess }: { onSuccess: (customerId: string, nextSt
           ))}
         </div>
       </div>
+
+      {/* Scheduling Details — visible when Save & Schedule Job selected */}
+      {nextStep === "schedule" && (
+        <>
+          <p style={sectionStyle}>{CUSTOMER_LABELS.schedulingDetails}</p>
+
+          <div>
+            <label style={labelStyle}>{CUSTOMER_LABELS.dumpsterSize}</label>
+            <select value={schedDumpsterSize} onChange={e => setSchedDumpsterSize(e.target.value)} style={{ ...inputStyle, appearance: "none" }}>
+              <option value="">{CUSTOMER_LABELS.selectSize}</option>
+              <option value="10 Yard">10 Yard</option>
+              <option value="15 Yard">15 Yard</option>
+              <option value="20 Yard">20 Yard</option>
+              <option value="30 Yard">30 Yard</option>
+              <option value="40 Yard">40 Yard</option>
+            </select>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <div>
+              <label style={labelStyle}>{CUSTOMER_LABELS.deliveryDate}</label>
+              <input type="date" value={schedDeliveryDate} onChange={e => setSchedDeliveryDate(e.target.value)} style={inputStyle} />
+            </div>
+            <div>
+              <label style={labelStyle}>{CUSTOMER_LABELS.pickupDate}</label>
+              <input type="date" value={schedPickupDate} onChange={e => setSchedPickupDate(e.target.value)} disabled={schedPickupTBD} style={{ ...inputStyle, opacity: schedPickupTBD ? 0.5 : 1 }} />
+            </div>
+          </div>
+
+          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--t-text-muted)", cursor: "pointer" }}>
+            <input type="checkbox" checked={schedPickupTBD} onChange={e => { setSchedPickupTBD(e.target.checked); if (e.target.checked) setSchedPickupDate(""); }} />
+            {CUSTOMER_LABELS.pickupTBD}
+          </label>
+
+          <div>
+            <label style={labelStyle}>{CUSTOMER_LABELS.siteAddress}</label>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--t-text-muted)", cursor: "pointer", marginBottom: 8 }}>
+              <input type="checkbox" checked={schedBillingSameAsSite} onChange={e => setSchedBillingSameAsSite(e.target.checked)} />
+              {CUSTOMER_LABELS.billingSameAsSite}
+            </label>
+            {!schedBillingSameAsSite && (
+              <AddressAutocomplete value={schedSiteAddress} onChange={setSchedSiteAddress} placeholder="Search site address..." />
+            )}
+          </div>
+
+          <div>
+            <label style={labelStyle}>{CUSTOMER_LABELS.paymentMethod}</label>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+              {([
+                { key: "card" as const, label: CUSTOMER_LABELS.creditCard },
+                { key: "cash" as const, label: CUSTOMER_LABELS.cash },
+                { key: "check" as const, label: CUSTOMER_LABELS.check },
+              ]).map(opt => (
+                <button key={opt.key} type="button" onClick={() => setSchedPaymentMethod(opt.key)}
+                  style={{
+                    padding: "10px 0",
+                    borderRadius: 10,
+                    fontSize: 13,
+                    fontWeight: 600,
+                    border: schedPaymentMethod === opt.key ? "none" : "1px solid var(--t-border)",
+                    backgroundColor: schedPaymentMethod === opt.key ? "var(--t-accent)" : "transparent",
+                    color: schedPaymentMethod === opt.key ? "var(--t-accent-on-accent)" : "var(--t-text-muted)",
+                    cursor: "pointer",
+                    transition: "all 0.15s ease",
+                  }}>
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
 
       <button type="submit" disabled={saving}
         style={{
