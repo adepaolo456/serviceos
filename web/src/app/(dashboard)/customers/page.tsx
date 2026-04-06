@@ -51,6 +51,14 @@ const FILTERS = [
 type SortKey = "name" | "revenue" | "jobs" | "type";
 type SortDir = "asc" | "desc";
 
+/* ── UI Labels ── */
+const CUSTOMER_LABELS = {
+  customerCreatedSuccess: "Customer created successfully",
+  continueToBooking: "Continue to Booking",
+  viewCustomer: "View Customer",
+  returnToCustomers: "Return to Customers",
+};
+
 /* ---- Page ---- */
 
 export default function CustomersPage() {
@@ -64,6 +72,7 @@ export default function CustomersPage() {
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [panelOpen, setPanelOpen] = useState(false);
+  const [createdCustomerId, setCreatedCustomerId] = useState<string | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>("name");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
 
@@ -496,8 +505,34 @@ export default function CustomersPage() {
       )}
 
       {/* Create Slide-over */}
-      <SlideOver open={panelOpen} onClose={() => setPanelOpen(false)} title="New Customer">
-        <NewCustomerForm onSuccess={() => { setPanelOpen(false); fetchCustomers(); }} />
+      <SlideOver open={panelOpen} onClose={() => { setPanelOpen(false); setCreatedCustomerId(null); }} title="New Customer">
+        {createdCustomerId ? (
+          <div className="flex flex-col items-center justify-center py-8 text-center space-y-4">
+            <div className="h-12 w-12 rounded-full flex items-center justify-center" style={{ background: "var(--t-accent-soft)" }}>
+              <Users className="h-6 w-6" style={{ color: "var(--t-accent)" }} />
+            </div>
+            <p className="text-sm font-semibold" style={{ color: "var(--t-text-primary)" }}>{CUSTOMER_LABELS.customerCreatedSuccess}</p>
+            <div className="flex flex-col gap-2 w-full max-w-xs">
+              <button onClick={() => { setPanelOpen(false); setCreatedCustomerId(null); openWizard({ customerId: createdCustomerId }); }}
+                className="w-full rounded-full py-2.5 text-sm font-semibold"
+                style={{ background: "var(--t-accent)", color: "var(--t-accent-on-accent)" }}>
+                {CUSTOMER_LABELS.continueToBooking}
+              </button>
+              <button onClick={() => { setPanelOpen(false); setCreatedCustomerId(null); router.push(`/customers/${createdCustomerId}`); }}
+                className="w-full rounded-full py-2.5 text-sm font-medium border"
+                style={{ borderColor: "var(--t-border)", color: "var(--t-text-muted)" }}>
+                {CUSTOMER_LABELS.viewCustomer}
+              </button>
+              <button onClick={() => { setPanelOpen(false); setCreatedCustomerId(null); }}
+                className="text-xs font-medium mt-1"
+                style={{ color: "var(--t-text-muted)" }}>
+                {CUSTOMER_LABELS.returnToCustomers}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <NewCustomerForm onSuccess={(id) => { setCreatedCustomerId(id); fetchCustomers(); }} />
+        )}
       </SlideOver>
     </div>
   );
@@ -507,7 +542,7 @@ export default function CustomersPage() {
    Create Customer Form
    ============================================================ */
 
-function NewCustomerForm({ onSuccess }: { onSuccess: () => void }) {
+function NewCustomerForm({ onSuccess }: { onSuccess: (customerId: string) => void }) {
   const [type, setType] = useState<"residential" | "commercial">("residential");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -561,7 +596,7 @@ function NewCustomerForm({ onSuccess }: { onSuccess: () => void }) {
     setError(""); setSaving(true);
     try {
       const addr = billingAddress.street ? { street: billingAddress.street, city: billingAddress.city, state: billingAddress.state, zip: billingAddress.zip, lat: billingAddress.lat, lng: billingAddress.lng } : undefined;
-      await api.post("/customers", {
+      const created = await api.post<{ id: string }>("/customers", {
         type, firstName, lastName,
         email: email || undefined,
         phone: phone || undefined,
@@ -571,7 +606,7 @@ function NewCustomerForm({ onSuccess }: { onSuccess: () => void }) {
         tags: tags ? tags.split(",").map(t => t.trim()).filter(Boolean) : undefined,
         leadSource: leadSource || undefined,
       });
-      onSuccess();
+      onSuccess(created.id);
     } catch (err) { setError(err instanceof Error ? err.message : "Failed to create"); }
     finally { setSaving(false); }
   };
