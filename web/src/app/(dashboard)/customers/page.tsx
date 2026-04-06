@@ -771,39 +771,6 @@ function NewCustomerForm({ onOrchestrated, onClose }: { onOrchestrated: (result:
         </div>
       )}
 
-      {/* Duplicate warning */}
-      {duplicateMatch && (
-        <div style={{
-          backgroundColor: "var(--t-accent-soft)",
-          border: "1px solid var(--t-accent)",
-          borderRadius: 10,
-          padding: "16px",
-          fontSize: 13,
-        }}>
-          <p style={{ fontWeight: 600, color: "var(--t-text-primary)", marginBottom: 4 }}>{CUSTOMER_LABELS.duplicateCustomerFound}</p>
-          <p style={{ color: "var(--t-text-muted)", marginBottom: 2 }}>
-            {duplicateMatch.first_name} {duplicateMatch.last_name}
-          </p>
-          <p style={{ color: "var(--t-text-muted)", marginBottom: 12, fontSize: 12 }}>
-            {duplicateMatch.matchField === "email" ? CUSTOMER_LABELS.matchingEmail : CUSTOMER_LABELS.matchingPhone}: {duplicateMatch.matchField === "email" ? duplicateMatch.email : duplicateMatch.phone}
-          </p>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <button type="button" onClick={() => { setDuplicateMatch(null); setDuplicateChecked(true); }}
-              style={{ width: "100%", padding: "10px 0", borderRadius: 24, fontSize: 13, fontWeight: 600, backgroundColor: "var(--t-accent)", color: "var(--t-accent-on-accent)", border: "none", cursor: "pointer" }}>
-              {CUSTOMER_LABELS.continueCreatingCustomer}
-            </button>
-            <button type="button" onClick={() => { onClose(); router.push(`/customers/${duplicateMatch.id}`); }}
-              style={{ width: "100%", padding: "10px 0", borderRadius: 24, fontSize: 13, fontWeight: 600, backgroundColor: "transparent", color: "var(--t-text-primary)", border: "1px solid var(--t-border)", cursor: "pointer" }}>
-              {CUSTOMER_LABELS.viewExistingCustomer}
-            </button>
-            <button type="button" onClick={() => setDuplicateMatch(null)}
-              style={{ fontSize: 12, color: "var(--t-text-muted)", backgroundColor: "transparent", border: "none", cursor: "pointer" }}>
-              {CUSTOMER_LABELS.cancelCreateCustomer}
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* Contact Info */}
       <p style={{ ...sectionStyle, borderTop: "none", marginTop: 0, paddingTop: 0 }}>Contact Info</p>
 
@@ -1009,6 +976,39 @@ function NewCustomerForm({ onOrchestrated, onClose }: { onOrchestrated: (result:
             </div>
           </div>
         </>
+      )}
+
+      {/* Duplicate warning */}
+      {duplicateMatch && (
+        <div style={{
+          backgroundColor: "var(--t-accent-soft)",
+          border: "1px solid var(--t-accent)",
+          borderRadius: 10,
+          padding: "16px",
+          fontSize: 13,
+        }}>
+          <p style={{ fontWeight: 600, color: "var(--t-text-primary)", marginBottom: 4 }}>{CUSTOMER_LABELS.duplicateCustomerFound}</p>
+          <p style={{ color: "var(--t-text-muted)", marginBottom: 2 }}>
+            {duplicateMatch.first_name} {duplicateMatch.last_name}
+          </p>
+          <p style={{ color: "var(--t-text-muted)", marginBottom: 12, fontSize: 12 }}>
+            {duplicateMatch.matchField === "email" ? CUSTOMER_LABELS.matchingEmail : CUSTOMER_LABELS.matchingPhone}: {duplicateMatch.matchField === "email" ? duplicateMatch.email : duplicateMatch.phone}
+          </p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <button type="button" onClick={() => { setDuplicateMatch(null); setDuplicateChecked(true); }}
+              style={{ width: "100%", padding: "10px 0", borderRadius: 24, fontSize: 13, fontWeight: 600, backgroundColor: "var(--t-accent)", color: "var(--t-accent-on-accent)", border: "none", cursor: "pointer" }}>
+              {CUSTOMER_LABELS.continueCreatingCustomer}
+            </button>
+            <button type="button" onClick={() => { onClose(); router.push(`/customers/${duplicateMatch.id}`); }}
+              style={{ width: "100%", padding: "10px 0", borderRadius: 24, fontSize: 13, fontWeight: 600, backgroundColor: "transparent", color: "var(--t-text-primary)", border: "1px solid var(--t-border)", cursor: "pointer" }}>
+              {CUSTOMER_LABELS.viewExistingCustomer}
+            </button>
+            <button type="button" onClick={() => setDuplicateMatch(null)}
+              style={{ fontSize: 12, color: "var(--t-text-muted)", backgroundColor: "transparent", border: "none", cursor: "pointer" }}>
+              {CUSTOMER_LABELS.cancelCreateCustomer}
+            </button>
+          </div>
+        </div>
       )}
 
       <button type="submit" disabled={saving || checkingDuplicate}
