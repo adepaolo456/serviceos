@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { useBooking } from "@/components/booking-provider";
-import type { InitialSchedule } from "@/components/booking-wizard";
 import {
   Plus, Search, Users, MoreHorizontal, Trash2, Phone as PhoneIcon,
   Mail, Briefcase, FileText, ArrowUpDown, Pencil,
@@ -87,6 +86,10 @@ const CUSTOMER_LABELS = {
   viewExistingCustomer: "View Existing Customer",
   cancelCreateCustomer: "Cancel",
   checkingDuplicate: "Checking for existing customers...",
+  bookingCreatedSuccess: "Customer created and job scheduled",
+  paymentSucceeded: "Payment processed successfully",
+  paymentFailed: "Payment could not be processed",
+  bookingUnpaid: "Job scheduled — invoice unpaid",
 };
 
 /* ---- Page ---- */
@@ -535,14 +538,27 @@ export default function CustomersPage() {
 
       {/* Create Slide-over */}
       <SlideOver open={panelOpen} onClose={() => { setPanelOpen(false); }} title="New Customer">
-        <NewCustomerForm onClose={() => setPanelOpen(false)} onSuccess={(id, nextStep, schedule) => {
+        <NewCustomerForm onClose={() => setPanelOpen(false)} onOrchestrated={(result) => {
           setPanelOpen(false);
           fetchCustomers();
-          toast("success", CUSTOMER_LABELS.customerCreatedSuccess);
-          if (nextStep === "schedule") {
-            openWizard({ customerId: id, initialSchedule: schedule });
-          } else {
-            router.push(`/customers/${id}`);
+          switch (result.status) {
+            case "customer_only":
+              toast("success", CUSTOMER_LABELS.customerCreatedSuccess);
+              router.push(`/customers/${result.customerId}`);
+              break;
+            case "booking_created":
+            case "invoice_unpaid":
+              toast("success", CUSTOMER_LABELS.bookingUnpaid);
+              router.push(`/customers/${result.customerId}`);
+              break;
+            case "payment_succeeded":
+              toast("success", CUSTOMER_LABELS.bookingCreatedSuccess);
+              router.push(`/customers/${result.customerId}`);
+              break;
+            case "payment_failed":
+              toast("error", CUSTOMER_LABELS.paymentFailed);
+              router.push(`/customers/${result.customerId}`);
+              break;
           }
         }} />
       </SlideOver>
@@ -556,10 +572,19 @@ export default function CustomersPage() {
 
 type NextStep = "save" | "schedule";
 
+interface OrchestrationResult {
+  customerId: string;
+  jobId?: string;
+  invoiceId?: string;
+  status: "customer_only" | "booking_created" | "invoice_unpaid" | "payment_succeeded" | "payment_failed";
+  nextAction: string;
+}
+
 interface DuplicateMatch { id: string; first_name: string; last_name: string; email: string; phone: string; matchField: "email" | "phone" }
 
-function NewCustomerForm({ onSuccess, onClose }: { onSuccess: (customerId: string, nextStep: NextStep, schedule?: InitialSchedule) => void; onClose: () => void }) {
+function NewCustomerForm({ onOrchestrated, onClose }: { onOrchestrated: (result: OrchestrationResult) => void; onClose: () => void }) {
   const router = useRouter();
+  const [idempotencyKey] = useState(() => crypto.randomUUID());
   const [type, setType] = useState<"residential" | "commercial">("residential");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -688,8 +713,12 @@ function NewCustomerForm({ onSuccess, onClose }: { onSuccess: (customerId: strin
     setSaving(true);
     try {
       const addr = billingAddress.street ? { street: billingAddress.street, city: billingAddress.city, state: billingAddress.state, zip: billingAddress.zip, lat: billingAddress.lat, lng: billingAddress.lng } : undefined;
-      const created = await api.post<{ id: string }>("/customers", {
-        type, firstName, lastName,
+      const siteAddr = schedBillingSameAsSite ? billingAddress : schedSiteAddress;
+
+      const result = await api.post<OrchestrationResult>("/bookings/create-with-booking", {
+        type,
+        firstName,
+        lastName,
         email: email || undefined,
         phone: phone || undefined,
         companyName: type === "commercial" ? companyName || undefined : undefined,
@@ -697,24 +726,34 @@ function NewCustomerForm({ onSuccess, onClose }: { onSuccess: (customerId: strin
         notes: notes || undefined,
         tags: tags ? tags.split(",").map(t => t.trim()).filter(Boolean) : undefined,
         leadSource: leadSource || undefined,
-      });
-
-      if (nextStep === "schedule") {
-        const siteAddr = schedBillingSameAsSite ? billingAddress : schedSiteAddress;
-        const schedule: InitialSchedule = {
+        intent: nextStep === "schedule" ? "schedule_job" : "customer_only",
+        ...(nextStep === "schedule" ? {
           dumpsterSize: schedDumpsterSize,
           deliveryDate: schedDeliveryDate,
-          pickupDate: schedPickupTBD ? null : schedPickupDate,
+          pickupDate: schedPickupTBD ? undefined : schedPickupDate,
           pickupTBD: schedPickupTBD,
           siteAddress: siteAddr.street ? { street: siteAddr.street, city: siteAddr.city, state: siteAddr.state, zip: siteAddr.zip, lat: siteAddr.lat, lng: siteAddr.lng } : undefined,
           paymentMethod: schedPaymentMethod,
-        };
-        onSuccess(created.id, nextStep, schedule);
-      } else {
-        onSuccess(created.id, nextStep);
+        } : {}),
+        idempotencyKey,
+        confirmedCreateDespiteDuplicate: duplicateChecked,
+      });
+
+      onOrchestrated(result);
+    } catch (err: unknown) {
+      // Handle backend duplicate detection
+      const errData = (err as { response?: { data?: { code?: string; existingCustomerId?: string } } })?.response?.data;
+      if (errData?.code === "DUPLICATE_CUSTOMER" && errData.existingCustomerId) {
+        try {
+          const res = await api.get<{ data: { id: string; first_name: string; last_name: string; email: string; phone: string }[]; meta: { total: number } }>(`/customers?search=${encodeURIComponent(email || phone)}&limit=1`);
+          if (res.data.length > 0) {
+            setDuplicateMatch({ ...res.data[0], matchField: email ? "email" : "phone" });
+            return;
+          }
+        } catch { /* fall through to generic error */ }
       }
-    } catch (err) { setError(err instanceof Error ? err.message : "Failed to create"); }
-    finally { setSaving(false); }
+      setError(err instanceof Error ? err.message : "Failed to create");
+    } finally { setSaving(false); }
   };
 
   return (
