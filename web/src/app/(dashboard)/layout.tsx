@@ -7,6 +7,7 @@ import { ToastProvider } from "@/components/toast";
 import KeyboardShortcuts from "@/components/keyboard-shortcuts";
 import NotificationBell from "@/components/notification-bell";
 import { BookingProvider, useBooking } from "@/components/booking-provider";
+import { QuickQuoteProvider } from "@/components/quick-quote-provider";
 
 function DashboardContent({ children }: { children: React.ReactNode }) {
   const { collapsed } = useSidebar();
@@ -50,7 +51,9 @@ export default function DashboardLayout({
     <SidebarProvider>
       <ToastProvider>
         <BookingProvider>
-          <DashboardContent>{children}</DashboardContent>
+          <QuickQuoteProvider>
+            <DashboardContent>{children}</DashboardContent>
+          </QuickQuoteProvider>
         </BookingProvider>
       </ToastProvider>
     </SidebarProvider>

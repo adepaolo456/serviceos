@@ -28,12 +28,13 @@ import {
   Moon,
   ChevronLeft,
   ChevronRight,
-  Plus,
+  DollarSign,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useTheme } from "@/components/theme-provider";
 import { useSidebar } from "@/components/sidebar-context";
-import { useBooking } from "@/components/booking-provider";
+import { useQuickQuote } from "@/components/quick-quote-provider";
+import { getFeatureLabel } from "@/lib/feature-registry";
 
 interface UserProfile {
   firstName: string;
@@ -91,7 +92,7 @@ export default function Sidebar() {
   const [pricingQaCount, setPricingQaCount] = useState(0);
   const { theme, cycleTheme } = useTheme();
   const { collapsed, toggleCollapsed } = useSidebar();
-  const { openWizard } = useBooking();
+  const { openQuickQuote } = useQuickQuote();
 
   useEffect(() => {
     api
@@ -137,11 +138,11 @@ export default function Sidebar() {
 
       <div className="px-3 pt-2">
         <button
-          onClick={() => openWizard()}
+          onClick={() => openQuickQuote()}
           className="flex w-full items-center justify-center gap-2 rounded-full py-2.5 text-sm font-semibold transition-opacity hover:opacity-90"
           style={{ backgroundColor: "var(--t-accent)", color: "#fff" }}
         >
-          <Plus className="h-4 w-4" /> New Booking
+          <DollarSign className="h-4 w-4" /> {getFeatureLabel("quick_quote")}
         </button>
       </div>
 
@@ -227,14 +228,14 @@ export default function Sidebar() {
         <span className="text-[15px] font-bold" style={{ color: "var(--t-accent)" }}>OS</span>
       </div>
 
-      {/* New Booking — icon only */}
+      {/* Quick Quote — icon only */}
       <div className="flex justify-center pt-2">
         <button
-          onClick={() => openWizard()}
+          onClick={() => openQuickQuote()}
           className="flex h-10 w-10 items-center justify-center rounded-full transition-opacity hover:opacity-90"
           style={{ backgroundColor: "var(--t-accent)", color: "#fff" }}
         >
-          <Plus className="h-4 w-4" />
+          <DollarSign className="h-4 w-4" />
         </button>
       </div>
 
