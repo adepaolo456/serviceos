@@ -78,6 +78,8 @@ const CUSTOMER_LABELS = {
   selectSize: "Select size",
   selectPaymentMethod: "Select payment method",
   schedulingRequired: "Please fill in all required scheduling fields",
+  noSizesAvailable: "No sizes available",
+  loadingSizes: "Loading sizes...",
 };
 
 /* ---- Page ---- */
@@ -571,6 +573,27 @@ function NewCustomerForm({ onSuccess }: { onSuccess: (customerId: string, nextSt
   const [schedSiteAddress, setSchedSiteAddress] = useState<AddressValue>({ street: "", city: "", state: "", zip: "", lat: null, lng: null });
   const [schedBillingSameAsSite, setSchedBillingSameAsSite] = useState(false);
   const [schedPaymentMethod, setSchedPaymentMethod] = useState<"card" | "cash" | "check">("card");
+  const [sizeOptions, setSizeOptions] = useState<{ id: string; asset_subtype: string; base_price: number }[]>([]);
+  const [sizesLoading, setSizesLoading] = useState(false);
+
+  // Fetch tenant-scoped size options when scheduling is selected
+  useEffect(() => {
+    if (nextStep !== "schedule") return;
+    if (sizeOptions.length > 0) return; // already fetched
+    setSizesLoading(true);
+    api.get<{ data: { id: string; asset_subtype: string; base_price: number }[] }>("/pricing?limit=100")
+      .then((res) => {
+        const opts = res.data || [];
+        setSizeOptions(opts);
+        // Clear selection if previously selected size is no longer available
+        if (schedDumpsterSize && !opts.some(o => o.asset_subtype === schedDumpsterSize)) {
+          setSchedDumpsterSize("");
+        }
+      })
+      .catch(() => setSizeOptions([]))
+      .finally(() => setSizesLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nextStep]);
 
   const inputStyle: React.CSSProperties = {
     width: "100%",
@@ -809,13 +832,11 @@ function NewCustomerForm({ onSuccess }: { onSuccess: (customerId: string, nextSt
 
           <div>
             <label style={labelStyle}>{CUSTOMER_LABELS.dumpsterSize}</label>
-            <select value={schedDumpsterSize} onChange={e => setSchedDumpsterSize(e.target.value)} style={{ ...inputStyle, appearance: "none" }}>
-              <option value="">{CUSTOMER_LABELS.selectSize}</option>
-              <option value="10 Yard">10 Yard</option>
-              <option value="15 Yard">15 Yard</option>
-              <option value="20 Yard">20 Yard</option>
-              <option value="30 Yard">30 Yard</option>
-              <option value="40 Yard">40 Yard</option>
+            <select value={schedDumpsterSize} onChange={e => setSchedDumpsterSize(e.target.value)} disabled={sizesLoading} style={{ ...inputStyle, appearance: "none", opacity: sizesLoading ? 0.5 : 1 }}>
+              <option value="">{sizesLoading ? CUSTOMER_LABELS.loadingSizes : sizeOptions.length === 0 ? CUSTOMER_LABELS.noSizesAvailable : CUSTOMER_LABELS.selectSize}</option>
+              {sizeOptions.map(opt => (
+                <option key={opt.id} value={opt.asset_subtype}>{opt.asset_subtype} — {formatCurrency(opt.base_price)}</option>
+              ))}
             </select>
           </div>
 
