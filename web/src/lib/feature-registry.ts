@@ -397,6 +397,40 @@ export const FEATURE_REGISTRY: Record<string, FeatureDescription> = {
     isUserFacing: true, isGuideEligible: false,
     keywords: ["quote", "history", "customer", "conversion", "pipeline"],
   },
+
+  // ── Job Lifecycle Display States ──
+  job_status_pending_payment: {
+    id: "job_status_pending_payment", label: "Pending Payment", category: "operations",
+    shortDescription: "Job is awaiting payment before it can be dispatched.",
+    guideDescription: "A job in Pending Payment status has not yet satisfied the payment requirement. It will not appear on the dispatch board until the invoice is paid or a credit override is applied. Use Quick Quote or the booking wizard to collect payment and advance the job.",
+    routeOrSurface: "job_status", tenantOverrideKey: "job_status_pending_payment",
+    isUserFacing: true, isGuideEligible: true,
+    keywords: ["pending", "payment", "unpaid", "invoice", "gate", "block"],
+  },
+  job_status_unassigned: {
+    id: "job_status_unassigned", label: "Unassigned", category: "operations",
+    shortDescription: "Job is dispatch-ready but not yet assigned to a driver.",
+    guideDescription: "An Unassigned job has passed payment requirements and is ready for dispatch. Drag it onto a driver column on the Dispatch Board to assign it, or use bulk assignment. Once assigned, the job becomes Assigned.",
+    routeOrSurface: "job_status", tenantOverrideKey: "job_status_unassigned",
+    isUserFacing: true, isGuideEligible: true,
+    keywords: ["unassigned", "ready", "dispatch", "queue", "available"],
+  },
+  job_status_assigned: {
+    id: "job_status_assigned", label: "Assigned", category: "operations",
+    shortDescription: "Job has been assigned to a driver and route.",
+    guideDescription: "An Assigned job has a driver and is part of a route. The driver will see it in their mobile app. When the driver starts heading to the job, it moves to En Route.",
+    routeOrSurface: "job_status", tenantOverrideKey: "job_status_assigned",
+    isUserFacing: true, isGuideEligible: true,
+    keywords: ["assigned", "driver", "route", "dispatched", "scheduled"],
+  },
+  job_status_arrived: {
+    id: "job_status_arrived", label: "Arrived", category: "operations",
+    shortDescription: "Driver has arrived at the job site.",
+    guideDescription: "An Arrived job means the driver is physically at the delivery or pickup location. This status helps track on-site time. When the driver finishes the job, it moves to Completed.",
+    routeOrSurface: "job_status", tenantOverrideKey: "job_status_arrived",
+    isUserFacing: true, isGuideEligible: true,
+    keywords: ["arrived", "on-site", "driver", "location", "active"],
+  },
 };
 
 // ── Category display labels ──

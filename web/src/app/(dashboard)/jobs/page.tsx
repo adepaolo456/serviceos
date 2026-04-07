@@ -74,26 +74,17 @@ interface PriceQuote { breakdown: { basePrice: number; total: number; tax: numbe
 
 /* ─── Constants ─── */
 
-const STATUSES = ["all", "overdue", "pending", "confirmed", "dispatched", "en_route", "in_progress", "completed", "cancelled"] as const;
+import { deriveDisplayStatus, DISPLAY_STATUS_LABELS, displayStatusColor } from "@/lib/job-status";
 
 const STATUS_LABELS: Record<string, string> = {
-  all: "All", overdue: "Overdue", pending: "Pending", confirmed: "Confirmed", dispatched: "Dispatched",
-  en_route: "En Route", arrived: "Arrived", in_progress: "In Progress",
+  all: "All", overdue: "Overdue",
+  pending_payment: "Pending Payment", unassigned: "Unassigned",
+  assigned: "Assigned", en_route: "En Route", arrived: "Arrived",
   completed: "Completed", cancelled: "Cancelled",
+  // Legacy stored values → display labels (for filter counts from API)
+  pending: "Pending Payment", confirmed: "Unassigned", dispatched: "Assigned",
+  in_progress: "Arrived",
 };
-
-/* ─── Status text colors (no badge backgrounds) ─── */
-
-function statusTextClass(s: string): string {
-  if (s === "completed") return "text-[var(--t-accent-text)]";
-  if (s === "confirmed") return "text-[var(--t-accent-text)]";
-  if (s === "overdue" || s === "cancelled") return "text-[var(--t-error)]";
-  if (s === "pending") return "text-[var(--t-warning)]";
-  if (s === "dispatched") return "text-[var(--t-warning)]";
-  if (s === "en_route") return "text-[var(--t-warning)]";
-  if (s === "in_progress") return "text-[var(--t-info)]";
-  return "text-[var(--t-text-muted)]";
-}
 
 /* ─── Job type text (no badge backgrounds) ─── */
 
@@ -188,10 +179,10 @@ export default function JobsPage() {
   const [selectedJobIds, setSelectedJobIds] = useState<Set<string>>(new Set());
   const [bulkProgress, setBulkProgress] = useState<string | null>(null);
 
-  // Multi-status KPI groups: tile filter value → actual API statuses
+  // Multi-status KPI groups: tile filter value → actual stored API statuses
   const MULTI_STATUS: Record<string, string[]> = {
     unassigned: ["pending", "confirmed"],
-    active: ["in_progress", "en_route"],
+    arrived: ["arrived", "in_progress"],
   };
 
   const fetchJobs = useCallback(async () => {
@@ -218,7 +209,10 @@ export default function JobsPage() {
         setTotal(results.reduce((sum, r) => sum + r.meta.total, 0));
       } else {
         const params = new URLSearchParams({ page: String(page), limit: "30" });
-        if (statusFilter !== "all") params.set("status", statusFilter);
+        // Map display filter keys to stored status values for API
+        const DISPLAY_TO_STORED: Record<string, string> = { assigned: "dispatched", pending_payment: "pending" };
+        const apiStatus = DISPLAY_TO_STORED[statusFilter] || statusFilter;
+        if (apiStatus !== "all") params.set("status", apiStatus);
         const range = getDateRange(dateRange);
         if (range.dateFrom) params.set("dateFrom", range.dateFrom);
         if (range.dateTo) params.set("dateTo", range.dateTo);
@@ -243,6 +237,10 @@ export default function JobsPage() {
   const getCount = (s: string) => {
     if (s === "all") return statusCounts.reduce((sum, c) => sum + Number(c.count), 0);
     if (s === "overdue") return overdueCount;
+    // Map display filter keys to stored status values
+    if (s === "unassigned") return statusCounts.filter((c) => ["pending", "confirmed"].includes(c.status)).reduce((sum, c) => sum + Number(c.count), 0);
+    if (s === "assigned") return Number(statusCounts.find((c) => c.status === "dispatched")?.count ?? 0);
+    if (s === "arrived") return statusCounts.filter((c) => ["arrived", "in_progress"].includes(c.status)).reduce((sum, c) => sum + Number(c.count), 0);
     return Number(statusCounts.find((c) => c.status === s)?.count ?? 0);
   };
 
@@ -250,11 +248,11 @@ export default function JobsPage() {
   const todayStr = new Date().toISOString().split("T")[0];
   const todayCount = jobs.filter((j) => j.scheduled_date === todayStr).length;
   const unassignedCount = statusCounts.filter((c) => ["pending", "confirmed"].includes(c.status)).reduce((s, c) => s + Number(c.count), 0);
-  const inProgressCount = getCount("in_progress") + getCount("en_route");
+  const arrivedCount = getCount("arrived") + getCount("in_progress");
   const completedCount = getCount("completed");
 
-  const PRIMARY_STATUSES = ["all", "overdue", "pending", "confirmed"] as const;
-  const SECONDARY_STATUSES = ["dispatched", "en_route", "in_progress", "completed", "cancelled"] as const;
+  const PRIMARY_STATUSES = ["all", "overdue", "unassigned", "assigned"] as const;
+  const SECONDARY_STATUSES = ["en_route", "arrived", "completed", "cancelled"] as const;
 
   const filteredJobs = useMemo(() => {
     let result = [...jobs];
@@ -306,7 +304,7 @@ export default function JobsPage() {
         {[
           { label: "Unassigned", value: unassignedCount, color: unassignedCount > 0 ? "var(--t-warning)" : "var(--t-accent)", bg: unassignedCount > 0 ? "var(--t-warning-soft)" : undefined, filter: "unassigned", dateRange: "all", icon: AlertCircle },
           { label: "Today", value: todayCount, color: "var(--t-text-primary)", filter: "all", dateRange: "today", icon: Calendar },
-          { label: "In Progress", value: inProgressCount, color: "var(--t-info)", filter: "active", dateRange: "all", icon: Truck },
+          { label: "Arrived", value: arrivedCount, color: "var(--t-info, #3b82f6)", filter: "arrived", dateRange: "all", icon: Truck },
           { label: "Completed", value: completedCount, color: "var(--t-accent)", filter: "completed", dateRange: "all", icon: CheckCircle2 },
         ].map((stat) => (
           <button
@@ -588,8 +586,8 @@ export default function JobsPage() {
 
                       {/* Status */}
                       <td style={{ padding: "12px 16px" }}>
-                        <span className={statusTextClass(job.status)} style={{ fontSize: 11, fontWeight: 600, textTransform: "capitalize" }}>
-                          {STATUS_LABELS[job.status] || job.status.replace(/_/g, " ")}
+                        <span style={{ fontSize: 11, fontWeight: 600, color: displayStatusColor(deriveDisplayStatus(job.status)) }}>
+                          {DISPLAY_STATUS_LABELS[deriveDisplayStatus(job.status)]}
                         </span>
                         {job.is_overdue && (
                           <p className="badge-error" style={{ fontSize: 9, fontWeight: 700, marginTop: 3, padding: "0px 5px", display: "inline-block" }}>

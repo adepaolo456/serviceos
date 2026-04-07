@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, memo, useRef } from "react";
+import { deriveDisplayStatus, DISPLAY_STATUS_LABELS, displayStatusColor } from "@/lib/job-status";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import {
@@ -966,7 +967,7 @@ function DispatchMap({ board, activeJobId }: { board: DispatchBoard | null; acti
       const addrStr = [job.service_address?.street, job.service_address?.city].filter(Boolean).join(", ") || "No address";
       const typeStr = `${job.asset_subtype || job.asset?.subtype || ""} ${tc.label || job.job_type}`.trim();
       const driverName = driverMap.get(job.id) || "Unassigned";
-      const statusStr = (job.status || "pending").replace(/_/g, " ");
+      const statusStr = DISPLAY_STATUS_LABELS[deriveDisplayStatus(job.status || "pending")];
 
       const textColor = theme === "light" ? "#0a0a0a" : "#fff";
       const mutedColor = theme === "light" ? "#666" : "#888";
@@ -1513,7 +1514,7 @@ function StatusDropdown({ jobId, currentStatus, onStatusChange }: { jobId: strin
       <button ref={btnRef} onClick={handleOpen}
         className="flex items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-medium ml-auto"
         style={{ borderColor: "var(--t-border)", color: "var(--t-text-muted)" }}>
-        Status: {currentStatus.replace(/_/g, " ")} ▾
+        Status: {DISPLAY_STATUS_LABELS[deriveDisplayStatus(currentStatus)]} ▾
       </button>
       {open && pos && typeof document !== "undefined" && createPortal(
         <div onMouseDown={e => e.stopPropagation()}
@@ -1642,7 +1643,7 @@ function QVContent({ job, detail, board, onAssign, onRefresh, toast }: {
 
       <div className="flex items-center gap-2 flex-wrap">
         <span className="text-xs font-medium" style={{ color: tc.stripe }}>{tc.label}</span>
-        <span className="text-xs font-medium capitalize" style={{ color: isCompleted ? "var(--t-accent)" : "var(--t-warning)" }}>{job.status.replace(/_/g, " ")}</span>
+        <span className="text-xs font-medium" style={{ color: displayStatusColor(deriveDisplayStatus(job.status)) }}>{DISPLAY_STATUS_LABELS[deriveDisplayStatus(job.status)]}</span>
         {(d.asset_subtype || d.asset?.subtype) && <span className="rounded-md px-2 py-0.5 text-[11px] font-bold" style={{ background: "#F0F0F0", border: "1px solid #E0E0E0", color: "#0A0A0A" }}>{d.asset_subtype || d.asset?.subtype}</span>}
         {d.asset?.identifier && <span className="text-xs font-bold" style={{ color: "var(--t-accent)" }}>{d.asset.identifier}</span>}
       </div>
