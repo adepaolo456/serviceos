@@ -6,6 +6,7 @@ import { Invoice } from '../entities/invoice.entity';
 import { Payment } from '../entities/payment.entity';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { PricingService } from '../../pricing/pricing.service';
+import { MapboxService } from '../../mapbox/mapbox.service';
 import { BookingCompletionService } from './booking-completion.service';
 import { CreateWithBookingDto } from '../dto/create-with-booking.dto';
 
@@ -29,6 +30,7 @@ export class OrchestrationService {
     private notificationsService: NotificationsService,
     private pricingService: PricingService,
     private bookingCompletionService: BookingCompletionService,
+    private mapboxService: MapboxService,
   ) {}
 
   async createWithBooking(tenantId: string, dto: CreateWithBookingDto): Promise<OrchestrationResult> {
@@ -147,13 +149,39 @@ export class OrchestrationService {
 
       // 2. Calculate full tenant-scoped pricing (base + distance surcharge)
       const siteAddr = dto.siteAddress || dto.billingAddress || {};
+      let customerLat = siteAddr.lat != null ? Number(siteAddr.lat) : null;
+      let customerLng = siteAddr.lng != null ? Number(siteAddr.lng) : null;
+
+      // Geocode fallback: if coordinates are missing or invalid (0,0), attempt geocoding
+      const needsGeocode = customerLat == null || customerLng == null
+        || (customerLat === 0 && customerLng === 0);
+      if (needsGeocode && siteAddr.street) {
+        const addrStr = [siteAddr.street, siteAddr.city, siteAddr.state, siteAddr.zip].filter(Boolean).join(', ');
+        try {
+          const geo = await this.mapboxService.geocodeAddress(addrStr);
+          if (geo?.lat && geo?.lng) {
+            customerLat = geo.lat;
+            customerLng = geo.lng;
+            // Persist geocoded coords back to the site address for downstream use
+            siteAddr.lat = geo.lat;
+            siteAddr.lng = geo.lng;
+          }
+        } catch {
+          this.logger.warn(`Geocoding fallback failed for: ${addrStr}`);
+        }
+      }
+
+      if (customerLat == null || customerLng == null || (customerLat === 0 && customerLng === 0)) {
+        throw new BadRequestException('Customer address could not be geocoded — cannot calculate distance pricing');
+      }
+
       const priceResult = await this.pricingService.calculate(tenantId, {
         serviceType: 'dumpster_rental',
         assetSubtype: dto.dumpsterSize!,
         jobType: 'delivery',
         customerType: dto.type || 'residential',
-        customerLat: Number(siteAddr.lat) || 0,
-        customerLng: Number(siteAddr.lng) || 0,
+        customerLat,
+        customerLng,
         rentalDays: rentalDays,
       } as any);
       const basePrice = priceResult.breakdown.basePrice;

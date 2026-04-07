@@ -24,6 +24,7 @@ export interface BackfillResult {
   dry_run: boolean;
   jobs: { total_scanned: number; already_valid: number; geocoded: number; failed: number; skipped_verified: number };
   customers: { total_scanned: number; already_valid: number; geocoded: number; failed: number; skipped_verified: number };
+  service_sites: { total_scanned: number; already_valid: number; geocoded: number; failed: number };
   failures: Array<{ record_type: string; record_id: string; address: string; error: string }>;
 }
 
@@ -58,6 +59,7 @@ export class GeocodeBackfillService {
       dry_run: dryRun,
       jobs: { total_scanned: 0, already_valid: 0, geocoded: 0, failed: 0, skipped_verified: 0 },
       customers: { total_scanned: 0, already_valid: 0, geocoded: 0, failed: 0, skipped_verified: 0 },
+      service_sites: { total_scanned: 0, already_valid: 0, geocoded: 0, failed: 0 },
       failures: [],
       _diagnostic: {
         mapbox_available: !!testGeo,
@@ -76,6 +78,7 @@ export class GeocodeBackfillService {
 
     if (opts.include_customers !== false) {
       await this.backfillCustomers(opts.tenant_id, batchSize, dryRun, skipVerified, result);
+      await this.backfillServiceSites(opts.tenant_id, batchSize, dryRun, result);
     }
 
     return result;
@@ -203,6 +206,74 @@ export class GeocodeBackfillService {
       result.customers.geocoded++;
 
       if (result.customers.geocoded >= batchSize) break;
+    }
+  }
+
+  private async backfillServiceSites(
+    tenantId: string,
+    batchSize: number,
+    dryRun: boolean,
+    result: BackfillResult,
+  ) {
+    // Find customers with service_addresses that have at least one entry
+    const customers = await this.customerRepo.find({
+      where: { tenant_id: tenantId },
+      select: ['id', 'service_addresses', 'tenant_id'],
+      take: batchSize * 10,
+    });
+
+    for (const cust of customers) {
+      const sites = cust.service_addresses as Record<string, unknown>[] | null;
+      if (!sites || !Array.isArray(sites) || sites.length === 0) continue;
+
+      let anyUpdated = false;
+      const updatedSites = [...sites];
+
+      for (let i = 0; i < updatedSites.length; i++) {
+        const site = updatedSites[i];
+        result.service_sites.total_scanned++;
+
+        if (hasValidServiceCoordinates(site)) {
+          result.service_sites.already_valid++;
+          continue;
+        }
+
+        const addrStr = buildAddressString(site);
+        if (!addrStr) {
+          result.service_sites.failed++;
+          result.failures.push({
+            record_type: 'service_site', record_id: `${cust.id}[${i}]`,
+            address: JSON.stringify(site), error: 'No geocodable address string',
+          });
+          continue;
+        }
+
+        const geo = await this.mapbox.geocodeAddress(addrStr);
+        if (!geo || !isValidCoordinatePair(geo.lat, geo.lng)) {
+          result.service_sites.failed++;
+          result.failures.push({
+            record_type: 'service_site', record_id: `${cust.id}[${i}]`,
+            address: addrStr, error: geo ? 'Geocode returned invalid coordinates' : 'Mapbox geocode failed',
+          });
+          continue;
+        }
+
+        if (!dryRun) {
+          updatedSites[i] = { ...site, lat: geo.lat, lng: geo.lng, geocoded_at: new Date().toISOString(), geocode_source: 'mapbox' };
+          anyUpdated = true;
+        }
+        result.service_sites.geocoded++;
+      }
+
+      // Persist the entire updated array if any sites were geocoded
+      if (anyUpdated && !dryRun) {
+        await this.customerRepo
+          .createQueryBuilder()
+          .update(Customer)
+          .set({ service_addresses: updatedSites as any })
+          .where('id = :id AND tenant_id = :tenantId', { id: cust.id, tenantId })
+          .execute();
+      }
     }
   }
 

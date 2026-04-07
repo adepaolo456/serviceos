@@ -24,6 +24,7 @@ import { RentalChain } from '../rental-chains/entities/rental-chain.entity';
 import { TaskChainLink } from '../rental-chains/entities/task-chain-link.entity';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { PricingModule } from '../pricing/pricing.module';
+import { MapboxModule } from '../mapbox/mapbox.module';
 import { OrchestrationService } from './services/orchestration.service';
 import { BookingCompletionService } from './services/booking-completion.service';
 
@@ -48,6 +49,7 @@ import { BookingCompletionService } from './services/booking-completion.service'
     ]),
     NotificationsModule,
     PricingModule,
+    MapboxModule,
   ],
   controllers: [InvoiceController, BillingIssueController, PaymentsController, BookingsController],
   providers: [InvoiceService, BillingIssueDetectorService, BillingService, OrchestrationService, BookingCompletionService],
