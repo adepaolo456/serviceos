@@ -118,6 +118,12 @@ export class PricingQaController {
     let reviewQueueCount = 0;
     let missingRuleCount = 0;
     let missingSubtypeCount = 0;
+    let actionableCount = 0;
+
+    const ACTIONABLE_ISSUE_TYPES = new Set([
+      'geocode_blocked', 'missing_address', 'pricing_snapshot_missing',
+      'missing_asset_subtype', 'missing_pricing_rule',
+    ]);
 
     const rows: PricingQaRow[] = [];
 
@@ -198,6 +204,7 @@ export class PricingQaController {
       })[0] : null;
 
       if (primaryIssue) {
+        if (ACTIONABLE_ISSUE_TYPES.has(primaryIssue.type)) actionableCount++;
         rows.push({
           job_id: job.id,
           job_number: job.job_number,
@@ -250,6 +257,7 @@ export class PricingQaController {
         missing_snapshots: missingSnapshotCount,
         missing_pricing_rules: missingRuleCount,
         missing_asset_subtypes: missingSubtypeCount,
+        actionable_count: actionableCount,
       },
       rows,
     };

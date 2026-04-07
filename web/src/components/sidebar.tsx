@@ -105,11 +105,8 @@ export default function Sidebar() {
       .then((s) => setBillingIssueCount(s.total || 0))
       .catch(() => {});
     api
-      .get<{ summary: { geocode_blocked: number; missing_address: number; missing_snapshots: number; missing_pricing_rules: number; missing_asset_subtypes: number } }>("/pricing-qa/overview")
-      .then((d) => {
-        const s = d.summary;
-        setPricingQaCount((s.geocode_blocked || 0) + (s.missing_address || 0) + (s.missing_snapshots || 0) + (s.missing_pricing_rules || 0) + (s.missing_asset_subtypes || 0));
-      })
+      .get<{ summary: { actionable_count: number } }>("/pricing-qa/overview")
+      .then((d) => setPricingQaCount(d.summary.actionable_count || 0))
       .catch(() => {});
   }, []);
 
