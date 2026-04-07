@@ -38,6 +38,22 @@ export class JobsController {
     return this.jobsService.findAll(tenantId, query);
   }
 
+  @Get('active-onsite')
+  @ApiOperation({ summary: 'Get active on-site dumpsters for a customer at a site' })
+  getActiveOnsite(
+    @TenantId() tenantId: string,
+    @Query('customerId') customerId: string,
+    @Query('street') street?: string,
+    @Query('city') city?: string,
+    @Query('state') state?: string,
+    @Query('zip') zip?: string,
+  ) {
+    const address = street && city && state
+      ? { street, city, state, zip }
+      : undefined;
+    return this.jobsService.getActiveOnsite(tenantId, customerId, address);
+  }
+
   @Get('unassigned')
   @ApiOperation({ summary: 'Get unassigned jobs' })
   findUnassigned(@TenantId() tenantId: string) {

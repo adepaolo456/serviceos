@@ -95,6 +95,14 @@ export const FEATURE_REGISTRY: Record<string, FeatureDescription> = {
     isUserFacing: false, isGuideEligible: false,
     keywords: ["book", "order", "create", "schedule", "wizard", "internal"],
   },
+  exchange_detection: {
+    id: "exchange_detection", label: "Exchange Detection", category: "operations",
+    shortDescription: "Exchange selected — active dumpster found at this site",
+    guideDescription: "When a customer already has an active dumpster at the selected service address, the booking wizard automatically defaults to Exchange instead of New Delivery. You can always override this by manually selecting a different job type.",
+    routeOrSurface: "wizard_internal", tenantOverrideKey: "exchange_detection",
+    isUserFacing: true, isGuideEligible: false,
+    keywords: ["exchange", "detection", "auto", "onsite", "dumpster", "swap", "active"],
+  },
   dispatch_unassigned: {
     id: "dispatch_unassigned", label: "Unassigned", category: "operations",
     shortDescription: "Jobs not yet assigned to a driver.",
