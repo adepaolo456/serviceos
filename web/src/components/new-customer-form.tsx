@@ -332,12 +332,16 @@ export default function NewCustomerForm({ onOrchestrated, onClose, forceCustomer
     } finally { setSaving(false); }
   };
 
+  const isQuickQuoteMode = !!initialSchedule;
+
   const submitLabel = checkingDuplicate
     ? NEW_CUSTOMER_LABELS.checkingDuplicate
     : saving
     ? NEW_CUSTOMER_LABELS.creatingCustomer
     : forceCustomerOnly
     ? (selectedCustomerId ? "Continue with Selected Customer" : NEW_CUSTOMER_LABELS.saveAndContinue)
+    : isQuickQuoteMode
+    ? NEW_CUSTOMER_LABELS.continueToBooking
     : nextStep === "schedule"
     ? NEW_CUSTOMER_LABELS.saveAndContinue
     : NEW_CUSTOMER_LABELS.saveCustomer;
@@ -452,8 +456,8 @@ export default function NewCustomerForm({ onOrchestrated, onClose, forceCustomer
         <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} style={{ ...inputStyle, resize: "none" }} placeholder="Internal notes..." />
       </div>
 
-      {/* Next step selector — hidden in forceCustomerOnly mode */}
-      {!forceCustomerOnly && (
+      {/* Next step selector — hidden in forceCustomerOnly and Quick Quote modes */}
+      {!forceCustomerOnly && !isQuickQuoteMode && (
         <div style={{ marginTop: 8 }}>
           <label style={labelStyle}>{NEW_CUSTOMER_LABELS.nextStep}</label>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
