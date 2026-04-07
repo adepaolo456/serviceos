@@ -11,6 +11,9 @@ export class Quote {
   @Column({ name: 'quote_number', unique: true })
   quote_number!: string;
 
+  @Column({ name: 'customer_id', type: 'uuid', nullable: true })
+  customer_id!: string | null;
+
   @Column({ name: 'customer_name', nullable: true })
   customer_name!: string;
 

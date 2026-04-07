@@ -371,6 +371,32 @@ export const FEATURE_REGISTRY: Record<string, FeatureDescription> = {
     isUserFacing: true, isGuideEligible: false,
     keywords: ["address", "delivery", "location", "distance", "zone", "map"],
   },
+
+  // ── Quotes Pipeline ──
+  quotes_page: {
+    id: "quotes_page", label: "Quotes", category: "billing",
+    shortDescription: "Track sent quotes, conversions, and quote pipeline.",
+    guideDescription: "The Quotes page shows all quotes sent from Quick Quote. Filter by status (open, converted, expired), search by customer or quote number, and view conversion metrics. Open any quote to see full details, re-send the email, or copy the booking link.",
+    routeOrSurface: "/quotes", tenantOverrideKey: "quotes_page",
+    isUserFacing: true, isGuideEligible: true,
+    keywords: ["quote", "pipeline", "conversion", "sent", "tracking", "email"],
+  },
+  quote_detail: {
+    id: "quote_detail", label: "Quote Detail", category: "billing",
+    shortDescription: "View quote snapshot, pricing, status, and booking linkage.",
+    guideDescription: "The Quote Detail panel shows the full quote record including customer info, pricing breakdown, delivery address, timeline, and conversion status. If the quote was booked, a link to the resulting job is shown. You can re-send the quote email or copy the booking link for internal use.",
+    routeOrSurface: "slide_over", tenantOverrideKey: "quote_detail",
+    isUserFacing: true, isGuideEligible: false,
+    keywords: ["quote", "detail", "snapshot", "pricing", "status", "booking"],
+  },
+  quote_history: {
+    id: "quote_history", label: "Quote History", category: "customers",
+    shortDescription: "Customer's quote history and conversion status.",
+    guideDescription: "The Quote History tab on the customer dashboard shows all quotes associated with that customer. Each entry displays the quote number, dumpster size, quoted amount, status (open, converted, expired), and date. Use it to understand a customer's quoting history before creating a new job.",
+    routeOrSurface: "customer_tab", tenantOverrideKey: "quote_history",
+    isUserFacing: true, isGuideEligible: false,
+    keywords: ["quote", "history", "customer", "conversion", "pipeline"],
+  },
 };
 
 // ── Category display labels ──

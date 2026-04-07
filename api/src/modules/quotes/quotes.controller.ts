@@ -4,6 +4,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Quote } from './quote.entity';
 import { Tenant } from '../tenants/entities/tenant.entity';
+import { Customer } from '../customers/entities/customer.entity';
 import { TenantId, CurrentUser, Public } from '../../common/decorators';
 import { NotificationsService } from '../notifications/notifications.service';
 import { randomBytes } from 'crypto';
@@ -83,6 +84,7 @@ export class QuotesController {
   constructor(
     @InjectRepository(Quote) private quoteRepo: Repository<Quote>,
     @InjectRepository(Tenant) private tenantRepo: Repository<Tenant>,
+    @InjectRepository(Customer) private customerRepo: Repository<Customer>,
     private notificationsService: NotificationsService,
   ) {}
 
@@ -118,9 +120,21 @@ export class QuotesController {
     const token = generateToken();
     const totalQuoted = body.totalQuoted ?? body.basePrice;
 
+    // Best-effort customer lookup by email (do not create — just link if exists)
+    let customerId: string | null = null;
+    if (body.customerEmail) {
+      try {
+        const existing = await this.customerRepo.findOne({
+          where: { tenant_id: tenantId, email: body.customerEmail.toLowerCase().trim() },
+        });
+        if (existing) customerId = existing.id;
+      } catch { /* best-effort — null is fine */ }
+    }
+
     const quote = this.quoteRepo.create({
       tenant_id: tenantId,
       quote_number: quoteNumber,
+      customer_id: customerId,
       customer_name: body.customerName || null,
       customer_email: body.customerEmail || null,
       customer_phone: body.customerPhone || null,
@@ -186,11 +200,32 @@ export class QuotesController {
     return saved;
   }
 
+  @Get('summary')
+  @ApiOperation({ summary: 'Get quote conversion summary stats' })
+  async summary(@TenantId() tenantId: string) {
+    const all = await this.quoteRepo.find({ where: { tenant_id: tenantId } });
+    const now = new Date();
+    let sent = 0, converted = 0, expired = 0, draft = 0, open = 0;
+    for (const q of all) {
+      if (q.status === 'converted') { converted++; }
+      else if (q.status === 'draft') { draft++; }
+      else if (q.status === 'sent' && now > q.expires_at) { expired++; }
+      else if (q.status === 'sent') { open++; sent++; }
+      if (q.status === 'sent' || q.status === 'converted') sent++;
+    }
+    // sent here counts all that were ever sent (including converted)
+    const totalSent = converted + open + expired;
+    const conversionRate = totalSent > 0 ? Math.round((converted / totalSent) * 100) : 0;
+    return { totalSent, converted, open, expired, draft, conversionRate };
+  }
+
   @Get()
   @ApiOperation({ summary: 'List quotes for tenant' })
   async list(
     @TenantId() tenantId: string,
     @Query('status') status?: string,
+    @Query('search') search?: string,
+    @Query('customerId') customerId?: string,
     @Query('limit') limit?: string,
   ) {
     const qb = this.quoteRepo.createQueryBuilder('q')
@@ -198,10 +233,58 @@ export class QuotesController {
       .orderBy('q.created_at', 'DESC')
       .take(Number(limit) || 50);
 
-    if (status) qb.andWhere('q.status = :status', { status });
+    if (search) {
+      qb.andWhere(
+        '(q.customer_name ILIKE :search OR q.quote_number ILIKE :search OR q.customer_email ILIKE :search)',
+        { search: `%${search}%` },
+      );
+    }
+
+    // Derived status filter: "open" = sent + not expired, "expired" = sent + past expires_at
+    if (status === 'open') {
+      qb.andWhere('q.status = :s', { s: 'sent' }).andWhere('q.expires_at > NOW()');
+    } else if (status === 'expired') {
+      qb.andWhere('q.status = :s', { s: 'sent' }).andWhere('q.expires_at <= NOW()');
+    } else if (status) {
+      qb.andWhere('q.status = :s', { s: status });
+    }
+
+    if (customerId) {
+      // Prefer FK match, fall back to email match for legacy quotes without customer_id
+      qb.andWhere(
+        '(q.customer_id = :customerId OR (q.customer_id IS NULL AND q.customer_email IN (SELECT email FROM customers WHERE id = :customerId AND tenant_id = :tenantId)))',
+        { customerId, tenantId },
+      );
+    }
 
     const [data, total] = await qb.getManyAndCount();
-    return { data, meta: { total } };
+
+    // Compute derived status for each quote
+    const now = new Date();
+    const enriched = data.map((q) => ({
+      ...q,
+      derived_status: q.status === 'sent' && now > q.expires_at ? 'expired' : q.status,
+    }));
+
+    return { data: enriched, meta: { total } };
+  }
+
+  @Get(':id')
+  @ApiOperation({ summary: 'Get single quote detail' })
+  async detail(
+    @TenantId() tenantId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    const quote = await this.quoteRepo.findOne({ where: { id, tenant_id: tenantId } });
+    if (!quote) return { error: 'Quote not found' };
+    const now = new Date();
+    const tenant = await this.tenantRepo.findOne({ where: { id: tenantId } });
+    const bookingUrl = quote.token && tenant ? buildTenantBookingUrl(tenant.slug, quote.token) : null;
+    return {
+      ...quote,
+      derived_status: quote.status === 'sent' && now > quote.expires_at ? 'expired' : quote.status,
+      booking_url: bookingUrl,
+    };
   }
 
   /**
@@ -226,8 +309,59 @@ export class QuotesController {
   }
 
   /**
+   * POST /quotes/:id/resend — Re-send quote email using existing token.
+   */
+  @Post(':id/resend')
+  @ApiOperation({ summary: 'Re-send quote email' })
+  async resend(
+    @TenantId() tenantId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    const quote = await this.quoteRepo.findOne({ where: { id, tenant_id: tenantId } });
+    if (!quote) return { error: 'Quote not found' };
+    if (!quote.customer_email) return { error: 'No email on quote' };
+    if (quote.status === 'converted') return { error: 'Quote already converted' };
+
+    const tenant = await this.tenantRepo.findOne({ where: { id: tenantId } });
+    if (!tenant) return { error: 'Tenant not found' };
+
+    const bookNowUrl = buildTenantBookingUrl(tenant.slug, quote.token!);
+    const addressStr = quote.delivery_address
+      ? [quote.delivery_address.street, quote.delivery_address.city, quote.delivery_address.state, quote.delivery_address.zip].filter(Boolean).join(', ')
+      : null;
+
+    const html = buildQuoteEmailHtml({
+      customerName: quote.customer_name || 'Customer',
+      tenantName: tenant.name,
+      assetSubtype: quote.asset_subtype,
+      totalQuoted: Number(quote.total_quoted),
+      basePrice: Number(quote.base_price),
+      distanceSurcharge: Number(quote.distance_surcharge),
+      rentalDays: quote.rental_days,
+      includedTons: Number(quote.included_tons),
+      overageRate: Number(quote.overage_rate),
+      deliveryAddress: addressStr,
+      bookNowUrl,
+      tenantColor: (tenant as any).website_primary_color || undefined,
+    });
+
+    await this.notificationsService.send(tenantId, {
+      channel: 'email',
+      type: 'quote_sent',
+      recipient: quote.customer_email,
+      subject: `Your Quote from ${tenant.name} — ${quote.asset_subtype.replace('yd', ' Yard')} Dumpster`,
+      body: html,
+    });
+
+    if (quote.status === 'draft') {
+      await this.quoteRepo.update(id, { status: 'sent' });
+    }
+
+    return { success: true, message: `Quote re-sent to ${quote.customer_email}` };
+  }
+
+  /**
    * Public: GET /quotes/:id/book — Legacy endpoint (kept for backward compat).
-   * New flow uses GET /public/tenant/:slug/quote/:token instead.
    */
   @Public()
   @Get(':id/book')

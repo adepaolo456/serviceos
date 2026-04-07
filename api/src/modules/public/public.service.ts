@@ -295,6 +295,18 @@ export class PublicService {
 
       await queryRunner.commitTransaction();
 
+      // Mark quote as converted (after successful booking, non-blocking)
+      if (body.quoteId) {
+        try {
+          await this.quoteRepo.update(
+            { id: body.quoteId, tenant_id: t.id },
+            { status: 'converted', booked_job_id: saved.id, customer_id: customer.id },
+          );
+        } catch {
+          // Quote conversion update is non-critical — don't fail the booking
+        }
+      }
+
       return {
         jobNumber: saved.job_number,
         jobId: saved.id,
