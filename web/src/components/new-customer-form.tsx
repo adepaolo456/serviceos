@@ -103,8 +103,9 @@ export default function NewCustomerForm({ onOrchestrated, onClose, forceCustomer
 
   // Customer autocomplete
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
-  const [searchResults, setSearchResults] = useState<{ id: string; first_name: string; last_name: string; email: string; phone: string; billing_address?: Record<string, any> }[]>([]);
+  const [searchResults, setSearchResults] = useState<{ id: string; first_name: string; last_name: string; email: string; phone: string; billing_address?: Record<string, any>; service_addresses?: Record<string, any>[] }[]>([]);
   const [showDropdown, setShowDropdown] = useState(false);
+  const [customerServiceSites, setCustomerServiceSites] = useState<AddressValue[]>([]);
   const searchDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -130,6 +131,19 @@ export default function NewCustomerForm({ onOrchestrated, onClose, forceCustomer
   const [sizesLoading, setSizesLoading] = useState(false);
 
   const showScheduling = !forceCustomerOnly && nextStep === "schedule";
+  const formatAddr = (a: AddressValue) => [a.street, a.city, a.state, a.zip].filter(Boolean).join(", ");
+  // Track which site source is active: "quote" | "saved-{index}" | "billing" | "new"
+  const [siteSource, setSiteSource] = useState<string>(initialSchedule?.siteAddress ? "quote" : "billing");
+  const hasQuoteAddress = !!(initialSchedule?.siteAddress?.street);
+  // Only show site picker in Quick Quote flow (when initialSchedule is present)
+  const hasSavedSites = !!(initialSchedule && selectedCustomerId && customerServiceSites.length > 0);
+  const showSitePicker = hasQuoteAddress || hasSavedSites;
+
+  const selectSite = (addr: AddressValue, source: string) => {
+    setSchedSiteAddress(addr);
+    setSchedBillingSameAsSite(false);
+    setSiteSource(source);
+  };
 
   // Customer autocomplete search
   const handleNameSearch = useCallback((first: string, last: string) => {
@@ -137,7 +151,7 @@ export default function NewCustomerForm({ onOrchestrated, onClose, forceCustomer
     if (q.length < 2) { setSearchResults([]); setShowDropdown(false); return; }
     if (searchDebounce.current) clearTimeout(searchDebounce.current);
     searchDebounce.current = setTimeout(() => {
-      api.get<{ id: string; first_name: string; last_name: string; email: string; phone: string; billing_address?: Record<string, any> }[]>(`/customers/search?q=${encodeURIComponent(q)}&limit=5`)
+      api.get<{ id: string; first_name: string; last_name: string; email: string; phone: string; billing_address?: Record<string, any>; service_addresses?: Record<string, any>[] }[]>(`/customers/search?q=${encodeURIComponent(q)}&limit=5`)
         .then(results => { setSearchResults(results); setShowDropdown(results.length > 0); })
         .catch(() => { setSearchResults([]); setShowDropdown(false); });
     }, 250);
@@ -160,12 +174,21 @@ export default function NewCustomerForm({ onOrchestrated, onClose, forceCustomer
         lng: addr.lng != null ? Number(addr.lng) : null,
       });
     }
+    // Store saved service sites for scheduling site picker
+    if (c.service_addresses && c.service_addresses.length > 0) {
+      setCustomerServiceSites(c.service_addresses.map((a: Record<string, any>) => ({
+        street: a.street || "", city: a.city || "", state: a.state || "", zip: a.zip || "",
+        lat: a.lat != null ? Number(a.lat) : null, lng: a.lng != null ? Number(a.lng) : null,
+      })));
+    } else {
+      setCustomerServiceSites([]);
+    }
     setShowDropdown(false);
     setDuplicateChecked(true);
   };
 
   const clearSelectedCustomer = () => {
-    if (selectedCustomerId) { setSelectedCustomerId(null); setDuplicateChecked(false); }
+    if (selectedCustomerId) { setSelectedCustomerId(null); setDuplicateChecked(false); setCustomerServiceSites([]); }
   };
 
   // Close dropdown on click outside
@@ -476,15 +499,40 @@ export default function NewCustomerForm({ onOrchestrated, onClose, forceCustomer
           </label>
           <div>
             <label style={labelStyle}>{NEW_CUSTOMER_LABELS.siteAddress}</label>
-            {siteAddressLocked ? (
-              <div style={{ backgroundColor: "var(--t-accent-soft)", border: "1px solid var(--t-accent)", borderRadius: 10, padding: "10px 16px", fontSize: 14, color: "var(--t-text-primary)" }}>
-                {[schedSiteAddress.street, schedSiteAddress.city, schedSiteAddress.state, schedSiteAddress.zip].filter(Boolean).join(", ")}
-                <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 600, textTransform: "uppercase", color: "var(--t-accent)" }}>From quote</span>
+            {showSitePicker ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {/* Quote address option */}
+                {hasQuoteAddress && (
+                  <button type="button" onClick={() => selectSite(
+                    { street: initialSchedule!.siteAddress!.street, city: initialSchedule!.siteAddress!.city, state: initialSchedule!.siteAddress!.state, zip: initialSchedule!.siteAddress!.zip, lat: initialSchedule!.siteAddress!.lat ?? null, lng: initialSchedule!.siteAddress!.lng ?? null },
+                    "quote",
+                  )}
+                    style={{ width: "100%", textAlign: "left", borderRadius: 10, padding: "10px 16px", fontSize: 13, cursor: "pointer", border: siteSource === "quote" ? "2px solid var(--t-accent)" : "1px solid var(--t-border)", backgroundColor: siteSource === "quote" ? "var(--t-accent-soft)" : "var(--t-bg-card)", color: "var(--t-text-primary)", transition: "all 0.15s ease" }}>
+                    {formatAddr({ street: initialSchedule!.siteAddress!.street, city: initialSchedule!.siteAddress!.city, state: initialSchedule!.siteAddress!.state, zip: initialSchedule!.siteAddress!.zip, lat: null, lng: null })}
+                    <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 600, textTransform: "uppercase", color: "var(--t-accent)" }}>From quote</span>
+                  </button>
+                )}
+                {/* Saved service sites */}
+                {hasSavedSites && customerServiceSites.map((site, i) => (
+                  <button key={i} type="button" onClick={() => selectSite(site, `saved-${i}`)}
+                    style={{ width: "100%", textAlign: "left", borderRadius: 10, padding: "10px 16px", fontSize: 13, cursor: "pointer", border: siteSource === `saved-${i}` ? "2px solid var(--t-accent)" : "1px solid var(--t-border)", backgroundColor: siteSource === `saved-${i}` ? "var(--t-accent-soft)" : "var(--t-bg-card)", color: "var(--t-text-primary)", transition: "all 0.15s ease" }}>
+                    {formatAddr(site)}
+                    <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 600, textTransform: "uppercase", color: "var(--t-text-muted)" }}>Saved site</span>
+                  </button>
+                ))}
+                {/* Option to enter a new address */}
+                <button type="button" onClick={() => { setSiteSource("new"); setSchedBillingSameAsSite(false); setSchedSiteAddress({ street: "", city: "", state: "", zip: "", lat: null, lng: null }); }}
+                  style={{ fontSize: 13, fontWeight: 600, color: "var(--t-accent)", backgroundColor: "transparent", border: "none", cursor: "pointer", textAlign: "left", padding: "4px 0" }}>
+                  + Enter different address
+                </button>
+                {siteSource === "new" && (
+                  <AddressAutocomplete value={schedSiteAddress} onChange={a => setSchedSiteAddress(a)} placeholder="Search site address..." />
+                )}
               </div>
             ) : (
               <>
                 <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--t-text-muted)", cursor: "pointer", marginBottom: 8 }}>
-                  <input type="checkbox" checked={schedBillingSameAsSite} onChange={e => setSchedBillingSameAsSite(e.target.checked)} />
+                  <input type="checkbox" checked={schedBillingSameAsSite} onChange={e => { setSchedBillingSameAsSite(e.target.checked); setSiteSource(e.target.checked ? "billing" : "new"); }} />
                   {NEW_CUSTOMER_LABELS.billingSameAsSite}
                 </label>
                 {!schedBillingSameAsSite && (
