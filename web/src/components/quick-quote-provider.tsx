@@ -2,7 +2,8 @@
 
 import { createContext, useContext, useState, useCallback, type ReactNode } from "react";
 import QuickQuoteDrawer from "@/components/quick-quote-drawer";
-import CustomerPickerDrawer from "@/components/customer-picker-drawer";
+import SlideOver from "@/components/slide-over";
+import NewCustomerForm, { type OrchestrationResult } from "@/components/new-customer-form";
 import { useBooking } from "@/components/booking-provider";
 import type { InitialSchedule } from "@/components/booking-wizard";
 
@@ -47,24 +48,30 @@ export function QuickQuoteProvider({ children }: { children: ReactNode }) {
     setCustomerPickerOpen(true);
   }, []);
 
-  const handleCustomerSelected = useCallback((opts: { customerId?: string; initialSchedule?: InitialSchedule }) => {
+  const handleCustomerResult = useCallback((result: OrchestrationResult) => {
     setCustomerPickerOpen(false);
+    // Customer created/selected — hand off to booking wizard with quote context
     openWizard({
-      customerId: opts.customerId,
-      initialSchedule: opts.initialSchedule,
+      customerId: result.customerId,
+      initialSchedule: pendingSchedule,
     });
-  }, [openWizard]);
+  }, [openWizard, pendingSchedule]);
 
   return (
     <QuickQuoteContext.Provider value={{ drawerOpen, openQuickQuote, closeQuickQuote, openCustomerPicker }}>
       {children}
       <QuickQuoteDrawer key={resetKey} />
-      <CustomerPickerDrawer
+      <SlideOver
         open={customerPickerOpen}
         onClose={() => setCustomerPickerOpen(false)}
-        onSelect={handleCustomerSelected}
-        initialSchedule={pendingSchedule}
-      />
+        title="New Customer"
+      >
+        <NewCustomerForm
+          forceCustomerOnly
+          onOrchestrated={handleCustomerResult}
+          onClose={() => setCustomerPickerOpen(false)}
+        />
+      </SlideOver>
     </QuickQuoteContext.Provider>
   );
 }
