@@ -704,10 +704,38 @@ export default function NewCustomerForm({ onOrchestrated, onClose, forceCustomer
         </div>
       )}
 
-      <button type="submit" disabled={saving || checkingDuplicate}
-        style={{ width: "100%", backgroundColor: "var(--t-accent)", color: "var(--t-accent-on-accent)", fontSize: 14, fontWeight: 700, padding: "14px 0", borderRadius: 24, border: "none", cursor: saving || checkingDuplicate ? "default" : "pointer", opacity: saving || checkingDuplicate ? 0.5 : 1, transition: "opacity 0.15s ease", marginTop: 8 }}>
-        {submitLabel}
-      </button>
+      {/* Inline CTA — visible only when NOT in Quick Quote mode */}
+      {!isQuickQuoteMode && (
+        <button type="submit" disabled={saving || checkingDuplicate}
+          style={{ width: "100%", backgroundColor: "var(--t-accent)", color: "var(--t-accent-on-accent)", fontSize: 14, fontWeight: 700, padding: "14px 0", borderRadius: 24, border: "none", cursor: saving || checkingDuplicate ? "default" : "pointer", opacity: saving || checkingDuplicate ? 0.5 : 1, transition: "opacity 0.15s ease", marginTop: 8 }}>
+          {submitLabel}
+        </button>
+      )}
+
+      {/* Spacer so sticky bar doesn't cover last form fields */}
+      {isQuickQuoteMode && <div style={{ height: 72 }} />}
+
+      {/* Sticky bottom CTA bar — Quick Quote mode only */}
+      {isQuickQuoteMode && (
+        <div style={{
+          position: "sticky", bottom: -24, left: -24, right: -24,
+          marginLeft: -24, marginRight: -24,
+          backgroundColor: "var(--t-bg-secondary)",
+          borderTop: "1px solid var(--t-border)",
+          padding: "12px 24px",
+          display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
+        }}>
+          <div style={{ fontSize: 12, color: "var(--t-text-muted)", minWidth: 0 }}>
+            {schedDumpsterSize && <span style={{ fontWeight: 600, color: "var(--t-text-primary)" }}>{formatDumpsterSize(schedDumpsterSize)}</span>}
+            {workflowDecision === "exchange" && <span style={{ marginLeft: 6, fontSize: 11, color: "var(--t-accent)", fontWeight: 600 }}>EXCHANGE</span>}
+            {workflowDecision === "new_rental" && <span style={{ marginLeft: 6, fontSize: 11, color: "var(--t-text-muted)", fontWeight: 600 }}>NEW RENTAL</span>}
+          </div>
+          <button type="submit" disabled={saving || checkingDuplicate}
+            style={{ backgroundColor: "var(--t-accent)", color: "var(--t-accent-on-accent)", fontSize: 14, fontWeight: 700, padding: "12px 28px", borderRadius: 24, border: "none", cursor: saving || checkingDuplicate ? "default" : "pointer", opacity: saving || checkingDuplicate ? 0.5 : 1, transition: "opacity 0.15s ease", whiteSpace: "nowrap" }}>
+            {submitLabel}
+          </button>
+        </div>
+      )}
     </form>
   );
 }
