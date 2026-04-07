@@ -91,6 +91,15 @@ export class CreateWithBookingDto {
   @IsNumber()
   rentalDays?: number;
 
+  // Exchange support
+  @IsOptional()
+  @IsIn(['delivery', 'exchange'])
+  jobType?: string;
+
+  @IsOptional()
+  @IsUUID()
+  exchangeRentalChainId?: string;
+
   // Idempotency
   @IsOptional()
   @IsUUID()

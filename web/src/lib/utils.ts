@@ -1,3 +1,9 @@
+/** Format dumpster size for display: "20yd" → "20 Yard" */
+export function formatDumpsterSize(size: string | null | undefined): string {
+  if (!size) return "Unknown";
+  return size.replace("yd", " Yard");
+}
+
 /** Format phone string to (XXX) XXX-XXXX */
 export function formatPhone(phone: string | null | undefined): string {
   if (!phone) return "";
