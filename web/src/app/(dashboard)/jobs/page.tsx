@@ -2,8 +2,9 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { useQuickQuote } from "@/components/quick-quote-provider";
+import { useBooking } from "@/components/booking-provider";
 import {
+  Plus,
   Briefcase,
   Search,
   Truck,
@@ -171,7 +172,7 @@ function getDateRange(range: string): { dateFrom?: string; dateTo?: string } {
 
 export default function JobsPage() {
   const router = useRouter();
-  const { openQuickQuote } = useQuickQuote();
+  const { openWizard } = useBooking();
   const { toast } = useToast();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [total, setTotal] = useState(0);
@@ -455,8 +456,8 @@ export default function JobsPage() {
               Clear Filters
             </button>
           ) : (
-            <button onClick={() => openQuickQuote()} className="btn-primary inline-flex items-center gap-2 text-sm">
-              <DollarSign className="h-4 w-4" /> Quick Quote
+            <button onClick={() => openWizard()} className="btn-primary inline-flex items-center gap-2 text-sm">
+              <Plus className="h-4 w-4" /> New Booking
             </button>
           )}
         </div>
