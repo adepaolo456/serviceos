@@ -1334,6 +1334,75 @@ export class JobsService {
     return { jobs, parentJobId };
   }
 
+  /**
+   * Create an exchange job directly from a rental chain, without requiring a parent delivery job.
+   * Used for standalone/legacy rentals where chain links may not have a completed delivery job.
+   */
+  async exchangeFromRental(
+    tenantId: string,
+    body: { rentalChainId: string; scheduledDate: string; timeWindow?: string; newAssetSubtype?: string; exchangeFee?: number },
+  ) {
+    const chain = await this.rentalChainRepo.findOne({
+      where: { id: body.rentalChainId, tenant_id: tenantId },
+      relations: ['customer'],
+    });
+    if (!chain) {
+      throw new NotFoundException(`Rental chain ${body.rentalChainId} not found`);
+    }
+
+    // Try to find the most recent job in this chain to get service_address
+    const chainLink = await this.taskChainLinkRepo.findOne({
+      where: { rental_chain_id: chain.id },
+      relations: ['job'],
+      order: { sequence_number: 'DESC' },
+    });
+
+    const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    const seq = Math.floor(Math.random() * 9000) + 1000;
+
+    let windowStart = '08:00', windowEnd = '17:00';
+    if (body.timeWindow === 'morning') { windowStart = '08:00'; windowEnd = '12:00'; }
+    else if (body.timeWindow === 'afternoon') { windowStart = '12:00'; windowEnd = '17:00'; }
+
+    const exchangeJob = this.jobsRepository.create({
+      tenant_id: tenantId,
+      customer_id: chain.customer_id,
+      job_number: `JOB-${dateStr}-${seq}`,
+      job_type: 'exchange',
+      service_type: 'dumpster_rental',
+      asset_subtype: body.newAssetSubtype || chain.dumpster_size,
+      asset_id: chain.asset_id || null,
+      service_address: chainLink?.job?.service_address || null,
+      status: 'pending',
+      priority: 'normal',
+      source: 'exchange_from_rental',
+      scheduled_date: body.scheduledDate,
+      scheduled_window_start: windowStart,
+      scheduled_window_end: windowEnd,
+    } as Partial<Job> as Job);
+    const savedJob = await this.jobsRepository.save(exchangeJob);
+
+    // Create exchange invoice
+    const exchangeFee = Number(body.exchangeFee || 0);
+    if (exchangeFee > 0) {
+      await this.billingService.createInternalInvoice(tenantId, {
+        customerId: chain.customer_id,
+        jobId: savedJob.id,
+        source: 'exchange',
+        invoiceType: 'exchange',
+        status: 'open',
+        lineItems: [{ description: 'Dumpster Exchange', quantity: 1, unitPrice: exchangeFee, amount: exchangeFee }],
+        notes: `Exchange scheduled for rental chain ${chain.id}`,
+      });
+    }
+
+    // No chain link update needed — the rental chain was used only as source of truth
+    // for customer/address/asset. handleTypeChange operates on existing chain links,
+    // but this job was created outside the chain link system.
+
+    return { jobs: [savedJob], rentalChainId: chain.id };
+  }
+
   async stageAtYard(tenantId: string, jobId: string, body: { wasteType?: string; notes?: string }) {
     const job = await this.findOne(tenantId, jobId);
 
