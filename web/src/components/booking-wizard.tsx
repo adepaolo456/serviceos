@@ -26,7 +26,7 @@ export interface InitialSchedule {
 interface BookingWizardProps {
   open: boolean;
   onClose: () => void;
-  onComplete?: () => void;
+  onComplete?: (createdJobId?: string) => void;
   prefillCustomerId?: string;
   prefillDate?: string;
   initialSchedule?: InitialSchedule;
@@ -559,33 +559,36 @@ export default function BookingWizard({
         const anyLink = rental?.links?.find((l) => !!l.job_id);
         const parentJobId = deliveryLink?.job_id || anyLink?.job_id;
 
+        let createdJobId: string | undefined;
         if (parentJobId) {
           // Chain-based exchange: use existing schedule-next flow
-          await api.post(`/jobs/${parentJobId}/schedule-next`, {
+          const res = await api.post<{ jobs: Array<{ id: string }> }>(`/jobs/${parentJobId}/schedule-next`, {
             type: "exchange",
             scheduledDate: deliveryDate,
             timeWindow: "any",
             newAssetSubtype: exchangeReplacementSize || dumpsterSize,
             exchangeFee: priceQuote?.total || priceQuote?.base_price || 0,
           });
+          createdJobId = res.jobs?.[0]?.id;
         } else {
           // Standalone/legacy rental: create exchange directly from rental chain
-          await api.post("/jobs/exchange-from-rental", {
+          const res = await api.post<{ jobs: Array<{ id: string }> }>("/jobs/exchange-from-rental", {
             rentalChainId: rental?.id,
             scheduledDate: deliveryDate,
             timeWindow: "any",
             newAssetSubtype: exchangeReplacementSize || dumpsterSize,
             exchangeFee: priceQuote?.total || priceQuote?.base_price || 0,
           });
+          createdJobId = res.jobs?.[0]?.id;
         }
         toast("success", "Exchange scheduled successfully");
-        onComplete?.();
+        onComplete?.(createdJobId);
         onClose();
         return;
       }
 
       // Standard delivery path — existing BookingCompletionService flow
-      await api.post("/bookings/complete", {
+      const bookingResult = await api.post<{ deliveryJob: { id: string }; pickupJob: { id: string }; invoice: { id: string } }>("/bookings/complete", {
         customerId: selectedCustomer?.id || undefined,
         customer: selectedCustomer ? undefined : {
           firstName,
@@ -613,7 +616,7 @@ export default function BookingWizard({
         sendInvoiceNow: resolvedMethod === "invoice" && sendInvoiceNow ? true : undefined,
       });
       toast("success", "Booking created successfully");
-      onComplete?.();
+      onComplete?.(bookingResult.deliveryJob?.id);
       onClose();
     } catch (err) {
       toast("error", err instanceof Error ? err.message : "Failed to create booking");

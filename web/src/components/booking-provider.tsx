@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext, useState, useCallback, type ReactNode } from "react";
+import { useRouter } from "next/navigation";
 import BookingWizard, { type InitialSchedule } from "@/components/booking-wizard";
 
 interface BookingContextValue {
@@ -21,7 +22,8 @@ export function useBooking() {
   return useContext(BookingContext);
 }
 
-export function BookingProvider({ children, onComplete }: { children: ReactNode; onComplete?: () => void }) {
+export function BookingProvider({ children, onComplete }: { children: ReactNode; onComplete?: (createdJobId?: string) => void }) {
+  const router = useRouter();
   const [wizardOpen, setWizardOpen] = useState(false);
   const [prefillCustomerId, setPrefillCustomerId] = useState<string | undefined>();
   const [prefillDate, setPrefillDate] = useState<string | undefined>();
@@ -38,13 +40,21 @@ export function BookingProvider({ children, onComplete }: { children: ReactNode;
     setWizardOpen(false);
   }, []);
 
+  const handleComplete = useCallback((createdJobId?: string) => {
+    onComplete?.(createdJobId);
+    // Navigate to the created job so user can see invoice/payment actions immediately
+    if (createdJobId) {
+      router.push(`/jobs/${createdJobId}`);
+    }
+  }, [onComplete, router]);
+
   return (
     <BookingContext.Provider value={{ wizardOpen, openWizard, closeWizard, prefillCustomerId, prefillDate }}>
       {children}
       <BookingWizard
         open={wizardOpen}
         onClose={closeWizard}
-        onComplete={onComplete}
+        onComplete={handleComplete}
         prefillCustomerId={prefillCustomerId}
         prefillDate={prefillDate}
         initialSchedule={initialSchedule}
