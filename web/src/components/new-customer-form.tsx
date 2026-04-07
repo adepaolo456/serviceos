@@ -228,7 +228,7 @@ export default function NewCustomerForm({ onOrchestrated, onClose, forceCustomer
     }
     setShowDropdown(false);
     setDuplicateChecked(true);
-    if (isQuickQuoteMode) setCustomerCollapsed(true);
+    setCustomerCollapsed(true);
   };
 
   const clearSelectedCustomer = () => {
@@ -271,7 +271,7 @@ export default function NewCustomerForm({ onOrchestrated, onClose, forceCustomer
     setSchedPickupDate(d.toISOString().split("T")[0]);
   }, [schedDeliveryDate, schedDumpsterSize, sizeOptions, schedPickupTBD, pickupManuallySet]);
 
-  const compact = isQuickQuoteMode;
+  const compact = true; // tighter spacing for all modes
   const inputStyle: React.CSSProperties = {
     width: "100%", backgroundColor: "var(--t-bg-card)", border: "1px solid var(--t-border)",
     borderRadius: 10, padding: compact ? "8px 14px" : "10px 16px", fontSize: 14, color: "var(--t-text-primary)",
@@ -409,7 +409,7 @@ export default function NewCustomerForm({ onOrchestrated, onClose, forceCustomer
       )}
 
       {/* Customer section — collapsed summary or full form */}
-      {isQuickQuoteMode && selectedCustomerId && customerCollapsed ? (
+      {selectedCustomerId && customerCollapsed ? (
         <div style={{ backgroundColor: "var(--t-bg-card)", border: "1px solid var(--t-border)", borderRadius: 10, padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div>
             <div style={{ fontSize: 14, fontWeight: 600, color: "var(--t-text-primary)" }}>{firstName} {lastName}</div>
@@ -704,20 +704,11 @@ export default function NewCustomerForm({ onOrchestrated, onClose, forceCustomer
         </div>
       )}
 
-      {/* Inline CTA — visible only when NOT in Quick Quote mode */}
-      {!isQuickQuoteMode && (
-        <button type="submit" disabled={saving || checkingDuplicate}
-          style={{ width: "100%", backgroundColor: "var(--t-accent)", color: "var(--t-accent-on-accent)", fontSize: 14, fontWeight: 700, padding: "14px 0", borderRadius: 24, border: "none", cursor: saving || checkingDuplicate ? "default" : "pointer", opacity: saving || checkingDuplicate ? 0.5 : 1, transition: "opacity 0.15s ease", marginTop: 8 }}>
-          {submitLabel}
-        </button>
-      )}
-
       {/* Spacer so sticky bar doesn't cover last form fields */}
-      {isQuickQuoteMode && <div style={{ height: 72 }} />}
+      <div style={{ height: 72 }} />
 
-      {/* Sticky bottom CTA bar — Quick Quote mode only */}
-      {isQuickQuoteMode && (
-        <div style={{
+      {/* Sticky bottom CTA bar */}
+      <div style={{
           position: "sticky", bottom: -24, left: -24, right: -24,
           marginLeft: -24, marginRight: -24,
           backgroundColor: "var(--t-bg-secondary)",
@@ -735,7 +726,6 @@ export default function NewCustomerForm({ onOrchestrated, onClose, forceCustomer
             {submitLabel}
           </button>
         </div>
-      )}
     </form>
   );
 }
