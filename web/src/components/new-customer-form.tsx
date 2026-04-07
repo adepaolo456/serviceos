@@ -174,6 +174,17 @@ export default function NewCustomerForm({ onOrchestrated, onClose, forceCustomer
     enabled: isQuickQuoteMode && !!selectedCustomerId && showScheduling,
   });
 
+  // Smart default: auto-select Exchange when active dumpsters are detected
+  useEffect(() => {
+    if (dumpsterCheckLoading || !hasActiveOnsite || activeDumpsters.length === 0) return;
+    // Only default if no decision has been made yet (null = fresh state)
+    if (workflowDecision !== null) return;
+    setWorkflowDecision("exchange");
+    if (activeDumpsters.length === 1) {
+      setExchangeSelection(activeDumpsters[0].rentalChainId);
+    }
+  }, [dumpsterCheckLoading, hasActiveOnsite, activeDumpsters, workflowDecision]);
+
   // Customer autocomplete search
   const handleNameSearch = useCallback((first: string, last: string) => {
     const q = `${first} ${last}`.trim();
@@ -256,20 +267,22 @@ export default function NewCustomerForm({ onOrchestrated, onClose, forceCustomer
     setSchedPickupDate(d.toISOString().split("T")[0]);
   }, [schedDeliveryDate, schedDumpsterSize, sizeOptions, schedPickupTBD, pickupManuallySet]);
 
+  const compact = isQuickQuoteMode;
   const inputStyle: React.CSSProperties = {
     width: "100%", backgroundColor: "var(--t-bg-card)", border: "1px solid var(--t-border)",
-    borderRadius: 10, padding: "10px 16px", fontSize: 14, color: "var(--t-text-primary)",
+    borderRadius: 10, padding: compact ? "8px 14px" : "10px 16px", fontSize: 14, color: "var(--t-text-primary)",
     outline: "none", transition: "border-color 0.15s ease",
   };
   const labelStyle: React.CSSProperties = {
     display: "block", fontSize: 12, fontWeight: 600, color: "var(--t-text-muted)",
-    textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 6,
+    textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: compact ? 4 : 6,
   };
   const sectionStyle: React.CSSProperties = {
     fontSize: 12, fontWeight: 600, color: "var(--t-text-muted)", textTransform: "uppercase",
-    letterSpacing: "0.5px", paddingTop: 16, paddingBottom: 8,
-    borderTop: "1px solid var(--t-border)", marginTop: 16,
+    letterSpacing: "0.5px", paddingTop: compact ? 10 : 16, paddingBottom: compact ? 6 : 8,
+    borderTop: "1px solid var(--t-border)", marginTop: compact ? 10 : 16,
   };
+  const formGap = compact ? 10 : 16;
 
   const effectiveIntent = forceCustomerOnly ? "customer_only" : (nextStep === "schedule" ? "schedule_job" : "customer_only");
 
@@ -384,7 +397,7 @@ export default function NewCustomerForm({ onOrchestrated, onClose, forceCustomer
     : NEW_CUSTOMER_LABELS.saveCustomer;
 
   return (
-    <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+    <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: formGap }}>
       {error && (
         <div style={{ backgroundColor: "var(--t-error-soft)", border: "1px solid var(--t-border)", borderRadius: 10, padding: "12px 16px", fontSize: 13, color: "var(--t-error)" }}>
           {error}

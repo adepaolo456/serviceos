@@ -89,6 +89,7 @@ export function QuickQuoteProvider({ children }: { children: ReactNode }) {
         onClose={() => setCustomerFormOpen(false)}
         title="New Customer"
         side="left"
+        wide
       >
         <NewCustomerForm
           initialSchedule={pendingSchedule}
