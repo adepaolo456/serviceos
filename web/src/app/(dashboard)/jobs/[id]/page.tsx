@@ -80,16 +80,7 @@ interface Job {
 
 /* --- Constants --- */
 
-const STATUS_COLORS: Record<string, string> = {
-  pending: "text-yellow-500",
-  confirmed: "text-blue-400",
-  dispatched: "text-purple-400",
-  en_route: "text-orange-400",
-  arrived: "text-teal-400",
-  in_progress: "text-[var(--t-accent)]",
-  completed: "text-emerald-400",
-  cancelled: "text-[var(--t-error)]",
-};
+import { deriveDisplayStatus, DISPLAY_STATUS_LABELS, displayStatusColor } from "@/lib/job-status";
 
 const JOB_TYPE_COLORS: Record<string, string> = {
   delivery: "text-blue-400",
@@ -115,19 +106,19 @@ const VALID_TRANSITIONS: Record<string, string[]> = {
 };
 
 const TRANSITION_STYLES: Record<string, { label: string; className: string; icon: typeof CheckCircle2 }> = {
-  confirmed: { label: "Confirm", className: "bg-[var(--t-accent)] text-[var(--t-accent-on-accent)] hover:opacity-90", icon: CheckCircle2 },
-  dispatched: { label: "Dispatch", className: "bg-[var(--t-accent)] text-[var(--t-accent-on-accent)] hover:opacity-90", icon: Truck },
+  confirmed: { label: "Mark Ready", className: "bg-[var(--t-accent)] text-[var(--t-accent-on-accent)] hover:opacity-90", icon: CheckCircle2 },
+  dispatched: { label: "Assign", className: "bg-[var(--t-accent)] text-[var(--t-accent-on-accent)] hover:opacity-90", icon: Truck },
   en_route: { label: "En Route", className: "bg-[var(--t-accent)] text-[var(--t-accent-on-accent)] hover:opacity-90", icon: Truck },
   arrived: { label: "Arrived", className: "bg-[var(--t-accent)] text-[var(--t-accent-on-accent)] hover:opacity-90", icon: MapPin },
-  in_progress: { label: "Start Work", className: "bg-[var(--t-accent)] text-[var(--t-accent-on-accent)] hover:opacity-90", icon: AlertCircle },
+  in_progress: { label: "On Site", className: "bg-[var(--t-accent)] text-[var(--t-accent-on-accent)] hover:opacity-90", icon: AlertCircle },
   completed: { label: "Complete", className: "bg-[var(--t-accent)] text-[var(--t-accent-on-accent)] hover:opacity-90", icon: CheckCircle2 },
   cancelled: { label: "Cancel", className: "border border-[var(--t-error)]/20 text-[var(--t-error)] hover:bg-[var(--t-error-soft)]", icon: XCircle },
 };
 
 const TIMELINE_STEPS = [
   { key: "created_at", label: "Created", status: "pending" },
-  { key: "confirmed", label: "Confirmed", status: "confirmed" },
-  { key: "dispatched_at", label: "Dispatched", status: "dispatched" },
+  { key: "confirmed", label: "Unassigned", status: "confirmed" },
+  { key: "dispatched_at", label: "Assigned", status: "dispatched" },
   { key: "en_route_at", label: "En Route", status: "en_route" },
   { key: "arrived_at", label: "Arrived", status: "arrived" },
   { key: "completed_at", label: "Completed", status: "completed" },
@@ -222,7 +213,7 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
     setActionLoading(true);
     try {
       await api.patch(`/jobs/${id}/status`, { status: newStatus });
-      toast("success", `Job marked as ${newStatus.replace(/_/g, " ")}`);
+      toast("success", `Job marked as ${DISPLAY_STATUS_LABELS[deriveDisplayStatus(newStatus)]}`);
       await fetchJob();
     } catch { toast("error", "Failed to update"); } finally { setActionLoading(false); }
   };
@@ -300,8 +291,8 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
         <div>
           <div className="flex items-center gap-3 mb-1 flex-wrap">
             <h1 className="text-[28px] font-bold tracking-[-1px] text-[var(--t-frame-text)]">{job.job_number}</h1>
-            <span className={`text-xs font-medium ${STATUS_COLORS[job.status] || ""}`}>
-              {job.status.replace(/_/g, " ")}
+            <span className="text-xs font-medium" style={{ color: displayStatusColor(deriveDisplayStatus(job.status)) }}>
+              {DISPLAY_STATUS_LABELS[deriveDisplayStatus(job.status)]}
             </span>
             <span className={`text-[11px] font-medium capitalize ${typeColor}`}>
               {job.job_type}
