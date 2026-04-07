@@ -10,9 +10,10 @@ interface SlideOverProps {
   children: ReactNode;
   headerActions?: ReactNode;
   side?: "left" | "right";
+  wide?: boolean;
 }
 
-export default function SlideOver({ open, onClose, title, children, headerActions, side = "right" }: SlideOverProps) {
+export default function SlideOver({ open, onClose, title, children, headerActions, side = "right", wide }: SlideOverProps) {
   useEffect(() => {
     if (open) document.body.style.overflow = "hidden";
     else document.body.style.overflow = "";
@@ -32,7 +33,7 @@ export default function SlideOver({ open, onClose, title, children, headerAction
     <div className={`fixed inset-0 z-50 flex ${side === "left" ? "justify-start" : "justify-end"}`}>
       <div className="fixed inset-0 bg-black/60 backdrop-blur-sm animate-fade-in" onClick={onClose} />
       <div
-        className={`relative w-full max-w-lg shadow-2xl ${side === "left" ? "animate-slide-in-left rounded-r-[20px]" : "animate-slide-in-right rounded-l-[20px]"}`}
+        className={`relative w-full ${wide ? "max-w-2xl" : "max-w-lg"} shadow-2xl ${side === "left" ? "animate-slide-in-left rounded-r-[20px]" : "animate-slide-in-right rounded-l-[20px]"}`}
         style={{ backgroundColor: "var(--t-bg-secondary)", ...(side === "left" ? { borderRight: "1px solid var(--t-border)" } : { borderLeft: "1px solid var(--t-border)" }) }}
       >
         <div
