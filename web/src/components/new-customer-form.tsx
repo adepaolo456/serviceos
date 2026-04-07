@@ -160,6 +160,9 @@ export default function NewCustomerForm({ onOrchestrated, onClose, forceCustomer
     setExchangeSelection(null);
   };
 
+  // Customer section collapse (Quick Quote existing customer only)
+  const [customerCollapsed, setCustomerCollapsed] = useState(false);
+
   // Workflow decision state (Quick Quote existing customer only)
   const [workflowDecision, setWorkflowDecision] = useState<"new_rental" | "exchange" | null>(null);
   const [exchangeSelection, setExchangeSelection] = useState<string | null>(null); // rentalChainId
@@ -225,10 +228,11 @@ export default function NewCustomerForm({ onOrchestrated, onClose, forceCustomer
     }
     setShowDropdown(false);
     setDuplicateChecked(true);
+    if (isQuickQuoteMode) setCustomerCollapsed(true);
   };
 
   const clearSelectedCustomer = () => {
-    if (selectedCustomerId) { setSelectedCustomerId(null); setDuplicateChecked(false); setCustomerServiceSites([]); }
+    if (selectedCustomerId) { setSelectedCustomerId(null); setDuplicateChecked(false); setCustomerServiceSites([]); setCustomerCollapsed(false); }
   };
 
   // Close dropdown on click outside
@@ -404,102 +408,125 @@ export default function NewCustomerForm({ onOrchestrated, onClose, forceCustomer
         </div>
       )}
 
-      {/* Contact Info */}
-      <p style={{ ...sectionStyle, borderTop: "none", marginTop: 0, paddingTop: 0 }}>Contact Info</p>
-
-      <div>
-        <label style={labelStyle}>Type</label>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-          {(["residential", "commercial"] as const).map(t => (
-            <button key={t} type="button" onClick={() => setType(t)}
-              style={{ padding: "10px 0", borderRadius: 10, fontSize: 13, fontWeight: 600, textTransform: "capitalize", border: type === t ? "none" : "1px solid var(--t-border)", backgroundColor: type === t ? "var(--t-accent)" : "transparent", color: type === t ? "var(--t-accent-on-accent)" : "var(--t-text-muted)", cursor: "pointer", transition: "all 0.15s ease" }}>
-              {t}
+      {/* Customer section — collapsed summary or full form */}
+      {isQuickQuoteMode && selectedCustomerId && customerCollapsed ? (
+        <div style={{ backgroundColor: "var(--t-bg-card)", border: "1px solid var(--t-border)", borderRadius: 10, padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 600, color: "var(--t-text-primary)" }}>{firstName} {lastName}</div>
+            {formatAddr(billingAddress) && <div style={{ fontSize: 12, color: "var(--t-text-muted)", marginTop: 2 }}>{formatAddr(billingAddress)}</div>}
+            {phone && <div style={{ fontSize: 12, color: "var(--t-text-muted)", marginTop: 1 }}>{phone}</div>}
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <button type="button" onClick={() => setCustomerCollapsed(false)}
+              style={{ fontSize: 12, fontWeight: 600, color: "var(--t-accent)", background: "none", border: "none", cursor: "pointer" }}>
+              Edit
             </button>
-          ))}
+            <button type="button" onClick={() => { clearSelectedCustomer(); setFirstName(""); setLastName(""); setEmail(""); setPhone(""); }}
+              style={{ fontSize: 12, fontWeight: 600, color: "var(--t-text-muted)", background: "none", border: "none", cursor: "pointer" }}>
+              &times;
+            </button>
+          </div>
         </div>
-      </div>
+      ) : (
+        <>
+          {/* Contact Info */}
+          <p style={{ ...sectionStyle, borderTop: "none", marginTop: 0, paddingTop: 0 }}>Contact Info</p>
 
-      {type === "commercial" && (
-        <div>
-          <label style={labelStyle}>Company</label>
-          <input value={companyName} onChange={e => setCompanyName(e.target.value)} style={inputStyle} placeholder="Acme Construction" />
-        </div>
+          <div>
+            <label style={labelStyle}>Type</label>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+              {(["residential", "commercial"] as const).map(t => (
+                <button key={t} type="button" onClick={() => setType(t)}
+                  style={{ padding: "10px 0", borderRadius: 10, fontSize: 13, fontWeight: 600, textTransform: "capitalize", border: type === t ? "none" : "1px solid var(--t-border)", backgroundColor: type === t ? "var(--t-accent)" : "transparent", color: type === t ? "var(--t-accent-on-accent)" : "var(--t-text-muted)", cursor: "pointer", transition: "all 0.15s ease" }}>
+                  {t}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {type === "commercial" && (
+            <div>
+              <label style={labelStyle}>Company</label>
+              <input value={companyName} onChange={e => setCompanyName(e.target.value)} style={inputStyle} placeholder="Acme Construction" />
+            </div>
+          )}
+
+          <div style={{ position: "relative" }} ref={dropdownRef}>
+            {selectedCustomerId && (
+              <div style={{ backgroundColor: "var(--t-accent-soft)", borderRadius: 8, padding: "8px 12px", marginBottom: 8, fontSize: 12, color: "var(--t-accent)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span>{NEW_CUSTOMER_LABELS.existingCustomerSelected}</span>
+                <button type="button" onClick={() => { clearSelectedCustomer(); setFirstName(""); setLastName(""); setEmail(""); setPhone(""); }} style={{ background: "none", border: "none", color: "var(--t-accent)", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>&times;</button>
+              </div>
+            )}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <div>
+                <label style={labelStyle}>First Name</label>
+                <input value={firstName} onChange={e => { setFirstName(e.target.value); clearSelectedCustomer(); handleNameSearch(e.target.value, lastName); }} required style={inputStyle} placeholder="Jane" autoComplete="off" />
+              </div>
+              <div>
+                <label style={labelStyle}>Last Name</label>
+                <input value={lastName} onChange={e => { setLastName(e.target.value); clearSelectedCustomer(); handleNameSearch(firstName, e.target.value); }} required style={inputStyle} placeholder="Smith" autoComplete="off" />
+              </div>
+            </div>
+            {showDropdown && searchResults.length > 0 && (
+              <div style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 50, backgroundColor: "var(--t-bg-card)", border: "1px solid var(--t-border)", borderRadius: 10, marginTop: 4, boxShadow: "0 4px 12px rgba(0,0,0,0.15)", maxHeight: 220, overflowY: "auto" }}>
+                {searchResults.map(c => (
+                  <button key={c.id} type="button" onClick={() => selectExistingCustomer(c)}
+                    style={{ display: "block", width: "100%", textAlign: "left", padding: "10px 14px", border: "none", borderBottom: "1px solid var(--t-border)", backgroundColor: "transparent", cursor: "pointer", fontSize: 13 }}
+                    onMouseEnter={e => (e.currentTarget.style.backgroundColor = "var(--t-frame-hover)")}
+                    onMouseLeave={e => (e.currentTarget.style.backgroundColor = "transparent")}>
+                    <div style={{ fontWeight: 600, color: "var(--t-text-primary)" }}>{c.first_name} {c.last_name}</div>
+                    {(c.phone || c.email) && (
+                      <div style={{ fontSize: 11, color: "var(--t-text-muted)", marginTop: 2 }}>
+                        {c.phone}{c.phone && c.email ? " · " : ""}{c.email}
+                      </div>
+                    )}
+                  </button>
+                ))}
+                <button type="button" onClick={() => setShowDropdown(false)}
+                  style={{ display: "block", width: "100%", textAlign: "left", padding: "10px 14px", border: "none", backgroundColor: "transparent", cursor: "pointer", fontSize: 13, color: "var(--t-accent)", fontWeight: 600 }}>
+                  {NEW_CUSTOMER_LABELS.continueAsNewCustomer}
+                </button>
+              </div>
+            )}
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <div>
+              <label style={labelStyle}>Phone</label>
+              <input type="tel" value={phone} onChange={e => setPhone(e.target.value)} style={inputStyle} placeholder="(555) 555-5555" />
+            </div>
+            <div>
+              <label style={labelStyle}>Email</label>
+              <input type="email" value={email} onChange={e => setEmail(e.target.value)} style={inputStyle} placeholder="jane@example.com" />
+            </div>
+          </div>
+
+          {/* Address */}
+          <p style={sectionStyle}>Billing Address</p>
+          <AddressAutocomplete value={billingAddress} onChange={setBillingAddress} placeholder="Search address..." />
+
+          {/* Account */}
+          <p style={sectionStyle}>Account</p>
+          <div>
+            <label style={labelStyle}>Lead Source</label>
+            <select value={leadSource} onChange={e => setLeadSource(e.target.value)} style={{ ...inputStyle, appearance: "none" }}>
+              <option value="">Select source</option>
+              <option value="phone">Phone Call</option>
+              <option value="website">Website</option>
+              <option value="marketplace">RentThis Marketplace</option>
+              <option value="referral">Referral</option>
+              <option value="google">Google</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+
+          <div>
+            <label style={labelStyle}>Tags</label>
+            <input value={tags} onChange={e => setTags(e.target.value)} style={inputStyle} placeholder="VIP, Contractor, Repeat Customer (comma-separated)" />
+          </div>
+        </>
       )}
-
-      <div style={{ position: "relative" }} ref={dropdownRef}>
-        {selectedCustomerId && (
-          <div style={{ backgroundColor: "var(--t-accent-soft)", borderRadius: 8, padding: "8px 12px", marginBottom: 8, fontSize: 12, color: "var(--t-accent)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <span>{NEW_CUSTOMER_LABELS.existingCustomerSelected}</span>
-            <button type="button" onClick={() => { clearSelectedCustomer(); setFirstName(""); setLastName(""); setEmail(""); setPhone(""); }} style={{ background: "none", border: "none", color: "var(--t-accent)", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>&times;</button>
-          </div>
-        )}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-          <div>
-            <label style={labelStyle}>First Name</label>
-            <input value={firstName} onChange={e => { setFirstName(e.target.value); clearSelectedCustomer(); handleNameSearch(e.target.value, lastName); }} required style={inputStyle} placeholder="Jane" autoComplete="off" />
-          </div>
-          <div>
-            <label style={labelStyle}>Last Name</label>
-            <input value={lastName} onChange={e => { setLastName(e.target.value); clearSelectedCustomer(); handleNameSearch(firstName, e.target.value); }} required style={inputStyle} placeholder="Smith" autoComplete="off" />
-          </div>
-        </div>
-        {showDropdown && searchResults.length > 0 && (
-          <div style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 50, backgroundColor: "var(--t-bg-card)", border: "1px solid var(--t-border)", borderRadius: 10, marginTop: 4, boxShadow: "0 4px 12px rgba(0,0,0,0.15)", maxHeight: 220, overflowY: "auto" }}>
-            {searchResults.map(c => (
-              <button key={c.id} type="button" onClick={() => selectExistingCustomer(c)}
-                style={{ display: "block", width: "100%", textAlign: "left", padding: "10px 14px", border: "none", borderBottom: "1px solid var(--t-border)", backgroundColor: "transparent", cursor: "pointer", fontSize: 13 }}
-                onMouseEnter={e => (e.currentTarget.style.backgroundColor = "var(--t-frame-hover)")}
-                onMouseLeave={e => (e.currentTarget.style.backgroundColor = "transparent")}>
-                <div style={{ fontWeight: 600, color: "var(--t-text-primary)" }}>{c.first_name} {c.last_name}</div>
-                {(c.phone || c.email) && (
-                  <div style={{ fontSize: 11, color: "var(--t-text-muted)", marginTop: 2 }}>
-                    {c.phone}{c.phone && c.email ? " · " : ""}{c.email}
-                  </div>
-                )}
-              </button>
-            ))}
-            <button type="button" onClick={() => setShowDropdown(false)}
-              style={{ display: "block", width: "100%", textAlign: "left", padding: "10px 14px", border: "none", backgroundColor: "transparent", cursor: "pointer", fontSize: 13, color: "var(--t-accent)", fontWeight: 600 }}>
-              {NEW_CUSTOMER_LABELS.continueAsNewCustomer}
-            </button>
-          </div>
-        )}
-      </div>
-
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-        <div>
-          <label style={labelStyle}>Phone</label>
-          <input type="tel" value={phone} onChange={e => setPhone(e.target.value)} style={inputStyle} placeholder="(555) 555-5555" />
-        </div>
-        <div>
-          <label style={labelStyle}>Email</label>
-          <input type="email" value={email} onChange={e => setEmail(e.target.value)} style={inputStyle} placeholder="jane@example.com" />
-        </div>
-      </div>
-
-      {/* Address */}
-      <p style={sectionStyle}>Billing Address</p>
-      <AddressAutocomplete value={billingAddress} onChange={setBillingAddress} placeholder="Search address..." />
-
-      {/* Account */}
-      <p style={sectionStyle}>Account</p>
-      <div>
-        <label style={labelStyle}>Lead Source</label>
-        <select value={leadSource} onChange={e => setLeadSource(e.target.value)} style={{ ...inputStyle, appearance: "none" }}>
-          <option value="">Select source</option>
-          <option value="phone">Phone Call</option>
-          <option value="website">Website</option>
-          <option value="marketplace">RentThis Marketplace</option>
-          <option value="referral">Referral</option>
-          <option value="google">Google</option>
-          <option value="other">Other</option>
-        </select>
-      </div>
-
-      <div>
-        <label style={labelStyle}>Tags</label>
-        <input value={tags} onChange={e => setTags(e.target.value)} style={inputStyle} placeholder="VIP, Contractor, Repeat Customer (comma-separated)" />
-      </div>
 
       {/* Next step selector — hidden in forceCustomerOnly and Quick Quote modes */}
       {!forceCustomerOnly && !isQuickQuoteMode && (
