@@ -6,6 +6,8 @@ import { api } from "@/lib/api";
 import { useToast } from "@/components/toast";
 import { formatCurrency } from "@/lib/utils";
 import AddressAutocomplete, { type AddressValue } from "@/components/address-autocomplete";
+import { useActiveOnsiteDumpsters } from "@/lib/use-active-onsite-dumpsters";
+import { getFeatureTooltip } from "@/lib/feature-registry";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -128,7 +130,7 @@ function addDays(dateStr: string, days: number): string {
 
 function SectionDivider({ label }: { label: string }) {
   return (
-    <div className="relative flex items-center py-4">
+    <div className="relative flex items-center py-2 md:py-2">
       <div className="flex-1 h-px" style={{ backgroundColor: "var(--t-border)" }} />
       <span
         className="px-3 text-[11px] font-semibold uppercase tracking-wide"
@@ -174,7 +176,7 @@ function TileButton({
 
 function ProgressDots({ step }: { step: number }) {
   return (
-    <div className="flex items-center justify-center gap-2 py-3">
+    <div className="flex items-center justify-center gap-2 py-2">
       {[1, 2, 3].map((s) => (
         <div
           key={s}
@@ -244,6 +246,54 @@ export default function BookingWizard({
   const [submitting, setSubmitting] = useState(false);
   const [sendInvoiceNow, setSendInvoiceNow] = useState(false);
   const [preferredPaymentMethod, setPreferredPaymentMethod] = useState<"card" | "cash" | "check" | "invoice">("invoice");
+  const [rentalsLoading, setRentalsLoading] = useState(false);
+
+  // Smart exchange detection
+  const [jobTypeManuallySet, setJobTypeManuallySet] = useState(false);
+  const [exchangeAutoDetected, setExchangeAutoDetected] = useState(false);
+
+  // Derive structured site address for detection hook
+  const detectionAddress = (() => {
+    let addr: AddressFields | undefined;
+    if (serviceAddressMode === "different" && newServiceAddress.street) {
+      addr = newServiceAddress;
+    } else if (serviceAddressMode === "existing" && selectedCustomer?.service_addresses?.length) {
+      addr = selectedCustomer.service_addresses[selectedAddressIdx];
+    } else if (serviceAddressMode === "same" && billingAddress.street) {
+      addr = billingAddress;
+    }
+    // Require at least street + city + state for confident matching
+    if (!addr || !addr.street || !addr.city || !addr.state) return undefined;
+    return { street: addr.street, city: addr.city, state: addr.state, zip: addr.zip || "" };
+  })();
+
+  // Active onsite detection hook
+  const {
+    hasActiveOnsite: detectedOnsite,
+    dumpsters: detectedDumpsters,
+    isLoading: detectionLoading,
+  } = useActiveOnsiteDumpsters({
+    customerId: selectedCustomer?.id,
+    siteAddress: detectionAddress,
+    enabled: open,
+  });
+
+  // Auto-default job type based on detection (only when not manually overridden)
+  useEffect(() => {
+    if (detectionLoading) return;
+    if (jobTypeManuallySet) return;
+
+    if (detectedOnsite && detectedDumpsters.length > 0) {
+      setTaskType("exchange");
+      setExchangeAutoDetected(true);
+      // Load detected dumpsters into active rentals for the exchange picker
+      // We still need the full rental chain data for exchange submission,
+      // so also fetch rental chains when entering step 3
+    } else if (!detectedOnsite && !jobTypeManuallySet) {
+      setTaskType("drop_off");
+      setExchangeAutoDetected(false);
+    }
+  }, [detectedOnsite, detectedDumpsters, detectionLoading, jobTypeManuallySet]);
 
   // Lock body scroll
   useEffect(() => {
@@ -301,7 +351,10 @@ export default function BookingWizard({
       setPriceQuote(null);
       setAvailability(null);
       setSubmitting(false);
+      setRentalsLoading(false);
       setPreferredPaymentMethod(initialSchedule?.paymentMethod || "invoice");
+      setJobTypeManuallySet(false);
+      setExchangeAutoDetected(false);
       // Hydrate from initialSchedule if provided
       const locked = !!(initialSchedule?.lockSiteAddress && initialSchedule?.siteAddress);
       setSiteAddressLocked(locked);
@@ -339,18 +392,25 @@ export default function BookingWizard({
           if (opts.length > 0 && !dumpsterSize) setDumpsterSize(opts[0].asset_subtype);
         })
         .catch(() => {});
-      // Fetch active rentals for customer to detect exchange opportunities
+      // Fetch active rentals for customer (needed for exchange submission path)
       if (selectedCustomer?.id) {
+        setRentalsLoading(true);
         api.get<any[]>(`/rental-chains?customerId=${selectedCustomer.id}&status=active`)
           .then((chains) => {
             const active = (Array.isArray(chains) ? chains : []).filter(
               (c: any) => c.status === "active" && !c.actual_pickup_date,
             );
             setActiveRentals(active);
+            // If exchange was auto-detected and exactly 1 rental, auto-select it
+            if (!jobTypeManuallySet && detectedOnsite && active.length === 1) {
+              setSelectedRentalForExchange(active[0].id);
+            }
           })
-          .catch(() => setActiveRentals([]));
+          .catch(() => setActiveRentals([]))
+          .finally(() => setRentalsLoading(false));
       } else {
         setActiveRentals([]);
+        setRentalsLoading(false);
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -436,6 +496,9 @@ export default function BookingWizard({
     if (c.billing_address) {
       setBillingAddress({ ...c.billing_address, street2: c.billing_address.street2 || "", county: c.billing_address.county || "" });
     }
+    // Customer change = new decision context — reset manual override
+    setJobTypeManuallySet(false);
+    setExchangeAutoDetected(false);
     // When a quote-sourced address is locked, do NOT auto-switch to the customer's
     // saved addresses. Keep the quote address active; customer addresses will be
     // shown as selectable alternatives in the UI.
@@ -462,7 +525,14 @@ export default function BookingWizard({
     [a.street, a.city, a.state, a.zip].filter(Boolean).join(", ");
 
   /* ---- Submit ---- */
+  const exchangeReady = taskType !== "exchange" || !!selectedRentalForExchange;
+
   const handleSubmit = async (collectPayment: boolean) => {
+    // Belt-and-suspenders: block exchange submit without a selected rental
+    if (taskType === "exchange" && !selectedRentalForExchange) {
+      toast("error", "Select a dumpster to exchange");
+      return;
+    }
     setSubmitting(true);
     const svcAddr = resolvedServiceAddress();
     const pickupDateStr = addDays(deliveryDate, rentalLength);
@@ -569,7 +639,7 @@ export default function BookingWizard({
         <ProgressDots step={step} />
 
         {/* Body */}
-        <div className="flex-1 overflow-y-auto px-6 pb-6">
+        <div className="flex-1 overflow-y-auto px-6 pb-4">
           {/* ============================== STEP 1 ============================== */}
           {step === 1 && (
             <div className="space-y-4">
@@ -657,6 +727,8 @@ export default function BookingWizard({
                       setPhone("");
                       setAdditionalContacts([]);
                       setServiceAddressMode("same");
+                      setJobTypeManuallySet(false);
+                      setExchangeAutoDetected(false);
                     }}
                   >
                     Clear
@@ -899,7 +971,7 @@ export default function BookingWizard({
               )}
 
               {/* Continue */}
-              <div className="pt-4">
+              <div className="pt-2">
                 <button
                   type="button"
                   disabled={!step1Valid}
@@ -999,7 +1071,7 @@ export default function BookingWizard({
               </div>
 
               {/* Navigation */}
-              <div className="flex gap-3 pt-4">
+              <div className="flex gap-3 pt-2">
                 <button
                   type="button"
                   onClick={() => setStep(1)}
@@ -1039,15 +1111,16 @@ export default function BookingWizard({
                 <div className="flex gap-3">
                   <TileButton
                     selected={taskType === "drop_off"}
-                    onClick={() => { setTaskType("drop_off"); setSelectedRentalForExchange(""); }}
+                    onClick={() => { setTaskType("drop_off"); setSelectedRentalForExchange(""); setJobTypeManuallySet(true); setExchangeAutoDetected(false); }}
                     title="New Delivery"
                     subtitle="Deliver dumpster"
                   />
-                  {activeRentals.length > 0 && (
+                  {(activeRentals.length > 0 || detectedOnsite) && (
                     <TileButton
                       selected={taskType === "exchange"}
                       onClick={() => {
                         setTaskType("exchange");
+                        setJobTypeManuallySet(true);
                         if (activeRentals.length === 1) setSelectedRentalForExchange(activeRentals[0].id);
                       }}
                       title="Exchange"
@@ -1055,10 +1128,25 @@ export default function BookingWizard({
                     />
                   )}
                 </div>
+                {/* Auto-detection helper message */}
+                {exchangeAutoDetected && taskType === "exchange" && (
+                  <p
+                    className="mt-1.5 text-xs"
+                    style={{ color: "var(--t-accent)" }}
+                  >
+                    {getFeatureTooltip("exchange_detection")}
+                  </p>
+                )}
               </div>
 
               {/* Exchange: active rentals on site */}
-              {taskType === "exchange" && activeRentals.length > 0 && (
+              {taskType === "exchange" && rentalsLoading && (
+                <div className="flex items-center gap-2 py-3">
+                  <Loader2 className="h-4 w-4 animate-spin" style={{ color: "var(--t-text-muted)" }} />
+                  <span className="text-sm" style={{ color: "var(--t-text-muted)" }}>Loading active rentals...</span>
+                </div>
+              )}
+              {taskType === "exchange" && !rentalsLoading && activeRentals.length > 0 && (
                 <div className="space-y-3">
                   <SectionDivider label="Dumpster Being Removed" />
                   {activeRentals.length === 1 ? (
@@ -1234,7 +1322,7 @@ export default function BookingWizard({
 
               {/* Price quote */}
               <div
-                className="rounded-[20px] border p-4 space-y-2"
+                className="rounded-[20px] border p-3 space-y-1.5"
                 style={{ borderColor: "var(--t-border)", backgroundColor: "var(--t-bg-card)" }}
               >
                 <h4 className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--t-text-muted)" }}>
@@ -1281,7 +1369,7 @@ export default function BookingWizard({
               </div>
 
               {/* Send invoice option */}
-              <label className="flex items-center gap-2 pt-2 cursor-pointer select-none">
+              <label className="flex items-center gap-2 pt-1 cursor-pointer select-none">
                 <input
                   type="checkbox"
                   checked={sendInvoiceNow}
@@ -1295,7 +1383,7 @@ export default function BookingWizard({
               </label>
 
               {/* Footer buttons */}
-              <div className="flex gap-3 pt-2">
+              <div className="flex gap-3 pt-1">
                 <button
                   type="button"
                   onClick={() => setStep(2)}
@@ -1306,7 +1394,7 @@ export default function BookingWizard({
                 </button>
                 <button
                   type="button"
-                  disabled={submitting}
+                  disabled={submitting || !exchangeReady}
                   onClick={() => handleSubmit(false)}
                   className="flex-1 rounded-full py-3 text-sm font-semibold border transition-opacity disabled:opacity-50"
                   style={{ borderColor: "var(--t-accent)", color: "var(--t-accent)" }}
@@ -1315,7 +1403,7 @@ export default function BookingWizard({
                 </button>
                 <button
                   type="button"
-                  disabled={submitting}
+                  disabled={submitting || !exchangeReady}
                   onClick={() => handleSubmit(true)}
                   className="flex-1 rounded-full py-3 text-sm font-semibold transition-opacity disabled:opacity-50"
                   style={{ backgroundColor: "var(--t-accent)", color: "#fff" }}

@@ -1078,6 +1078,117 @@ export class JobsService {
       .getMany();
   }
 
+  /**
+   * Find active on-site dumpsters for a customer, optionally filtered by site address.
+   * "Active onsite" = rental chain is active, no actual pickup date, and the delivery
+   * job's service_address matches when an address filter is provided.
+   */
+  async getActiveOnsite(
+    tenantId: string,
+    customerId: string,
+    address?: { street: string; city: string; state: string; zip?: string },
+  ) {
+    if (!customerId) {
+      return { hasActiveOnsite: false, dumpsters: [] };
+    }
+
+    // Query active rental chains with their delivery jobs
+    const rows: Array<{
+      chain_id: string;
+      asset_id: string | null;
+      dumpster_size: string;
+      drop_off_date: string;
+      chain_status: string;
+      job_id: string | null;
+      job_service_address: Record<string, any> | null;
+      asset_identifier: string | null;
+    }> = await this.jobsRepository.manager.query(
+      `SELECT
+         rc.id            AS chain_id,
+         rc.asset_id      AS asset_id,
+         rc.dumpster_size AS dumpster_size,
+         rc.drop_off_date AS drop_off_date,
+         rc.status        AS chain_status,
+         dj.id            AS job_id,
+         dj.service_address AS job_service_address,
+         a.identifier     AS asset_identifier
+       FROM rental_chains rc
+       LEFT JOIN task_chain_links tcl
+         ON tcl.rental_chain_id = rc.id AND tcl.task_type = 'drop_off'
+       LEFT JOIN jobs dj
+         ON dj.id = tcl.job_id
+       LEFT JOIN assets a
+         ON a.id = rc.asset_id
+       WHERE rc.tenant_id = $1
+         AND rc.customer_id = $2
+         AND rc.status = 'active'
+         AND rc.actual_pickup_date IS NULL`,
+      [tenantId, customerId],
+    );
+
+    let filtered = rows;
+
+    // Component-level address matching: each component must match individually
+    if (address) {
+      const norm = (s: string | undefined | null) =>
+        (s || '')
+          .toLowerCase()
+          .replace(/[.,#\-]/g, '')
+          .replace(/\s+/g, ' ')
+          .trim();
+
+      const qStreet = norm(address.street);
+      const qCity = norm(address.city);
+      const qState = norm(address.state);
+      const qZip = norm(address.zip);
+
+      filtered = rows.filter((r) => {
+        if (!r.job_service_address) return false;
+        const sa = r.job_service_address;
+
+        // Street: normalize and compare (starts-with for abbreviation tolerance, e.g. "St" vs "Street")
+        const sStreet = norm(sa.street);
+        const streetMatch =
+          sStreet === qStreet ||
+          sStreet.startsWith(qStreet) ||
+          qStreet.startsWith(sStreet);
+
+        // City: exact normalized match (critical — prevents "Boston" vs "Brockton")
+        const cityMatch = norm(sa.city) === qCity;
+
+        // State: exact normalized match
+        const stateMatch = norm(sa.state) === qState;
+
+        // Zip: match if both present
+        const sZip = norm(sa.zip);
+        const zipMatch = !qZip || !sZip || sZip === qZip;
+
+        return streetMatch && cityMatch && stateMatch && zipMatch;
+      });
+    }
+
+    const dumpsters = filtered.map((r) => ({
+      jobId: r.job_id,
+      assetId: r.asset_id,
+      size: r.dumpster_size,
+      deliveredAt: r.drop_off_date,
+      address: r.job_service_address
+        ? [
+            r.job_service_address.street,
+            r.job_service_address.city,
+            r.job_service_address.state,
+            r.job_service_address.zip,
+          ]
+            .filter(Boolean)
+            .join(', ')
+        : null,
+      rentalChainId: r.chain_id,
+      assetIdentifier: r.asset_identifier,
+    }));
+
+    return { hasActiveOnsite: dumpsters.length > 0, dumpsters };
+  }
+
   async findUnassigned(tenantId: string) {
     return this.jobsRepository
       .createQueryBuilder('j')
