@@ -4,10 +4,8 @@ import { useState, useEffect, useCallback } from "react";
 import { DollarSign, Mail, Loader2 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useToast } from "@/components/toast";
-import { useBooking } from "@/components/booking-provider";
 import { useQuickQuote } from "@/components/quick-quote-provider";
 import SlideOver from "@/components/slide-over";
-import CustomerPickerDrawer from "@/components/customer-picker-drawer";
 import AddressAutocomplete, { type AddressValue } from "@/components/address-autocomplete";
 import { getFeatureLabel } from "@/lib/feature-registry";
 import type { InitialSchedule } from "@/components/booking-wizard";
@@ -52,8 +50,7 @@ interface PricingResult {
 }
 
 export default function QuickQuoteDrawer() {
-  const { drawerOpen, closeQuickQuote } = useQuickQuote();
-  const { openWizard } = useBooking();
+  const { drawerOpen, closeQuickQuote, openCustomerPicker } = useQuickQuote();
   const { toast } = useToast();
 
   // Form state
@@ -120,11 +117,7 @@ export default function QuickQuoteDrawer() {
     setAddressDisplay(addr.formatted || [addr.street, addr.city, addr.state, addr.zip].filter(Boolean).join(", "));
   }, []);
 
-  // Customer picker state for customer-first Book Now flow
-  const [customerPickerOpen, setCustomerPickerOpen] = useState(false);
-  const [pendingSchedule, setPendingSchedule] = useState<InitialSchedule | undefined>();
-
-  // Book Now — open customer-first picker, then hand off to booking wizard
+  // Book Now — build schedule, then open customer picker via provider (survives drawer remount)
   const handleBookNow = useCallback(() => {
     const schedule: InitialSchedule = {
       dumpsterSize: selectedSize,
@@ -140,19 +133,10 @@ export default function QuickQuoteDrawer() {
         },
       } : {}),
     };
-    setPendingSchedule(schedule);
+    // Open customer picker BEFORE closing quote drawer — state lives in provider
+    openCustomerPicker(schedule);
     closeQuickQuote();
-    setCustomerPickerOpen(true);
-  }, [closeQuickQuote, selectedSize, address]);
-
-  // After customer is selected/skipped, open booking wizard with full context
-  const handleCustomerSelected = useCallback((opts: { customerId?: string; initialSchedule?: InitialSchedule }) => {
-    setCustomerPickerOpen(false);
-    openWizard({
-      customerId: opts.customerId,
-      initialSchedule: opts.initialSchedule,
-    });
-  }, [openWizard]);
+  }, [closeQuickQuote, openCustomerPicker, selectedSize, address]);
 
   // Email Quote — atomic: create quote + send email
   const handleSendQuote = useCallback(async () => {
@@ -186,7 +170,6 @@ export default function QuickQuoteDrawer() {
   const outsideServiceArea = !!pricingError;
 
   return (
-  <>
     <SlideOver open={drawerOpen} onClose={closeQuickQuote} title={getFeatureLabel("quick_quote")} side="left">
       <div className="space-y-5">
         {/* Dumpster Size */}
@@ -450,13 +433,5 @@ export default function QuickQuoteDrawer() {
         )}
       </div>
     </SlideOver>
-
-    <CustomerPickerDrawer
-      open={customerPickerOpen}
-      onClose={() => setCustomerPickerOpen(false)}
-      onSelect={handleCustomerSelected}
-      initialSchedule={pendingSchedule}
-    />
-  </>
   );
 }
