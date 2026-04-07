@@ -127,4 +127,9 @@ export class CreatePublicBookingDto {
   @IsOptional()
   @IsString()
   source?: string;
+
+  @ApiPropertyOptional({ description: 'Quote ID for conversion tracking' })
+  @IsOptional()
+  @IsUUID()
+  quoteId?: string;
 }

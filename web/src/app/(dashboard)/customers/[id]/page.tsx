@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { useBooking } from "@/components/booking-provider";
 import {
   ArrowLeft, Mail, Phone, MapPin, Building, Calendar, Pencil, Trash2,
-  Briefcase, FileText, DollarSign, Clock, Plus, MessageSquare,
+  Briefcase, FileText, FileCheck, DollarSign, Clock, Plus, MessageSquare,
   CreditCard, Send, Tag, Settings, User,
 } from "lucide-react";
 import { api } from "@/lib/api";
@@ -74,6 +74,7 @@ const TABS = [
   { key: "overview", label: "Overview", icon: User },
   { key: "billing", label: "Billing", icon: CreditCard },
   { key: "jobs", label: "Jobs", icon: Briefcase },
+  { key: "quotes", label: "Quotes", icon: FileCheck },
   { key: "invoices", label: "Invoices", icon: FileText },
   { key: "pricing", label: "Pricing", icon: DollarSign },
   { key: "notes", label: "Notes", icon: MessageSquare },
@@ -93,6 +94,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
   const [jobs, setJobs] = useState<Job[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [notes, setNotes] = useState<Note[]>([]);
+  const [customerQuotes, setCustomerQuotes] = useState<Array<{ id: string; quote_number: string; asset_subtype: string; total_quoted: number; derived_status: string; created_at: string; customer_name: string | null }>>([]);
   const [creditMemos, setCreditMemos] = useState<{ id: string; amount: number; reason: string; status: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<Tab>("overview");
@@ -110,6 +112,9 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
           api.get<Note[]>(`/customers/${id}/notes`).catch(() => []),
         ]);
         setCustomer(c); setJobs(j.data); setInvoices(i.data); setNotes(n);
+        api.get<{ data: any[] }>(`/quotes?customerId=${id}&limit=50`)
+          .then((r) => setCustomerQuotes(r.data || []))
+          .catch(() => setCustomerQuotes([]));
         api.get<{ id: string; amount: number; reason: string; status: string }[]>(`/invoices/credit-memos/by-customer/${id}`)
           .then(setCreditMemos).catch(() => setCreditMemos([]));
       } catch { /* */ }
@@ -358,6 +363,33 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
                       <td className="px-4 py-3 text-[var(--t-text-muted)]">{j.asset?.identifier || "—"}</td>
                       <td className="px-4 py-3"><span className={`text-[10px] font-medium capitalize ${STATUS_CLS[j.status] || ""}`}>{j.status.replace(/_/g, " ")}</span></td>
                       <td className="px-4 py-3 text-[var(--t-text-primary)] tabular-nums">{j.total_price ? fmtMoneyShort(j.total_price) : "—"}</td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ===== QUOTES TAB ===== */}
+      {tab === "quotes" && (
+        <div className="rounded-[20px] bg-[var(--t-bg-card)] border border-[var(--t-border)] overflow-hidden">
+          <div className="table-scroll">
+            <table className="w-full text-sm">
+              <thead><tr className="border-b border-[var(--t-border)]">
+                {["Quote #", "Size", "Amount", "Status", "Date"].map(h => (
+                  <th key={h} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-[var(--t-text-muted)]">{h}</th>
+                ))}
+              </tr></thead>
+              <tbody>
+                {customerQuotes.length === 0 ? <tr><td colSpan={5} className="py-12 text-center text-xs text-[var(--t-text-muted)]">No quotes for this customer</td></tr> :
+                  customerQuotes.map(q => (
+                    <tr key={q.id} onClick={() => router.push(`/quotes`)} className="border-b border-[var(--t-border)] last:border-0 cursor-pointer hover:bg-[var(--t-bg-card-hover)] transition-colors">
+                      <td className="px-4 py-3 font-medium text-[var(--t-accent)]">{q.quote_number}</td>
+                      <td className="px-4 py-3 text-[var(--t-text-primary)]">{q.asset_subtype}</td>
+                      <td className="px-4 py-3 text-[var(--t-text-primary)] tabular-nums">${Number(q.total_quoted).toFixed(2)}</td>
+                      <td className="px-4 py-3"><span className="text-[10px] font-medium capitalize" style={{ color: q.derived_status === "converted" ? "var(--t-success, #22c55e)" : q.derived_status === "expired" ? "var(--t-error)" : "var(--t-accent)" }}>{q.derived_status}</span></td>
+                      <td className="px-4 py-3 text-[var(--t-text-muted)]">{new Date(q.created_at).toLocaleDateString()}</td>
                     </tr>
                   ))}
               </tbody>
