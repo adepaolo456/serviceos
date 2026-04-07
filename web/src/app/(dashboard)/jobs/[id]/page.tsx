@@ -115,6 +115,17 @@ const TRANSITION_STYLES: Record<string, { label: string; className: string; icon
   cancelled: { label: "Cancel", className: "border border-[var(--t-error)]/20 text-[var(--t-error)] hover:bg-[var(--t-error-soft)]", icon: XCircle },
 };
 
+// Office can only trigger these as primary actions
+const OFFICE_ALLOWED_TRANSITIONS = new Set(["confirmed", "dispatched", "cancelled"]);
+
+// Override corrections: current stored status → allowed correction targets
+const OVERRIDE_TARGETS: Record<string, string[]> = {
+  dispatched: ["en_route"],
+  en_route: ["dispatched", "arrived", "in_progress"],
+  arrived: ["en_route", "in_progress", "completed"],
+  in_progress: ["arrived", "completed"],
+};
+
 const TIMELINE_STEPS = [
   { key: "created_at", label: "Created", status: "pending" },
   { key: "confirmed", label: "Unassigned", status: "confirmed" },
@@ -171,6 +182,10 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
   const [editingAddress, setEditingAddress] = useState(false);
   const [editAddress, setEditAddress] = useState<AddressValue>({ street: "", city: "", state: "", zip: "", lat: null, lng: null });
   const [savingAddress, setSavingAddress] = useState(false);
+  // Override modal state
+  const [overrideOpen, setOverrideOpen] = useState(false);
+  const [overrideTarget, setOverrideTarget] = useState("");
+  const [overrideReason, setOverrideReason] = useState("");
 
   const fetchJob = async () => {
     try {
@@ -216,6 +231,21 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
       toast("success", `Job marked as ${DISPLAY_STATUS_LABELS[deriveDisplayStatus(newStatus)]}`);
       await fetchJob();
     } catch { toast("error", "Failed to update"); } finally { setActionLoading(false); }
+  };
+
+  const handleOverride = async () => {
+    if (!overrideTarget || !overrideReason.trim()) return;
+    setActionLoading(true);
+    try {
+      await api.patch(`/jobs/${id}/status`, { status: overrideTarget });
+      // Record override as a note on the job
+      const existing = job?.driver_notes || "";
+      const overrideNote = `[Status Override] ${DISPLAY_STATUS_LABELS[deriveDisplayStatus(overrideTarget)]} — ${overrideReason.trim()}`;
+      await api.patch(`/jobs/${id}`, { driver_notes: existing ? `${overrideNote}\n${existing}` : overrideNote });
+      toast("success", `Status overridden to ${DISPLAY_STATUS_LABELS[deriveDisplayStatus(overrideTarget)]}`);
+      setOverrideOpen(false);
+      await fetchJob();
+    } catch { toast("error", "Failed to override status"); } finally { setActionLoading(false); }
   };
 
   const deleteJob = async () => {
@@ -314,8 +344,8 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Status transition buttons */}
-          {transitions.filter((t) => t !== "cancelled").map((t) => {
+          {/* Status transition buttons — office-allowed only */}
+          {transitions.filter((t) => OFFICE_ALLOWED_TRANSITIONS.has(t) && t !== "cancelled").map((t) => {
             const style = TRANSITION_STYLES[t];
             if (!style) return null;
             const Icon = style.icon;
@@ -339,6 +369,14 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
             <button onClick={deleteJob} className="flex w-full items-center gap-2 px-4 py-2 text-sm text-[var(--t-error)] hover:bg-[var(--t-bg-card-hover)] transition-colors">
               <Trash2 className="h-3.5 w-3.5" /> Delete Job
             </button>
+            {(OVERRIDE_TARGETS[job.status]?.length ?? 0) > 0 && (
+              <>
+                <div className="my-1 border-t border-[var(--t-border)]" />
+                <button onClick={() => { setOverrideTarget(OVERRIDE_TARGETS[job.status]?.[0] || ""); setOverrideReason(""); setOverrideOpen(true); }} className="flex w-full items-center gap-2 px-4 py-2 text-sm text-[var(--t-text-muted)] hover:bg-[var(--t-bg-card-hover)] transition-colors">
+                  <AlertTriangle className="h-3.5 w-3.5" /> Override Status
+                </button>
+              </>
+            )}
             {job.status === "completed" && (job.job_type === "delivery" || job.job_type === "drop_off") && (
               <>
                 <div className="my-1 border-t border-[var(--t-border)]" />
@@ -852,6 +890,61 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
           )}
         </div>
       </div>
+
+      {/* --- Override Status Modal --- */}
+      {overrideOpen && job && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setOverrideOpen(false)} />
+          <div className="relative rounded-[20px] p-6 w-full max-w-md shadow-2xl" style={{ backgroundColor: "var(--t-bg-secondary)", border: "1px solid var(--t-border)" }}>
+            <h3 className="text-base font-semibold mb-1" style={{ color: "var(--t-text-primary)" }}>Override Status</h3>
+            <p className="text-xs mb-4" style={{ color: "var(--t-text-muted)" }}>
+              Correct a driver status error. This action is recorded.
+            </p>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-[11px] font-semibold uppercase tracking-wide mb-1" style={{ color: "var(--t-text-muted)" }}>Target Status</label>
+                <select
+                  value={overrideTarget}
+                  onChange={(e) => setOverrideTarget(e.target.value)}
+                  className="w-full rounded-[14px] border px-3.5 py-2.5 text-sm outline-none focus:border-[var(--t-accent)]"
+                  style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)", color: "var(--t-text-primary)" }}
+                >
+                  {(OVERRIDE_TARGETS[job.status] || []).map((s) => (
+                    <option key={s} value={s}>{DISPLAY_STATUS_LABELS[deriveDisplayStatus(s)]}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-[11px] font-semibold uppercase tracking-wide mb-1" style={{ color: "var(--t-text-muted)" }}>Reason (required)</label>
+                <input
+                  value={overrideReason}
+                  onChange={(e) => setOverrideReason(e.target.value)}
+                  placeholder="e.g. Driver tapped wrong button"
+                  className="w-full rounded-[14px] border px-3.5 py-2.5 text-sm outline-none focus:border-[var(--t-accent)]"
+                  style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)", color: "var(--t-text-primary)" }}
+                />
+              </div>
+              <div className="flex gap-2 pt-2">
+                <button
+                  onClick={handleOverride}
+                  disabled={!overrideTarget || !overrideReason.trim() || actionLoading}
+                  className="flex-1 rounded-full py-2.5 text-sm font-semibold transition-opacity hover:opacity-90 disabled:opacity-40"
+                  style={{ backgroundColor: "var(--t-warning)", color: "#000" }}
+                >
+                  {actionLoading ? "Overriding..." : "Confirm Override"}
+                </button>
+                <button
+                  onClick={() => setOverrideOpen(false)}
+                  className="rounded-full px-5 py-2.5 text-sm font-medium border transition-colors hover:bg-[var(--t-bg-card-hover)]"
+                  style={{ borderColor: "var(--t-border)", color: "var(--t-text-muted)" }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
