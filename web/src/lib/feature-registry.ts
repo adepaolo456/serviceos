@@ -103,6 +103,14 @@ export const FEATURE_REGISTRY: Record<string, FeatureDescription> = {
     isUserFacing: true, isGuideEligible: false,
     keywords: ["exchange", "detection", "auto", "onsite", "dumpster", "swap", "active"],
   },
+  exchange_availability: {
+    id: "exchange_availability", label: "Replacement Inventory", category: "operations",
+    shortDescription: "Replacement inventory",
+    guideDescription: "Shows how many replacement dumpsters of the selected size are available for the exchange date. This checks the same fleet inventory used for new deliveries but displays with exchange-specific context.",
+    routeOrSurface: "wizard_internal", tenantOverrideKey: "exchange_availability",
+    isUserFacing: true, isGuideEligible: false,
+    keywords: ["exchange", "replacement", "inventory", "availability", "dumpster", "swap"],
+  },
   dispatch_unassigned: {
     id: "dispatch_unassigned", label: "Unassigned", category: "operations",
     shortDescription: "Jobs not yet assigned to a driver.",

@@ -103,9 +103,9 @@ const RENTAL_LENGTHS = [7, 14, 21, 30];
 const PRIORITIES = ["Normal", "First Stop", "Last Stop", "AM Only", "PM Only"];
 
 const INPUT_CLASS =
-  "w-full rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-3 text-sm outline-none transition-colors focus:border-[var(--t-accent)] focus:ring-1 focus:ring-[var(--t-accent)]";
+  "w-full rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-2.5 text-sm outline-none transition-colors focus:border-[var(--t-accent)] focus:ring-1 focus:ring-[var(--t-accent)]";
 
-const LABEL_CLASS = "block text-[11px] font-semibold uppercase tracking-wide mb-1.5";
+const LABEL_CLASS = "block text-[11px] font-semibold uppercase tracking-wide mb-1";
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                            */
@@ -130,7 +130,7 @@ function addDays(dateStr: string, days: number): string {
 
 function SectionDivider({ label }: { label: string }) {
   return (
-    <div className="relative flex items-center py-2 md:py-2">
+    <div className="relative flex items-center py-1.5">
       <div className="flex-1 h-px" style={{ backgroundColor: "var(--t-border)" }} />
       <span
         className="px-3 text-[11px] font-semibold uppercase tracking-wide"
@@ -158,7 +158,7 @@ function TileButton({
     <button
       type="button"
       onClick={onClick}
-      className="flex-1 rounded-[20px] border px-4 py-3 text-left transition-colors"
+      className="flex-1 rounded-[20px] border px-4 py-2.5 text-left transition-colors"
       style={{
         backgroundColor: selected ? "var(--t-accent-soft)" : "var(--t-bg-card)",
         borderColor: selected ? "var(--t-accent)" : "var(--t-border)",
@@ -176,7 +176,7 @@ function TileButton({
 
 function ProgressDots({ step }: { step: number }) {
   return (
-    <div className="flex items-center justify-center gap-2 py-2">
+    <div className="flex items-center justify-center gap-2 py-1.5">
       {[1, 2, 3].map((s) => (
         <div
           key={s}
@@ -389,7 +389,11 @@ export default function BookingWizard({
         .then((res) => {
           const opts = res.data || [];
           setPricingOptions(opts);
-          if (opts.length > 0 && !dumpsterSize) setDumpsterSize(opts[0].asset_subtype);
+          if (opts.length > 0 && !dumpsterSize) {
+            setDumpsterSize(opts[0].asset_subtype);
+            // Initialize rental length from tenant pricing rule
+            if (opts[0].rental_period_days) setRentalLength(opts[0].rental_period_days);
+          }
         })
         .catch(() => {});
       // Fetch active rentals for customer (needed for exchange submission path)
@@ -415,6 +419,14 @@ export default function BookingWizard({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step]);
+
+  // Sync rental length from pricing rule when effective size changes
+  useEffect(() => {
+    if (!pricingOptions.length) return;
+    const effectiveSize = taskType === "exchange" ? (exchangeReplacementSize || dumpsterSize) : dumpsterSize;
+    const rule = pricingOptions.find((p) => p.asset_subtype === effectiveSize);
+    if (rule?.rental_period_days) setRentalLength(rule.rental_period_days);
+  }, [dumpsterSize, exchangeReplacementSize, taskType, pricingOptions]);
 
   // Re-quote when options change
   const fetchQuote = useCallback(async () => {
@@ -459,14 +471,15 @@ export default function BookingWizard({
     if (step === 3 && dumpsterSize) fetchQuote();
   }, [step, dumpsterSize, rentalLength, deliveryDate, taskType, selectedRentalForExchange, exchangeReplacementSize, fetchQuote]);
 
-  // Fetch availability
+  // Fetch availability (exchange-aware: use replacement size when in exchange mode)
+  const availabilitySize = taskType === "exchange" ? (exchangeReplacementSize || dumpsterSize) : dumpsterSize;
   useEffect(() => {
-    if (step === 3 && dumpsterSize && deliveryDate) {
-      api.get<AvailabilityResponse>(`/assets/availability?subtype=${encodeURIComponent(dumpsterSize)}&date=${deliveryDate}`)
+    if (step === 3 && availabilitySize && deliveryDate) {
+      api.get<AvailabilityResponse>(`/assets/availability?subtype=${encodeURIComponent(availabilitySize)}&date=${deliveryDate}`)
         .then((r) => setAvailability(r.availableOnDate))
         .catch(() => setAvailability(null));
     }
-  }, [step, dumpsterSize, deliveryDate]);
+  }, [step, availabilitySize, deliveryDate]);
 
   /* ---- Customer search ---- */
   const searchCustomers = useCallback((fn: string, ln: string) => {
@@ -639,7 +652,7 @@ export default function BookingWizard({
         <ProgressDots step={step} />
 
         {/* Body */}
-        <div className="flex-1 overflow-y-auto px-6 pb-4">
+        <div className="flex-1 overflow-y-auto px-6 pb-3">
           {/* ============================== STEP 1 ============================== */}
           {step === 1 && (
             <div className="space-y-4">
@@ -1094,7 +1107,7 @@ export default function BookingWizard({
 
           {/* ============================== STEP 3 ============================== */}
           {step === 3 && (
-            <div className="space-y-4">
+            <div className="space-y-3">
               {/* Service address header */}
               <div className="flex items-center gap-2 text-xs" style={{ color: "var(--t-text-muted)" }}>
                 <MapPin className="h-3.5 w-3.5" />
@@ -1141,17 +1154,17 @@ export default function BookingWizard({
 
               {/* Exchange: active rentals on site */}
               {taskType === "exchange" && rentalsLoading && (
-                <div className="flex items-center gap-2 py-3">
+                <div className="flex items-center gap-2 py-2">
                   <Loader2 className="h-4 w-4 animate-spin" style={{ color: "var(--t-text-muted)" }} />
                   <span className="text-sm" style={{ color: "var(--t-text-muted)" }}>Loading active rentals...</span>
                 </div>
               )}
               {taskType === "exchange" && !rentalsLoading && activeRentals.length > 0 && (
-                <div className="space-y-3">
+                <div className="space-y-2">
                   <SectionDivider label="Dumpster Being Removed" />
                   {activeRentals.length === 1 ? (
                     <div
-                      className="rounded-[20px] border px-4 py-3"
+                      className="rounded-[20px] border px-4 py-2.5"
                       style={{ backgroundColor: "var(--t-accent-soft)", borderColor: "var(--t-accent)" }}
                     >
                       <span className="text-sm font-medium" style={{ color: "var(--t-text-primary)" }}>
@@ -1173,7 +1186,7 @@ export default function BookingWizard({
                           key={rental.id}
                           type="button"
                           onClick={() => setSelectedRentalForExchange(rental.id)}
-                          className="w-full rounded-[20px] border px-4 py-3 text-left transition-colors"
+                          className="w-full rounded-[20px] border px-4 py-2.5 text-left transition-colors"
                           style={{
                             backgroundColor: selectedRentalForExchange === rental.id ? "var(--t-accent-soft)" : "var(--t-bg-card)",
                             borderColor: selectedRentalForExchange === rental.id ? "var(--t-accent)" : "var(--t-border)",
@@ -1204,7 +1217,7 @@ export default function BookingWizard({
                         <select
                           value={exchangeReplacementSize || dumpsterSize}
                           onChange={(e) => setExchangeReplacementSize(e.target.value)}
-                          className="w-full rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-3 text-sm outline-none transition-colors focus:border-[var(--t-accent)] focus:ring-1 focus:ring-[var(--t-accent)]"
+                          className="w-full rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-2.5 text-sm outline-none transition-colors focus:border-[var(--t-accent)] focus:ring-1 focus:ring-[var(--t-accent)]"
                           style={{ color: "var(--t-text-primary)" }}
                         >
                           {pricingOptions.map((p) => (
@@ -1228,7 +1241,7 @@ export default function BookingWizard({
                   <select
                     value={dumpsterSize}
                     onChange={(e) => setDumpsterSize(e.target.value)}
-                    className="w-full rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-3 text-sm outline-none transition-colors focus:border-[var(--t-accent)] focus:ring-1 focus:ring-[var(--t-accent)]"
+                    className="w-full rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-2.5 text-sm outline-none transition-colors focus:border-[var(--t-accent)] focus:ring-1 focus:ring-[var(--t-accent)]"
                     style={{ color: "var(--t-text-primary)" }}
                   >
                     {pricingOptions.map((p) => (
@@ -1241,7 +1254,7 @@ export default function BookingWizard({
               )}
 
               {/* Date + Rental + Priority */}
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-3 gap-2">
                 <div>
                   <label className={LABEL_CLASS} style={{ color: "var(--t-text-muted)" }}>Delivery Date</label>
                   <input
@@ -1257,10 +1270,10 @@ export default function BookingWizard({
                   <select
                     value={rentalLength}
                     onChange={(e) => setRentalLength(Number(e.target.value))}
-                    className="w-full rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-3 text-sm outline-none transition-colors focus:border-[var(--t-accent)] focus:ring-1 focus:ring-[var(--t-accent)]"
+                    className="w-full rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-2.5 text-sm outline-none transition-colors focus:border-[var(--t-accent)] focus:ring-1 focus:ring-[var(--t-accent)]"
                     style={{ color: "var(--t-text-primary)" }}
                   >
-                    {RENTAL_LENGTHS.map((d) => (
+                    {(RENTAL_LENGTHS.includes(rentalLength) ? RENTAL_LENGTHS : [rentalLength, ...RENTAL_LENGTHS].sort((a, b) => a - b)).map((d) => (
                       <option key={d} value={d}>{d} days</option>
                     ))}
                   </select>
@@ -1270,7 +1283,7 @@ export default function BookingWizard({
                   <select
                     value={priority}
                     onChange={(e) => setPriority(e.target.value)}
-                    className="w-full rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-3 text-sm outline-none transition-colors focus:border-[var(--t-accent)] focus:ring-1 focus:ring-[var(--t-accent)]"
+                    className="w-full rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-2.5 text-sm outline-none transition-colors focus:border-[var(--t-accent)] focus:ring-1 focus:ring-[var(--t-accent)]"
                     style={{ color: "var(--t-text-primary)" }}
                   >
                     {PRIORITIES.map((p) => (
@@ -1284,12 +1297,16 @@ export default function BookingWizard({
               {availability !== null && (
                 <div className="flex items-center gap-2 text-sm" style={{ color: "var(--t-text-muted)" }}>
                   <Box className="h-4 w-4" style={{ color: availability > 0 ? "var(--t-accent)" : "var(--t-error)" }} />
-                  <span>{availability} {dumpsterSize} available on {deliveryDate}</span>
+                  <span>
+                    {taskType === "exchange"
+                      ? `${getFeatureTooltip("exchange_availability")}: ${availability} ${availabilitySize} on ${deliveryDate}`
+                      : `${availability} ${availabilitySize} available on ${deliveryDate}`}
+                  </span>
                 </div>
               )}
 
               {/* Auto-schedule pickup */}
-              <div className="flex items-center justify-between rounded-[20px] border px-4 py-3" style={{ borderColor: "var(--t-border)", backgroundColor: "var(--t-bg-card)" }}>
+              <div className="flex items-center justify-between rounded-[20px] border px-4 py-2.5" style={{ borderColor: "var(--t-border)", backgroundColor: "var(--t-bg-card)" }}>
                 <div>
                   <span className="text-sm font-medium" style={{ color: "var(--t-text-primary)" }}>Auto-schedule pickup</span>
                   {autoSchedulePickup && deliveryDate && (
@@ -1314,8 +1331,8 @@ export default function BookingWizard({
                   placeholder="Optional notes for the driver..."
                   value={driverNotes}
                   onChange={(e) => setDriverNotes(e.target.value)}
-                  rows={3}
-                  className="w-full rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-3 text-sm outline-none transition-colors focus:border-[var(--t-accent)] focus:ring-1 focus:ring-[var(--t-accent)] resize-none"
+                  rows={2}
+                  className="w-full rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-2.5 text-sm outline-none transition-colors focus:border-[var(--t-accent)] focus:ring-1 focus:ring-[var(--t-accent)] resize-none"
                   style={{ color: "var(--t-text-primary)" }}
                 />
               </div>
@@ -1329,7 +1346,7 @@ export default function BookingWizard({
                   Price Quote
                 </h4>
                 {quoteLoading ? (
-                  <div className="flex items-center justify-center py-4">
+                  <div className="flex items-center justify-center py-2">
                     <Loader2 className="h-5 w-5 animate-spin" style={{ color: "var(--t-text-muted)" }} />
                   </div>
                 ) : priceQuote ? (
@@ -1369,7 +1386,7 @@ export default function BookingWizard({
               </div>
 
               {/* Send invoice option */}
-              <label className="flex items-center gap-2 pt-1 cursor-pointer select-none">
+              <label className="flex items-center gap-2 cursor-pointer select-none">
                 <input
                   type="checkbox"
                   checked={sendInvoiceNow}
@@ -1383,7 +1400,7 @@ export default function BookingWizard({
               </label>
 
               {/* Footer buttons */}
-              <div className="flex gap-3 pt-1">
+              <div className="flex gap-3">
                 <button
                   type="button"
                   onClick={() => setStep(2)}
