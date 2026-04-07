@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useToast } from "@/components/toast";
+import { deriveDisplayStatus, DISPLAY_STATUS_LABELS, displayStatusColor } from "@/lib/job-status";
 import SlideOver from "@/components/slide-over";
 import AddressAutocomplete, { type AddressValue } from "@/components/address-autocomplete";
 import MapboxMap from "@/components/mapbox-map";
@@ -361,7 +362,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
                       <td className="px-4 py-3 text-[var(--t-text-primary)] capitalize">{j.job_type}</td>
                       <td className="px-4 py-3 text-[var(--t-text-primary)]">{j.scheduled_date || "—"}</td>
                       <td className="px-4 py-3 text-[var(--t-text-muted)]">{j.asset?.identifier || "—"}</td>
-                      <td className="px-4 py-3"><span className={`text-[10px] font-medium capitalize ${STATUS_CLS[j.status] || ""}`}>{j.status.replace(/_/g, " ")}</span></td>
+                      <td className="px-4 py-3"><span className="text-[10px] font-medium" style={{ color: displayStatusColor(deriveDisplayStatus(j.status)) }}>{DISPLAY_STATUS_LABELS[deriveDisplayStatus(j.status)]}</span></td>
                       <td className="px-4 py-3 text-[var(--t-text-primary)] tabular-nums">{j.total_price ? fmtMoneyShort(j.total_price) : "—"}</td>
                     </tr>
                   ))}

@@ -25,6 +25,7 @@ import {
 import { api } from "@/lib/api";
 import SlideOver from "@/components/slide-over";
 import AddressAutocomplete, { type AddressValue } from "@/components/address-autocomplete";
+import { deriveDisplayStatus, DISPLAY_STATUS_LABELS, displayStatusColor } from "@/lib/job-status";
 
 /* ---- Types ---- */
 
@@ -780,11 +781,10 @@ export default function DashboardPage() {
                         <span style={{
                           fontSize: 11,
                           fontWeight: 600,
-                          color: STATUS_COLOR[job.status] || "var(--t-text-muted)",
-                          textTransform: "capitalize",
+                          color: displayStatusColor(deriveDisplayStatus(job.status)),
                           flexShrink: 0,
                         }}>
-                          {job.status.replace(/_/g, " ")}
+                          {DISPLAY_STATUS_LABELS[deriveDisplayStatus(job.status)]}
                         </span>
                       </Link>
                     );
