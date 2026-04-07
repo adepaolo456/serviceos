@@ -1,8 +1,14 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Customer } from './entities/customer.entity';
 import { Invoice } from '../billing/entities/invoice.entity';
+import { MapboxService } from '../mapbox/mapbox.service';
+import {
+  hasValidServiceCoordinates,
+  buildAddressString,
+  isValidCoordinatePair,
+} from '../../common/helpers/coordinate-validator';
 import {
   CreateCustomerDto,
   UpdateCustomerDto,
@@ -11,11 +17,14 @@ import {
 
 @Injectable()
 export class CustomersService {
+  private readonly logger = new Logger(CustomersService.name);
+
   constructor(
     @InjectRepository(Customer)
     private customersRepository: Repository<Customer>,
     @InjectRepository(Invoice)
     private invoiceRepository: Repository<Invoice>,
+    private mapboxService: MapboxService,
   ) {}
 
   private generateAccountId(): string {
@@ -25,6 +34,10 @@ export class CustomersService {
   }
 
   async create(tenantId: string, dto: CreateCustomerDto): Promise<Customer> {
+    // Soft geocode billing address and service sites before saving
+    const billingAddress = await this.softGeocodeAddress(dto.billingAddress as Record<string, any> | undefined);
+    const serviceAddresses = await this.softGeocodeAddressList(dto.serviceAddresses as Record<string, any>[] | undefined);
+
     const customer = this.customersRepository.create({
       tenant_id: tenantId,
       account_id: this.generateAccountId(),
@@ -34,8 +47,8 @@ export class CustomersService {
       last_name: dto.lastName,
       email: dto.email,
       phone: dto.phone,
-      billing_address: dto.billingAddress,
-      service_addresses: dto.serviceAddresses,
+      billing_address: billingAddress,
+      service_addresses: serviceAddresses,
       notes: dto.notes,
       tags: dto.tags,
       lead_source: dto.leadSource,
@@ -143,9 +156,9 @@ export class CustomersService {
     if (dto.email !== undefined) customer.email = dto.email;
     if (dto.phone !== undefined) customer.phone = dto.phone;
     if (dto.billingAddress !== undefined)
-      customer.billing_address = dto.billingAddress;
+      customer.billing_address = await this.softGeocodeAddress(dto.billingAddress as Record<string, any> | undefined);
     if (dto.serviceAddresses !== undefined)
-      customer.service_addresses = dto.serviceAddresses;
+      customer.service_addresses = await this.softGeocodeAddressList(dto.serviceAddresses as Record<string, any>[] | undefined);
     if (dto.notes !== undefined) customer.notes = dto.notes;
     if (dto.tags !== undefined) customer.tags = dto.tags;
     if (dto.leadSource !== undefined) customer.lead_source = dto.leadSource;
@@ -178,5 +191,44 @@ export class CustomersService {
       balance: Number(result?.balance ?? 0),
       unpaid_count: Number(result?.unpaid_count ?? 0),
     };
+  }
+
+  /**
+   * Soft geocode a single address. Never throws — returns the address
+   * with coords added on success, or unchanged on failure.
+   */
+  private async softGeocodeAddress(
+    addr: Record<string, any> | undefined | null,
+  ): Promise<Record<string, any> | undefined> {
+    if (!addr) return addr as undefined;
+    if (hasValidServiceCoordinates(addr)) return addr;
+
+    const addrStr = buildAddressString(addr as Record<string, unknown>);
+    if (!addrStr) return addr;
+
+    try {
+      const geo = await this.mapboxService.geocodeAddress(addrStr);
+      if (geo && isValidCoordinatePair(geo.lat, geo.lng)) {
+        return { ...addr, lat: geo.lat, lng: geo.lng, geocoded_at: new Date().toISOString(), geocode_source: 'mapbox' };
+      }
+    } catch {
+      this.logger.warn(`Soft geocode failed for: ${addrStr}`);
+    }
+
+    return addr;
+  }
+
+  /**
+   * Soft geocode each address in a list. Never throws.
+   */
+  private async softGeocodeAddressList(
+    addrs: Record<string, any>[] | undefined | null,
+  ): Promise<Record<string, any>[] | undefined> {
+    if (!addrs || !Array.isArray(addrs)) return addrs as undefined;
+    const result: Record<string, any>[] = [];
+    for (const addr of addrs) {
+      result.push((await this.softGeocodeAddress(addr)) ?? addr);
+    }
+    return result;
   }
 }
