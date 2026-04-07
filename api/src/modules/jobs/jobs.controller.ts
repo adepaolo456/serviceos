@@ -162,6 +162,15 @@ export class JobsController {
     return this.jobsService.stageAtYard(tenantId, id, body);
   }
 
+  @Post('exchange-from-rental')
+  @ApiOperation({ summary: 'Create exchange job directly from a rental chain (standalone/legacy)' })
+  exchangeFromRental(
+    @TenantId() tenantId: string,
+    @Body() body: { rentalChainId: string; scheduledDate: string; timeWindow?: string; newAssetSubtype?: string; exchangeFee?: number },
+  ) {
+    return this.jobsService.exchangeFromRental(tenantId, body);
+  }
+
   @Delete(':id')
   @ApiOperation({ summary: 'Cascade delete (cancel) a job with related entities' })
   async deleteJob(

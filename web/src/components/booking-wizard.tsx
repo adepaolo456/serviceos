@@ -554,21 +554,30 @@ export default function BookingWizard({
       // Exchange path — schedule exchange via JobsService
       if (taskType === "exchange" && selectedRentalForExchange) {
         const rental = activeRentals.find((r) => r.id === selectedRentalForExchange);
-        // Find the delivery job from the rental chain to use as parent
+        // Find the best parent job: prefer completed delivery, then any job in the chain
         const deliveryLink = rental?.links?.find((l) => l.task_type === "drop_off" && l.status === "completed");
-        const parentJobId = deliveryLink?.job_id;
-        if (!parentJobId) {
-          toast("error", "Could not find the original delivery job for this rental");
-          setSubmitting(false);
-          return;
+        const anyLink = rental?.links?.find((l) => !!l.job_id);
+        const parentJobId = deliveryLink?.job_id || anyLink?.job_id;
+
+        if (parentJobId) {
+          // Chain-based exchange: use existing schedule-next flow
+          await api.post(`/jobs/${parentJobId}/schedule-next`, {
+            type: "exchange",
+            scheduledDate: deliveryDate,
+            timeWindow: "any",
+            newAssetSubtype: exchangeReplacementSize || dumpsterSize,
+            exchangeFee: priceQuote?.total || priceQuote?.base_price || 0,
+          });
+        } else {
+          // Standalone/legacy rental: create exchange directly from rental chain
+          await api.post("/jobs/exchange-from-rental", {
+            rentalChainId: rental?.id,
+            scheduledDate: deliveryDate,
+            timeWindow: "any",
+            newAssetSubtype: exchangeReplacementSize || dumpsterSize,
+            exchangeFee: priceQuote?.total || priceQuote?.base_price || 0,
+          });
         }
-        await api.post(`/jobs/${parentJobId}/schedule-next`, {
-          type: "exchange",
-          scheduledDate: deliveryDate,
-          timeWindow: "any",
-          newAssetSubtype: exchangeReplacementSize || dumpsterSize,
-          exchangeFee: priceQuote?.total || priceQuote?.base_price || 0,
-        });
         toast("success", "Exchange scheduled successfully");
         onComplete?.();
         onClose();
