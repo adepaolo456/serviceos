@@ -5,11 +5,11 @@ import { Customer } from '../../customers/entities/customer.entity';
 import { Job } from '../../jobs/entities/job.entity';
 import { RentalChain } from '../../rental-chains/entities/rental-chain.entity';
 import { Invoice } from '../entities/invoice.entity';
-import { InvoiceLineItem } from '../entities/invoice-line-item.entity';
 import { Payment } from '../entities/payment.entity';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { PricingService } from '../../pricing/pricing.service';
 import { MapboxService } from '../../mapbox/mapbox.service';
+import { BillingService } from '../billing.service';
 import { BookingCompletionService } from './booking-completion.service';
 import { CreateWithBookingDto } from '../dto/create-with-booking.dto';
 
@@ -33,6 +33,7 @@ export class OrchestrationService {
     private notificationsService: NotificationsService,
     private pricingService: PricingService,
     private bookingCompletionService: BookingCompletionService,
+    private billingService: BillingService,
     private mapboxService: MapboxService,
   ) {}
 
@@ -196,8 +197,6 @@ export class OrchestrationService {
         // Exchange path: create exchange job + invoice from rental chain
         const chainRepo = queryRunner.manager.getRepository(RentalChain);
         const jobRepo = queryRunner.manager.getRepository(Job);
-        const invoiceRepo = queryRunner.manager.getRepository(Invoice);
-        const lineItemRepo = queryRunner.manager.getRepository(InvoiceLineItem);
 
         const chain = await chainRepo.findOne({ where: { id: dto.exchangeRentalChainId, tenant_id: tenantId } });
         if (!chain) throw new BadRequestException('Rental chain not found');
@@ -212,28 +211,21 @@ export class OrchestrationService {
           asset_id: chain.asset_id || null, service_address: siteAddr as Record<string, string>,
           status: 'pending', priority: 'normal', source: 'quick_quote_exchange',
           scheduled_date: dto.deliveryDate!, rental_days: rentalDays,
+          scheduled_window_start: '08:00', scheduled_window_end: '17:00',
         } as Partial<Job> as Job);
         const savedJob = await jobRepo.save(exchangeJob);
 
-        // Create exchange invoice
-        const invoiceNumber = await this.getNextInvoiceNumber(tenantId, queryRunner.manager);
-        const today = new Date().toISOString().split('T')[0];
-        const invoice = invoiceRepo.create({
-          tenant_id: tenantId, invoice_number: invoiceNumber, customer_id: customerId,
-          job_id: savedJob.id, status: 'open', invoice_date: today,
-          due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-          summary_of_work: `Exchange scheduled for rental chain ${chain.id}`,
-        } as Partial<Invoice>);
-        const savedInv = await invoiceRepo.save(invoice);
+        // Create exchange invoice using canonical billing service (matches existing exchange flow)
+        const savedInv = await this.billingService.createInternalInvoice(tenantId, {
+          customerId,
+          jobId: savedJob.id,
+          source: 'exchange',
+          invoiceType: 'exchange',
+          status: 'open',
+          lineItems: [{ description: 'Dumpster Exchange', quantity: 1, unitPrice: totalPrice, amount: totalPrice }],
+          notes: `Exchange scheduled for rental chain ${chain.id}`,
+        }, queryRunner.manager);
 
-        const lineItem = lineItemRepo.create({
-          invoice_id: savedInv.id, sort_order: 0, line_type: 'service',
-          name: 'Dumpster Exchange', quantity: 1, unit_rate: totalPrice, amount: totalPrice, net_amount: totalPrice,
-        });
-        await lineItemRepo.save(lineItem);
-        await invoiceRepo.update(savedInv.id, { subtotal: totalPrice, total: totalPrice, balance_due: totalPrice });
-
-        // Build a compatible completionResult shape
         completionResult = {
           deliveryJob: savedJob, pickupJob: savedJob, invoice: savedInv,
           rentalChainId: chain.id, autoApproved: false, assignedAsset: null,
@@ -383,9 +375,4 @@ export class OrchestrationService {
     return d.toISOString().split('T')[0];
   }
 
-  private async getNextInvoiceNumber(tenantId: string, manager?: import('typeorm').EntityManager): Promise<number> {
-    const src = manager ?? this.dataSource;
-    const result = await src.query(`SELECT next_invoice_number($1) as num`, [tenantId]);
-    return result[0].num;
-  }
 }
