@@ -2,6 +2,7 @@
 
 import { useState, useEffect, use, type FormEvent } from "react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowLeft,
   Send,
@@ -152,6 +153,8 @@ export default function InvoiceDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [invoice, setInvoice] = useState<Invoice | null>(null);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -206,6 +209,14 @@ export default function InvoiceDetailPage({
     api.get<{ data: PricingRule[] }>("/pricing").then(r => setPricingRules(r.data || [])).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
+
+  // Auto-open payment panel when navigated from post-create billing flow
+  useEffect(() => {
+    if (searchParams.get("openPayment") === "1" && invoice && Number(invoice.balance_due) > 0) {
+      setPaymentPanel(true);
+      router.replace(`/invoices/${id}`, { scroll: false });
+    }
+  }, [searchParams, invoice, id, router]);
 
   // Fetch linked job status for paid-invoice editability check
   useEffect(() => {
