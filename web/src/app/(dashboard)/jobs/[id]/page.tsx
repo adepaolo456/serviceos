@@ -274,7 +274,7 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
   if (!job) return <div className="flex items-center justify-center py-32 text-[var(--t-text-muted)]">Job not found</div>;
 
   const addr = job.service_address;
-  const transitions = VALID_TRANSITIONS[job.status] || [];
+  const transitions = (VALID_TRANSITIONS[job.status] || []).filter((t) => t !== "dispatched" || !!job.assigned_driver);
   const statusIdx = TIMELINE_STEPS.findIndex((s) => s.status === job.status);
   const typeColor = JOB_TYPE_COLORS[job.job_type] || "text-blue-400";
   const sizeColor = job.asset?.subtype ? (SIZE_COLORS[job.asset.subtype] || "text-[var(--t-text-muted)]") : "";
