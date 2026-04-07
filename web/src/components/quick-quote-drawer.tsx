@@ -7,8 +7,10 @@ import { useToast } from "@/components/toast";
 import { useBooking } from "@/components/booking-provider";
 import { useQuickQuote } from "@/components/quick-quote-provider";
 import SlideOver from "@/components/slide-over";
+import CustomerPickerDrawer from "@/components/customer-picker-drawer";
 import AddressAutocomplete, { type AddressValue } from "@/components/address-autocomplete";
 import { getFeatureLabel } from "@/lib/feature-registry";
+import type { InitialSchedule } from "@/components/booking-wizard";
 
 interface PricingRule {
   id: string;
@@ -118,26 +120,39 @@ export default function QuickQuoteDrawer() {
     setAddressDisplay(addr.formatted || [addr.street, addr.city, addr.state, addr.zip].filter(Boolean).join(", "));
   }, []);
 
-  // Book Now — hand off to existing booking wizard
+  // Customer picker state for customer-first Book Now flow
+  const [customerPickerOpen, setCustomerPickerOpen] = useState(false);
+  const [pendingSchedule, setPendingSchedule] = useState<InitialSchedule | undefined>();
+
+  // Book Now — open customer-first picker, then hand off to booking wizard
   const handleBookNow = useCallback(() => {
+    const schedule: InitialSchedule = {
+      dumpsterSize: selectedSize,
+      lockSiteAddress: !!address,
+      ...(address ? {
+        siteAddress: {
+          street: address.street,
+          city: address.city,
+          state: address.state,
+          zip: address.zip,
+          lat: address.lat,
+          lng: address.lng,
+        },
+      } : {}),
+    };
+    setPendingSchedule(schedule);
     closeQuickQuote();
+    setCustomerPickerOpen(true);
+  }, [closeQuickQuote, selectedSize, address]);
+
+  // After customer is selected/skipped, open booking wizard with full context
+  const handleCustomerSelected = useCallback((opts: { customerId?: string; initialSchedule?: InitialSchedule }) => {
+    setCustomerPickerOpen(false);
     openWizard({
-      initialSchedule: {
-        dumpsterSize: selectedSize,
-        lockSiteAddress: !!address,
-        ...(address ? {
-          siteAddress: {
-            street: address.street,
-            city: address.city,
-            state: address.state,
-            zip: address.zip,
-            lat: address.lat,
-            lng: address.lng,
-          },
-        } : {}),
-      },
+      customerId: opts.customerId,
+      initialSchedule: opts.initialSchedule,
     });
-  }, [closeQuickQuote, openWizard, selectedSize, address]);
+  }, [openWizard]);
 
   // Email Quote — atomic: create quote + send email
   const handleSendQuote = useCallback(async () => {
@@ -171,6 +186,7 @@ export default function QuickQuoteDrawer() {
   const outsideServiceArea = !!pricingError;
 
   return (
+  <>
     <SlideOver open={drawerOpen} onClose={closeQuickQuote} title={getFeatureLabel("quick_quote")} side="left">
       <div className="space-y-5">
         {/* Dumpster Size */}
@@ -434,5 +450,13 @@ export default function QuickQuoteDrawer() {
         )}
       </div>
     </SlideOver>
+
+    <CustomerPickerDrawer
+      open={customerPickerOpen}
+      onClose={() => setCustomerPickerOpen(false)}
+      onSelect={handleCustomerSelected}
+      initialSchedule={pendingSchedule}
+    />
+  </>
   );
 }
