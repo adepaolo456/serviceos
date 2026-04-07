@@ -2,7 +2,10 @@ import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import { Customer } from '../../customers/entities/customer.entity';
+import { Job } from '../../jobs/entities/job.entity';
+import { RentalChain } from '../../rental-chains/entities/rental-chain.entity';
 import { Invoice } from '../entities/invoice.entity';
+import { InvoiceLineItem } from '../entities/invoice-line-item.entity';
 import { Payment } from '../entities/payment.entity';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { PricingService } from '../../pricing/pricing.service';
@@ -188,33 +191,82 @@ export class OrchestrationService {
       const distanceSurcharge = priceResult.breakdown.distanceSurcharge || 0;
       const totalPrice = priceResult.breakdown.total;
 
-      // 3. Shared booking completion (jobs, invoice, line items, rental chain)
-      completionResult = await this.bookingCompletionService.completeBooking({
-        tenantId,
-        customerId,
-        dumpsterSize: dto.dumpsterSize!,
-        serviceType: 'dumpster_rental',
-        deliveryDate: dto.deliveryDate!,
-        pickupDate,
-        rentalDays,
-        siteAddress: siteAddr as Record<string, any>,
-        basePrice,
-        distanceSurcharge,
-        totalPrice,
-        pricingSnapshot: {
-          capturedAt: new Date().toISOString(),
-          pricingRuleId: priceResult.rule.id,
-          pricingRuleName: priceResult.rule.name,
-          basePrice,
-          distanceMiles: priceResult.breakdown.distanceMiles,
-          distanceSurcharge,
-          rentalDays,
-          total: totalPrice,
-        },
-        pricingTierUsed: 'global',
-      }, queryRunner.manager);
+      // 3. Create booking — exchange or new delivery
+      if (dto.jobType === 'exchange' && dto.exchangeRentalChainId) {
+        // Exchange path: create exchange job + invoice from rental chain
+        const chainRepo = queryRunner.manager.getRepository(RentalChain);
+        const jobRepo = queryRunner.manager.getRepository(Job);
+        const invoiceRepo = queryRunner.manager.getRepository(Invoice);
+        const lineItemRepo = queryRunner.manager.getRepository(InvoiceLineItem);
 
-      savedInvoice = completionResult.invoice;
+        const chain = await chainRepo.findOne({ where: { id: dto.exchangeRentalChainId, tenant_id: tenantId } });
+        if (!chain) throw new BadRequestException('Rental chain not found');
+
+        const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+        const seq = Math.floor(Math.random() * 9000) + 1000;
+
+        const exchangeJob = jobRepo.create({
+          tenant_id: tenantId, customer_id: customerId,
+          job_number: `JOB-${dateStr}-${seq}`, job_type: 'exchange',
+          service_type: 'dumpster_rental', asset_subtype: dto.dumpsterSize,
+          asset_id: chain.asset_id || null, service_address: siteAddr as Record<string, string>,
+          status: 'pending', priority: 'normal', source: 'quick_quote_exchange',
+          scheduled_date: dto.deliveryDate!, rental_days: rentalDays,
+        } as Partial<Job> as Job);
+        const savedJob = await jobRepo.save(exchangeJob);
+
+        // Create exchange invoice
+        const invoiceNumber = await this.getNextInvoiceNumber(tenantId, queryRunner.manager);
+        const today = new Date().toISOString().split('T')[0];
+        const invoice = invoiceRepo.create({
+          tenant_id: tenantId, invoice_number: invoiceNumber, customer_id: customerId,
+          job_id: savedJob.id, status: 'open', invoice_date: today,
+          due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+          summary_of_work: `Exchange scheduled for rental chain ${chain.id}`,
+        } as Partial<Invoice>);
+        const savedInv = await invoiceRepo.save(invoice);
+
+        const lineItem = lineItemRepo.create({
+          invoice_id: savedInv.id, sort_order: 0, line_type: 'service',
+          name: 'Dumpster Exchange', quantity: 1, unit_rate: totalPrice, amount: totalPrice, net_amount: totalPrice,
+        });
+        await lineItemRepo.save(lineItem);
+        await invoiceRepo.update(savedInv.id, { subtotal: totalPrice, total: totalPrice, balance_due: totalPrice });
+
+        // Build a compatible completionResult shape
+        completionResult = {
+          deliveryJob: savedJob, pickupJob: savedJob, invoice: savedInv,
+          rentalChainId: chain.id, autoApproved: false, assignedAsset: null,
+        } as any;
+        savedInvoice = savedInv;
+      } else {
+        // Standard delivery path
+        completionResult = await this.bookingCompletionService.completeBooking({
+          tenantId,
+          customerId,
+          dumpsterSize: dto.dumpsterSize!,
+          serviceType: 'dumpster_rental',
+          deliveryDate: dto.deliveryDate!,
+          pickupDate,
+          rentalDays,
+          siteAddress: siteAddr as Record<string, any>,
+          basePrice,
+          distanceSurcharge,
+          totalPrice,
+          pricingSnapshot: {
+            capturedAt: new Date().toISOString(),
+            pricingRuleId: priceResult.rule.id,
+            pricingRuleName: priceResult.rule.name,
+            basePrice,
+            distanceMiles: priceResult.breakdown.distanceMiles,
+            distanceSurcharge,
+            rentalDays,
+            total: totalPrice,
+          },
+          pricingTierUsed: 'global',
+        }, queryRunner.manager);
+        savedInvoice = completionResult.invoice;
+      }
 
       await queryRunner.commitTransaction();
     } catch (err) {
@@ -329,5 +381,11 @@ export class OrchestrationService {
     const d = new Date(dateStr);
     d.setDate(d.getDate() + days);
     return d.toISOString().split('T')[0];
+  }
+
+  private async getNextInvoiceNumber(tenantId: string, manager?: import('typeorm').EntityManager): Promise<number> {
+    const src = manager ?? this.dataSource;
+    const result = await src.query(`SELECT next_invoice_number($1) as num`, [tenantId]);
+    return result[0].num;
   }
 }

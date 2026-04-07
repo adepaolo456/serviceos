@@ -3,8 +3,9 @@
 import { useState, useEffect, useCallback, useRef, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, formatDumpsterSize } from "@/lib/utils";
 import AddressAutocomplete, { type AddressValue } from "@/components/address-autocomplete";
+import { useActiveOnsiteDumpsters, type OnsiteDumpster } from "@/lib/use-active-onsite-dumpsters";
 
 /* ── Types ── */
 
@@ -62,6 +63,16 @@ export const NEW_CUSTOMER_LABELS = {
   bookingUnpaid: "Job scheduled — invoice unpaid",
   continueAsNewCustomer: "Continue as new customer",
   existingCustomerSelected: "Existing customer selected",
+  // Decision step labels (Quick Quote existing customer with active dumpsters)
+  activeDumpstersFound: "Active dumpsters at this site",
+  newRental: "New Rental",
+  newRentalDesc: "Deliver an additional dumpster",
+  exchangeDumpster: "Exchange",
+  exchangeDumpsterDesc: "Swap an existing dumpster",
+  selectDumpsterToExchange: "Select dumpster to exchange",
+  loadingActiveDumpsters: "Checking for active dumpsters...",
+  decisionRequired: "Please choose New Rental or Exchange before continuing",
+  exchangeSelectionRequired: "Please select a dumpster to exchange",
 };
 
 /* ── Props ── */
@@ -131,6 +142,7 @@ export default function NewCustomerForm({ onOrchestrated, onClose, forceCustomer
   const [sizesLoading, setSizesLoading] = useState(false);
 
   const showScheduling = !forceCustomerOnly && nextStep === "schedule";
+  const isQuickQuoteMode = !!initialSchedule;
   const formatAddr = (a: AddressValue) => [a.street, a.city, a.state, a.zip].filter(Boolean).join(", ");
   // Track which site source is active: "quote" | "saved-{index}" | "billing" | "new"
   const [siteSource, setSiteSource] = useState<string>(initialSchedule?.siteAddress ? "quote" : "billing");
@@ -143,7 +155,24 @@ export default function NewCustomerForm({ onOrchestrated, onClose, forceCustomer
     setSchedSiteAddress(addr);
     setSchedBillingSameAsSite(false);
     setSiteSource(source);
+    // Reset workflow decision when site changes
+    setWorkflowDecision(null);
+    setExchangeSelection(null);
   };
+
+  // Workflow decision state (Quick Quote existing customer only)
+  const [workflowDecision, setWorkflowDecision] = useState<"new_rental" | "exchange" | null>(null);
+  const [exchangeSelection, setExchangeSelection] = useState<string | null>(null); // rentalChainId
+
+  // Active dumpster detection at selected site (Quick Quote mode only)
+  const detectionSiteAddr = schedSiteAddress.street && schedSiteAddress.city && schedSiteAddress.state
+    ? { street: schedSiteAddress.street, city: schedSiteAddress.city, state: schedSiteAddress.state, zip: schedSiteAddress.zip }
+    : undefined;
+  const { hasActiveOnsite, dumpsters: activeDumpsters, isLoading: dumpsterCheckLoading } = useActiveOnsiteDumpsters({
+    customerId: isQuickQuoteMode ? (selectedCustomerId ?? undefined) : undefined,
+    siteAddress: detectionSiteAddr,
+    enabled: isQuickQuoteMode && !!selectedCustomerId && showScheduling,
+  });
 
   // Customer autocomplete search
   const handleNameSearch = useCallback((first: string, last: string) => {
@@ -253,6 +282,15 @@ export default function NewCustomerForm({ onOrchestrated, onClose, forceCustomer
         setError(NEW_CUSTOMER_LABELS.schedulingRequired);
         return;
       }
+      // Block submission if active dumpsters exist but no decision made
+      if (isQuickQuoteMode && selectedCustomerId && hasActiveOnsite && !workflowDecision) {
+        setError(NEW_CUSTOMER_LABELS.decisionRequired);
+        return;
+      }
+      if (workflowDecision === "exchange" && !exchangeSelection) {
+        setError(NEW_CUSTOMER_LABELS.exchangeSelectionRequired);
+        return;
+      }
     }
 
     // Duplicate detection
@@ -311,6 +349,7 @@ export default function NewCustomerForm({ onOrchestrated, onClose, forceCustomer
           pickupTBD: schedPickupTBD,
           siteAddress: siteAddr.street ? { street: siteAddr.street, city: siteAddr.city, state: siteAddr.state, zip: siteAddr.zip, lat: siteAddr.lat, lng: siteAddr.lng } : undefined,
           paymentMethod: schedPaymentMethod,
+          ...(workflowDecision === "exchange" && exchangeSelection ? { jobType: "exchange", exchangeRentalChainId: exchangeSelection } : {}),
         } : {}),
         idempotencyKey,
         confirmedCreateDespiteDuplicate: duplicateChecked,
@@ -331,8 +370,6 @@ export default function NewCustomerForm({ onOrchestrated, onClose, forceCustomer
       setError(err instanceof Error ? err.message : "Failed to create");
     } finally { setSaving(false); }
   };
-
-  const isQuickQuoteMode = !!initialSchedule;
 
   const submitLabel = checkingDuplicate
     ? NEW_CUSTOMER_LABELS.checkingDuplicate
@@ -545,6 +582,45 @@ export default function NewCustomerForm({ onOrchestrated, onClose, forceCustomer
               </>
             )}
           </div>
+
+          {/* Workflow decision — active dumpsters at site (Quick Quote existing customer only) */}
+          {isQuickQuoteMode && selectedCustomerId && showScheduling && dumpsterCheckLoading && (
+            <p style={{ fontSize: 13, color: "var(--t-text-muted)" }}>{NEW_CUSTOMER_LABELS.loadingActiveDumpsters}</p>
+          )}
+          {isQuickQuoteMode && selectedCustomerId && showScheduling && !dumpsterCheckLoading && hasActiveOnsite && activeDumpsters.length > 0 && (
+            <div>
+              <label style={labelStyle}>{NEW_CUSTOMER_LABELS.activeDumpstersFound}</label>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                <button type="button" onClick={() => { setWorkflowDecision("new_rental"); setExchangeSelection(null); }}
+                  style={{ padding: "10px 0", borderRadius: 10, fontSize: 13, fontWeight: 600, border: workflowDecision === "new_rental" ? "none" : "1px solid var(--t-border)", backgroundColor: workflowDecision === "new_rental" ? "var(--t-accent)" : "transparent", color: workflowDecision === "new_rental" ? "var(--t-accent-on-accent)" : "var(--t-text-muted)", cursor: "pointer", transition: "all 0.15s ease", textAlign: "center" }}>
+                  {NEW_CUSTOMER_LABELS.newRental}
+                </button>
+                <button type="button" onClick={() => { setWorkflowDecision("exchange"); if (activeDumpsters.length === 1) setExchangeSelection(activeDumpsters[0].rentalChainId); }}
+                  style={{ padding: "10px 0", borderRadius: 10, fontSize: 13, fontWeight: 600, border: workflowDecision === "exchange" ? "none" : "1px solid var(--t-border)", backgroundColor: workflowDecision === "exchange" ? "var(--t-accent)" : "transparent", color: workflowDecision === "exchange" ? "var(--t-accent-on-accent)" : "var(--t-text-muted)", cursor: "pointer", transition: "all 0.15s ease", textAlign: "center" }}>
+                  {NEW_CUSTOMER_LABELS.exchangeDumpster}
+                </button>
+              </div>
+              {/* Exchange dumpster picker */}
+              {workflowDecision === "exchange" && (
+                <div style={{ marginTop: 8 }}>
+                  <label style={labelStyle}>{NEW_CUSTOMER_LABELS.selectDumpsterToExchange}</label>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    {activeDumpsters.map((d) => (
+                      <label key={d.rentalChainId} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 10, border: exchangeSelection === d.rentalChainId ? "2px solid var(--t-accent)" : "1px solid var(--t-border)", backgroundColor: exchangeSelection === d.rentalChainId ? "var(--t-accent-soft)" : "var(--t-bg-card)", cursor: "pointer", transition: "all 0.15s ease" }}>
+                        <input type="radio" name="exchangeDumpster" checked={exchangeSelection === d.rentalChainId} onChange={() => setExchangeSelection(d.rentalChainId)} style={{ accentColor: "var(--t-accent)" }} />
+                        <div>
+                          <span style={{ fontSize: 13, fontWeight: 600, color: "var(--t-text-primary)" }}>{formatDumpsterSize(d.size)}</span>
+                          {d.assetIdentifier && <span style={{ marginLeft: 6, fontSize: 11, color: "var(--t-text-muted)" }}>#{d.assetIdentifier}</span>}
+                          <span style={{ display: "block", fontSize: 11, color: "var(--t-text-muted)", marginTop: 2 }}>Delivered {d.deliveredAt}</span>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           <div>
             <label style={labelStyle}>{NEW_CUSTOMER_LABELS.paymentMethod}</label>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
