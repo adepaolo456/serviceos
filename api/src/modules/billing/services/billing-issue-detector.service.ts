@@ -294,7 +294,7 @@ export class BillingIssueDetectorService {
     } else {
       // Default: actionable issues only
       qb.andWhere('bi.status IN (:...statuses)', {
-        statuses: ['open', 'auto_resolved'],
+        statuses: ['open'],
       });
     }
     if (query.issueType)
@@ -320,7 +320,7 @@ export class BillingIssueDetectorService {
       .select('bi.issue_type', 'issue_type')
       .addSelect('COUNT(*)::int', 'count')
       .where('bi.tenant_id = :tenantId', { tenantId })
-      .andWhere('bi.status IN (:...statuses)', { statuses: ['open', 'auto_resolved'] })
+      .andWhere('bi.status IN (:...statuses)', { statuses: ['open'] })
       .groupBy('bi.issue_type')
       .getRawMany<{ issue_type: string; count: number }>();
 
