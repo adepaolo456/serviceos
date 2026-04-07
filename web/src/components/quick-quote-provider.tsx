@@ -21,6 +21,7 @@ export function useQuickQuote() {
 
 export function QuickQuoteProvider({ children }: { children: ReactNode }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [resetKey, setResetKey] = useState(0);
 
   const openQuickQuote = useCallback(() => {
     setDrawerOpen(true);
@@ -28,12 +29,13 @@ export function QuickQuoteProvider({ children }: { children: ReactNode }) {
 
   const closeQuickQuote = useCallback(() => {
     setDrawerOpen(false);
+    setResetKey((k) => k + 1);
   }, []);
 
   return (
     <QuickQuoteContext.Provider value={{ drawerOpen, openQuickQuote, closeQuickQuote }}>
       {children}
-      <QuickQuoteDrawer />
+      <QuickQuoteDrawer key={resetKey} />
     </QuickQuoteContext.Provider>
   );
 }

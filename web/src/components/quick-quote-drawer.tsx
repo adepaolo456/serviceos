@@ -86,20 +86,7 @@ export default function QuickQuoteDrawer() {
       .finally(() => setRulesLoading(false));
   }, [drawerOpen]);
 
-  // Reset state on open
-  useEffect(() => {
-    if (drawerOpen) {
-      setSelectedSize("");
-      setAddress(null);
-      setAddressDisplay("");
-      setPricingResult(null);
-      setPricingError(null);
-      setShowEmailFields(false);
-      setCustomerName("");
-      setCustomerEmail("");
-      setCustomerPhone("");
-    }
-  }, [drawerOpen]);
+  // No reset-on-open effect needed — provider remounts this component via key on close
 
   // Calculate full quote via POST /pricing/calculate when size + address are set
   useEffect(() => {
