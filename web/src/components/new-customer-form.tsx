@@ -66,16 +66,24 @@ export const NEW_CUSTOMER_LABELS = {
 
 /* ── Props ── */
 
+interface SchedulePrefill {
+  dumpsterSize?: string;
+  lockSiteAddress?: boolean;
+  siteAddress?: { street: string; city: string; state: string; zip: string; lat?: number | null; lng?: number | null };
+}
+
 interface NewCustomerFormProps {
   onOrchestrated: (result: OrchestrationResult) => void;
   onClose: () => void;
   /** When true, hides scheduling fields and forces customer-only creation */
   forceCustomerOnly?: boolean;
+  /** Prefill scheduling fields from Quick Quote context */
+  initialSchedule?: SchedulePrefill;
 }
 
 /* ── Component ── */
 
-export default function NewCustomerForm({ onOrchestrated, onClose, forceCustomerOnly }: NewCustomerFormProps) {
+export default function NewCustomerForm({ onOrchestrated, onClose, forceCustomerOnly, initialSchedule }: NewCustomerFormProps) {
   const router = useRouter();
   const [idempotencyKey] = useState(() => crypto.randomUUID());
   const [type, setType] = useState<"residential" | "commercial">("residential");
@@ -91,6 +99,7 @@ export default function NewCustomerForm({ onOrchestrated, onClose, forceCustomer
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [nextStep, setNextStep] = useState<NextStep>(forceCustomerOnly ? "save" : "schedule");
+  const siteAddressLocked = !!(initialSchedule?.lockSiteAddress && initialSchedule?.siteAddress);
 
   // Customer autocomplete
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
@@ -105,12 +114,16 @@ export default function NewCustomerForm({ onOrchestrated, onClose, forceCustomer
   const [checkingDuplicate, setCheckingDuplicate] = useState(false);
 
   // Scheduling fields (visible when nextStep === "schedule" and not forceCustomerOnly)
-  const [schedDumpsterSize, setSchedDumpsterSize] = useState("");
+  const [schedDumpsterSize, setSchedDumpsterSize] = useState(initialSchedule?.dumpsterSize || "");
   const [schedDeliveryDate, setSchedDeliveryDate] = useState(() => new Date().toISOString().split("T")[0]);
   const [schedPickupDate, setSchedPickupDate] = useState("");
   const [schedPickupTBD, setSchedPickupTBD] = useState(false);
-  const [schedSiteAddress, setSchedSiteAddress] = useState<AddressValue>({ street: "", city: "", state: "", zip: "", lat: null, lng: null });
-  const [schedBillingSameAsSite, setSchedBillingSameAsSite] = useState(true);
+  const [schedSiteAddress, setSchedSiteAddress] = useState<AddressValue>(
+    initialSchedule?.siteAddress
+      ? { street: initialSchedule.siteAddress.street, city: initialSchedule.siteAddress.city, state: initialSchedule.siteAddress.state, zip: initialSchedule.siteAddress.zip, lat: initialSchedule.siteAddress.lat ?? null, lng: initialSchedule.siteAddress.lng ?? null }
+      : { street: "", city: "", state: "", zip: "", lat: null, lng: null },
+  );
+  const [schedBillingSameAsSite, setSchedBillingSameAsSite] = useState(!initialSchedule?.siteAddress);
   const [schedPaymentMethod, setSchedPaymentMethod] = useState<"card" | "cash" | "check">("card");
   const [sizeOptions, setSizeOptions] = useState<{ id: string; asset_subtype: string; base_price: number; rental_period_days?: number }[]>([]);
   const [pickupManuallySet, setPickupManuallySet] = useState(false);
@@ -463,12 +476,21 @@ export default function NewCustomerForm({ onOrchestrated, onClose, forceCustomer
           </label>
           <div>
             <label style={labelStyle}>{NEW_CUSTOMER_LABELS.siteAddress}</label>
-            <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--t-text-muted)", cursor: "pointer", marginBottom: 8 }}>
-              <input type="checkbox" checked={schedBillingSameAsSite} onChange={e => setSchedBillingSameAsSite(e.target.checked)} />
-              {NEW_CUSTOMER_LABELS.billingSameAsSite}
-            </label>
-            {!schedBillingSameAsSite && (
-              <AddressAutocomplete value={schedSiteAddress} onChange={setSchedSiteAddress} placeholder="Search site address..." />
+            {siteAddressLocked ? (
+              <div style={{ backgroundColor: "var(--t-accent-soft)", border: "1px solid var(--t-accent)", borderRadius: 10, padding: "10px 16px", fontSize: 14, color: "var(--t-text-primary)" }}>
+                {[schedSiteAddress.street, schedSiteAddress.city, schedSiteAddress.state, schedSiteAddress.zip].filter(Boolean).join(", ")}
+                <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 600, textTransform: "uppercase", color: "var(--t-accent)" }}>From quote</span>
+              </div>
+            ) : (
+              <>
+                <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--t-text-muted)", cursor: "pointer", marginBottom: 8 }}>
+                  <input type="checkbox" checked={schedBillingSameAsSite} onChange={e => setSchedBillingSameAsSite(e.target.checked)} />
+                  {NEW_CUSTOMER_LABELS.billingSameAsSite}
+                </label>
+                {!schedBillingSameAsSite && (
+                  <AddressAutocomplete value={schedSiteAddress} onChange={setSchedSiteAddress} placeholder="Search site address..." />
+                )}
+              </>
             )}
           </div>
           <div>
