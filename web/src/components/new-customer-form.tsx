@@ -501,11 +501,6 @@ export default function NewCustomerForm({ onOrchestrated, onClose, forceCustomer
         <input value={tags} onChange={e => setTags(e.target.value)} style={inputStyle} placeholder="VIP, Contractor, Repeat Customer (comma-separated)" />
       </div>
 
-      <div>
-        <label style={labelStyle}>Notes</label>
-        <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} style={{ ...inputStyle, resize: "none" }} placeholder="Internal notes..." />
-      </div>
-
       {/* Next step selector — hidden in forceCustomerOnly and Quick Quote modes */}
       {!forceCustomerOnly && !isQuickQuoteMode && (
         <div style={{ marginTop: 8 }}>
@@ -633,6 +628,11 @@ export default function NewCustomerForm({ onOrchestrated, onClose, forceCustomer
               )}
             </div>
           )}
+
+          <div>
+            <label style={labelStyle}>Notes</label>
+            <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} style={{ ...inputStyle, resize: "none" }} placeholder="Driver notes, placement instructions..." />
+          </div>
 
           <div>
             <label style={labelStyle}>{NEW_CUSTOMER_LABELS.paymentMethod}</label>
