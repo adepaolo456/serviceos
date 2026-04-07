@@ -2,7 +2,7 @@
 
 import { useState, useEffect, use } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowLeft,
   MapPin,
@@ -165,8 +165,10 @@ function daysBetween(a: string, b: string): number {
 export default function JobDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { toast } = useToast();
   const [job, setJob] = useState<Job | null>(null);
+  const [isPostCreate, setIsPostCreate] = useState(false);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [dumpTickets, setDumpTickets] = useState<Array<{
@@ -211,6 +213,15 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
   };
 
   useEffect(() => { fetchJob(); fetchDumpTickets(); fetchInvoice(); }, [id]);
+
+  // Detect one-time postCreate flag and consume it
+  useEffect(() => {
+    if (searchParams.get("postCreate") === "1") {
+      setIsPostCreate(true);
+      // Clean the query param from URL without re-triggering navigation
+      router.replace(`/jobs/${id}`, { scroll: false });
+    }
+  }, [searchParams, id, router]);
 
   const changeStatus = async (newStatus: string) => {
     if (actionLoading) return;
@@ -394,6 +405,66 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
           </Dropdown>
         </div>
       </div>
+
+      {/* --- Post-Create Billing Banner --- */}
+      {isPostCreate && invoice && invoice.balance_due > 0 && (
+        <div
+          className="mb-4 flex items-center justify-between rounded-[20px] border-l-4 px-5 py-4"
+          style={{ backgroundColor: "var(--t-accent-soft)", borderColor: "var(--t-accent)", borderTop: "1px solid var(--t-border)", borderRight: "1px solid var(--t-border)", borderBottom: "1px solid var(--t-border)" }}
+        >
+          <div className="flex items-center gap-3">
+            <DollarSign className="h-5 w-5" style={{ color: "var(--t-accent)" }} />
+            <div>
+              <p className="text-sm font-semibold" style={{ color: "var(--t-text-primary)" }}>
+                Invoice #{invoice.invoice_number} — {fmt(invoice.balance_due)} due
+              </p>
+              <p className="text-xs" style={{ color: "var(--t-text-muted)" }}>
+                Collect payment to complete this booking
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Link
+              href={`/invoices/${invoice.id}?openPayment=1`}
+              className="flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold transition-opacity hover:opacity-90"
+              style={{ backgroundColor: "var(--t-accent)", color: "#fff" }}
+            >
+              <DollarSign className="h-3.5 w-3.5" /> Collect Payment
+            </Link>
+            <button
+              onClick={() => setIsPostCreate(false)}
+              className="rounded-full px-3 py-2 text-xs font-medium transition-colors hover:bg-[var(--t-bg-card-hover)]"
+              style={{ color: "var(--t-text-muted)" }}
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
+      {isPostCreate && invoice && invoice.balance_due <= 0 && (
+        <div
+          className="mb-4 flex items-center gap-3 rounded-[20px] border px-5 py-3"
+          style={{ backgroundColor: "var(--t-bg-card)", borderColor: "var(--t-accent)" }}
+        >
+          <CheckCircle2 className="h-5 w-5" style={{ color: "var(--t-accent)" }} />
+          <p className="text-sm font-medium" style={{ color: "var(--t-text-primary)" }}>
+            Booking created — invoice paid
+          </p>
+        </div>
+      )}
+      {isPostCreate && !invoice && (
+        <div
+          className="mb-4 flex items-center justify-between rounded-[20px] border-l-4 px-5 py-3"
+          style={{ backgroundColor: "var(--t-warning-soft, var(--t-bg-card))", borderColor: "var(--t-warning)", borderTop: "1px solid var(--t-border)", borderRight: "1px solid var(--t-border)", borderBottom: "1px solid var(--t-border)" }}
+        >
+          <div className="flex items-center gap-3">
+            <AlertCircle className="h-5 w-5" style={{ color: "var(--t-warning)" }} />
+            <p className="text-sm font-medium" style={{ color: "var(--t-text-primary)" }}>
+              Booking created — no invoice found yet
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* --- Quick Action Buttons --- */}
       <div className="mb-6 flex items-center gap-2 flex-wrap">

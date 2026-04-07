@@ -42,9 +42,9 @@ export function BookingProvider({ children, onComplete }: { children: ReactNode;
 
   const handleComplete = useCallback((createdJobId?: string) => {
     onComplete?.(createdJobId);
-    // Navigate to the created job so user can see invoice/payment actions immediately
+    // Navigate to the created job with postCreate flag so billing is surfaced immediately
     if (createdJobId) {
-      router.push(`/jobs/${createdJobId}`);
+      router.push(`/jobs/${createdJobId}?postCreate=1`);
     }
   }, [onComplete, router]);
 
