@@ -1020,12 +1020,18 @@ function QuotesTab() {
               className="accent-[var(--t-accent)]" />
             <span className="text-sm text-[var(--t-text-primary)]">Enable email quotes</span>
           </label>
-          <label className="inline-flex items-center gap-3 cursor-pointer">
-            <input type="checkbox" checked={settings.quotes_sms_enabled ?? false}
-              onChange={(e) => set("quotes_sms_enabled", e.target.checked)}
-              className="accent-[var(--t-accent)]" />
-            <span className="text-sm text-[var(--t-text-primary)]">Enable SMS quotes</span>
-          </label>
+          <div>
+            <label className={`inline-flex items-center gap-3 ${settings.sms_phone_number ? "cursor-pointer" : "opacity-50 cursor-not-allowed"}`}>
+              <input type="checkbox" checked={settings.quotes_sms_enabled ?? false}
+                onChange={(e) => { if (settings.sms_phone_number) set("quotes_sms_enabled", e.target.checked); }}
+                disabled={!settings.sms_phone_number}
+                className="accent-[var(--t-accent)]" />
+              <span className="text-sm text-[var(--t-text-primary)]">Enable SMS quotes</span>
+            </label>
+            {!settings.sms_phone_number && (
+              <p className="text-[11px] mt-1 ml-6" style={{ color: "var(--t-text-muted)" }}>Requires an assigned SMS number</p>
+            )}
+          </div>
           <div>
             <label className={labelCls}>Default Delivery Method</label>
             <select value={settings.default_quote_delivery_method ?? "email"}
@@ -1040,27 +1046,7 @@ function QuotesTab() {
       </div>
 
       {/* SMS Configuration */}
-      <div>
-        <h3 className="text-sm font-bold uppercase tracking-wide text-[var(--t-text-primary)] mb-3">SMS Configuration</h3>
-        <div className="rounded-[14px] border p-4 space-y-2" style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)" }}>
-          <div className="flex items-center justify-between">
-            <span className="text-sm" style={{ color: "var(--t-text-primary)" }}>SMS Number</span>
-            <span className="text-sm font-mono" style={{ color: settings.sms_phone_number ? "var(--t-text-primary)" : "var(--t-text-muted)" }}>
-              {settings.sms_phone_number || "No SMS number assigned"}
-            </span>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="text-sm" style={{ color: "var(--t-text-primary)" }}>Status</span>
-            <span className="inline-flex items-center gap-1.5 text-xs font-semibold rounded-full px-2.5 py-0.5"
-              style={{
-                backgroundColor: settings.sms_enabled && settings.sms_phone_number ? "var(--t-success-soft, rgba(34,197,94,0.1))" : "var(--t-bg-elevated, #e5e7eb)",
-                color: settings.sms_enabled && settings.sms_phone_number ? "var(--t-success, #22c55e)" : "var(--t-text-muted)",
-              }}>
-              {settings.sms_enabled && settings.sms_phone_number ? "SMS active" : "SMS not configured"}
-            </span>
-          </div>
-        </div>
-      </div>
+      <SmsConfigCard settings={settings} onUpdate={(updates) => { for (const [k, v] of Object.entries(updates)) set(k, v); }} />
 
       {/* Templates */}
       <div>
@@ -1117,5 +1103,115 @@ function QuotesTab() {
         {saved && <span className="text-sm text-[var(--t-accent)] flex items-center gap-1"><Check className="h-4 w-4" /> Saved</span>}
       </div>
     </form>
+  );
+}
+
+/* ─── SMS Config Card ─── */
+
+const SMS_LABELS = {
+  sectionTitle: "SMS Configuration",
+  numberLabel: "SMS Number",
+  noNumber: "No SMS number assigned",
+  statusActive: "SMS active",
+  statusInactive: "SMS inactive",
+  statusNotConfigured: "SMS not configured",
+  assignNumber: "Assign SMS Number",
+  editNumber: "Edit Number",
+  requiresNumber: "SMS requires an assigned number before SMS quote delivery can be enabled",
+  numberPlaceholder: "(508) 555-1234",
+  invalidNumber: "Please enter a valid US phone number",
+  saving: "Saving...",
+};
+
+function SmsConfigCard({ settings, onUpdate }: { settings: Record<string, any>; onUpdate: (u: Record<string, any>) => void }) {
+  const { toast } = useToast();
+  const [editing, setEditing] = useState(false);
+  const [numberInput, setNumberInput] = useState("");
+  const [smsSaving, setSmsSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  const hasNumber = !!settings.sms_phone_number;
+  const isActive = settings.sms_enabled && hasNumber;
+
+  const statusLabel = isActive ? SMS_LABELS.statusActive : hasNumber ? SMS_LABELS.statusInactive : SMS_LABELS.statusNotConfigured;
+  const statusColor = isActive ? "var(--t-success, #22c55e)" : "var(--t-text-muted)";
+  const statusBg = isActive ? "var(--t-success-soft, rgba(34,197,94,0.1))" : "var(--t-bg-elevated, #e5e7eb)";
+
+  const normalizeLocal = (raw: string): string | null => {
+    const digits = raw.replace(/\D/g, "");
+    if (digits.length === 10) return `+1${digits}`;
+    if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
+    if (raw.startsWith("+") && digits.length >= 10 && digits.length <= 15) return `+${digits}`;
+    return null;
+  };
+
+  const formatDisplay = (e164: string) => {
+    const digits = e164.replace(/\D/g, "");
+    if (digits.length === 11 && digits.startsWith("1")) {
+      const d = digits.slice(1);
+      return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`;
+    }
+    return e164;
+  };
+
+  const handleSave = async () => {
+    setError("");
+    const normalized = normalizeLocal(numberInput);
+    if (!normalized) { setError(SMS_LABELS.invalidNumber); return; }
+    setSmsSaving(true);
+    try {
+      await api.patch("/tenant-settings/quotes", { sms_phone_number: normalized });
+      onUpdate({ sms_phone_number: normalized });
+      setEditing(false);
+      toast("success", "SMS number saved");
+    } catch { setError("Failed to save"); }
+    finally { setSmsSaving(false); }
+  };
+
+  return (
+    <div>
+      <h3 className="text-sm font-bold uppercase tracking-wide text-[var(--t-text-primary)] mb-3">{SMS_LABELS.sectionTitle}</h3>
+      <div className="rounded-[14px] border p-4 space-y-3" style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)" }}>
+        <div className="flex items-center justify-between">
+          <span className="text-sm" style={{ color: "var(--t-text-primary)" }}>{SMS_LABELS.numberLabel}</span>
+          <span className="text-sm font-mono" style={{ color: hasNumber ? "var(--t-text-primary)" : "var(--t-text-muted)" }}>
+            {hasNumber ? formatDisplay(settings.sms_phone_number) : SMS_LABELS.noNumber}
+          </span>
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="text-sm" style={{ color: "var(--t-text-primary)" }}>Status</span>
+          <span className="inline-flex items-center text-xs font-semibold rounded-full px-2.5 py-0.5" style={{ backgroundColor: statusBg, color: statusColor }}>
+            {statusLabel}
+          </span>
+        </div>
+        {!hasNumber && !editing && (
+          <p className="text-[11px]" style={{ color: "var(--t-text-muted)" }}>{SMS_LABELS.requiresNumber}</p>
+        )}
+        {editing ? (
+          <div className="space-y-2 pt-1">
+            <input value={numberInput} onChange={(e) => { setNumberInput(e.target.value); setError(""); }}
+              placeholder={SMS_LABELS.numberPlaceholder} className={inputCls} autoFocus />
+            {error && <p className="text-xs" style={{ color: "var(--t-error)" }}>{error}</p>}
+            <div className="flex gap-2">
+              <button type="button" onClick={handleSave} disabled={smsSaving}
+                className="rounded-full bg-[var(--t-accent)] text-white px-4 py-1.5 text-xs font-semibold disabled:opacity-50">
+                {smsSaving ? SMS_LABELS.saving : "Save"}
+              </button>
+              <button type="button" onClick={() => { setEditing(false); setError(""); }}
+                className="rounded-full border px-4 py-1.5 text-xs font-medium"
+                style={{ borderColor: "var(--t-border)", color: "var(--t-text-muted)" }}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button type="button" onClick={() => { setNumberInput(settings.sms_phone_number || ""); setEditing(true); }}
+            className="rounded-full border px-4 py-1.5 text-xs font-semibold transition-colors hover:bg-[var(--t-bg-card-hover)]"
+            style={{ borderColor: "var(--t-border)", color: "var(--t-accent)" }}>
+            {hasNumber ? SMS_LABELS.editNumber : SMS_LABELS.assignNumber}
+          </button>
+        )}
+      </div>
+    </div>
   );
 }
