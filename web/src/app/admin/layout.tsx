@@ -14,6 +14,7 @@ import {
   MessageSquare,
   BarChart3,
   BookOpen,
+  PhoneOff,
 } from "lucide-react";
 import { api } from "@/lib/api";
 
@@ -30,6 +31,7 @@ const nav = [
   { name: "Tenants", href: "/admin/tenants", icon: Building2 },
   { name: "Subscriptions", href: "/admin/subscriptions", icon: CreditCard },
   { name: "Demos", href: "/admin/demos", icon: MessageSquare },
+  { name: "SMS Requests", href: "/admin/sms-requests", icon: PhoneOff },
   { name: "Help Analytics", href: "/admin/help-analytics", icon: BarChart3 },
   { name: "Admin Guide", href: "/admin/admin-guide", icon: BookOpen },
 ];

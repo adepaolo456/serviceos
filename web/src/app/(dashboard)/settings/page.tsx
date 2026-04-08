@@ -1122,7 +1122,38 @@ const SMS_LABELS = {
   smsProvisioningFailed: "Unable to provision a number right now. Please try again later.",
   numberPlaceholder: "(508) 555-1234",
   invalidNumber: "Please enter a valid US phone number",
+  // ── Number-removal request flow ──
+  requestNumberRemoval: "Request Number Removal",
+  smsRemovalPending: "Removal request submitted — awaiting ServiceOS review",
+  smsRemovalRequestSubmitted: "Removal request submitted",
+  smsRemovalCancel: "Cancel request",
+  smsRemovalCancelled: "Request cancelled",
+  smsRemovalRejected: "Removal request was declined",
+  smsRemovalReleased: "Number was released",
+  smsRemovalFailed: "Removal failed — contact support",
+  removalModalTitle: "Request SMS number removal",
+  removalModalBody:
+    "Submitting this request will ask ServiceOS to release your dedicated SMS number. ServiceOS will review the request before any change is made.",
+  removalModalBullet1:
+    "Customers will no longer be able to text this number once it is released.",
+  removalModalBullet2:
+    "Monthly billing for the number stops only after the release is processed by ServiceOS.",
+  removalModalBullet3:
+    "Releasing a number is irreversible — you may not be able to recover the same number.",
+  removalModalConfirm: "Submit request",
+  removalModalCancel: "Keep number",
+  removalSubmitFailed: "Could not submit removal request. Please try again.",
 };
+
+interface SmsReleaseRequest {
+  id: string;
+  status: "pending" | "rejected" | "released" | "failed";
+  sms_phone_number: string;
+  requested_at: string;
+  reviewed_at: string | null;
+  released_at: string | null;
+  failure_reason: string | null;
+}
 
 function SmsConfigCard({ settings, onUpdate }: { settings: Record<string, any>; onUpdate: (u: Record<string, any>) => void }) {
   const { toast } = useToast();
@@ -1131,9 +1162,69 @@ function SmsConfigCard({ settings, onUpdate }: { settings: Record<string, any>; 
   const [numberInput, setNumberInput] = useState("");
   const [smsSaving, setSmsSaving] = useState(false);
   const [error, setError] = useState("");
+  const [pendingRequest, setPendingRequest] = useState<SmsReleaseRequest | null>(null);
+  const [latestRequest, setLatestRequest] = useState<SmsReleaseRequest | null>(null);
+  const [removalModalOpen, setRemovalModalOpen] = useState(false);
+  const [submittingRemoval, setSubmittingRemoval] = useState(false);
+  const [cancellingRemoval, setCancellingRemoval] = useState(false);
 
   const hasNumber = !!settings.sms_phone_number;
   const isActive = settings.sms_enabled && hasNumber;
+  const hasPendingRemoval = !!pendingRequest;
+
+  // Load any existing release request state for this tenant
+  useEffect(() => {
+    if (!hasNumber) {
+      setPendingRequest(null);
+      return;
+    }
+    let cancelled = false;
+    api
+      .get<{ pending: SmsReleaseRequest | null; latest: SmsReleaseRequest | null }>(
+        "/tenant-settings/sms/release-request",
+      )
+      .then((res) => {
+        if (cancelled) return;
+        setPendingRequest(res.pending);
+        setLatestRequest(res.latest);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [hasNumber, settings.sms_phone_number]);
+
+  const handleRequestRemoval = async () => {
+    setSubmittingRemoval(true);
+    try {
+      const created = await api.post<SmsReleaseRequest>(
+        "/tenant-settings/sms/release-request",
+        {},
+      );
+      setPendingRequest(created);
+      setLatestRequest(created);
+      setRemovalModalOpen(false);
+      toast("success", SMS_LABELS.smsRemovalRequestSubmitted);
+    } catch (err) {
+      toast("error", err instanceof Error ? err.message : SMS_LABELS.removalSubmitFailed);
+    } finally {
+      setSubmittingRemoval(false);
+    }
+  };
+
+  const handleCancelRemoval = async () => {
+    if (!pendingRequest) return;
+    setCancellingRemoval(true);
+    try {
+      await api.delete(`/tenant-settings/sms/release-request/${pendingRequest.id}`);
+      setPendingRequest(null);
+      toast("success", SMS_LABELS.smsRemovalCancelled);
+    } catch (err) {
+      toast("error", err instanceof Error ? err.message : "Failed to cancel request");
+    } finally {
+      setCancellingRemoval(false);
+    }
+  };
 
   const statusLabel = isActive ? SMS_LABELS.statusActive : hasNumber ? SMS_LABELS.statusInactive : SMS_LABELS.statusNotConfigured;
   const statusColor = isActive ? "var(--t-success, #22c55e)" : "var(--t-text-muted)";
@@ -1218,12 +1309,52 @@ function SmsConfigCard({ settings, onUpdate }: { settings: Record<string, any>; 
           </>
         )}
 
+        {hasNumber && !editing && hasPendingRemoval && (
+          <div
+            className="rounded-[14px] border px-3 py-2 text-xs flex items-center justify-between gap-3"
+            style={{
+              borderColor: "color-mix(in srgb, var(--t-warning) 30%, transparent)",
+              background: "var(--t-warning-soft, rgba(234,179,8,0.08))",
+              color: "var(--t-warning)",
+            }}
+          >
+            <span>{SMS_LABELS.smsRemovalPending}</span>
+            <button
+              type="button"
+              onClick={handleCancelRemoval}
+              disabled={cancellingRemoval}
+              className="text-[11px] font-semibold underline disabled:opacity-50"
+              style={{ background: "none", border: "none", cursor: "pointer", color: "inherit" }}
+            >
+              {cancellingRemoval ? "..." : SMS_LABELS.smsRemovalCancel}
+            </button>
+          </div>
+        )}
+
+        {hasNumber && !editing && !hasPendingRemoval && latestRequest?.status === "rejected" && (
+          <p className="text-[11px]" style={{ color: "var(--t-text-muted)" }}>
+            {SMS_LABELS.smsRemovalRejected}
+          </p>
+        )}
+
         {hasNumber && !editing && (
-          <button type="button" onClick={() => { setNumberInput(settings.sms_phone_number || ""); setEditing(true); setError(""); }}
-            className="text-[11px] font-medium transition-colors hover:underline"
-            style={{ color: "var(--t-text-muted)", background: "none", border: "none", cursor: "pointer", padding: 0 }}>
-            {SMS_LABELS.editNumber}
-          </button>
+          <div className="flex items-center gap-3">
+            <button type="button" onClick={() => { setNumberInput(settings.sms_phone_number || ""); setEditing(true); setError(""); }}
+              className="text-[11px] font-medium transition-colors hover:underline"
+              style={{ color: "var(--t-text-muted)", background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+              {SMS_LABELS.editNumber}
+            </button>
+            {!hasPendingRemoval && (
+              <button
+                type="button"
+                onClick={() => setRemovalModalOpen(true)}
+                className="text-[11px] font-medium transition-colors hover:underline"
+                style={{ color: "var(--t-error)", background: "none", border: "none", cursor: "pointer", padding: 0 }}
+              >
+                {SMS_LABELS.requestNumberRemoval}
+              </button>
+            )}
+          </div>
         )}
 
         {editing && (
@@ -1243,6 +1374,87 @@ function SmsConfigCard({ settings, onUpdate }: { settings: Record<string, any>; 
             </div>
           </div>
         )}
+      </div>
+
+      <SmsRemovalRequestModal
+        open={removalModalOpen}
+        submitting={submittingRemoval}
+        onCancel={() => setRemovalModalOpen(false)}
+        onConfirm={handleRequestRemoval}
+      />
+    </div>
+  );
+}
+
+function SmsRemovalRequestModal({
+  open,
+  submitting,
+  onCancel,
+  onConfirm,
+}: {
+  open: boolean;
+  submitting: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  useEffect(() => {
+    if (!open) return;
+    const handleEsc = (e: KeyboardEvent) => { if (e.key === "Escape" && !submitting) onCancel(); };
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", handleEsc);
+    return () => {
+      document.body.style.overflow = "";
+      window.removeEventListener("keydown", handleEsc);
+    };
+  }, [open, submitting, onCancel]);
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" onClick={() => !submitting && onCancel()} />
+      <div
+        className="relative w-full max-w-md rounded-[20px] shadow-2xl p-6 mx-4"
+        style={{ backgroundColor: "var(--t-bg-secondary)", border: "1px solid var(--t-border)" }}
+      >
+        <div className="flex items-start gap-3 mb-4">
+          <AlertTriangle className="h-5 w-5 mt-0.5 shrink-0" style={{ color: "var(--t-warning)" }} />
+          <div>
+            <h2 className="text-base font-semibold" style={{ color: "var(--t-text-primary)" }}>
+              {SMS_LABELS.removalModalTitle}
+            </h2>
+            <p className="text-sm mt-1" style={{ color: "var(--t-text-muted)" }}>
+              {SMS_LABELS.removalModalBody}
+            </p>
+          </div>
+        </div>
+
+        <ul className="space-y-2 mb-5 text-xs" style={{ color: "var(--t-text-primary)" }}>
+          <li className="flex gap-2"><span style={{ color: "var(--t-warning)" }}>•</span>{SMS_LABELS.removalModalBullet1}</li>
+          <li className="flex gap-2"><span style={{ color: "var(--t-warning)" }}>•</span>{SMS_LABELS.removalModalBullet2}</li>
+          <li className="flex gap-2"><span style={{ color: "var(--t-warning)" }}>•</span>{SMS_LABELS.removalModalBullet3}</li>
+        </ul>
+
+        <div className="flex gap-3">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={submitting}
+            className="flex-1 rounded-full py-3 text-sm font-semibold border disabled:opacity-50"
+            style={{ borderColor: "var(--t-border)", color: "var(--t-text-primary)" }}
+          >
+            {SMS_LABELS.removalModalCancel}
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={submitting}
+            className="flex-1 rounded-full py-3 text-sm font-semibold transition-opacity disabled:opacity-50"
+            style={{ backgroundColor: "var(--t-error)", color: "var(--t-bg-primary)" }}
+          >
+            {submitting ? "Submitting..." : SMS_LABELS.removalModalConfirm}
+          </button>
+        </div>
       </div>
     </div>
   );
