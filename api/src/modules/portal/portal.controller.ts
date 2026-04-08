@@ -65,7 +65,7 @@ export class PortalController {
   @Post('profile/change-password')
   changePassword(@Req() req: Request, @Body() dto: ChangePasswordDto) {
     const user = req.user as PortalUser;
-    return this.portalService.changePassword(user.customerId, dto.currentPassword, dto.newPassword);
+    return this.portalService.changePassword(user.customerId, user.tenantId, dto.currentPassword, dto.newPassword);
   }
 
   @Post('agreements/:jobId/sign')

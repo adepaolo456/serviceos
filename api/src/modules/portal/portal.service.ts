@@ -8,6 +8,52 @@ import { Job } from '../jobs/entities/job.entity';
 import { Invoice } from '../billing/entities/invoice.entity';
 import { Payment } from '../billing/entities/payment.entity';
 
+/**
+ * Customer-safe projection of a Job for portal responses.
+ *
+ * This is an explicit allow-list: any field NOT listed here is never sent to
+ * portal clients, even if the underlying Job entity gains new columns. All new
+ * Job columns are hidden by default — they must be opted into this shape.
+ *
+ * Explicitly excluded (reasoning): tenant_id / customer_id (scoping / redundant),
+ * assigned_driver_* and driver_notes (driver identity and internal notes),
+ * base_price / discount_* / pricing_snapshot* / extra_day_* (pricing internals),
+ * dispatched_at / en_route_at / arrived_at (internal state-transition timestamps),
+ * dump_* (dispatcher/driver operational), is_failed_trip / failed_* / attempt_count
+ * (failure tracking), drop_off_asset_pin / pick_up_asset_pin (sensitive ops data),
+ * parent_job_id / linked_job_ids / route_order / source / marketplace_booking_id
+ * / priority (internal routing/ops), cancellation_reason (may contain operator
+ * comments), photos (not consumed by portal UI today), updated_at (not needed).
+ */
+type PortalJob = {
+  id: string;
+  job_number: string;
+  job_type: string;
+  service_type: string | null;
+  asset_subtype: string | null;
+  status: string;
+  scheduled_date: string | null;
+  scheduled_window_start: string | null;
+  scheduled_window_end: string | null;
+  service_address: Record<string, any> | null;
+  placement_notes: string | null;
+  rental_start_date: string | null;
+  rental_end_date: string | null;
+  rental_days: number | null;
+  total_price: number | null;
+  deposit_amount: number | null;
+  is_overdue: boolean;
+  completed_at: Date | null;
+  cancelled_at: Date | null;
+  rescheduled_by_customer: boolean;
+  rescheduled_at: Date | null;
+  rescheduled_from_date: string | null;
+  rescheduled_reason: string | null;
+  signature_url: string | null;
+  created_at: Date;
+  asset: { id: string; identifier: string; subtype: string | null } | null;
+};
+
 @Injectable()
 export class PortalService {
   constructor(
@@ -17,6 +63,48 @@ export class PortalService {
     @InjectRepository(Payment) private paymentRepo: Repository<Payment>,
     private jwtService: JwtService,
   ) {}
+
+  /**
+   * Allow-list mapper: Job → PortalJob. Strips every internal field listed
+   * in the PortalJob type comment above. Used at every portal read site
+   * that would otherwise serialize a raw Job entity.
+   */
+  private toPortalJob(job: Job): PortalJob {
+    return {
+      id: job.id,
+      job_number: job.job_number,
+      job_type: job.job_type,
+      service_type: job.service_type ?? null,
+      asset_subtype: job.asset_subtype ?? null,
+      status: job.status,
+      scheduled_date: job.scheduled_date ?? null,
+      scheduled_window_start: job.scheduled_window_start ?? null,
+      scheduled_window_end: job.scheduled_window_end ?? null,
+      service_address: job.service_address ?? null,
+      placement_notes: job.placement_notes ?? null,
+      rental_start_date: job.rental_start_date ?? null,
+      rental_end_date: job.rental_end_date ?? null,
+      rental_days: job.rental_days ?? null,
+      total_price: job.total_price != null ? Number(job.total_price) : null,
+      deposit_amount: job.deposit_amount != null ? Number(job.deposit_amount) : null,
+      is_overdue: job.is_overdue ?? false,
+      completed_at: job.completed_at ?? null,
+      cancelled_at: job.cancelled_at ?? null,
+      rescheduled_by_customer: job.rescheduled_by_customer ?? false,
+      rescheduled_at: job.rescheduled_at ?? null,
+      rescheduled_from_date: job.rescheduled_from_date ?? null,
+      rescheduled_reason: job.rescheduled_reason ?? null,
+      signature_url: job.signature_url ?? null,
+      created_at: job.created_at,
+      asset: job.asset
+        ? {
+            id: job.asset.id,
+            identifier: job.asset.identifier,
+            subtype: job.asset.subtype ?? null,
+          }
+        : null,
+    };
+  }
 
   async login(email: string, password: string, tenantId: string) {
     const customer = await this.customerRepo
@@ -123,7 +211,7 @@ export class PortalService {
       relations: ['asset'],
       order: { created_at: 'DESC' },
     });
-    return jobs;
+    return jobs.map((j) => this.toPortalJob(j));
   }
 
   async getInvoices(customerId: string, tenantId: string) {
@@ -153,7 +241,14 @@ export class PortalService {
       order: { applied_at: 'DESC' },
     });
 
-    return { invoice, payments };
+    // Map nested job through customer-safe projection; strips internal Job fields.
+    return {
+      invoice: {
+        ...invoice,
+        job: invoice.job ? this.toPortalJob(invoice.job) : null,
+      },
+      payments,
+    };
   }
 
   async submitServiceRequest(customerId: string, tenantId: string, dto: any) {
@@ -181,7 +276,7 @@ export class PortalService {
     });
 
     const saved = await this.jobRepo.save(job);
-    return saved;
+    return this.toPortalJob(saved);
   }
 
   async extendRental(customerId: string, tenantId: string, jobId: string, newEndDate: string) {
@@ -225,7 +320,7 @@ export class PortalService {
     });
 
     const saved = await this.jobRepo.save(pickupJob);
-    return saved;
+    return this.toPortalJob(saved);
   }
 
   async getProfile(customerId: string, tenantId: string) {
@@ -246,11 +341,14 @@ export class PortalService {
     return this.getProfile(customerId, tenantId);
   }
 
-  async changePassword(customerId: string, currentPassword: string, newPassword: string) {
+  async changePassword(customerId: string, tenantId: string, currentPassword: string, newPassword: string) {
+    // H2: tenant filter on both SELECT and UPDATE for defense-in-depth
+    // consistency with every other portal service method.
     const customer = await this.customerRepo
       .createQueryBuilder('c')
       .addSelect('c.portal_password_hash')
       .where('c.id = :id', { id: customerId })
+      .andWhere('c.tenant_id = :tenantId', { tenantId })
       .getOne();
 
     if (!customer || !customer.portal_password_hash) {
@@ -266,6 +364,7 @@ export class PortalService {
       .update(Customer)
       .set({ portal_password_hash: hash })
       .where('id = :id', { id: customerId })
+      .andWhere('tenant_id = :tenantId', { tenantId })
       .execute();
     return { message: 'Password updated' };
   }
@@ -330,9 +429,12 @@ export class PortalService {
       await this.jobRepo.update(pickupJob.id, { scheduled_date: updates.rental_end_date as string });
     }
 
-    const updated = await this.jobRepo.findOne({ where: { id: jobId } });
+    // H1: re-read is scoped defensively (same pattern as initial lookup at line 284).
+    const updated = await this.jobRepo.findOne({
+      where: { id: jobId, customer_id: customerId, tenant_id: tenantId },
+    });
     return {
-      ...updated,
+      ...(updated ? this.toPortalJob(updated) : {}),
       message: `Your delivery has been moved to ${body.scheduledDate}.${updates.rental_end_date ? ` Your new pickup date is ${updates.rental_end_date}.` : ''} The company has been notified.`,
     };
   }

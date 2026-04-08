@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { portalApi } from "@/lib/portal-api";
 import { formatCurrency } from "@/lib/utils";
+import { deriveCustomerTimeline, type CustomerTimelineStep } from "@/lib/job-status";
 import { Package, Calendar, MapPin, ChevronRight, CalendarClock } from "lucide-react";
 
 interface Rental {
@@ -16,78 +17,15 @@ interface Rental {
   rental_end_date: string;
   rental_days: number;
   total_price: number;
-  base_price: number;
   service_address: { formatted?: string; street?: string } | null;
-  asset: { identifier?: string; size?: string } | null;
+  asset: { identifier?: string; subtype?: string } | null;
   completed_at: string | null;
   created_at: string;
 }
 
 const tabs = ["Active", "Upcoming", "Completed", "All"] as const;
 
-type TimelineStep = { label: string; state: "done" | "current" | "future" };
-
-function getTimelineSteps(rental: Rental, allRentals: Rental[]): TimelineStep[] {
-  const status = rental.status;
-  const jobType = rental.job_type;
-
-  // Find related pickup job for this rental (same address / linked)
-  const pickupJob = allRentals.find(
-    r => r.job_type === "pickup" && r.id !== rental.id &&
-    r.service_address?.formatted === rental.service_address?.formatted
-  );
-
-  const steps: TimelineStep[] = [];
-
-  // Step 1: Ordered
-  if (["pending", "confirmed"].includes(status) && jobType === "delivery") {
-    steps.push({ label: "Ordered", state: "current" });
-  } else {
-    steps.push({ label: "Ordered", state: "done" });
-  }
-
-  // Step 2: Delivery
-  if (["dispatched", "en_route", "arrived"].includes(status) && jobType === "delivery") {
-    steps.push({ label: "Delivery In Progress", state: "current" });
-  } else if (["pending", "confirmed"].includes(status) && jobType === "delivery") {
-    steps.push({ label: "Delivery In Progress", state: "future" });
-  } else {
-    steps.push({ label: "Delivered", state: "done" });
-  }
-
-  // Step 3: In Use
-  if (status === "in_progress" && jobType === "delivery") {
-    steps.push({ label: "In Use", state: "current" });
-  } else if (["completed"].includes(status) && jobType === "delivery" && !pickupJob) {
-    steps.push({ label: "In Use", state: "current" });
-  } else if (["pending", "confirmed", "dispatched", "en_route", "arrived"].includes(status) && jobType === "delivery") {
-    steps.push({ label: "In Use", state: "future" });
-  } else {
-    steps.push({ label: "In Use", state: "done" });
-  }
-
-  // Step 4: Pickup Scheduled
-  if (pickupJob && ["pending", "confirmed"].includes(pickupJob.status)) {
-    steps.push({ label: "Pickup Scheduled", state: "current" });
-  } else if (pickupJob && ["dispatched", "en_route", "arrived", "in_progress", "completed"].includes(pickupJob.status)) {
-    steps.push({ label: "Pickup Scheduled", state: "done" });
-  } else {
-    steps.push({ label: "Pickup Scheduled", state: "future" });
-  }
-
-  // Step 5: Picked Up
-  if (pickupJob && pickupJob.status === "completed") {
-    steps.push({ label: "Picked Up", state: "done" });
-  } else if (pickupJob && ["dispatched", "en_route", "arrived", "in_progress"].includes(pickupJob.status)) {
-    steps.push({ label: "Pickup In Progress", state: "current" });
-  } else {
-    steps.push({ label: "Picked Up", state: "future" });
-  }
-
-  return steps;
-}
-
-function HorizontalTimeline({ steps }: { steps: TimelineStep[] }) {
+function HorizontalTimeline({ steps }: { steps: CustomerTimelineStep[] }) {
   return (
     <div className="w-full overflow-x-auto py-3">
       <div className="flex items-center min-w-[400px]">
@@ -182,7 +120,7 @@ export default function PortalRentalsPage() {
   const inputCls = "w-full rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-3 py-2 text-sm text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)]";
 
   if (detail) {
-    const timelineSteps = getTimelineSteps(detail, rentals);
+    const timelineSteps = deriveCustomerTimeline(detail, rentals);
     const canChangeDate = ["pending", "confirmed"].includes(detail.status);
     const tooSoon = isWithin24Hours(detail.scheduled_date);
 
@@ -192,7 +130,7 @@ export default function PortalRentalsPage() {
         <div className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6">
           <div className="flex flex-wrap items-start justify-between gap-3 mb-6">
             <div>
-              <h2 className="text-lg font-bold text-[var(--t-text-primary)]">{detail.asset?.size || detail.service_type || "Dumpster"} Rental</h2>
+              <h2 className="text-lg font-bold text-[var(--t-text-primary)]">{detail.asset?.subtype || detail.service_type || "Dumpster"} Rental</h2>
               <p className="text-sm text-[var(--t-text-muted)]">{detail.job_number}</p>
             </div>
             <span className={`text-xs font-medium ${STATUS_COLORS[detail.status] || ""}`}>{STATUS_LABELS[detail.status] || detail.status}</span>
@@ -305,14 +243,14 @@ export default function PortalRentalsPage() {
       ) : (
         <div className="space-y-3">
           {filtered.map(r => {
-            const steps = r.job_type === "delivery" ? getTimelineSteps(r, rentals) : [];
+            const steps = r.job_type === "delivery" ? deriveCustomerTimeline(r, rentals) : [];
             return (
               <button key={r.id} onClick={() => setDetail(r)}
                 className="w-full text-left rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-4 hover:bg-[var(--t-bg-card-hover)] transition-colors">
                 <div className="flex items-center justify-between">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
-                      <p className="text-sm font-semibold text-[var(--t-text-primary)]">{r.asset?.size || r.service_type || "Dumpster"}</p>
+                      <p className="text-sm font-semibold text-[var(--t-text-primary)]">{r.asset?.subtype || r.service_type || "Dumpster"}</p>
                       <span className={`text-xs font-medium ${STATUS_COLORS[r.status] || ""}`}>{STATUS_LABELS[r.status] || r.status}</span>
                     </div>
                     <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-[var(--t-text-muted)]">
