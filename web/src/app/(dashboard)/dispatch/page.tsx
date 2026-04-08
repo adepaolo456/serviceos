@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, memo, useRef } from "react";
-import { deriveDisplayStatus, DISPLAY_STATUS_LABELS, displayStatusColor } from "@/lib/job-status";
+import { deriveDisplayStatus, DISPLAY_STATUS_LABELS, displayStatusColor, JOB_TYPE_LABELS, type JobType } from "@/lib/job-status";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import {
@@ -88,12 +88,16 @@ function getJobCoords(job: DispatchJob): [number, number] | null {
 
 /* ---- Constants ---- */
 
-const TYPE_CONFIG: Record<string, { label: string; letter: string; stripe: string }> = {
-  delivery: { label: "Drop Off", letter: "D", stripe: "var(--t-accent)" },
-  pickup: { label: "Pick Up", letter: "P", stripe: "var(--t-warning)" },
-  exchange: { label: "Exchange", letter: "E", stripe: "#a78bfa" },
-  dump_run: { label: "Dump Run", letter: "DR", stripe: "var(--t-error)" },
+// Styling-only map (letter + stripe). Labels come from JOB_TYPE_LABELS registry.
+const TYPE_CONFIG: Record<string, { letter: string; stripe: string }> = {
+  delivery: { letter: "D", stripe: "var(--t-accent)" },
+  pickup: { letter: "P", stripe: "var(--t-warning)" },
+  exchange: { letter: "E", stripe: "#a78bfa" },
+  dump_run: { letter: "DR", stripe: "var(--t-error)" },
 };
+
+/** Registry-driven type label with passthrough fallback for unknown types. */
+const getTypeLabel = (t: string): string => JOB_TYPE_LABELS[t as JobType] ?? t;
 
 const FILTER_TABS = [
   { key: "all", label: "All" }, { key: "delivery", label: "Deliveries" },
@@ -791,7 +795,7 @@ export default function DispatchPage() {
 
       {/* ── QuickView ── */}
       <QuickView isOpen={!!quickViewJob} onClose={() => { setQuickViewJob(null); setQvDetail(null); }}
-        title={quickViewJob ? `${quickViewJob.asset_subtype || quickViewJob.asset?.subtype || ""} ${TYPE_CONFIG[quickViewJob.job_type]?.label || quickViewJob.job_type}`.trim() : ""}
+        title={quickViewJob ? `${quickViewJob.asset_subtype || quickViewJob.asset?.subtype || ""} ${getTypeLabel(quickViewJob.job_type)}`.trim() : ""}
         subtitle={quickViewJob?.job_number}
         actions={quickViewJob ? <Link href={`/jobs/${quickViewJob.id}`} className="rounded-full px-3 py-1.5 text-xs font-medium" style={{ background: "var(--t-bg-card-hover)", color: "var(--t-text-primary)" }}><ExternalLink className="h-3 w-3 inline mr-1" />Full Detail</Link> : undefined}
         footer={quickViewJob ? (
@@ -965,7 +969,7 @@ function DispatchMap({ board, activeJobId }: { board: DispatchBoard | null; acti
 
       const custName = job.customer ? `${job.customer.first_name} ${job.customer.last_name}` : job.job_number;
       const addrStr = [job.service_address?.street, job.service_address?.city].filter(Boolean).join(", ") || "No address";
-      const typeStr = `${job.asset_subtype || job.asset?.subtype || ""} ${tc.label || job.job_type}`.trim();
+      const typeStr = `${job.asset_subtype || job.asset?.subtype || ""} ${getTypeLabel(job.job_type)}`.trim();
       const driverName = driverMap.get(job.id) || "Unassigned";
       const statusStr = DISPLAY_STATUS_LABELS[deriveDisplayStatus(job.status || "pending")];
 
@@ -1248,7 +1252,7 @@ function ColumnCard({ columnId, title, driver, isUnassigned, count, progress, jo
               <span className="font-bold" style={{ color: "var(--t-accent-text)" }}>NOW:</span>
               <span className="truncate" style={{ color: "var(--t-text-primary)" }}>
                 {(activeJob.asset_subtype || activeJob.asset?.subtype || "").replace(/yd$/i, "Y").toUpperCase()}{" "}
-                {TYPE_CONFIG[activeJob.job_type]?.label.toUpperCase() || activeJob.job_type.toUpperCase()}
+                {getTypeLabel(activeJob.job_type).toUpperCase()}
                 {activeJob.service_address ? ` — ${[activeJob.service_address.street, activeJob.service_address.city].filter(Boolean).join(", ")}` : ""}
               </span>
             </div>
@@ -1257,7 +1261,7 @@ function ColumnCard({ columnId, title, driver, isUnassigned, count, progress, jo
               <span className="font-bold" style={{ color: "var(--t-text-muted)" }}>NEXT:</span>
               <span className="truncate" style={{ color: "var(--t-text-primary)" }}>
                 {(nextJob.asset_subtype || nextJob.asset?.subtype || "").replace(/yd$/i, "Y").toUpperCase()}{" "}
-                {TYPE_CONFIG[nextJob.job_type]?.label.toUpperCase() || nextJob.job_type.toUpperCase()}
+                {getTypeLabel(nextJob.job_type).toUpperCase()}
                 {nextJob.service_address ? ` — ${[nextJob.service_address.street, nextJob.service_address.city].filter(Boolean).join(", ")}` : ""}
               </span>
             </div>
@@ -1350,7 +1354,8 @@ const JobTile = memo(function JobTile({ job, isUnassigned, drivers, onAssign, on
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: job.id });
   const isCompleted = job.status === "completed";
-  const tc = TYPE_CONFIG[job.job_type] || { label: job.job_type, letter: "?", stripe: "#8A8A8A" };
+  const tc = TYPE_CONFIG[job.job_type] || { letter: "?", stripe: "#8A8A8A" };
+  const typeLabel = getTypeLabel(job.job_type);
   const addr = job.service_address;
   const addrStr = addr ? [addr.street, addr.city].filter(Boolean).join(", ") : "";
   const size = job.asset_subtype || job.asset?.subtype || "";
@@ -1410,41 +1415,59 @@ const JobTile = memo(function JobTile({ job, isUnassigned, drivers, onAssign, on
         </button>
         {/* Content */}
         <div className="flex-1 min-w-0">
-          {/* Line 1: Size + Type (tight row) */}
+          {/* Line 1: Size (primary) + Type (secondary) */}
           <div className="flex items-baseline gap-1.5">
             {size && <span className="text-[14px] font-extrabold leading-none" style={{ color: "var(--t-text-primary)" }}>{size.replace(/yd$/i, "Y").toUpperCase()}</span>}
-            <span className="text-[13px] font-extrabold uppercase leading-none" style={{ color: tc.stripe }}>{tc.label.toUpperCase()}</span>
+            <span className="text-[11px] font-semibold uppercase tracking-wide leading-none" style={{ color: "var(--t-text-muted)" }}>{typeLabel}</span>
             {isCompleted && <CheckCircle2 className="h-3 w-3 ml-0.5" style={{ color: "var(--t-accent-text)" }} />}
           </div>
-          {/* Line 2: Customer (bold, primary) */}
-          <p className="text-[13px] font-semibold mt-1 truncate" style={{ color: "var(--t-text-primary)" }}>
-            {job.customer ? `${job.customer.first_name} ${job.customer.last_name}` : job.job_number}
+          {/* Line 2: Address (promoted — highly readable) */}
+          {addrStr && <p className="text-[13px] font-medium mt-1 truncate" style={{ color: "var(--t-text-primary)" }}>{addrStr}</p>}
+          {proximitySuggestion && <p className="text-[10px] mt-0.5 italic" style={{ color: "var(--t-text-muted)" }}>{proximitySuggestion}</p>}
+          {/* Line 3: Customer + secondary metadata (de-emphasized) */}
+          <p className="text-[11px] mt-0.5 truncate" style={{ color: "var(--t-text-muted)" }}>
+            <span>{job.customer ? `${job.customer.first_name} ${job.customer.last_name}` : job.job_number}</span>
+            {(job.scheduled_window_start || job.scheduled_window_end) && (
+              <>
+                <span aria-hidden="true"> · </span>
+                <span className="tabular-nums">
+                  {fmtTime(job.scheduled_window_start)}{job.scheduled_window_end ? `–${fmtTime(job.scheduled_window_end)}` : ""}
+                </span>
+              </>
+            )}
+            {job.asset?.identifier && (
+              <>
+                <span aria-hidden="true"> · </span>
+                <span className="font-semibold" style={{ color: "var(--t-text-secondary, var(--t-text-muted))" }}>{job.asset.identifier}</span>
+              </>
+            )}
           </p>
-          {/* Line 3: Address (muted) */}
-          {addrStr && <p className="text-[12px] mt-0.5 truncate" style={{ color: "var(--t-text-muted)" }}>{addrStr}</p>}
-          {proximitySuggestion && <p className="text-[10px] mt-0.5 italic" style={{ color: "var(--t-accent)" }}>{proximitySuggestion}</p>}
-          {/* Line 4: Time + Status bottom row */}
-          {(job.scheduled_window_start || job.scheduled_window_end) && (
-            <p className="text-[11px] mt-1" style={{ color: "var(--t-text-muted)" }}>
-              {fmtTime(job.scheduled_window_start)}{job.scheduled_window_end ? ` – ${fmtTime(job.scheduled_window_end)}` : ""}
-            </p>
-          )}
-          {/* Line 5: Badges */}
-          {(job.asset?.identifier || job.is_failed_trip || job.source === "rescheduled_from_failure" || job.is_overdue || needsYardStop || (isCompleted && (job.job_type === 'pickup' || job.job_type === 'exchange')) || job.dump_disposition === 'staged') && (
-            <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-              {job.asset?.identifier && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ background: "rgba(34,197,94,0.08)", color: "var(--t-accent-text)" }}>{job.asset.identifier}</span>}
-              {needsYardStop && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: "rgba(217,119,6,0.08)", color: "var(--t-warning)" }}>YARD STOP</span>}
-              {job.is_failed_trip && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: "rgba(220,38,38,0.08)", color: "var(--t-error)" }}>FAILED</span>}
-              {job.source === "rescheduled_from_failure" && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: "rgba(217,119,6,0.08)", color: "var(--t-warning)" }}>FROM FAILED</span>}
-              {job.is_overdue && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: "rgba(220,38,38,0.08)", color: "var(--t-error)" }}>OVERDUE {job.extra_days}d</span>}
-              {isCompleted && (job.job_type === 'pickup' || job.job_type === 'exchange') && (
-                job.dump_status && job.dump_status !== 'none'
-                  ? <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: "rgba(34,197,94,0.08)", color: "var(--t-accent-text)" }}>DUMPED</span>
-                  : <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: "rgba(217,119,6,0.08)", color: "var(--t-warning)" }}>AWAITING DUMP</span>
-              )}
-              {job.dump_disposition === 'staged' && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: "rgba(139,92,246,0.08)", color: "#8B5CF6" }}>AT YARD</span>}
-            </div>
-          )}
+          {/* Subtle state chip — at most one, neutral outlined (color-noise-free) */}
+          {(() => {
+            // Priority: OVERDUE > FAILED > FROM FAILED > AT YARD > YARD STOP
+            // DUMPED / AWAITING DUMP removed as post-completion chatter per Sprint 2 polish.
+            let state: string | null = null;
+            if (job.is_overdue) state = `OVERDUE ${job.extra_days ?? ""}d`.trim();
+            else if (job.is_failed_trip) state = "FAILED";
+            else if (job.source === "rescheduled_from_failure") state = "FROM FAILED";
+            else if (job.dump_disposition === "staged") state = "AT YARD";
+            else if (needsYardStop) state = "YARD STOP";
+            if (!state) return null;
+            return (
+              <div className="mt-1">
+                <span
+                  className="inline-block text-[9px] font-semibold tracking-wide px-1.5 py-0.5 rounded"
+                  style={{
+                    border: "1px solid var(--t-border)",
+                    color: "var(--t-text-muted)",
+                    background: "transparent",
+                  }}
+                >
+                  {state}
+                </span>
+              </div>
+            );
+          })()}
         </div>
         {/* Quick actions — visible on hover */}
         <div className="shrink-0 flex flex-col gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity" data-no-select>
@@ -1539,7 +1562,8 @@ function StatusDropdown({ jobId, currentStatus, onStatusChange }: { jobId: strin
 }
 
 function JobTileGhost({ job, bulkCount = 1 }: { job: DispatchJob; bulkCount?: number }) {
-  const tc = TYPE_CONFIG[job.job_type] || { label: job.job_type, letter: "?", stripe: "#8A8A8A" };
+  const tc = TYPE_CONFIG[job.job_type] || { letter: "?", stripe: "#8A8A8A" };
+  const typeLabel = getTypeLabel(job.job_type);
   const size = job.asset_subtype || job.asset?.subtype || "";
   return (
     <div className="relative" style={{ width: 310 }}>
@@ -1555,7 +1579,7 @@ function JobTileGhost({ job, bulkCount = 1 }: { job: DispatchJob; bulkCount?: nu
         <div className="absolute left-0 top-2.5 bottom-2.5 w-[4px] rounded-full" style={{ background: tc.stripe }} />
         <div className="flex items-center gap-2 pl-2">
           {size && <span className="rounded-md px-2 py-0.5 text-[13px] font-extrabold" style={{ background: "#F0F0F0", border: "1px solid #E0E0E0", color: "#0A0A0A" }}>{size.replace(/yd$/i, "Y").toUpperCase()}</span>}
-          <span className="text-[13px] font-extrabold uppercase" style={{ color: tc.stripe }}>{tc.label.toUpperCase()}</span>
+          <span className="text-[13px] font-extrabold uppercase" style={{ color: tc.stripe }}>{typeLabel.toUpperCase()}</span>
           <span className="text-[12px] font-medium" style={{ color: "#666" }}>{job.customer ? `${job.customer.first_name} ${job.customer.last_name}` : job.job_number}</span>
         </div>
       </div>
@@ -1590,7 +1614,8 @@ function QVContent({ job, detail, board, onAssign, onRefresh, toast }: {
   const [editingPlacement, setEditingPlacement] = useState(false);
   const [placementValue, setPlacementValue] = useState("");
   const [savingPlacement, setSavingPlacement] = useState(false);
-  const tc = TYPE_CONFIG[job.job_type] || { label: job.job_type, letter: "?", stripe: "#8A8A8A" };
+  const tc = TYPE_CONFIG[job.job_type] || { letter: "?", stripe: "#8A8A8A" };
+  const typeLabel = getTypeLabel(job.job_type);
   const isCompleted = job.status === "completed";
   const d = detail || job;
   const addr = d.service_address;
@@ -1642,7 +1667,7 @@ function QVContent({ job, detail, board, onAssign, onRefresh, toast }: {
       )}
 
       <div className="flex items-center gap-2 flex-wrap">
-        <span className="text-xs font-medium" style={{ color: tc.stripe }}>{tc.label}</span>
+        <span className="text-xs font-medium" style={{ color: tc.stripe }}>{typeLabel}</span>
         <span className="text-xs font-medium" style={{ color: displayStatusColor(deriveDisplayStatus(job.status)) }}>{DISPLAY_STATUS_LABELS[deriveDisplayStatus(job.status)]}</span>
         {(d.asset_subtype || d.asset?.subtype) && <span className="rounded-md px-2 py-0.5 text-[11px] font-bold" style={{ background: "#F0F0F0", border: "1px solid #E0E0E0", color: "#0A0A0A" }}>{d.asset_subtype || d.asset?.subtype}</span>}
         {d.asset?.identifier && <span className="text-xs font-bold" style={{ color: "var(--t-accent)" }}>{d.asset.identifier}</span>}

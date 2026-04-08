@@ -64,6 +64,17 @@ export const DISPLAY_STATUS_LABELS: Record<DisplayStatus, string> = {
   needs_reschedule: "Needs Reschedule",
 };
 
+/** Canonical job type identifiers (matches stored job.type values) */
+export type JobType = "delivery" | "pickup" | "exchange" | "dump_run";
+
+/** Human-readable labels for job types — single source of truth for dispatch UI */
+export const JOB_TYPE_LABELS: Record<JobType, string> = {
+  delivery: "Drop Off",
+  pickup: "Pick Up",
+  exchange: "Exchange",
+  dump_run: "Dump Run",
+};
+
 /** CSS color variable for each display status */
 export function displayStatusColor(status: DisplayStatus): string {
   switch (status) {
