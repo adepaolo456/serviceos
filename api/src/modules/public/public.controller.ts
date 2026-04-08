@@ -59,4 +59,10 @@ export class PublicController {
   ) {
     return this.publicService.getQuoteByToken(slug, token);
   }
+
+  @Get('quote/:token')
+  @ApiOperation({ summary: 'Get hosted quote page data by token (no slug needed)' })
+  getHostedQuote(@Param('token') token: string) {
+    return this.publicService.getHostedQuote(token);
+  }
 }
