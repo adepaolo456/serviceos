@@ -1,5 +1,6 @@
 import {
   Injectable,
+  Logger,
   BadRequestException,
   ConflictException,
 } from '@nestjs/common';
@@ -18,6 +19,8 @@ import { normalizePhone } from '../../common/utils/phone';
 
 @Injectable()
 export class TenantSettingsService {
+  private readonly logger = new Logger(TenantSettingsService.name);
+
   constructor(
     @InjectRepository(TenantSettings)
     private settingsRepo: Repository<TenantSettings>,
@@ -150,6 +153,87 @@ export class TenantSettingsService {
       await this.settingsRepo.update({ tenant_id: tenantId }, { quote_templates: dto.quote_templates, updated_at: new Date() } as any);
     }
     return this.settingsRepo.findOneOrFail({ where: { tenant_id: tenantId } });
+  }
+
+  /**
+   * Auto-provision an SMS-capable Twilio number for the tenant.
+   * Uses platform Twilio credentials. Tenant never needs a Twilio account.
+   */
+  async provisionSmsNumber(tenantId: string): Promise<{ success: boolean; phoneNumber?: string; error?: string }> {
+    const settings = await this.getSettings(tenantId);
+
+    // Guard: already has a number
+    if (settings.sms_phone_number) {
+      return { success: true, phoneNumber: settings.sms_phone_number };
+    }
+
+    const accountSid = process.env.TWILIO_ACCOUNT_SID || '';
+    const authToken = process.env.TWILIO_AUTH_TOKEN || '';
+    if (!accountSid || !authToken) {
+      return { success: false, error: 'SMS provisioning is not available at this time' };
+    }
+
+    const auth = Buffer.from(`${accountSid}:${authToken}`).toString('base64');
+    const apiBase = `https://api.twilio.com/2010-04-01/Accounts/${accountSid}`;
+    const headers = { Authorization: `Basic ${auth}`, 'Content-Type': 'application/x-www-form-urlencoded' };
+
+    try {
+      // 1. Search for available US local SMS-capable number
+      const searchParams = new URLSearchParams({ SmsEnabled: 'true', VoiceEnabled: 'true', PageSize: '1' });
+      const searchRes = await fetch(`${apiBase}/AvailablePhoneNumbers/US/Local.json?${searchParams}`, { headers });
+      const searchData = await searchRes.json();
+
+      if (!searchRes.ok || !searchData.available_phone_numbers?.length) {
+        this.logger.error(`No available numbers: ${JSON.stringify(searchData)}`);
+        return { success: false, error: 'No SMS numbers available right now. Please try again later.' };
+      }
+
+      const numberToBuy = searchData.available_phone_numbers[0].phone_number;
+
+      // 2. Purchase the number + configure inbound SMS webhook
+      const apiDomain = process.env.API_DOMAIN || 'serviceos-api.vercel.app';
+      const webhookUrl = `https://${apiDomain}/automation/sms/inbound`;
+
+      const buyParams = new URLSearchParams({
+        PhoneNumber: numberToBuy,
+        SmsUrl: webhookUrl,
+        SmsMethod: 'POST',
+      });
+
+      const buyRes = await fetch(`${apiBase}/IncomingPhoneNumbers.json`, {
+        method: 'POST', headers, body: buyParams.toString(),
+      });
+      const buyData = await buyRes.json();
+
+      if (!buyRes.ok) {
+        this.logger.error(`Number purchase failed: ${JSON.stringify(buyData)}`);
+        return { success: false, error: 'Unable to provision a number right now. Please try again later.' };
+      }
+
+      const assignedNumber = buyData.phone_number;
+
+      // 3. Save to tenant settings — conditional update prevents duplicate assignment from race
+      const result = await this.settingsRepo.createQueryBuilder()
+        .update(TenantSettings)
+        .set({ sms_phone_number: assignedNumber, updated_at: new Date() })
+        .where('tenant_id = :tenantId AND (sms_phone_number IS NULL OR sms_phone_number = \'\')', { tenantId })
+        .execute();
+
+      if (!result.affected || result.affected === 0) {
+        // Another request already assigned a number — the purchased number is now orphaned
+        // Log for manual cleanup but don't fail the user
+        this.logger.warn(`Provisioned ${assignedNumber} for tenant ${tenantId} but another number was already assigned. Orphaned number needs manual release.`);
+        const current = await this.getSettings(tenantId);
+        return { success: true, phoneNumber: current.sms_phone_number! };
+      }
+
+      this.logger.log(`Provisioned SMS number ${assignedNumber} for tenant ${tenantId}`);
+      return { success: true, phoneNumber: assignedNumber };
+
+    } catch (err: any) {
+      this.logger.error(`SMS provisioning error for tenant ${tenantId}: ${err.message}`);
+      return { success: false, error: 'Unable to provision a number right now. Please try again later.' };
+    }
   }
 
   private async validatePortalSlug(
