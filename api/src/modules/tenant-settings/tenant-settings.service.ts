@@ -12,6 +12,7 @@ import {
   UpdateOperationsDto,
   UpdateNotificationConfigDto,
   UpdateQuoteSettingsDto,
+  UpdateQuoteTemplatesDto,
 } from './dto/tenant-settings.dto';
 
 @Injectable()
@@ -125,6 +126,17 @@ export class TenantSettingsService {
     if (dto.default_quote_delivery_method !== undefined) update.default_quote_delivery_method = dto.default_quote_delivery_method;
     update.updated_at = new Date();
     await this.settingsRepo.update({ tenant_id: tenantId }, update);
+    return this.settingsRepo.findOneOrFail({ where: { tenant_id: tenantId } });
+  }
+
+  async updateQuoteTemplates(
+    tenantId: string,
+    dto: UpdateQuoteTemplatesDto,
+  ): Promise<TenantSettings> {
+    await this.getSettings(tenantId);
+    if (dto.quote_templates !== undefined) {
+      await this.settingsRepo.update({ tenant_id: tenantId }, { quote_templates: dto.quote_templates, updated_at: new Date() } as any);
+    }
     return this.settingsRepo.findOneOrFail({ where: { tenant_id: tenantId } });
   }
 

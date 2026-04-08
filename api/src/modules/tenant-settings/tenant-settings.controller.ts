@@ -7,6 +7,7 @@ import {
   UpdateOperationsDto,
   UpdateNotificationConfigDto,
   UpdateQuoteSettingsDto,
+  UpdateQuoteTemplatesDto,
 } from './dto/tenant-settings.dto';
 import { TenantId } from '../../common/decorators';
 
@@ -65,5 +66,14 @@ export class TenantSettingsController {
     @Body() dto: UpdateQuoteSettingsDto,
   ) {
     return this.settingsService.updateQuoteSettings(tenantId, dto);
+  }
+
+  @Patch('quote-templates')
+  @ApiOperation({ summary: 'Update quote email/SMS templates' })
+  updateQuoteTemplates(
+    @TenantId() tenantId: string,
+    @Body() dto: UpdateQuoteTemplatesDto,
+  ) {
+    return this.settingsService.updateQuoteTemplates(tenantId, dto);
   }
 }

@@ -930,6 +930,15 @@ function QuotesTab() {
         quotes_sms_enabled: settings.quotes_sms_enabled,
         default_quote_delivery_method: method,
       });
+      // Save templates separately (clean empty strings)
+      const templates = settings.quote_templates || {};
+      const cleanTemplates: Record<string, string> = {};
+      for (const [k, v] of Object.entries(templates)) {
+        if (typeof v === "string" && v.trim()) cleanTemplates[k] = v;
+      }
+      await api.patch("/tenant-settings/quote-templates", {
+        quote_templates: Object.keys(cleanTemplates).length > 0 ? cleanTemplates : null,
+      });
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch {
@@ -1006,6 +1015,53 @@ function QuotesTab() {
             </select>
           </div>
         </div>
+      </div>
+
+      {/* Templates */}
+      <div>
+        <h3 className="text-sm font-bold uppercase tracking-wide text-[var(--t-text-primary)] mb-2">Email & SMS Templates</h3>
+        <p className="text-[11px] text-[var(--t-text-muted)] mb-3">
+          Available placeholders: {"{customer_name}"} {"{company_name}"} {"{quote_price}"} {"{quote_link}"} {"{dumpster_size}"} {"{service_address}"} {"{expires_at}"} {"{company_phone}"} {"{company_email}"}
+        </p>
+        <p className="text-[11px] text-[var(--t-text-muted)] mb-4">Leave blank to use the default template.</p>
+        {([
+          { group: "Quote", keys: ["quote_email_subject", "quote_email_body", "quote_sms_body"] },
+          { group: "Follow-Up", keys: ["followup_email_subject", "followup_email_body", "followup_sms_body"] },
+          { group: "Expiration", keys: ["expiration_email_subject", "expiration_email_body", "expiration_sms_body"] },
+        ] as const).map(({ group, keys }) => (
+          <div key={group} className="mb-4">
+            <p className="text-[12px] font-semibold uppercase tracking-wide text-[var(--t-text-muted)] mb-2" style={{ borderTop: "1px solid var(--t-border)", paddingTop: 12 }}>{group}</p>
+            <div className="space-y-3">
+              {keys.map((k) => {
+                const isBody = k.includes("body");
+                const label = k.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+                const templates = (settings.quote_templates || {}) as Record<string, string>;
+                return (
+                  <div key={k}>
+                    <label className={labelCls}>{label}</label>
+                    {isBody ? (
+                      <textarea
+                        value={templates[k] || ""}
+                        onChange={(e) => set("quote_templates", { ...templates, [k]: e.target.value })}
+                        rows={3}
+                        className={inputCls}
+                        style={{ resize: "vertical" }}
+                        placeholder="Default template will be used"
+                      />
+                    ) : (
+                      <input
+                        value={templates[k] || ""}
+                        onChange={(e) => set("quote_templates", { ...templates, [k]: e.target.value })}
+                        className={inputCls}
+                        placeholder="Default template will be used"
+                      />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ))}
       </div>
 
       <div className="flex items-center gap-3 pt-2">
