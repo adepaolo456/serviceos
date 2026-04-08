@@ -53,6 +53,50 @@ interface Summary {
   rangeDays: number;
 }
 
+const FOLLOW_UP_LABELS = {
+  scheduled: "Follow-up scheduled",
+  due: "Follow-up due",
+  sent: "Follow-up sent",
+  sectionTitle: "Follow-Up",
+};
+
+const FOLLOW_UP_COLORS: Record<string, { bg: string; text: string }> = {
+  scheduled: { bg: "var(--t-bg-elevated, #e5e7eb)", text: "var(--t-text-muted)" },
+  due: { bg: "var(--t-warning-soft, rgba(234,179,8,0.1))", text: "var(--t-warning)" },
+  sent: { bg: "var(--t-success-soft, rgba(34,197,94,0.1))", text: "var(--t-success, #22c55e)" },
+};
+
+type FollowUpState = "scheduled" | "due" | "sent" | null;
+
+function getFollowUpState(
+  quote: Quote,
+  followUpEnabled: boolean,
+  delayHours: number,
+  now: Date,
+): FollowUpState {
+  if (quote.auto_follow_up_sent_at) return "sent";
+  if (!followUpEnabled) return null;
+  if (quote.derived_status !== "sent" && quote.derived_status !== "open") return null;
+  if (!quote.last_sent_at) return null;
+  if (!quote.customer_email) return null;
+  const dueAt = new Date(new Date(quote.last_sent_at).getTime() + delayHours * 60 * 60 * 1000);
+  if (now >= dueAt) return "due";
+  return "scheduled";
+}
+
+function FollowUpBadge({ state }: { state: FollowUpState }) {
+  if (!state) return null;
+  const colors = FOLLOW_UP_COLORS[state];
+  return (
+    <span
+      className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide"
+      style={{ backgroundColor: colors.bg, color: colors.text }}
+    >
+      {FOLLOW_UP_LABELS[state]}
+    </span>
+  );
+}
+
 const STATUS_FILTERS = [
   { key: "all", label: "All" },
   { key: "open", label: "Open" },
@@ -131,6 +175,7 @@ export default function QuotesPage() {
 
   const [hotQuotes, setHotQuotes] = useState<Quote[]>([]);
   const [statsRange, setStatsRange] = useState("30d");
+  const [tenantSettings, setTenantSettings] = useState<{ quote_follow_up_enabled?: boolean; quote_follow_up_delay_hours?: number }>({});
 
   useEffect(() => {
     api.get<Summary>(`/quotes/summary?range=${statsRange}`).then(setSummary).catch(() => {});
@@ -138,6 +183,7 @@ export default function QuotesPage() {
 
   useEffect(() => {
     api.get<{ data: Quote[] }>("/quotes?hot=true&limit=10").then((r) => setHotQuotes(r.data || [])).catch(() => {});
+    api.get<Record<string, any>>("/tenant-settings").then((s) => setTenantSettings(s)).catch(() => {});
   }, []);
 
   const openDetail = async (q: Quote) => {
@@ -398,7 +444,7 @@ export default function QuotesPage() {
           <table className="w-full text-sm">
             <thead>
               <tr style={{ borderBottom: "1px solid var(--t-border)" }}>
-                {["Quote #", "Customer", "Address", "Size", "Amount", "Status", "Created", ""].map((h) => (
+                {["Quote #", "Customer", "Address", "Size", "Amount", "Status", "Follow-Up", "Created", ""].map((h) => (
                   <th
                     key={h}
                     className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wide"
@@ -436,6 +482,9 @@ export default function QuotesPage() {
                   </td>
                   <td className="px-4 py-3">
                     <StatusBadge status={q.derived_status} />
+                  </td>
+                  <td className="px-4 py-3">
+                    <FollowUpBadge state={getFollowUpState(q, tenantSettings.quote_follow_up_enabled ?? false, tenantSettings.quote_follow_up_delay_hours ?? 24, new Date())} />
                   </td>
                   <td className="px-4 py-3 text-xs" style={{ color: "var(--t-text-muted)" }}>
                     {formatDate(q.created_at)}
@@ -507,6 +556,27 @@ export default function QuotesPage() {
                 )}
               </div>
             </div>
+
+            {/* Follow-Up */}
+            {(() => {
+              const fuState = getFollowUpState(selectedQuote, tenantSettings.quote_follow_up_enabled ?? false, tenantSettings.quote_follow_up_delay_hours ?? 24, new Date());
+              if (!fuState && !selectedQuote.auto_follow_up_sent_at) return null;
+              return (
+                <div className="rounded-[14px] border p-4" style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)" }}>
+                  <p className="text-[11px] font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--t-text-muted)" }}>{FOLLOW_UP_LABELS.sectionTitle}</p>
+                  <div className="flex items-center justify-between">
+                    <FollowUpBadge state={fuState} />
+                    <span className="text-xs" style={{ color: "var(--t-text-muted)" }}>
+                      {selectedQuote.auto_follow_up_sent_at
+                        ? `Sent ${formatDate(selectedQuote.auto_follow_up_sent_at)}`
+                        : fuState === "scheduled" && selectedQuote.last_sent_at
+                        ? `Scheduled for ${formatDate(new Date(new Date(selectedQuote.last_sent_at).getTime() + (tenantSettings.quote_follow_up_delay_hours ?? 24) * 3600000).toISOString())}`
+                        : fuState === "due" ? "Ready to send" : ""}
+                    </span>
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* Linked booking */}
             {selectedQuote.booked_job_id && (
