@@ -86,6 +86,8 @@ export class JobsController {
 
   // Static PATCH routes MUST come before :id parameterized routes
   @Patch('bulk-reorder')
+  @UseGuards(RolesGuard)
+  @Roles('admin', 'owner', 'dispatcher')
   @ApiOperation({ summary: 'Bulk reorder jobs within a route' })
   bulkReorder(
     @TenantId() tenantId: string,
@@ -125,6 +127,8 @@ export class JobsController {
   }
 
   @Patch(':id/assign')
+  @UseGuards(RolesGuard)
+  @Roles('admin', 'owner', 'dispatcher')
   @ApiOperation({ summary: 'Assign or unassign driver and/or asset' })
   assign(
     @TenantId() tenantId: string,
