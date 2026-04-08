@@ -409,7 +409,7 @@ export default function NewCustomerForm({ onOrchestrated, onClose, forceCustomer
       )}
 
       {/* Customer section — collapsed summary or full form */}
-      {selectedCustomerId && customerCollapsed ? (
+      {customerCollapsed && firstName.trim() && lastName.trim() ? (
         <div style={{ backgroundColor: "var(--t-bg-card)", border: "1px solid var(--t-border)", borderRadius: 10, padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div>
             <div style={{ fontSize: 14, fontWeight: 600, color: "var(--t-text-primary)" }}>{firstName} {lastName}</div>
@@ -421,10 +421,12 @@ export default function NewCustomerForm({ onOrchestrated, onClose, forceCustomer
               style={{ fontSize: 12, fontWeight: 600, color: "var(--t-accent)", background: "none", border: "none", cursor: "pointer" }}>
               Edit
             </button>
-            <button type="button" onClick={() => { clearSelectedCustomer(); setFirstName(""); setLastName(""); setEmail(""); setPhone(""); }}
-              style={{ fontSize: 12, fontWeight: 600, color: "var(--t-text-muted)", background: "none", border: "none", cursor: "pointer" }}>
-              &times;
-            </button>
+            {selectedCustomerId && (
+              <button type="button" onClick={() => { clearSelectedCustomer(); setFirstName(""); setLastName(""); setEmail(""); setPhone(""); }}
+                style={{ fontSize: 12, fontWeight: 600, color: "var(--t-text-muted)", background: "none", border: "none", cursor: "pointer" }}>
+                &times;
+              </button>
+            )}
           </div>
         </div>
       ) : (
@@ -537,7 +539,7 @@ export default function NewCustomerForm({ onOrchestrated, onClose, forceCustomer
               { key: "schedule" as const, label: NEW_CUSTOMER_LABELS.saveAndSchedule },
               { key: "save" as const, label: NEW_CUSTOMER_LABELS.saveCustomerOnly },
             ]).map(opt => (
-              <button key={opt.key} type="button" onClick={() => setNextStep(opt.key)}
+              <button key={opt.key} type="button" onClick={() => { setNextStep(opt.key); if (opt.key === "schedule" && firstName.trim() && lastName.trim()) setCustomerCollapsed(true); }}
                 style={{ padding: "10px 0", borderRadius: 10, fontSize: 13, fontWeight: 600, border: nextStep === opt.key ? "none" : "1px solid var(--t-border)", backgroundColor: nextStep === opt.key ? "var(--t-accent)" : "transparent", color: nextStep === opt.key ? "var(--t-accent-on-accent)" : "var(--t-text-muted)", cursor: "pointer", transition: "all 0.15s ease" }}>
                 {opt.label}
               </button>
