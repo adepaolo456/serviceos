@@ -384,6 +384,7 @@ export class PublicService {
 
     const expired = new Date() > quote.expires_at;
     const converted = quote.status === 'converted';
+    const isActive = !expired && !converted;
 
     // Fire-and-forget view tracking — does not block response
     const now = new Date();
@@ -398,8 +399,31 @@ export class PublicService {
       .execute()
       .catch(() => {}); // silent — analytics must not break page load
 
+    const branding = {
+      companyName: tenant.name,
+      logoUrl: tenant.website_logo_url || null,
+      primaryColor: tenant.website_primary_color || '#2ECC71',
+      phone: tenant.website_phone || null,
+      email: tenant.website_email || null,
+      slug: tenant.slug,
+    };
+
+    // For converted or expired quotes, return only branding + a friendly message.
+    // Do NOT expose customer name, delivery address, or pricing breakdown — those leak
+    // PII to anyone still holding the forwarded link.
+    if (!isActive) {
+      return {
+        status: expired ? 'expired' : 'booked',
+        message: expired
+          ? 'This quote has expired.'
+          : 'This quote has already been converted to a booking.',
+        quote: null,
+        branding,
+      };
+    }
+
     return {
-      status: expired ? 'expired' : converted ? 'booked' : 'active',
+      status: 'active',
       quote: {
         size: quote.asset_subtype,
         customerName: quote.customer_name,
@@ -413,16 +437,9 @@ export class PublicService {
         extraDayRate: Number(quote.extra_day_rate),
         expiresAt: quote.expires_at,
         createdAt: quote.created_at,
-        bookedAt: converted ? quote.updated_at : null,
+        bookedAt: null,
       },
-      branding: {
-        companyName: tenant.name,
-        logoUrl: tenant.website_logo_url || null,
-        primaryColor: tenant.website_primary_color || '#2ECC71',
-        phone: tenant.website_phone || null,
-        email: tenant.website_email || null,
-        slug: tenant.slug,
-      },
+      branding,
     };
   }
 

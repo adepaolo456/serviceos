@@ -33,7 +33,8 @@ interface Branding {
 
 interface HostedQuoteResponse {
   status: "active" | "expired" | "booked";
-  quote: QuoteData;
+  message?: string;
+  quote: QuoteData | null;
   branding: Branding;
 }
 
@@ -75,19 +76,23 @@ export default function HostedQuotePage({ params }: { params: Promise<{ token: s
 
   const { quote, branding, status } = data;
   const accent = branding.primaryColor || "#2ECC71";
-  const isActive = status === "active";
+  const isActive = status === "active" && quote !== null;
   const bookNowUrl = `https://${branding.slug}.${process.env.NEXT_PUBLIC_TENANT_DOMAIN || "serviceos.com"}/site/book?quote=${encodeURIComponent(token)}`;
-  const addr = quote.deliveryAddress;
+  const addr = quote?.deliveryAddress ?? null;
   const addrStr = addr ? [addr.street, addr.city, addr.state, addr.zip].filter(Boolean).join(", ") : null;
-  const expiresDate = new Date(quote.expiresAt).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
-  const hoursUntilExpiry = isActive ? Math.max(0, Math.round((new Date(quote.expiresAt).getTime() - Date.now()) / 3600000)) : 0;
+  const expiresDate = quote
+    ? new Date(quote.expiresAt).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })
+    : null;
+  const hoursUntilExpiry = isActive && quote ? Math.max(0, Math.round((new Date(quote.expiresAt).getTime() - Date.now()) / 3600000)) : 0;
   const expiresToday = isActive && hoursUntilExpiry <= 24;
   const expiringSoon = isActive && hoursUntilExpiry <= 48 && !expiresToday;
   const expiryLabel = expiresToday
     ? (hoursUntilExpiry <= 1 ? "Expires in less than an hour" : `Expires in ${hoursUntilExpiry} hours`)
     : expiringSoon
     ? "Expires tomorrow"
-    : `Valid through ${expiresDate}`;
+    : expiresDate
+    ? `Valid through ${expiresDate}`
+    : "";
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -118,7 +123,7 @@ export default function HostedQuotePage({ params }: { params: Promise<{ token: s
         {status === "expired" && (
           <div className="mb-6 rounded-xl bg-amber-50 border border-amber-200 px-5 py-4">
             <p className="text-sm text-amber-800 font-semibold">This quote has expired</p>
-            <p className="text-xs text-amber-700 mt-1">Expired on {expiresDate}. Contact us for updated pricing.</p>
+            <p className="text-xs text-amber-700 mt-1">{expiresDate ? `Expired on ${expiresDate}. ` : ""}Contact us for updated pricing.</p>
           </div>
         )}
         {status === "booked" && (
@@ -126,7 +131,7 @@ export default function HostedQuotePage({ params }: { params: Promise<{ token: s
             <CheckCircle2 className="h-5 w-5 text-green-600 shrink-0" />
             <div>
               <p className="text-sm text-green-800 font-semibold">Booking confirmed</p>
-              {quote.bookedAt && <p className="text-xs text-green-700 mt-0.5">Booked on {new Date(quote.bookedAt).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}</p>}
+              {quote?.bookedAt && <p className="text-xs text-green-700 mt-0.5">Booked on {new Date(quote.bookedAt).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}</p>}
             </div>
           </div>
         )}
@@ -134,76 +139,78 @@ export default function HostedQuotePage({ params }: { params: Promise<{ token: s
         {/* Greeting */}
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-gray-900">
-            {quote.customerName ? `Hi ${quote.customerName.split(" ")[0]},` : "Your Quote"}
+            {quote?.customerName ? `Hi ${quote.customerName.split(" ")[0]},` : "Your Quote"}
           </h1>
           <p className="text-sm text-gray-500 mt-1">
-            Here&#39;s your quote from {branding.companyName}
+            {quote ? `Here's your quote from ${branding.companyName}` : `From ${branding.companyName}`}
           </p>
         </div>
 
-        {/* Quote card */}
-        <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm">
-          {/* Hero */}
-          <div className="px-6 py-5" style={{ backgroundColor: isActive ? accent + "12" : "#f9fafb" }}>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <Box className="h-6 w-6" style={{ color: isActive ? accent : "#9ca3af" }} />
-                <div>
-                  <p className="text-lg font-bold text-gray-900">{formatDumpsterSize(quote.size)} Dumpster</p>
-                  <p className="text-sm text-gray-500">{quote.rentalDays}-day rental</p>
+        {/* Quote card — only rendered for active quotes; expired/booked show banner + contact only */}
+        {quote && (
+          <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm">
+            {/* Hero */}
+            <div className="px-6 py-5" style={{ backgroundColor: isActive ? accent + "12" : "#f9fafb" }}>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <Box className="h-6 w-6" style={{ color: isActive ? accent : "#9ca3af" }} />
+                  <div>
+                    <p className="text-lg font-bold text-gray-900">{formatDumpsterSize(quote.size)} Dumpster</p>
+                    <p className="text-sm text-gray-500">{quote.rentalDays}-day rental</p>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <p className="text-2xl font-extrabold" style={{ color: isActive ? accent : "#6b7280" }}>{formatCurrency(quote.totalQuoted)}</p>
+                  <p className="text-xs text-gray-500">total quoted</p>
                 </div>
               </div>
-              <div className="text-right">
-                <p className="text-2xl font-extrabold" style={{ color: isActive ? accent : "#6b7280" }}>{formatCurrency(quote.totalQuoted)}</p>
-                <p className="text-xs text-gray-500">total quoted</p>
+            </div>
+
+            {/* Details */}
+            <div className="px-6 py-4 space-y-3 text-sm">
+              <div className="flex justify-between">
+                <span className="text-gray-500">Base price</span>
+                <span className="text-gray-900 font-medium">{formatCurrency(quote.basePrice)}</span>
+              </div>
+              {quote.distanceSurcharge > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Distance surcharge</span>
+                  <span className="text-gray-900 font-medium">{formatCurrency(quote.distanceSurcharge)}</span>
+                </div>
+              )}
+              <div className="flex justify-between">
+                <span className="text-gray-500">Included weight</span>
+                <span className="text-gray-900">{quote.includedTons} tons</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500">Overage rate</span>
+                <span className="text-gray-900">{formatCurrency(quote.overageRate)}/ton</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500">Extra days</span>
+                <span className="text-gray-900">{formatCurrency(quote.extraDayRate)}/day after {quote.rentalDays} days</span>
               </div>
             </div>
-          </div>
 
-          {/* Details */}
-          <div className="px-6 py-4 space-y-3 text-sm">
-            <div className="flex justify-between">
-              <span className="text-gray-500">Base price</span>
-              <span className="text-gray-900 font-medium">{formatCurrency(quote.basePrice)}</span>
-            </div>
-            {quote.distanceSurcharge > 0 && (
-              <div className="flex justify-between">
-                <span className="text-gray-500">Distance surcharge</span>
-                <span className="text-gray-900 font-medium">{formatCurrency(quote.distanceSurcharge)}</span>
+            {/* Address */}
+            {addrStr && (
+              <div className="px-6 py-3 border-t border-gray-100">
+                <div className="flex items-center gap-2 text-sm text-gray-600">
+                  <MapPin className="h-4 w-4 text-gray-400 shrink-0" />
+                  <span>{addrStr}</span>
+                </div>
               </div>
             )}
-            <div className="flex justify-between">
-              <span className="text-gray-500">Included weight</span>
-              <span className="text-gray-900">{quote.includedTons} tons</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-gray-500">Overage rate</span>
-              <span className="text-gray-900">{formatCurrency(quote.overageRate)}/ton</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-gray-500">Extra days</span>
-              <span className="text-gray-900">{formatCurrency(quote.extraDayRate)}/day after {quote.rentalDays} days</span>
-            </div>
-          </div>
 
-          {/* Address */}
-          {addrStr && (
+            {/* Validity */}
             <div className="px-6 py-3 border-t border-gray-100">
-              <div className="flex items-center gap-2 text-sm text-gray-600">
-                <MapPin className="h-4 w-4 text-gray-400 shrink-0" />
-                <span>{addrStr}</span>
+              <div className="flex items-center gap-2 text-sm" style={{ color: expiresToday ? "#dc2626" : expiringSoon ? "#d97706" : "#6b7280" }}>
+                <Clock className="h-4 w-4" style={{ color: expiresToday ? "#dc2626" : expiringSoon ? "#d97706" : "#9ca3af" }} />
+                <span className={expiresToday ? "font-semibold" : ""}>{expiryLabel}</span>
               </div>
             </div>
-          )}
-
-          {/* Validity */}
-          <div className="px-6 py-3 border-t border-gray-100">
-            <div className="flex items-center gap-2 text-sm" style={{ color: expiresToday ? "#dc2626" : expiringSoon ? "#d97706" : "#6b7280" }}>
-              <Clock className="h-4 w-4" style={{ color: expiresToday ? "#dc2626" : expiringSoon ? "#d97706" : "#9ca3af" }} />
-              <span className={expiresToday ? "font-semibold" : ""}>{expiryLabel}</span>
-            </div>
           </div>
-        </div>
+        )}
 
         {/* Action area */}
         <div className="mt-8 space-y-4">
