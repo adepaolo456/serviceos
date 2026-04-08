@@ -96,17 +96,24 @@ export class BillingService {
     }
 
     // Recalculate
-    await this.recalculate(saved.id);
+    await this.recalculate(saved.id, tenantId);
 
-    // Resolve rental chain from job
+    // Resolve rental chain from job (scoped to tenant via rental_chains join)
     if (dto.jobId) {
       try {
         const link = await this.dataSource.query(
-          'SELECT rental_chain_id FROM task_chain_links WHERE job_id = $1 LIMIT 1',
-          [dto.jobId],
+          `SELECT tcl.rental_chain_id
+           FROM task_chain_links tcl
+           INNER JOIN rental_chains rc ON rc.id = tcl.rental_chain_id
+           WHERE tcl.job_id = $1 AND rc.tenant_id = $2
+           LIMIT 1`,
+          [dto.jobId, tenantId],
         );
         if (link?.[0]?.rental_chain_id) {
-          await this.invoicesRepository.update(saved.id, { rental_chain_id: link[0].rental_chain_id });
+          await this.invoicesRepository.update(
+            { id: saved.id, tenant_id: tenantId },
+            { rental_chain_id: link[0].rental_chain_id },
+          );
         }
       } catch { /* non-fatal */ }
     }
@@ -172,7 +179,7 @@ export class BillingService {
 
     try {
       const invoiceWithCustomer = await this.invoicesRepository.findOne({
-        where: { id },
+        where: { id, tenant_id: tenantId },
         relations: ['customer'],
       });
       const cust = invoiceWithCustomer?.customer;
@@ -245,7 +252,7 @@ export class BillingService {
 
     await this.invoicesRepository.save(invoice);
     if (changes.line_items) {
-      await this.recalculate(id);
+      await this.recalculate(id, tenantId);
     }
 
     const saved = await this.findOneInvoice(tenantId, id);
@@ -323,7 +330,7 @@ export class BillingService {
       await this.lineItemRepo.save(deliveryItem);
     }
 
-    await this.recalculate(invoice.id);
+    await this.recalculate(invoice.id, tenantId);
     const updated = await this.findOneInvoice(tenantId, invoice.id);
 
     // Update the linked job
@@ -339,7 +346,7 @@ export class BillingService {
       await this.jobsRepository.save(job);
 
       if (job.asset_id && oldSubtype !== newSubtype) {
-        await this.assetRepo.update(job.asset_id, {
+        await this.assetRepo.update({ id: job.asset_id, tenant_id: tenantId } as any, {
           status: 'available', current_job_id: null, current_location_type: 'yard',
         } as any);
 
@@ -353,10 +360,10 @@ export class BillingService {
           .getOne();
 
         if (available) {
-          await this.assetRepo.update(available.id, { status: 'reserved', current_job_id: job.id } as any);
-          await this.jobsRepository.update(job.id, { asset_id: available.id });
+          await this.assetRepo.update({ id: available.id, tenant_id: tenantId } as any, { status: 'reserved', current_job_id: job.id } as any);
+          await this.jobsRepository.update({ id: job.id, tenant_id: tenantId }, { asset_id: available.id });
         } else {
-          await this.jobsRepository.update(job.id, { asset_id: null } as any);
+          await this.jobsRepository.update({ id: job.id, tenant_id: tenantId }, { asset_id: null } as any);
           assetWarning = `No ${newSubtype} assets available — asset needs manual assignment`;
         }
       }
@@ -495,12 +502,15 @@ export class BillingService {
       const balanceDue = Math.max(Math.round((Number(invoice.total) - totalPaid) * 100) / 100, 0);
       const newStatus = balanceDue <= 0 ? 'paid' : totalPaid > 0 ? 'partial' : invoice.status;
       const paidAt = newStatus === 'paid' ? new Date() : invoice.paid_at;
-      await this.invoicesRepository.update(dto.invoiceId, {
-        amount_paid: Math.round(totalPaid * 100) / 100,
-        balance_due: balanceDue,
-        status: newStatus,
-        paid_at: paidAt,
-      });
+      await this.invoicesRepository.update(
+        { id: dto.invoiceId, tenant_id: tenantId },
+        {
+          amount_paid: Math.round(totalPaid * 100) / 100,
+          balance_due: balanceDue,
+          status: newStatus,
+          paid_at: paidAt,
+        },
+      );
     }
 
     return savedPayment;
@@ -584,14 +594,17 @@ export class BillingService {
     const discount = params.discountAmount ?? 0;
     const total = Math.round((subtotal - discount) * 100) / 100;
 
-    await repo.update(saved.id, {
-      subtotal,
-      total,
-      amount_paid: isPaid ? total : 0,
-      balance_due: isPaid ? 0 : total,
-    });
+    await repo.update(
+      { id: saved.id, tenant_id: saved.tenant_id },
+      {
+        subtotal,
+        total,
+        amount_paid: isPaid ? total : 0,
+        balance_due: isPaid ? 0 : total,
+      },
+    );
 
-    return repo.findOne({ where: { id: saved.id } }) as Promise<Invoice>;
+    return repo.findOne({ where: { id: saved.id, tenant_id: saved.tenant_id } }) as Promise<Invoice>;
   }
 
   async hasInvoice(tenantId: string, jobId: string, source: string): Promise<boolean> {
@@ -602,14 +615,17 @@ export class BillingService {
     return count > 0;
   }
 
-  async voidInternalInvoice(invoiceId: string, reason?: string): Promise<void> {
-    const invoice = await this.invoicesRepository.findOneBy({ id: invoiceId });
+  async voidInternalInvoice(invoiceId: string, tenantId: string, reason?: string): Promise<void> {
+    const invoice = await this.invoicesRepository.findOneBy({ id: invoiceId, tenant_id: tenantId });
     if (!invoice || invoice.status === 'voided') return;
 
-    await this.invoicesRepository.update(invoiceId, {
-      voided_at: new Date(),
-      balance_due: 0,
-    });
+    await this.invoicesRepository.update(
+      { id: invoiceId, tenant_id: tenantId },
+      {
+        voided_at: new Date(),
+        balance_due: 0,
+      },
+    );
 
     // Create credit memo for the voided amount
     try {
@@ -630,20 +646,23 @@ export class BillingService {
     } catch { /* credit memo is best-effort */ }
   }
 
-  private async recalculate(invoiceId: string) {
+  private async recalculate(invoiceId: string, tenantId: string) {
     const items = await this.lineItemRepo.find({ where: { invoice_id: invoiceId } });
     const subtotal = items.reduce((s, li) => s + Number(li.net_amount), 0);
     const taxAmount = items.reduce((s, li) => s + Number(li.tax_amount), 0);
     const total = Math.round((subtotal + taxAmount) * 100) / 100;
 
-    const invoice = await this.invoicesRepository.findOneBy({ id: invoiceId });
+    const invoice = await this.invoicesRepository.findOneBy({ id: invoiceId, tenant_id: tenantId });
     const balanceDue = Math.max(0, Math.round((total - Number(invoice?.amount_paid || 0)) * 100) / 100);
 
-    await this.invoicesRepository.update(invoiceId, {
-      subtotal: Math.round(subtotal * 100) / 100,
-      tax_amount: Math.round(taxAmount * 100) / 100,
-      total,
-      balance_due: balanceDue,
-    });
+    await this.invoicesRepository.update(
+      { id: invoiceId, tenant_id: tenantId },
+      {
+        subtotal: Math.round(subtotal * 100) / 100,
+        tax_amount: Math.round(taxAmount * 100) / 100,
+        total,
+        balance_due: balanceDue,
+      },
+    );
   }
 }

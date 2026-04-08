@@ -119,9 +119,12 @@ export class DumpLocationsService {
     return this.rateRepo.save(rate);
   }
 
-  async updateRate(rateId: string, body: Record<string, unknown>) {
+  async updateRate(tenantId: string, rateId: string, body: Record<string, unknown>) {
     const old = await this.rateRepo.findOneBy({ id: rateId });
     if (!old) throw new NotFoundException('Rate not found');
+    // Verify parent dump_location belongs to this tenant (rates have no tenant_id column)
+    const parent = await this.locRepo.findOneBy({ id: old.dump_location_id, tenant_id: tenantId });
+    if (!parent) throw new NotFoundException('Rate not found');
     const today = new Date().toISOString().split('T')[0];
 
     // Archive old rate
@@ -141,9 +144,11 @@ export class DumpLocationsService {
     return this.rateRepo.save(newRate);
   }
 
-  async removeRate(rateId: string) {
+  async removeRate(tenantId: string, rateId: string) {
     const rate = await this.rateRepo.findOneBy({ id: rateId });
     if (!rate) throw new NotFoundException('Rate not found');
+    const parent = await this.locRepo.findOneBy({ id: rate.dump_location_id, tenant_id: tenantId });
+    if (!parent) throw new NotFoundException('Rate not found');
     const today = new Date().toISOString().split('T')[0];
     rate.effective_until = today;
     rate.is_active = false;
@@ -178,9 +183,11 @@ export class DumpLocationsService {
     return this.surRepo.save(sur);
   }
 
-  async updateSurcharge(surchargeId: string, body: Record<string, unknown>) {
+  async updateSurcharge(tenantId: string, surchargeId: string, body: Record<string, unknown>) {
     const old = await this.surRepo.findOneBy({ id: surchargeId });
     if (!old) throw new NotFoundException('Surcharge not found');
+    const parent = await this.locRepo.findOneBy({ id: old.dump_location_id, tenant_id: tenantId });
+    if (!parent) throw new NotFoundException('Surcharge not found');
     const today = new Date().toISOString().split('T')[0];
 
     // Archive old surcharge
@@ -201,9 +208,11 @@ export class DumpLocationsService {
     return this.surRepo.save(newSur);
   }
 
-  async removeSurcharge(surchargeId: string) {
+  async removeSurcharge(tenantId: string, surchargeId: string) {
     const sur = await this.surRepo.findOneBy({ id: surchargeId });
     if (!sur) throw new NotFoundException('Surcharge not found');
+    const parent = await this.locRepo.findOneBy({ id: sur.dump_location_id, tenant_id: tenantId });
+    if (!parent) throw new NotFoundException('Surcharge not found');
     const today = new Date().toISOString().split('T')[0];
     sur.effective_until = today;
     sur.is_active = false;
@@ -253,7 +262,7 @@ export class DumpLocationsService {
     const ticketNumber = (body.ticketNumber || body.dump_ticket_number || '') as string;
     const ticketPhoto = (body.ticketPhoto || body.dump_ticket_photo || '') as string;
 
-    const location = await this.locRepo.findOne({ where: { id: dumpLocationId }, relations: ['rates', 'surcharges'] });
+    const location = await this.locRepo.findOne({ where: { id: dumpLocationId, tenant_id: tenantId }, relations: ['rates', 'surcharges'] });
     if (!location) throw new NotFoundException('Dump location not found');
 
     const rate = location.rates.find(r => r.waste_type === wasteType && r.is_active);
@@ -560,7 +569,7 @@ export class DumpLocationsService {
     if (!job) throw new NotFoundException('Job not found');
 
     // Recalculate costs (same logic as submitDumpSlip)
-    const location = await this.locRepo.findOne({ where: { id: dumpLocationId }, relations: ['rates', 'surcharges'] });
+    const location = await this.locRepo.findOne({ where: { id: dumpLocationId, tenant_id: tenantId }, relations: ['rates', 'surcharges'] });
     if (!location) throw new NotFoundException('Dump location not found');
 
     const rate = location.rates.find(r => r.waste_type === wasteType && r.is_active);

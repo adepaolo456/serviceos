@@ -129,8 +129,9 @@ export class RentalChainsService {
     const link = await this.linkRepo.findOne({ where: { job_id: jobId } });
     if (!link) return; // Job isn't part of a chain
 
+    // Verify the parent chain belongs to this tenant (task_chain_links has no tenant_id column)
     const chain = await this.chainRepo.findOne({
-      where: { id: link.rental_chain_id },
+      where: { id: link.rental_chain_id, tenant_id: tenantId },
     });
     if (!chain) return;
 
@@ -139,18 +140,22 @@ export class RentalChainsService {
       oldType.includes('exchange') &&
       (newType.includes('pick_up') || newType.includes('pickup'))
     ) {
-      // Cancel the next link (auto-scheduled pickup for new dumpster after exchange)
+      // Cancel the next link (auto-scheduled pickup for new dumpster after exchange).
+      // Chain ownership already validated above; nextLink is within the same chain.
       if (link.next_link_id) {
         const nextLink = await this.linkRepo.findOne({
-          where: { id: link.next_link_id },
+          where: { id: link.next_link_id, rental_chain_id: chain.id },
         });
         if (nextLink && nextLink.status !== 'cancelled') {
           nextLink.status = 'cancelled';
           await this.linkRepo.save(nextLink);
-          await this.jobRepo.update(nextLink.job_id, {
-            status: 'cancelled',
-            cancelled_at: new Date(),
-          });
+          await this.jobRepo.update(
+            { id: nextLink.job_id, tenant_id: tenantId },
+            {
+              status: 'cancelled',
+              cancelled_at: new Date(),
+            },
+          );
         }
       }
 
@@ -188,10 +193,13 @@ export class RentalChainsService {
       if (currentPickup) {
         currentPickup.status = 'cancelled';
         await this.linkRepo.save(currentPickup);
-        await this.jobRepo.update(currentPickup.job_id, {
-          status: 'cancelled',
-          cancelled_at: new Date(),
-        });
+        await this.jobRepo.update(
+          { id: currentPickup.job_id, tenant_id: tenantId },
+          {
+            status: 'cancelled',
+            cancelled_at: new Date(),
+          },
+        );
       }
 
       // Get max sequence number
@@ -296,13 +304,13 @@ export class RentalChainsService {
 
     // Revenue: sum of all non-voided invoices for this chain
     const revenueResult = await this.chainRepo.manager.query(
-      `SELECT COALESCE(SUM(total), 0) as revenue FROM invoices WHERE rental_chain_id = $1 AND voided_at IS NULL`,
-      [chainId],
+      `SELECT COALESCE(SUM(total), 0) as revenue FROM invoices WHERE rental_chain_id = $1 AND tenant_id = $2 AND voided_at IS NULL`,
+      [chainId, tenantId],
     );
-    // Cost: sum of all job_costs for jobs in this chain
+    // Cost: sum of all job_costs for jobs in this chain (scoped to tenant via job_costs.tenant_id)
     const costResult = await this.chainRepo.manager.query(
-      `SELECT COALESCE(SUM(jc.amount), 0) as cost FROM job_costs jc INNER JOIN task_chain_links tcl ON tcl.job_id = jc.job_id WHERE tcl.rental_chain_id = $1`,
-      [chainId],
+      `SELECT COALESCE(SUM(jc.amount), 0) as cost FROM job_costs jc INNER JOIN task_chain_links tcl ON tcl.job_id = jc.job_id WHERE tcl.rental_chain_id = $1 AND jc.tenant_id = $2`,
+      [chainId, tenantId],
     );
 
     const totalRevenue = Number(revenueResult[0]?.revenue || 0);

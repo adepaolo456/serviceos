@@ -1,6 +1,7 @@
 import { Controller, Post, Query } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import * as crypto from 'crypto';
 import { Public } from '../../common/decorators';
 import { Tenant } from '../tenants/entities/tenant.entity';
 import { Customer } from '../customers/entities/customer.entity';
@@ -40,8 +41,19 @@ export class SeedController {
     if (process.env.NODE_ENV === 'production' && !process.env.SEED_ENABLED) {
       return { error: 'Seed is disabled in production' };
     }
-    const expectedSecret = process.env.SEED_SECRET || 'SEED_2026';
-    if (secret !== expectedSecret) return { error: 'Invalid secret' };
+    const expectedSecret = process.env.SEED_SECRET;
+    if (!expectedSecret) {
+      return { error: 'Seed endpoint disabled (no SEED_SECRET configured)' };
+    }
+    if (!secret) return { error: 'Invalid secret' };
+    const provided = Buffer.from(secret);
+    const expected = Buffer.from(expectedSecret);
+    if (provided.length !== expected.length) return { error: 'Invalid secret' };
+    try {
+      if (!crypto.timingSafeEqual(provided, expected)) return { error: 'Invalid secret' };
+    } catch {
+      return { error: 'Invalid secret' };
+    }
 
     const tenant = await this.tenantRepo.findOne({ where: { slug: 'rent-this-dumpster-mnbxs4jm' } });
     if (!tenant) return { error: 'Tenant not found' };

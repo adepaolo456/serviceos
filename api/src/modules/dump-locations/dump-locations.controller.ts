@@ -36,10 +36,10 @@ export class DumpLocationsController {
   addRate(@TenantId() tid: string, @Param('id', ParseUUIDPipe) id: string, @Body() body: Record<string, unknown>) { return this.service.addRate(tid, id, body); }
 
   @Patch('dump-locations/:id/rates/:rateId')
-  updateRate(@TenantId() tid: string, @Param('id', ParseUUIDPipe) id: string, @Param('rateId', ParseUUIDPipe) rateId: string, @Body() body: Record<string, unknown>) { return this.service.updateRate(rateId, body); }
+  updateRate(@TenantId() tid: string, @Param('id', ParseUUIDPipe) id: string, @Param('rateId', ParseUUIDPipe) rateId: string, @Body() body: Record<string, unknown>) { return this.service.updateRate(tid, rateId, body); }
 
   @Delete('dump-locations/:id/rates/:rateId')
-  removeRate(@TenantId() tid: string, @Param('rateId', ParseUUIDPipe) rateId: string) { return this.service.removeRate(rateId); }
+  removeRate(@TenantId() tid: string, @Param('rateId', ParseUUIDPipe) rateId: string) { return this.service.removeRate(tid, rateId); }
 
   // Surcharges
   @Get('dump-locations/:id/surcharges')
@@ -49,10 +49,10 @@ export class DumpLocationsController {
   addSurcharge(@TenantId() tid: string, @Param('id', ParseUUIDPipe) id: string, @Body() body: Record<string, unknown>) { return this.service.addSurcharge(tid, id, body); }
 
   @Patch('dump-locations/:id/surcharges/:surchargeId')
-  updateSurcharge(@TenantId() tid: string, @Param('id', ParseUUIDPipe) id: string, @Param('surchargeId', ParseUUIDPipe) sid: string, @Body() body: Record<string, unknown>) { return this.service.updateSurcharge(sid, body); }
+  updateSurcharge(@TenantId() tid: string, @Param('id', ParseUUIDPipe) id: string, @Param('surchargeId', ParseUUIDPipe) sid: string, @Body() body: Record<string, unknown>) { return this.service.updateSurcharge(tid, sid, body); }
 
   @Delete('dump-locations/:id/surcharges/:surchargeId')
-  removeSurcharge(@TenantId() tid: string, @Param('surchargeId', ParseUUIDPipe) sid: string) { return this.service.removeSurcharge(sid); }
+  removeSurcharge(@TenantId() tid: string, @Param('surchargeId', ParseUUIDPipe) sid: string) { return this.service.removeSurcharge(tid, sid); }
 
   // Dump Slips (on jobs)
   @Post('jobs/:id/dump-slip')
