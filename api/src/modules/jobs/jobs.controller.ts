@@ -8,6 +8,7 @@ import {
   Param,
   Query,
   ParseUUIDPipe,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JobsService } from './jobs.service';
@@ -18,7 +19,8 @@ import {
   ChangeStatusDto,
   CalendarQueryDto,
 } from './dto/job.dto';
-import { TenantId, CurrentUser } from '../../common/decorators';
+import { TenantId, CurrentUser, Roles } from '../../common/decorators';
+import { RolesGuard } from '../../common/guards';
 
 @ApiTags('Jobs')
 @ApiBearerAuth()
@@ -172,6 +174,8 @@ export class JobsController {
   }
 
   @Delete(':id')
+  @UseGuards(RolesGuard)
+  @Roles('admin', 'owner')
   @ApiOperation({ summary: 'Cascade delete (cancel) a job with related entities' })
   async deleteJob(
     @TenantId() tenantId: string,

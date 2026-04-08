@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Body } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Body, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { TenantSettingsService } from './tenant-settings.service';
 import {
@@ -9,11 +9,14 @@ import {
   UpdateQuoteSettingsDto,
   UpdateQuoteTemplatesDto,
 } from './dto/tenant-settings.dto';
-import { TenantId } from '../../common/decorators';
+import { TenantId, Roles } from '../../common/decorators';
+import { RolesGuard } from '../../common/guards';
 
 @ApiTags('Tenant Settings')
 @Controller('tenant-settings')
 @ApiBearerAuth()
+@UseGuards(RolesGuard)
+@Roles('admin', 'owner')
 export class TenantSettingsController {
   constructor(private readonly settingsService: TenantSettingsService) {}
 

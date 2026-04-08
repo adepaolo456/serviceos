@@ -146,7 +146,7 @@ import { HelpAnalyticsEvent } from './modules/analytics/entities/help-analytics-
             RateLimitLog,
             HelpAnalyticsEvent,
           ],
-          synchronize: true,
+          synchronize: false,
           ssl: {
             rejectUnauthorized: false,
           },

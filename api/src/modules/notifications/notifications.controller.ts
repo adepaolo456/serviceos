@@ -1,15 +1,18 @@
-import { Controller, Get, Post, Put, Body, Query, Param, ParseUUIDPipe } from '@nestjs/common';
+import { Controller, Get, Post, Put, Body, Query, Param, ParseUUIDPipe, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { NotificationsService } from './notifications.service';
 import {
   SendNotificationDto,
   ListNotificationsQueryDto,
 } from './dto/notifications.dto';
-import { TenantId, CurrentUser } from '../../common/decorators';
+import { TenantId, CurrentUser, Roles } from '../../common/decorators';
+import { RolesGuard } from '../../common/guards';
 
 @ApiTags('Notifications')
 @ApiBearerAuth()
 @Controller('notifications')
+@UseGuards(RolesGuard)
+@Roles('admin', 'owner')
 export class NotificationsController {
   constructor(private readonly notificationsService: NotificationsService) {}
 
@@ -30,16 +33,19 @@ export class NotificationsController {
   }
 
   @Get()
+  @Roles('admin', 'owner', 'dispatcher')
   findAll(@TenantId() tenantId: string, @Query() query: ListNotificationsQueryDto) {
     return this.notificationsService.findAll(tenantId, query);
   }
 
   @Get('log/summary')
+  @Roles('admin', 'owner', 'dispatcher')
   getLogSummary(@TenantId() tenantId: string) {
     return this.notificationsService.getLogSummary(tenantId);
   }
 
   @Get('preferences')
+  @Roles('admin', 'owner', 'dispatcher')
   getPreferences(@TenantId() tenantId: string) {
     return this.notificationsService.getPreferences(tenantId);
   }
