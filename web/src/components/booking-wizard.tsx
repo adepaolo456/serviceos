@@ -963,7 +963,7 @@ export default function BookingWizard({
                 </div>
               ) : (
                 <div className="space-y-3">
-                  <label className="flex items-center gap-2 cursor-pointer">
+                  <label className="inline-flex items-center gap-2 cursor-pointer">
                     <input
                       type="radio"
                       name="svc_addr"
@@ -973,7 +973,7 @@ export default function BookingWizard({
                     />
                     <span className="text-sm" style={{ color: "var(--t-text-primary)" }}>Same as billing address</span>
                   </label>
-                  <label className="flex items-center gap-2 cursor-pointer">
+                  <label className="inline-flex items-center gap-2 cursor-pointer">
                     <input
                       type="radio"
                       name="svc_addr"
@@ -1398,7 +1398,7 @@ export default function BookingWizard({
               </div>
 
               {/* Send invoice option */}
-              <label className="flex items-center gap-2 cursor-pointer select-none">
+              <label className="inline-flex items-center gap-2 cursor-pointer select-none">
                 <input
                   type="checkbox"
                   checked={sendInvoiceNow}
