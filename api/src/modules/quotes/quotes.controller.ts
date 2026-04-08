@@ -209,21 +209,32 @@ export class QuotesController {
 
   @Get('summary')
   @ApiOperation({ summary: 'Get quote conversion summary stats' })
-  async summary(@TenantId() tenantId: string) {
-    const all = await this.quoteRepo.find({ where: { tenant_id: tenantId } });
+  async summary(
+    @TenantId() tenantId: string,
+    @Query('range') range?: string,
+  ) {
+    // Parse range: 7d, 30d, 90d — default 30d
+    const days = range === '7d' ? 7 : range === '90d' ? 90 : 30;
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - days);
+
+    const all = await this.quoteRepo.createQueryBuilder('q')
+      .where('q.tenant_id = :tenantId', { tenantId })
+      .andWhere('q.created_at >= :cutoff', { cutoff })
+      .getMany();
+
     const now = new Date();
-    let sent = 0, converted = 0, expired = 0, draft = 0, open = 0;
+    let totalSent = 0, viewed = 0, converted = 0, expired = 0, draft = 0, open = 0;
     for (const q of all) {
+      if (q.status === 'draft') { draft++; continue; }
+      if (q.status === 'sent' || q.status === 'converted') totalSent++;
       if (q.status === 'converted') { converted++; }
-      else if (q.status === 'draft') { draft++; }
       else if (q.status === 'sent' && now > q.expires_at) { expired++; }
-      else if (q.status === 'sent') { open++; sent++; }
-      if (q.status === 'sent' || q.status === 'converted') sent++;
+      else if (q.status === 'sent') { open++; }
+      if ((q.view_count ?? 0) > 0) viewed++;
     }
-    // sent here counts all that were ever sent (including converted)
-    const totalSent = converted + open + expired;
     const conversionRate = totalSent > 0 ? Math.round((converted / totalSent) * 100) : 0;
-    return { totalSent, converted, open, expired, draft, conversionRate };
+    return { totalSent, viewed, converted, open, expired, draft, conversionRate, rangeDays: days };
   }
 
   @Get()

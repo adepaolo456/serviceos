@@ -39,11 +39,13 @@ interface Quote {
 
 interface Summary {
   totalSent: number;
+  viewed: number;
   converted: number;
   open: number;
   expired: number;
   draft: number;
   conversionRate: number;
+  rangeDays: number;
 }
 
 const STATUS_FILTERS = [
@@ -123,9 +125,13 @@ export default function QuotesPage() {
   useEffect(() => { fetchQuotes(); }, [fetchQuotes]);
 
   const [hotQuotes, setHotQuotes] = useState<Quote[]>([]);
+  const [statsRange, setStatsRange] = useState("30d");
 
   useEffect(() => {
-    api.get<Summary>("/quotes/summary").then(setSummary).catch(() => {});
+    api.get<Summary>(`/quotes/summary?range=${statsRange}`).then(setSummary).catch(() => {});
+  }, [statsRange]);
+
+  useEffect(() => {
     api.get<{ data: Quote[] }>("/quotes?hot=true&limit=10").then((r) => setHotQuotes(r.data || [])).catch(() => {});
   }, []);
 
@@ -173,28 +179,51 @@ export default function QuotesPage() {
         </div>
       </div>
 
-      {/* Summary stats */}
+      {/* Conversion Dashboard */}
       {summary && (
-        <div className="grid grid-cols-4 gap-3 mb-6">
-          {[
-            { label: "Sent", value: summary.totalSent, color: "var(--t-accent)" },
-            { label: "Converted", value: summary.converted, color: "var(--t-success, #22c55e)" },
-            { label: "Open", value: summary.open, color: "var(--t-warning)" },
-            { label: "Conversion Rate", value: `${summary.conversionRate}%`, color: "var(--t-accent)" },
-          ].map((s) => (
-            <div
-              key={s.label}
-              className="rounded-[14px] border p-4"
-              style={{ background: "var(--t-bg-secondary)", borderColor: "var(--t-border)" }}
-            >
-              <p className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: "var(--t-text-muted)" }}>
-                {s.label}
-              </p>
-              <p className="text-[22px] font-bold mt-1" style={{ color: s.color }}>
-                {s.value}
-              </p>
+        <div className="mb-6">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-bold uppercase tracking-wide" style={{ color: "var(--t-text-primary)" }}>
+              Quote Conversion
+            </h2>
+            <div className="flex gap-1">
+              {(["7d", "30d", "90d"] as const).map((r) => (
+                <button
+                  key={r}
+                  onClick={() => setStatsRange(r)}
+                  className="rounded-full px-2.5 py-1 text-[11px] font-semibold transition-colors"
+                  style={{
+                    background: statsRange === r ? "var(--t-accent)" : "var(--t-bg-card)",
+                    color: statsRange === r ? "var(--t-accent-on-accent)" : "var(--t-text-muted)",
+                    border: statsRange === r ? "none" : "1px solid var(--t-border)",
+                  }}
+                >
+                  {r === "7d" ? "7 days" : r === "30d" ? "30 days" : "90 days"}
+                </button>
+              ))}
             </div>
-          ))}
+          </div>
+          <div className="grid grid-cols-4 gap-3">
+            {[
+              { label: "Sent", value: summary.totalSent, color: "var(--t-accent)" },
+              { label: "Viewed", value: summary.viewed, color: "var(--t-warning)" },
+              { label: "Booked", value: summary.converted, color: "var(--t-success, #22c55e)" },
+              { label: "Conversion", value: `${summary.conversionRate}%`, color: "var(--t-accent)" },
+            ].map((s) => (
+              <div
+                key={s.label}
+                className="rounded-[14px] border p-4"
+                style={{ background: "var(--t-bg-secondary)", borderColor: "var(--t-border)" }}
+              >
+                <p className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: "var(--t-text-muted)" }}>
+                  {s.label}
+                </p>
+                <p className="text-[22px] font-bold mt-1" style={{ color: s.color }}>
+                  {s.value}
+                </p>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
