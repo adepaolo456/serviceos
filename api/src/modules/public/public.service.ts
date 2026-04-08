@@ -370,6 +370,48 @@ export class PublicService {
    * Validates that the quote belongs to the tenant identified by slug.
    * Returns only safe fields needed for booking — no internal IDs or PII leakage across tenants.
    */
+  /**
+   * Hosted quote page: returns quote data + tenant branding for public rendering.
+   * Looked up by token only — no slug needed in URL.
+   * No internal IDs exposed.
+   */
+  async getHostedQuote(token: string) {
+    const quote = await this.quoteRepo.findOne({ where: { token } });
+    if (!quote) throw new NotFoundException('Quote not found.');
+
+    const tenant = await this.tenantRepo.findOne({ where: { id: quote.tenant_id } });
+    if (!tenant) throw new NotFoundException('Quote not found.');
+
+    const expired = new Date() > quote.expires_at;
+    const converted = quote.status === 'converted';
+
+    return {
+      status: expired ? 'expired' : converted ? 'booked' : 'active',
+      quote: {
+        size: quote.asset_subtype,
+        customerName: quote.customer_name,
+        deliveryAddress: quote.delivery_address,
+        totalQuoted: Number(quote.total_quoted),
+        basePrice: Number(quote.base_price),
+        distanceSurcharge: Number(quote.distance_surcharge),
+        rentalDays: quote.rental_days,
+        includedTons: Number(quote.included_tons),
+        overageRate: Number(quote.overage_rate),
+        extraDayRate: Number(quote.extra_day_rate),
+        expiresAt: quote.expires_at,
+        createdAt: quote.created_at,
+      },
+      branding: {
+        companyName: tenant.name,
+        logoUrl: tenant.website_logo_url || null,
+        primaryColor: tenant.website_primary_color || '#2ECC71',
+        phone: tenant.website_phone || null,
+        email: tenant.website_email || null,
+        slug: tenant.slug,
+      },
+    };
+  }
+
   async getQuoteByToken(slug: string, token: string) {
     const tenant = await this.findTenant(slug);
 
