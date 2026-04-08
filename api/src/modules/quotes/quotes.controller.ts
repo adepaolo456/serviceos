@@ -212,7 +212,7 @@ export class QuotesController {
             body: html,
           });
 
-          await this.quoteRepo.update(saved.id, { status: 'sent' });
+          await this.quoteRepo.update(saved.id, { status: 'sent', last_sent_at: new Date() });
           saved.status = 'sent';
         }
       } catch (err: any) {
@@ -466,9 +466,11 @@ export class QuotesController {
       body: html,
     });
 
-    if (quote.status === 'draft') {
-      await this.quoteRepo.update(id, { status: 'sent' });
-    }
+    // Update last_sent_at (resets follow-up timer) and status if draft
+    await this.quoteRepo.update(id, {
+      ...(quote.status === 'draft' ? { status: 'sent' } : {}),
+      last_sent_at: new Date(),
+    });
 
     return { success: true, message: `Quote re-sent to ${quote.customer_email}` };
   }

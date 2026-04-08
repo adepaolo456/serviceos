@@ -58,4 +58,14 @@ export class AutomationController {
     }
     return this.automationService.scanOverdueRentals();
   }
+
+  @Public()
+  @Get('cron/quote-follow-ups')
+  @ApiOperation({ summary: 'Cron: send automatic quote follow-up emails' })
+  async cronQuoteFollowUps(@Query('secret') secret: string) {
+    if (secret !== 'SERVICEOS_CRON_SECRET_2026') {
+      return { error: 'Unauthorized' };
+    }
+    return this.automationService.processQuoteFollowUps();
+  }
 }

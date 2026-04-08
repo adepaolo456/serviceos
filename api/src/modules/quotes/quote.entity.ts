@@ -74,6 +74,12 @@ export class Quote {
   @Column({ name: 'view_count', type: 'int', default: 0 })
   view_count!: number;
 
+  @Column({ name: 'last_sent_at', type: 'timestamptz', nullable: true })
+  last_sent_at!: Date | null;
+
+  @Column({ name: 'auto_follow_up_sent_at', type: 'timestamptz', nullable: true })
+  auto_follow_up_sent_at!: Date | null;
+
   @CreateDateColumn({ name: 'created_at' })
   created_at!: Date;
 

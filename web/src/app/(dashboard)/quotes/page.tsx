@@ -38,6 +38,8 @@ interface Quote {
   follow_up_priority?: "needs_follow_up" | "stale" | null;
   expires_urgency?: "expires_today" | "expiring_soon" | null;
   hours_until_expiry?: number;
+  auto_follow_up_sent_at?: string | null;
+  last_sent_at?: string | null;
 }
 
 interface Summary {

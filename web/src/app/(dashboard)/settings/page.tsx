@@ -929,6 +929,8 @@ function QuotesTab() {
         quotes_email_enabled: settings.quotes_email_enabled,
         quotes_sms_enabled: settings.quotes_sms_enabled,
         default_quote_delivery_method: method,
+        quote_follow_up_enabled: settings.quote_follow_up_enabled ?? false,
+        quote_follow_up_delay_hours: Number(settings.quote_follow_up_delay_hours) || 24,
       });
       // Save templates separately (clean empty strings)
       const templates = settings.quote_templates || {};
@@ -985,6 +987,26 @@ function QuotesTab() {
             <input type="number" min={1} max={10080} value={settings.follow_up_recency_minutes ?? 120}
               onChange={(e) => set("follow_up_recency_minutes", e.target.value)} className={inputCls} />
           </div>
+        </div>
+        <div className="mt-4 space-y-3">
+          <label className="flex items-center gap-3 cursor-pointer">
+            <input type="checkbox" checked={settings.quote_follow_up_enabled ?? false}
+              onChange={(e) => set("quote_follow_up_enabled", e.target.checked)}
+              className="accent-[var(--t-accent)]" />
+            <span className="text-sm text-[var(--t-text-primary)]">Enable automatic follow-up email</span>
+          </label>
+          {settings.quote_follow_up_enabled && (
+            <div>
+              <label className={labelCls}>Follow-Up Delay (hours after send)</label>
+              <select value={settings.quote_follow_up_delay_hours ?? 24}
+                onChange={(e) => set("quote_follow_up_delay_hours", Number(e.target.value))}
+                className={inputCls}>
+                {[4, 8, 12, 24, 48, 72].map((h) => (
+                  <option key={h} value={h}>{h} hours</option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
       </div>
 

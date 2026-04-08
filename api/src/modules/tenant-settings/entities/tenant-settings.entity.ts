@@ -81,6 +81,12 @@ export class TenantSettings {
   @Column({ name: 'default_quote_delivery_method', length: 10, default: 'email' })
   default_quote_delivery_method!: string;
 
+  @Column({ name: 'quote_follow_up_enabled', default: false })
+  quote_follow_up_enabled!: boolean;
+
+  @Column({ name: 'quote_follow_up_delay_hours', type: 'int', default: 24 })
+  quote_follow_up_delay_hours!: number;
+
   @Column({ name: 'quote_templates', type: 'jsonb', nullable: true })
   quote_templates!: Record<string, string> | null;
 
