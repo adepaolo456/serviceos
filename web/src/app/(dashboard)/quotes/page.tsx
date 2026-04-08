@@ -1,10 +1,10 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Search, FileCheck, Mail, Copy, ExternalLink, Loader2, ChevronRight } from "lucide-react";
+import { Search, FileCheck, Mail, Copy, ExternalLink, Loader2, ChevronRight, Flame, Phone } from "lucide-react";
 import { api } from "@/lib/api";
 import { useToast } from "@/components/toast";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, formatDumpsterSize } from "@/lib/utils";
 import { getFeatureLabel } from "@/lib/feature-registry";
 import SlideOver from "@/components/slide-over";
 
@@ -31,6 +31,10 @@ interface Quote {
   created_at: string;
   created_by: string | null;
   booking_url?: string;
+  view_count?: number;
+  first_viewed_at?: string | null;
+  last_viewed_at?: string | null;
+  is_hot?: boolean;
 }
 
 interface Summary {
@@ -80,6 +84,18 @@ function formatDate(d: string | null): string {
   return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
+function timeAgo(d: string | null): string {
+  if (!d) return "";
+  const ms = Date.now() - new Date(d).getTime();
+  const mins = Math.floor(ms / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  return `${days}d ago`;
+}
+
 export default function QuotesPage() {
   const { toast } = useToast();
   const [quotes, setQuotes] = useState<Quote[]>([]);
@@ -106,8 +122,11 @@ export default function QuotesPage() {
 
   useEffect(() => { fetchQuotes(); }, [fetchQuotes]);
 
+  const [hotQuotes, setHotQuotes] = useState<Quote[]>([]);
+
   useEffect(() => {
     api.get<Summary>("/quotes/summary").then(setSummary).catch(() => {});
+    api.get<{ data: Quote[] }>("/quotes?hot=true&limit=10").then((r) => setHotQuotes(r.data || [])).catch(() => {});
   }, []);
 
   const openDetail = async (q: Quote) => {
@@ -176,6 +195,83 @@ export default function QuotesPage() {
               </p>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Hot Quotes */}
+      {hotQuotes.length > 0 && (
+        <div className="mb-6">
+          <div className="flex items-center gap-2 mb-3">
+            <Flame className="h-4 w-4" style={{ color: "var(--t-warning)" }} />
+            <h2 className="text-sm font-bold uppercase tracking-wide" style={{ color: "var(--t-text-primary)" }}>
+              Hot Quotes
+            </h2>
+            <span className="text-[11px] font-medium rounded-full px-2 py-0.5" style={{ backgroundColor: "var(--t-warning-soft, rgba(234,179,8,0.1))", color: "var(--t-warning)" }}>
+              {hotQuotes.length}
+            </span>
+          </div>
+          <div className="grid gap-2">
+            {hotQuotes.map((q) => (
+              <div
+                key={q.id}
+                className="flex items-center justify-between rounded-[12px] border px-4 py-3"
+                style={{ backgroundColor: "var(--t-bg-card)", borderColor: "var(--t-border)" }}
+              >
+                <div className="flex items-center gap-4 min-w-0">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-semibold truncate" style={{ color: "var(--t-text-primary)" }}>
+                        {q.customer_name || "Unknown"}
+                      </span>
+                      <span className="text-[11px] font-medium" style={{ color: "var(--t-text-muted)" }}>
+                        {formatDumpsterSize(q.asset_subtype)}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-3 text-[11px] mt-0.5" style={{ color: "var(--t-text-muted)" }}>
+                      <span className="font-semibold" style={{ color: "var(--t-accent)" }}>
+                        {formatCurrency(Number(q.total_quoted))}
+                      </span>
+                      <span>{q.view_count ?? 0} views</span>
+                      {q.last_viewed_at && <span>Last: {timeAgo(q.last_viewed_at)}</span>}
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {q.customer_phone && (
+                    <a
+                      href={`tel:${q.customer_phone}`}
+                      className="flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors hover:bg-[var(--t-bg-card-hover)]"
+                      style={{ borderColor: "var(--t-border)", color: "var(--t-text-primary)" }}
+                      title="Call"
+                    >
+                      <Phone className="h-3 w-3" /> Call
+                    </a>
+                  )}
+                  <button
+                    onClick={() => handleResend(q.id)}
+                    disabled={resending === q.id}
+                    className="flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors hover:bg-[var(--t-bg-card-hover)] disabled:opacity-50"
+                    style={{ borderColor: "var(--t-border)", color: "var(--t-text-primary)" }}
+                    title="Resend Quote"
+                  >
+                    <Mail className="h-3 w-3" /> {resending === q.id ? "..." : "Resend"}
+                  </button>
+                  {q.token && (
+                    <a
+                      href={`/quote/${q.token}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors hover:bg-[var(--t-bg-card-hover)]"
+                      style={{ borderColor: "var(--t-border)", color: "var(--t-accent)" }}
+                      title="View hosted quote"
+                    >
+                      <ExternalLink className="h-3 w-3" /> View
+                    </a>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 

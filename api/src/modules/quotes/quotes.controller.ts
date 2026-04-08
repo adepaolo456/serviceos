@@ -234,6 +234,7 @@ export class QuotesController {
     @Query('search') search?: string,
     @Query('customerId') customerId?: string,
     @Query('limit') limit?: string,
+    @Query('hot') hot?: string,
   ) {
     const qb = this.quoteRepo.createQueryBuilder('q')
       .where('q.tenant_id = :tenantId', { tenantId })
@@ -257,21 +258,32 @@ export class QuotesController {
     }
 
     if (customerId) {
-      // Prefer FK match, fall back to email match for legacy quotes without customer_id
       qb.andWhere(
         '(q.customer_id = :customerId OR (q.customer_id IS NULL AND q.customer_email IN (SELECT email FROM customers WHERE id = :customerId AND tenant_id = :tenantId)))',
         { customerId, tenantId },
       );
     }
 
+    // Hot quotes filter: active, not expired, viewed 2+ times
+    if (hot === 'true') {
+      qb.andWhere('q.status = :hotStatus', { hotStatus: 'sent' })
+        .andWhere('q.expires_at > NOW()')
+        .andWhere('COALESCE(q.view_count, 0) >= 2');
+    }
+
     const [data, total] = await qb.getManyAndCount();
 
-    // Compute derived status for each quote
+    // Compute derived status + is_hot for each quote
     const now = new Date();
-    const enriched = data.map((q) => ({
-      ...q,
-      derived_status: q.status === 'sent' && now > q.expires_at ? 'expired' : q.status,
-    }));
+    const enriched = data.map((q) => {
+      const isExpired = q.status === 'sent' && now > q.expires_at;
+      const isHot = q.status === 'sent' && !isExpired && (q.view_count ?? 0) >= 2;
+      return {
+        ...q,
+        derived_status: isExpired ? 'expired' : q.status,
+        is_hot: isHot,
+      };
+    });
 
     return { data: enriched, meta: { total } };
   }
