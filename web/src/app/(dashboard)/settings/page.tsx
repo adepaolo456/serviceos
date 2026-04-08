@@ -1039,6 +1039,29 @@ function QuotesTab() {
         </div>
       </div>
 
+      {/* SMS Configuration */}
+      <div>
+        <h3 className="text-sm font-bold uppercase tracking-wide text-[var(--t-text-primary)] mb-3">SMS Configuration</h3>
+        <div className="rounded-[14px] border p-4 space-y-2" style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)" }}>
+          <div className="flex items-center justify-between">
+            <span className="text-sm" style={{ color: "var(--t-text-primary)" }}>SMS Number</span>
+            <span className="text-sm font-mono" style={{ color: settings.sms_phone_number ? "var(--t-text-primary)" : "var(--t-text-muted)" }}>
+              {settings.sms_phone_number || "No SMS number assigned"}
+            </span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-sm" style={{ color: "var(--t-text-primary)" }}>Status</span>
+            <span className="inline-flex items-center gap-1.5 text-xs font-semibold rounded-full px-2.5 py-0.5"
+              style={{
+                backgroundColor: settings.sms_enabled && settings.sms_phone_number ? "var(--t-success-soft, rgba(34,197,94,0.1))" : "var(--t-bg-elevated, #e5e7eb)",
+                color: settings.sms_enabled && settings.sms_phone_number ? "var(--t-success, #22c55e)" : "var(--t-text-muted)",
+              }}>
+              {settings.sms_enabled && settings.sms_phone_number ? "SMS active" : "SMS not configured"}
+            </span>
+          </div>
+        </div>
+      </div>
+
       {/* Templates */}
       <div>
         <h3 className="text-sm font-bold uppercase tracking-wide text-[var(--t-text-primary)] mb-2">Email & SMS Templates</h3>

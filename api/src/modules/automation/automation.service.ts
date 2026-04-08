@@ -11,6 +11,8 @@ import { Quote } from '../quotes/quote.entity';
 import { NotificationsService } from '../notifications/notifications.service';
 import { TenantSettingsService } from '../tenant-settings/tenant-settings.service';
 import { getTemplate, renderTemplate } from '../quotes/quote-templates';
+import { SmsMessage } from '../sms/sms-message.entity';
+import { normalizePhone } from '../../common/utils/phone';
 
 @Injectable()
 export class AutomationService {
@@ -24,6 +26,7 @@ export class AutomationService {
     @InjectRepository(Invoice) private invoiceRepo: Repository<Invoice>,
     @InjectRepository(Notification) private notifRepo: Repository<Notification>,
     @InjectRepository(Quote) private quoteRepo: Repository<Quote>,
+    @InjectRepository(SmsMessage) private smsMessageRepo: Repository<SmsMessage>,
     private notificationsService: NotificationsService,
     private settingsService: TenantSettingsService,
     private dataSource: DataSource,
@@ -384,5 +387,66 @@ export class AutomationService {
     }
 
     return { processed, sent, skipped, timestamp: now.toISOString() };
+  }
+
+  /**
+   * Handle inbound SMS from Twilio webhook.
+   * Routes to tenant by matching To number, attempts customer match by From number.
+   */
+  async handleInboundSms(payload: Record<string, string>) {
+    const rawFrom = payload.From || payload.from || '';
+    const rawTo = payload.To || payload.to || '';
+    const body = payload.Body || payload.body || '';
+    const messageSid = payload.MessageSid || payload.messageSid || null;
+
+    const normalizedTo = normalizePhone(rawTo);
+    const normalizedFrom = normalizePhone(rawFrom);
+
+    if (!normalizedTo || !normalizedFrom) {
+      this.logger.warn(`Inbound SMS: invalid numbers From=${rawFrom} To=${rawTo}`);
+      return;
+    }
+
+    // Route to tenant by assigned phone number
+    const tenantRow = await this.dataSource.query(
+      `SELECT tenant_id FROM tenant_settings WHERE sms_phone_number = $1 AND sms_enabled = true LIMIT 1`,
+      [normalizedTo],
+    );
+
+    if (!tenantRow || tenantRow.length === 0) {
+      this.logger.warn(`Inbound SMS: no tenant for number ${normalizedTo}`);
+      return;
+    }
+
+    const tenantId = tenantRow[0].tenant_id;
+
+    // Attempt customer match by normalized phone
+    let customerId: string | null = null;
+    try {
+      const customerRow = await this.dataSource.query(
+        `SELECT id FROM customers WHERE tenant_id = $1 AND REGEXP_REPLACE(phone, '[^0-9]', '', 'g') = $2 LIMIT 1`,
+        [tenantId, normalizedFrom.replace(/\D/g, '')],
+      );
+      if (customerRow && customerRow.length > 0) {
+        customerId = customerRow[0].id;
+      }
+    } catch { /* best-effort matching */ }
+
+    // Write inbound message record
+    const message = this.smsMessageRepo.create({
+      tenant_id: tenantId,
+      customer_id: customerId,
+      direction: 'inbound',
+      from_number: normalizedFrom,
+      to_number: normalizedTo,
+      body,
+      provider: 'twilio',
+      provider_message_sid: messageSid,
+      status: 'received',
+      source_type: 'inbound',
+    });
+    await this.smsMessageRepo.save(message);
+
+    this.logger.log(`Inbound SMS from ${normalizedFrom} to ${normalizedTo} (tenant ${tenantId})`);
   }
 }
