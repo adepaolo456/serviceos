@@ -96,8 +96,24 @@ export class PortalService {
   }
 
   async magicLink(email: string, tenantId: string) {
-    const customer = await this.customerRepo.findOne({ where: { email, tenant_id: tenantId, is_active: true } });
-    if (!customer) throw new NotFoundException('No account found for this email');
+    // Timing-safe, enumeration-safe: always return the same response regardless
+    // of whether the email/tenant combo exists. Timing floor prevents attackers
+    // from distinguishing by response latency.
+    const start = Date.now();
+    const floor = 200;
+
+    const customer = await this.customerRepo.findOne({
+      where: { email, tenant_id: tenantId, is_active: true },
+    });
+    if (customer) {
+      // TODO: actually send a magic-link email. Current implementation is a stub.
+    }
+
+    const elapsed = Date.now() - start;
+    if (elapsed < floor) {
+      await new Promise((r) => setTimeout(r, floor - elapsed));
+    }
+
     return { message: 'If an account exists, a login link has been sent to your email.' };
   }
 

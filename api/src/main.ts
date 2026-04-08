@@ -49,14 +49,18 @@ export async function createApp() {
     }),
   );
 
-  const config = new DocumentBuilder()
-    .setTitle('ServiceOS API')
-    .setDescription('Multi-tenant SaaS API for service businesses')
-    .setVersion('1.0')
-    .addBearerAuth()
-    .build();
-  const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('docs', app, document);
+  // Swagger/OpenAPI: only expose in non-production, or when explicitly enabled
+  // via ENABLE_SWAGGER=true. Prevents the full API surface from being public in prod.
+  if (process.env.NODE_ENV !== 'production' || process.env.ENABLE_SWAGGER === 'true') {
+    const config = new DocumentBuilder()
+      .setTitle('ServiceOS API')
+      .setDescription('Multi-tenant SaaS API for service businesses')
+      .setVersion('1.0')
+      .addBearerAuth()
+      .build();
+    const document = SwaggerModule.createDocument(app, config);
+    SwaggerModule.setup('docs', app, document);
+  }
 
   return app;
 }

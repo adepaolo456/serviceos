@@ -9,6 +9,7 @@ import {
   UseGuards,
   HttpCode,
   HttpStatus,
+  HttpException,
 } from '@nestjs/common';
 // Manual OAuth flow — no passport AuthGuard needed for Google
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
@@ -47,7 +48,24 @@ export class AuthController {
   @Post('login')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Login with email and password' })
-  login(@Body() dto: LoginDto) {
+  async login(@Body() dto: LoginDto, @Req() req: Request) {
+    const ip =
+      (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ||
+      req.ip ||
+      'unknown';
+    const rateResult = await checkRateLimit(
+      this.dataSource,
+      ip,
+      '/auth/login',
+      10,
+      15,
+    );
+    if (!rateResult.allowed) {
+      throw new HttpException(
+        { statusCode: 429, message: 'Too many requests. Try again later.', retryAfter: rateResult.retryAfterSeconds },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
     return this.authService.login(dto);
   }
 
