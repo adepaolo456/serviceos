@@ -36,6 +36,8 @@ interface Quote {
   last_viewed_at?: string | null;
   is_hot?: boolean;
   follow_up_priority?: "needs_follow_up" | "stale" | null;
+  expires_urgency?: "expires_today" | "expiring_soon" | null;
+  hours_until_expiry?: number;
 }
 
 interface Summary {
@@ -244,17 +246,20 @@ export default function QuotesPage() {
             {hotQuotes.map((q) => {
               const isUrgent = q.follow_up_priority === "needs_follow_up";
               const isStale = q.follow_up_priority === "stale";
+              const expiresToday = q.expires_urgency === "expires_today";
+              const expiringSoon = q.expires_urgency === "expiring_soon";
+              const highlightBorder = isUrgent || expiresToday;
               return (
                 <div
                   key={q.id}
                   className="flex items-center justify-between rounded-[12px] border px-4 py-3"
                   style={{
-                    backgroundColor: isUrgent ? "var(--t-warning-soft, rgba(234,179,8,0.06))" : "var(--t-bg-card)",
-                    borderColor: isUrgent ? "var(--t-warning)" : "var(--t-border)",
+                    backgroundColor: isUrgent ? "var(--t-warning-soft, rgba(234,179,8,0.06))" : expiresToday ? "var(--t-error-soft, rgba(239,68,68,0.04))" : "var(--t-bg-card)",
+                    borderColor: highlightBorder ? (expiresToday && !isUrgent ? "var(--t-error)" : "var(--t-warning)") : "var(--t-border)",
                   }}
                 >
                   <div className="min-w-0">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-sm font-semibold truncate" style={{ color: "var(--t-text-primary)" }}>
                         {q.customer_name || "Unknown"}
                       </span>
@@ -269,6 +274,16 @@ export default function QuotesPage() {
                       {isStale && (
                         <span className="text-[10px] font-bold uppercase rounded-full px-2 py-0.5" style={{ backgroundColor: "var(--t-bg-elevated, #e5e7eb)", color: "var(--t-text-muted)" }}>
                           Stale
+                        </span>
+                      )}
+                      {expiresToday && (
+                        <span className="text-[10px] font-bold uppercase rounded-full px-2 py-0.5" style={{ backgroundColor: "var(--t-error)", color: "#fff" }}>
+                          Expires Today
+                        </span>
+                      )}
+                      {expiringSoon && !expiresToday && (
+                        <span className="text-[10px] font-bold uppercase rounded-full px-2 py-0.5" style={{ backgroundColor: "var(--t-warning-soft, rgba(234,179,8,0.15))", color: "var(--t-warning)" }}>
+                          Expiring Soon
                         </span>
                       )}
                     </div>
