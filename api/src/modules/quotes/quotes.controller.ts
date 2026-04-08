@@ -284,17 +284,45 @@ export class QuotesController {
 
     const [data, total] = await qb.getManyAndCount();
 
-    // Compute derived status + is_hot for each quote
+    // Compute derived status, hot flag, and follow-up priority
     const now = new Date();
+    const twoHoursAgo = new Date(now.getTime() - 2 * 60 * 60 * 1000);
+    const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+
     const enriched = data.map((q) => {
       const isExpired = q.status === 'sent' && now > q.expires_at;
       const isHot = q.status === 'sent' && !isExpired && (q.view_count ?? 0) >= 2;
+      const lastViewed = q.last_viewed_at ? new Date(q.last_viewed_at) : null;
+
+      // Follow-up priority: needs_follow_up > stale > null
+      let follow_up_priority: string | null = null;
+      if (isHot && lastViewed && lastViewed >= twoHoursAgo) {
+        follow_up_priority = 'needs_follow_up';
+      } else if (isHot && lastViewed && lastViewed < oneDayAgo) {
+        follow_up_priority = 'stale';
+      }
+
       return {
         ...q,
         derived_status: isExpired ? 'expired' : q.status,
         is_hot: isHot,
+        follow_up_priority,
       };
     });
+
+    // Sort: needs_follow_up first, then by last_viewed_at desc, then view_count desc
+    if (hot === 'true') {
+      enriched.sort((a, b) => {
+        const priorityOrder = { needs_follow_up: 0, stale: 2 } as Record<string, number>;
+        const pa = a.follow_up_priority ? (priorityOrder[a.follow_up_priority] ?? 1) : 1;
+        const pb = b.follow_up_priority ? (priorityOrder[b.follow_up_priority] ?? 1) : 1;
+        if (pa !== pb) return pa - pb;
+        const la = a.last_viewed_at ? new Date(a.last_viewed_at).getTime() : 0;
+        const lb = b.last_viewed_at ? new Date(b.last_viewed_at).getTime() : 0;
+        if (lb !== la) return lb - la;
+        return (b.view_count ?? 0) - (a.view_count ?? 0);
+      });
+    }
 
     return { data: enriched, meta: { total } };
   }
