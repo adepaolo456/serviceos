@@ -7,6 +7,7 @@ import { Tenant } from '../tenants/entities/tenant.entity';
 import { Customer } from '../customers/entities/customer.entity';
 import { TenantId, CurrentUser, Public } from '../../common/decorators';
 import { NotificationsService } from '../notifications/notifications.service';
+import { TenantSettingsService } from '../tenant-settings/tenant-settings.service';
 import { randomBytes } from 'crypto';
 
 function generateToken(): string {
@@ -90,6 +91,7 @@ export class QuotesController {
     @InjectRepository(Tenant) private tenantRepo: Repository<Tenant>,
     @InjectRepository(Customer) private customerRepo: Repository<Customer>,
     private notificationsService: NotificationsService,
+    private settingsService: TenantSettingsService,
   ) {}
 
   /**
@@ -116,6 +118,7 @@ export class QuotesController {
       totalQuoted?: number;
     },
   ) {
+    const settings = await this.settingsService.getSettings(tenantId);
     const now = new Date();
     const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
     const count = await this.quoteRepo.count({ where: { tenant_id: tenantId } });
@@ -153,7 +156,7 @@ export class QuotesController {
       total_quoted: totalQuoted,
       status: 'draft',
       token,
-      expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      expires_at: new Date(Date.now() + settings.quote_expiration_days * 24 * 60 * 60 * 1000),
       created_by: userId,
     } as Partial<Quote>);
 
@@ -275,31 +278,37 @@ export class QuotesController {
       );
     }
 
-    // Hot quotes filter: active, not expired, viewed 2+ times
+    // Load tenant settings for thresholds
+    const settings = await this.settingsService.getSettings(tenantId);
+    const hotThreshold = settings.hot_quote_view_threshold ?? 2;
+    const recencyMs = (settings.follow_up_recency_minutes ?? 120) * 60 * 1000;
+    const expiringSoonMs = (settings.expiring_soon_hours ?? 48) * 60 * 60 * 1000;
+
+    // Hot quotes filter: active, not expired, viewed >= threshold
     if (hot === 'true') {
       qb.andWhere('q.status = :hotStatus', { hotStatus: 'sent' })
         .andWhere('q.expires_at > NOW()')
-        .andWhere('COALESCE(q.view_count, 0) >= 2');
+        .andWhere('COALESCE(q.view_count, 0) >= :hotThreshold', { hotThreshold });
     }
 
     const [data, total] = await qb.getManyAndCount();
 
     // Compute derived status, hot flag, follow-up priority, and expiry urgency
     const now = new Date();
-    const twoHoursAgo = new Date(now.getTime() - 2 * 60 * 60 * 1000);
+    const recencyCutoff = new Date(now.getTime() - recencyMs);
     const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
     const in24h = new Date(now.getTime() + 24 * 60 * 60 * 1000);
-    const in48h = new Date(now.getTime() + 48 * 60 * 60 * 1000);
+    const inExpiringSoon = new Date(now.getTime() + expiringSoonMs);
 
     const enriched = data.map((q) => {
       const isExpired = q.status === 'sent' && now > q.expires_at;
-      const isHot = q.status === 'sent' && !isExpired && (q.view_count ?? 0) >= 2;
+      const isHot = q.status === 'sent' && !isExpired && (q.view_count ?? 0) >= hotThreshold;
       const lastViewed = q.last_viewed_at ? new Date(q.last_viewed_at) : null;
       const expiresAt = new Date(q.expires_at);
 
       // Follow-up priority
       let follow_up_priority: string | null = null;
-      if (isHot && lastViewed && lastViewed >= twoHoursAgo) {
+      if (isHot && lastViewed && lastViewed >= recencyCutoff) {
         follow_up_priority = 'needs_follow_up';
       } else if (isHot && lastViewed && lastViewed < oneDayAgo) {
         follow_up_priority = 'stale';
@@ -309,7 +318,7 @@ export class QuotesController {
       let expires_urgency: string | null = null;
       if (!isExpired && q.status === 'sent') {
         if (expiresAt <= in24h) expires_urgency = 'expires_today';
-        else if (expiresAt <= in48h) expires_urgency = 'expiring_soon';
+        else if (expiresAt <= inExpiringSoon) expires_urgency = 'expiring_soon';
       }
 
       return {

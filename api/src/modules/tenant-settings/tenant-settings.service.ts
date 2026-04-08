@@ -11,6 +11,7 @@ import {
   UpdateBrandingDto,
   UpdateOperationsDto,
   UpdateNotificationConfigDto,
+  UpdateQuoteSettingsDto,
 } from './dto/tenant-settings.dto';
 
 @Injectable()
@@ -105,6 +106,24 @@ export class TenantSettingsService {
     if (dto.email_enabled !== undefined) update.email_enabled = dto.email_enabled;
     update.updated_at = new Date();
 
+    await this.settingsRepo.update({ tenant_id: tenantId }, update);
+    return this.settingsRepo.findOneOrFail({ where: { tenant_id: tenantId } });
+  }
+
+  async updateQuoteSettings(
+    tenantId: string,
+    dto: UpdateQuoteSettingsDto,
+  ): Promise<TenantSettings> {
+    await this.getSettings(tenantId);
+    const update: Record<string, unknown> = {};
+    if (dto.quote_expiration_days !== undefined) update.quote_expiration_days = dto.quote_expiration_days;
+    if (dto.hot_quote_view_threshold !== undefined) update.hot_quote_view_threshold = dto.hot_quote_view_threshold;
+    if (dto.follow_up_recency_minutes !== undefined) update.follow_up_recency_minutes = dto.follow_up_recency_minutes;
+    if (dto.expiring_soon_hours !== undefined) update.expiring_soon_hours = dto.expiring_soon_hours;
+    if (dto.quotes_email_enabled !== undefined) update.quotes_email_enabled = dto.quotes_email_enabled;
+    if (dto.quotes_sms_enabled !== undefined) update.quotes_sms_enabled = dto.quotes_sms_enabled;
+    if (dto.default_quote_delivery_method !== undefined) update.default_quote_delivery_method = dto.default_quote_delivery_method;
+    update.updated_at = new Date();
     await this.settingsRepo.update({ tenant_id: tenantId }, update);
     return this.settingsRepo.findOneOrFail({ where: { tenant_id: tenantId } });
   }

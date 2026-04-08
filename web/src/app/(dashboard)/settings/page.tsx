@@ -4,9 +4,10 @@ import { useState, useEffect, useCallback, type FormEvent } from "react";
 import {
   Building, Users, CreditCard, Plug, Upload, Copy, Check, Eye, EyeOff,
   ExternalLink, Zap, Globe, Key, Webhook, MapPin, Plus, Trash2, Star,
-  Bell, Shield, Lock, Download, AlertTriangle,
+  Bell, Shield, Lock, Download, AlertTriangle, FileText,
 } from "lucide-react";
 import { api } from "@/lib/api";
+import { useToast } from "@/components/toast";
 import SlideOver from "@/components/slide-over";
 import AddressAutocomplete, { type AddressValue } from "@/components/address-autocomplete";
 
@@ -32,6 +33,7 @@ const TABS = [
   { key: "notifications", label: "Notifications", icon: Bell },
   { key: "integrations", label: "Integrations", icon: Plug },
   { key: "website", label: "Website", icon: Globe },
+  { key: "quotes", label: "Quotes", icon: FileText },
   { key: "account", label: "Account", icon: Shield },
 ] as const;
 
@@ -80,6 +82,7 @@ export default function SettingsPage() {
       {tab === "notifications" && <NotificationsTab />}
       {tab === "integrations" && <IntegrationsTab profile={profile} />}
       {tab === "website" && profile && <WebsiteTab slug={profile.tenant.slug} />}
+      {tab === "quotes" && <QuotesTab />}
       {tab === "account" && <AccountTab profile={profile} />}
     </div>
   );
@@ -886,5 +889,132 @@ function WebsiteTab({ slug }: { slug: string }) {
         {saved && <span className="text-sm text-[var(--t-accent)] flex items-center gap-1"><Check className="h-4 w-4" /> Saved</span>}
       </div>
     </div>
+  );
+}
+
+/* ─── Quotes Tab ─── */
+
+function QuotesTab() {
+  const [settings, setSettings] = useState<Record<string, any> | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const { toast } = useToast();
+
+  useEffect(() => {
+    api.get<Record<string, any>>("/tenant-settings").then(setSettings).catch(() => {});
+  }, []);
+
+  const handleSave = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!settings) return;
+
+    // Validate delivery method vs enabled channels
+    const method = settings.default_quote_delivery_method || "email";
+    if (method === "email" && !settings.quotes_email_enabled) {
+      toast("error", "Cannot set default to email when email is disabled");
+      return;
+    }
+    if (method === "sms" && !settings.quotes_sms_enabled) {
+      toast("error", "Cannot set default to SMS when SMS is disabled");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      await api.patch("/tenant-settings/quotes", {
+        quote_expiration_days: Number(settings.quote_expiration_days) || 30,
+        hot_quote_view_threshold: Number(settings.hot_quote_view_threshold) || 2,
+        follow_up_recency_minutes: Number(settings.follow_up_recency_minutes) || 120,
+        expiring_soon_hours: Number(settings.expiring_soon_hours) || 48,
+        quotes_email_enabled: settings.quotes_email_enabled,
+        quotes_sms_enabled: settings.quotes_sms_enabled,
+        default_quote_delivery_method: method,
+      });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch {
+      toast("error", "Failed to save");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!settings) return <div className="py-8 text-center text-[var(--t-text-muted)]">Loading...</div>;
+
+  const set = (key: string, value: unknown) => setSettings((s) => s ? { ...s, [key]: value } : s);
+
+  return (
+    <form onSubmit={handleSave} className="max-w-xl space-y-6">
+      {/* Quote Rules */}
+      <div>
+        <h3 className="text-sm font-bold uppercase tracking-wide text-[var(--t-text-primary)] mb-3">Quote Rules</h3>
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className={labelCls}>Expiration (days)</label>
+            <input type="number" min={1} max={365} value={settings.quote_expiration_days ?? 30}
+              onChange={(e) => set("quote_expiration_days", e.target.value)} className={inputCls} />
+          </div>
+          <div>
+            <label className={labelCls}>Expiring Soon Window (hours)</label>
+            <input type="number" min={1} max={720} value={settings.expiring_soon_hours ?? 48}
+              onChange={(e) => set("expiring_soon_hours", e.target.value)} className={inputCls} />
+          </div>
+        </div>
+      </div>
+
+      {/* Hot Quote / Follow-Up */}
+      <div>
+        <h3 className="text-sm font-bold uppercase tracking-wide text-[var(--t-text-primary)] mb-3">Hot Quote / Follow-Up</h3>
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className={labelCls}>Hot Quote Threshold (views)</label>
+            <input type="number" min={1} max={100} value={settings.hot_quote_view_threshold ?? 2}
+              onChange={(e) => set("hot_quote_view_threshold", e.target.value)} className={inputCls} />
+          </div>
+          <div>
+            <label className={labelCls}>Follow-Up Recency (minutes)</label>
+            <input type="number" min={1} max={10080} value={settings.follow_up_recency_minutes ?? 120}
+              onChange={(e) => set("follow_up_recency_minutes", e.target.value)} className={inputCls} />
+          </div>
+        </div>
+      </div>
+
+      {/* Delivery Settings */}
+      <div>
+        <h3 className="text-sm font-bold uppercase tracking-wide text-[var(--t-text-primary)] mb-3">Delivery Settings</h3>
+        <div className="space-y-3">
+          <label className="flex items-center gap-3 cursor-pointer">
+            <input type="checkbox" checked={settings.quotes_email_enabled ?? true}
+              onChange={(e) => set("quotes_email_enabled", e.target.checked)}
+              className="accent-[var(--t-accent)]" />
+            <span className="text-sm text-[var(--t-text-primary)]">Enable email quotes</span>
+          </label>
+          <label className="flex items-center gap-3 cursor-pointer">
+            <input type="checkbox" checked={settings.quotes_sms_enabled ?? false}
+              onChange={(e) => set("quotes_sms_enabled", e.target.checked)}
+              className="accent-[var(--t-accent)]" />
+            <span className="text-sm text-[var(--t-text-primary)]">Enable SMS quotes</span>
+          </label>
+          <div>
+            <label className={labelCls}>Default Delivery Method</label>
+            <select value={settings.default_quote_delivery_method ?? "email"}
+              onChange={(e) => set("default_quote_delivery_method", e.target.value)}
+              className={inputCls}>
+              <option value="email">Email</option>
+              <option value="sms" disabled={!settings.quotes_sms_enabled}>SMS</option>
+              <option value="both" disabled={!settings.quotes_email_enabled || !settings.quotes_sms_enabled}>Both</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-3 pt-2">
+        <button type="submit" disabled={saving}
+          className="rounded-full bg-[var(--t-accent)] text-white px-6 py-2.5 text-sm font-semibold transition-opacity disabled:opacity-50">
+          {saving ? "Saving..." : "Save Quote Settings"}
+        </button>
+        {saved && <span className="text-sm text-[var(--t-accent)] flex items-center gap-1"><Check className="h-4 w-4" /> Saved</span>}
+      </div>
+    </form>
   );
 }
