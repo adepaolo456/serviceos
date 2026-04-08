@@ -293,19 +293,30 @@ export class PublicService {
         notes: 'Paid at time of booking',
       }, queryRunner.manager);
 
-      await queryRunner.commitTransaction();
-
-      // Mark quote as converted (after successful booking, non-blocking)
+      // Mark quote as converted — atomic with job/customer/invoice creation.
+      // Precondition `status = 'sent'` prevents double-conversion and blocks
+      // conversion of draft/already-converted quotes. Tenant scoping preserved
+      // via `tenant_id: t.id`. If the update affects 0 rows, throw so the
+      // whole booking transaction rolls back (no orphan customer/job/invoice).
       if (body.quoteId) {
-        try {
-          await this.quoteRepo.update(
-            { id: body.quoteId, tenant_id: t.id },
-            { status: 'converted', booked_job_id: saved.id, customer_id: customer.id },
+        const quoteRepoTx = queryRunner.manager.getRepository(Quote);
+        const result = await quoteRepoTx.update(
+          { id: body.quoteId, tenant_id: t.id, status: 'sent' },
+          {
+            status: 'converted',
+            booked_job_id: saved.id,
+            customer_id: customer.id,
+            booked_at: new Date(),
+          },
+        );
+        if (result.affected === 0) {
+          throw new BadRequestException(
+            'This quote is no longer available for booking. It may have already been booked, expired, or been cancelled. Please contact us for help.',
           );
-        } catch {
-          // Quote conversion update is non-critical — don't fail the booking
         }
       }
+
+      await queryRunner.commitTransaction();
 
       return {
         jobNumber: saved.job_number,
@@ -410,13 +421,16 @@ export class PublicService {
 
     // For converted or expired quotes, return only branding + a friendly message.
     // Do NOT expose customer name, delivery address, or pricing breakdown — those leak
-    // PII to anyone still holding the forwarded link.
+    // PII to anyone still holding the forwarded link. `bookedAt` is safe to expose
+    // (timestamp only, no PII) and lives at the top level so the banner can render it
+    // even while the nested `quote` object is nulled out.
     if (!isActive) {
       return {
         status: expired ? 'expired' : 'booked',
         message: expired
           ? 'This quote has expired.'
           : 'This quote has already been converted to a booking.',
+        bookedAt: quote.booked_at ?? null,
         quote: null,
         branding,
       };
@@ -424,6 +438,7 @@ export class PublicService {
 
     return {
       status: 'active',
+      bookedAt: null,
       quote: {
         size: quote.asset_subtype,
         customerName: quote.customer_name,
@@ -437,7 +452,6 @@ export class PublicService {
         extraDayRate: Number(quote.extra_day_rate),
         expiresAt: quote.expires_at,
         createdAt: quote.created_at,
-        bookedAt: null,
       },
       branding,
     };

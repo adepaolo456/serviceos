@@ -62,6 +62,9 @@ export class Quote {
   @Column({ name: 'booked_job_id', type: 'uuid', nullable: true })
   booked_job_id!: string | null;
 
+  @Column({ name: 'booked_at', type: 'timestamptz', nullable: true })
+  booked_at!: Date | null;
+
   @Column({ name: 'created_by', type: 'uuid', nullable: true })
   created_by!: string | null;
 
