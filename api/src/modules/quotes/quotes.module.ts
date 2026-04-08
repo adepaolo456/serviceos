@@ -6,12 +6,14 @@ import { Customer } from '../customers/entities/customer.entity';
 import { QuotesController } from './quotes.controller';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { TenantSettingsModule } from '../tenant-settings/tenant-settings.module';
+import { SmsModule } from '../sms/sms.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Quote, Tenant, Customer]),
     NotificationsModule,
     TenantSettingsModule,
+    SmsModule,
   ],
   controllers: [QuotesController],
 })
