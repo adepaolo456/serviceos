@@ -284,17 +284,20 @@ export class QuotesController {
 
     const [data, total] = await qb.getManyAndCount();
 
-    // Compute derived status, hot flag, and follow-up priority
+    // Compute derived status, hot flag, follow-up priority, and expiry urgency
     const now = new Date();
     const twoHoursAgo = new Date(now.getTime() - 2 * 60 * 60 * 1000);
     const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const in24h = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+    const in48h = new Date(now.getTime() + 48 * 60 * 60 * 1000);
 
     const enriched = data.map((q) => {
       const isExpired = q.status === 'sent' && now > q.expires_at;
       const isHot = q.status === 'sent' && !isExpired && (q.view_count ?? 0) >= 2;
       const lastViewed = q.last_viewed_at ? new Date(q.last_viewed_at) : null;
+      const expiresAt = new Date(q.expires_at);
 
-      // Follow-up priority: needs_follow_up > stale > null
+      // Follow-up priority
       let follow_up_priority: string | null = null;
       if (isHot && lastViewed && lastViewed >= twoHoursAgo) {
         follow_up_priority = 'needs_follow_up';
@@ -302,20 +305,32 @@ export class QuotesController {
         follow_up_priority = 'stale';
       }
 
+      // Expiry urgency (active quotes only)
+      let expires_urgency: string | null = null;
+      if (!isExpired && q.status === 'sent') {
+        if (expiresAt <= in24h) expires_urgency = 'expires_today';
+        else if (expiresAt <= in48h) expires_urgency = 'expiring_soon';
+      }
+
       return {
         ...q,
         derived_status: isExpired ? 'expired' : q.status,
         is_hot: isHot,
         follow_up_priority,
+        expires_urgency,
+        hours_until_expiry: !isExpired ? Math.max(0, Math.round((expiresAt.getTime() - now.getTime()) / 3600000)) : 0,
       };
     });
 
-    // Sort: needs_follow_up first, then by last_viewed_at desc, then view_count desc
+    // Sort: needs_follow_up first, expiring soon boosted, then recency, then views
     if (hot === 'true') {
       enriched.sort((a, b) => {
-        const priorityOrder = { needs_follow_up: 0, stale: 2 } as Record<string, number>;
-        const pa = a.follow_up_priority ? (priorityOrder[a.follow_up_priority] ?? 1) : 1;
-        const pb = b.follow_up_priority ? (priorityOrder[b.follow_up_priority] ?? 1) : 1;
+        const priorityOrder = { needs_follow_up: 0, stale: 3 } as Record<string, number>;
+        let pa = a.follow_up_priority ? (priorityOrder[a.follow_up_priority] ?? 2) : 2;
+        let pb = b.follow_up_priority ? (priorityOrder[b.follow_up_priority] ?? 2) : 2;
+        // Boost expiring quotes within their tier
+        if (a.expires_urgency === 'expires_today' && pa > 0) pa = Math.min(pa, 1);
+        if (b.expires_urgency === 'expires_today' && pb > 0) pb = Math.min(pb, 1);
         if (pa !== pb) return pa - pb;
         const la = a.last_viewed_at ? new Date(a.last_viewed_at).getTime() : 0;
         const lb = b.last_viewed_at ? new Date(b.last_viewed_at).getTime() : 0;

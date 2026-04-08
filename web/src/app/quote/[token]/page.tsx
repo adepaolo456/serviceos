@@ -80,6 +80,14 @@ export default function HostedQuotePage({ params }: { params: Promise<{ token: s
   const addr = quote.deliveryAddress;
   const addrStr = addr ? [addr.street, addr.city, addr.state, addr.zip].filter(Boolean).join(", ") : null;
   const expiresDate = new Date(quote.expiresAt).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+  const hoursUntilExpiry = isActive ? Math.max(0, Math.round((new Date(quote.expiresAt).getTime() - Date.now()) / 3600000)) : 0;
+  const expiresToday = isActive && hoursUntilExpiry <= 24;
+  const expiringSoon = isActive && hoursUntilExpiry <= 48 && !expiresToday;
+  const expiryLabel = expiresToday
+    ? (hoursUntilExpiry <= 1 ? "Expires in less than an hour" : `Expires in ${hoursUntilExpiry} hours`)
+    : expiringSoon
+    ? "Expires tomorrow"
+    : `Valid through ${expiresDate}`;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -190,9 +198,9 @@ export default function HostedQuotePage({ params }: { params: Promise<{ token: s
 
           {/* Validity */}
           <div className="px-6 py-3 border-t border-gray-100">
-            <div className="flex items-center gap-2 text-sm text-gray-500">
-              <Clock className="h-4 w-4 text-gray-400" />
-              <span>Valid through {expiresDate}</span>
+            <div className="flex items-center gap-2 text-sm" style={{ color: expiresToday ? "#dc2626" : expiringSoon ? "#d97706" : "#6b7280" }}>
+              <Clock className="h-4 w-4" style={{ color: expiresToday ? "#dc2626" : expiringSoon ? "#d97706" : "#9ca3af" }} />
+              <span className={expiresToday ? "font-semibold" : ""}>{expiryLabel}</span>
             </div>
           </div>
         </div>
