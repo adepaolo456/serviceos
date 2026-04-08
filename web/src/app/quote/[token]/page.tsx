@@ -43,7 +43,7 @@ export default function HostedQuotePage({ params }: { params: Promise<{ token: s
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch(`${API}/public/quote/${token}`)
+    fetch(`${API}/public/tenant/quote/${token}`)
       .then((r) => {
         if (!r.ok) throw new Error("not_found");
         return r.json();
