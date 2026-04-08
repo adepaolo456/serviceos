@@ -83,6 +83,28 @@ export const JOB_TYPE_LABELS: Record<JobType, string> = {
 // React component) so it can be reused and tested independently.
 // ─────────────────────────────────────────────────────────────────
 
+/** Fallback noun used when a rental has no asset subtype or service type */
+export const RENTAL_TITLE_FALLBACK = "Dumpster";
+
+/** Suffix appended to customer-facing rental titles (e.g. "10yd Rental") */
+export const RENTAL_TITLE_SUFFIX = "Rental";
+
+/**
+ * Format a customer-facing rental title.
+ *
+ * Examples: "10yd Rental", "20yd Rental", "Dumpster Rental" (fallback).
+ *
+ * Single source of truth for portal rental card/header titling — used by
+ * both the rentals list and the detail view so copy stays consistent.
+ */
+export function formatRentalTitle(rental: {
+  asset?: { subtype?: string | null } | null;
+  service_type?: string | null;
+}): string {
+  const label = rental.asset?.subtype || rental.service_type || RENTAL_TITLE_FALLBACK;
+  return `${label} ${RENTAL_TITLE_SUFFIX}`;
+}
+
 /** Canonical step keys for the customer rental lifecycle timeline */
 export type CustomerTimelineStepKey =
   | "ordered"
