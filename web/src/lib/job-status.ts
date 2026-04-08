@@ -97,14 +97,22 @@ export const RENTAL_TITLE_SUFFIX = "Rental";
  * Single source of truth for portal rental card/header titling — used by
  * both the rentals list and the detail view so copy stays consistent.
  *
+ * Priority order:
+ *   1. `asset_subtype` (top-level Job column — set at booking time, present
+ *      even before a physical dumpster is allocated to the rental)
+ *   2. `asset.subtype` (from the loaded asset relation — only populated
+ *      once the rental has been assigned a specific dumpster)
+ *   3. Fallback to "Dumpster"
+ *
  * Intentionally does NOT fall back to `service_type`: that column stores
  * internal snake_case values (e.g. "dumpster_rental") which must never
  * render in customer-facing UI.
  */
 export function formatRentalTitle(rental: {
+  asset_subtype?: string | null;
   asset?: { subtype?: string | null } | null;
 }): string {
-  const label = rental.asset?.subtype || RENTAL_TITLE_FALLBACK;
+  const label = rental.asset_subtype || rental.asset?.subtype || RENTAL_TITLE_FALLBACK;
   return `${label} ${RENTAL_TITLE_SUFFIX}`;
 }
 
