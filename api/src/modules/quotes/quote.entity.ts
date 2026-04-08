@@ -65,6 +65,15 @@ export class Quote {
   @Column({ name: 'created_by', type: 'uuid', nullable: true })
   created_by!: string | null;
 
+  @Column({ name: 'first_viewed_at', type: 'timestamptz', nullable: true })
+  first_viewed_at!: Date | null;
+
+  @Column({ name: 'last_viewed_at', type: 'timestamptz', nullable: true })
+  last_viewed_at!: Date | null;
+
+  @Column({ name: 'view_count', type: 'int', default: 0 })
+  view_count!: number;
+
   @CreateDateColumn({ name: 'created_at' })
   created_at!: Date;
 

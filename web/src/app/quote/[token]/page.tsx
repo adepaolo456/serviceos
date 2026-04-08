@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, use } from "react";
-import { Phone, Mail, MapPin, Calendar, Box, Clock } from "lucide-react";
+import { Phone, Mail, MapPin, Box, Clock, CheckCircle2 } from "lucide-react";
 import { formatPhone, formatCurrency, formatDumpsterSize } from "@/lib/utils";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "https://serviceos-api.vercel.app";
@@ -19,6 +19,7 @@ interface QuoteData {
   extraDayRate: number;
   expiresAt: string;
   createdAt: string;
+  bookedAt: string | null;
 }
 
 interface Branding {
@@ -107,13 +108,18 @@ export default function HostedQuotePage({ params }: { params: Promise<{ token: s
       <div className="mx-auto max-w-2xl px-6 py-8">
         {/* Status banner */}
         {status === "expired" && (
-          <div className="mb-6 rounded-xl bg-amber-50 border border-amber-200 px-5 py-3 text-sm text-amber-800 font-medium">
-            This quote expired on {expiresDate}. Please contact us for updated pricing.
+          <div className="mb-6 rounded-xl bg-amber-50 border border-amber-200 px-5 py-4">
+            <p className="text-sm text-amber-800 font-semibold">This quote has expired</p>
+            <p className="text-xs text-amber-700 mt-1">Expired on {expiresDate}. Contact us for updated pricing.</p>
           </div>
         )}
         {status === "booked" && (
-          <div className="mb-6 rounded-xl bg-green-50 border border-green-200 px-5 py-3 text-sm text-green-800 font-medium">
-            This quote has been booked. Thank you!
+          <div className="mb-6 rounded-xl bg-green-50 border border-green-200 px-5 py-4 flex items-center gap-3">
+            <CheckCircle2 className="h-5 w-5 text-green-600 shrink-0" />
+            <div>
+              <p className="text-sm text-green-800 font-semibold">Booking confirmed</p>
+              {quote.bookedAt && <p className="text-xs text-green-700 mt-0.5">Booked on {new Date(quote.bookedAt).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}</p>}
+            </div>
           </div>
         )}
 
@@ -130,17 +136,17 @@ export default function HostedQuotePage({ params }: { params: Promise<{ token: s
         {/* Quote card */}
         <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm">
           {/* Hero */}
-          <div className="px-6 py-5" style={{ backgroundColor: accent + "12" }}>
+          <div className="px-6 py-5" style={{ backgroundColor: isActive ? accent + "12" : "#f9fafb" }}>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <Box className="h-6 w-6" style={{ color: accent }} />
+                <Box className="h-6 w-6" style={{ color: isActive ? accent : "#9ca3af" }} />
                 <div>
                   <p className="text-lg font-bold text-gray-900">{formatDumpsterSize(quote.size)} Dumpster</p>
                   <p className="text-sm text-gray-500">{quote.rentalDays}-day rental</p>
                 </div>
               </div>
               <div className="text-right">
-                <p className="text-2xl font-extrabold" style={{ color: accent }}>{formatCurrency(quote.totalQuoted)}</p>
+                <p className="text-2xl font-extrabold" style={{ color: isActive ? accent : "#6b7280" }}>{formatCurrency(quote.totalQuoted)}</p>
                 <p className="text-xs text-gray-500">total quoted</p>
               </div>
             </div>
