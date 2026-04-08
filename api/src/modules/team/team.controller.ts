@@ -1,5 +1,5 @@
 import {
-  Controller, Get, Post, Patch, Body, Param, Query, Req, Res,
+  Controller, Get, Post, Patch, Body, Param, Query, Req, Res, UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -8,6 +8,8 @@ import type { Request, Response } from 'express';
 import { User } from '../auth/entities/user.entity';
 import { Job } from '../jobs/entities/job.entity';
 import { TimeEntry } from './time-entry.entity';
+import { RolesGuard } from '../../common/guards';
+import { Roles } from '../../common/decorators';
 
 @ApiTags('Team')
 @ApiBearerAuth()
@@ -109,6 +111,8 @@ export class TeamController {
   }
 
   @Patch(':id')
+  @UseGuards(RolesGuard)
+  @Roles('admin', 'owner')
   async updateEmployee(
     @Req() req: Request, @Param('id') id: string,
     @Body() body: Record<string, unknown>,

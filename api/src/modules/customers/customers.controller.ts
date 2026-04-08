@@ -10,6 +10,7 @@ import {
   HttpCode,
   HttpStatus,
   ParseUUIDPipe,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CustomersService } from './customers.service';
@@ -18,7 +19,8 @@ import {
   UpdateCustomerDto,
   ListCustomersQueryDto,
 } from './dto/customer.dto';
-import { TenantId } from '../../common/decorators';
+import { TenantId, Roles } from '../../common/decorators';
+import { RolesGuard } from '../../common/guards';
 
 @ApiTags('Customers')
 @ApiBearerAuth()
@@ -77,6 +79,8 @@ export class CustomersController {
   }
 
   @Delete(':id')
+  @UseGuards(RolesGuard)
+  @Roles('admin', 'owner')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Delete a customer' })
   remove(@TenantId() tenantId: string, @Param('id', ParseUUIDPipe) id: string) {

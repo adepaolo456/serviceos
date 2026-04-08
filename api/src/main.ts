@@ -8,18 +8,38 @@ export async function createApp() {
     rawBody: true,
   });
 
-  app.enableCors({
-    origin: (origin, callback) => {
-      // Allow requests with no origin (server-to-server, curl, mobile apps)
-      if (!origin) return callback(null, true);
-      // Always allow our own domains
-      const allowed = ['http://localhost:3000', 'https://serviceos-web-zeta.vercel.app'];
-      if (allowed.includes(origin)) return callback(null, true);
-      // Allow any origin for public/widget API routes (checked per-request in middleware)
-      // This is necessary for the embeddable widget to work from tenant domains
-      return callback(null, true);
-    },
-    credentials: true,
+  // Per-request CORS: public endpoints (widget / tenant websites) allow any origin
+  // without credentials; everything else uses a strict allowlist with credentials.
+  const allowedOrigins = [
+    'https://serviceos.vercel.app',
+    'https://www.serviceos.vercel.app',
+    'https://serviceos-web-zeta.vercel.app',
+    'http://localhost:3000',
+    'http://localhost:3001',
+  ];
+  const tenantSubdomainRegex = /^https:\/\/[a-z0-9-]+\.serviceos\.app$/;
+
+  app.enableCors((req, cb) => {
+    const url = (req as { url?: string }).url || '';
+    // Public endpoints — widget.js fetches these from arbitrary tenant domains.
+    // No credentials, any origin.
+    if (url.startsWith('/public/')) {
+      return cb(null, { origin: true, credentials: false });
+    }
+    // Authenticated endpoints — strict allowlist with credentials.
+    cb(null, {
+      origin: (origin, originCb) => {
+        // Allow requests with no origin (mobile apps, Postman, server-to-server)
+        if (!origin) return originCb(null, true);
+        if (allowedOrigins.includes(origin)) return originCb(null, true);
+        // Allow any *.vercel.app preview deploys
+        if (origin.endsWith('.vercel.app')) return originCb(null, true);
+        // Allow tenant subdomains (tenant websites feature)
+        if (tenantSubdomainRegex.test(origin)) return originCb(null, true);
+        return originCb(new Error('Not allowed by CORS'));
+      },
+      credentials: true,
+    });
   });
 
   app.useGlobalPipes(

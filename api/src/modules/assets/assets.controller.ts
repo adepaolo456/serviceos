@@ -10,6 +10,7 @@ import {
   HttpCode,
   HttpStatus,
   ParseUUIDPipe,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AssetsService } from './assets.service';
@@ -18,7 +19,8 @@ import {
   UpdateAssetDto,
   ListAssetsQueryDto,
 } from './dto/asset.dto';
-import { TenantId } from '../../common/decorators';
+import { TenantId, Roles } from '../../common/decorators';
+import { RolesGuard } from '../../common/guards';
 
 @ApiTags('Assets')
 @ApiBearerAuth()
@@ -87,6 +89,8 @@ export class AssetsController {
   }
 
   @Delete(':id')
+  @UseGuards(RolesGuard)
+  @Roles('admin', 'owner')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Delete an asset' })
   remove(@TenantId() tenantId: string, @Param('id', ParseUUIDPipe) id: string) {

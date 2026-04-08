@@ -7,6 +7,7 @@ import {
   Param,
   Query,
   ParseUUIDPipe,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { DispatchService } from './dispatch.service';
@@ -15,11 +16,14 @@ import {
   CreateRouteDto,
   ReorderDto,
 } from './dto/dispatch.dto';
-import { TenantId } from '../../common/decorators';
+import { TenantId, Roles } from '../../common/decorators';
+import { RolesGuard } from '../../common/guards';
 
 @ApiTags('Dispatch')
 @ApiBearerAuth()
 @Controller()
+@UseGuards(RolesGuard)
+@Roles('admin', 'owner', 'dispatcher')
 export class DispatchController {
   constructor(private readonly dispatchService: DispatchService) {}
 
