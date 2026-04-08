@@ -17,6 +17,7 @@ interface Rental {
   rental_end_date: string;
   rental_days: number;
   total_price: number;
+  asset_subtype?: string | null;
   service_address: { formatted?: string; street?: string } | null;
   asset: { identifier?: string; subtype?: string } | null;
   completed_at: string | null;
