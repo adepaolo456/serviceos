@@ -357,55 +357,43 @@ export default function QuickQuoteDrawer() {
           </div>
         )}
 
-        {/* Action Buttons */}
+        {/* Unified Action Area */}
         {hasQuote && !calculating && (
           <div className="space-y-3">
-            <div className="flex gap-3">
-              <button
-                onClick={handleBookNow}
-                className="flex-1 flex items-center justify-center gap-2 rounded-full py-2.5 text-[13px] font-bold transition-opacity hover:opacity-90"
-                style={{ background: "var(--t-accent)", color: "var(--t-accent-on-accent)" }}
-              >
-                <DollarSign className="h-4 w-4" /> {getFeatureLabel("quick_quote_book_now")}
-              </button>
-              {!showEmailFields && (
-                <button
-                  onClick={() => setShowEmailFields(true)}
-                  className="flex-1 flex items-center justify-center gap-2 rounded-full py-2.5 text-[13px] font-bold border transition-colors hover:bg-[var(--t-bg-card-hover)]"
-                  style={{ borderColor: "var(--t-border)", color: "var(--t-text-primary)", background: "transparent" }}
-                >
-                  <Mail className="h-4 w-4" /> {getFeatureLabel("quick_quote_email")}
-                </button>
-              )}
-            </div>
+            {/* Primary: Book Now */}
+            <button
+              onClick={handleBookNow}
+              className="w-full flex items-center justify-center gap-2 rounded-full py-2.5 text-[13px] font-bold transition-opacity hover:opacity-90"
+              style={{ background: "var(--t-accent)", color: "var(--t-accent-on-accent)" }}
+            >
+              <DollarSign className="h-4 w-4" /> {getFeatureLabel("quick_quote_book_now")}
+            </button>
 
-            {/* Email Quote — progressive disclosure */}
-            {showEmailFields && (
-              <div className="rounded-[14px] border p-4 space-y-3 animate-fade-in" style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)" }}>
-                <p className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: "var(--t-text-muted)" }}>
-                  {getFeatureLabel("quick_quote_email")} To
-                </p>
-                <div className="space-y-2">
+            {/* Send Quote — inline compact form */}
+            {!showEmailFields ? (
+              <button
+                onClick={() => setShowEmailFields(true)}
+                className="w-full flex items-center justify-center gap-2 rounded-full py-2.5 text-[13px] font-bold border transition-colors hover:bg-[var(--t-bg-card-hover)]"
+                style={{ borderColor: "var(--t-border)", color: "var(--t-text-primary)", background: "transparent" }}
+              >
+                <Mail className="h-4 w-4" /> {getFeatureLabel("quick_quote_email")}
+              </button>
+            ) : (
+              <div className="rounded-[14px] border p-3 space-y-2 animate-fade-in" style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)" }}>
+                <div className="flex gap-2">
                   <input
                     value={customerName}
                     onChange={(e) => setCustomerName(e.target.value)}
-                    placeholder="Customer name *"
-                    className="w-full rounded-[14px] border px-3.5 py-2 text-sm outline-none focus:border-[var(--t-accent)]"
+                    placeholder="Name *"
+                    className="flex-1 rounded-[10px] border px-3 py-1.5 text-sm outline-none focus:border-[var(--t-accent)]"
                     style={{ background: "var(--t-bg-secondary)", borderColor: "var(--t-border)", color: "var(--t-text-primary)" }}
                   />
                   <input
                     value={customerEmail}
                     onChange={(e) => setCustomerEmail(e.target.value)}
-                    placeholder="Email address *"
+                    placeholder="Email *"
                     type="email"
-                    className="w-full rounded-[14px] border px-3.5 py-2 text-sm outline-none focus:border-[var(--t-accent)]"
-                    style={{ background: "var(--t-bg-secondary)", borderColor: "var(--t-border)", color: "var(--t-text-primary)" }}
-                  />
-                  <input
-                    value={customerPhone}
-                    onChange={(e) => setCustomerPhone(e.target.value)}
-                    placeholder="Phone (optional)"
-                    className="w-full rounded-[14px] border px-3.5 py-2 text-sm outline-none focus:border-[var(--t-accent)]"
+                    className="flex-1 rounded-[10px] border px-3 py-1.5 text-sm outline-none focus:border-[var(--t-accent)]"
                     style={{ background: "var(--t-bg-secondary)", borderColor: "var(--t-border)", color: "var(--t-text-primary)" }}
                   />
                 </div>
@@ -413,7 +401,7 @@ export default function QuickQuoteDrawer() {
                   <button
                     onClick={handleSendQuote}
                     disabled={!customerName || !customerEmail || sending}
-                    className="flex-1 flex items-center justify-center gap-2 rounded-full py-2.5 text-[13px] font-bold transition-opacity hover:opacity-90 disabled:opacity-50"
+                    className="flex-1 flex items-center justify-center gap-2 rounded-full py-2 text-[13px] font-bold transition-opacity hover:opacity-90 disabled:opacity-50"
                     style={{ background: "var(--t-accent)", color: "var(--t-accent-on-accent)" }}
                   >
                     {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}
@@ -421,8 +409,8 @@ export default function QuickQuoteDrawer() {
                   </button>
                   <button
                     onClick={() => setShowEmailFields(false)}
-                    className="rounded-full px-4 py-2.5 text-[13px] font-medium border transition-colors hover:bg-[var(--t-bg-card-hover)]"
-                    style={{ borderColor: "var(--t-border)", color: "var(--t-text-muted)" }}
+                    className="rounded-full px-3 py-2 text-[12px] font-medium transition-colors hover:bg-[var(--t-bg-card-hover)]"
+                    style={{ color: "var(--t-text-muted)", background: "transparent", border: "none" }}
                   >
                     Cancel
                   </button>
