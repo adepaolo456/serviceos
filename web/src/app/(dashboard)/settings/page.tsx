@@ -671,7 +671,7 @@ function NotifCard({ title, desc, children }: { title: string; desc: string; chi
 
 function ToggleSwitch({ label, checked, onChange }: { label: string; checked: boolean; onChange: () => void }) {
   return (
-    <label className="flex items-center gap-2 cursor-pointer">
+    <label className="inline-flex items-center gap-2 cursor-pointer">
       <button type="button" onClick={onChange} className={`relative h-5 w-9 rounded-full transition-colors ${checked ? "bg-[var(--t-accent)]" : "bg-[var(--t-bg-card-hover)]"}`}>
         <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${checked ? "left-[18px]" : "left-0.5"}`} />
       </button>
@@ -817,7 +817,7 @@ function WebsiteTab({ slug }: { slug: string }) {
       <div className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-sm font-semibold text-[var(--t-text-primary)]">Your Website</h3>
-          <label className="flex items-center gap-2">
+          <label className="inline-flex items-center gap-2">
             <span className="text-[13px] text-[var(--t-text-muted)]">Enabled</span>
             <button onClick={() => setConfig(c => ({ ...c, websiteEnabled: !c.websiteEnabled }))} className={`w-10 h-5 rounded-full transition-colors ${config.websiteEnabled ? "bg-[var(--t-accent)]" : "bg-[var(--t-bg-card-hover)]"}`}>
               <span className={`block w-4 h-4 rounded-full bg-white shadow transition-transform ${config.websiteEnabled ? "translate-x-5" : "translate-x-0.5"}`} />
@@ -864,7 +864,7 @@ function WebsiteTab({ slug }: { slug: string }) {
       <div className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5 space-y-4">
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-semibold text-[var(--t-text-primary)]">Embed Widget</h3>
-          <label className="flex items-center gap-2">
+          <label className="inline-flex items-center gap-2">
             <span className="text-[13px] text-[var(--t-text-muted)]">Enabled</span>
             <button onClick={() => setConfig(c => ({ ...c, widgetEnabled: !c.widgetEnabled }))} className={`w-10 h-5 rounded-full transition-colors ${config.widgetEnabled ? "bg-[var(--t-accent)]" : "bg-[var(--t-bg-card-hover)]"}`}>
               <span className={`block w-4 h-4 rounded-full bg-white shadow transition-transform ${config.widgetEnabled ? "translate-x-5" : "translate-x-0.5"}`} />
@@ -989,7 +989,7 @@ function QuotesTab() {
           </div>
         </div>
         <div className="mt-4 space-y-3">
-          <label className="flex items-center gap-3 cursor-pointer">
+          <label className="inline-flex items-center gap-3 cursor-pointer">
             <input type="checkbox" checked={settings.quote_follow_up_enabled ?? false}
               onChange={(e) => set("quote_follow_up_enabled", e.target.checked)}
               className="accent-[var(--t-accent)]" />
@@ -1014,13 +1014,13 @@ function QuotesTab() {
       <div>
         <h3 className="text-sm font-bold uppercase tracking-wide text-[var(--t-text-primary)] mb-3">Delivery Settings</h3>
         <div className="space-y-3">
-          <label className="flex items-center gap-3 cursor-pointer">
+          <label className="inline-flex items-center gap-3 cursor-pointer">
             <input type="checkbox" checked={settings.quotes_email_enabled ?? true}
               onChange={(e) => set("quotes_email_enabled", e.target.checked)}
               className="accent-[var(--t-accent)]" />
             <span className="text-sm text-[var(--t-text-primary)]">Enable email quotes</span>
           </label>
-          <label className="flex items-center gap-3 cursor-pointer">
+          <label className="inline-flex items-center gap-3 cursor-pointer">
             <input type="checkbox" checked={settings.quotes_sms_enabled ?? false}
               onChange={(e) => set("quotes_sms_enabled", e.target.checked)}
               className="accent-[var(--t-accent)]" />

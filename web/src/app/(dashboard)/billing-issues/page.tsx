@@ -603,7 +603,7 @@ export default function BillingIssuesPage() {
           <option value="">All Types</option>
           {ISSUE_TYPES.filter(t => t.key !== "all").map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
         </select>
-        <label className="flex items-center gap-2 text-xs cursor-pointer select-none" style={{ color: "var(--t-text-muted)" }}>
+        <label className="inline-flex items-center gap-2 text-xs cursor-pointer select-none" style={{ color: "var(--t-text-muted)" }}>
           <input
             type="checkbox"
             checked={showResolved}

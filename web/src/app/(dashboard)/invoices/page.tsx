@@ -380,7 +380,7 @@ export default function InvoicesPage() {
 
       {/* Search & Sort */}
       <div className="flex items-center gap-3 mb-5">
-        <label className="flex items-center gap-2 cursor-pointer shrink-0" onClick={(e) => e.stopPropagation()}>
+        <label className="inline-flex items-center gap-2 cursor-pointer shrink-0" onClick={(e) => e.stopPropagation()}>
           <input
             type="checkbox"
             checked={filteredInvoices.length > 0 && filteredInvoices.every(inv => selectedIds.has(inv.id))}
