@@ -81,6 +81,9 @@ export class TenantSettings {
   @Column({ name: 'default_quote_delivery_method', length: 10, default: 'email' })
   default_quote_delivery_method!: string;
 
+  @Column({ name: 'quote_templates', type: 'jsonb', nullable: true })
+  quote_templates!: Record<string, string> | null;
+
   @CreateDateColumn({ name: 'created_at' })
   created_at!: Date;
 

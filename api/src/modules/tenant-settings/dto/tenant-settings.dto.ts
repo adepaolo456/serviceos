@@ -5,6 +5,7 @@ import {
   IsNumber,
   IsBoolean,
   IsIn,
+  IsObject,
   Matches,
   Min,
   Max,
@@ -157,6 +158,11 @@ export class UpdateNotificationConfigDto {
   @IsOptional()
   @IsBoolean()
   email_enabled?: boolean;
+}
+
+export class UpdateQuoteTemplatesDto {
+  @ApiPropertyOptional() @IsOptional() @IsObject()
+  quote_templates?: Record<string, string>;
 }
 
 export class UpdateQuoteSettingsDto {

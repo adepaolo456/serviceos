@@ -8,6 +8,7 @@ import { Customer } from '../customers/entities/customer.entity';
 import { TenantId, CurrentUser, Public } from '../../common/decorators';
 import { NotificationsService } from '../notifications/notifications.service';
 import { TenantSettingsService } from '../tenant-settings/tenant-settings.service';
+import { getTemplate, renderTemplate } from './quote-templates';
 import { randomBytes } from 'crypto';
 
 function generateToken(): string {
@@ -190,11 +191,24 @@ export class QuotesController {
             tenantColor: (tenant as any).website_primary_color || undefined,
           });
 
+          const templateCtx = {
+            customer_name: body.customerName || '',
+            company_name: tenant.name,
+            quote_price: `$${Number(totalQuoted).toFixed(2)}`,
+            quote_link: viewQuoteUrl,
+            dumpster_size: body.assetSubtype.replace('yd', ' Yard'),
+            service_address: addressStr || '',
+            expires_at: new Date(saved.expires_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
+            company_phone: (tenant as any).website_phone || '',
+            company_email: (tenant as any).website_email || '',
+          };
+          const emailSubject = renderTemplate(getTemplate('quote_email_subject', settings.quote_templates), templateCtx);
+
           await this.notificationsService.send(tenantId, {
             channel: 'email',
             type: 'quote_sent',
             recipient: body.customerEmail,
-            subject: `Your Quote from ${tenant.name} — ${body.assetSubtype.replace('yd', ' Yard')} Dumpster`,
+            subject: emailSubject,
             body: html,
           });
 
@@ -430,11 +444,25 @@ export class QuotesController {
       tenantColor: (tenant as any).website_primary_color || undefined,
     });
 
+    const resendSettings = await this.settingsService.getSettings(tenantId);
+    const resendCtx = {
+      customer_name: quote.customer_name || 'Customer',
+      company_name: tenant.name,
+      quote_price: `$${Number(quote.total_quoted).toFixed(2)}`,
+      quote_link: viewQuoteUrl,
+      dumpster_size: quote.asset_subtype.replace('yd', ' Yard'),
+      service_address: addressStr || '',
+      expires_at: new Date(quote.expires_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
+      company_phone: (tenant as any).website_phone || '',
+      company_email: (tenant as any).website_email || '',
+    };
+    const resendSubject = renderTemplate(getTemplate('quote_email_subject', resendSettings.quote_templates), resendCtx);
+
     await this.notificationsService.send(tenantId, {
       channel: 'email',
       type: 'quote_sent',
       recipient: quote.customer_email,
-      subject: `Your Quote from ${tenant.name} — ${quote.asset_subtype.replace('yd', ' Yard')} Dumpster`,
+      subject: resendSubject,
       body: html,
     });
 
