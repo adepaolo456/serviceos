@@ -19,7 +19,6 @@ interface QuoteData {
   extraDayRate: number;
   expiresAt: string;
   createdAt: string;
-  bookedAt: string | null;
 }
 
 interface Branding {
@@ -34,6 +33,7 @@ interface Branding {
 interface HostedQuoteResponse {
   status: "active" | "expired" | "booked";
   message?: string;
+  bookedAt: string | null;
   quote: QuoteData | null;
   branding: Branding;
 }
@@ -74,7 +74,7 @@ export default function HostedQuotePage({ params }: { params: Promise<{ token: s
     );
   }
 
-  const { quote, branding, status } = data;
+  const { quote, branding, status, bookedAt } = data;
   const accent = branding.primaryColor || "#2ECC71";
   const isActive = status === "active" && quote !== null;
   const bookNowUrl = `https://${branding.slug}.${process.env.NEXT_PUBLIC_TENANT_DOMAIN || "serviceos.com"}/site/book?quote=${encodeURIComponent(token)}`;
@@ -131,7 +131,7 @@ export default function HostedQuotePage({ params }: { params: Promise<{ token: s
             <CheckCircle2 className="h-5 w-5 text-green-600 shrink-0" />
             <div>
               <p className="text-sm text-green-800 font-semibold">Booking confirmed</p>
-              {quote?.bookedAt && <p className="text-xs text-green-700 mt-0.5">Booked on {new Date(quote.bookedAt).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}</p>}
+              {bookedAt && <p className="text-xs text-green-700 mt-0.5">Booked on {new Date(bookedAt).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}</p>}
             </div>
           </div>
         )}
