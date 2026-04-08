@@ -10,6 +10,13 @@ import { CreatePublicBookingDto } from './dto/public-booking.dto';
 export class PublicController {
   constructor(private readonly publicService: PublicService) {}
 
+  // Static routes MUST come before parameterized :slug routes
+  @Get('quote/:token')
+  @ApiOperation({ summary: 'Get hosted quote page data by token (no slug needed)' })
+  getHostedQuote(@Param('token') token: string) {
+    return this.publicService.getHostedQuote(token);
+  }
+
   @Get(':slug')
   @ApiOperation({ summary: 'Get tenant website info by slug' })
   getTenant(@Param('slug') slug: string) {
@@ -60,9 +67,4 @@ export class PublicController {
     return this.publicService.getQuoteByToken(slug, token);
   }
 
-  @Get('quote/:token')
-  @ApiOperation({ summary: 'Get hosted quote page data by token (no slug needed)' })
-  getHostedQuote(@Param('token') token: string) {
-    return this.publicService.getHostedQuote(token);
-  }
 }
