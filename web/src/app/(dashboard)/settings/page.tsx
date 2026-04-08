@@ -1115,16 +1115,18 @@ const SMS_LABELS = {
   statusActive: "SMS active",
   statusInactive: "SMS inactive",
   statusNotConfigured: "SMS not configured",
-  assignNumber: "Assign SMS Number",
-  editNumber: "Edit Number",
-  requiresNumber: "SMS requires an assigned number before SMS quote delivery can be enabled",
+  getSmsNumber: "Get SMS Number",
+  editNumber: "Change Number",
+  smsBusinessDescription: "Get a dedicated texting number for your business. Customers can receive quotes and updates via text.",
+  smsProvisioning: "Setting up your number...",
+  smsProvisioningFailed: "Unable to provision a number right now. Please try again later.",
   numberPlaceholder: "(508) 555-1234",
   invalidNumber: "Please enter a valid US phone number",
-  saving: "Saving...",
 };
 
 function SmsConfigCard({ settings, onUpdate }: { settings: Record<string, any>; onUpdate: (u: Record<string, any>) => void }) {
   const { toast } = useToast();
+  const [provisioning, setProvisioning] = useState(false);
   const [editing, setEditing] = useState(false);
   const [numberInput, setNumberInput] = useState("");
   const [smsSaving, setSmsSaving] = useState(false);
@@ -1137,14 +1139,6 @@ function SmsConfigCard({ settings, onUpdate }: { settings: Record<string, any>; 
   const statusColor = isActive ? "var(--t-success, #22c55e)" : "var(--t-text-muted)";
   const statusBg = isActive ? "var(--t-success-soft, rgba(34,197,94,0.1))" : "var(--t-bg-elevated, #e5e7eb)";
 
-  const normalizeLocal = (raw: string): string | null => {
-    const digits = raw.replace(/\D/g, "");
-    if (digits.length === 10) return `+1${digits}`;
-    if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
-    if (raw.startsWith("+") && digits.length >= 10 && digits.length <= 15) return `+${digits}`;
-    return null;
-  };
-
   const formatDisplay = (e164: string) => {
     const digits = e164.replace(/\D/g, "");
     if (digits.length === 11 && digits.startsWith("1")) {
@@ -1154,7 +1148,34 @@ function SmsConfigCard({ settings, onUpdate }: { settings: Record<string, any>; 
     return e164;
   };
 
-  const handleSave = async () => {
+  const handleProvision = async () => {
+    setError("");
+    setProvisioning(true);
+    try {
+      const res = await api.post<{ success: boolean; phoneNumber?: string; error?: string }>("/tenant-settings/sms/provision-number", {});
+      if (res.success && res.phoneNumber) {
+        onUpdate({ sms_phone_number: res.phoneNumber });
+        toast("success", `SMS number assigned: ${formatDisplay(res.phoneNumber)}`);
+      } else {
+        setError(res.error || SMS_LABELS.smsProvisioningFailed);
+      }
+    } catch {
+      setError(SMS_LABELS.smsProvisioningFailed);
+    } finally {
+      setProvisioning(false);
+    }
+  };
+
+  // Manual edit fallback (hidden behind "Change Number" for admin use)
+  const normalizeLocal = (raw: string): string | null => {
+    const digits = raw.replace(/\D/g, "");
+    if (digits.length === 10) return `+1${digits}`;
+    if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
+    if (raw.startsWith("+") && digits.length >= 10 && digits.length <= 15) return `+${digits}`;
+    return null;
+  };
+
+  const handleManualSave = async () => {
     setError("");
     const normalized = normalizeLocal(numberInput);
     if (!normalized) { setError(SMS_LABELS.invalidNumber); return; }
@@ -1163,7 +1184,7 @@ function SmsConfigCard({ settings, onUpdate }: { settings: Record<string, any>; 
       await api.patch("/tenant-settings/quotes", { sms_phone_number: normalized });
       onUpdate({ sms_phone_number: normalized });
       setEditing(false);
-      toast("success", "SMS number saved");
+      toast("success", "SMS number updated");
     } catch { setError("Failed to save"); }
     finally { setSmsSaving(false); }
   };
@@ -1184,18 +1205,35 @@ function SmsConfigCard({ settings, onUpdate }: { settings: Record<string, any>; 
             {statusLabel}
           </span>
         </div>
+
+        {error && <p className="text-xs" style={{ color: "var(--t-error)" }}>{error}</p>}
+
         {!hasNumber && !editing && (
-          <p className="text-[11px]" style={{ color: "var(--t-text-muted)" }}>{SMS_LABELS.requiresNumber}</p>
+          <>
+            <p className="text-[11px]" style={{ color: "var(--t-text-muted)" }}>{SMS_LABELS.smsBusinessDescription}</p>
+            <button type="button" onClick={handleProvision} disabled={provisioning}
+              className="rounded-full bg-[var(--t-accent)] text-white px-5 py-2 text-sm font-semibold transition-opacity disabled:opacity-50 hover:opacity-90">
+              {provisioning ? SMS_LABELS.smsProvisioning : SMS_LABELS.getSmsNumber}
+            </button>
+          </>
         )}
-        {editing ? (
+
+        {hasNumber && !editing && (
+          <button type="button" onClick={() => { setNumberInput(settings.sms_phone_number || ""); setEditing(true); setError(""); }}
+            className="text-[11px] font-medium transition-colors hover:underline"
+            style={{ color: "var(--t-text-muted)", background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+            {SMS_LABELS.editNumber}
+          </button>
+        )}
+
+        {editing && (
           <div className="space-y-2 pt-1">
             <input value={numberInput} onChange={(e) => { setNumberInput(e.target.value); setError(""); }}
               placeholder={SMS_LABELS.numberPlaceholder} className={inputCls} autoFocus />
-            {error && <p className="text-xs" style={{ color: "var(--t-error)" }}>{error}</p>}
             <div className="flex gap-2">
-              <button type="button" onClick={handleSave} disabled={smsSaving}
+              <button type="button" onClick={handleManualSave} disabled={smsSaving}
                 className="rounded-full bg-[var(--t-accent)] text-white px-4 py-1.5 text-xs font-semibold disabled:opacity-50">
-                {smsSaving ? SMS_LABELS.saving : "Save"}
+                {smsSaving ? "Saving..." : "Save"}
               </button>
               <button type="button" onClick={() => { setEditing(false); setError(""); }}
                 className="rounded-full border px-4 py-1.5 text-xs font-medium"
@@ -1204,12 +1242,6 @@ function SmsConfigCard({ settings, onUpdate }: { settings: Record<string, any>; 
               </button>
             </div>
           </div>
-        ) : (
-          <button type="button" onClick={() => { setNumberInput(settings.sms_phone_number || ""); setEditing(true); }}
-            className="rounded-full border px-4 py-1.5 text-xs font-semibold transition-colors hover:bg-[var(--t-bg-card-hover)]"
-            style={{ borderColor: "var(--t-border)", color: "var(--t-accent)" }}>
-            {hasNumber ? SMS_LABELS.editNumber : SMS_LABELS.assignNumber}
-          </button>
         )}
       </div>
     </div>

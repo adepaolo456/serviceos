@@ -1,4 +1,4 @@
-import { Controller, Get, Patch, Body } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Body } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { TenantSettingsService } from './tenant-settings.service';
 import {
@@ -66,6 +66,12 @@ export class TenantSettingsController {
     @Body() dto: UpdateQuoteSettingsDto,
   ) {
     return this.settingsService.updateQuoteSettings(tenantId, dto);
+  }
+
+  @Post('sms/provision-number')
+  @ApiOperation({ summary: 'Auto-provision an SMS number for the tenant' })
+  provisionSmsNumber(@TenantId() tenantId: string) {
+    return this.settingsService.provisionSmsNumber(tenantId);
   }
 
   @Patch('quote-templates')
