@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { portalApi } from "@/lib/portal-api";
 import { formatCurrency } from "@/lib/utils";
-import { deriveCustomerTimeline, type CustomerTimelineStep } from "@/lib/job-status";
+import { deriveCustomerTimeline, formatRentalTitle, type CustomerTimelineStep } from "@/lib/job-status";
 import { Package, Calendar, MapPin, ChevronRight, CalendarClock } from "lucide-react";
 
 interface Rental {
@@ -130,7 +130,7 @@ export default function PortalRentalsPage() {
         <div className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6">
           <div className="flex flex-wrap items-start justify-between gap-3 mb-6">
             <div>
-              <h2 className="text-lg font-bold text-[var(--t-text-primary)]">{detail.asset?.subtype || detail.service_type || "Dumpster"} Rental</h2>
+              <h2 className="text-lg font-bold text-[var(--t-text-primary)]">{formatRentalTitle(detail)}</h2>
               <p className="text-sm text-[var(--t-text-muted)]">{detail.job_number}</p>
             </div>
             <span className={`text-xs font-medium ${STATUS_COLORS[detail.status] || ""}`}>{STATUS_LABELS[detail.status] || detail.status}</span>
@@ -250,7 +250,7 @@ export default function PortalRentalsPage() {
                 <div className="flex items-center justify-between">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
-                      <p className="text-sm font-semibold text-[var(--t-text-primary)]">{r.asset?.subtype || r.service_type || "Dumpster"}</p>
+                      <p className="text-sm font-semibold text-[var(--t-text-primary)]">{formatRentalTitle(r)}</p>
                       <span className={`text-xs font-medium ${STATUS_COLORS[r.status] || ""}`}>{STATUS_LABELS[r.status] || r.status}</span>
                     </div>
                     <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-[var(--t-text-muted)]">
