@@ -9,12 +9,13 @@ import { Tenant } from '../tenants/entities/tenant.entity';
 import { Invoice } from '../billing/entities/invoice.entity';
 import { Notification } from '../notifications/entities/notification.entity';
 import { Quote } from '../quotes/quote.entity';
+import { SmsMessage } from '../sms/sms-message.entity';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { TenantSettingsModule } from '../tenant-settings/tenant-settings.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Job, Customer, PricingRule, Tenant, Invoice, Notification, Quote]),
+    TypeOrmModule.forFeature([Job, Customer, PricingRule, Tenant, Invoice, Notification, Quote, SmsMessage]),
     NotificationsModule,
     TenantSettingsModule,
   ],

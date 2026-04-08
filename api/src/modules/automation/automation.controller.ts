@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Param, Body, Query } from '@nestjs/common';
+import { Controller, Get, Post, Param, Body, Query, Header } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
 import { AutomationService } from './automation.service';
 import { TenantId, Public } from '../../common/decorators';
@@ -67,5 +67,14 @@ export class AutomationController {
       return { error: 'Unauthorized' };
     }
     return this.automationService.processQuoteFollowUps();
+  }
+
+  @Public()
+  @Post('sms/inbound')
+  @Header('Content-Type', 'text/xml')
+  @ApiOperation({ summary: 'Twilio inbound SMS webhook' })
+  async smsInbound(@Body() body: Record<string, string>) {
+    await this.automationService.handleInboundSms(body);
+    return '<Response></Response>';
   }
 }

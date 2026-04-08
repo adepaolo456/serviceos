@@ -550,7 +550,13 @@ export default function QuotesPage() {
               <p className="text-[11px] font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--t-text-muted)" }}>Timeline</p>
               <div className="space-y-1 text-xs" style={{ color: "var(--t-text-muted)" }}>
                 <div className="flex justify-between"><span>Created</span><span>{formatDate(selectedQuote.created_at)}</span></div>
+                {selectedQuote.last_sent_at && (
+                  <div className="flex justify-between"><span>Last sent</span><span>{formatDate(selectedQuote.last_sent_at)}</span></div>
+                )}
                 <div className="flex justify-between"><span>Expires</span><span>{formatDate(selectedQuote.expires_at)}</span></div>
+                {selectedQuote.auto_follow_up_sent_at && (
+                  <div className="flex justify-between"><span>Auto follow-up</span><span style={{ color: "var(--t-success, #22c55e)" }}>{formatDate(selectedQuote.auto_follow_up_sent_at)}</span></div>
+                )}
                 {selectedQuote.booked_job_id && (
                   <div className="flex justify-between"><span>Converted to booking</span><span style={{ color: "var(--t-success, #22c55e)" }}>Yes</span></div>
                 )}

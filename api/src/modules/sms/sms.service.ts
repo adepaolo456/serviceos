@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { SmsMessage } from './sms-message.entity';
 import { TenantSettingsService } from '../tenant-settings/tenant-settings.service';
+import { normalizePhone } from '../../common/utils/phone';
 
 export interface SendSmsParams {
   tenantId: string;
@@ -47,8 +48,9 @@ export class SmsService {
       return { success: false, error: 'No SMS phone number assigned to this tenant' };
     }
 
-    // 2. Basic validation
-    if (!to || to.replace(/\D/g, '').length < 10) {
+    // 2. Normalize + validate
+    const normalizedTo = normalizePhone(to);
+    if (!normalizedTo) {
       return { success: false, error: 'Invalid recipient phone number' };
     }
 
@@ -57,12 +59,7 @@ export class SmsService {
     }
 
     // 3. Send via platform Twilio account, using tenant's assigned number as From
-    // The TwilioService uses platform env credentials — we override the From number
     const fromNumber = settings.sms_phone_number;
-    let normalizedTo = to.replace(/[^\d+]/g, '');
-    if (!normalizedTo.startsWith('+')) {
-      normalizedTo = normalizedTo.startsWith('1') ? `+${normalizedTo}` : `+1${normalizedTo}`;
-    }
 
     try {
       // Direct Twilio REST API call using platform credentials + tenant's From number
