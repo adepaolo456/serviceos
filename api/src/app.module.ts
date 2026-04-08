@@ -63,6 +63,8 @@ import { ReportingModule } from './modules/reporting/reporting.module';
 import { StripeModule } from './modules/stripe/stripe.module';
 import { QuotesModule } from './modules/quotes/quotes.module';
 import { Quote } from './modules/quotes/quote.entity';
+import { SmsModule } from './modules/sms/sms.module';
+import { SmsMessage } from './modules/sms/sms-message.entity';
 import { DeliveryZone } from './modules/pricing/entities/delivery-zone.entity';
 import { DumpLocation, DumpLocationRate, DumpLocationSurcharge } from './modules/dump-locations/entities/dump-location.entity';
 import { DumpTicket } from './modules/dump-locations/entities/dump-ticket.entity';
@@ -130,6 +132,7 @@ import { HelpAnalyticsEvent } from './modules/analytics/entities/help-analytics-
             DumpTicket,
             SubscriptionPlan,
             Quote,
+            SmsMessage,
             DeliveryZone,
             TenantFee,
             PricingSnapshot,
@@ -171,6 +174,7 @@ import { HelpAnalyticsEvent } from './modules/analytics/entities/help-analytics-
     ReportingModule,
     StripeModule,
     QuotesModule,
+    SmsModule,
     RentalChainsModule,
     MapboxModule,
     OnboardingModule,

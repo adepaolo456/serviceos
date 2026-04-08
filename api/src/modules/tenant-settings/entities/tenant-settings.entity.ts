@@ -47,6 +47,9 @@ export class TenantSettings {
   @Column({ name: 'sms_enabled', default: false })
   sms_enabled!: boolean;
 
+  @Column({ name: 'sms_phone_number', length: 20, nullable: true })
+  sms_phone_number!: string | null;
+
   @Column({ name: 'email_enabled', default: false })
   email_enabled!: boolean;
 
