@@ -75,6 +75,133 @@ export const JOB_TYPE_LABELS: Record<JobType, string> = {
   dump_run: "Dump Run",
 };
 
+// ─────────────────────────────────────────────────────────────────
+// Customer-facing rental lifecycle timeline
+//
+// Single source of truth for the 5-step progress indicator shown to
+// customers in the portal. Derivation logic lives here (not in any
+// React component) so it can be reused and tested independently.
+// ─────────────────────────────────────────────────────────────────
+
+/** Canonical step keys for the customer rental lifecycle timeline */
+export type CustomerTimelineStepKey =
+  | "ordered"
+  | "delivery_in_progress"
+  | "delivered"
+  | "in_use"
+  | "pickup_scheduled"
+  | "pickup_in_progress"
+  | "picked_up";
+
+/** Human-readable labels — the ONLY place these strings live */
+export const CUSTOMER_TIMELINE_LABELS: Record<CustomerTimelineStepKey, string> = {
+  ordered: "Ordered",
+  delivery_in_progress: "Delivery In Progress",
+  delivered: "Delivered",
+  in_use: "In Use",
+  pickup_scheduled: "Pickup Scheduled",
+  pickup_in_progress: "Pickup In Progress",
+  picked_up: "Picked Up",
+};
+
+/** Rendered timeline step */
+export type CustomerTimelineStep = {
+  key: CustomerTimelineStepKey;
+  label: string;
+  state: "done" | "current" | "future";
+};
+
+/** Minimal job shape required to derive the customer timeline */
+export type CustomerTimelineJob = {
+  id: string;
+  job_type: string;
+  status: string;
+  service_address: { formatted?: string; street?: string } | null;
+};
+
+/**
+ * Derive the 5-step rental-lifecycle timeline a customer sees.
+ *
+ * Logic was extracted verbatim from the portal rentals page to consolidate
+ * status mapping into one shared location. Pickup jobs are correlated by
+ * formatted service address — pre-existing behavior, tracked as follow-up.
+ */
+export function deriveCustomerTimeline(
+  rental: CustomerTimelineJob,
+  allRentals: CustomerTimelineJob[],
+): CustomerTimelineStep[] {
+  const status = rental.status;
+  const jobType = rental.job_type;
+
+  const pickupJob = allRentals.find(
+    (r) =>
+      r.job_type === "pickup" &&
+      r.id !== rental.id &&
+      r.service_address?.formatted === rental.service_address?.formatted,
+  );
+
+  const steps: CustomerTimelineStep[] = [];
+  const push = (key: CustomerTimelineStepKey, state: CustomerTimelineStep["state"]) => {
+    steps.push({ key, label: CUSTOMER_TIMELINE_LABELS[key], state });
+  };
+
+  // Step 1: Ordered
+  if (["pending", "confirmed"].includes(status) && jobType === "delivery") {
+    push("ordered", "current");
+  } else {
+    push("ordered", "done");
+  }
+
+  // Step 2: Delivery in progress / Delivered
+  if (["dispatched", "en_route", "arrived"].includes(status) && jobType === "delivery") {
+    push("delivery_in_progress", "current");
+  } else if (["pending", "confirmed"].includes(status) && jobType === "delivery") {
+    push("delivery_in_progress", "future");
+  } else {
+    push("delivered", "done");
+  }
+
+  // Step 3: In Use
+  if (status === "in_progress" && jobType === "delivery") {
+    push("in_use", "current");
+  } else if (status === "completed" && jobType === "delivery" && !pickupJob) {
+    push("in_use", "current");
+  } else if (
+    ["pending", "confirmed", "dispatched", "en_route", "arrived"].includes(status) &&
+    jobType === "delivery"
+  ) {
+    push("in_use", "future");
+  } else {
+    push("in_use", "done");
+  }
+
+  // Step 4: Pickup Scheduled
+  if (pickupJob && ["pending", "confirmed"].includes(pickupJob.status)) {
+    push("pickup_scheduled", "current");
+  } else if (
+    pickupJob &&
+    ["dispatched", "en_route", "arrived", "in_progress", "completed"].includes(pickupJob.status)
+  ) {
+    push("pickup_scheduled", "done");
+  } else {
+    push("pickup_scheduled", "future");
+  }
+
+  // Step 5: Picked Up
+  if (pickupJob && pickupJob.status === "completed") {
+    push("picked_up", "done");
+  } else if (
+    pickupJob &&
+    ["dispatched", "en_route", "arrived", "in_progress"].includes(pickupJob.status)
+  ) {
+    push("pickup_in_progress", "current");
+  } else {
+    push("picked_up", "future");
+  }
+
+  return steps;
+}
+
 /** CSS color variable for each display status */
 export function displayStatusColor(status: DisplayStatus): string {
   switch (status) {
