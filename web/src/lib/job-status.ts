@@ -90,12 +90,13 @@ export const RENTAL_TITLE_FALLBACK = "Dumpster";
 export const RENTAL_TITLE_SUFFIX = "Rental";
 
 /**
- * Format a customer-facing rental title.
+ * Customer-safe dumpster size label, e.g. "10yd" / "20yd" / "Dumpster".
  *
- * Examples: "10yd Rental", "20yd Rental", "Dumpster Rental" (fallback).
- *
- * Single source of truth for portal rental card/header titling — used by
- * both the rentals list and the detail view so copy stays consistent.
+ * Single source of truth for the portal's size fallback chain. Prefer this
+ * when composing any customer-facing copy that includes a dumpster size —
+ * do NOT inline the chain at the call site and do NOT read `asset?.size`
+ * (which does not exist on the Asset entity) or `service_type` (which
+ * stores internal snake_case values).
  *
  * Priority order:
  *   1. `asset_subtype` (top-level Job column — set at booking time, present
@@ -103,17 +104,30 @@ export const RENTAL_TITLE_SUFFIX = "Rental";
  *   2. `asset.subtype` (from the loaded asset relation — only populated
  *      once the rental has been assigned a specific dumpster)
  *   3. Fallback to "Dumpster"
+ */
+export function rentalSizeLabel(rental: {
+  asset_subtype?: string | null;
+  asset?: { subtype?: string | null } | null;
+}): string {
+  return rental.asset_subtype || rental.asset?.subtype || RENTAL_TITLE_FALLBACK;
+}
+
+/**
+ * Format a customer-facing rental title.
  *
- * Intentionally does NOT fall back to `service_type`: that column stores
- * internal snake_case values (e.g. "dumpster_rental") which must never
- * render in customer-facing UI.
+ * Examples: "10yd Rental", "20yd Rental", "Dumpster Rental" (fallback).
+ *
+ * Used by both the rentals page (list + detail) and the dashboard Active
+ * Rentals card so copy stays consistent. For contexts that need a different
+ * noun (e.g. "Delivery") or a different combined format (e.g. size + address
+ * in the Report Issue picker), call `rentalSizeLabel` directly and compose
+ * your own surrounding copy.
  */
 export function formatRentalTitle(rental: {
   asset_subtype?: string | null;
   asset?: { subtype?: string | null } | null;
 }): string {
-  const label = rental.asset_subtype || rental.asset?.subtype || RENTAL_TITLE_FALLBACK;
-  return `${label} ${RENTAL_TITLE_SUFFIX}`;
+  return `${rentalSizeLabel(rental)} ${RENTAL_TITLE_SUFFIX}`;
 }
 
 /** Canonical step keys for the customer rental lifecycle timeline */
