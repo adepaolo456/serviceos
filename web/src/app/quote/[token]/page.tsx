@@ -74,6 +74,8 @@ export default function HostedQuotePage({ params }: { params: Promise<{ token: s
 
   const { quote, branding, status } = data;
   const accent = branding.primaryColor || "#2ECC71";
+  const isActive = status === "active";
+  const bookNowUrl = `https://${branding.slug}.${process.env.NEXT_PUBLIC_TENANT_DOMAIN || "serviceos.com"}/site/book?quote=${encodeURIComponent(token)}`;
   const addr = quote.deliveryAddress;
   const addrStr = addr ? [addr.street, addr.city, addr.state, addr.zip].filter(Boolean).join(", ") : null;
   const expiresDate = new Date(quote.expiresAt).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
@@ -189,31 +191,46 @@ export default function HostedQuotePage({ params }: { params: Promise<{ token: s
           </div>
         </div>
 
-        {/* Contact CTA */}
-        <div className="mt-8 text-center space-y-3">
-          <p className="text-sm text-gray-500">Ready to book or have questions?</p>
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
-            {branding.phone && (
-              <a
-                href={`tel:${branding.phone}`}
-                className="flex items-center gap-2 rounded-full px-6 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90"
-                style={{ backgroundColor: accent }}
-              >
-                <Phone className="h-4 w-4" /> Call {formatPhone(branding.phone)}
-              </a>
-            )}
-            {branding.email && (
-              <a
-                href={`mailto:${branding.email}`}
-                className="flex items-center gap-2 rounded-full border border-gray-300 px-6 py-2.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100"
-              >
-                <Mail className="h-4 w-4" /> Email Us
-              </a>
+        {/* Action area */}
+        <div className="mt-8 space-y-4">
+          {/* Book Now — active quotes only */}
+          {isActive && (
+            <a
+              href={bookNowUrl}
+              className="flex items-center justify-center gap-2 w-full rounded-full py-3.5 text-[15px] font-bold text-white transition-opacity hover:opacity-90 shadow-sm"
+              style={{ backgroundColor: accent }}
+            >
+              Book Now
+            </a>
+          )}
+
+          {/* Contact */}
+          <div className="text-center space-y-2">
+            <p className="text-sm text-gray-500">
+              {isActive ? "Have questions?" : "Need an updated quote?"}
+            </p>
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+              {branding.phone && (
+                <a
+                  href={`tel:${branding.phone}`}
+                  className="flex items-center gap-2 rounded-full border border-gray-300 px-5 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100"
+                >
+                  <Phone className="h-4 w-4" /> {formatPhone(branding.phone)}
+                </a>
+              )}
+              {branding.email && (
+                <a
+                  href={`mailto:${branding.email}`}
+                  className="flex items-center gap-2 rounded-full border border-gray-300 px-5 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100"
+                >
+                  <Mail className="h-4 w-4" /> Email Us
+                </a>
+              )}
+            </div>
+            {!branding.phone && !branding.email && (
+              <p className="text-sm text-gray-400">Contact your service provider for next steps</p>
             )}
           </div>
-          {!branding.phone && !branding.email && (
-            <p className="text-sm text-gray-400">Contact your service provider for next steps</p>
-          )}
         </div>
 
         {/* Footer */}

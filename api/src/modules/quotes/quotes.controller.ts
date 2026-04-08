@@ -30,6 +30,7 @@ function buildQuoteEmailHtml(params: {
   overageRate: number;
   deliveryAddress: string | null;
   bookNowUrl: string;
+  viewQuoteUrl: string;
   tenantColor?: string;
 }): string {
   const color = params.tenantColor || '#10b981';
@@ -69,6 +70,9 @@ function buildQuoteEmailHtml(params: {
       <a href="${params.bookNowUrl}" style="display:block;text-align:center;margin:24px 0 0;padding:14px 24px;background:${color};color:#fff;text-decoration:none;border-radius:999px;font-weight:700;font-size:15px">
         Book Now
       </a>
+      <p style="margin:16px 0 0;text-align:center;font-size:13px">
+        <a href="${params.viewQuoteUrl}" style="color:${color};text-decoration:underline">View your full quote online</a>
+      </p>
     </div>
   </div>
 </body>
@@ -161,6 +165,8 @@ export class QuotesController {
         const tenant = await this.tenantRepo.findOne({ where: { id: tenantId } });
         if (tenant) {
           const bookNowUrl = buildTenantBookingUrl(tenant.slug, token);
+          const webDomain = process.env.WEB_DOMAIN || 'serviceos-web-zeta.vercel.app';
+          const viewQuoteUrl = `https://${webDomain}/quote/${encodeURIComponent(token)}`;
           const addressStr = body.deliveryAddress
             ? [body.deliveryAddress.street, body.deliveryAddress.city, body.deliveryAddress.state, body.deliveryAddress.zip].filter(Boolean).join(', ')
             : null;
@@ -177,6 +183,7 @@ export class QuotesController {
             overageRate: body.overageRate || 0,
             deliveryAddress: addressStr,
             bookNowUrl,
+            viewQuoteUrl,
             tenantColor: (tenant as any).website_primary_color || undefined,
           });
 
@@ -326,6 +333,8 @@ export class QuotesController {
     if (!tenant) return { error: 'Tenant not found' };
 
     const bookNowUrl = buildTenantBookingUrl(tenant.slug, quote.token!);
+    const webDomain = process.env.WEB_DOMAIN || 'serviceos-web-zeta.vercel.app';
+    const viewQuoteUrl = `https://${webDomain}/quote/${encodeURIComponent(quote.token!)}`;
     const addressStr = quote.delivery_address
       ? [quote.delivery_address.street, quote.delivery_address.city, quote.delivery_address.state, quote.delivery_address.zip].filter(Boolean).join(', ')
       : null;
@@ -342,6 +351,7 @@ export class QuotesController {
       overageRate: Number(quote.overage_rate),
       deliveryAddress: addressStr,
       bookNowUrl,
+      viewQuoteUrl,
       tenantColor: (tenant as any).website_primary_color || undefined,
     });
 
