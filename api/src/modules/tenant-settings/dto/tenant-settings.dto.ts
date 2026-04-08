@@ -166,6 +166,9 @@ export class UpdateQuoteTemplatesDto {
 }
 
 export class UpdateQuoteSettingsDto {
+  @ApiPropertyOptional() @IsOptional() @IsString()
+  sms_phone_number?: string | null;
+
   @ApiPropertyOptional() @IsOptional() @IsBoolean()
   quote_follow_up_enabled?: boolean;
 

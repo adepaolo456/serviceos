@@ -14,6 +14,7 @@ import {
   UpdateQuoteSettingsDto,
   UpdateQuoteTemplatesDto,
 } from './dto/tenant-settings.dto';
+import { normalizePhone } from '../../common/utils/phone';
 
 @Injectable()
 export class TenantSettingsService {
@@ -117,6 +118,15 @@ export class TenantSettingsService {
   ): Promise<TenantSettings> {
     await this.getSettings(tenantId);
     const update: Record<string, unknown> = {};
+    if (dto.sms_phone_number !== undefined) {
+      if (dto.sms_phone_number === null || dto.sms_phone_number === '') {
+        update.sms_phone_number = null;
+      } else {
+        const normalized = normalizePhone(dto.sms_phone_number);
+        if (!normalized) throw new BadRequestException('Invalid SMS phone number');
+        update.sms_phone_number = normalized;
+      }
+    }
     if (dto.quote_follow_up_enabled !== undefined) update.quote_follow_up_enabled = dto.quote_follow_up_enabled;
     if (dto.quote_follow_up_delay_hours !== undefined) update.quote_follow_up_delay_hours = dto.quote_follow_up_delay_hours;
     if (dto.quote_expiration_days !== undefined) update.quote_expiration_days = dto.quote_expiration_days;
