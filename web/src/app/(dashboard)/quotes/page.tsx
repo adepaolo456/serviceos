@@ -35,6 +35,7 @@ interface Quote {
   first_viewed_at?: string | null;
   last_viewed_at?: string | null;
   is_hot?: boolean;
+  follow_up_priority?: "needs_follow_up" | "stale" | null;
 }
 
 interface Summary {
@@ -227,8 +228,8 @@ export default function QuotesPage() {
         </div>
       )}
 
-      {/* Hot Quotes */}
-      {hotQuotes.length > 0 && (
+      {/* Hot Quotes + Follow-Up */}
+      {hotQuotes.length > 0 ? (
         <div className="mb-6">
           <div className="flex items-center gap-2 mb-3">
             <Flame className="h-4 w-4" style={{ color: "var(--t-warning)" }} />
@@ -240,13 +241,18 @@ export default function QuotesPage() {
             </span>
           </div>
           <div className="grid gap-2">
-            {hotQuotes.map((q) => (
-              <div
-                key={q.id}
-                className="flex items-center justify-between rounded-[12px] border px-4 py-3"
-                style={{ backgroundColor: "var(--t-bg-card)", borderColor: "var(--t-border)" }}
-              >
-                <div className="flex items-center gap-4 min-w-0">
+            {hotQuotes.map((q) => {
+              const isUrgent = q.follow_up_priority === "needs_follow_up";
+              const isStale = q.follow_up_priority === "stale";
+              return (
+                <div
+                  key={q.id}
+                  className="flex items-center justify-between rounded-[12px] border px-4 py-3"
+                  style={{
+                    backgroundColor: isUrgent ? "var(--t-warning-soft, rgba(234,179,8,0.06))" : "var(--t-bg-card)",
+                    borderColor: isUrgent ? "var(--t-warning)" : "var(--t-border)",
+                  }}
+                >
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-semibold truncate" style={{ color: "var(--t-text-primary)" }}>
@@ -255,52 +261,72 @@ export default function QuotesPage() {
                       <span className="text-[11px] font-medium" style={{ color: "var(--t-text-muted)" }}>
                         {formatDumpsterSize(q.asset_subtype)}
                       </span>
+                      {isUrgent && (
+                        <span className="text-[10px] font-bold uppercase rounded-full px-2 py-0.5" style={{ backgroundColor: "var(--t-warning)", color: "#fff" }}>
+                          Viewing Now
+                        </span>
+                      )}
+                      {isStale && (
+                        <span className="text-[10px] font-bold uppercase rounded-full px-2 py-0.5" style={{ backgroundColor: "var(--t-bg-elevated, #e5e7eb)", color: "var(--t-text-muted)" }}>
+                          Stale
+                        </span>
+                      )}
                     </div>
                     <div className="flex items-center gap-3 text-[11px] mt-0.5" style={{ color: "var(--t-text-muted)" }}>
                       <span className="font-semibold" style={{ color: "var(--t-accent)" }}>
                         {formatCurrency(Number(q.total_quoted))}
                       </span>
                       <span>{q.view_count ?? 0} views</span>
-                      {q.last_viewed_at && <span>Last: {timeAgo(q.last_viewed_at)}</span>}
+                      {q.last_viewed_at && <span>{timeAgo(q.last_viewed_at)}</span>}
                     </div>
                   </div>
-                </div>
-                <div className="flex items-center gap-1.5 shrink-0">
-                  {q.customer_phone && (
-                    <a
-                      href={`tel:${q.customer_phone}`}
-                      className="flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors hover:bg-[var(--t-bg-card-hover)]"
-                      style={{ borderColor: "var(--t-border)", color: "var(--t-text-primary)" }}
-                      title="Call"
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {q.customer_phone && (
+                      <a
+                        href={`tel:${q.customer_phone}`}
+                        className="flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold transition-colors"
+                        style={isUrgent
+                          ? { backgroundColor: "var(--t-accent)", color: "var(--t-accent-on-accent)" }
+                          : { border: "1px solid var(--t-border)", color: "var(--t-text-primary)" }
+                        }
+                        title="Call"
+                      >
+                        <Phone className="h-3 w-3" /> Call
+                      </a>
+                    )}
+                    <button
+                      onClick={() => handleResend(q.id)}
+                      disabled={resending === q.id}
+                      className="flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold transition-colors disabled:opacity-50"
+                      style={isUrgent && !q.customer_phone
+                        ? { backgroundColor: "var(--t-accent)", color: "var(--t-accent-on-accent)" }
+                        : { border: "1px solid var(--t-border)", color: "var(--t-text-primary)" }
+                      }
+                      title="Resend Quote"
                     >
-                      <Phone className="h-3 w-3" /> Call
-                    </a>
-                  )}
-                  <button
-                    onClick={() => handleResend(q.id)}
-                    disabled={resending === q.id}
-                    className="flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors hover:bg-[var(--t-bg-card-hover)] disabled:opacity-50"
-                    style={{ borderColor: "var(--t-border)", color: "var(--t-text-primary)" }}
-                    title="Resend Quote"
-                  >
-                    <Mail className="h-3 w-3" /> {resending === q.id ? "..." : "Resend"}
-                  </button>
-                  {q.token && (
-                    <a
-                      href={`/quote/${q.token}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors hover:bg-[var(--t-bg-card-hover)]"
-                      style={{ borderColor: "var(--t-border)", color: "var(--t-accent)" }}
-                      title="View hosted quote"
-                    >
-                      <ExternalLink className="h-3 w-3" /> View
-                    </a>
-                  )}
+                      <Mail className="h-3 w-3" /> {resending === q.id ? "..." : "Resend"}
+                    </button>
+                    {q.token && (
+                      <a
+                        href={`/quote/${q.token}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors hover:bg-[var(--t-bg-card-hover)]"
+                        style={{ borderColor: "var(--t-border)", color: "var(--t-accent)" }}
+                        title="View hosted quote"
+                      >
+                        <ExternalLink className="h-3 w-3" /> View
+                      </a>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
+        </div>
+      ) : (
+        <div className="mb-6 rounded-[12px] border px-4 py-3 text-center" style={{ backgroundColor: "var(--t-bg-card)", borderColor: "var(--t-border)" }}>
+          <p className="text-sm" style={{ color: "var(--t-text-muted)" }}>No active follow-ups right now</p>
         </div>
       )}
 
