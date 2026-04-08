@@ -385,6 +385,19 @@ export class PublicService {
     const expired = new Date() > quote.expires_at;
     const converted = quote.status === 'converted';
 
+    // Fire-and-forget view tracking — does not block response
+    const now = new Date();
+    this.quoteRepo.createQueryBuilder()
+      .update()
+      .set({
+        last_viewed_at: now,
+        view_count: () => 'COALESCE(view_count, 0) + 1',
+        ...(quote.first_viewed_at ? {} : { first_viewed_at: now }),
+      })
+      .where('id = :id', { id: quote.id })
+      .execute()
+      .catch(() => {}); // silent — analytics must not break page load
+
     return {
       status: expired ? 'expired' : converted ? 'booked' : 'active',
       quote: {
@@ -400,6 +413,7 @@ export class PublicService {
         extraDayRate: Number(quote.extra_day_rate),
         expiresAt: quote.expires_at,
         createdAt: quote.created_at,
+        bookedAt: converted ? quote.updated_at : null,
       },
       branding: {
         companyName: tenant.name,
