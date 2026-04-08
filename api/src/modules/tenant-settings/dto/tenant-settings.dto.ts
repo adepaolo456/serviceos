@@ -4,6 +4,7 @@ import {
   IsInt,
   IsNumber,
   IsBoolean,
+  IsIn,
   Matches,
   Min,
   Max,
@@ -156,4 +157,27 @@ export class UpdateNotificationConfigDto {
   @IsOptional()
   @IsBoolean()
   email_enabled?: boolean;
+}
+
+export class UpdateQuoteSettingsDto {
+  @ApiPropertyOptional() @IsOptional() @IsInt() @Min(1) @Max(365)
+  quote_expiration_days?: number;
+
+  @ApiPropertyOptional() @IsOptional() @IsInt() @Min(1) @Max(100)
+  hot_quote_view_threshold?: number;
+
+  @ApiPropertyOptional() @IsOptional() @IsInt() @Min(1) @Max(10080)
+  follow_up_recency_minutes?: number;
+
+  @ApiPropertyOptional() @IsOptional() @IsInt() @Min(1) @Max(720)
+  expiring_soon_hours?: number;
+
+  @ApiPropertyOptional() @IsOptional() @IsBoolean()
+  quotes_email_enabled?: boolean;
+
+  @ApiPropertyOptional() @IsOptional() @IsBoolean()
+  quotes_sms_enabled?: boolean;
+
+  @ApiPropertyOptional() @IsOptional() @IsIn(['email', 'sms', 'both'])
+  default_quote_delivery_method?: string;
 }

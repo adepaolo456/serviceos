@@ -59,6 +59,28 @@ export class TenantSettings {
   @Column({ name: 'onboarding_completed_at', type: 'timestamptz', nullable: true })
   onboarding_completed_at!: Date | null;
 
+  // Quote & Follow-Up settings
+  @Column({ name: 'quote_expiration_days', type: 'int', default: 30 })
+  quote_expiration_days!: number;
+
+  @Column({ name: 'hot_quote_view_threshold', type: 'int', default: 2 })
+  hot_quote_view_threshold!: number;
+
+  @Column({ name: 'follow_up_recency_minutes', type: 'int', default: 120 })
+  follow_up_recency_minutes!: number;
+
+  @Column({ name: 'expiring_soon_hours', type: 'int', default: 48 })
+  expiring_soon_hours!: number;
+
+  @Column({ name: 'quotes_email_enabled', default: true })
+  quotes_email_enabled!: boolean;
+
+  @Column({ name: 'quotes_sms_enabled', default: false })
+  quotes_sms_enabled!: boolean;
+
+  @Column({ name: 'default_quote_delivery_method', length: 10, default: 'email' })
+  default_quote_delivery_method!: string;
+
   @CreateDateColumn({ name: 'created_at' })
   created_at!: Date;
 
