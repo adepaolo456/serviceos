@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { portalApi } from "@/lib/portal-api";
 import { formatCurrency } from "@/lib/utils";
+import { formatRentalTitle } from "@/lib/job-status";
 import { Package, FileText, PlusCircle, Phone, Calendar, MapPin, Clock, ArrowUpRight, AlertCircle, CreditCard, CalendarClock, AlertTriangle } from "lucide-react";
 
 interface Rental {
@@ -17,8 +18,9 @@ interface Rental {
   rental_end_date: string;
   rental_days: number;
   total_price: number;
+  asset_subtype?: string | null;
   service_address: { formatted?: string; street?: string; city?: string } | null;
-  asset: { identifier?: string; size?: string } | null;
+  asset: { identifier?: string; size?: string; subtype?: string } | null;
 }
 
 interface Invoice {
@@ -235,7 +237,7 @@ export default function PortalHomePage() {
                   <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
                     <div>
                       <div className="flex items-center gap-2">
-                        <p className="text-sm font-bold text-[var(--t-text-primary)]">{r.asset?.size || r.service_type || "Dumpster"} — {r.job_type === "delivery" ? "Rental" : "Pickup"}</p>
+                        <p className="text-sm font-bold text-[var(--t-text-primary)]">{formatRentalTitle(r)}</p>
                         <span className={`text-xs font-medium ${STATUS_COLORS[r.status] || ""}`}>{STATUS_LABELS[r.status] || r.status}</span>
                       </div>
                       <p className="text-xs text-[var(--t-text-muted)] mt-1">{r.job_number}</p>
