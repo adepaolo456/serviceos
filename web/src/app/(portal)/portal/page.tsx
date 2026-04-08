@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { portalApi } from "@/lib/portal-api";
 import { formatCurrency } from "@/lib/utils";
-import { formatRentalTitle } from "@/lib/job-status";
+import { formatRentalTitle, rentalSizeLabel } from "@/lib/job-status";
 import { Package, FileText, PlusCircle, Phone, Calendar, MapPin, Clock, ArrowUpRight, AlertCircle, CreditCard, CalendarClock, AlertTriangle } from "lucide-react";
 
 interface Rental {
@@ -288,7 +288,7 @@ export default function PortalHomePage() {
             {upcoming.map(r => (
               <div key={r.id} className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-4 flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-[var(--t-text-primary)]">{r.asset?.size || "Dumpster"} Delivery</p>
+                  <p className="text-sm font-medium text-[var(--t-text-primary)]">{rentalSizeLabel(r)} Delivery</p>
                   <p className="text-xs text-[var(--t-text-muted)] mt-0.5">
                     <Calendar className="inline h-3 w-3 mr-1" />
                     Scheduled: {r.scheduled_date ? new Date(r.scheduled_date).toLocaleDateString() : "TBD"}
@@ -354,7 +354,7 @@ export default function PortalHomePage() {
                       <option value="">All rentals</option>
                       {active.map(r => (
                         <option key={r.id} value={r.id}>
-                          {r.asset?.size || "Dumpster"} - {r.service_address?.formatted || r.service_address?.street || r.job_number}
+                          {rentalSizeLabel(r)} - {r.service_address?.formatted || r.service_address?.street || r.job_number}
                         </option>
                       ))}
                     </select>
