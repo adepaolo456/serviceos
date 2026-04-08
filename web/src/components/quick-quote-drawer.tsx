@@ -1,14 +1,47 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { DollarSign, Mail, Loader2 } from "lucide-react";
+import { DollarSign, Mail, MessageSquare, Loader2, AlertTriangle } from "lucide-react";
 import { api } from "@/lib/api";
 import { useToast } from "@/components/toast";
 import { useQuickQuote } from "@/components/quick-quote-provider";
 import SlideOver from "@/components/slide-over";
 import AddressAutocomplete, { type AddressValue } from "@/components/address-autocomplete";
 import { getFeatureLabel } from "@/lib/feature-registry";
+import { QUOTE_SEND_LABELS, deliveryReasonLabel } from "@/lib/quote-send-labels";
+import QuoteSendPanel from "@/components/quote-send-panel";
 import type { InitialSchedule } from "@/components/booking-wizard";
+
+type DeliveryMethod = "email" | "sms" | "both";
+
+interface ChannelOutcome {
+  attempted: boolean;
+  ok: boolean;
+  reason?: string;
+  recipient?: string;
+}
+
+interface SendResponse {
+  send: { email: ChannelOutcome; sms: ChannelOutcome };
+  resolved_method: DeliveryMethod;
+}
+
+interface SmsPreviewResponse {
+  valid: boolean;
+  reason?: string;
+  body: string;
+  recipient: string | null;
+  from_number: string | null;
+  character_count: number;
+}
+
+interface TenantQuoteSettings {
+  sms_enabled?: boolean;
+  sms_phone_number?: string | null;
+  quotes_email_enabled?: boolean;
+  quotes_sms_enabled?: boolean;
+  default_quote_delivery_method?: DeliveryMethod;
+}
 
 interface PricingRule {
   id: string;
@@ -65,15 +98,52 @@ export default function QuickQuoteDrawer() {
   const [calculating, setCalculating] = useState(false);
   const [pricingError, setPricingError] = useState<string | null>(null);
 
-  // Email Quote progressive disclosure
-  const [showEmailFields, setShowEmailFields] = useState(false);
+  // Send-quote progressive disclosure
+  const [showSendFields, setShowSendFields] = useState(false);
   const [customerName, setCustomerName] = useState("");
   const [customerEmail, setCustomerEmail] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [sending, setSending] = useState(false);
+  const [deliveryMethod, setDeliveryMethod] = useState<DeliveryMethod>("email");
+  const [tenantQuoteSettings, setTenantQuoteSettings] = useState<TenantQuoteSettings>({});
+  const [smsPreview, setSmsPreview] = useState<SmsPreviewResponse | null>(null);
+  const [smsPreviewLoading, setSmsPreviewLoading] = useState(false);
+
+  // Load tenant settings to determine which channels are available + the default
+  useEffect(() => {
+    if (!drawerOpen) return;
+    api
+      .get<TenantQuoteSettings>("/tenant-settings")
+      .then((s) => {
+        setTenantQuoteSettings(s);
+        if (s.default_quote_delivery_method) {
+          setDeliveryMethod(s.default_quote_delivery_method);
+        }
+      })
+      .catch(() => {});
+  }, [drawerOpen]);
 
   const selectedRule = rules.find((r) => r.asset_subtype === selectedSize);
   const breakdown = pricingResult?.breakdown;
+
+  // Channel availability derived from tenant settings — UI mirrors the
+  // backend rules (the backend remains the source of truth for actual sends).
+  const emailChannelAvailable = !!tenantQuoteSettings.quotes_email_enabled;
+  const smsChannelAvailable =
+    !!tenantQuoteSettings.sms_enabled &&
+    !!tenantQuoteSettings.sms_phone_number &&
+    !!tenantQuoteSettings.quotes_sms_enabled;
+
+  // If the chosen method becomes unavailable due to settings, fall back safely.
+  useEffect(() => {
+    if (deliveryMethod === "sms" && !smsChannelAvailable && emailChannelAvailable) {
+      setDeliveryMethod("email");
+    } else if (deliveryMethod === "email" && !emailChannelAvailable && smsChannelAvailable) {
+      setDeliveryMethod("sms");
+    } else if (deliveryMethod === "both" && (!emailChannelAvailable || !smsChannelAvailable)) {
+      setDeliveryMethod(emailChannelAvailable ? "email" : smsChannelAvailable ? "sms" : "email");
+    }
+  }, [deliveryMethod, emailChannelAvailable, smsChannelAvailable]);
 
   // Fetch pricing rules on open
   useEffect(() => {
@@ -138,16 +208,68 @@ export default function QuickQuoteDrawer() {
     closeQuickQuote();
   }, [closeQuickQuote, openCustomerPicker, selectedSize, address]);
 
-  // Email Quote — atomic: create quote + send email
+  // Live SMS preview when SMS or Both is selected — re-renders against the
+  // tenant's real template + the in-progress quote payload.
+  useEffect(() => {
+    const wantSms = deliveryMethod === "sms" || deliveryMethod === "both";
+    if (!wantSms || !showSendFields || !breakdown || !smsChannelAvailable) {
+      setSmsPreview(null);
+      return;
+    }
+    let cancelled = false;
+    setSmsPreviewLoading(true);
+    api
+      .post<SmsPreviewResponse>("/quotes/preview-sms", {
+        customerName: customerName || undefined,
+        customerPhone: customerPhone || undefined,
+        customerEmail: customerEmail || undefined,
+        deliveryAddress: address
+          ? { street: address.street, city: address.city, state: address.state, zip: address.zip }
+          : undefined,
+        assetSubtype: selectedSize,
+        totalQuoted: breakdown.total,
+      })
+      .then((res) => {
+        if (!cancelled) setSmsPreview(res);
+      })
+      .catch(() => {
+        if (!cancelled) setSmsPreview(null);
+      })
+      .finally(() => {
+        if (!cancelled) setSmsPreviewLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    deliveryMethod,
+    showSendFields,
+    breakdown,
+    smsChannelAvailable,
+    customerName,
+    customerPhone,
+    customerEmail,
+    address,
+    selectedSize,
+  ]);
+
+  // Atomic create + send via the selected delivery method.
   const handleSendQuote = useCallback(async () => {
-    if (!selectedRule || !customerEmail || !customerName || !breakdown) return;
+    if (!selectedRule || !customerName || !breakdown) return;
+    const wantEmail = deliveryMethod === "email" || deliveryMethod === "both";
+    const wantSms = deliveryMethod === "sms" || deliveryMethod === "both";
+    if (wantEmail && !customerEmail) return;
+    if (wantSms && !customerPhone) return;
+
     setSending(true);
     try {
-      await api.post("/quotes", {
+      const res = await api.post<SendResponse>("/quotes", {
         customerName,
-        customerEmail,
+        customerEmail: customerEmail || undefined,
         customerPhone: customerPhone || undefined,
-        deliveryAddress: address ? { street: address.street, city: address.city, state: address.state, zip: address.zip, lat: address.lat, lng: address.lng } : null,
+        deliveryAddress: address
+          ? { street: address.street, city: address.city, state: address.state, zip: address.zip, lat: address.lat, lng: address.lng }
+          : null,
         assetSubtype: selectedSize,
         basePrice: breakdown.basePrice,
         includedTons: breakdown.includedTons,
@@ -156,15 +278,57 @@ export default function QuickQuoteDrawer() {
         extraDayRate: breakdown.extraDayRate,
         distanceSurcharge: breakdown.distanceSurcharge,
         totalQuoted: breakdown.total,
+        deliveryMethod,
       });
-      toast("success", `Quote emailed to ${customerEmail}`);
-      closeQuickQuote();
-    } catch {
-      toast("error", "Failed to send quote");
+
+      const { email, sms } = res.send;
+      const emailOk = email.ok;
+      const smsOk = sms.ok;
+      const emailFailed = email.attempted && !email.ok;
+      const smsFailed = sms.attempted && !sms.ok;
+
+      if (emailOk && smsOk) {
+        toast("success", QUOTE_SEND_LABELS.bothSendSuccess);
+        closeQuickQuote();
+      } else if (emailOk && !sms.attempted) {
+        toast("success", QUOTE_SEND_LABELS.emailSendSuccess);
+        closeQuickQuote();
+      } else if (smsOk && !email.attempted) {
+        toast("success", QUOTE_SEND_LABELS.smsSendSuccess);
+        closeQuickQuote();
+      } else if (emailOk && smsFailed) {
+        // Partial — clearly distinguish, do NOT collapse to generic success
+        toast("warning", `${QUOTE_SEND_LABELS.smsSendPartialSuccess}${sms.reason ? ` (${deliveryReasonLabel(sms.reason) || sms.reason})` : ""}`);
+        closeQuickQuote();
+      } else if (smsOk && emailFailed) {
+        toast("warning", `${QUOTE_SEND_LABELS.emailSendPartialSuccess}${email.reason ? ` (${deliveryReasonLabel(email.reason) || email.reason})` : ""}`);
+        closeQuickQuote();
+      } else {
+        // Both failed (or none attempted)
+        const detail =
+          deliveryReasonLabel(email.reason || sms.reason) ||
+          email.reason ||
+          sms.reason ||
+          QUOTE_SEND_LABELS.noChannelAttempted;
+        toast("error", detail);
+      }
+    } catch (err) {
+      toast("error", err instanceof Error ? err.message : "Failed to send quote");
     } finally {
       setSending(false);
     }
-  }, [selectedRule, customerName, customerEmail, customerPhone, address, selectedSize, breakdown, toast, closeQuickQuote]);
+  }, [
+    selectedRule,
+    customerName,
+    customerEmail,
+    customerPhone,
+    address,
+    selectedSize,
+    breakdown,
+    deliveryMethod,
+    toast,
+    closeQuickQuote,
+  ]);
 
   const hasQuote = !!breakdown;
   const outsideServiceArea = !!pricingError;
@@ -370,52 +534,33 @@ export default function QuickQuoteDrawer() {
             </button>
 
             {/* Send Quote — inline compact form */}
-            {!showEmailFields ? (
+            {!showSendFields ? (
               <button
-                onClick={() => setShowEmailFields(true)}
+                onClick={() => setShowSendFields(true)}
                 className="w-full flex items-center justify-center gap-2 rounded-full py-2.5 text-[13px] font-bold border transition-colors hover:bg-[var(--t-bg-card-hover)]"
                 style={{ borderColor: "var(--t-border)", color: "var(--t-text-primary)", background: "transparent" }}
               >
                 <Mail className="h-4 w-4" /> {getFeatureLabel("quick_quote_email")}
               </button>
             ) : (
-              <div className="rounded-[14px] border p-3 space-y-2 animate-fade-in" style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)" }}>
-                <div className="flex gap-2">
-                  <input
-                    value={customerName}
-                    onChange={(e) => setCustomerName(e.target.value)}
-                    placeholder="Name *"
-                    className="flex-1 rounded-[10px] border px-3 py-1.5 text-sm outline-none focus:border-[var(--t-accent)]"
-                    style={{ background: "var(--t-bg-secondary)", borderColor: "var(--t-border)", color: "var(--t-text-primary)" }}
-                  />
-                  <input
-                    value={customerEmail}
-                    onChange={(e) => setCustomerEmail(e.target.value)}
-                    placeholder="Email *"
-                    type="email"
-                    className="flex-1 rounded-[10px] border px-3 py-1.5 text-sm outline-none focus:border-[var(--t-accent)]"
-                    style={{ background: "var(--t-bg-secondary)", borderColor: "var(--t-border)", color: "var(--t-text-primary)" }}
-                  />
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    onClick={handleSendQuote}
-                    disabled={!customerName || !customerEmail || sending}
-                    className="flex-1 flex items-center justify-center gap-2 rounded-full py-2 text-[13px] font-bold transition-opacity hover:opacity-90 disabled:opacity-50"
-                    style={{ background: "var(--t-accent)", color: "var(--t-accent-on-accent)" }}
-                  >
-                    {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}
-                    {sending ? "Sending..." : getFeatureLabel("quick_quote_email").replace("Email", "Send")}
-                  </button>
-                  <button
-                    onClick={() => setShowEmailFields(false)}
-                    className="rounded-full px-3 py-2 text-[12px] font-medium transition-colors hover:bg-[var(--t-bg-card-hover)]"
-                    style={{ color: "var(--t-text-muted)", background: "transparent", border: "none" }}
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
+              <QuoteSendPanel
+                customerName={customerName}
+                customerEmail={customerEmail}
+                customerPhone={customerPhone}
+                onCustomerNameChange={setCustomerName}
+                onCustomerEmailChange={setCustomerEmail}
+                onCustomerPhoneChange={setCustomerPhone}
+                deliveryMethod={deliveryMethod}
+                onDeliveryMethodChange={setDeliveryMethod}
+                emailChannelAvailable={emailChannelAvailable}
+                smsChannelAvailable={smsChannelAvailable}
+                tenantSmsNumber={tenantQuoteSettings.sms_phone_number || null}
+                smsPreview={smsPreview}
+                smsPreviewLoading={smsPreviewLoading}
+                onSend={handleSendQuote}
+                onCancel={() => setShowSendFields(false)}
+                sending={sending}
+              />
             )}
           </div>
         )}

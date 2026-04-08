@@ -1,12 +1,14 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Search, FileCheck, Mail, Copy, ExternalLink, Loader2, ChevronRight, Flame, Phone } from "lucide-react";
+import { Search, FileCheck, Mail, Copy, ExternalLink, Loader2, ChevronRight, Flame, Phone, MessageSquare } from "lucide-react";
 import { api } from "@/lib/api";
 import { useToast } from "@/components/toast";
 import { formatCurrency, formatDumpsterSize } from "@/lib/utils";
 import { getFeatureLabel } from "@/lib/feature-registry";
 import SlideOver from "@/components/slide-over";
+import QuoteSendPanel, { type SmsPreviewState } from "@/components/quote-send-panel";
+import { QUOTE_SEND_LABELS, deliveryReasonLabel, type DeliveryMethod } from "@/lib/quote-send-labels";
 
 interface Quote {
   id: string;
@@ -175,7 +177,24 @@ export default function QuotesPage() {
 
   const [hotQuotes, setHotQuotes] = useState<Quote[]>([]);
   const [statsRange, setStatsRange] = useState("30d");
-  const [tenantSettings, setTenantSettings] = useState<{ quote_follow_up_enabled?: boolean; quote_follow_up_delay_hours?: number }>({});
+  const [tenantSettings, setTenantSettings] = useState<{
+    quote_follow_up_enabled?: boolean;
+    quote_follow_up_delay_hours?: number;
+    sms_enabled?: boolean;
+    sms_phone_number?: string | null;
+    quotes_email_enabled?: boolean;
+    quotes_sms_enabled?: boolean;
+    default_quote_delivery_method?: DeliveryMethod;
+  }>({});
+
+  // Detail-panel resend state — separate from the row-level "quick resend" so
+  // both interactions can coexist without sharing state.
+  const [resendPanelOpen, setResendPanelOpen] = useState(false);
+  const [resendDeliveryMethod, setResendDeliveryMethod] = useState<DeliveryMethod>("email");
+  const [resendCustomerEmail, setResendCustomerEmail] = useState("");
+  const [resendCustomerPhone, setResendCustomerPhone] = useState("");
+  const [resendSmsPreview, setResendSmsPreview] = useState<SmsPreviewState | null>(null);
+  const [resendSmsPreviewLoading, setResendSmsPreviewLoading] = useState(false);
 
   useEffect(() => {
     api.get<Summary>(`/quotes/summary?range=${statsRange}`).then(setSummary).catch(() => {});
@@ -185,6 +204,59 @@ export default function QuotesPage() {
     api.get<{ data: Quote[] }>("/quotes?hot=true&limit=10").then((r) => setHotQuotes(r.data || [])).catch(() => {});
     api.get<Record<string, any>>("/tenant-settings").then((s) => setTenantSettings(s)).catch(() => {});
   }, []);
+
+  const emailChannelAvailable = !!tenantSettings.quotes_email_enabled;
+  const smsChannelAvailable =
+    !!tenantSettings.sms_enabled &&
+    !!tenantSettings.sms_phone_number &&
+    !!tenantSettings.quotes_sms_enabled;
+
+  // Open the detail-panel resend with the quote's current contact info + tenant default.
+  const openResendPanel = useCallback(
+    (q: Quote) => {
+      setResendCustomerEmail(q.customer_email || "");
+      setResendCustomerPhone(q.customer_phone || "");
+      const initialMethod = (() => {
+        const def = tenantSettings.default_quote_delivery_method || "email";
+        if (def === "sms" && !smsChannelAvailable) return emailChannelAvailable ? "email" : "email";
+        if (def === "email" && !emailChannelAvailable) return smsChannelAvailable ? "sms" : "email";
+        if (def === "both" && (!emailChannelAvailable || !smsChannelAvailable)) {
+          return emailChannelAvailable ? "email" : smsChannelAvailable ? "sms" : "email";
+        }
+        return def as DeliveryMethod;
+      })();
+      setResendDeliveryMethod(initialMethod);
+      setResendSmsPreview(null);
+      setResendPanelOpen(true);
+    },
+    [tenantSettings.default_quote_delivery_method, emailChannelAvailable, smsChannelAvailable],
+  );
+
+  // Live SMS preview while the resend panel is open and SMS is part of the selection.
+  useEffect(() => {
+    if (!selectedQuote || !resendPanelOpen) return;
+    const wantSms = resendDeliveryMethod === "sms" || resendDeliveryMethod === "both";
+    if (!wantSms || !smsChannelAvailable) {
+      setResendSmsPreview(null);
+      return;
+    }
+    let cancelled = false;
+    setResendSmsPreviewLoading(true);
+    api
+      .post<SmsPreviewState>(`/quotes/${selectedQuote.id}/sms-preview`, {})
+      .then((res) => {
+        if (!cancelled) setResendSmsPreview(res);
+      })
+      .catch(() => {
+        if (!cancelled) setResendSmsPreview(null);
+      })
+      .finally(() => {
+        if (!cancelled) setResendSmsPreviewLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedQuote, resendPanelOpen, resendDeliveryMethod, smsChannelAvailable]);
 
   const openDetail = async (q: Quote) => {
     try {
@@ -196,11 +268,21 @@ export default function QuotesPage() {
     setDetailOpen(true);
   };
 
+  // Row-level quick resend — preserves existing email-only semantics so the
+  // dense list/follow-up surfaces remain a single-tap action.
   const handleResend = async (quoteId: string) => {
     setResending(quoteId);
     try {
-      await api.post(`/quotes/${quoteId}/resend`, {});
-      toast("success", "Quote re-sent");
+      const res = await api.post<{
+        send: { email: { ok: boolean; reason?: string }; sms: { ok: boolean; reason?: string } };
+      }>(`/quotes/${quoteId}/resend`, { deliveryMethod: "email" });
+      if (res.send?.email?.ok) {
+        toast("success", QUOTE_SEND_LABELS.emailSendSuccess);
+      } else {
+        const detail =
+          deliveryReasonLabel(res.send?.email?.reason) || res.send?.email?.reason || "Failed to re-send";
+        toast("error", detail);
+      }
       fetchQuotes();
     } catch {
       toast("error", "Failed to re-send");
@@ -208,6 +290,57 @@ export default function QuotesPage() {
       setResending(null);
     }
   };
+
+  // Detail-panel resend — supports email/sms/both with preview + partial-success.
+  const handleResendFromPanel = useCallback(async () => {
+    if (!selectedQuote) return;
+    setResending(selectedQuote.id);
+    try {
+      const res = await api.post<{
+        send: {
+          email: { attempted: boolean; ok: boolean; reason?: string };
+          sms: { attempted: boolean; ok: boolean; reason?: string };
+        };
+        resolved_method: DeliveryMethod;
+      }>(`/quotes/${selectedQuote.id}/resend`, { deliveryMethod: resendDeliveryMethod });
+
+      const { email, sms } = res.send;
+      if (email.ok && sms.ok) {
+        toast("success", QUOTE_SEND_LABELS.bothSendSuccess);
+        setResendPanelOpen(false);
+      } else if (email.ok && !sms.attempted) {
+        toast("success", QUOTE_SEND_LABELS.emailSendSuccess);
+        setResendPanelOpen(false);
+      } else if (sms.ok && !email.attempted) {
+        toast("success", QUOTE_SEND_LABELS.smsSendSuccess);
+        setResendPanelOpen(false);
+      } else if (email.ok && sms.attempted && !sms.ok) {
+        toast(
+          "warning",
+          `${QUOTE_SEND_LABELS.smsSendPartialSuccess}${sms.reason ? ` (${deliveryReasonLabel(sms.reason) || sms.reason})` : ""}`,
+        );
+        setResendPanelOpen(false);
+      } else if (sms.ok && email.attempted && !email.ok) {
+        toast(
+          "warning",
+          `${QUOTE_SEND_LABELS.emailSendPartialSuccess}${email.reason ? ` (${deliveryReasonLabel(email.reason) || email.reason})` : ""}`,
+        );
+        setResendPanelOpen(false);
+      } else {
+        const detail =
+          deliveryReasonLabel(email.reason || sms.reason) ||
+          email.reason ||
+          sms.reason ||
+          QUOTE_SEND_LABELS.noChannelAttempted;
+        toast("error", detail);
+      }
+      fetchQuotes();
+    } catch (err) {
+      toast("error", err instanceof Error ? err.message : "Failed to re-send");
+    } finally {
+      setResending(null);
+    }
+  }, [selectedQuote, resendDeliveryMethod, fetchQuotes, toast]);
 
   const copyBookingLink = (q: Quote) => {
     if (q.booking_url || q.token) {
@@ -597,14 +730,18 @@ export default function QuotesPage() {
 
             {/* Actions */}
             <div className="flex gap-2 pt-2">
-              {selectedQuote.derived_status !== "converted" && selectedQuote.customer_email && (
+              {selectedQuote.derived_status !== "converted" && (emailChannelAvailable || smsChannelAvailable) && (
                 <button
-                  onClick={() => handleResend(selectedQuote.id)}
-                  disabled={resending === selectedQuote.id}
+                  onClick={() => openResendPanel(selectedQuote)}
+                  disabled={resending === selectedQuote.id || resendPanelOpen}
                   className="flex-1 flex items-center justify-center gap-2 rounded-full py-2.5 text-[13px] font-bold border transition-colors hover:bg-[var(--t-bg-card-hover)] disabled:opacity-50"
                   style={{ borderColor: "var(--t-border)", color: "var(--t-text-primary)" }}
                 >
-                  {resending === selectedQuote.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}
+                  {resending === selectedQuote.id ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <MessageSquare className="h-4 w-4" />
+                  )}
                   Re-send
                 </button>
               )}
@@ -618,6 +755,29 @@ export default function QuotesPage() {
                 </button>
               )}
             </div>
+
+            {/* Resend panel — choose method, preview SMS, send */}
+            {resendPanelOpen && selectedQuote && (
+              <QuoteSendPanel
+                customerName={selectedQuote.customer_name || ""}
+                customerEmail={resendCustomerEmail}
+                customerPhone={resendCustomerPhone}
+                onCustomerNameChange={() => { /* not editable in resend */ }}
+                onCustomerEmailChange={setResendCustomerEmail}
+                onCustomerPhoneChange={setResendCustomerPhone}
+                deliveryMethod={resendDeliveryMethod}
+                onDeliveryMethodChange={setResendDeliveryMethod}
+                emailChannelAvailable={emailChannelAvailable}
+                smsChannelAvailable={smsChannelAvailable}
+                tenantSmsNumber={tenantSettings.sms_phone_number || null}
+                smsPreview={resendSmsPreview}
+                smsPreviewLoading={resendSmsPreviewLoading}
+                onSend={handleResendFromPanel}
+                onCancel={() => setResendPanelOpen(false)}
+                sending={resending === selectedQuote.id}
+                hideCustomerFields
+              />
+            )}
           </div>
         )}
       </SlideOver>

@@ -8,8 +8,25 @@ import { Customer } from '../customers/entities/customer.entity';
 import { TenantId, CurrentUser, Public } from '../../common/decorators';
 import { NotificationsService } from '../notifications/notifications.service';
 import { TenantSettingsService } from '../tenant-settings/tenant-settings.service';
+import { SmsService } from '../sms/sms.service';
+import { TenantSettings } from '../tenant-settings/entities/tenant-settings.entity';
+import { normalizePhone, isValidPhone } from '../../common/utils/phone';
 import { getTemplate, renderTemplate } from './quote-templates';
 import { randomBytes } from 'crypto';
+
+type DeliveryMethod = 'email' | 'sms' | 'both';
+
+interface ChannelOutcome {
+  attempted: boolean;
+  ok: boolean;
+  reason?: string;
+  recipient?: string;
+}
+
+interface SendOutcome {
+  email: ChannelOutcome;
+  sms: ChannelOutcome;
+}
 
 function generateToken(): string {
   return randomBytes(32).toString('base64url');
@@ -93,14 +110,260 @@ export class QuotesController {
     @InjectRepository(Customer) private customerRepo: Repository<Customer>,
     private notificationsService: NotificationsService,
     private settingsService: TenantSettingsService,
+    private smsService: SmsService,
   ) {}
 
+  // ───────────────────────────────────────────────────────────────────────────
+  // Centralized quote send context — used by create + resend + sms-preview so
+  // every send path renders templates from the same source of truth.
+  // ───────────────────────────────────────────────────────────────────────────
+
   /**
-   * POST /quotes — Atomic: create quote + send email + mark as sent.
-   * Used by Quick Quote drawer's Email Quote flow.
+   * Build the canonical hosted-quote URL for a tenant + token.
+   * Single source of truth — every send channel must use this.
+   */
+  private buildViewQuoteUrl(token: string): string {
+    const webDomain = process.env.WEB_DOMAIN || 'serviceos-web-zeta.vercel.app';
+    return `https://${webDomain}/quote/${encodeURIComponent(token)}`;
+  }
+
+  /**
+   * Build the template substitution context shared by every quote channel.
+   */
+  private buildTemplateContext(args: {
+    tenant: Tenant;
+    customerName: string | null;
+    assetSubtype: string;
+    totalQuoted: number;
+    deliveryAddress: Record<string, any> | null;
+    expiresAt: Date;
+    viewQuoteUrl: string;
+  }): Record<string, string> {
+    const addressStr = args.deliveryAddress
+      ? [
+          args.deliveryAddress.street,
+          args.deliveryAddress.city,
+          args.deliveryAddress.state,
+          args.deliveryAddress.zip,
+        ]
+          .filter(Boolean)
+          .join(', ')
+      : '';
+    return {
+      customer_name: args.customerName || 'Customer',
+      company_name: args.tenant.name,
+      quote_price: `$${Number(args.totalQuoted).toFixed(2)}`,
+      quote_link: args.viewQuoteUrl,
+      dumpster_size: args.assetSubtype.replace('yd', ' Yard'),
+      service_address: addressStr,
+      expires_at: new Date(args.expiresAt).toLocaleDateString('en-US', {
+        month: 'long',
+        day: 'numeric',
+        year: 'numeric',
+      }),
+      company_phone: (args.tenant as any).website_phone || '',
+      company_email: (args.tenant as any).website_email || '',
+    };
+  }
+
+  /**
+   * Resolve and validate the delivery method against tenant + customer state.
+   *
+   * Returns the channels that should actually be attempted, plus per-channel
+   * blocked reasons so the caller can surface partial-success messaging without
+   * the UI having to re-derive the same rules.
+   */
+  private resolveChannels(args: {
+    requested: DeliveryMethod | undefined;
+    settings: TenantSettings;
+    customerEmail: string | null;
+    customerPhone: string | null;
+  }): {
+    method: DeliveryMethod;
+    email: { allowed: boolean; recipient: string | null; blockedReason?: string };
+    sms: { allowed: boolean; recipient: string | null; blockedReason?: string };
+  } {
+    const { settings } = args;
+
+    // ── Email channel ──
+    let emailAllowed = false;
+    let emailRecipient: string | null = null;
+    let emailBlocked: string | undefined;
+    if (!settings.quotes_email_enabled) {
+      emailBlocked = 'tenant_quotes_email_disabled';
+    } else if (!args.customerEmail) {
+      emailBlocked = 'no_customer_email';
+    } else {
+      emailAllowed = true;
+      emailRecipient = args.customerEmail;
+    }
+
+    // ── SMS channel ──
+    let smsAllowed = false;
+    let smsRecipient: string | null = null;
+    let smsBlocked: string | undefined;
+    if (!settings.sms_enabled) {
+      smsBlocked = 'tenant_sms_disabled';
+    } else if (!settings.sms_phone_number) {
+      smsBlocked = 'tenant_sms_number_missing';
+    } else if (!settings.quotes_sms_enabled) {
+      smsBlocked = 'tenant_quotes_sms_disabled';
+    } else if (!args.customerPhone) {
+      smsBlocked = 'no_customer_phone';
+    } else {
+      const normalized = normalizePhone(args.customerPhone);
+      if (!normalized) {
+        smsBlocked = 'invalid_customer_phone';
+      } else {
+        smsAllowed = true;
+        smsRecipient = normalized;
+      }
+    }
+
+    // Resolve requested method against the tenant default + what is actually allowed.
+    const def = (settings.default_quote_delivery_method as DeliveryMethod) || 'email';
+    const requested: DeliveryMethod = args.requested || def;
+    let method: DeliveryMethod = requested;
+
+    // If the caller asked for both but only one is allowed, gracefully degrade.
+    if (method === 'both' && !emailAllowed && !smsAllowed) {
+      method = 'email'; // will produce all-failure outcome reflected in result
+    } else if (method === 'both' && !emailAllowed) {
+      method = 'sms';
+    } else if (method === 'both' && !smsAllowed) {
+      method = 'email';
+    }
+
+    return {
+      method,
+      email: { allowed: emailAllowed, recipient: emailRecipient, blockedReason: emailBlocked },
+      sms: { allowed: smsAllowed, recipient: smsRecipient, blockedReason: smsBlocked },
+    };
+  }
+
+  /**
+   * Send the quote email — pure side-effect helper, never throws to caller.
+   */
+  private async sendQuoteEmail(args: {
+    tenantId: string;
+    tenant: Tenant;
+    quote: Pick<
+      Quote,
+      | 'asset_subtype'
+      | 'total_quoted'
+      | 'base_price'
+      | 'distance_surcharge'
+      | 'rental_days'
+      | 'included_tons'
+      | 'overage_rate'
+      | 'delivery_address'
+      | 'expires_at'
+    >;
+    recipient: string;
+    customerName: string;
+    bookNowUrl: string;
+    viewQuoteUrl: string;
+    templateCtx: Record<string, string>;
+    settings: TenantSettings;
+  }): Promise<ChannelOutcome> {
+    try {
+      const addressStr = args.quote.delivery_address
+        ? [
+            args.quote.delivery_address.street,
+            args.quote.delivery_address.city,
+            args.quote.delivery_address.state,
+            args.quote.delivery_address.zip,
+          ]
+            .filter(Boolean)
+            .join(', ')
+        : null;
+
+      const html = buildQuoteEmailHtml({
+        customerName: args.customerName,
+        tenantName: args.tenant.name,
+        assetSubtype: args.quote.asset_subtype,
+        totalQuoted: Number(args.quote.total_quoted),
+        basePrice: Number(args.quote.base_price),
+        distanceSurcharge: Number(args.quote.distance_surcharge),
+        rentalDays: args.quote.rental_days,
+        includedTons: Number(args.quote.included_tons),
+        overageRate: Number(args.quote.overage_rate),
+        deliveryAddress: addressStr,
+        bookNowUrl: args.bookNowUrl,
+        viewQuoteUrl: args.viewQuoteUrl,
+        tenantColor: (args.tenant as any).website_primary_color || undefined,
+      });
+      const subject = renderTemplate(
+        getTemplate('quote_email_subject', args.settings.quote_templates),
+        args.templateCtx,
+      );
+      await this.notificationsService.send(args.tenantId, {
+        channel: 'email',
+        type: 'quote_sent',
+        recipient: args.recipient,
+        subject,
+        body: html,
+      });
+      return { attempted: true, ok: true, recipient: args.recipient };
+    } catch (err: any) {
+      this.logger.error(`Quote email send failed for tenant ${args.tenantId}: ${err.message}`);
+      return { attempted: true, ok: false, reason: err.message || 'email_send_failed', recipient: args.recipient };
+    }
+  }
+
+  /**
+   * Send the quote SMS — uses the centralized SmsService and the tenant's
+   * assigned number. Never throws to caller.
+   */
+  private async sendQuoteSms(args: {
+    tenantId: string;
+    quoteId: string | null;
+    customerId: string | null;
+    recipient: string;
+    templateCtx: Record<string, string>;
+    settings: TenantSettings;
+  }): Promise<ChannelOutcome> {
+    const body = renderTemplate(
+      getTemplate('quote_sms_body', args.settings.quote_templates),
+      args.templateCtx,
+    );
+    if (!body || !body.trim()) {
+      return { attempted: true, ok: false, reason: 'empty_sms_body', recipient: args.recipient };
+    }
+    const result = await this.smsService.sendSms({
+      tenantId: args.tenantId,
+      to: args.recipient,
+      body,
+      source: 'quote_send',
+      sourceId: args.quoteId || undefined,
+      customerId: args.customerId || undefined,
+    });
+    if (!result.success) {
+      return {
+        attempted: true,
+        ok: false,
+        reason: result.error || 'sms_send_failed',
+        recipient: args.recipient,
+      };
+    }
+    return { attempted: true, ok: true, recipient: args.recipient };
+  }
+
+  /**
+   * POST /quotes — Atomic: create quote + send via selected delivery method.
+   * Used by Quick Quote drawer's send flow.
+   *
+   * Delivery method:
+   *   - explicit `deliveryMethod` body field, or
+   *   - tenant default (`default_quote_delivery_method`), or
+   *   - 'email' fallback
+   *
+   * The send is per-channel additive: if email succeeds and SMS fails (or vice
+   * versa), the quote is still marked sent and the response surfaces the real
+   * per-channel outcome so the UI can show partial success.
    */
   @Post()
-  @ApiOperation({ summary: 'Create and email a quote' })
+  @ApiOperation({ summary: 'Create a quote and send via email/sms/both' })
   async create(
     @TenantId() tenantId: string,
     @CurrentUser('id') userId: string,
@@ -117,6 +380,7 @@ export class QuotesController {
       extraDayRate?: number;
       distanceSurcharge?: number;
       totalQuoted?: number;
+      deliveryMethod?: DeliveryMethod;
     },
   ) {
     const settings = await this.settingsService.getSettings(tenantId);
@@ -163,65 +427,81 @@ export class QuotesController {
 
     const saved = await this.quoteRepo.save(quote);
 
-    // If email provided, send quote email and mark as sent
-    if (body.customerEmail && body.customerName) {
-      try {
-        const tenant = await this.tenantRepo.findOne({ where: { id: tenantId } });
-        if (tenant) {
-          const bookNowUrl = buildTenantBookingUrl(tenant.slug, token);
-          const webDomain = process.env.WEB_DOMAIN || 'serviceos-web-zeta.vercel.app';
-          const viewQuoteUrl = `https://${webDomain}/quote/${encodeURIComponent(token)}`;
-          const addressStr = body.deliveryAddress
-            ? [body.deliveryAddress.street, body.deliveryAddress.city, body.deliveryAddress.state, body.deliveryAddress.zip].filter(Boolean).join(', ')
-            : null;
-
-          const html = buildQuoteEmailHtml({
-            customerName: body.customerName,
-            tenantName: tenant.name,
-            assetSubtype: body.assetSubtype,
-            totalQuoted,
-            basePrice: body.basePrice,
-            distanceSurcharge: body.distanceSurcharge || 0,
-            rentalDays: body.rentalDays || 14,
-            includedTons: body.includedTons || 0,
-            overageRate: body.overageRate || 0,
-            deliveryAddress: addressStr,
-            bookNowUrl,
-            viewQuoteUrl,
-            tenantColor: (tenant as any).website_primary_color || undefined,
-          });
-
-          const templateCtx = {
-            customer_name: body.customerName || '',
-            company_name: tenant.name,
-            quote_price: `$${Number(totalQuoted).toFixed(2)}`,
-            quote_link: viewQuoteUrl,
-            dumpster_size: body.assetSubtype.replace('yd', ' Yard'),
-            service_address: addressStr || '',
-            expires_at: new Date(saved.expires_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
-            company_phone: (tenant as any).website_phone || '',
-            company_email: (tenant as any).website_email || '',
-          };
-          const emailSubject = renderTemplate(getTemplate('quote_email_subject', settings.quote_templates), templateCtx);
-
-          await this.notificationsService.send(tenantId, {
-            channel: 'email',
-            type: 'quote_sent',
-            recipient: body.customerEmail,
-            subject: emailSubject,
-            body: html,
-          });
-
-          await this.quoteRepo.update(saved.id, { status: 'sent', last_sent_at: new Date() });
-          saved.status = 'sent';
-        }
-      } catch (err: any) {
-        this.logger.error(`Failed to send quote email: ${err.message}`);
-        // Quote is still saved as draft — don't fail the whole request
-      }
+    const tenant = await this.tenantRepo.findOne({ where: { id: tenantId } });
+    if (!tenant) {
+      return { ...saved, send: { email: { attempted: false, ok: false, reason: 'tenant_missing' }, sms: { attempted: false, ok: false, reason: 'tenant_missing' } } };
     }
 
-    return saved;
+    const channels = this.resolveChannels({
+      requested: body.deliveryMethod,
+      settings,
+      customerEmail: body.customerEmail || null,
+      customerPhone: body.customerPhone || null,
+    });
+
+    const viewQuoteUrl = this.buildViewQuoteUrl(token);
+    const bookNowUrl = buildTenantBookingUrl(tenant.slug, token);
+    const templateCtx = this.buildTemplateContext({
+      tenant,
+      customerName: body.customerName || null,
+      assetSubtype: body.assetSubtype,
+      totalQuoted,
+      deliveryAddress: body.deliveryAddress || null,
+      expiresAt: saved.expires_at,
+      viewQuoteUrl,
+    });
+
+    const wantEmail = channels.method === 'email' || channels.method === 'both';
+    const wantSms = channels.method === 'sms' || channels.method === 'both';
+
+    const outcome: SendOutcome = {
+      email: {
+        attempted: false,
+        ok: false,
+        reason: channels.email.blockedReason,
+        recipient: channels.email.recipient || undefined,
+      },
+      sms: {
+        attempted: false,
+        ok: false,
+        reason: channels.sms.blockedReason,
+        recipient: channels.sms.recipient || undefined,
+      },
+    };
+
+    if (wantEmail && channels.email.allowed && channels.email.recipient) {
+      outcome.email = await this.sendQuoteEmail({
+        tenantId,
+        tenant,
+        quote: saved,
+        recipient: channels.email.recipient,
+        customerName: body.customerName || 'Customer',
+        bookNowUrl,
+        viewQuoteUrl,
+        templateCtx,
+        settings,
+      });
+    }
+
+    if (wantSms && channels.sms.allowed && channels.sms.recipient) {
+      outcome.sms = await this.sendQuoteSms({
+        tenantId,
+        quoteId: saved.id,
+        customerId,
+        recipient: channels.sms.recipient,
+        templateCtx,
+        settings,
+      });
+    }
+
+    // Mark sent only if at least one channel actually succeeded.
+    if (outcome.email.ok || outcome.sms.ok) {
+      await this.quoteRepo.update(saved.id, { status: 'sent', last_sent_at: new Date() });
+      saved.status = 'sent';
+      saved.last_sent_at = new Date();
+    }
+
+    return { ...saved, send: outcome, resolved_method: channels.method };
   }
 
   @Get('summary')
@@ -405,74 +685,209 @@ export class QuotesController {
   }
 
   /**
-   * POST /quotes/:id/resend — Re-send quote email using existing token.
+   * POST /quotes/:id/resend — Re-send a quote via email/sms/both using the
+   * existing hosted-quote token. Returns per-channel outcome so the UI can
+   * show partial-success messaging without re-deriving validation rules.
    */
   @Post(':id/resend')
-  @ApiOperation({ summary: 'Re-send quote email' })
+  @ApiOperation({ summary: 'Re-send quote via email/sms/both' })
   async resend(
     @TenantId() tenantId: string,
     @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: { deliveryMethod?: DeliveryMethod } = {},
   ) {
     const quote = await this.quoteRepo.findOne({ where: { id, tenant_id: tenantId } });
     if (!quote) return { error: 'Quote not found' };
-    if (!quote.customer_email) return { error: 'No email on quote' };
     if (quote.status === 'converted') return { error: 'Quote already converted' };
+    if (!quote.token) return { error: 'Quote has no hosted link token' };
 
     const tenant = await this.tenantRepo.findOne({ where: { id: tenantId } });
     if (!tenant) return { error: 'Tenant not found' };
 
-    const bookNowUrl = buildTenantBookingUrl(tenant.slug, quote.token!);
-    const webDomain = process.env.WEB_DOMAIN || 'serviceos-web-zeta.vercel.app';
-    const viewQuoteUrl = `https://${webDomain}/quote/${encodeURIComponent(quote.token!)}`;
-    const addressStr = quote.delivery_address
-      ? [quote.delivery_address.street, quote.delivery_address.city, quote.delivery_address.state, quote.delivery_address.zip].filter(Boolean).join(', ')
-      : null;
+    const settings = await this.settingsService.getSettings(tenantId);
 
-    const html = buildQuoteEmailHtml({
-      customerName: quote.customer_name || 'Customer',
-      tenantName: tenant.name,
+    const channels = this.resolveChannels({
+      requested: body.deliveryMethod,
+      settings,
+      customerEmail: quote.customer_email || null,
+      customerPhone: quote.customer_phone || null,
+    });
+
+    const viewQuoteUrl = this.buildViewQuoteUrl(quote.token);
+    const bookNowUrl = buildTenantBookingUrl(tenant.slug, quote.token);
+    const templateCtx = this.buildTemplateContext({
+      tenant,
+      customerName: quote.customer_name || null,
       assetSubtype: quote.asset_subtype,
       totalQuoted: Number(quote.total_quoted),
-      basePrice: Number(quote.base_price),
-      distanceSurcharge: Number(quote.distance_surcharge),
-      rentalDays: quote.rental_days,
-      includedTons: Number(quote.included_tons),
-      overageRate: Number(quote.overage_rate),
-      deliveryAddress: addressStr,
-      bookNowUrl,
+      deliveryAddress: quote.delivery_address,
+      expiresAt: quote.expires_at,
       viewQuoteUrl,
-      tenantColor: (tenant as any).website_primary_color || undefined,
     });
 
-    const resendSettings = await this.settingsService.getSettings(tenantId);
-    const resendCtx = {
-      customer_name: quote.customer_name || 'Customer',
-      company_name: tenant.name,
-      quote_price: `$${Number(quote.total_quoted).toFixed(2)}`,
-      quote_link: viewQuoteUrl,
-      dumpster_size: quote.asset_subtype.replace('yd', ' Yard'),
-      service_address: addressStr || '',
-      expires_at: new Date(quote.expires_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
-      company_phone: (tenant as any).website_phone || '',
-      company_email: (tenant as any).website_email || '',
+    const wantEmail = channels.method === 'email' || channels.method === 'both';
+    const wantSms = channels.method === 'sms' || channels.method === 'both';
+
+    const outcome: SendOutcome = {
+      email: {
+        attempted: false,
+        ok: false,
+        reason: channels.email.blockedReason,
+        recipient: channels.email.recipient || undefined,
+      },
+      sms: {
+        attempted: false,
+        ok: false,
+        reason: channels.sms.blockedReason,
+        recipient: channels.sms.recipient || undefined,
+      },
     };
-    const resendSubject = renderTemplate(getTemplate('quote_email_subject', resendSettings.quote_templates), resendCtx);
 
-    await this.notificationsService.send(tenantId, {
-      channel: 'email',
-      type: 'quote_sent',
-      recipient: quote.customer_email,
-      subject: resendSubject,
-      body: html,
+    if (wantEmail && channels.email.allowed && channels.email.recipient) {
+      outcome.email = await this.sendQuoteEmail({
+        tenantId,
+        tenant,
+        quote,
+        recipient: channels.email.recipient,
+        customerName: quote.customer_name || 'Customer',
+        bookNowUrl,
+        viewQuoteUrl,
+        templateCtx,
+        settings,
+      });
+    }
+
+    if (wantSms && channels.sms.allowed && channels.sms.recipient) {
+      outcome.sms = await this.sendQuoteSms({
+        tenantId,
+        quoteId: quote.id,
+        customerId: quote.customer_id,
+        recipient: channels.sms.recipient,
+        templateCtx,
+        settings,
+      });
+    }
+
+    // Update last_sent_at + status only if at least one channel succeeded.
+    if (outcome.email.ok || outcome.sms.ok) {
+      await this.quoteRepo.update(id, {
+        ...(quote.status === 'draft' ? { status: 'sent' } : {}),
+        last_sent_at: new Date(),
+      });
+    }
+
+    return { send: outcome, resolved_method: channels.method };
+  }
+
+  /**
+   * POST /quotes/:id/sms-preview — Render the quote SMS body with the real
+   * template + tenant context so the UI can show a controlled preview before
+   * the user explicitly confirms an SMS send. NEVER sends anything.
+   */
+  @Post(':id/sms-preview')
+  @ApiOperation({ summary: 'Render SMS body preview for a quote (no send)' })
+  async smsPreview(
+    @TenantId() tenantId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    const quote = await this.quoteRepo.findOne({ where: { id, tenant_id: tenantId } });
+    if (!quote) return { valid: false, reason: 'quote_not_found' };
+    if (!quote.token) return { valid: false, reason: 'no_token' };
+
+    const tenant = await this.tenantRepo.findOne({ where: { id: tenantId } });
+    if (!tenant) return { valid: false, reason: 'tenant_missing' };
+
+    const settings = await this.settingsService.getSettings(tenantId);
+    const channels = this.resolveChannels({
+      requested: 'sms',
+      settings,
+      customerEmail: quote.customer_email || null,
+      customerPhone: quote.customer_phone || null,
     });
 
-    // Update last_sent_at (resets follow-up timer) and status if draft
-    await this.quoteRepo.update(id, {
-      ...(quote.status === 'draft' ? { status: 'sent' } : {}),
-      last_sent_at: new Date(),
+    const viewQuoteUrl = this.buildViewQuoteUrl(quote.token);
+    const templateCtx = this.buildTemplateContext({
+      tenant,
+      customerName: quote.customer_name || null,
+      assetSubtype: quote.asset_subtype,
+      totalQuoted: Number(quote.total_quoted),
+      deliveryAddress: quote.delivery_address,
+      expiresAt: quote.expires_at,
+      viewQuoteUrl,
     });
 
-    return { success: true, message: `Quote re-sent to ${quote.customer_email}` };
+    const renderedBody = renderTemplate(
+      getTemplate('quote_sms_body', settings.quote_templates),
+      templateCtx,
+    );
+
+    const valid = channels.sms.allowed && !!renderedBody.trim();
+    return {
+      valid,
+      reason: valid ? undefined : channels.sms.blockedReason || 'empty_body',
+      body: renderedBody,
+      recipient: channels.sms.recipient,
+      from_number: settings.sms_phone_number,
+      character_count: renderedBody.length,
+    };
+  }
+
+  /**
+   * POST /quotes/preview-sms — Stateless SMS preview for a quote that has not
+   * been created yet (used by the Quick Quote drawer). Renders the SMS body
+   * from the in-progress quote payload + tenant template + a placeholder link.
+   */
+  @Post('preview-sms')
+  @ApiOperation({ summary: 'Preview SMS body for an in-progress quote (no quote row)' })
+  async previewSmsForDraft(
+    @TenantId() tenantId: string,
+    @Body() body: {
+      customerName?: string;
+      customerPhone?: string;
+      customerEmail?: string;
+      deliveryAddress?: Record<string, any>;
+      assetSubtype: string;
+      totalQuoted: number;
+    },
+  ) {
+    const tenant = await this.tenantRepo.findOne({ where: { id: tenantId } });
+    if (!tenant) return { valid: false, reason: 'tenant_missing' };
+    const settings = await this.settingsService.getSettings(tenantId);
+
+    const channels = this.resolveChannels({
+      requested: 'sms',
+      settings,
+      customerEmail: body.customerEmail || null,
+      customerPhone: body.customerPhone || null,
+    });
+
+    // Use a stable preview placeholder for the link — the real token is created on send.
+    const previewLink = `https://${process.env.WEB_DOMAIN || 'serviceos-web-zeta.vercel.app'}/quote/preview`;
+    const expiresAt = new Date(Date.now() + settings.quote_expiration_days * 24 * 60 * 60 * 1000);
+    const templateCtx = this.buildTemplateContext({
+      tenant,
+      customerName: body.customerName || null,
+      assetSubtype: body.assetSubtype,
+      totalQuoted: body.totalQuoted,
+      deliveryAddress: body.deliveryAddress || null,
+      expiresAt,
+      viewQuoteUrl: previewLink,
+    });
+
+    const renderedBody = renderTemplate(
+      getTemplate('quote_sms_body', settings.quote_templates),
+      templateCtx,
+    );
+
+    const valid = channels.sms.allowed && !!renderedBody.trim();
+    return {
+      valid,
+      reason: valid ? undefined : channels.sms.blockedReason || 'empty_body',
+      body: renderedBody,
+      recipient: channels.sms.recipient,
+      from_number: settings.sms_phone_number,
+      character_count: renderedBody.length,
+    };
   }
 
   /**
