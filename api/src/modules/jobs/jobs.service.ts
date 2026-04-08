@@ -73,6 +73,14 @@ export class JobsService {
   ) {}
 
   async create(tenantId: string, dto: CreateJobDto): Promise<Job> {
+    // Validate that the asset (if provided) belongs to this tenant before creating the job.
+    if (dto.assetId) {
+      const asset = await this.assetRepo.findOne({
+        where: { id: dto.assetId, tenant_id: tenantId },
+      });
+      if (!asset) throw new NotFoundException('Asset not found');
+    }
+
     const today = new Date();
     const dateStr = today.toISOString().slice(0, 10).replace(/-/g, '');
 
@@ -143,10 +151,13 @@ export class JobsService {
 
     // Reserve asset if one was assigned at creation
     if (savedJob.asset_id) {
-      await this.assetRepo.update(savedJob.asset_id, {
-        status: 'reserved',
-        current_job_id: savedJob.id,
-      } as any);
+      await this.assetRepo.update(
+        { id: savedJob.asset_id, tenant_id: tenantId } as any,
+        {
+          status: 'reserved',
+          current_job_id: savedJob.id,
+        } as any,
+      );
     }
 
     // Auto-create POS invoice for delivery jobs with a price
@@ -556,7 +567,7 @@ export class JobsService {
               (li) => li.name?.toLowerCase().includes('failed'),
             );
             if (hasFailedLine && inv.status !== 'voided') {
-              await this.billingService.voidInternalInvoice(inv.id, 'Failed trip charge reversed — job completed successfully');
+              await this.billingService.voidInternalInvoice(inv.id, tenantId, 'Failed trip charge reversed — job completed successfully');
             }
           }
         } catch { /* reversal is best-effort */ }
@@ -698,7 +709,7 @@ export class JobsService {
     // Asset info
     let assetInfo: Record<string, any> | null = null;
     if (job.asset_id) {
-      const asset = await this.assetRepo.findOne({ where: { id: job.asset_id } });
+      const asset = await this.assetRepo.findOne({ where: { id: job.asset_id, tenant_id: tenantId } });
       if (asset) {
         assetInfo = { status: asset.status, identifier: asset.identifier };
       }
@@ -821,12 +832,15 @@ export class JobsService {
 
         // Release pickup's asset
         if (pickupJob.asset_id) {
-          const pickupAsset = await this.assetRepo.findOne({ where: { id: pickupJob.asset_id } });
+          const pickupAsset = await this.assetRepo.findOne({ where: { id: pickupJob.asset_id, tenant_id: tenantId } });
           if (pickupAsset) {
-            await this.assetRepo.update(pickupJob.asset_id, {
-              status: 'available',
-              current_job_id: null,
-            } as any);
+            await this.assetRepo.update(
+              { id: pickupJob.asset_id, tenant_id: tenantId } as any,
+              {
+                status: 'available',
+                current_job_id: null,
+              } as any,
+            );
             assetsReleased.push({ id: pickupAsset.id, identifier: pickupAsset.identifier });
           }
         }
@@ -835,15 +849,18 @@ export class JobsService {
 
     // 4. Asset release for main task
     if (job.asset_id) {
-      const asset = await this.assetRepo.findOne({ where: { id: job.asset_id } });
+      const asset = await this.assetRepo.findOne({ where: { id: job.asset_id, tenant_id: tenantId } });
       if (asset) {
         const preDeliveryStatuses = ['pending', 'confirmed'];
         if (preDeliveryStatuses.includes(previousStatus)) {
           // Not yet delivered — release back to available
-          await this.assetRepo.update(job.asset_id, {
-            status: 'available',
-            current_job_id: null,
-          } as any);
+          await this.assetRepo.update(
+            { id: job.asset_id, tenant_id: tenantId } as any,
+            {
+              status: 'available',
+              current_job_id: null,
+            } as any,
+          );
           // Only add if not already in the released list
           if (!assetsReleased.find((a) => a.id === asset.id)) {
             assetsReleased.push({ id: asset.id, identifier: asset.identifier });
@@ -893,7 +910,7 @@ export class JobsService {
 
     const chainIds = [...new Set(chainLinks.map((l) => l.rental_chain_id))];
     for (const chainId of chainIds) {
-      await this.rentalChainRepo.update(chainId, { status: 'cancelled' });
+      await this.rentalChainRepo.update({ id: chainId, tenant_id: tenantId }, { status: 'cancelled' });
       rentalChainsCancelled.push({ id: chainId });
     }
 
@@ -908,18 +925,19 @@ export class JobsService {
 
   private async updateAssetOnJobStatus(job: Job, newStatus: string): Promise<void> {
     if (!job.asset_id) return;
+    const tenant_id = job.tenant_id;
 
     switch (newStatus) {
       case 'confirmed':
       case 'dispatched':
-        await this.assetRepo.update(job.asset_id, {
+        await this.assetRepo.update({ id: job.asset_id, tenant_id } as any, {
           status: 'reserved',
           current_job_id: job.id,
         } as any);
         break;
 
       case 'en_route':
-        await this.assetRepo.update(job.asset_id, {
+        await this.assetRepo.update({ id: job.asset_id, tenant_id } as any, {
           status: 'in_transit',
           current_job_id: job.id,
           current_location_type: 'in_transit',
@@ -937,7 +955,7 @@ export class JobsService {
 
       case 'cancelled':
       case 'failed':
-        await this.assetRepo.update(job.asset_id, {
+        await this.assetRepo.update({ id: job.asset_id, tenant_id } as any, {
           status: 'available',
           current_job_id: null,
           current_location_type: 'yard',
@@ -948,45 +966,46 @@ export class JobsService {
 
   private async handleCompletedAsset(job: Job): Promise<void> {
     const jobType = job.job_type;
+    const tenant_id = job.tenant_id;
 
     if (jobType === 'delivery' || jobType === 'drop_off') {
-      await this.assetRepo.update(job.asset_id, {
+      await this.assetRepo.update({ id: job.asset_id, tenant_id } as any, {
         status: 'on_site',
         current_job_id: job.id,
         current_location_type: 'customer_site',
       } as any);
     } else if (jobType === 'pickup' || jobType === 'removal') {
-      await this.assetRepo.update(job.asset_id, {
+      await this.assetRepo.update({ id: job.asset_id, tenant_id } as any, {
         status: 'available',
         current_job_id: null,
         current_location_type: 'yard',
         needs_dump: true,
       } as any);
       // Log history
-      const pickupAsset = await this.assetRepo.findOne({ where: { id: job.asset_id } });
+      const pickupAsset = await this.assetRepo.findOne({ where: { id: job.asset_id, tenant_id } });
       if (pickupAsset) {
         const hist = Array.isArray(pickupAsset.operational_history) ? [...pickupAsset.operational_history] : [];
         hist.push({ event: 'picked_up', timestamp: new Date().toISOString(), job_id: job.id, details: { from: 'customer_site' } });
         if (hist.length > 50) hist.splice(0, hist.length - 50);
-        await this.assetRepo.update(job.asset_id, { operational_history: hist } as any);
+        await this.assetRepo.update({ id: job.asset_id, tenant_id } as any, { operational_history: hist } as any);
       }
     } else if (jobType === 'exchange') {
       // Old asset (main asset_id) returns to yard
-      await this.assetRepo.update(job.asset_id, {
+      await this.assetRepo.update({ id: job.asset_id, tenant_id } as any, {
         status: 'available',
         current_job_id: null,
         current_location_type: 'yard',
       } as any);
       // New asset (drop_off_asset_id) goes to customer site
       if (job.drop_off_asset_id) {
-        await this.assetRepo.update(job.drop_off_asset_id, {
+        await this.assetRepo.update({ id: job.drop_off_asset_id, tenant_id } as any, {
           status: 'on_site',
           current_job_id: job.id,
           current_location_type: 'customer_site',
         } as any);
       }
     } else if (jobType === 'dump_run' || jobType === 'dump_and_return') {
-      await this.assetRepo.update(job.asset_id, {
+      await this.assetRepo.update({ id: job.asset_id, tenant_id } as any, {
         status: 'available',
         current_job_id: null,
         current_location_type: 'yard',
@@ -996,12 +1015,12 @@ export class JobsService {
         staged_waste_type: null,
         staged_notes: null,
       } as any);
-      const dumpAsset = await this.assetRepo.findOne({ where: { id: job.asset_id } });
+      const dumpAsset = await this.assetRepo.findOne({ where: { id: job.asset_id, tenant_id } });
       if (dumpAsset) {
         const hist = Array.isArray(dumpAsset.operational_history) ? [...dumpAsset.operational_history] : [];
         hist.push({ event: 'dump_run_completed', timestamp: new Date().toISOString(), job_id: job.id, details: { now: 'ready_for_rental' } });
         if (hist.length > 50) hist.splice(0, hist.length - 50);
-        await this.assetRepo.update(job.asset_id, { operational_history: hist } as any);
+        await this.assetRepo.update({ id: job.asset_id, tenant_id } as any, { operational_history: hist } as any);
       }
     }
   }
@@ -1272,7 +1291,7 @@ export class JobsService {
         },
       });
       if (pickupJob) {
-        await this.jobsRepository.update(pickupJob.id, { scheduled_date: updates.rental_end_date as string });
+        await this.jobsRepository.update({ id: pickupJob.id, tenant_id: tenantId }, { scheduled_date: updates.rental_end_date as string });
       }
     }
 
@@ -1329,7 +1348,7 @@ export class JobsService {
     // Update parent's linked_job_ids
     const linkedIds = Array.isArray(parent.linked_job_ids) ? [...parent.linked_job_ids] : [];
     jobs.forEach(j => linkedIds.push(j.id));
-    await this.jobsRepository.update(parentJobId, { linked_job_ids: linkedIds });
+    await this.jobsRepository.update({ id: parentJobId, tenant_id: tenantId }, { linked_job_ids: linkedIds });
 
     return { jobs, parentJobId };
   }
@@ -1406,10 +1425,10 @@ export class JobsService {
   async stageAtYard(tenantId: string, jobId: string, body: { wasteType?: string; notes?: string }) {
     const job = await this.findOne(tenantId, jobId);
 
-    await this.jobsRepository.update(jobId, { dump_disposition: 'staged' });
+    await this.jobsRepository.update({ id: jobId, tenant_id: tenantId }, { dump_disposition: 'staged' });
 
     if (job.asset_id) {
-      await this.assetRepo.update(job.asset_id, {
+      await this.assetRepo.update({ id: job.asset_id, tenant_id: tenantId } as any, {
         status: 'full_staged',
         staged_at: new Date(),
         staged_from_job_id: jobId,
@@ -1423,8 +1442,8 @@ export class JobsService {
     return this.findOne(tenantId, jobId);
   }
 
-  async updateAssetStatus(assetId: string, status: string): Promise<void> {
-    await this.assetRepo.update(assetId, { status, current_job_id: null } as any);
+  async updateAssetStatus(assetId: string, tenantId: string, status: string): Promise<void> {
+    await this.assetRepo.update({ id: assetId, tenant_id: tenantId } as any, { status, current_job_id: null } as any);
   }
 
   async softDelete(tenantId: string, id: string): Promise<void> {
@@ -1489,7 +1508,7 @@ export class JobsService {
 
     // Update assets to "scheduled_dump"
     for (const assetId of body.assetIds) {
-      await this.assetRepo.update(assetId, { current_job_id: saved.id } as any);
+      await this.assetRepo.update({ id: assetId, tenant_id: tenantId } as any, { current_job_id: saved.id } as any);
     }
 
     return saved;

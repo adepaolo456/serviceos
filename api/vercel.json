@@ -33,11 +33,11 @@
   ],
   "crons": [
     {
-      "path": "/automation/cron/overdue-scan?secret=SERVICEOS_CRON_SECRET_2026",
+      "path": "/automation/cron/overdue-scan",
       "schedule": "0 12 * * *"
     },
     {
-      "path": "/automation/cron/quote-follow-ups?secret=SERVICEOS_CRON_SECRET_2026",
+      "path": "/automation/cron/quote-follow-ups",
       "schedule": "0 * * * *"
     }
   ]

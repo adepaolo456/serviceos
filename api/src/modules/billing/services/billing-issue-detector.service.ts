@@ -448,8 +448,8 @@ export class BillingIssueDetectorService {
     todayStr: string,
   ): Promise<BillingIssue | null> {
     const chains = await this.dataSource.query(
-      `SELECT * FROM rental_chains WHERE id = $1 AND status = 'active'`,
-      [invoice.rental_chain_id],
+      `SELECT * FROM rental_chains WHERE id = $1 AND tenant_id = $2 AND status = 'active'`,
+      [invoice.rental_chain_id, tenantId],
     );
     if (!chains.length) return null;
 
@@ -531,7 +531,7 @@ export class BillingIssueDetectorService {
     resolved: ResolvedPrice,
   ): Promise<BillingIssue | null> {
     const dumpCosts = await this.jobCostRepo.find({
-      where: { job_id: job.id, cost_type: 'dump_expense' },
+      where: { job_id: job.id, tenant_id: tenantId, cost_type: 'dump_expense' },
     });
 
     // Sum all weights across all dump costs for this job
@@ -570,7 +570,7 @@ export class BillingIssueDetectorService {
       }),
     );
 
-    const invoice = await this.invoiceRepo.findOneBy({ id: invoiceId });
+    const invoice = await this.invoiceRepo.findOneBy({ id: invoiceId, tenant_id: tenantId });
     if (invoice) await this.recalculateInvoiceTotals(invoice);
 
     return this.createIssueIfNotExists(tenantId, {
