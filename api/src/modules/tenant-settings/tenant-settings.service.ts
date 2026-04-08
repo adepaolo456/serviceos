@@ -117,6 +117,8 @@ export class TenantSettingsService {
   ): Promise<TenantSettings> {
     await this.getSettings(tenantId);
     const update: Record<string, unknown> = {};
+    if (dto.quote_follow_up_enabled !== undefined) update.quote_follow_up_enabled = dto.quote_follow_up_enabled;
+    if (dto.quote_follow_up_delay_hours !== undefined) update.quote_follow_up_delay_hours = dto.quote_follow_up_delay_hours;
     if (dto.quote_expiration_days !== undefined) update.quote_expiration_days = dto.quote_expiration_days;
     if (dto.hot_quote_view_threshold !== undefined) update.hot_quote_view_threshold = dto.hot_quote_view_threshold;
     if (dto.follow_up_recency_minutes !== undefined) update.follow_up_recency_minutes = dto.follow_up_recency_minutes;

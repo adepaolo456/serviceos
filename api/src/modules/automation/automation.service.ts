@@ -1,13 +1,16 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, LessThan, In, IsNull, Not } from 'typeorm';
+import { Repository, DataSource, LessThan, In, IsNull, Not } from 'typeorm';
 import { Job } from '../jobs/entities/job.entity';
 import { Customer } from '../customers/entities/customer.entity';
 import { PricingRule } from '../pricing/entities/pricing-rule.entity';
 import { Tenant } from '../tenants/entities/tenant.entity';
 import { Invoice } from '../billing/entities/invoice.entity';
 import { Notification } from '../notifications/entities/notification.entity';
+import { Quote } from '../quotes/quote.entity';
 import { NotificationsService } from '../notifications/notifications.service';
+import { TenantSettingsService } from '../tenant-settings/tenant-settings.service';
+import { getTemplate, renderTemplate } from '../quotes/quote-templates';
 
 @Injectable()
 export class AutomationService {
@@ -20,7 +23,10 @@ export class AutomationService {
     @InjectRepository(Tenant) private tenantRepo: Repository<Tenant>,
     @InjectRepository(Invoice) private invoiceRepo: Repository<Invoice>,
     @InjectRepository(Notification) private notifRepo: Repository<Notification>,
+    @InjectRepository(Quote) private quoteRepo: Repository<Quote>,
     private notificationsService: NotificationsService,
+    private settingsService: TenantSettingsService,
+    private dataSource: DataSource,
   ) {}
 
   async scanOverdueRentals(tenantId?: string) {
@@ -284,5 +290,99 @@ export class AutomationService {
     }));
 
     return { overdueCount: overdueInvoices.length, remindersSent };
+  }
+
+  /**
+   * Process automatic quote follow-ups across all enabled tenants.
+   * Runs via Vercel Cron — must be idempotent and safe for overlapping executions.
+   */
+  async processQuoteFollowUps() {
+    const now = new Date();
+    let processed = 0, sent = 0, skipped = 0;
+
+    // Find all tenants with follow-ups enabled
+    const enabledTenants = await this.dataSource.query(
+      `SELECT tenant_id, quote_follow_up_delay_hours, quote_templates
+       FROM tenant_settings
+       WHERE quote_follow_up_enabled = true`,
+    );
+
+    for (const ts of enabledTenants) {
+      const delayMs = (ts.quote_follow_up_delay_hours ?? 24) * 60 * 60 * 1000;
+      const cutoff = new Date(now.getTime() - delayMs);
+
+      // Find eligible quotes: sent, not expired, not followed up, last_sent before cutoff
+      const eligible = await this.quoteRepo.createQueryBuilder('q')
+        .where('q.tenant_id = :tenantId', { tenantId: ts.tenant_id })
+        .andWhere('q.status = :status', { status: 'sent' })
+        .andWhere('q.auto_follow_up_sent_at IS NULL')
+        .andWhere('q.expires_at > :now', { now })
+        .andWhere('q.customer_email IS NOT NULL')
+        .andWhere("q.customer_email != ''")
+        .andWhere('q.last_sent_at IS NOT NULL')
+        .andWhere('q.last_sent_at <= :cutoff', { cutoff })
+        .take(20)
+        .getMany();
+
+      for (const quote of eligible) {
+        processed++;
+
+        // Atomic claim: only proceed if we successfully mark it
+        const claimed = await this.quoteRepo.createQueryBuilder()
+          .update(Quote)
+          .set({ auto_follow_up_sent_at: now })
+          .where('id = :id AND auto_follow_up_sent_at IS NULL', { id: quote.id })
+          .execute();
+
+        if (!claimed.affected || claimed.affected === 0) {
+          skipped++;
+          continue; // Another execution already claimed this quote
+        }
+
+        // Load tenant for branding
+        const tenant = await this.tenantRepo.findOne({ where: { id: ts.tenant_id } });
+        if (!tenant) { skipped++; continue; }
+
+        // Build template context
+        const webDomain = process.env.WEB_DOMAIN || 'serviceos-web-zeta.vercel.app';
+        const viewQuoteUrl = quote.token ? `https://${webDomain}/quote/${encodeURIComponent(quote.token)}` : '';
+        const addressStr = quote.delivery_address
+          ? [quote.delivery_address.street, quote.delivery_address.city, quote.delivery_address.state, quote.delivery_address.zip].filter(Boolean).join(', ')
+          : '';
+
+        const ctx = {
+          customer_name: quote.customer_name || 'Customer',
+          company_name: tenant.name,
+          quote_price: `$${Number(quote.total_quoted).toFixed(2)}`,
+          quote_link: viewQuoteUrl,
+          dumpster_size: (quote.asset_subtype || '').replace('yd', ' Yard'),
+          service_address: addressStr,
+          expires_at: new Date(quote.expires_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
+          company_phone: (tenant as any).website_phone || '',
+          company_email: (tenant as any).website_email || '',
+        };
+
+        const templates = ts.quote_templates || null;
+        const subject = renderTemplate(getTemplate('followup_email_subject', templates), ctx);
+        const body = renderTemplate(getTemplate('followup_email_body', templates), ctx);
+
+        try {
+          await this.notificationsService.send(ts.tenant_id, {
+            channel: 'email',
+            type: 'quote_follow_up',
+            recipient: quote.customer_email,
+            subject,
+            body,
+          });
+          sent++;
+          this.logger.log(`Follow-up sent for quote ${quote.quote_number} to ${quote.customer_email}`);
+        } catch (err: any) {
+          this.logger.error(`Follow-up failed for quote ${quote.id}: ${err.message}`);
+          // Claim stays — we don't retry in V1 to avoid spam
+        }
+      }
+    }
+
+    return { processed, sent, skipped, timestamp: now.toISOString() };
   }
 }

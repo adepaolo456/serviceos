@@ -166,6 +166,12 @@ export class UpdateQuoteTemplatesDto {
 }
 
 export class UpdateQuoteSettingsDto {
+  @ApiPropertyOptional() @IsOptional() @IsBoolean()
+  quote_follow_up_enabled?: boolean;
+
+  @ApiPropertyOptional() @IsOptional() @IsInt() @Min(1) @Max(168)
+  quote_follow_up_delay_hours?: number;
+
   @ApiPropertyOptional() @IsOptional() @IsInt() @Min(1) @Max(365)
   quote_expiration_days?: number;
 
