@@ -164,20 +164,34 @@ function daysBetween(a: string, b: string): number {
 }
 
 /**
- * Per-row Blocked predicate. MUST stay in lockstep with
- * AnalyticsService.getJobsSummary() — if the backend count diverges from
- * what the UI paints, operators lose trust in the tile.
+ * Reasons a job can be flagged as Blocked. Ordered by priority —
+ * `getBlockedReason` returns the first matching reason, so
+ * `billing_issue` takes precedence over `unpaid_completed_invoice`
+ * when a job satisfies both. A billing issue is an explicit flag raised
+ * by a detector (stronger signal), while the completed-unpaid case is
+ * a fallback derivation from invoice state.
  *
- * A job is Blocked when EITHER:
- *   (a) it has ≥1 open billing issue, OR
- *   (b) job.status === "completed" AND linked invoice has
- *       balance_due > 0 AND invoice status is NOT paid/partial/voided.
- *
- * "Blocked" is purely a computed UI + analytics layer. It is NOT written to
- * job.status and does NOT change any lifecycle/dispatch behavior.
+ * "Blocked" and every reason below are purely a computed UI + analytics
+ * layer. Nothing here is written to job.status, and neither
+ * deriveDisplayStatus nor any lifecycle logic consults this value.
  */
-function isJobBlocked(job: Job): boolean {
-  if ((job.open_billing_issue_count ?? 0) > 0) return true;
+type BlockedReason = "billing_issue" | "unpaid_completed_invoice" | null;
+
+/**
+ * Derive the blocked reason from an enriched Job row. Uses ONLY fields
+ * that are already present on the jobs API response when
+ * `enrichment=board` is set — no extra fetches, no cross-tenant reads.
+ *
+ * MUST stay in lockstep with the backend aggregate at
+ * AnalyticsService.getJobsSummary() — if a tenant has N blocked jobs
+ * per the analytics tile, this helper must classify exactly N rows.
+ * The UNION of `billing_issue` and `unpaid_completed_invoice` is
+ * therefore identical to `isJobBlocked` by construction (see below).
+ */
+function getBlockedReason(job: Job): BlockedReason {
+  if ((job.open_billing_issue_count ?? 0) > 0) {
+    return "billing_issue";
+  }
   const inv = job.linked_invoice;
   if (
     job.status === "completed" &&
@@ -185,9 +199,19 @@ function isJobBlocked(job: Job): boolean {
     Number(inv.balance_due) > 0 &&
     !["paid", "partial", "voided"].includes(inv.status)
   ) {
-    return true;
+    return "unpaid_completed_invoice";
   }
-  return false;
+  return null;
+}
+
+/**
+ * Per-row Blocked predicate. Delegates to `getBlockedReason` so the
+ * "is it blocked?" answer and the "why is it blocked?" answer can
+ * never drift. MUST also stay in lockstep with
+ * AnalyticsService.getJobsSummary() on the backend.
+ */
+function isJobBlocked(job: Job): boolean {
+  return getBlockedReason(job) !== null;
 }
 
 function getDateRange(range: string): { dateFrom?: string; dateTo?: string } {
@@ -218,6 +242,11 @@ export default function JobsPage() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [total, setTotal] = useState(0);
   const [statusFilter, setStatusFilter] = useState("all");
+  // Blocked drill-down sub-filter. Only meaningful when statusFilter === "blocked".
+  // Operates on the already-fetched blocked slice — does NOT re-fetch.
+  const [blockedSubview, setBlockedSubview] = useState<
+    "all" | "billing_issue" | "unpaid_completed_invoice"
+  >("all");
   const [dateRange, setDateRange] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState("date_desc");
@@ -338,6 +367,12 @@ export default function JobsPage() {
 
   useEffect(() => { setPage(1); }, [statusFilter, dateRange]);
 
+  // Reset the Blocked sub-view whenever the user leaves the Blocked
+  // filter, so re-entering always starts clean on "all".
+  useEffect(() => {
+    if (statusFilter !== "blocked") setBlockedSubview("all");
+  }, [statusFilter]);
+
   const getCount = (s: string) => {
     if (s === "all") return statusCounts.reduce((sum, c) => sum + Number(c.count), 0);
     if (s === "overdue") return overdueCount;
@@ -354,8 +389,29 @@ export default function JobsPage() {
   const PRIMARY_STATUSES = ["all", "overdue", "unassigned", "assigned"] as const;
   const SECONDARY_STATUSES = ["en_route", "arrived", "completed", "cancelled"] as const;
 
+  // Per-reason counts inside the current blocked slice, used by the
+  // sub-filter pills. Recomputed whenever the fetched slice changes.
+  const blockedReasonCounts = useMemo(() => {
+    if (statusFilter !== "blocked") {
+      return { all: 0, billing_issue: 0, unpaid_completed_invoice: 0 };
+    }
+    let billing_issue = 0;
+    let unpaid_completed_invoice = 0;
+    for (const j of jobs) {
+      const reason = getBlockedReason(j);
+      if (reason === "billing_issue") billing_issue++;
+      else if (reason === "unpaid_completed_invoice") unpaid_completed_invoice++;
+    }
+    return { all: jobs.length, billing_issue, unpaid_completed_invoice };
+  }, [jobs, statusFilter]);
+
   const filteredJobs = useMemo(() => {
     let result = [...jobs];
+    // Blocked drill-down: narrow the already-fetched blocked slice by
+    // reason. Pure client-side — no extra fetch.
+    if (statusFilter === "blocked" && blockedSubview !== "all") {
+      result = result.filter((j) => getBlockedReason(j) === blockedSubview);
+    }
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       result = result.filter((j) => {
@@ -383,7 +439,7 @@ export default function JobsPage() {
       return 0;
     });
     return result;
-  }, [jobs, searchQuery, sortBy]);
+  }, [jobs, searchQuery, sortBy, statusFilter, blockedSubview]);
 
   const thStyle: React.CSSProperties = { padding: "10px 16px", textAlign: "left", fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--t-text-muted)", whiteSpace: "nowrap" };
 
@@ -589,6 +645,69 @@ export default function JobsPage() {
         </div>
       </div>
 
+      {/* ─── Blocked sub-filter (reason segmentation) ─── */}
+      {/*
+       * Only rendered when the Blocked tile is active. Pure client-side
+       * narrowing of the already-fetched blocked slice — no extra fetch,
+       * no new endpoint. Labels resolve through FEATURE_REGISTRY so
+       * tenant overrides and Help Center tooltips stay consistent with
+       * the Blocked tile itself.
+       */}
+      {statusFilter === "blocked" && (
+        <div className="surface-card mb-5" style={{ padding: "8px 14px", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <span style={{ fontSize: 11, fontWeight: 500, color: "var(--t-text-muted)" }}>
+            Reason:
+          </span>
+          {([
+            {
+              key: "all" as const,
+              // Fully registry-driven — no inline composition. The
+              // `blocked_subview_all` entry exists specifically to keep
+              // this label flowing through FEATURE_REGISTRY so tenant
+              // overrides apply uniformly across every pill.
+              label: FEATURE_REGISTRY.blocked_subview_all?.label ?? "All Blocked",
+              count: blockedReasonCounts.all,
+              featureId: "blocked_subview_all",
+            },
+            {
+              key: "billing_issue" as const,
+              label: FEATURE_REGISTRY.blocked_reason_billing_issue?.label ?? "Billing Issue",
+              count: blockedReasonCounts.billing_issue,
+              featureId: "blocked_reason_billing_issue",
+            },
+            {
+              key: "unpaid_completed_invoice" as const,
+              label: FEATURE_REGISTRY.blocked_reason_unpaid_completed_invoice?.label ?? "Unpaid Invoice",
+              count: blockedReasonCounts.unpaid_completed_invoice,
+              featureId: "blocked_reason_unpaid_completed_invoice",
+            },
+          ]).map((opt) => {
+            const isActive = blockedSubview === opt.key;
+            const tooltip = FEATURE_REGISTRY[opt.featureId]?.shortDescription;
+            return (
+              <button
+                key={opt.key}
+                onClick={() => setBlockedSubview(opt.key)}
+                title={tooltip}
+                style={{
+                  display: "inline-flex", alignItems: "center", gap: 5,
+                  padding: "4px 10px", borderRadius: 6,
+                  fontSize: 11, fontWeight: isActive ? 600 : 500,
+                  background: isActive ? "var(--t-error-soft)" : "transparent",
+                  color: isActive ? "var(--t-error)" : "var(--t-text-secondary)",
+                  border: "none", cursor: "pointer", transition: "all 0.12s ease",
+                }}
+              >
+                {opt.label}
+                <span style={{ fontSize: 10, fontWeight: 700, opacity: isActive ? 1 : 0.6 }}>
+                  {opt.count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       {/* ─── Job Table ─── */}
       {loading ? (
         <div className="space-y-2">
@@ -599,12 +718,44 @@ export default function JobsPage() {
       ) : filteredJobs.length === 0 ? (
         <div className="surface-card py-20 flex flex-col items-center justify-center text-center">
           <Briefcase size={44} style={{ color: "var(--t-text-tertiary)" }} className="mb-3" />
-          <h2 style={{ fontSize: 17, fontWeight: 600, color: "var(--t-text-primary)" }} className="mb-1">
-            {(statusFilter !== "all" || dateRange !== "all" || searchQuery) ? "No matching jobs" : "No jobs yet"}
-          </h2>
-          <p style={{ fontSize: 13, color: "var(--t-text-muted)" }} className="mb-5">
-            {(statusFilter !== "all" || dateRange !== "all" || searchQuery) ? "Try adjusting your filters or search" : "Create your first job to get started"}
-          </p>
+          {(() => {
+            // Contextual empty state. Blocked + sub-filter gets its own
+            // copy so operators understand WHY the list is empty — the
+            // sub-filter may be hiding rows that exist in "All Blocked".
+            let heading: string;
+            let description: string;
+            if (statusFilter === "blocked") {
+              const rangeSuffix = dateRange === "all" ? "" : " in this date range";
+              if (blockedSubview === "billing_issue") {
+                const label = FEATURE_REGISTRY.blocked_reason_billing_issue?.label ?? "Billing Issue";
+                heading = `No blocked jobs with a ${label}`;
+                description = `No jobs currently have open billing issues${rangeSuffix}. Try another reason or clear the sub-filter.`;
+              } else if (blockedSubview === "unpaid_completed_invoice") {
+                const label = FEATURE_REGISTRY.blocked_reason_unpaid_completed_invoice?.label ?? "Unpaid Invoice";
+                heading = `No blocked jobs with an ${label}`;
+                description = `No completed jobs currently have an unpaid invoice${rangeSuffix}. Try another reason or clear the sub-filter.`;
+              } else {
+                heading = "No blocked jobs";
+                description = `Everything is unblocked${rangeSuffix} — nice.`;
+              }
+            } else if (statusFilter !== "all" || dateRange !== "all" || searchQuery) {
+              heading = "No matching jobs";
+              description = "Try adjusting your filters or search";
+            } else {
+              heading = "No jobs yet";
+              description = "Create your first job to get started";
+            }
+            return (
+              <>
+                <h2 style={{ fontSize: 17, fontWeight: 600, color: "var(--t-text-primary)" }} className="mb-1">
+                  {heading}
+                </h2>
+                <p style={{ fontSize: 13, color: "var(--t-text-muted)" }} className="mb-5">
+                  {description}
+                </p>
+              </>
+            );
+          })()}
           {(statusFilter !== "all" || dateRange !== "all" || searchQuery) ? (
             <button onClick={() => { setStatusFilter("all"); setDateRange("all"); setSearchQuery(""); }}
               className="inline-flex items-center gap-1.5 rounded-full border px-4 py-2 text-sm font-medium transition-colors"
@@ -720,10 +871,44 @@ export default function JobsPage() {
                         </span>
                       </td>
 
-                      {/* Customer (primary) + Job # (secondary) */}
+                      {/* Customer (primary) + Job # (secondary) + blocked reason (blocked view only) */}
                       <td style={{ padding: "12px 16px" }}>
                         <p style={{ fontWeight: 600, fontSize: 13, color: "var(--t-text-primary)", lineHeight: 1.3 }}>{customerName || <span style={{ color: "var(--t-text-tertiary)" }}>No customer</span>}</p>
                         <p style={{ fontSize: 11, color: "var(--t-text-muted)", fontVariantNumeric: "tabular-nums", marginTop: 1 }}>{job.job_number}</p>
+                        {statusFilter === "blocked" && (() => {
+                          // Reason badge with quick-action navigation. Only rendered
+                          // in the Blocked drill-down view. Clicking the badge jumps
+                          // to the existing workflow for that reason — reuse, not
+                          // new routes. `stopPropagation` prevents the row-click
+                          // from also firing (which would navigate to the job).
+                          const reason = getBlockedReason(job);
+                          if (!reason) return null;
+                          const featureId = reason === "billing_issue"
+                            ? "blocked_reason_billing_issue"
+                            : "blocked_reason_unpaid_completed_invoice";
+                          const feature = FEATURE_REGISTRY[featureId];
+                          const target = reason === "billing_issue"
+                            ? `/billing-issues?jobId=${job.id}`
+                            : `/invoices?jobId=${job.id}`;
+                          return (
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); router.push(target); }}
+                              title={feature?.shortDescription}
+                              style={{
+                                display: "inline-flex", alignItems: "center", gap: 4,
+                                marginTop: 4, padding: "1px 6px",
+                                borderRadius: 4, border: "none", cursor: "pointer",
+                                background: "var(--t-error-soft)",
+                                color: "var(--t-error)",
+                                fontSize: 10, fontWeight: 600,
+                              }}
+                            >
+                              {feature?.label ?? reason}
+                              <ArrowRight style={{ width: 9, height: 9 }} />
+                            </button>
+                          );
+                        })()}
                       </td>
 
                       {/* Address */}
