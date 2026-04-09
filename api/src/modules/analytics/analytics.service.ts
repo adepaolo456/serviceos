@@ -120,6 +120,193 @@ export class AnalyticsService {
     }));
   }
 
+  /**
+   * Tenant-wide operational blocker counts for the Jobs page top strip.
+   * Each count is a scalar — the Jobs page reads these directly to
+   * populate its tiles without paginating through all jobs. Zero mutation.
+   *
+   * Blocker definitions:
+   *   - payment_blocked: jobs with a linked invoice whose status is not
+   *     in ('paid','partial','voided') AND balance_due > 0, in a
+   *     non-terminal job state. Matches the dispatch board + enrichment
+   *     predicate at dispatch.service.ts:39 and jobs.service.ts
+   *     enrichJobsForBoard's dispatch_ready derivation.
+   *   - billing_issue: jobs with at least one `open` billing issue.
+   *   - unassigned_active: jobs with no driver AND not in a terminal
+   *     state (matches existing Jobs page "unassigned" semantics).
+   */
+  async getJobsByBlocker(tenantId: string): Promise<{
+    payment_blocked: number;
+    billing_issue: number;
+    unassigned_active: number;
+  }> {
+    const [paymentBlockedRow, billingIssueRow, unassignedActiveRow] = await Promise.all([
+      // payment_blocked: inner join invoices, scoped to tenant on both sides
+      this.jobsRepository
+        .createQueryBuilder('j')
+        .innerJoin(
+          'invoices',
+          'inv',
+          'inv.job_id = j.id AND inv.tenant_id = j.tenant_id',
+        )
+        .where('j.tenant_id = :tenantId', { tenantId })
+        .andWhere('j.status NOT IN (:...terminalJobStatuses)', {
+          terminalJobStatuses: ['completed', 'cancelled', 'voided'],
+        })
+        .andWhere('inv.status NOT IN (:...terminalInvoiceStatuses)', {
+          terminalInvoiceStatuses: ['paid', 'partial', 'voided'],
+        })
+        .andWhere('inv.balance_due > 0')
+        .select('COUNT(DISTINCT j.id)::int', 'count')
+        .getRawOne<{ count: number }>(),
+
+      // billing_issue: distinct jobs with at least one open billing issue
+      this.jobsRepository
+        .createQueryBuilder('j')
+        .innerJoin(
+          'billing_issues',
+          'bi',
+          'bi.job_id = j.id AND bi.tenant_id = j.tenant_id',
+        )
+        .where('j.tenant_id = :tenantId', { tenantId })
+        .andWhere('bi.status = :openStatus', { openStatus: 'open' })
+        .select('COUNT(DISTINCT j.id)::int', 'count')
+        .getRawOne<{ count: number }>(),
+
+      // unassigned_active: matches the Jobs page's existing "unassigned"
+      // tile — jobs with no driver in non-terminal state.
+      this.jobsRepository
+        .createQueryBuilder('j')
+        .where('j.tenant_id = :tenantId', { tenantId })
+        .andWhere('j.assigned_driver_id IS NULL')
+        .andWhere('j.status NOT IN (:...terminalJobStatuses)', {
+          terminalJobStatuses: ['completed', 'cancelled'],
+        })
+        .select('COUNT(*)::int', 'count')
+        .getRawOne<{ count: number }>(),
+    ]);
+
+    return {
+      payment_blocked: Number(paymentBlockedRow?.count ?? 0),
+      billing_issue: Number(billingIssueRow?.count ?? 0),
+      unassigned_active: Number(unassignedActiveRow?.count ?? 0),
+    };
+  }
+
+  /**
+   * Jobs page top-strip summary counts. Multi-tenant scoped.
+   *
+   * `blocked` is a computed UI/analytics layer — NOT a job status and NOT
+   * stored anywhere. A job is considered Blocked when:
+   *   (a) it has at least one billing issue with `status = 'open'`, OR
+   *   (b) it has `status = 'completed'` AND its linked invoice has
+   *       `balance_due > 0` AND the invoice status is NOT in
+   *       ('paid','partial','voided').
+   *
+   * The union is counted via COUNT(DISTINCT j.id), so a job matching both
+   * conditions is counted once. The frontend per-row predicate
+   * (`isJobBlocked` in jobs/page.tsx) applies the identical boolean so the
+   * tile count and the row borders can never diverge.
+   *
+   * Security:
+   *   - `tenant_id` is required and parameterised on every predicate.
+   *   - Every JOIN condition includes `<alias>.tenant_id = j.tenant_id`
+   *     (belt-and-suspenders against cross-tenant leakage if a row ever had
+   *     a stale FK).
+   *   - No raw string interpolation of tenantId.
+   *   - Returns only scalar aggregates — no billing issue details, no
+   *     invoice numbers, no customer data.
+   */
+  async getJobsSummary(tenantId: string): Promise<{
+    unassigned: number;
+    assigned: number;
+    enRoute: number;
+    completed: number;
+    blocked: number;
+  }> {
+    const [
+      unassignedCount,
+      assignedCount,
+      enRouteCount,
+      completedCount,
+      blockedRow,
+    ] = await Promise.all([
+      // unassigned: stored `pending` or `confirmed` — dispatch-ready but no
+      // driver yet. Matches the existing Jobs page "unassigned" grouping.
+      this.jobsRepository
+        .createQueryBuilder('j')
+        .where('j.tenant_id = :tenantId', { tenantId })
+        .andWhere('j.status IN (:...statuses)', {
+          statuses: ['pending', 'confirmed'],
+        })
+        .getCount(),
+
+      // assigned: stored `dispatched` — driver attached, not yet moving.
+      this.jobsRepository
+        .createQueryBuilder('j')
+        .where('j.tenant_id = :tenantId', { tenantId })
+        .andWhere('j.status = :status', { status: 'dispatched' })
+        .getCount(),
+
+      // en_route: stored `en_route` — driver traveling.
+      this.jobsRepository
+        .createQueryBuilder('j')
+        .where('j.tenant_id = :tenantId', { tenantId })
+        .andWhere('j.status = :status', { status: 'en_route' })
+        .getCount(),
+
+      // completed: stored `completed` — job finished on-site.
+      this.jobsRepository
+        .createQueryBuilder('j')
+        .where('j.tenant_id = :tenantId', { tenantId })
+        .andWhere('j.status = :status', { status: 'completed' })
+        .getCount(),
+
+      // blocked: UNION of
+      //   (open billing issue)
+      //   OR (completed AND unpaid linked invoice)
+      // Counted as DISTINCT jobs so overlapping matches collapse.
+      this.jobsRepository
+        .createQueryBuilder('j')
+        .leftJoin(
+          'billing_issues',
+          'bi',
+          'bi.job_id = j.id AND bi.tenant_id = j.tenant_id',
+        )
+        .leftJoin(
+          'invoices',
+          'inv',
+          'inv.job_id = j.id AND inv.tenant_id = j.tenant_id',
+        )
+        .where('j.tenant_id = :tenantId', { tenantId })
+        .andWhere(
+          `(
+            (bi.id IS NOT NULL AND bi.status = :openIssueStatus)
+            OR (
+              j.status = :completedJobStatus
+              AND inv.balance_due > 0
+              AND inv.status NOT IN (:...paidInvoiceStatuses)
+            )
+          )`,
+          {
+            openIssueStatus: 'open',
+            completedJobStatus: 'completed',
+            paidInvoiceStatuses: ['paid', 'partial', 'voided'],
+          },
+        )
+        .select('COUNT(DISTINCT j.id)::int', 'count')
+        .getRawOne<{ count: number }>(),
+    ]);
+
+    return {
+      unassigned: Number(unassignedCount),
+      assigned: Number(assignedCount),
+      enRoute: Number(enRouteCount),
+      completed: Number(completedCount),
+      blocked: Number(blockedRow?.count ?? 0),
+    };
+  }
+
   private async getTotalRevenue(tenantId: string): Promise<number> {
     const result = await this.invoicesRepository
       .createQueryBuilder('i')

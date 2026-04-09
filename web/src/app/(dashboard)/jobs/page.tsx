@@ -28,6 +28,7 @@ import SlideOver from "@/components/slide-over";
 import Dropdown from "@/components/dropdown";
 import { useToast } from "@/components/toast";
 import { CreditCard, FileWarning, MapPinOff } from "lucide-react";
+import { FEATURE_REGISTRY } from "@/lib/feature-registry";
 
 /* ─── Types ─── */
 
@@ -162,6 +163,33 @@ function daysBetween(a: string, b: string): number {
   return Math.round((new Date(b).getTime() - new Date(a).getTime()) / 86400000);
 }
 
+/**
+ * Per-row Blocked predicate. MUST stay in lockstep with
+ * AnalyticsService.getJobsSummary() — if the backend count diverges from
+ * what the UI paints, operators lose trust in the tile.
+ *
+ * A job is Blocked when EITHER:
+ *   (a) it has ≥1 open billing issue, OR
+ *   (b) job.status === "completed" AND linked invoice has
+ *       balance_due > 0 AND invoice status is NOT paid/partial/voided.
+ *
+ * "Blocked" is purely a computed UI + analytics layer. It is NOT written to
+ * job.status and does NOT change any lifecycle/dispatch behavior.
+ */
+function isJobBlocked(job: Job): boolean {
+  if ((job.open_billing_issue_count ?? 0) > 0) return true;
+  const inv = job.linked_invoice;
+  if (
+    job.status === "completed" &&
+    inv &&
+    Number(inv.balance_due) > 0 &&
+    !["paid", "partial", "voided"].includes(inv.status)
+  ) {
+    return true;
+  }
+  return false;
+}
+
 function getDateRange(range: string): { dateFrom?: string; dateTo?: string } {
   const today = new Date();
   const fmt = (d: Date) => d.toISOString().split("T")[0];
@@ -207,6 +235,16 @@ export default function JobsPage() {
     billing_issue: number;
     unassigned_active: number;
   }>({ payment_blocked: 0, billing_issue: 0, unassigned_active: 0 });
+  // Jobs page top-strip counts — single source of truth for the 5 tiles.
+  // Tenant-scoped on the server via /analytics/jobs-summary. `blocked` is
+  // a computed UNION, not a stored status.
+  const [summary, setSummary] = useState<{
+    unassigned: number;
+    assigned: number;
+    enRoute: number;
+    completed: number;
+    blocked: number;
+  }>({ unassigned: 0, assigned: 0, enRoute: 0, completed: 0, blocked: 0 });
 
   // Multi-status KPI groups: tile filter value → actual stored API statuses
   const MULTI_STATUS: Record<string, string[]> = {
@@ -266,6 +304,17 @@ export default function JobsPage() {
       )
       .then(setBlockerCounts)
       .catch(() => {});
+    // Top-strip summary counts (unassigned / assigned / en route / completed / blocked).
+    api
+      .get<{
+        unassigned: number;
+        assigned: number;
+        enRoute: number;
+        completed: number;
+        blocked: number;
+      }>("/analytics/jobs-summary")
+      .then(setSummary)
+      .catch(() => {});
   }, []);
 
   useEffect(() => { setPage(1); }, [statusFilter, dateRange]);
@@ -281,11 +330,7 @@ export default function JobsPage() {
   };
 
   const totalCount = getCount("all");
-  const todayStr = new Date().toISOString().split("T")[0];
-  const todayCount = jobs.filter((j) => j.scheduled_date === todayStr).length;
   const unassignedCount = statusCounts.filter((c) => ["pending", "confirmed"].includes(c.status)).reduce((s, c) => s + Number(c.count), 0);
-  const arrivedCount = getCount("arrived") + getCount("in_progress");
-  const completedCount = getCount("completed");
 
   const PRIMARY_STATUSES = ["all", "overdue", "unassigned", "assigned"] as const;
   const SECONDARY_STATUSES = ["en_route", "arrived", "completed", "cancelled"] as const;
@@ -336,29 +381,105 @@ export default function JobsPage() {
       </div>
 
       {/* ─── Stat strip ─── */}
-      <div className="grid grid-cols-4 gap-3 mb-6">
+      {/*
+       * Registry-driven top strip. Labels + tooltips resolve through
+       * FEATURE_REGISTRY so tenant overrides and the Help Center stay in
+       * sync. Counts come from /analytics/jobs-summary (tenant-scoped on
+       * the server). Blocked is a computed union — see isJobBlocked().
+       */}
+      <div className="grid grid-cols-5 gap-3 mb-6">
         {[
-          { label: "Unassigned", value: unassignedCount, color: unassignedCount > 0 ? "var(--t-warning)" : "var(--t-accent)", bg: unassignedCount > 0 ? "var(--t-warning-soft)" : undefined, filter: "unassigned", dateRange: "all", icon: AlertCircle },
-          { label: "Today", value: todayCount, color: "var(--t-text-primary)", filter: "all", dateRange: "today", icon: Calendar },
-          { label: "Arrived", value: arrivedCount, color: "var(--t-info, #3b82f6)", filter: "arrived", dateRange: "all", icon: Truck },
-          { label: "Completed", value: completedCount, color: "var(--t-accent)", filter: "completed", dateRange: "all", icon: CheckCircle2 },
-        ].map((stat) => (
-          <button
-            key={stat.label}
-            onClick={() => { setStatusFilter(stat.filter); setDateRange(stat.dateRange); }}
-            className="surface-card card-hover text-left px-4 py-3"
-            style={stat.bg ? { backgroundColor: stat.bg } : undefined}
-          >
-            <div className="flex items-center justify-between mb-1">
-              <stat.icon style={{ width: 14, height: 14, color: stat.color }} />
-              {stat.value > 0 && stat.label === "Unassigned" && (
-                <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--t-warning)", display: "inline-block" }} />
-              )}
+          {
+            key: "unassigned",
+            featureId: "job_status_unassigned",
+            value: summary.unassigned,
+            color: summary.unassigned > 0 ? "var(--t-warning)" : "var(--t-text-primary)",
+            filter: "unassigned" as const,
+            icon: AlertCircle,
+            clickable: true,
+          },
+          {
+            key: "assigned",
+            featureId: "job_status_assigned",
+            value: summary.assigned,
+            color: "var(--t-info, #3b82f6)",
+            filter: "assigned" as const,
+            icon: Send,
+            clickable: true,
+          },
+          {
+            key: "en_route",
+            featureId: "job_status_en_route",
+            value: summary.enRoute,
+            color: "var(--t-info, #3b82f6)",
+            filter: "en_route" as const,
+            icon: Truck,
+            clickable: true,
+          },
+          {
+            key: "completed",
+            featureId: "job_status_completed",
+            value: summary.completed,
+            color: "var(--t-accent)",
+            filter: "completed" as const,
+            icon: CheckCircle2,
+            clickable: true,
+          },
+          {
+            key: "blocked",
+            featureId: "job_status_blocked",
+            value: summary.blocked,
+            color: summary.blocked > 0 ? "var(--t-error)" : "var(--t-text-primary)",
+            // Blocked is not a stored status — tile is display-only for
+            // this pass. Red left-borders on matching rows do the
+            // filtering work visually.
+            filter: null,
+            icon: FileWarning,
+            clickable: false,
+          },
+        ].map((stat) => {
+          const feature = FEATURE_REGISTRY[stat.featureId];
+          const label = feature?.label ?? stat.key;
+          const tooltip = feature?.shortDescription;
+          const Icon = stat.icon;
+          const commonChildren = (
+            <>
+              <div className="flex items-center justify-between mb-1">
+                <Icon style={{ width: 14, height: 14, color: stat.color }} />
+                {stat.key === "blocked" && stat.value > 0 && (
+                  <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--t-error)", display: "inline-block" }} />
+                )}
+                {stat.key === "unassigned" && stat.value > 0 && (
+                  <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--t-warning)", display: "inline-block" }} />
+                )}
+              </div>
+              <p style={{ fontSize: 24, fontWeight: 700, color: stat.color, fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>{stat.value}</p>
+              <p style={{ fontSize: 11, fontWeight: 500, color: "var(--t-text-muted)", marginTop: 4 }}>{label}</p>
+            </>
+          );
+          if (stat.clickable && stat.filter) {
+            const filterValue = stat.filter;
+            return (
+              <button
+                key={stat.key}
+                onClick={() => { setStatusFilter(filterValue); setDateRange("all"); }}
+                className="surface-card card-hover text-left px-4 py-3"
+                title={tooltip}
+              >
+                {commonChildren}
+              </button>
+            );
+          }
+          return (
+            <div
+              key={stat.key}
+              className="surface-card px-4 py-3"
+              title={tooltip}
+            >
+              {commonChildren}
             </div>
-            <p style={{ fontSize: 24, fontWeight: 700, color: stat.color, fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>{stat.value}</p>
-            <p style={{ fontSize: 11, fontWeight: 500, color: "var(--t-text-muted)", marginTop: 4 }}>{stat.label}</p>
-          </button>
-        ))}
+          );
+        })}
       </div>
 
       {/* ─── Controls bar ─── */}
@@ -532,20 +653,36 @@ export default function JobsPage() {
                 {filteredJobs.map((job) => {
                   const customerName = job.customer ? `${job.customer.first_name} ${job.customer.last_name}` : "";
                   const address = fmtAddress(job.service_address);
-                  const isToday = job.scheduled_date === todayStr;
 
                   return (
                     <tr
                       key={job.id}
                       onClick={() => router.push(`/jobs/${job.id}`)}
                       className="table-row cursor-pointer"
-                      style={{
-                        borderBottom: "1px solid var(--t-border-subtle)",
-                        ...(job.is_overdue ? { borderLeft: "3px solid var(--t-error)", backgroundColor: "var(--t-error-soft)" }
-                          : !job.assigned_driver && !["completed", "cancelled"].includes(job.status) ? { borderLeft: "3px solid var(--t-warning)", backgroundColor: "var(--t-warning-soft)" }
-                          : isToday ? { borderLeft: "3px solid var(--t-accent)", backgroundColor: "var(--t-accent-soft)" }
-                          : { borderLeft: "3px solid transparent" }),
-                      }}
+                      style={(() => {
+                        // Visual priority ladder. Exactly ONE border per row.
+                        //   1. Blocked      → red    (overrides everything)
+                        //   2. Unassigned   → orange
+                        //   3. Assigned/En Route → blue
+                        //   4. Completed    → green
+                        // Blocked uses the isJobBlocked() predicate, which
+                        // mirrors AnalyticsService.getJobsSummary() so the
+                        // top-strip count and the borders never diverge.
+                        const base: React.CSSProperties = { borderBottom: "1px solid var(--t-border-subtle)" };
+                        if (isJobBlocked(job)) {
+                          return { ...base, borderLeft: "3px solid var(--t-error)" };
+                        }
+                        if (["pending", "confirmed"].includes(job.status)) {
+                          return { ...base, borderLeft: "3px solid var(--t-warning)" };
+                        }
+                        if (["dispatched", "en_route"].includes(job.status)) {
+                          return { ...base, borderLeft: "3px solid var(--t-info, #3b82f6)" };
+                        }
+                        if (job.status === "completed") {
+                          return { ...base, borderLeft: "3px solid var(--t-success, #22c55e)" };
+                        }
+                        return { ...base, borderLeft: "3px solid transparent" };
+                      })()}
                     >
                       <td style={{ padding: "12px 6px 12px 14px", width: 36 }}>
                         <input

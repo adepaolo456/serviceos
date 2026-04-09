@@ -31,4 +31,22 @@ export class AnalyticsController {
   getJobsByStatus(@TenantId() tenantId: string) {
     return this.analyticsService.getJobsByStatus(tenantId);
   }
+
+  @Get('jobs-by-blocker')
+  @ApiOperation({
+    summary:
+      'Tenant-wide blocker counts for the Jobs page top strip (payment_blocked, billing_issue, unassigned_active)',
+  })
+  getJobsByBlocker(@TenantId() tenantId: string) {
+    return this.analyticsService.getJobsByBlocker(tenantId);
+  }
+
+  @Get('jobs-summary')
+  @ApiOperation({
+    summary:
+      'Jobs page top-strip counts (unassigned, assigned, enRoute, completed, blocked). Multi-tenant scoped. Blocked is a computed UI layer, not a stored job status.',
+  })
+  getJobsSummary(@TenantId() tenantId: string) {
+    return this.analyticsService.getJobsSummary(tenantId);
+  }
 }

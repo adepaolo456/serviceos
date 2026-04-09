@@ -447,6 +447,30 @@ export const FEATURE_REGISTRY: Record<string, FeatureDescription> = {
     isUserFacing: true, isGuideEligible: true,
     keywords: ["arrived", "on-site", "driver", "location", "active"],
   },
+  job_status_en_route: {
+    id: "job_status_en_route", label: "En Route", category: "operations",
+    shortDescription: "Driver is traveling to the job site.",
+    guideDescription: "An En Route job means the driver has left the yard or their previous stop and is heading to the delivery or pickup location. Customers may receive an ETA notification at this point. When the driver reaches the site the job moves to Arrived.",
+    routeOrSurface: "job_status", tenantOverrideKey: "job_status_en_route",
+    isUserFacing: true, isGuideEligible: true,
+    keywords: ["en route", "driving", "driver", "eta", "traveling", "heading"],
+  },
+  job_status_completed: {
+    id: "job_status_completed", label: "Completed", category: "operations",
+    shortDescription: "Job has been completed on-site.",
+    guideDescription: "A Completed job has been finished by the driver. The customer can now be invoiced (if billing was deferred) and any billing follow-ups (unpaid balances, completion review) surface from this state.",
+    routeOrSurface: "job_status", tenantOverrideKey: "job_status_completed",
+    isUserFacing: true, isGuideEligible: true,
+    keywords: ["completed", "done", "finished", "delivered", "picked up"],
+  },
+  job_status_blocked: {
+    id: "job_status_blocked", label: "Blocked", category: "operations",
+    shortDescription: "Job is flagged for operator attention due to a billing issue.",
+    guideDescription: "Blocked is a computed flag — not a stored job status. A job is Blocked when it has an open billing issue OR when it was completed while its linked invoice still has an unpaid balance. Blocked jobs stay on their normal dispatch track but surface in the Jobs page top strip and get a red left-border so operators can resolve the money problem without losing sight of the dispatch lifecycle.",
+    routeOrSurface: "job_status", tenantOverrideKey: "job_status_blocked",
+    isUserFacing: true, isGuideEligible: true,
+    keywords: ["blocked", "billing", "issue", "unpaid", "review", "attention", "money"],
+  },
 };
 
 // ── Category display labels ──
