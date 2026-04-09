@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Body, Query, Param, ParseUUIDPipe, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Put, Body, Query, Param, ParseUUIDPipe, UseGuards, ForbiddenException } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { NotificationsService } from './notifications.service';
 import {
@@ -53,9 +53,14 @@ export class NotificationsController {
   @Put('preferences/:type')
   updatePreference(
     @TenantId() tenantId: string,
+    @CurrentUser('role') userRole: string,
     @Param('type') type: string,
     @Body() body: { email_enabled?: boolean; sms_enabled?: boolean },
   ) {
+    // Field-level gating: only owner may mutate SMS preferences
+    if (body.sms_enabled !== undefined && userRole !== 'owner') {
+      throw new ForbiddenException('Only the account owner can modify SMS preferences');
+    }
     return this.notificationsService.updatePreference(tenantId, type, body);
   }
 
@@ -80,8 +85,13 @@ export class NotificationsController {
   @Post('test')
   async testNotification(
     @TenantId() tenantId: string,
+    @CurrentUser('role') userRole: string,
     @Body() body: { email?: string; phone?: string; type?: string },
   ) {
+    // Field-level gating: only owner may send test SMS
+    if (body.phone && userRole !== 'owner') {
+      throw new ForbiddenException('Only the account owner can send test SMS messages');
+    }
     const results: any = {};
     if (body.email) {
       const notif = await this.notificationsService.send(tenantId, {

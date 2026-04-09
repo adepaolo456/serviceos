@@ -9,7 +9,7 @@ import {
   UpdateQuoteSettingsDto,
   UpdateQuoteTemplatesDto,
 } from './dto/tenant-settings.dto';
-import { TenantId, Roles } from '../../common/decorators';
+import { TenantId, Roles, CurrentUser } from '../../common/decorators';
 import { RolesGuard } from '../../common/guards';
 
 @ApiTags('Tenant Settings')
@@ -21,6 +21,7 @@ export class TenantSettingsController {
   constructor(private readonly settingsService: TenantSettingsService) {}
 
   @Get()
+  @Roles('dispatcher', 'admin', 'owner')
   @ApiOperation({ summary: 'Get tenant settings' })
   getSettings(@TenantId() tenantId: string) {
     return this.settingsService.getSettings(tenantId);
@@ -57,21 +58,24 @@ export class TenantSettingsController {
   @ApiOperation({ summary: 'Update notification config' })
   updateNotificationConfig(
     @TenantId() tenantId: string,
+    @CurrentUser('role') userRole: string,
     @Body() dto: UpdateNotificationConfigDto,
   ) {
-    return this.settingsService.updateNotificationConfig(tenantId, dto);
+    return this.settingsService.updateNotificationConfig(tenantId, dto, userRole);
   }
 
   @Patch('quotes')
   @ApiOperation({ summary: 'Update quote & follow-up settings' })
   updateQuoteSettings(
     @TenantId() tenantId: string,
+    @CurrentUser('role') userRole: string,
     @Body() dto: UpdateQuoteSettingsDto,
   ) {
-    return this.settingsService.updateQuoteSettings(tenantId, dto);
+    return this.settingsService.updateQuoteSettings(tenantId, dto, userRole);
   }
 
   @Post('sms/provision-number')
+  @Roles('owner')
   @ApiOperation({ summary: 'Auto-provision an SMS number for the tenant' })
   provisionSmsNumber(@TenantId() tenantId: string) {
     return this.settingsService.provisionSmsNumber(tenantId);
@@ -81,8 +85,9 @@ export class TenantSettingsController {
   @ApiOperation({ summary: 'Update quote email/SMS templates' })
   updateQuoteTemplates(
     @TenantId() tenantId: string,
+    @CurrentUser('role') userRole: string,
     @Body() dto: UpdateQuoteTemplatesDto,
   ) {
-    return this.settingsService.updateQuoteTemplates(tenantId, dto);
+    return this.settingsService.updateQuoteTemplates(tenantId, dto, userRole);
   }
 }
