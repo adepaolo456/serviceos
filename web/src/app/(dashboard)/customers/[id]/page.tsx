@@ -15,6 +15,17 @@ import { deriveDisplayStatus, DISPLAY_STATUS_LABELS, displayStatusColor } from "
 import SlideOver from "@/components/slide-over";
 import AddressAutocomplete, { type AddressValue } from "@/components/address-autocomplete";
 import MapboxMap from "@/components/mapbox-map";
+import {
+  CUSTOMER_DASHBOARD_LABELS,
+  smsStatusLabel,
+} from "@/lib/customer-dashboard-labels";
+import type { CustomerDashboardResponse } from "@/lib/customer-dashboard-types";
+import StatusStrip from "./_components/StatusStrip";
+import ServiceSitesPanel from "./_components/ServiceSitesPanel";
+import FinancialSnapshotCard from "./_components/FinancialSnapshotCard";
+import AlertsIssuesPanel from "./_components/AlertsIssuesPanel";
+import JobsTimeline from "./_components/JobsTimeline";
+import NotesAndInstructions from "./_components/NotesAndInstructions";
 
 /* ---- Types ---- */
 
@@ -97,7 +108,9 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
   const [notes, setNotes] = useState<Note[]>([]);
   const [customerQuotes, setCustomerQuotes] = useState<Array<{ id: string; quote_number: string; asset_subtype: string; total_quoted: number; derived_status: string; created_at: string; customer_name: string | null }>>([]);
   const [creditMemos, setCreditMemos] = useState<{ id: string; amount: number; reason: string; status: string }[]>([]);
+  const [dashboard, setDashboard] = useState<CustomerDashboardResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [tab, setTab] = useState<Tab>("overview");
   const [editOpen, setEditOpen] = useState(false);
   const [newNote, setNewNote] = useState("");
@@ -118,6 +131,12 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
           .catch(() => setCustomerQuotes([]));
         api.get<{ id: string; amount: number; reason: string; status: string }[]>(`/invoices/credit-memos/by-customer/${id}`)
           .then(setCreditMemos).catch(() => setCreditMemos([]));
+        // New composed dashboard payload (Pass 2 — backend aggregator).
+        // Fetched independently so the legacy tabs still render if this
+        // endpoint 404s or errors (e.g. old deploys without the column).
+        api.get<CustomerDashboardResponse>(`/customers/${id}/dashboard`)
+          .then(setDashboard)
+          .catch(() => setDashboard(null));
       } catch { /* */ }
       finally { setLoading(false); }
     }
@@ -176,6 +195,21 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
                 {activeJobs.length > 0 && <span className="text-xs font-medium text-yellow-500">Active Rental</span>}
                 {netBalance > 0 && <span className="text-xs font-medium text-[var(--t-error)]">Balance Due</span>}
                 {netBalance < 0 && <span className="text-xs font-medium text-[var(--t-accent)]">Credit</span>}
+                {dashboard && (
+                  <span
+                    className="text-xs font-medium"
+                    style={{
+                      color:
+                        dashboard.identity.smsStatus === "opted_out"
+                          ? "var(--t-warning)"
+                          : dashboard.identity.smsStatus === "enabled"
+                            ? "var(--t-accent)"
+                            : "var(--t-text-muted)",
+                    }}
+                  >
+                    {smsStatusLabel(dashboard.identity.smsStatus)}
+                  </span>
+                )}
               </div>
               {customer.company_name && <p className="text-xs text-[var(--t-text-muted)] mt-0.5">{customer.company_name}</p>}
               <div className="flex items-center gap-3 mt-1.5 text-xs text-[var(--t-text-muted)] flex-wrap">
@@ -198,6 +232,46 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
         </div>
       </div>
 
+      {/* ===== NEW COMPOSED DASHBOARD (primary view, Pass 2) ===== */}
+      {dashboard ? (
+        <>
+          <StatusStrip data={dashboard.statusStrip} />
+
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3 mb-5">
+            <div className="lg:col-span-2 space-y-4">
+              <JobsTimeline data={dashboard.jobsTimeline} />
+              <AlertsIssuesPanel issues={dashboard.issues} />
+            </div>
+            <div className="space-y-4">
+              <FinancialSnapshotCard data={dashboard.financial} />
+              <ServiceSitesPanel data={dashboard.serviceSites} />
+              <NotesAndInstructions data={dashboard.notes} />
+            </div>
+          </div>
+        </>
+      ) : (
+        <div className="mb-5 space-y-3">
+          <div className="h-16 rounded-[20px] bg-[var(--t-bg-card)] animate-pulse" />
+          <div className="h-64 rounded-[20px] bg-[var(--t-bg-card)] animate-pulse" />
+        </div>
+      )}
+
+      {/* ===== ADVANCED: legacy tabs preserved behind expandable ===== */}
+      <details
+        open={advancedOpen}
+        onToggle={(e) => setAdvancedOpen((e.target as HTMLDetailsElement).open)}
+        className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] mb-5"
+      >
+        <summary
+          className="cursor-pointer select-none px-5 py-3 text-sm font-semibold text-[var(--t-text-primary)] flex items-center justify-between"
+        >
+          <span>{CUSTOMER_DASHBOARD_LABELS.sections.advanced}</span>
+          <span className="text-[11px] font-normal text-[var(--t-text-muted)]">
+            {CUSTOMER_DASHBOARD_LABELS.sections.advancedHint}
+          </span>
+        </summary>
+
+        <div className="border-t border-[var(--t-border)] p-5">
       {/* ===== TABS ===== */}
       <div className="flex gap-0 border-b border-[var(--t-frame-border)] mb-5 overflow-x-auto">
         {TABS.map(t => (
@@ -525,6 +599,8 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
           )}
         </div>
       )}
+        </div>
+      </details>
 
       {/* Edit */}
       <SlideOver open={editOpen} onClose={() => setEditOpen(false)} title="Edit Customer">
