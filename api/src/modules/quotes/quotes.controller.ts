@@ -601,10 +601,19 @@ export class QuotesController {
     const inExpiringSoon = new Date(now.getTime() + expiringSoonMs);
 
     const enriched = data.map((q) => {
-      const isExpired = q.status === 'sent' && now > q.expires_at;
+      // Defensive: legacy quote rows may have null expires_at. Guard every
+      // Date operation so a single bad row cannot crash the list endpoint.
+      const rawExpires = q.expires_at as Date | string | null | undefined;
+      let expiresAt: Date | null = null;
+      if (rawExpires != null) {
+        const parsed = rawExpires instanceof Date ? rawExpires : new Date(rawExpires);
+        if (!isNaN(parsed.getTime())) expiresAt = parsed;
+      }
+
+      const isExpired =
+        q.status === 'sent' && expiresAt !== null && now > expiresAt;
       const isHot = q.status === 'sent' && !isExpired && (q.view_count ?? 0) >= hotThreshold;
       const lastViewed = q.last_viewed_at ? new Date(q.last_viewed_at) : null;
-      const expiresAt = new Date(q.expires_at);
 
       // Follow-up priority
       let follow_up_priority: string | null = null;
@@ -614,12 +623,20 @@ export class QuotesController {
         follow_up_priority = 'stale';
       }
 
-      // Expiry urgency (active quotes only)
+      // Expiry urgency (active quotes only — skip rows with no usable expiry)
       let expires_urgency: string | null = null;
-      if (!isExpired && q.status === 'sent') {
+      if (!isExpired && q.status === 'sent' && expiresAt !== null) {
         if (expiresAt <= in24h) expires_urgency = 'expires_today';
         else if (expiresAt <= inExpiringSoon) expires_urgency = 'expiring_soon';
       }
+
+      const hoursUntilExpiry =
+        !isExpired && expiresAt !== null
+          ? Math.max(
+              0,
+              Math.round((expiresAt.getTime() - now.getTime()) / 3600000),
+            )
+          : 0;
 
       return {
         ...q,
@@ -627,7 +644,7 @@ export class QuotesController {
         is_hot: isHot,
         follow_up_priority,
         expires_urgency,
-        hours_until_expiry: !isExpired ? Math.max(0, Math.round((expiresAt.getTime() - now.getTime()) / 3600000)) : 0,
+        hours_until_expiry: hoursUntilExpiry,
       };
     });
 

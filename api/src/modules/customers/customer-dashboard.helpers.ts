@@ -260,7 +260,7 @@ export function deriveFinancialSnapshot(
  * yellow `expiring_quote` status-strip reason.
  */
 export function countExpiringQuotes(
-  quotes: Array<{ status: string; expires_at: Date | string }>,
+  quotes: Array<{ status: string; expires_at: Date | string | null | undefined }>,
   windowHours: number = 48,
   now: Date = new Date(),
 ): number {
@@ -269,9 +269,13 @@ export function countExpiringQuotes(
   let count = 0;
   for (const q of quotes) {
     if (q.status !== 'draft' && q.status !== 'sent') continue;
+    // Defensive: legacy quote rows can have expires_at = null. The previous
+    // ternary returned the raw value when it wasn't a string, then crashed
+    // on `null.getTime()`. Skip any quote without a usable expiry.
+    if (q.expires_at == null) continue;
     const expiresAt =
       typeof q.expires_at === 'string' ? new Date(q.expires_at) : q.expires_at;
-    if (isNaN(expiresAt.getTime())) continue;
+    if (!(expiresAt instanceof Date) || isNaN(expiresAt.getTime())) continue;
     if (expiresAt.getTime() > now.getTime() && expiresAt.getTime() <= horizon) {
       count += 1;
     }
