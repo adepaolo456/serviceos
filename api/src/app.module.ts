@@ -94,6 +94,10 @@ import { HelpAnalyticsEvent } from './modules/analytics/entities/help-analytics-
         if (!url) {
           console.error('DATABASE_URL is not set. Available env keys:', Object.keys(process.env).filter(k => k.includes('DATABASE') || k.includes('JWT') || k.includes('VERCEL')).join(', '));
         }
+        // In test mode (NODE_ENV=test), bootstrap the schema directly from
+        // entity metadata via synchronize, and disable SSL for local Docker
+        // Postgres. Production/dev paths are unchanged.
+        const isTest = process.env.NODE_ENV === 'test';
         return {
           type: 'postgres',
           url,
@@ -146,10 +150,8 @@ import { HelpAnalyticsEvent } from './modules/analytics/entities/help-analytics-
             RateLimitLog,
             HelpAnalyticsEvent,
           ],
-          synchronize: false,
-          ssl: {
-            rejectUnauthorized: false,
-          },
+          synchronize: isTest,
+          ssl: isTest ? false : { rejectUnauthorized: false },
         };
       },
     }),
