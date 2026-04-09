@@ -49,4 +49,17 @@ export class AnalyticsController {
   getJobsSummary(@TenantId() tenantId: string) {
     return this.analyticsService.getJobsSummary(tenantId);
   }
+
+  @Get('jobs-blocked')
+  @ApiOperation({
+    summary:
+      'Full tenant-scoped list of Blocked jobs for the Jobs page drill-down. Uses the identical shared predicate as jobs-summary.blocked so counts and the list cannot drift. Optional dateFrom/dateTo filter on scheduled_date, matching the existing Jobs page date semantics. Returns enriched job rows (linked_invoice, open_billing_issue_count, chain, dispatch_ready) compatible with the existing /jobs?enrichment=board response shape.',
+  })
+  getJobsBlocked(
+    @TenantId() tenantId: string,
+    @Query('dateFrom') dateFrom?: string,
+    @Query('dateTo') dateTo?: string,
+  ) {
+    return this.analyticsService.getJobsBlocked(tenantId, dateFrom, dateTo);
+  }
 }

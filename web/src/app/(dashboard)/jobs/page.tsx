@@ -304,24 +304,26 @@ export default function JobsPage() {
         setJobs(merged);
         setTotal(results.reduce((sum, r) => sum + r.meta.total, 0));
       } else if (statusFilter === "blocked") {
-        // "Blocked" is a computed UI layer — NOT a stored job status, so
-        // we cannot query `?status=blocked` on the API. Fetch a wide
-        // slice of the most recent enriched jobs (enrichment=board
-        // populates open_billing_issue_count + linked_invoice, which
-        // isJobBlocked reads) and narrow the slice with the same
-        // predicate the top-strip tile uses. The authoritative
-        // tenant-wide count is still summary.blocked, sourced from
-        // /analytics/jobs-summary. Single source of truth for the
-        // predicate lives in isJobBlocked(), which mirrors
-        // AnalyticsService.getJobsSummary()'s SQL 1:1.
-        const params = new URLSearchParams({ page: "1", limit: "200", enrichment: "board" });
+        // "Blocked" is a computed UI layer — NOT a stored job status.
+        // Phase 2: hits the dedicated /analytics/jobs-blocked endpoint
+        // which uses the IDENTICAL shared SQL predicate as
+        // /analytics/jobs-summary.blocked, so the full blocked list and
+        // the top-strip tile count can never drift. Replaces the
+        // previous Phase 1 approach which fetched a 200-row slice of
+        // /jobs and filtered client-side (a slice that could miss
+        // blocked rows for large tenants). getBlockedReason /
+        // isJobBlocked are still used client-side for per-row reason
+        // chips and sub-filter segmentation.
+        const params = new URLSearchParams();
         const range = getDateRange(dateRange);
         if (range.dateFrom) params.set("dateFrom", range.dateFrom);
         if (range.dateTo) params.set("dateTo", range.dateTo);
-        const res = await api.get<JobsResponse>(`/jobs?${params.toString()}`);
-        const blockedInSlice = res.data.filter(isJobBlocked);
-        setJobs(blockedInSlice);
-        setTotal(blockedInSlice.length);
+        const qs = params.toString();
+        const blocked = await api.get<Job[]>(
+          `/analytics/jobs-blocked${qs ? `?${qs}` : ""}`,
+        );
+        setJobs(blocked);
+        setTotal(blocked.length);
       } else {
         const params = new URLSearchParams({ page: String(page), limit: "30", enrichment: "board" });
         // Map display filter keys to stored status values for API

@@ -8,9 +8,13 @@ import { HelpAnalyticsEvent } from './entities/help-analytics-event.entity';
 import { AnalyticsService } from './analytics.service';
 import { AnalyticsController } from './analytics.controller';
 import { HelpAnalyticsController } from './help-analytics.controller';
+import { JobsModule } from '../jobs/jobs.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Invoice, Job, Customer, Asset, HelpAnalyticsEvent])],
+  imports: [
+    TypeOrmModule.forFeature([Invoice, Job, Customer, Asset, HelpAnalyticsEvent]),
+    JobsModule,
+  ],
   controllers: [AnalyticsController, HelpAnalyticsController],
   providers: [AnalyticsService],
 })
