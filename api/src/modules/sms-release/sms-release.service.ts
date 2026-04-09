@@ -437,6 +437,7 @@ export class SmsReleaseService {
         .set({
           sms_phone_number: null,
           sms_enabled: false,
+          quotes_sms_enabled: false,
           updated_at: releasedAt,
         })
         .where('tenant_id = :tenantId AND sms_phone_number = :number', {
@@ -511,7 +512,12 @@ export class SmsReleaseService {
     await this.settingsRepo
       .createQueryBuilder()
       .update(TenantSettings)
-      .set({ sms_phone_number: null, sms_enabled: false, updated_at: new Date() })
+      .set({
+        sms_phone_number: null,
+        sms_enabled: false,
+        quotes_sms_enabled: false,
+        updated_at: new Date(),
+      })
       .where('tenant_id = :tenantId AND sms_phone_number = :number', {
         tenantId: request.tenant_id,
         number: request.sms_phone_number,

@@ -218,7 +218,7 @@ export default function QuotesPage() {
       setResendCustomerPhone(q.customer_phone || "");
       const initialMethod = (() => {
         const def = tenantSettings.default_quote_delivery_method || "email";
-        if (def === "sms" && !smsChannelAvailable) return emailChannelAvailable ? "email" : "email";
+        if (def === "sms" && !smsChannelAvailable) return emailChannelAvailable ? "email" : "sms";
         if (def === "email" && !emailChannelAvailable) return smsChannelAvailable ? "sms" : "email";
         if (def === "both" && (!emailChannelAvailable || !smsChannelAvailable)) {
           return emailChannelAvailable ? "email" : smsChannelAvailable ? "sms" : "email";

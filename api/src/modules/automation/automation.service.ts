@@ -12,6 +12,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { TenantSettingsService } from '../tenant-settings/tenant-settings.service';
 import { getTemplate, renderTemplate } from '../quotes/quote-templates';
 import { SmsMessage } from '../sms/sms-message.entity';
+import { SmsService } from '../sms/sms.service';
 import { normalizePhone } from '../../common/utils/phone';
 
 @Injectable()
@@ -29,6 +30,7 @@ export class AutomationService {
     @InjectRepository(SmsMessage) private smsMessageRepo: Repository<SmsMessage>,
     private notificationsService: NotificationsService,
     private settingsService: TenantSettingsService,
+    private smsService: SmsService,
     private dataSource: DataSource,
   ) {}
 
@@ -305,7 +307,8 @@ export class AutomationService {
 
     // Find all tenants with follow-ups enabled
     const enabledTenants = await this.dataSource.query(
-      `SELECT tenant_id, quote_follow_up_delay_hours, quote_templates
+      `SELECT tenant_id, quote_follow_up_delay_hours, quote_templates,
+              sms_enabled, quotes_sms_enabled, sms_phone_number
        FROM tenant_settings
        WHERE quote_follow_up_enabled = true`,
     );
@@ -382,6 +385,37 @@ export class AutomationService {
         } catch (err: any) {
           this.logger.error(`Follow-up failed for quote ${quote.id}: ${err.message}`);
           // Claim stays — we don't retry in V1 to avoid spam
+        }
+
+        // SMS follow-up — piggybacks on the same atomic claim as the email send.
+        // Independent of email success/failure so one channel can't block the other.
+        // All four conditions must be true; otherwise silently skip (no log, no retry).
+        if (
+          ts.sms_enabled === true &&
+          ts.quotes_sms_enabled === true &&
+          !!ts.sms_phone_number &&
+          !!quote.customer_phone
+        ) {
+          try {
+            const smsBody = renderTemplate(getTemplate('followup_sms_body', templates), ctx);
+            const smsResult = await this.smsService.sendSms({
+              tenantId: ts.tenant_id,
+              to: quote.customer_phone,
+              body: smsBody,
+              source: 'quote_follow_up',
+              sourceId: quote.id,
+              customerId: quote.customer_id || undefined,
+            });
+            if (!smsResult.success) {
+              this.logger.warn(
+                `SMS follow-up for quote ${quote.id} did not send: ${smsResult.error}`,
+              );
+            }
+          } catch (err: any) {
+            this.logger.error(
+              `SMS follow-up threw for quote ${quote.id}: ${err.message}`,
+            );
+          }
         }
       }
     }
