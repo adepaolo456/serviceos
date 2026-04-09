@@ -444,6 +444,11 @@ export default function BookingWizard({
         customerLat: svcAddr.lat || 42.0834,
         customerLng: svcAddr.lng || -71.0184,
         rentalDays: rentalLength,
+        // Include customerId when a customer is selected so the backend
+        // applies any matching client_pricing_overrides (base_price only
+        // in the current Pass 1 scope). Falls back to global pricing
+        // when no customer is selected or no override exists.
+        ...(selectedCustomer?.id ? { customerId: selectedCustomer.id } : {}),
         ...(isExchange && exchangeRental ? {
           exchange_context: {
             pickup_asset_subtype: exchangeRental.dumpster_size,
