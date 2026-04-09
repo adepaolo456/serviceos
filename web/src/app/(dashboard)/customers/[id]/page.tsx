@@ -1007,6 +1007,7 @@ function PricingOverrideRow({
         });
       } else {
         await api.post(`/customers/${customerId}/pricing-overrides`, {
+          customer_id: customerId,
           pricing_rule_id: rule.id,
           base_price: parsed,
         });
@@ -1157,6 +1158,7 @@ function SurchargeOverrideRow({
         });
       } else {
         await api.post(`/customers/${customerId}/surcharge-overrides`, {
+          customer_id: customerId,
           surcharge_template_id: template.id,
           amount: parsed,
           available_for_billing: active,
