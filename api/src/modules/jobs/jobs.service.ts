@@ -13,6 +13,7 @@ import { Notification } from '../notifications/entities/notification.entity';
 import { Customer } from '../customers/entities/customer.entity';
 import { Route } from '../dispatch/entities/route.entity';
 import { Invoice } from '../billing/entities/invoice.entity';
+import { BillingIssue } from '../billing/entities/billing-issue.entity';
 import { CreditMemo } from '../billing/entities/credit-memo.entity';
 import { RentalChain } from '../rental-chains/entities/rental-chain.entity';
 import { TaskChainLink } from '../rental-chains/entities/task-chain-link.entity';
@@ -60,6 +61,8 @@ export class JobsService {
     private routeRepo: Repository<Route>,
     @InjectRepository(Invoice)
     private invoiceRepo: Repository<Invoice>,
+    @InjectRepository(BillingIssue)
+    private billingIssueRepo: Repository<BillingIssue>,
     @InjectRepository(CreditMemo)
     private creditMemoRepo: Repository<CreditMemo>,
     @InjectRepository(RentalChain)
@@ -258,6 +261,17 @@ export class JobsService {
 
     const [data, total] = await qb.getManyAndCount();
 
+    // Opt-in operational-board enrichment. Zero effect on callers that
+    // don't pass ?enrichment=board. Runs three parallel lookups scoped
+    // to the paged job IDs — O(N) post-fetch, no N+1.
+    if (query.enrichment === 'board' && data.length > 0) {
+      const enriched = await this.enrichJobsForBoard(tenantId, data);
+      return {
+        data: enriched,
+        meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
+      };
+    }
+
     return {
       data,
       meta: {
@@ -267,6 +281,109 @@ export class JobsService {
         totalPages: Math.ceil(total / limit),
       },
     };
+  }
+
+  /**
+   * Attach operational-board fields to each job: linked invoice status,
+   * rental-chain context (prev/next link), open billing issue count,
+   * and a derived dispatch_ready flag. All lookups tenant-scoped via
+   * the job IDs (which are already filtered by tenant in findAll).
+   */
+  private async enrichJobsForBoard(
+    tenantId: string,
+    jobs: Job[],
+  ): Promise<Array<Job & Record<string, unknown>>> {
+    const jobIds = jobs.map((j) => j.id);
+
+    const [invoices, chainLinks, billingIssues] = await Promise.all([
+      this.invoiceRepo.find({
+        where: { tenant_id: tenantId, job_id: In(jobIds) },
+        select: ['id', 'status', 'balance_due', 'job_id'],
+      }),
+      this.taskChainLinkRepo.find({
+        where: { job_id: In(jobIds) },
+        relations: ['previous_link', 'previous_link.job', 'next_link', 'next_link.job'],
+      }),
+      this.billingIssueRepo.find({
+        where: { tenant_id: tenantId, status: 'open', job_id: In(jobIds) },
+        select: ['id', 'job_id'],
+      }),
+    ]);
+
+    // Index lookups by job_id for O(1) attach
+    const invoiceByJob = new Map<string, (typeof invoices)[number]>();
+    for (const inv of invoices) {
+      // If multiple invoices exist for the same job, prefer the first
+      // one encountered — matches existing dispatch board behavior.
+      if (!invoiceByJob.has(inv.job_id)) invoiceByJob.set(inv.job_id, inv);
+    }
+
+    const chainLinkByJob = new Map<string, (typeof chainLinks)[number]>();
+    for (const link of chainLinks) chainLinkByJob.set(link.job_id, link);
+
+    const billingIssueCountByJob = new Map<string, number>();
+    for (const issue of billingIssues) {
+      billingIssueCountByJob.set(
+        issue.job_id,
+        (billingIssueCountByJob.get(issue.job_id) ?? 0) + 1,
+      );
+    }
+
+    return jobs.map((job) => {
+      const invoice = invoiceByJob.get(job.id) ?? null;
+      const link = chainLinkByJob.get(job.id) ?? null;
+      const openBillingIssueCount = billingIssueCountByJob.get(job.id) ?? 0;
+
+      // Dispatch ready = not terminal AND (no invoice OR invoice paid/partial).
+      // Mirrors the visibility predicate at dispatch.service.ts:39.
+      const isTerminal = ['completed', 'cancelled', 'voided'].includes(
+        job.status,
+      );
+      const invoicePaidOrMissing =
+        !invoice ||
+        invoice.status === 'paid' ||
+        invoice.status === 'partial' ||
+        invoice.status === 'voided';
+      const dispatchReady = !isTerminal && invoicePaidOrMissing;
+
+      const chainContext = link
+        ? {
+            chainId: link.rental_chain_id,
+            sequenceNumber: link.sequence_number,
+            previousLink: link.previous_link
+              ? {
+                  jobId: link.previous_link.job?.id ?? link.previous_link.job_id,
+                  taskType: link.previous_link.task_type,
+                  scheduledDate: link.previous_link.scheduled_date,
+                  assetSubtype:
+                    link.previous_link.job?.asset_subtype ?? null,
+                }
+              : null,
+            nextLink: link.next_link
+              ? {
+                  jobId: link.next_link.job?.id ?? link.next_link.job_id,
+                  taskType: link.next_link.task_type,
+                  scheduledDate: link.next_link.scheduled_date,
+                  assetSubtype: link.next_link.job?.asset_subtype ?? null,
+                }
+              : null,
+          }
+        : null;
+
+      return {
+        ...job,
+        linked_invoice: invoice
+          ? {
+              id: invoice.id,
+              status: invoice.status,
+              balance_due: Number(invoice.balance_due) || 0,
+            }
+          : null,
+        chain: chainContext,
+        open_billing_issue_count: openBillingIssueCount,
+        dispatch_ready: dispatchReady,
+      };
+    });
   }
 
   async findOne(tenantId: string, id: string): Promise<Job> {

@@ -216,6 +216,16 @@ export class ListJobsQueryDto {
   @IsInt()
   @Min(1)
   limit?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Optional enrichment mode. When set to "board", each job is decorated with linked_invoice, chain context, open_billing_issue_count, and dispatch_ready flag. Default (omitted) returns the original shape unchanged.',
+    enum: ['board'],
+  })
+  @IsOptional()
+  @IsString()
+  @IsIn(['board'])
+  enrichment?: string;
 }
 
 export class ChangeStatusDto {

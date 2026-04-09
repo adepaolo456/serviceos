@@ -30,6 +30,20 @@ import { useToast } from "@/components/toast";
 
 /* ─── Types ─── */
 
+interface JobChainLinkRef {
+  jobId: string;
+  taskType: string;
+  scheduledDate: string;
+  assetSubtype: string | null;
+}
+
+interface JobChainContext {
+  chainId: string;
+  sequenceNumber: number;
+  previousLink: JobChainLinkRef | null;
+  nextLink: JobChainLinkRef | null;
+}
+
 interface Job {
   id: string;
   job_number: string;
@@ -55,6 +69,13 @@ interface Job {
   rescheduled_by_customer?: boolean;
   rescheduled_from_date?: string;
   created_at: string;
+  // Board-enrichment fields — populated when the fetch passes
+  // ?enrichment=board. Optional to preserve backward compatibility with
+  // the raw /jobs response shape used by the legacy status filter path.
+  linked_invoice?: { id: string; status: string; balance_due: number } | null;
+  chain?: JobChainContext | null;
+  open_billing_issue_count?: number;
+  dispatch_ready?: boolean;
 }
 
 interface JobsResponse {
@@ -198,7 +219,7 @@ export default function JobsPage() {
         const range = getDateRange(dateRange);
         const results = await Promise.all(
           statuses.map(s => {
-            const params = new URLSearchParams({ page: "1", limit: "50", status: s });
+            const params = new URLSearchParams({ page: "1", limit: "50", status: s, enrichment: "board" });
             if (range.dateFrom) params.set("dateFrom", range.dateFrom);
             if (range.dateTo) params.set("dateTo", range.dateTo);
             return api.get<JobsResponse>(`/jobs?${params.toString()}`);
@@ -208,7 +229,7 @@ export default function JobsPage() {
         setJobs(merged);
         setTotal(results.reduce((sum, r) => sum + r.meta.total, 0));
       } else {
-        const params = new URLSearchParams({ page: String(page), limit: "30" });
+        const params = new URLSearchParams({ page: String(page), limit: "30", enrichment: "board" });
         // Map display filter keys to stored status values for API
         const DISPLAY_TO_STORED: Record<string, string> = { assigned: "dispatched", pending_payment: "pending" };
         const apiStatus = DISPLAY_TO_STORED[statusFilter] || statusFilter;
@@ -586,9 +607,20 @@ export default function JobsPage() {
 
                       {/* Status */}
                       <td style={{ padding: "12px 16px" }}>
-                        <span style={{ fontSize: 11, fontWeight: 600, color: displayStatusColor(deriveDisplayStatus(job.status)) }}>
-                          {DISPLAY_STATUS_LABELS[deriveDisplayStatus(job.status)]}
-                        </span>
+                        {(() => {
+                          // Pass linked invoice status so pending_payment
+                          // renders correctly (was rendering as "unassigned"
+                          // before the enrichment wire-up).
+                          const displayStatus = deriveDisplayStatus(
+                            job.status,
+                            job.linked_invoice?.status,
+                          );
+                          return (
+                            <span style={{ fontSize: 11, fontWeight: 600, color: displayStatusColor(displayStatus) }}>
+                              {DISPLAY_STATUS_LABELS[displayStatus]}
+                            </span>
+                          );
+                        })()}
                         {job.is_overdue && (
                           <p className="badge-error" style={{ fontSize: 9, fontWeight: 700, marginTop: 3, padding: "0px 5px", display: "inline-block" }}>
                             +{job.extra_days}d
