@@ -3,6 +3,7 @@ import {
   Logger,
   BadRequestException,
   ConflictException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Not } from 'typeorm';
@@ -101,7 +102,13 @@ export class TenantSettingsService {
   async updateNotificationConfig(
     tenantId: string,
     dto: UpdateNotificationConfigDto,
+    userRole: string,
   ): Promise<TenantSettings> {
+    // Field-level gating: only owner may mutate SMS-sensitive fields
+    if (dto.sms_enabled !== undefined && userRole !== 'owner') {
+      throw new ForbiddenException('Only the account owner can modify SMS settings');
+    }
+
     await this.getSettings(tenantId);
 
     const update: Record<string, unknown> = {};
@@ -118,7 +125,17 @@ export class TenantSettingsService {
   async updateQuoteSettings(
     tenantId: string,
     dto: UpdateQuoteSettingsDto,
+    userRole: string,
   ): Promise<TenantSettings> {
+    // Field-level gating: only owner may mutate SMS-sensitive fields
+    const touchesSmsFields =
+      dto.sms_phone_number !== undefined ||
+      dto.quotes_sms_enabled !== undefined ||
+      dto.quote_follow_up_enabled !== undefined;
+    if (touchesSmsFields && userRole !== 'owner') {
+      throw new ForbiddenException('Only the account owner can modify SMS settings');
+    }
+
     await this.getSettings(tenantId);
     const update: Record<string, unknown> = {};
     if (dto.sms_phone_number !== undefined) {
@@ -147,7 +164,12 @@ export class TenantSettingsService {
   async updateQuoteTemplates(
     tenantId: string,
     dto: UpdateQuoteTemplatesDto,
+    userRole: string,
   ): Promise<TenantSettings> {
+    // Quote templates include SMS body content — owner-only
+    if (userRole !== 'owner') {
+      throw new ForbiddenException('Only the account owner can modify SMS templates');
+    }
     await this.getSettings(tenantId);
     if (dto.quote_templates !== undefined) {
       await this.settingsRepo.update({ tenant_id: tenantId }, { quote_templates: dto.quote_templates, updated_at: new Date() } as any);

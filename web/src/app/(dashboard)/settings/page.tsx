@@ -10,6 +10,7 @@ import { api } from "@/lib/api";
 import { useToast } from "@/components/toast";
 import SlideOver from "@/components/slide-over";
 import AddressAutocomplete, { type AddressValue } from "@/components/address-autocomplete";
+import { SMS_LABELS } from "@/lib/sms-settings-labels";
 
 interface Profile {
   id: string; email: string; firstName: string; lastName: string; role: string;
@@ -79,10 +80,10 @@ export default function SettingsPage() {
       {tab === "locations" && <LocationsTab />}
       {tab === "team" && <TeamTab />}
       {tab === "billing" && <BillingTab profile={profile} />}
-      {tab === "notifications" && <NotificationsTab />}
+      {tab === "notifications" && <NotificationsTab profile={profile} />}
       {tab === "integrations" && <IntegrationsTab profile={profile} />}
       {tab === "website" && profile && <WebsiteTab slug={profile.tenant.slug} />}
-      {tab === "quotes" && <QuotesTab />}
+      {tab === "quotes" && <QuotesTab profile={profile} />}
       {tab === "account" && <AccountTab profile={profile} />}
     </div>
   );
@@ -527,7 +528,8 @@ const NOTIF_TYPES = [
 
 interface NotifPref { notification_type: string; email_enabled: boolean; sms_enabled: boolean }
 
-function NotificationsTab() {
+function NotificationsTab({ profile }: { profile: Profile | null }) {
+  const canManageSms = profile?.role === "owner";
   const [prefs, setPrefs] = useState<NotifPref[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<string | null>(null);
@@ -590,13 +592,18 @@ function NotificationsTab() {
             </button>
           </div>
           <div className="flex gap-2">
-            <input value={testPhone} onChange={e => setTestPhone(e.target.value)} placeholder="+1234567890" className={`flex-1 ${inp}`} />
-            <button onClick={() => sendTest("sms")} disabled={testSending || !testPhone} className="shrink-0 rounded-full px-4 py-2 text-xs font-semibold disabled:opacity-40" style={{ background: "var(--t-accent)", color: "var(--t-accent-on-accent)" }}>
+            <input value={testPhone} onChange={e => setTestPhone(e.target.value)} placeholder="+1234567890" className={`flex-1 ${inp}`} disabled={!canManageSms} />
+            <button onClick={() => sendTest("sms")} disabled={testSending || !testPhone || !canManageSms} className="shrink-0 rounded-full px-4 py-2 text-xs font-semibold disabled:opacity-40" style={{ background: "var(--t-accent)", color: "var(--t-accent-on-accent)" }}>
               {testSending ? "..." : "Test SMS"}
             </button>
           </div>
         </div>
         {testResult && <p className={`mt-2 text-xs font-medium ${testResult.startsWith("Failed") ? "text-[var(--t-error)]" : "text-[var(--t-accent)]"}`}>{testResult}</p>}
+        {!canManageSms && (
+          <p className="mt-3 text-[11px] rounded-[12px] px-3 py-2" style={{ background: "var(--t-bg-card-hover)", color: "var(--t-text-muted)", border: "1px solid var(--t-border)" }}>
+            {SMS_LABELS.readOnlyBanner}
+          </p>
+        )}
       </div>
 
       {/* Service Notifications */}
@@ -613,7 +620,7 @@ function NotificationsTab() {
                 </div>
                 {n.hasSms && (
                   <div className="flex items-center gap-1">
-                    <ToggleSwitch label="SMS" checked={p.sms_enabled} onChange={() => togglePref(n.type, "sms_enabled")} />
+                    <ToggleSwitch label="SMS" checked={p.sms_enabled} onChange={() => togglePref(n.type, "sms_enabled")} disabled={!canManageSms} />
                     {saving === n.type + "sms_enabled" && <Check className="h-3 w-3 text-[var(--t-accent)]" />}
                   </div>
                 )}
@@ -637,7 +644,7 @@ function NotificationsTab() {
                 </div>
                 {n.hasSms && (
                   <div className="flex items-center gap-1">
-                    <ToggleSwitch label="SMS" checked={p.sms_enabled} onChange={() => togglePref(n.type, "sms_enabled")} />
+                    <ToggleSwitch label="SMS" checked={p.sms_enabled} onChange={() => togglePref(n.type, "sms_enabled")} disabled={!canManageSms} />
                     {saving === n.type + "sms_enabled" && <Check className="h-3 w-3 text-[var(--t-accent)]" />}
                   </div>
                 )}
@@ -669,10 +676,10 @@ function NotifCard({ title, desc, children }: { title: string; desc: string; chi
   );
 }
 
-function ToggleSwitch({ label, checked, onChange }: { label: string; checked: boolean; onChange: () => void }) {
+function ToggleSwitch({ label, checked, onChange, disabled = false }: { label: string; checked: boolean; onChange: () => void; disabled?: boolean }) {
   return (
-    <label className="inline-flex items-center gap-2 cursor-pointer">
-      <button type="button" onClick={onChange} className={`relative h-5 w-9 rounded-full transition-colors ${checked ? "bg-[var(--t-accent)]" : "bg-[var(--t-bg-card-hover)]"}`}>
+    <label className={`inline-flex items-center gap-2 ${disabled ? "cursor-not-allowed opacity-50" : "cursor-pointer"}`}>
+      <button type="button" onClick={disabled ? undefined : onChange} disabled={disabled} className={`relative h-5 w-9 rounded-full transition-colors ${checked ? "bg-[var(--t-accent)]" : "bg-[var(--t-bg-card-hover)]"} ${disabled ? "cursor-not-allowed" : ""}`}>
         <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${checked ? "left-[18px]" : "left-0.5"}`} />
       </button>
       {label && <span className="text-[13px] text-[var(--t-text-muted)]">{label}</span>}
@@ -894,7 +901,8 @@ function WebsiteTab({ slug }: { slug: string }) {
 
 /* ─── Quotes Tab ─── */
 
-function QuotesTab() {
+function QuotesTab({ profile }: { profile: Profile | null }) {
+  const canManageSms = profile?.role === "owner";
   const [settings, setSettings] = useState<Record<string, any> | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -921,26 +929,34 @@ function QuotesTab() {
 
     setSaving(true);
     try {
-      await api.patch("/tenant-settings/quotes", {
+      // Build payload: SMS-sensitive fields only included when caller is owner.
+      // Backend rejects SMS field mutations from non-owners with 403 regardless,
+      // so stripping client-side lets admin still save non-SMS quote settings.
+      const quotesPayload: Record<string, any> = {
         quote_expiration_days: Number(settings.quote_expiration_days) || 30,
         hot_quote_view_threshold: Number(settings.hot_quote_view_threshold) || 2,
         follow_up_recency_minutes: Number(settings.follow_up_recency_minutes) || 120,
         expiring_soon_hours: Number(settings.expiring_soon_hours) || 48,
         quotes_email_enabled: settings.quotes_email_enabled,
-        quotes_sms_enabled: settings.quotes_sms_enabled,
         default_quote_delivery_method: method,
-        quote_follow_up_enabled: settings.quote_follow_up_enabled ?? false,
         quote_follow_up_delay_hours: Number(settings.quote_follow_up_delay_hours) || 24,
-      });
-      // Save templates separately (clean empty strings)
-      const templates = settings.quote_templates || {};
-      const cleanTemplates: Record<string, string> = {};
-      for (const [k, v] of Object.entries(templates)) {
-        if (typeof v === "string" && v.trim()) cleanTemplates[k] = v;
+      };
+      if (canManageSms) {
+        quotesPayload.quotes_sms_enabled = settings.quotes_sms_enabled;
+        quotesPayload.quote_follow_up_enabled = settings.quote_follow_up_enabled ?? false;
       }
-      await api.patch("/tenant-settings/quote-templates", {
-        quote_templates: Object.keys(cleanTemplates).length > 0 ? cleanTemplates : null,
-      });
+      await api.patch("/tenant-settings/quotes", quotesPayload);
+      // Templates are owner-only (contain SMS body content)
+      if (canManageSms) {
+        const templates = settings.quote_templates || {};
+        const cleanTemplates: Record<string, string> = {};
+        for (const [k, v] of Object.entries(templates)) {
+          if (typeof v === "string" && v.trim()) cleanTemplates[k] = v;
+        }
+        await api.patch("/tenant-settings/quote-templates", {
+          quote_templates: Object.keys(cleanTemplates).length > 0 ? cleanTemplates : null,
+        });
+      }
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch {
@@ -989,9 +1005,10 @@ function QuotesTab() {
           </div>
         </div>
         <div className="mt-4 space-y-3">
-          <label className="inline-flex items-center gap-3 cursor-pointer">
+          <label className={`inline-flex items-center gap-3 ${canManageSms ? "cursor-pointer" : "cursor-not-allowed opacity-50"}`}>
             <input type="checkbox" checked={settings.quote_follow_up_enabled ?? false}
               onChange={(e) => set("quote_follow_up_enabled", e.target.checked)}
+              disabled={!canManageSms}
               className="accent-[var(--t-accent)]" />
             <span className="text-sm text-[var(--t-text-primary)]">Enable automatic follow-up email</span>
           </label>
@@ -1013,6 +1030,11 @@ function QuotesTab() {
       {/* Delivery Settings */}
       <div>
         <h3 className="text-sm font-bold uppercase tracking-wide text-[var(--t-text-primary)] mb-3">Delivery Settings</h3>
+        {!canManageSms && (
+          <div className="mb-3 rounded-[14px] px-3 py-2 text-[11px]" style={{ background: "var(--t-bg-card-hover)", color: "var(--t-text-muted)", border: "1px solid var(--t-border)" }}>
+            {SMS_LABELS.readOnlyBanner}
+          </div>
+        )}
         <div className="space-y-3">
           <label className="inline-flex items-center gap-3 cursor-pointer">
             <input type="checkbox" checked={settings.quotes_email_enabled ?? true}
@@ -1021,10 +1043,10 @@ function QuotesTab() {
             <span className="text-sm text-[var(--t-text-primary)]">Enable email quotes</span>
           </label>
           <div>
-            <label className={`inline-flex items-center gap-3 ${settings.sms_phone_number ? "cursor-pointer" : "opacity-50 cursor-not-allowed"}`}>
+            <label className={`inline-flex items-center gap-3 ${settings.sms_phone_number && canManageSms ? "cursor-pointer" : "opacity-50 cursor-not-allowed"}`}>
               <input type="checkbox" checked={settings.quotes_sms_enabled ?? false}
-                onChange={(e) => { if (settings.sms_phone_number) set("quotes_sms_enabled", e.target.checked); }}
-                disabled={!settings.sms_phone_number}
+                onChange={(e) => { if (settings.sms_phone_number && canManageSms) set("quotes_sms_enabled", e.target.checked); }}
+                disabled={!settings.sms_phone_number || !canManageSms}
                 className="accent-[var(--t-accent)]" />
               <span className="text-sm text-[var(--t-text-primary)]">Enable SMS quotes</span>
             </label>
@@ -1046,7 +1068,7 @@ function QuotesTab() {
       </div>
 
       {/* SMS Configuration */}
-      <SmsConfigCard settings={settings} onUpdate={(updates) => { for (const [k, v] of Object.entries(updates)) set(k, v); }} />
+      <SmsConfigCard settings={settings} canManageSms={canManageSms} onUpdate={(updates) => { for (const [k, v] of Object.entries(updates)) set(k, v); }} />
 
       {/* Templates */}
       <div>
@@ -1108,43 +1130,6 @@ function QuotesTab() {
 
 /* ─── SMS Config Card ─── */
 
-const SMS_LABELS = {
-  sectionTitle: "SMS Configuration",
-  numberLabel: "SMS Number",
-  noNumber: "No SMS number assigned",
-  statusActive: "SMS active",
-  statusInactive: "SMS inactive",
-  statusNotConfigured: "SMS not configured",
-  getSmsNumber: "Get SMS Number",
-  editNumber: "Change Number",
-  smsBusinessDescription: "Get a dedicated texting number for your business. Customers can receive quotes and updates via text.",
-  smsProvisioning: "Setting up your number...",
-  smsProvisioningFailed: "Unable to provision a number right now. Please try again later.",
-  numberPlaceholder: "(508) 555-1234",
-  invalidNumber: "Please enter a valid US phone number",
-  // ── Number-removal request flow ──
-  requestNumberRemoval: "Request Number Removal",
-  smsRemovalPending: "Removal request submitted — awaiting ServiceOS review",
-  smsRemovalRequestSubmitted: "Removal request submitted",
-  smsRemovalCancel: "Cancel request",
-  smsRemovalCancelled: "Request cancelled",
-  smsRemovalRejected: "Removal request was declined",
-  smsRemovalReleased: "Number was released",
-  smsRemovalFailed: "Removal failed — contact support",
-  removalModalTitle: "Request SMS number removal",
-  removalModalBody:
-    "Submitting this request will ask ServiceOS to release your dedicated SMS number. ServiceOS will review the request before any change is made.",
-  removalModalBullet1:
-    "Customers will no longer be able to text this number once it is released.",
-  removalModalBullet2:
-    "Monthly billing for the number stops only after the release is processed by ServiceOS.",
-  removalModalBullet3:
-    "Releasing a number is irreversible — you may not be able to recover the same number.",
-  removalModalConfirm: "Submit request",
-  removalModalCancel: "Keep number",
-  removalSubmitFailed: "Could not submit removal request. Please try again.",
-};
-
 interface SmsReleaseRequest {
   id: string;
   status: "pending" | "rejected" | "released" | "failed";
@@ -1155,7 +1140,7 @@ interface SmsReleaseRequest {
   failure_reason: string | null;
 }
 
-function SmsConfigCard({ settings, onUpdate }: { settings: Record<string, any>; onUpdate: (u: Record<string, any>) => void }) {
+function SmsConfigCard({ settings, canManageSms, onUpdate }: { settings: Record<string, any>; canManageSms: boolean; onUpdate: (u: Record<string, any>) => void }) {
   const { toast } = useToast();
   const [provisioning, setProvisioning] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -1284,6 +1269,11 @@ function SmsConfigCard({ settings, onUpdate }: { settings: Record<string, any>; 
     <div>
       <h3 className="text-sm font-bold uppercase tracking-wide text-[var(--t-text-primary)] mb-3">{SMS_LABELS.sectionTitle}</h3>
       <div className="rounded-[14px] border p-4 space-y-3" style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)" }}>
+        {!canManageSms && (
+          <div className="rounded-[12px] px-3 py-2 text-[11px]" style={{ background: "var(--t-bg-card-hover)", color: "var(--t-text-muted)", border: "1px solid var(--t-border)" }}>
+            {SMS_LABELS.readOnlyBanner}
+          </div>
+        )}
         <div className="flex items-center justify-between">
           <span className="text-sm" style={{ color: "var(--t-text-primary)" }}>{SMS_LABELS.numberLabel}</span>
           <span className="text-sm font-mono" style={{ color: hasNumber ? "var(--t-text-primary)" : "var(--t-text-muted)" }}>
@@ -1302,7 +1292,7 @@ function SmsConfigCard({ settings, onUpdate }: { settings: Record<string, any>; 
         {!hasNumber && !editing && (
           <>
             <p className="text-[11px]" style={{ color: "var(--t-text-muted)" }}>{SMS_LABELS.smsBusinessDescription}</p>
-            <button type="button" onClick={handleProvision} disabled={provisioning}
+            <button type="button" onClick={handleProvision} disabled={provisioning || !canManageSms}
               className="rounded-full bg-[var(--t-accent)] text-white px-5 py-2 text-sm font-semibold transition-opacity disabled:opacity-50 hover:opacity-90">
               {provisioning ? SMS_LABELS.smsProvisioning : SMS_LABELS.getSmsNumber}
             </button>
@@ -1322,9 +1312,9 @@ function SmsConfigCard({ settings, onUpdate }: { settings: Record<string, any>; 
             <button
               type="button"
               onClick={handleCancelRemoval}
-              disabled={cancellingRemoval}
+              disabled={cancellingRemoval || !canManageSms}
               className="text-[11px] font-semibold underline disabled:opacity-50"
-              style={{ background: "none", border: "none", cursor: "pointer", color: "inherit" }}
+              style={{ background: "none", border: "none", cursor: canManageSms ? "pointer" : "not-allowed", color: "inherit" }}
             >
               {cancellingRemoval ? "..." : SMS_LABELS.smsRemovalCancel}
             </button>
@@ -1340,16 +1330,18 @@ function SmsConfigCard({ settings, onUpdate }: { settings: Record<string, any>; 
         {hasNumber && !editing && (
           <div className="flex items-center gap-3">
             <button type="button" onClick={() => { setNumberInput(settings.sms_phone_number || ""); setEditing(true); setError(""); }}
-              className="text-[11px] font-medium transition-colors hover:underline"
-              style={{ color: "var(--t-text-muted)", background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+              disabled={!canManageSms}
+              className="text-[11px] font-medium transition-colors hover:underline disabled:opacity-50"
+              style={{ color: "var(--t-text-muted)", background: "none", border: "none", cursor: canManageSms ? "pointer" : "not-allowed", padding: 0 }}>
               {SMS_LABELS.editNumber}
             </button>
             {!hasPendingRemoval && (
               <button
                 type="button"
                 onClick={() => setRemovalModalOpen(true)}
-                className="text-[11px] font-medium transition-colors hover:underline"
-                style={{ color: "var(--t-error)", background: "none", border: "none", cursor: "pointer", padding: 0 }}
+                disabled={!canManageSms}
+                className="text-[11px] font-medium transition-colors hover:underline disabled:opacity-50"
+                style={{ color: "var(--t-error)", background: "none", border: "none", cursor: canManageSms ? "pointer" : "not-allowed", padding: 0 }}
               >
                 {SMS_LABELS.requestNumberRemoval}
               </button>
