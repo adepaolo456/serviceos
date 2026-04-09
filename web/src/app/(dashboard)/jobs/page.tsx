@@ -274,6 +274,25 @@ export default function JobsPage() {
         const merged = results.flatMap(r => r.data);
         setJobs(merged);
         setTotal(results.reduce((sum, r) => sum + r.meta.total, 0));
+      } else if (statusFilter === "blocked") {
+        // "Blocked" is a computed UI layer — NOT a stored job status, so
+        // we cannot query `?status=blocked` on the API. Fetch a wide
+        // slice of the most recent enriched jobs (enrichment=board
+        // populates open_billing_issue_count + linked_invoice, which
+        // isJobBlocked reads) and narrow the slice with the same
+        // predicate the top-strip tile uses. The authoritative
+        // tenant-wide count is still summary.blocked, sourced from
+        // /analytics/jobs-summary. Single source of truth for the
+        // predicate lives in isJobBlocked(), which mirrors
+        // AnalyticsService.getJobsSummary()'s SQL 1:1.
+        const params = new URLSearchParams({ page: "1", limit: "200", enrichment: "board" });
+        const range = getDateRange(dateRange);
+        if (range.dateFrom) params.set("dateFrom", range.dateFrom);
+        if (range.dateTo) params.set("dateTo", range.dateTo);
+        const res = await api.get<JobsResponse>(`/jobs?${params.toString()}`);
+        const blockedInSlice = res.data.filter(isJobBlocked);
+        setJobs(blockedInSlice);
+        setTotal(blockedInSlice.length);
       } else {
         const params = new URLSearchParams({ page: String(page), limit: "30", enrichment: "board" });
         // Map display filter keys to stored status values for API
@@ -430,20 +449,24 @@ export default function JobsPage() {
             featureId: "job_status_blocked",
             value: summary.blocked,
             color: summary.blocked > 0 ? "var(--t-error)" : "var(--t-text-primary)",
-            // Blocked is not a stored status — tile is display-only for
-            // this pass. Red left-borders on matching rows do the
-            // filtering work visually.
-            filter: null,
+            // Blocked is a computed UI layer, not a stored status — the
+            // fetchJobs branch for "blocked" handles the filtering by
+            // applying isJobBlocked to a wide enriched slice.
+            filter: "blocked" as const,
             icon: FileWarning,
-            clickable: false,
           },
         ].map((stat) => {
           const feature = FEATURE_REGISTRY[stat.featureId];
           const label = feature?.label ?? stat.key;
           const tooltip = feature?.shortDescription;
           const Icon = stat.icon;
-          const commonChildren = (
-            <>
+          return (
+            <button
+              key={stat.key}
+              onClick={() => { setStatusFilter(stat.filter); setDateRange("all"); }}
+              className="surface-card card-hover text-left px-4 py-3"
+              title={tooltip}
+            >
               <div className="flex items-center justify-between mb-1">
                 <Icon style={{ width: 14, height: 14, color: stat.color }} />
                 {stat.key === "blocked" && stat.value > 0 && (
@@ -455,29 +478,7 @@ export default function JobsPage() {
               </div>
               <p style={{ fontSize: 24, fontWeight: 700, color: stat.color, fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>{stat.value}</p>
               <p style={{ fontSize: 11, fontWeight: 500, color: "var(--t-text-muted)", marginTop: 4 }}>{label}</p>
-            </>
-          );
-          if (stat.clickable && stat.filter) {
-            const filterValue = stat.filter;
-            return (
-              <button
-                key={stat.key}
-                onClick={() => { setStatusFilter(filterValue); setDateRange("all"); }}
-                className="surface-card card-hover text-left px-4 py-3"
-                title={tooltip}
-              >
-                {commonChildren}
-              </button>
-            );
-          }
-          return (
-            <div
-              key={stat.key}
-              className="surface-card px-4 py-3"
-              title={tooltip}
-            >
-              {commonChildren}
-            </div>
+            </button>
           );
         })}
       </div>
