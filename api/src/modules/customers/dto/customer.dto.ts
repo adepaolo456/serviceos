@@ -77,6 +77,11 @@ export class CreateCustomerDto {
   @IsString()
   notes?: string;
 
+  @ApiPropertyOptional({ example: 'Gate code 4921. Drop behind white fence, away from mailbox.' })
+  @IsOptional()
+  @IsString()
+  driverInstructions?: string;
+
   @ApiPropertyOptional({ example: ['vip', 'repeat'] })
   @IsOptional()
   @IsArray()
