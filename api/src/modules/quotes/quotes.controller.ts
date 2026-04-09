@@ -5,7 +5,7 @@ import { Repository } from 'typeorm';
 import { Quote } from './quote.entity';
 import { Tenant } from '../tenants/entities/tenant.entity';
 import { Customer } from '../customers/entities/customer.entity';
-import { TenantId, CurrentUser, Public } from '../../common/decorators';
+import { TenantId, CurrentUser } from '../../common/decorators';
 import { NotificationsService } from '../notifications/notifications.service';
 import { TenantSettingsService } from '../tenant-settings/tenant-settings.service';
 import { SmsService } from '../sms/sms.service';
@@ -896,21 +896,4 @@ export class QuotesController {
     };
   }
 
-  /**
-   * Public: GET /quotes/:id/book — Legacy endpoint (kept for backward compat).
-   */
-  @Public()
-  @Get(':id/book')
-  @ApiOperation({ summary: 'Validate quote for booking (legacy)' })
-  async bookFromQuote(@Param('id', ParseUUIDPipe) id: string) {
-    const quote = await this.quoteRepo.findOne({ where: { id } });
-    if (!quote) return { valid: false, error: 'Quote not found' };
-    if (new Date() > quote.expires_at) return { valid: false, expired: true, message: 'This quote has expired' };
-    return {
-      valid: true,
-      quoteId: quote.id,
-      expiresAt: quote.expires_at,
-      size: quote.asset_subtype,
-    };
-  }
 }

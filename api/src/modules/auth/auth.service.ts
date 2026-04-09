@@ -10,6 +10,7 @@ import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { User } from './entities/user.entity';
 import { Tenant } from '../tenants/entities/tenant.entity';
+import { TenantSettings } from '../tenant-settings/entities/tenant-settings.entity';
 import {
   RegisterDto,
   LoginDto,
@@ -25,6 +26,8 @@ export class AuthService {
     private usersRepository: Repository<User>,
     @InjectRepository(Tenant)
     private tenantsRepository: Repository<Tenant>,
+    @InjectRepository(TenantSettings)
+    private tenantSettingsRepository: Repository<TenantSettings>,
     private jwtService: JwtService,
   ) {}
 
@@ -67,6 +70,15 @@ export class AuthService {
       role: 'owner',
     });
     const savedUser = await this.usersRepository.save(user);
+
+    // Pre-create tenant_settings row so the new tenant starts with an
+    // explicit row (entity defaults applied) rather than relying on the
+    // lazy-create path in TenantSettingsService.getSettings(). The lazy
+    // fallback is preserved as a safety net.
+    const tenantSettings = this.tenantSettingsRepository.create({
+      tenant_id: savedTenant.id,
+    });
+    await this.tenantSettingsRepository.save(tenantSettings);
 
     const tokens = await this.generateTokens(savedUser, savedTenant.id);
     await this.updateRefreshTokenHash(savedUser.id, tokens.refreshToken);
@@ -495,6 +507,14 @@ export class AuthService {
       role: 'owner',
     });
     const savedUser = await this.usersRepository.save(user);
+
+    // Pre-create tenant_settings row for Google OAuth signup (parity with
+    // email/password register path). Lazy fallback in TenantSettingsService
+    // remains as a safety net.
+    const tenantSettings = this.tenantSettingsRepository.create({
+      tenant_id: savedTenant.id,
+    });
+    await this.tenantSettingsRepository.save(tenantSettings);
 
     const tokens = await this.generateTokens(savedUser, savedTenant.id);
     await this.updateRefreshTokenHash(savedUser.id, tokens.refreshToken);
