@@ -129,6 +129,52 @@ export const CUSTOMER_DASHBOARD_LABELS = {
     active: "No active rentals",
     lastJob: "No jobs yet",
   },
+
+  // ────────────────────────────────────────────────────────────────
+  // Customer > Pricing tab — editable overrides (Pass 1: base_price only)
+  // ────────────────────────────────────────────────────────────────
+  pricing: {
+    sections: {
+      customPricing: "Custom Pricing",
+      customPricingDescription:
+        "Override global base prices for specific dumpster sizes. Other fields continue to use global pricing.",
+      surcharges: "Surcharge Amounts",
+      surchargesDescription:
+        "Override default surcharge amounts for this customer.",
+    },
+    status: {
+      usingGlobal: "Using global pricing",
+      usingGlobalSurcharges: "Using default surcharges",
+      customActive: "Custom pricing active",
+      customSurchargesActive: "Custom surcharges active",
+    },
+    fields: {
+      size: "Size",
+      global: "Global",
+      override: "Override",
+      effective: "Effective",
+      default: "Default",
+      clientRate: "Client Rate",
+      active: "Active",
+      overridePlaceholder: "Same as global",
+    },
+    actions: {
+      save: "Save",
+      clear: "Clear",
+      saving: "Saving…",
+    },
+    empty: {
+      noRules: "No pricing rules configured yet",
+      noRulesHint:
+        "Add tenant pricing rules on the Pricing page before setting customer overrides.",
+      noSurcharges: "No surcharge templates configured yet",
+    },
+    toast: {
+      saved: "Override saved",
+      cleared: "Override removed",
+      failed: "Failed to save override",
+    },
+  },
 } as const;
 
 // ──────────────────────────────────────────────────────────────────

@@ -811,7 +811,21 @@ interface SurchargeOverride {
   surcharge_template?: { id: string; name: string; default_amount: number };
 }
 
-function CustomerPricingTab({ customerId, customerName }: { customerId: string; customerName: string }) {
+interface PricingRuleLite {
+  id: string;
+  name: string;
+  asset_subtype: string;
+  base_price: number;
+  included_tons: number;
+  overage_per_ton: number;
+  extra_day_rate: number;
+  rental_period_days: number;
+  is_active: boolean;
+}
+
+function CustomerPricingTab({ customerId }: { customerId: string; customerName: string }) {
+  const L = CUSTOMER_DASHBOARD_LABELS.pricing;
+  const [rules, setRules] = useState<PricingRuleLite[]>([]);
   const [overrides, setOverrides] = useState<PricingOverride[]>([]);
   const [surcharges, setSurcharges] = useState<SurchargeOverride[]>([]);
   const [allTemplates, setAllTemplates] = useState<Array<{ id: string; name: string; default_amount: number }>>([]);
@@ -821,11 +835,18 @@ function CustomerPricingTab({ customerId, customerName }: { customerId: string; 
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [ov, sc, tpl] = await Promise.all([
+      const [rulesRes, ov, sc, tpl] = await Promise.all([
+        api.get<{ data: PricingRuleLite[] } | PricingRuleLite[]>("/pricing"),
         api.get<PricingOverride[]>(`/customers/${customerId}/pricing-overrides`),
         api.get<SurchargeOverride[]>(`/customers/${customerId}/surcharge-overrides`),
         api.get<Array<{ id: string; name: string; default_amount: number }>>("/surcharge-templates"),
       ]);
+      const ruleList: PricingRuleLite[] = Array.isArray(rulesRes)
+        ? rulesRes
+        : Array.isArray((rulesRes as any)?.data)
+          ? (rulesRes as any).data
+          : [];
+      setRules(ruleList.filter((r) => r.is_active !== false));
       setOverrides(Array.isArray(ov) ? ov : []);
       setSurcharges(Array.isArray(sc) ? sc : []);
       setAllTemplates(Array.isArray(tpl) ? tpl : []);
@@ -834,112 +855,430 @@ function CustomerPricingTab({ customerId, customerName }: { customerId: string; 
 
   useEffect(() => { fetchData(); }, [customerId]);
 
-  const fmt = (n: number | null | undefined) => n != null ? formatCurrency(n) : null;
-
   if (loading) {
     return <div className="space-y-4">{Array.from({ length: 3 }).map((_, i) => <div key={i} className="h-20 animate-pulse rounded-[20px]" style={{ background: "var(--t-bg-card)" }} />)}</div>;
   }
 
+  const overridesByRuleId = new Map(overrides.map((o) => [o.pricing_rule_id, o]));
+  const overridesActiveCount = overrides.filter((o) => o.base_price != null).length;
+
   return (
     <div className="space-y-8 max-w-3xl">
-      {/* Pricing Overrides */}
+      {/* ── Section 1: Custom Pricing ── */}
       <div>
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-start justify-between gap-3 mb-4 flex-wrap">
           <div>
-            <h3 className="text-sm font-semibold" style={{ color: "var(--t-text-primary)" }}>Custom Pricing</h3>
-            <p className="text-xs mt-0.5" style={{ color: "var(--t-text-muted)" }}>Override global pricing rules for {customerName}</p>
+            <h3 className="text-sm font-semibold" style={{ color: "var(--t-text-primary)" }}>
+              {L.sections.customPricing}
+            </h3>
+            <p className="text-xs mt-0.5" style={{ color: "var(--t-text-muted)" }}>
+              {L.sections.customPricingDescription}
+            </p>
           </div>
+          <span
+            className="rounded-full px-2.5 py-0.5 text-[11px] font-semibold shrink-0"
+            style={{
+              background: overridesActiveCount > 0
+                ? "var(--t-accent-soft, rgba(34,197,94,0.12))"
+                : "var(--t-bg-card-hover)",
+              color: overridesActiveCount > 0 ? "var(--t-accent)" : "var(--t-text-muted)",
+            }}
+          >
+            {overridesActiveCount > 0
+              ? `${L.status.customActive} · ${overridesActiveCount}`
+              : L.status.usingGlobal}
+          </span>
         </div>
-        {overrides.length === 0 ? (
+
+        {rules.length === 0 ? (
           <div className="rounded-[20px] border p-6 text-center" style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)" }}>
-            <p className="text-sm" style={{ color: "var(--t-text-muted)" }}>Using global pricing — no custom overrides</p>
+            <p className="text-sm" style={{ color: "var(--t-text-muted)" }}>{L.empty.noRules}</p>
+            <p className="text-xs mt-1" style={{ color: "var(--t-text-muted)" }}>{L.empty.noRulesHint}</p>
           </div>
         ) : (
-          <div className="space-y-3">
-            {overrides.map(o => {
-              const rule = o.pricing_rule;
-              return (
-                <div key={o.id} className="rounded-[20px] border p-4" style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)" }}>
-                  <div className="flex items-center justify-between mb-2">
-                    <h4 className="text-sm font-semibold" style={{ color: "var(--t-text-primary)" }}>
-                      {rule?.asset_subtype || "Custom"} Dumpster
-                    </h4>
-                    <button onClick={async () => { await api.delete(`/customers/${customerId}/pricing-overrides/${o.id}`); toast("success", "Override removed"); fetchData(); }}
-                      className="text-xs text-[var(--t-error)] hover:underline">Remove</button>
-                  </div>
-                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-xs">
-                    {[
-                      { label: "Base Price", val: o.base_price, global: rule?.base_price },
-                      { label: "Weight Allow.", val: o.weight_allowance_tons, global: rule?.included_tons, suffix: " tons" },
-                      { label: "Overage/Ton", val: o.overage_per_ton, global: rule?.overage_per_ton },
-                      { label: "Daily Rate", val: o.daily_overage_rate, global: rule?.extra_day_rate },
-                      { label: "Rental Days", val: o.rental_days, global: rule?.rental_period_days, suffix: " days" },
-                    ].map(f => (
-                      <div key={f.label}>
-                        <p className="font-medium mb-0.5" style={{ color: "var(--t-text-muted)" }}>{f.label}</p>
-                        {f.val != null ? (
-                          <p className="font-semibold" style={{ color: "var(--t-accent)" }}>
-                            {f.suffix ? `${f.val}${f.suffix}` : fmt(f.val)}
-                          </p>
-                        ) : (
-                          <p style={{ color: "var(--t-text-muted)" }}>
-                            {f.global != null ? (f.suffix ? `${f.global}${f.suffix}` : fmt(f.global)) : "—"} <span className="text-[10px]">(global)</span>
-                          </p>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              );
-            })}
+          <div className="rounded-[20px] border overflow-hidden" style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)" }}>
+            {rules.map((rule, idx) => (
+              <PricingOverrideRow
+                key={rule.id}
+                customerId={customerId}
+                rule={rule}
+                override={overridesByRuleId.get(rule.id) ?? null}
+                isLast={idx === rules.length - 1}
+                onChanged={fetchData}
+                onToast={toast}
+              />
+            ))}
           </div>
         )}
       </div>
 
-      {/* Surcharge Overrides */}
+      {/* ── Section 2: Surcharge Amounts ── */}
       <div>
-        <div className="mb-4">
-          <h3 className="text-sm font-semibold" style={{ color: "var(--t-text-primary)" }}>Surcharge Amounts</h3>
-          <p className="text-xs mt-0.5" style={{ color: "var(--t-text-muted)" }}>Override default surcharge amounts for this customer</p>
+        <div className="flex items-start justify-between gap-3 mb-4 flex-wrap">
+          <div>
+            <h3 className="text-sm font-semibold" style={{ color: "var(--t-text-primary)" }}>
+              {L.sections.surcharges}
+            </h3>
+            <p className="text-xs mt-0.5" style={{ color: "var(--t-text-muted)" }}>
+              {L.sections.surchargesDescription}
+            </p>
+          </div>
+          <span
+            className="rounded-full px-2.5 py-0.5 text-[11px] font-semibold shrink-0"
+            style={{
+              background: surcharges.length > 0
+                ? "var(--t-accent-soft, rgba(34,197,94,0.12))"
+                : "var(--t-bg-card-hover)",
+              color: surcharges.length > 0 ? "var(--t-accent)" : "var(--t-text-muted)",
+            }}
+          >
+            {surcharges.length > 0
+              ? `${L.status.customSurchargesActive} · ${surcharges.length}`
+              : L.status.usingGlobalSurcharges}
+          </span>
         </div>
-        <div className="rounded-[20px] border overflow-hidden" style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)" }}>
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-[var(--t-border)]">
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider" style={{ color: "var(--t-text-muted)" }}>Surcharge</th>
-                <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider" style={{ color: "var(--t-text-muted)" }}>Default</th>
-                <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider" style={{ color: "var(--t-text-muted)" }}>Client Rate</th>
-                <th className="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider" style={{ color: "var(--t-text-muted)" }}>Active</th>
-              </tr>
-            </thead>
-            <tbody>
-              {allTemplates.map(tpl => {
-                const override = surcharges.find(s => s.surcharge_template_id === tpl.id);
-                return (
-                  <tr key={tpl.id} className="border-b border-[var(--t-border)] last:border-0">
-                    <td className="px-4 py-3" style={{ color: "var(--t-text-primary)" }}>{tpl.name}</td>
-                    <td className="px-4 py-3 text-right tabular-nums" style={{ color: "var(--t-text-muted)" }}>{formatCurrency(tpl.default_amount)}</td>
-                    <td className="px-4 py-3 text-right tabular-nums font-medium" style={{ color: override ? "var(--t-accent)" : "var(--t-text-muted)" }}>
-                      {override ? formatCurrency(Number(override.amount)) : "—"}
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      {override ? (
-                        <span className="text-[10px] font-medium px-2 py-0.5 rounded-full" style={{
-                          background: override.available_for_billing ? "var(--t-accent-soft)" : "var(--t-bg-elevated)",
-                          color: override.available_for_billing ? "var(--t-accent)" : "var(--t-text-muted)",
-                        }}>
-                          {override.available_for_billing ? "Yes" : "No"}
-                        </span>
-                      ) : (
-                        <span className="text-xs" style={{ color: "var(--t-text-muted)" }}>—</span>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+
+        {allTemplates.length === 0 ? (
+          <div className="rounded-[20px] border p-6 text-center" style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)" }}>
+            <p className="text-sm" style={{ color: "var(--t-text-muted)" }}>{L.empty.noSurcharges}</p>
+          </div>
+        ) : (
+          <div className="rounded-[20px] border overflow-hidden" style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)" }}>
+            {allTemplates.map((tpl, idx) => (
+              <SurchargeOverrideRow
+                key={tpl.id}
+                customerId={customerId}
+                template={tpl}
+                override={surcharges.find((s) => s.surcharge_template_id === tpl.id) ?? null}
+                isLast={idx === allTemplates.length - 1}
+                onChanged={fetchData}
+                onToast={toast}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Single editable row for a pricing rule → customer override. */
+function PricingOverrideRow({
+  customerId,
+  rule,
+  override,
+  isLast,
+  onChanged,
+  onToast,
+}: {
+  customerId: string;
+  rule: PricingRuleLite;
+  override: PricingOverride | null;
+  isLast: boolean;
+  onChanged: () => void;
+  onToast: (variant: "success" | "error" | "warning", msg: string) => void;
+}) {
+  const L = CUSTOMER_DASHBOARD_LABELS.pricing;
+  const [input, setInput] = useState<string>(
+    override?.base_price != null ? String(override.base_price) : "",
+  );
+  const [saving, setSaving] = useState(false);
+  const [clearing, setClearing] = useState(false);
+
+  // Keep input in sync if parent refetches
+  useEffect(() => {
+    setInput(override?.base_price != null ? String(override.base_price) : "");
+  }, [override?.base_price]);
+
+  const globalBase = Number(rule.base_price);
+  const parsed = input.trim() === "" ? null : Number(input);
+  const isValid = parsed !== null && !isNaN(parsed) && parsed > 0;
+  const currentOverride = override?.base_price != null ? Number(override.base_price) : null;
+  const isDirty = isValid && parsed !== currentOverride;
+  const effective = currentOverride ?? globalBase;
+
+  const handleSave = async () => {
+    if (!isValid || !isDirty) return;
+    setSaving(true);
+    try {
+      if (override) {
+        await api.put(`/customers/${customerId}/pricing-overrides/${override.id}`, {
+          base_price: parsed,
+        });
+      } else {
+        await api.post(`/customers/${customerId}/pricing-overrides`, {
+          pricing_rule_id: rule.id,
+          base_price: parsed,
+        });
+      }
+      onToast("success", L.toast.saved);
+      onChanged();
+    } catch {
+      onToast("error", L.toast.failed);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleClear = async () => {
+    if (!override) return;
+    setClearing(true);
+    try {
+      await api.delete(`/customers/${customerId}/pricing-overrides/${override.id}`);
+      onToast("success", L.toast.cleared);
+      onChanged();
+    } catch {
+      onToast("error", L.toast.failed);
+    } finally {
+      setClearing(false);
+    }
+  };
+
+  const hasOverride = currentOverride != null;
+
+  return (
+    <div
+      className="flex items-center gap-3 px-4 py-3 flex-wrap"
+      style={{ borderBottom: isLast ? "none" : "1px solid var(--t-border)" }}
+    >
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium" style={{ color: "var(--t-text-primary)" }}>
+          {rule.asset_subtype}
+        </p>
+        <p className="text-[10px]" style={{ color: "var(--t-text-muted)" }}>
+          {L.fields.global}: {formatCurrency(globalBase)}
+          {" · "}
+          {L.fields.effective}:{" "}
+          <span style={{ color: hasOverride ? "var(--t-accent)" : "var(--t-text-muted)", fontWeight: hasOverride ? 600 : 400 }}>
+            {formatCurrency(effective)}
+          </span>
+        </p>
+      </div>
+
+      <div className="flex items-center gap-2 shrink-0">
+        <div className="relative">
+          <span
+            className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs pointer-events-none"
+            style={{ color: "var(--t-text-muted)" }}
+          >
+            $
+          </span>
+          <input
+            type="number"
+            inputMode="decimal"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder={L.fields.overridePlaceholder}
+            className="w-28 rounded-full border bg-[var(--t-bg-card-hover)] pl-5 pr-2.5 py-1.5 text-xs text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)] transition-colors tabular-nums"
+            style={{ borderColor: "var(--t-border)" }}
+          />
         </div>
+        <button
+          type="button"
+          onClick={handleSave}
+          disabled={!isDirty || !isValid || saving}
+          className="rounded-full px-3 py-1.5 text-xs font-semibold transition-opacity disabled:opacity-40"
+          style={{
+            background: "var(--t-accent)",
+            color: "var(--t-accent-on-accent)",
+            cursor: !isDirty || !isValid ? "not-allowed" : "pointer",
+          }}
+        >
+          {saving ? L.actions.saving : L.actions.save}
+        </button>
+        {hasOverride && (
+          <button
+            type="button"
+            onClick={handleClear}
+            disabled={clearing}
+            className="rounded-full border px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-40"
+            style={{
+              borderColor: "var(--t-border)",
+              color: "var(--t-text-muted)",
+            }}
+          >
+            {clearing ? "…" : L.actions.clear}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Single editable row for a surcharge template → customer override. */
+function SurchargeOverrideRow({
+  customerId,
+  template,
+  override,
+  isLast,
+  onChanged,
+  onToast,
+}: {
+  customerId: string;
+  template: { id: string; name: string; default_amount: number };
+  override: SurchargeOverride | null;
+  isLast: boolean;
+  onChanged: () => void;
+  onToast: (variant: "success" | "error" | "warning", msg: string) => void;
+}) {
+  const L = CUSTOMER_DASHBOARD_LABELS.pricing;
+  const [input, setInput] = useState<string>(
+    override?.amount != null ? String(override.amount) : "",
+  );
+  const [active, setActive] = useState<boolean>(override?.available_for_billing ?? true);
+  const [saving, setSaving] = useState(false);
+  const [clearing, setClearing] = useState(false);
+
+  useEffect(() => {
+    setInput(override?.amount != null ? String(override.amount) : "");
+    setActive(override?.available_for_billing ?? true);
+  }, [override?.amount, override?.available_for_billing]);
+
+  const defaultAmount = Number(template.default_amount);
+  const parsed = input.trim() === "" ? null : Number(input);
+  const isValid = parsed !== null && !isNaN(parsed) && parsed >= 0;
+  const currentAmount = override?.amount != null ? Number(override.amount) : null;
+  const currentActive = override?.available_for_billing ?? true;
+  const isDirty =
+    (isValid && parsed !== currentAmount) ||
+    (override != null && active !== currentActive);
+
+  const effective = override && currentActive ? currentAmount! : defaultAmount;
+  const hasOverride = override != null;
+
+  const handleSave = async () => {
+    if (!isValid || !isDirty) return;
+    setSaving(true);
+    try {
+      if (override) {
+        await api.put(`/customers/${customerId}/surcharge-overrides/${override.id}`, {
+          amount: parsed,
+          available_for_billing: active,
+        });
+      } else {
+        await api.post(`/customers/${customerId}/surcharge-overrides`, {
+          surcharge_template_id: template.id,
+          amount: parsed,
+          available_for_billing: active,
+        });
+      }
+      onToast("success", L.toast.saved);
+      onChanged();
+    } catch {
+      onToast("error", L.toast.failed);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleClear = async () => {
+    if (!override) return;
+    setClearing(true);
+    try {
+      await api.delete(`/customers/${customerId}/surcharge-overrides/${override.id}`);
+      onToast("success", L.toast.cleared);
+      onChanged();
+    } catch {
+      onToast("error", L.toast.failed);
+    } finally {
+      setClearing(false);
+    }
+  };
+
+  return (
+    <div
+      className="flex items-center gap-3 px-4 py-3 flex-wrap"
+      style={{ borderBottom: isLast ? "none" : "1px solid var(--t-border)" }}
+    >
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium" style={{ color: "var(--t-text-primary)" }}>
+          {template.name}
+        </p>
+        <p className="text-[10px]" style={{ color: "var(--t-text-muted)" }}>
+          {L.fields.default}: {formatCurrency(defaultAmount)}
+          {" · "}
+          {L.fields.effective}:{" "}
+          <span
+            style={{
+              color: hasOverride && currentActive ? "var(--t-accent)" : "var(--t-text-muted)",
+              fontWeight: hasOverride && currentActive ? 600 : 400,
+            }}
+          >
+            {formatCurrency(effective)}
+          </span>
+        </p>
+      </div>
+
+      <div className="flex items-center gap-2 shrink-0">
+        <div className="relative">
+          <span
+            className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs pointer-events-none"
+            style={{ color: "var(--t-text-muted)" }}
+          >
+            $
+          </span>
+          <input
+            type="number"
+            inputMode="decimal"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder={L.fields.overridePlaceholder}
+            className="w-24 rounded-full border bg-[var(--t-bg-card-hover)] pl-5 pr-2.5 py-1.5 text-xs text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)] transition-colors tabular-nums"
+            style={{ borderColor: "var(--t-border)" }}
+          />
+        </div>
+
+        {/* Active toggle — only meaningful once an override exists */}
+        <label
+          className={`inline-flex items-center gap-1.5 ${hasOverride ? "cursor-pointer" : "cursor-not-allowed opacity-50"}`}
+        >
+          <button
+            type="button"
+            onClick={() => hasOverride && setActive((v) => !v)}
+            disabled={!hasOverride}
+            className={`relative h-5 w-9 rounded-full transition-colors ${
+              active ? "bg-[var(--t-accent)]" : "bg-[var(--t-bg-card-hover)]"
+            }`}
+            style={{ border: "1px solid var(--t-border)" }}
+          >
+            <span
+              className={`absolute top-0.5 h-3.5 w-3.5 rounded-full bg-white transition-transform ${
+                active ? "left-[18px]" : "left-0.5"
+              }`}
+            />
+          </button>
+          <span className="text-[10px]" style={{ color: "var(--t-text-muted)" }}>
+            {L.fields.active}
+          </span>
+        </label>
+
+        <button
+          type="button"
+          onClick={handleSave}
+          disabled={!isDirty || !isValid || saving}
+          className="rounded-full px-3 py-1.5 text-xs font-semibold transition-opacity disabled:opacity-40"
+          style={{
+            background: "var(--t-accent)",
+            color: "var(--t-accent-on-accent)",
+            cursor: !isDirty || !isValid ? "not-allowed" : "pointer",
+          }}
+        >
+          {saving ? L.actions.saving : L.actions.save}
+        </button>
+        {hasOverride && (
+          <button
+            type="button"
+            onClick={handleClear}
+            disabled={clearing}
+            className="rounded-full border px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-40"
+            style={{
+              borderColor: "var(--t-border)",
+              color: "var(--t-text-muted)",
+            }}
+          >
+            {clearing ? "…" : L.actions.clear}
+          </button>
+        )}
       </div>
     </div>
   );
