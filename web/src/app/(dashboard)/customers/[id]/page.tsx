@@ -15,17 +15,7 @@ import { deriveDisplayStatus, DISPLAY_STATUS_LABELS, displayStatusColor } from "
 import SlideOver from "@/components/slide-over";
 import AddressAutocomplete, { type AddressValue } from "@/components/address-autocomplete";
 import MapboxMap from "@/components/mapbox-map";
-import {
-  CUSTOMER_DASHBOARD_LABELS,
-  smsStatusLabel,
-} from "@/lib/customer-dashboard-labels";
-import type { CustomerDashboardResponse } from "@/lib/customer-dashboard-types";
-import StatusStrip from "./_components/StatusStrip";
-import ServiceSitesPanel from "./_components/ServiceSitesPanel";
-import FinancialSnapshotCard from "./_components/FinancialSnapshotCard";
-import AlertsIssuesPanel from "./_components/AlertsIssuesPanel";
-import JobsTimeline from "./_components/JobsTimeline";
-import NotesAndInstructions from "./_components/NotesAndInstructions";
+import { CUSTOMER_DASHBOARD_LABELS } from "@/lib/customer-dashboard-labels";
 
 /* ---- Types ---- */
 
@@ -95,6 +85,9 @@ const TABS = [
 
 type Tab = typeof TABS[number]["key"];
 
+/** Overview-tab interactive tile keys — drives the shared detail panel. */
+type OverviewTile = "jobs" | "revenue" | "avgValue" | "active" | "lastJob";
+
 /* ---- Page ---- */
 
 export default function CustomerDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -108,10 +101,9 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
   const [notes, setNotes] = useState<Note[]>([]);
   const [customerQuotes, setCustomerQuotes] = useState<Array<{ id: string; quote_number: string; asset_subtype: string; total_quoted: number; derived_status: string; created_at: string; customer_name: string | null }>>([]);
   const [creditMemos, setCreditMemos] = useState<{ id: string; amount: number; reason: string; status: string }[]>([]);
-  const [dashboard, setDashboard] = useState<CustomerDashboardResponse | null>(null);
   const [loading, setLoading] = useState(true);
-  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [tab, setTab] = useState<Tab>("overview");
+  const [selectedTile, setSelectedTile] = useState<OverviewTile | null>(null);
   const [editOpen, setEditOpen] = useState(false);
   const [newNote, setNewNote] = useState("");
   const [addingNote, setAddingNote] = useState(false);
@@ -131,17 +123,22 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
           .catch(() => setCustomerQuotes([]));
         api.get<{ id: string; amount: number; reason: string; status: string }[]>(`/invoices/credit-memos/by-customer/${id}`)
           .then(setCreditMemos).catch(() => setCreditMemos([]));
-        // New composed dashboard payload (Pass 2 — backend aggregator).
-        // Fetched independently so the legacy tabs still render if this
-        // endpoint 404s or errors (e.g. old deploys without the column).
-        api.get<CustomerDashboardResponse>(`/customers/${id}/dashboard`)
-          .then(setDashboard)
-          .catch(() => setDashboard(null));
       } catch { /* */ }
       finally { setLoading(false); }
     }
     load();
   }, [id]);
+
+  // Default selected tile once jobs are loaded: Active if there are any
+  // active rentals, otherwise Jobs. Runs exactly once per customer load —
+  // after the user clicks a tile we keep their selection.
+  useEffect(() => {
+    if (loading || selectedTile !== null) return;
+    const hasActive = jobs.some(
+      (j) => !["completed", "cancelled"].includes(j.status),
+    );
+    setSelectedTile(hasActive ? "active" : "jobs");
+  }, [loading, jobs, selectedTile]);
 
   const handleDelete = async () => {
     if (!confirm("Delete this customer?")) return;
@@ -195,21 +192,6 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
                 {activeJobs.length > 0 && <span className="text-xs font-medium text-yellow-500">Active Rental</span>}
                 {netBalance > 0 && <span className="text-xs font-medium text-[var(--t-error)]">Balance Due</span>}
                 {netBalance < 0 && <span className="text-xs font-medium text-[var(--t-accent)]">Credit</span>}
-                {dashboard && (
-                  <span
-                    className="text-xs font-medium"
-                    style={{
-                      color:
-                        dashboard.identity.smsStatus === "opted_out"
-                          ? "var(--t-warning)"
-                          : dashboard.identity.smsStatus === "enabled"
-                            ? "var(--t-accent)"
-                            : "var(--t-text-muted)",
-                    }}
-                  >
-                    {smsStatusLabel(dashboard.identity.smsStatus)}
-                  </span>
-                )}
               </div>
               {customer.company_name && <p className="text-xs text-[var(--t-text-muted)] mt-0.5">{customer.company_name}</p>}
               <div className="flex items-center gap-3 mt-1.5 text-xs text-[var(--t-text-muted)] flex-wrap">
@@ -230,54 +212,9 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
             <button onClick={handleDelete} className="rounded-full border border-[var(--t-error)]/20 bg-transparent p-2 text-[var(--t-error)] hover:bg-[var(--t-error-soft)] transition-colors"><Trash2 className="h-3.5 w-3.5" /></button>
           </div>
         </div>
-
-        {/* Inline status strip — backend-derived severity + reason chips
-            embedded inside the header card to avoid a separate row. */}
-        {dashboard && (
-          <StatusStrip data={dashboard.statusStrip} variant="inline" />
-        )}
       </div>
 
-      {/* ===== NEW COMPOSED DASHBOARD (primary view, Pass 2) ===== */}
-      {dashboard ? (
-        <div className="grid grid-cols-1 gap-3 lg:grid-cols-3 mb-4">
-          <div className="lg:col-span-2 space-y-3">
-            {/* Priority row: alerts + financial side-by-side above jobs */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <AlertsIssuesPanel issues={dashboard.issues} />
-              <FinancialSnapshotCard data={dashboard.financial} />
-            </div>
-            <JobsTimeline data={dashboard.jobsTimeline} />
-          </div>
-          <div className="space-y-3">
-            <ServiceSitesPanel data={dashboard.serviceSites} />
-            <NotesAndInstructions data={dashboard.notes} />
-          </div>
-        </div>
-      ) : (
-        <div className="mb-4 space-y-3">
-          <div className="h-12 rounded-[20px] bg-[var(--t-bg-card)] animate-pulse" />
-          <div className="h-48 rounded-[20px] bg-[var(--t-bg-card)] animate-pulse" />
-        </div>
-      )}
-
-      {/* ===== ADVANCED: legacy tabs preserved behind expandable ===== */}
-      <details
-        open={advancedOpen}
-        onToggle={(e) => setAdvancedOpen((e.target as HTMLDetailsElement).open)}
-        className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] mb-4"
-      >
-        <summary
-          className="cursor-pointer select-none px-5 py-3 text-sm font-semibold text-[var(--t-text-primary)] flex items-center justify-between"
-        >
-          <span>{CUSTOMER_DASHBOARD_LABELS.sections.advanced}</span>
-          <span className="text-[11px] font-normal text-[var(--t-text-muted)]">
-            {CUSTOMER_DASHBOARD_LABELS.sections.advancedHint}
-          </span>
-        </summary>
-
-        <div className="border-t border-[var(--t-border)] p-5">
-      {/* ===== TABS ===== */}
+      {/* ===== TABS (promoted to top-level — no Advanced wrapper) ===== */}
       <div className="flex gap-0 border-b border-[var(--t-frame-border)] mb-5 overflow-x-auto">
         {TABS.map(t => (
           <button key={t.key} onClick={() => setTab(t.key)}
@@ -334,54 +271,51 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
                 <MapboxMap markers={mapPins} style={{ height: 200, width: "100%" }} interactive={false} showControls={false} />
               ) : null;
             })()}
-            {/* Quick Stats */}
+            {/* Interactive tiles — selecting a tile drives the shared detail panel below */}
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
-              {[
-                { label: "Jobs", value: customer.total_jobs },
-                { label: "Revenue", value: fmtMoneyShort(customer.lifetime_revenue) },
-                { label: "Avg Value", value: `$${avgValue}` },
-                { label: "Active", value: activeJobs.length },
-                { label: "Last Job", value: daysSinceLastJob !== null ? `${daysSinceLastJob}d` : "—" },
-              ].map(s => (
-                <div key={s.label} className="rounded-[20px] bg-[var(--t-bg-card)] border border-[var(--t-border)] p-3 text-center">
-                  <p className="text-base font-bold text-[var(--t-text-primary)] tabular-nums">{s.value}</p>
-                  <p className="text-[9px] text-[var(--t-text-muted)]">{s.label}</p>
-                </div>
-              ))}
+              {(
+                [
+                  { key: "jobs" as const, label: CUSTOMER_DASHBOARD_LABELS.tile.jobs, value: customer.total_jobs },
+                  { key: "revenue" as const, label: CUSTOMER_DASHBOARD_LABELS.tile.revenue, value: fmtMoneyShort(customer.lifetime_revenue) },
+                  { key: "avgValue" as const, label: CUSTOMER_DASHBOARD_LABELS.tile.avgValue, value: `$${avgValue}` },
+                  { key: "active" as const, label: CUSTOMER_DASHBOARD_LABELS.tile.active, value: activeJobs.length },
+                  { key: "lastJob" as const, label: CUSTOMER_DASHBOARD_LABELS.tile.lastJob, value: daysSinceLastJob !== null ? `${daysSinceLastJob}d` : "—" },
+                ]
+              ).map(s => {
+                const isSelected = selectedTile === s.key;
+                return (
+                  <button
+                    key={s.key}
+                    type="button"
+                    onClick={() => setSelectedTile(s.key)}
+                    className="rounded-[20px] border p-3 text-center transition-colors cursor-pointer"
+                    style={{
+                      background: isSelected ? "var(--t-accent-soft, rgba(34,197,94,0.08))" : "var(--t-bg-card)",
+                      borderColor: isSelected ? "var(--t-accent)" : "var(--t-border)",
+                    }}
+                    aria-pressed={isSelected}
+                  >
+                    <p
+                      className="text-base font-bold tabular-nums"
+                      style={{ color: isSelected ? "var(--t-accent)" : "var(--t-text-primary)" }}
+                    >
+                      {s.value}
+                    </p>
+                    <p className="text-[9px] text-[var(--t-text-muted)]">{s.label}</p>
+                  </button>
+                );
+              })}
             </div>
-            {/* Active Rentals */}
-            {activeJobs.length > 0 && (
-              <div className="rounded-[20px] border border-[var(--t-border)] p-4">
-                <p className="text-xs text-yellow-500 uppercase tracking-wider font-semibold mb-2">Active Rentals ({activeJobs.length})</p>
-                <div className="space-y-1.5">
-                  {activeJobs.map(j => (
-                    <Link key={j.id} href={`/jobs/${j.id}`} className="flex items-center justify-between rounded-[20px] bg-[var(--t-bg-card)] border border-[var(--t-border)] px-3 py-2 hover:bg-[var(--t-bg-card-hover)] transition-colors">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-medium text-[var(--t-text-primary)]">{j.job_number}</span>
-                        {j.asset && <span className="text-[10px] text-[var(--t-text-muted)]">{j.asset.identifier}</span>}
-                      </div>
-                      <span className={`text-[10px] font-medium capitalize ${STATUS_CLS[j.status] || ""}`}>{j.status.replace(/_/g, " ")}</span>
-                    </Link>
-                  ))}
-                </div>
-              </div>
+
+            {/* Shared detail panel — only the selected tile's content is rendered */}
+            {selectedTile && (
+              <OverviewTilePanel
+                tile={selectedTile}
+                jobs={jobs}
+                invoices={invoices}
+                customer={customer}
+              />
             )}
-            {/* Recent Jobs */}
-            <Card title="Recent Jobs" action={<button onClick={() => setTab("jobs")} className="text-[10px] text-[var(--t-accent)]">View all</button>}>
-              {jobs.length === 0 ? <p className="py-4 text-center text-xs text-[var(--t-text-muted)]">No jobs</p> : (
-                <div className="divide-y divide-[var(--t-border)] -mx-4">
-                  {jobs.slice(0, 5).map(j => (
-                    <Link key={j.id} href={`/jobs/${j.id}`} className="flex items-center justify-between px-4 py-2 hover:bg-[var(--t-bg-card-hover)] transition-colors">
-                      <span className="text-xs font-medium text-[var(--t-text-primary)]">{j.job_number}</span>
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] text-[var(--t-text-muted)]">{j.scheduled_date || "—"}</span>
-                        <span className={`text-[10px] font-medium ${STATUS_CLS[j.status] || ""}`}>{j.status.replace(/_/g, " ")}</span>
-                      </div>
-                    </Link>
-                  ))}
-                </div>
-              )}
-            </Card>
           </div>
         </div>
       )}
@@ -604,8 +538,6 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
           )}
         </div>
       )}
-        </div>
-      </details>
 
       {/* Edit */}
       <SlideOver open={editOpen} onClose={() => setEditOpen(false)} title="Edit Customer">
@@ -631,6 +563,192 @@ function Card({ title, action, children }: { title: string; action?: React.React
 
 function Row({ label, value }: { label: string; value: React.ReactNode }) {
   return <div className="flex items-center justify-between py-1.5 text-sm"><span className="text-[var(--t-text-muted)]">{label}</span><span className="text-[var(--t-text-primary)]">{value}</span></div>;
+}
+
+/* ---- Overview Tile Detail Panel ----
+ * Shared panel rendered below the Overview tile row. Its content changes
+ * based on which tile the user selected. All data comes from the existing
+ * customer-page fetches — no new network calls.
+ */
+
+function OverviewTilePanel({
+  tile,
+  jobs,
+  invoices,
+  customer,
+}: {
+  tile: OverviewTile;
+  jobs: Job[];
+  invoices: Invoice[];
+  customer: Customer;
+}) {
+  const L = CUSTOMER_DASHBOARD_LABELS;
+
+  // — Jobs: most-recent-first, up to 10 —
+  if (tile === "jobs") {
+    const recent = [...jobs].slice(0, 10);
+    return (
+      <Card title={L.tilePanel.jobs}>
+        {recent.length === 0 ? (
+          <EmptyRow>{L.tileEmpty.jobs}</EmptyRow>
+        ) : (
+          <div className="divide-y divide-[var(--t-border)] -mx-4">
+            {recent.map((j) => (
+              <Link key={j.id} href={`/jobs/${j.id}`} className="flex items-center justify-between px-4 py-2 hover:bg-[var(--t-bg-card-hover)] transition-colors">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-xs font-medium text-[var(--t-text-primary)]">{j.job_number}</span>
+                  <span className="text-[10px] text-[var(--t-text-muted)] capitalize">{j.job_type}</span>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className="text-[10px] text-[var(--t-text-muted)]">{j.scheduled_date || "—"}</span>
+                  <span className={`text-[10px] font-medium ${STATUS_CLS[j.status] || ""}`}>{j.status.replace(/_/g, " ")}</span>
+                </div>
+              </Link>
+            ))}
+          </div>
+        )}
+      </Card>
+    );
+  }
+
+  // — Revenue: paid invoices, sum + list —
+  if (tile === "revenue") {
+    const paidInvoices = invoices.filter((i) => i.status === "paid");
+    const lifetimeRevenue = Number(customer.lifetime_revenue) || 0;
+    return (
+      <Card title={L.tilePanel.revenue}>
+        <div className="mb-3 flex items-baseline justify-between">
+          <p className="text-[10px] uppercase tracking-wider text-[var(--t-text-muted)]">
+            Lifetime
+          </p>
+          <p className="text-lg font-bold tabular-nums text-[var(--t-text-primary)]">
+            {fmtMoney(lifetimeRevenue)}
+          </p>
+        </div>
+        {paidInvoices.length === 0 ? (
+          <EmptyRow>{L.tileEmpty.revenue}</EmptyRow>
+        ) : (
+          <div className="divide-y divide-[var(--t-border)] -mx-4">
+            {paidInvoices.slice(0, 10).map((i) => (
+              <Link key={i.id} href={`/invoices/${i.id}`} className="flex items-center justify-between px-4 py-2 hover:bg-[var(--t-bg-card-hover)] transition-colors">
+                <div>
+                  <p className="text-xs font-medium text-[var(--t-text-primary)]">#{i.invoice_number}</p>
+                  <p className="text-[10px] text-[var(--t-text-muted)]">{new Date(i.created_at).toLocaleDateString()}</p>
+                </div>
+                <span className="text-sm font-medium text-[var(--t-accent)] tabular-nums">{fmtMoney(i.total)}</span>
+              </Link>
+            ))}
+          </div>
+        )}
+      </Card>
+    );
+  }
+
+  // — Avg Value: jobs sorted by total_price descending, highlight average —
+  if (tile === "avgValue") {
+    const priced = jobs
+      .filter((j) => Number(j.total_price) > 0)
+      .sort((a, b) => Number(b.total_price) - Number(a.total_price));
+    const avg = priced.length > 0
+      ? Math.round(priced.reduce((s, j) => s + Number(j.total_price), 0) / priced.length)
+      : 0;
+    return (
+      <Card title={L.tilePanel.avgValue}>
+        <div className="mb-3 flex items-baseline justify-between">
+          <p className="text-[10px] uppercase tracking-wider text-[var(--t-text-muted)]">
+            Average
+          </p>
+          <p className="text-lg font-bold tabular-nums text-[var(--t-text-primary)]">
+            ${avg}
+          </p>
+        </div>
+        {priced.length === 0 ? (
+          <EmptyRow>{L.tileEmpty.avgValue}</EmptyRow>
+        ) : (
+          <div className="divide-y divide-[var(--t-border)] -mx-4">
+            {priced.slice(0, 10).map((j) => (
+              <Link key={j.id} href={`/jobs/${j.id}`} className="flex items-center justify-between px-4 py-2 hover:bg-[var(--t-bg-card-hover)] transition-colors">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-medium text-[var(--t-text-primary)]">{j.job_number}</span>
+                  <span className="text-[10px] text-[var(--t-text-muted)] capitalize">{j.job_type}</span>
+                </div>
+                <span className="text-xs font-medium tabular-nums text-[var(--t-text-primary)]">{fmtMoneyShort(Number(j.total_price))}</span>
+              </Link>
+            ))}
+          </div>
+        )}
+      </Card>
+    );
+  }
+
+  // — Active: active (non-completed, non-cancelled) jobs only —
+  if (tile === "active") {
+    const active = jobs.filter((j) => !["completed", "cancelled"].includes(j.status));
+    return (
+      <Card title={L.tilePanel.active}>
+        {active.length === 0 ? (
+          <EmptyRow>{L.tileEmpty.active}</EmptyRow>
+        ) : (
+          <div className="divide-y divide-[var(--t-border)] -mx-4">
+            {active.map((j) => (
+              <Link key={j.id} href={`/jobs/${j.id}`} className="flex items-center justify-between px-4 py-2 hover:bg-[var(--t-bg-card-hover)] transition-colors">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-xs font-medium text-[var(--t-text-primary)]">{j.job_number}</span>
+                  {j.asset && <span className="text-[10px] text-[var(--t-text-muted)]">{j.asset.identifier}</span>}
+                  <span className="text-[10px] text-[var(--t-text-muted)] capitalize">{j.job_type}</span>
+                </div>
+                <span className={`text-[10px] font-medium capitalize shrink-0 ${STATUS_CLS[j.status] || ""}`}>
+                  {j.status.replace(/_/g, " ")}
+                </span>
+              </Link>
+            ))}
+          </div>
+        )}
+      </Card>
+    );
+  }
+
+  // — Last Job: single card with latest job summary —
+  if (tile === "lastJob") {
+    const last = jobs[0];
+    return (
+      <Card title={L.tilePanel.lastJob}>
+        {!last ? (
+          <EmptyRow>{L.tileEmpty.lastJob}</EmptyRow>
+        ) : (
+          <Link href={`/jobs/${last.id}`} className="block rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card-hover)] p-3 hover:opacity-90 transition-opacity">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm font-semibold text-[var(--t-text-primary)]">{last.job_number}</span>
+              <span className={`text-[10px] font-medium capitalize ${STATUS_CLS[last.status] || ""}`}>
+                {last.status.replace(/_/g, " ")}
+              </span>
+            </div>
+            <div className="flex items-center gap-3 text-[11px] text-[var(--t-text-muted)] flex-wrap">
+              <span className="capitalize">{last.job_type}</span>
+              {last.asset && <span>{last.asset.identifier}</span>}
+              {last.scheduled_date && <span>{last.scheduled_date}</span>}
+              {Number(last.total_price) > 0 && (
+                <span className="text-[var(--t-text-primary)] font-medium tabular-nums">
+                  {fmtMoney(Number(last.total_price))}
+                </span>
+              )}
+              <span>· {timeAgo(last.created_at)}</span>
+            </div>
+          </Link>
+        )}
+      </Card>
+    );
+  }
+
+  return null;
+}
+
+function EmptyRow({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="py-4 text-center text-xs text-[var(--t-text-muted)]">
+      {children}
+    </p>
+  );
 }
 
 /* ---- Edit Form ---- */

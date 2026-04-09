@@ -104,6 +104,31 @@ export const CUSTOMER_DASHBOARD_LABELS = {
     exchange: "Exchange",
     dump_run: "Dump Run",
   },
+
+  // ────────────────────────────────────────────────────────────────
+  // Overview tab — interactive tiles + shared detail panel
+  // ────────────────────────────────────────────────────────────────
+  tile: {
+    jobs: "Jobs",
+    revenue: "Revenue",
+    avgValue: "Avg Value",
+    active: "Active",
+    lastJob: "Last Job",
+  },
+  tilePanel: {
+    jobs: "Recent Jobs",
+    revenue: "Revenue History",
+    avgValue: "Jobs by Value",
+    active: "Active Rentals",
+    lastJob: "Latest Job",
+  },
+  tileEmpty: {
+    jobs: "No jobs yet",
+    revenue: "No revenue history yet",
+    avgValue: "No priced jobs yet",
+    active: "No active rentals",
+    lastJob: "No jobs yet",
+  },
 } as const;
 
 // ──────────────────────────────────────────────────────────────────
