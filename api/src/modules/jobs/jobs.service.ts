@@ -26,6 +26,10 @@ import { JobPricingAudit } from './entities/job-pricing-audit.entity';
 import { hasPricingRelevantChanges } from './helpers/pricing-change-detector';
 import { extractCoordinates, buildAddressString } from '../../common/helpers/coordinate-validator';
 import {
+  BLOCKED_JOBS_WHERE_CLAUSE,
+  BLOCKED_JOBS_WHERE_PARAMS,
+} from '../../common/helpers/blocked-jobs-predicate';
+import {
   CreateJobDto,
   UpdateJobDto,
   ListJobsQueryDto,
@@ -281,6 +285,59 @@ export class JobsService {
         totalPages: Math.ceil(total / limit),
       },
     };
+  }
+
+  /**
+   * Full tenant-scoped list of "Blocked" jobs for the Jobs page
+   * drill-down view. Uses the shared blocked predicate from
+   * src/common/helpers/blocked-jobs-predicate.ts so this list and
+   * AnalyticsService.getJobsSummary().blocked cannot drift.
+   *
+   * Blocked is a computed layer — NOT a stored job.status value. No
+   * rows are mutated here, no status is persisted.
+   *
+   * Date range semantics: filters on `j.scheduled_date` with inclusive
+   * bounds, matching the existing `findAll` behavior so the frontend
+   * Jobs page gets consistent date semantics across all filter
+   * branches.
+   *
+   * Enrichment: runs through the same `enrichJobsForBoard` pipeline
+   * that `findAll({ enrichment: 'board' })` uses, so the frontend sees
+   * `linked_invoice`, `open_billing_issue_count`, `chain`, and
+   * `dispatch_ready` on every row — identical shape to the existing
+   * `/jobs?enrichment=board` response rows.
+   *
+   * Multi-tenant safety: `j.tenant_id = :tenantId` is applied on the
+   * outer query, and the shared predicate's EXISTS subqueries
+   * additionally constrain `bi.tenant_id = j.tenant_id` and
+   * `inv.tenant_id = j.tenant_id` as belt-and-suspenders.
+   */
+  async findBlocked(
+    tenantId: string,
+    dateFrom?: string,
+    dateTo?: string,
+  ): Promise<Array<Job & Record<string, unknown>>> {
+    const qb = this.jobsRepository
+      .createQueryBuilder('j')
+      .leftJoinAndSelect('j.customer', 'customer')
+      .leftJoinAndSelect('j.asset', 'asset')
+      .leftJoinAndSelect('j.assigned_driver', 'assigned_driver')
+      .where('j.tenant_id = :tenantId', { tenantId });
+
+    if (dateFrom) {
+      qb.andWhere('j.scheduled_date >= :dateFrom', { dateFrom });
+    }
+    if (dateTo) {
+      qb.andWhere('j.scheduled_date <= :dateTo', { dateTo });
+    }
+
+    qb.andWhere(BLOCKED_JOBS_WHERE_CLAUSE, BLOCKED_JOBS_WHERE_PARAMS)
+      .orderBy('j.scheduled_date', 'DESC')
+      .addOrderBy('j.created_at', 'DESC');
+
+    const jobs = await qb.getMany();
+    if (jobs.length === 0) return [];
+    return this.enrichJobsForBoard(tenantId, jobs);
   }
 
   /**

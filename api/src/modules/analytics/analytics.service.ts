@@ -5,6 +5,11 @@ import { Invoice } from '../billing/entities/invoice.entity';
 import { Job } from '../jobs/entities/job.entity';
 import { Customer } from '../customers/entities/customer.entity';
 import { Asset } from '../assets/entities/asset.entity';
+import { JobsService } from '../jobs/jobs.service';
+import {
+  BLOCKED_JOBS_WHERE_CLAUSE,
+  BLOCKED_JOBS_WHERE_PARAMS,
+} from '../../common/helpers/blocked-jobs-predicate';
 
 @Injectable()
 export class AnalyticsService {
@@ -17,7 +22,24 @@ export class AnalyticsService {
     private customersRepository: Repository<Customer>,
     @InjectRepository(Asset)
     private assetsRepository: Repository<Asset>,
+    private readonly jobsService: JobsService,
   ) {}
+
+  /**
+   * Full tenant-scoped blocked job list for the Jobs page drill-down.
+   * Delegates to JobsService.findBlocked so the enrichment pipeline
+   * (linked_invoice, open_billing_issue_count, chain, dispatch_ready)
+   * stays in one place. The blocked predicate is shared via
+   * BLOCKED_JOBS_WHERE_CLAUSE so this list can never drift from
+   * getJobsSummary().blocked for the same tenant + date range.
+   */
+  async getJobsBlocked(
+    tenantId: string,
+    dateFrom?: string,
+    dateTo?: string,
+  ) {
+    return this.jobsService.findBlocked(tenantId, dateFrom, dateTo);
+  }
 
   async getDashboard(tenantId: string) {
     const now = new Date();
@@ -262,39 +284,17 @@ export class AnalyticsService {
         .andWhere('j.status = :status', { status: 'completed' })
         .getCount(),
 
-      // blocked: UNION of
-      //   (open billing issue)
-      //   OR (completed AND unpaid linked invoice)
-      // Counted as DISTINCT jobs so overlapping matches collapse.
+      // blocked: UNION of (open billing issue) OR (completed AND
+      // unpaid linked invoice). Uses the shared EXISTS-based predicate
+      // from src/common/helpers/blocked-jobs-predicate.ts so this count
+      // and the /analytics/jobs-blocked list are guaranteed to match.
+      // EXISTS subqueries do not duplicate parent rows, so plain
+      // COUNT(*) is correct (no DISTINCT needed).
       this.jobsRepository
         .createQueryBuilder('j')
-        .leftJoin(
-          'billing_issues',
-          'bi',
-          'bi.job_id = j.id AND bi.tenant_id = j.tenant_id',
-        )
-        .leftJoin(
-          'invoices',
-          'inv',
-          'inv.job_id = j.id AND inv.tenant_id = j.tenant_id',
-        )
         .where('j.tenant_id = :tenantId', { tenantId })
-        .andWhere(
-          `(
-            (bi.id IS NOT NULL AND bi.status = :openIssueStatus)
-            OR (
-              j.status = :completedJobStatus
-              AND inv.balance_due > 0
-              AND inv.status NOT IN (:...paidInvoiceStatuses)
-            )
-          )`,
-          {
-            openIssueStatus: 'open',
-            completedJobStatus: 'completed',
-            paidInvoiceStatuses: ['paid', 'partial', 'voided'],
-          },
-        )
-        .select('COUNT(DISTINCT j.id)::int', 'count')
+        .andWhere(BLOCKED_JOBS_WHERE_CLAUSE, BLOCKED_JOBS_WHERE_PARAMS)
+        .select('COUNT(*)::int', 'count')
         .getRawOne<{ count: number }>(),
     ]);
 
