@@ -471,6 +471,36 @@ export const FEATURE_REGISTRY: Record<string, FeatureDescription> = {
     isUserFacing: true, isGuideEligible: true,
     keywords: ["blocked", "billing", "issue", "unpaid", "review", "attention", "money"],
   },
+  blocked_subview_all: {
+    id: "blocked_subview_all", label: "All Blocked", category: "operations",
+    shortDescription: "Show every blocked job regardless of reason.",
+    guideDescription: "",
+    routeOrSurface: "blocked_reason", tenantOverrideKey: "blocked_subview_all",
+    // Not guide-eligible on purpose. This entry exists so the sub-filter
+    // pill label flows entirely through the registry (tenant overrides
+    // still apply). The Blocked *concept* is already documented under
+    // `job_status_blocked`; registering this UI-widget label as a
+    // separate guide entry would duplicate that guide content with no
+    // new information and pollute Help Center search results.
+    isUserFacing: true, isGuideEligible: false,
+    keywords: ["all", "blocked", "reason", "sub-filter", "drill-down"],
+  },
+  blocked_reason_billing_issue: {
+    id: "blocked_reason_billing_issue", label: "Billing Issue", category: "operations",
+    shortDescription: "Job has at least one open billing issue flagged by the billing detector.",
+    guideDescription: "A Billing Issue reason appears on a Blocked job when the billing issue detector has raised one or more open issues against it (for example, a price mismatch, a completed_unpaid_review flag, or a customer credit override pending approval). Click the badge to jump to the Billing Issues page to review and resolve the underlying issue. Once the issue is resolved the Blocked flag and red row border clear automatically on the next Jobs page refresh.",
+    routeOrSurface: "blocked_reason", tenantOverrideKey: "blocked_reason_billing_issue",
+    isUserFacing: true, isGuideEligible: true,
+    keywords: ["blocked", "reason", "billing", "issue", "detector", "review", "resolve"],
+  },
+  blocked_reason_unpaid_completed_invoice: {
+    id: "blocked_reason_unpaid_completed_invoice", label: "Unpaid Invoice", category: "operations",
+    shortDescription: "Job was completed but its linked invoice still has an unpaid balance.",
+    guideDescription: "An Unpaid Invoice reason appears on a Blocked job when the job has reached Completed but its linked invoice still has a balance due and is not yet marked paid or partial. This surfaces jobs where the work was delivered but collection is outstanding. Click the badge to jump to the invoice and collect payment, send a reminder, or write off the balance. Once the invoice is fully collected or voided the Blocked flag and red row border clear automatically on the next Jobs page refresh.",
+    routeOrSurface: "blocked_reason", tenantOverrideKey: "blocked_reason_unpaid_completed_invoice",
+    isUserFacing: true, isGuideEligible: true,
+    keywords: ["blocked", "reason", "unpaid", "completed", "invoice", "collect", "balance", "delivered"],
+  },
 };
 
 // ── Category display labels ──
