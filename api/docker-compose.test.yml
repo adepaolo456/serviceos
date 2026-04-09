@@ -1,0 +1,27 @@
+# Test-only Postgres for the Tier 1 E2E suite.
+# Isolated from any local dev DB; data is ephemeral.
+#
+# Bring up:   docker compose -f docker-compose.test.yml up -d
+# Tear down:  docker compose -f docker-compose.test.yml down -v
+#
+# The `tmpfs` mount guarantees every restart starts from an empty data dir,
+# so the schema is always reproducible from entity metadata via TypeORM
+# synchronize in NODE_ENV=test.
+
+services:
+  test-db:
+    image: postgres:16-alpine
+    container_name: serviceos-test-db
+    environment:
+      POSTGRES_USER: test
+      POSTGRES_PASSWORD: test
+      POSTGRES_DB: serviceos_test
+    ports:
+      - "5433:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test -d serviceos_test"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
