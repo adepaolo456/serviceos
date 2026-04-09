@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { SmsMessage } from './sms-message.entity';
+import { SmsOptOutService } from './sms-opt-out.service';
 import { TenantSettingsService } from '../tenant-settings/tenant-settings.service';
 import { normalizePhone } from '../../common/utils/phone';
 
@@ -27,6 +28,7 @@ export class SmsService {
   constructor(
     @InjectRepository(SmsMessage) private messageRepo: Repository<SmsMessage>,
     private settingsService: TenantSettingsService,
+    private optOutService: SmsOptOutService,
   ) {}
 
   /**
@@ -52,6 +54,38 @@ export class SmsService {
     const normalizedTo = normalizePhone(to);
     if (!normalizedTo) {
       return { success: false, error: 'Invalid recipient phone number' };
+    }
+
+    // 2a. Suppression gate — tenant-scoped opt-out check.
+    // Runs before body validation and before the Twilio call so suppressed
+    // sends never touch the provider. Writes a best-effort audit row to
+    // sms_messages with status='suppressed' so operators can see the attempt.
+    if (await this.optOutService.isOptedOut(tenantId, normalizedTo)) {
+      try {
+        const suppressed = this.messageRepo.create({
+          tenant_id: tenantId,
+          customer_id: customerId || null,
+          quote_id: sourceId && source?.includes('quote') ? sourceId : null,
+          direction: 'outbound',
+          from_number: settings.sms_phone_number,
+          to_number: normalizedTo,
+          body: body || '',
+          provider: 'twilio',
+          provider_message_sid: null,
+          status: 'suppressed',
+          source_type: source || null,
+        });
+        await this.messageRepo.save(suppressed);
+      } catch (err: any) {
+        this.logger.warn(
+          `Failed to log suppressed SMS audit row for ${normalizedTo} (${tenantId}): ${err.message}`,
+        );
+        // Suppression still succeeds — audit logging is best-effort.
+      }
+      this.logger.warn(
+        `SMS suppressed for ${normalizedTo} (tenant ${tenantId}): customer opted out`,
+      );
+      return { success: false, error: 'customer_opted_out' };
     }
 
     if (!body || !body.trim()) {

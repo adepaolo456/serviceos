@@ -13,7 +13,13 @@ import { TenantSettingsService } from '../tenant-settings/tenant-settings.servic
 import { getTemplate, renderTemplate } from '../quotes/quote-templates';
 import { SmsMessage } from '../sms/sms-message.entity';
 import { SmsService } from '../sms/sms.service';
+import { SmsOptOutService } from '../sms/sms-opt-out.service';
 import { normalizePhone } from '../../common/utils/phone';
+
+// SMS opt-out keywords. Matched case-insensitively against a trimmed,
+// upper-cased message body. Exact match only — "STOP please" is not a STOP.
+const STOP_KEYWORDS = new Set(['STOP', 'STOPALL', 'UNSUBSCRIBE', 'CANCEL', 'END', 'QUIT']);
+const START_KEYWORDS = new Set(['START', 'YES', 'UNSTOP']);
 
 @Injectable()
 export class AutomationService {
@@ -31,6 +37,7 @@ export class AutomationService {
     private notificationsService: NotificationsService,
     private settingsService: TenantSettingsService,
     private smsService: SmsService,
+    private optOutService: SmsOptOutService,
     private dataSource: DataSource,
   ) {}
 
@@ -482,5 +489,31 @@ export class AutomationService {
     await this.smsMessageRepo.save(message);
 
     this.logger.log(`Inbound SMS from ${normalizedFrom} to ${normalizedTo} (tenant ${tenantId})`);
+
+    // STOP/START keyword handling. Runs AFTER the inbound row is saved so the
+    // audit trail exists regardless of downstream state. Wrapped in try/catch —
+    // any failure is logged and swallowed so Twilio does not retry the webhook
+    // and double-log the inbound message.
+    const keyword = (body || '').trim().toUpperCase();
+    if (keyword) {
+      try {
+        if (STOP_KEYWORDS.has(keyword)) {
+          await this.optOutService.recordOptOut(tenantId, normalizedFrom, message.id);
+          this.logger.log(
+            `SMS opt-out recorded: tenant=${tenantId} phone=${normalizedFrom} via=${message.id}`,
+          );
+        } else if (START_KEYWORDS.has(keyword)) {
+          await this.optOutService.recordOptIn(tenantId, normalizedFrom);
+          this.logger.log(
+            `SMS opt-in recorded (no-op if no prior opt-out): tenant=${tenantId} phone=${normalizedFrom}`,
+          );
+        }
+      } catch (err: any) {
+        this.logger.error(
+          `Failed to update opt-out state for tenant=${tenantId} phone=${normalizedFrom}: ${err.message}`,
+        );
+        // Do not rethrow — webhook must still return 200 to Twilio.
+      }
+    }
   }
 }

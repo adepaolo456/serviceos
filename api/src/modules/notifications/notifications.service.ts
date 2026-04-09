@@ -8,6 +8,8 @@ import { ScheduledNotification } from './entities/scheduled-notification.entity'
 import { Customer } from '../customers/entities/customer.entity';
 import { TwilioService } from './services/twilio.service';
 import { ResendEmailService } from './services/resend.service';
+import { SmsOptOutService } from '../sms/sms-opt-out.service';
+import { normalizePhone } from '../../common/utils/phone';
 import {
   SendNotificationDto,
   ListNotificationsQueryDto,
@@ -30,6 +32,7 @@ export class NotificationsService {
     private customerRepo: Repository<Customer>,
     private twilio: TwilioService,
     private resend: ResendEmailService,
+    private optOutService: SmsOptOutService,
   ) {}
 
   // ─── Queue a notification (existing API — kept for backward compat) ───
@@ -144,10 +147,22 @@ export class NotificationsService {
   private async processOne(n: Notification) {
     try {
       if (n.channel === 'sms') {
-        const result = await this.twilio.sendSms(n.recipient, n.body);
-        n.status = result.success ? 'delivered' : 'failed';
-        n.external_id = result.sid || null;
-        n.error_message = result.error || null;
+        // Opt-out gate — tenant-scoped suppression via shared service.
+        // Normalizes before lookup so the key matches what handleInboundSms() wrote.
+        const normalizedRecipient = normalizePhone(n.recipient);
+        if (
+          normalizedRecipient &&
+          (await this.optOutService.isOptedOut(n.tenant_id, normalizedRecipient))
+        ) {
+          n.status = 'suppressed';
+          n.error_message = 'customer_opted_out';
+          // Fall through to the notifRepo.save() at the end of processOne().
+        } else {
+          const result = await this.twilio.sendSms(n.recipient, n.body);
+          n.status = result.success ? 'delivered' : 'failed';
+          n.external_id = result.sid || null;
+          n.error_message = result.error || null;
+        }
       } else if (n.channel === 'email') {
         const result = await this.resend.sendEmail({
           to: n.recipient,
