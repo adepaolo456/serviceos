@@ -47,6 +47,7 @@ export const QUOTE_SEND_LABELS = {
   emailQuoteDisabled: "Quote email is not enabled in tenant settings.",
   emailNoCustomerEmail: "No customer email on file.",
   invalidCustomerPhone: "Customer phone number is invalid.",
+  smsCustomerOptedOut: "Customer has opted out of SMS",
 };
 
 /** Map a delivery method to its human label. */
@@ -81,6 +82,8 @@ export function deliveryReasonLabel(reason: string | undefined | null): string |
       return QUOTE_SEND_LABELS.smsRequiresValidCustomerPhone;
     case "invalid_customer_phone":
       return QUOTE_SEND_LABELS.invalidCustomerPhone;
+    case "customer_opted_out":
+      return QUOTE_SEND_LABELS.smsCustomerOptedOut;
     case "tenant_quotes_email_disabled":
       return QUOTE_SEND_LABELS.emailQuoteDisabled;
     case "no_customer_email":

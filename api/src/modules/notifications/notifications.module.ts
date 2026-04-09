@@ -9,6 +9,7 @@ import { NotificationsService } from './notifications.service';
 import { NotificationsController } from './notifications.controller';
 import { TwilioService } from './services/twilio.service';
 import { ResendEmailService } from './services/resend.service';
+import { SmsModule } from '../sms/sms.module';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { ResendEmailService } from './services/resend.service';
       ScheduledNotification,
       Customer,
     ]),
+    SmsModule,
   ],
   controllers: [NotificationsController],
   providers: [NotificationsService, TwilioService, ResendEmailService],

@@ -9,6 +9,7 @@ import { TenantId, CurrentUser, Public } from '../../common/decorators';
 import { NotificationsService } from '../notifications/notifications.service';
 import { TenantSettingsService } from '../tenant-settings/tenant-settings.service';
 import { SmsService } from '../sms/sms.service';
+import { SmsOptOutService } from '../sms/sms-opt-out.service';
 import { TenantSettings } from '../tenant-settings/entities/tenant-settings.entity';
 import { normalizePhone, isValidPhone } from '../../common/utils/phone';
 import { getTemplate, renderTemplate } from './quote-templates';
@@ -111,6 +112,7 @@ export class QuotesController {
     private notificationsService: NotificationsService,
     private settingsService: TenantSettingsService,
     private smsService: SmsService,
+    private optOutService: SmsOptOutService,
   ) {}
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -173,16 +175,16 @@ export class QuotesController {
    * blocked reasons so the caller can surface partial-success messaging without
    * the UI having to re-derive the same rules.
    */
-  private resolveChannels(args: {
+  private async resolveChannels(args: {
     requested: DeliveryMethod | undefined;
     settings: TenantSettings;
     customerEmail: string | null;
     customerPhone: string | null;
-  }): {
+  }): Promise<{
     method: DeliveryMethod;
     email: { allowed: boolean; recipient: string | null; blockedReason?: string };
     sms: { allowed: boolean; recipient: string | null; blockedReason?: string };
-  } {
+  }> {
     const { settings } = args;
 
     // ── Email channel ──
@@ -214,6 +216,10 @@ export class QuotesController {
       const normalized = normalizePhone(args.customerPhone);
       if (!normalized) {
         smsBlocked = 'invalid_customer_phone';
+      } else if (await this.optOutService.isOptedOut(settings.tenant_id, normalized)) {
+        // Tenant-scoped suppression — surfaces in the UI before the operator
+        // attempts a send. Defense-in-depth: SmsService also re-checks at send time.
+        smsBlocked = 'customer_opted_out';
       } else {
         smsAllowed = true;
         smsRecipient = normalized;
@@ -432,7 +438,7 @@ export class QuotesController {
       return { ...saved, send: { email: { attempted: false, ok: false, reason: 'tenant_missing' }, sms: { attempted: false, ok: false, reason: 'tenant_missing' } } };
     }
 
-    const channels = this.resolveChannels({
+    const channels = await this.resolveChannels({
       requested: body.deliveryMethod,
       settings,
       customerEmail: body.customerEmail || null,
@@ -706,7 +712,7 @@ export class QuotesController {
 
     const settings = await this.settingsService.getSettings(tenantId);
 
-    const channels = this.resolveChannels({
+    const channels = await this.resolveChannels({
       requested: body.deliveryMethod,
       settings,
       customerEmail: quote.customer_email || null,
@@ -798,7 +804,7 @@ export class QuotesController {
     if (!tenant) return { valid: false, reason: 'tenant_missing' };
 
     const settings = await this.settingsService.getSettings(tenantId);
-    const channels = this.resolveChannels({
+    const channels = await this.resolveChannels({
       requested: 'sms',
       settings,
       customerEmail: quote.customer_email || null,
@@ -854,7 +860,7 @@ export class QuotesController {
     if (!tenant) return { valid: false, reason: 'tenant_missing' };
     const settings = await this.settingsService.getSettings(tenantId);
 
-    const channels = this.resolveChannels({
+    const channels = await this.resolveChannels({
       requested: 'sms',
       settings,
       customerEmail: body.customerEmail || null,
