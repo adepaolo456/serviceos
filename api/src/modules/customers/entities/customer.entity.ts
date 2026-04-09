@@ -59,6 +59,12 @@ export class Customer {
   @Column({ type: 'text', nullable: true })
   notes!: string;
 
+  // Driver-facing instructions (separate from internal notes above).
+  // Surfaced on the customer dashboard and consumed by the driver app
+  // operational views. Nullable — empty means "no special instructions".
+  @Column({ name: 'driver_instructions', type: 'text', nullable: true })
+  driver_instructions!: string | null;
+
   @Column({ name: 'tags', type: 'simple-array', nullable: true })
   tags!: string[];
 

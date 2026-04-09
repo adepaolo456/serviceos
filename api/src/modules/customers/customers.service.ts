@@ -50,6 +50,7 @@ export class CustomersService {
       billing_address: billingAddress,
       service_addresses: serviceAddresses,
       notes: dto.notes,
+      driver_instructions: dto.driverInstructions ?? null,
       tags: dto.tags,
       lead_source: dto.leadSource,
     });
@@ -160,6 +161,8 @@ export class CustomersService {
     if (dto.serviceAddresses !== undefined)
       customer.service_addresses = await this.softGeocodeAddressList(dto.serviceAddresses as Record<string, any>[] | undefined);
     if (dto.notes !== undefined) customer.notes = dto.notes;
+    if (dto.driverInstructions !== undefined)
+      customer.driver_instructions = dto.driverInstructions;
     if (dto.tags !== undefined) customer.tags = dto.tags;
     if (dto.leadSource !== undefined) customer.lead_source = dto.leadSource;
     if (dto.pricingTier !== undefined) customer.pricing_tier = dto.pricingTier;

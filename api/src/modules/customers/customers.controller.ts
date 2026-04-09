@@ -14,6 +14,7 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CustomersService } from './customers.service';
+import { CustomerDashboardService } from './customer-dashboard.service';
 import {
   CreateCustomerDto,
   UpdateCustomerDto,
@@ -26,7 +27,10 @@ import { RolesGuard } from '../../common/guards';
 @ApiBearerAuth()
 @Controller('customers')
 export class CustomersController {
-  constructor(private readonly customersService: CustomersService) {}
+  constructor(
+    private readonly customersService: CustomersService,
+    private readonly dashboardService: CustomerDashboardService,
+  ) {}
 
   @Post()
   @ApiOperation({ summary: 'Create a new customer' })
@@ -76,6 +80,17 @@ export class CustomersController {
     @Param('id', ParseUUIDPipe) id: string,
   ) {
     return this.customersService.getCustomerBalance(tenantId, id);
+  }
+
+  @Get(':id/dashboard')
+  @ApiOperation({
+    summary: 'Aggregated customer dashboard payload (one round trip)',
+  })
+  getDashboard(
+    @TenantId() tenantId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.dashboardService.getCustomerDashboard(tenantId, id);
   }
 
   @Delete(':id')
