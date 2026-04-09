@@ -7,28 +7,38 @@ import {
 } from "@/lib/customer-dashboard-labels";
 import type { DashboardStatusStrip } from "@/lib/customer-dashboard-types";
 
-/**
- * Single-row high-signal status indicator. Severity + reasons come
- * directly from the backend aggregator — no client-side recomputation.
- */
-export default function StatusStrip({ data }: { data: DashboardStatusStrip }) {
-  const theme = severityTheme(data.severity);
+type Variant = "card" | "inline";
 
-  return (
-    <div
-      className="rounded-[20px] border p-4 mb-5 flex items-center gap-3 flex-wrap"
-      style={{
-        background: theme.bg,
-        borderColor: theme.border,
-      }}
-    >
+/**
+ * Single-row severity indicator. Severity + reasons come directly from
+ * the backend aggregator — no client-side recomputation.
+ *
+ * Two variants:
+ *   - "card" (default): standalone card with border, padding, background.
+ *     Used when the strip is its own row on the page.
+ *   - "inline": bare chip row with no card chrome. Used to embed the
+ *     strip inside another card (e.g. the identity header) so the whole
+ *     identity block fits in a single compact container.
+ */
+export default function StatusStrip({
+  data,
+  variant = "card",
+}: {
+  data: DashboardStatusStrip;
+  variant?: Variant;
+}) {
+  const theme = severityTheme(data.severity);
+  const isInline = variant === "inline";
+
+  const content = (
+    <>
       <div
-        className="h-2.5 w-2.5 rounded-full shrink-0"
+        className={isInline ? "h-2 w-2 rounded-full shrink-0" : "h-2.5 w-2.5 rounded-full shrink-0"}
         style={{ background: theme.dot }}
         aria-hidden="true"
       />
       <span
-        className="text-sm font-semibold"
+        className={isInline ? "text-xs font-semibold" : "text-sm font-semibold"}
         style={{ color: theme.text }}
       >
         {severityLabel(data.severity)}
@@ -40,7 +50,9 @@ export default function StatusStrip({ data }: { data: DashboardStatusStrip }) {
               key={key}
               className="rounded-full border px-2.5 py-0.5 text-[11px] font-medium"
               style={{
-                background: "var(--t-bg-card)",
+                background: isInline
+                  ? "var(--t-bg-card-hover)"
+                  : "var(--t-bg-card)",
                 borderColor: theme.border,
                 color: theme.text,
               }}
@@ -50,14 +62,29 @@ export default function StatusStrip({ data }: { data: DashboardStatusStrip }) {
           ))}
         </div>
       )}
-      {data.reasons.length === 0 && data.severity === "green" && (
-        <span className="text-[11px] text-[var(--t-text-muted)]">
-          {/* reasons intentionally empty for green — show nothing else */}
-        </span>
-      )}
       <span className="sr-only">
         {CUSTOMER_DASHBOARD_LABELS.sections.statusStrip}
       </span>
+    </>
+  );
+
+  if (isInline) {
+    return (
+      <div className="flex items-center gap-2.5 flex-wrap pt-3 border-t border-[var(--t-border)]">
+        {content}
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="rounded-[20px] border p-4 mb-5 flex items-center gap-3 flex-wrap"
+      style={{
+        background: theme.bg,
+        borderColor: theme.border,
+      }}
+    >
+      {content}
     </div>
   );
 }

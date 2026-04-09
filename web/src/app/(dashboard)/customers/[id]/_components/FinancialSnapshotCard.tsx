@@ -20,9 +20,14 @@ export default function FinancialSnapshotCard({
   const L = CUSTOMER_DASHBOARD_LABELS;
   const pill = statePillTheme(data.state);
 
+  const hasAnyMetric =
+    data.unpaidCount > 0 ||
+    data.overdueCount > 0 ||
+    data.overdueThirtyPlusCount > 0;
+
   return (
-    <div className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-4">
-      <div className="flex items-start justify-between mb-3 gap-3">
+    <div className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-3">
+      <div className="flex items-start justify-between mb-2 gap-3">
         <h3 className="text-sm font-bold uppercase tracking-wide text-[var(--t-text-primary)]">
           {L.sections.financial}
         </h3>
@@ -34,12 +39,12 @@ export default function FinancialSnapshotCard({
         </span>
       </div>
 
-      <div className="mb-3">
+      <div className="mb-2">
         <p className="text-[10px] uppercase tracking-wider text-[var(--t-text-muted)]">
           {L.fields.balance}
         </p>
         <p
-          className="text-2xl font-bold tabular-nums"
+          className="text-xl font-bold tabular-nums"
           style={{
             color:
               data.outstandingBalance > 0
@@ -51,22 +56,49 @@ export default function FinancialSnapshotCard({
         </p>
       </div>
 
-      <div className="grid grid-cols-3 gap-2 mb-3">
-        <MetricTile label={L.fields.unpaid} value={data.unpaidCount} />
-        <MetricTile
-          label={L.fields.overdue}
-          value={data.overdueCount}
-          emphasize={data.overdueCount > 0}
-        />
-        <MetricTile
-          label={L.fields.overdueThirtyPlus}
-          value={data.overdueThirtyPlusCount}
-          emphasize={data.overdueThirtyPlusCount > 0}
-        />
-      </div>
+      {/* Metric tiles only render when there's something to show.
+          Good-standing customers skip this row entirely. */}
+      {hasAnyMetric && (
+        <div className="flex items-center gap-3 text-[11px] mb-2 flex-wrap">
+          <span className="text-[var(--t-text-muted)]">
+            {L.fields.unpaid}:{" "}
+            <span className="text-[var(--t-text-primary)] font-semibold tabular-nums">
+              {data.unpaidCount}
+            </span>
+          </span>
+          <span className="text-[var(--t-text-muted)]">
+            {L.fields.overdue}:{" "}
+            <span
+              className="font-semibold tabular-nums"
+              style={{
+                color:
+                  data.overdueCount > 0
+                    ? "var(--t-error)"
+                    : "var(--t-text-primary)",
+              }}
+            >
+              {data.overdueCount}
+            </span>
+          </span>
+          <span className="text-[var(--t-text-muted)]">
+            {L.fields.overdueThirtyPlus}:{" "}
+            <span
+              className="font-semibold tabular-nums"
+              style={{
+                color:
+                  data.overdueThirtyPlusCount > 0
+                    ? "var(--t-error)"
+                    : "var(--t-text-primary)",
+              }}
+            >
+              {data.overdueThirtyPlusCount}
+            </span>
+          </span>
+        </div>
+      )}
 
-      <div className="border-t border-[var(--t-border)] pt-3">
-        <p className="text-[10px] uppercase tracking-wider text-[var(--t-text-muted)] mb-1.5">
+      <div className="border-t border-[var(--t-border)] pt-2">
+        <p className="text-[10px] uppercase tracking-wider text-[var(--t-text-muted)] mb-1">
           {L.fields.latestInvoice}
         </p>
         {data.latestInvoice ? (
@@ -84,32 +116,6 @@ export default function FinancialSnapshotCard({
           </p>
         )}
       </div>
-    </div>
-  );
-}
-
-function MetricTile({
-  label,
-  value,
-  emphasize = false,
-}: {
-  label: string;
-  value: number;
-  emphasize?: boolean;
-}) {
-  return (
-    <div className="rounded-[12px] border border-[var(--t-border)] bg-[var(--t-bg-card-hover)] px-2 py-2 text-center">
-      <p
-        className="text-base font-bold tabular-nums"
-        style={{
-          color: emphasize ? "var(--t-error)" : "var(--t-text-primary)",
-        }}
-      >
-        {value}
-      </p>
-      <p className="text-[9px] uppercase tracking-wider text-[var(--t-text-muted)]">
-        {label}
-      </p>
     </div>
   );
 }

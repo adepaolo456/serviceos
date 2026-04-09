@@ -181,16 +181,16 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
         <ArrowLeft className="h-3.5 w-3.5" /> Customers
       </Link>
 
-      {/* ===== HEADER ===== */}
-      <div className="rounded-[20px] bg-[var(--t-bg-card)] border border-[var(--t-border)] p-5 mb-5">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div className="flex items-start gap-4">
-            <div className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-[20px] text-lg font-bold ${customer.type === "commercial" ? "bg-purple-500/15 text-purple-400" : "bg-blue-500/15 text-blue-400"}`}>
+      {/* ===== HEADER (compressed — inline status strip at bottom) ===== */}
+      <div className="rounded-[20px] bg-[var(--t-bg-card)] border border-[var(--t-border)] p-4 mb-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex items-start gap-3">
+            <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-[16px] text-base font-bold ${customer.type === "commercial" ? "bg-purple-500/15 text-purple-400" : "bg-blue-500/15 text-blue-400"}`}>
               {customer.first_name[0]}{customer.last_name[0]}
             </div>
             <div>
               <div className="flex items-center gap-2 flex-wrap">
-                <h1 className="text-[28px] font-bold tracking-[-1px] text-[var(--t-text-primary)]">{customer.first_name} {customer.last_name}</h1>
+                <h1 className="text-[22px] font-bold tracking-[-0.5px] text-[var(--t-text-primary)]">{customer.first_name} {customer.last_name}</h1>
                 <span className={`text-xs font-medium capitalize ${customer.type === "commercial" ? "text-purple-400" : "text-blue-400"}`}>{customer.type}</span>
                 {activeJobs.length > 0 && <span className="text-xs font-medium text-yellow-500">Active Rental</span>}
                 {netBalance > 0 && <span className="text-xs font-medium text-[var(--t-error)]">Balance Due</span>}
@@ -230,29 +230,34 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
             <button onClick={handleDelete} className="rounded-full border border-[var(--t-error)]/20 bg-transparent p-2 text-[var(--t-error)] hover:bg-[var(--t-error-soft)] transition-colors"><Trash2 className="h-3.5 w-3.5" /></button>
           </div>
         </div>
+
+        {/* Inline status strip — backend-derived severity + reason chips
+            embedded inside the header card to avoid a separate row. */}
+        {dashboard && (
+          <StatusStrip data={dashboard.statusStrip} variant="inline" />
+        )}
       </div>
 
       {/* ===== NEW COMPOSED DASHBOARD (primary view, Pass 2) ===== */}
       {dashboard ? (
-        <>
-          <StatusStrip data={dashboard.statusStrip} />
-
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3 mb-5">
-            <div className="lg:col-span-2 space-y-4">
-              <JobsTimeline data={dashboard.jobsTimeline} />
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-3 mb-4">
+          <div className="lg:col-span-2 space-y-3">
+            {/* Priority row: alerts + financial side-by-side above jobs */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <AlertsIssuesPanel issues={dashboard.issues} />
-            </div>
-            <div className="space-y-4">
               <FinancialSnapshotCard data={dashboard.financial} />
-              <ServiceSitesPanel data={dashboard.serviceSites} />
-              <NotesAndInstructions data={dashboard.notes} />
             </div>
+            <JobsTimeline data={dashboard.jobsTimeline} />
           </div>
-        </>
+          <div className="space-y-3">
+            <ServiceSitesPanel data={dashboard.serviceSites} />
+            <NotesAndInstructions data={dashboard.notes} />
+          </div>
+        </div>
       ) : (
-        <div className="mb-5 space-y-3">
-          <div className="h-16 rounded-[20px] bg-[var(--t-bg-card)] animate-pulse" />
-          <div className="h-64 rounded-[20px] bg-[var(--t-bg-card)] animate-pulse" />
+        <div className="mb-4 space-y-3">
+          <div className="h-12 rounded-[20px] bg-[var(--t-bg-card)] animate-pulse" />
+          <div className="h-48 rounded-[20px] bg-[var(--t-bg-card)] animate-pulse" />
         </div>
       )}
 
@@ -260,7 +265,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
       <details
         open={advancedOpen}
         onToggle={(e) => setAdvancedOpen((e.target as HTMLDetailsElement).open)}
-        className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] mb-5"
+        className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] mb-4"
       >
         <summary
           className="cursor-pointer select-none px-5 py-3 text-sm font-semibold text-[var(--t-text-primary)] flex items-center justify-between"

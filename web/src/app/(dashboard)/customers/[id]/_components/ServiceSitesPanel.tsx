@@ -40,30 +40,34 @@ export default function ServiceSitesPanel({
       },
     }));
 
+  // Show map only for multi-site customers. A single-site map is a
+  // redundant pin for the address rendered immediately below it.
+  const showMap = sites.length >= 2 && mapPins.length > 0;
+
   return (
-    <div className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-4">
-      <h3 className="text-sm font-bold uppercase tracking-wide text-[var(--t-text-primary)] mb-3">
+    <div className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-3">
+      <h3 className="text-sm font-bold uppercase tracking-wide text-[var(--t-text-primary)] mb-2">
         {L.sections.serviceSites}
       </h3>
 
       {sites.length === 0 ? (
-        <p className="py-4 text-center text-xs text-[var(--t-text-muted)]">
+        <p className="py-2 text-xs text-[var(--t-text-muted)]">
           {L.empty.noServiceSites}
         </p>
       ) : (
         <>
-          {mapPins.length > 0 && (
-            <div className="mb-3">
+          {showMap && (
+            <div className="mb-2">
               <MapboxMap
                 markers={mapPins}
-                style={{ height: 180, width: "100%" }}
+                style={{ height: 120, width: "100%" }}
                 interactive={false}
                 showControls={false}
               />
             </div>
           )}
 
-          <div className="space-y-2">
+          <div className="space-y-1.5">
             {sites.map((site, idx) => (
               <SiteRow
                 key={`site-${idx}`}
@@ -91,14 +95,14 @@ function SiteRow({
   const line2 = [addr.city, addr.state, addr.zip].filter(Boolean).join(", ");
 
   return (
-    <div className="flex items-start justify-between gap-3 rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card-hover)] px-3 py-2">
+    <div className="flex items-start justify-between gap-2 rounded-[12px] border border-[var(--t-border)] bg-[var(--t-bg-card-hover)] px-2.5 py-1.5">
       <div className="flex items-start gap-2 min-w-0 flex-1">
         <MapPin className="h-3.5 w-3.5 mt-0.5 shrink-0 text-[var(--t-text-muted)]" />
         <div className="min-w-0">
-          <p className="text-sm text-[var(--t-text-primary)] truncate">
+          <p className="text-xs text-[var(--t-text-primary)] truncate">
             {line1}
           </p>
-          <p className="text-[11px] text-[var(--t-text-muted)] truncate">
+          <p className="text-[10px] text-[var(--t-text-muted)] truncate">
             {line2 || "—"}
           </p>
         </div>

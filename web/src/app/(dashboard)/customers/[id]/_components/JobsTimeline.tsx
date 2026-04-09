@@ -38,23 +38,23 @@ export default function JobsTimeline({
   const hasStandalone = data.standaloneJobs.length > 0;
 
   return (
-    <div className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-4">
-      <h3 className="text-sm font-bold uppercase tracking-wide text-[var(--t-text-primary)] mb-3">
+    <div className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-3">
+      <h3 className="text-sm font-bold uppercase tracking-wide text-[var(--t-text-primary)] mb-2">
         {L.sections.jobsTimeline}
       </h3>
 
       {!hasChains && !hasStandalone && (
-        <p className="py-4 text-center text-xs text-[var(--t-text-muted)]">
+        <p className="py-2 text-xs text-[var(--t-text-muted)]">
           {L.empty.noJobs}
         </p>
       )}
 
       {hasChains && (
-        <div className="mb-4">
-          <p className="text-[10px] uppercase tracking-wider text-[var(--t-text-muted)] mb-2">
+        <div className="mb-3">
+          <p className="text-[10px] uppercase tracking-wider text-[var(--t-text-muted)] mb-1.5">
             {L.fields.chainsHeading}
           </p>
-          <div className="space-y-3">
+          <div className="space-y-2">
             {data.chains.map((chain) => (
               <ChainRow key={chain.chainId} chain={chain} />
             ))}
@@ -63,11 +63,11 @@ export default function JobsTimeline({
       )}
 
       {hasStandalone && (
-        <div className={hasChains ? "border-t border-[var(--t-border)] pt-3" : ""}>
-          <p className="text-[10px] uppercase tracking-wider text-[var(--t-text-muted)] mb-2">
+        <div className={hasChains ? "border-t border-[var(--t-border)] pt-2" : ""}>
+          <p className="text-[10px] uppercase tracking-wider text-[var(--t-text-muted)] mb-1.5">
             {L.fields.standaloneHeading}
           </p>
-          <div className="space-y-1.5">
+          <div className="space-y-1">
             {data.standaloneJobs.map((job) => (
               <StandaloneJobRow key={job.id} job={job} />
             ))}
@@ -83,9 +83,20 @@ export default function JobsTimeline({
 // ────────────────────────────────────────────────────────────────────
 
 function ChainRow({ chain }: { chain: DashboardChain }) {
+  // Active rentals get a left-accent border so they visually pop as the
+  // most operationally relevant jobs on the page.
+  const isActive = chain.status === "active";
   return (
-    <div className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card-hover)] p-3">
-      <div className="flex items-center justify-between mb-2 flex-wrap gap-1">
+    <div
+      className={`rounded-[12px] border bg-[var(--t-bg-card-hover)] p-2.5 ${
+        isActive ? "border-l-4" : ""
+      }`}
+      style={{
+        borderColor: "var(--t-border)",
+        borderLeftColor: isActive ? "var(--t-accent)" : undefined,
+      }}
+    >
+      <div className="flex items-center justify-between mb-1.5 flex-wrap gap-1">
         <div className="flex items-center gap-2 min-w-0">
           <Truck className="h-3.5 w-3.5 text-[var(--t-text-muted)]" />
           <span className="text-[11px] font-semibold uppercase tracking-wider text-[var(--t-text-muted)]">
@@ -95,7 +106,13 @@ function ChainRow({ chain }: { chain: DashboardChain }) {
             {chain.dropOffDate}
           </span>
         </div>
-        <span className="text-[10px] text-[var(--t-text-muted)] capitalize">
+        <span
+          className="text-[10px] capitalize"
+          style={{
+            color: isActive ? "var(--t-accent)" : "var(--t-text-muted)",
+            fontWeight: isActive ? 600 : 400,
+          }}
+        >
           {chain.status}
         </span>
       </div>

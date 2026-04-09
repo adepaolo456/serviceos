@@ -22,17 +22,17 @@ export default function AlertsIssuesPanel({
   const L = CUSTOMER_DASHBOARD_LABELS;
 
   return (
-    <div className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-4">
-      <h3 className="text-sm font-bold uppercase tracking-wide text-[var(--t-text-primary)] mb-3">
+    <div className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-3">
+      <h3 className="text-sm font-bold uppercase tracking-wide text-[var(--t-text-primary)] mb-2">
         {L.sections.issues}
       </h3>
 
       {issues.length === 0 ? (
-        <p className="py-4 text-center text-xs text-[var(--t-text-muted)]">
+        <p className="py-1 text-xs text-[var(--t-text-muted)]">
           {L.empty.noIssues}
         </p>
       ) : (
-        <div className="space-y-2">
+        <div className="space-y-1.5">
           {issues.map((issue) => (
             <IssueRow key={issue.id} issue={issue} />
           ))}
@@ -48,17 +48,17 @@ function IssueRow({ issue }: { issue: DashboardIssue }) {
 
   const inner = (
     <div
-      className="flex items-start gap-3 rounded-[14px] border px-3 py-2"
+      className="flex items-start gap-2 rounded-[12px] border px-2.5 py-1.5"
       style={{ borderColor: theme.border, background: theme.bg }}
     >
       <Icon
-        className="h-4 w-4 mt-0.5 shrink-0"
+        className="h-3.5 w-3.5 mt-0.5 shrink-0"
         style={{ color: theme.icon }}
       />
       <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2 mb-0.5 flex-wrap">
+        <div className="flex items-center gap-2 flex-wrap">
           <span
-            className="text-[10px] font-semibold uppercase tracking-wider"
+            className="text-[9px] font-semibold uppercase tracking-wider"
             style={{ color: theme.icon }}
           >
             {issueCategoryLabel(issue.category)}
