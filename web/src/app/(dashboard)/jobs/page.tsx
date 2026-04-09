@@ -27,7 +27,6 @@ import { api } from "@/lib/api";
 import SlideOver from "@/components/slide-over";
 import Dropdown from "@/components/dropdown";
 import { useToast } from "@/components/toast";
-import { JOB_BOARD_LABELS } from "@/lib/job-board-labels";
 import { CreditCard, FileWarning, MapPinOff } from "lucide-react";
 
 /* ─── Types ─── */
