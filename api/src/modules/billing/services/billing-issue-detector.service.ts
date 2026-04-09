@@ -177,6 +177,56 @@ export class BillingIssueDetectorService {
   }
 
   // ─────────────────────────────────────────────────────────
+  // CHECK 8: Completed job with unpaid linked invoice
+  // ─────────────────────────────────────────────────────────
+  /**
+   * Detects jobs marked `completed` whose linked invoice is still in a
+   * non-terminal unpaid state (`draft` / `open` / `sent`) with a
+   * positive balance due. This is the detective guardrail against the
+   * legacy state we repaired — it surfaces the discrepancy in the
+   * existing Billing Issues workflow without blocking any transitions.
+   *
+   * Idempotent via `createIssueIfNotExists` (keyed on tenant + job_id +
+   * issue_type). Auto-resolved by `resolveStaleIssues` Pass 4 below
+   * when the invoice later becomes paid/partial/voided or
+   * balance_due <= 0.
+   */
+  async detectCompletedUnpaid(
+    tenantId: string,
+    jobId: string,
+  ): Promise<BillingIssue | null> {
+    const job = await this.jobRepo.findOne({
+      where: { id: jobId, tenant_id: tenantId },
+    });
+    if (!job || job.status !== 'completed') return null;
+
+    // Prefer the most recent linked invoice — matches the dashboard
+    // aggregator's "first wins" behavior for jobs that might have
+    // multiple invoice rows.
+    const invoice = await this.invoiceRepo.findOne({
+      where: { tenant_id: tenantId, job_id: jobId },
+      order: { created_at: 'DESC' },
+    });
+    if (!invoice) return null;
+
+    // Terminal / acceptable states — no issue.
+    if (['paid', 'partial', 'voided'].includes(invoice.status)) return null;
+    if (Number(invoice.balance_due) <= 0) return null;
+
+    return this.createIssueIfNotExists(tenantId, {
+      issue_type: 'completed_unpaid',
+      job_id: jobId,
+      invoice_id: invoice.id,
+      description: `Completed job ${job.job_number} has unpaid invoice #${invoice.invoice_number} (status: ${invoice.status}, balance due: $${Number(invoice.balance_due).toFixed(2)})`,
+      suggested_action:
+        'Record payment on the invoice, or investigate whether the job completion is accurate. Driver-app completions should normally have a matching payment or collection flow.',
+      calculated_amount: Number(invoice.balance_due) || 0,
+      auto_resolvable: true,
+      status: 'open',
+    });
+  }
+
+  // ─────────────────────────────────────────────────────────
   // DETECT ALL FOR ENTIRE TENANT
   // ─────────────────────────────────────────────────────────
 
@@ -210,6 +260,32 @@ export class BillingIssueDetectorService {
 
     for (const job of jobsWithoutInvoice) {
       const issue = await this.detectMissingInvoice(tenantId, job.id);
+      if (issue) allIssues.push(issue);
+    }
+
+    // Check 8: Completed jobs whose linked invoice is still unpaid.
+    // Tenant-scoped join — finds rows where job.status='completed' AND
+    // the invoice is in a non-terminal unpaid state with a positive
+    // balance. The detector itself does the same check again so this
+    // loop just hands it the candidates.
+    const completedUnpaidCandidates = await this.jobRepo
+      .createQueryBuilder('j')
+      .innerJoin(
+        Invoice,
+        'i',
+        'i.job_id = j.id AND i.tenant_id = j.tenant_id',
+      )
+      .where('j.tenant_id = :tenantId', { tenantId })
+      .andWhere('j.status = :jobStatus', { jobStatus: 'completed' })
+      .andWhere('i.status NOT IN (:...terminalStatuses)', {
+        terminalStatuses: ['paid', 'partial', 'voided'],
+      })
+      .andWhere('i.balance_due > 0')
+      .select(['j.id'])
+      .getMany();
+
+    for (const candidate of completedUnpaidCandidates) {
+      const issue = await this.detectCompletedUnpaid(tenantId, candidate.id);
       if (issue) allIssues.push(issue);
     }
 
@@ -428,6 +504,73 @@ export class BillingIssueDetectorService {
         dumpSlipType: 'missing_dump_slip',
         openStatuses,
         dumpTypes: dumpEligible,
+      })
+      .execute();
+
+    // Pass 4: Stale completed_unpaid — invoice is now paid/partial/voided
+    // or balance is zero. Mirrors the past_due_payment resolve semantics
+    // but scoped to the new completed_unpaid issue type.
+    await this.issueRepo
+      .createQueryBuilder()
+      .update(BillingIssue)
+      .set({
+        status: 'auto_resolved',
+        resolved_at: () => 'NOW()',
+        resolution_reason: 'auto_cleared_invoice_resolved',
+      })
+      .where(
+        'id IN (' +
+          this.issueRepo
+            .createQueryBuilder('bi')
+            .select('bi.id')
+            .innerJoin(Invoice, 'inv', 'inv.id = bi.invoice_id')
+            .where('bi.tenant_id = :tenantId')
+            .andWhere('bi.issue_type = :completedUnpaidType')
+            .andWhere('bi.status IN (:...openStatuses)')
+            .andWhere(
+              '(inv.balance_due <= 0 OR inv.status IN (:...terminalStatuses))',
+            )
+            .getQuery() +
+          ')',
+      )
+      .setParameters({
+        tenantId,
+        completedUnpaidType: 'completed_unpaid',
+        openStatuses,
+        terminalStatuses: ['paid', 'partial', 'voided'],
+      })
+      .execute();
+
+    // Pass 5: Stale completed_unpaid — linked job is no longer 'completed'
+    // (e.g. it was reverted to pending via the legacy-repair plan or
+    // legitimately moved back to a pre-dispatch state). If the job isn't
+    // completed anymore, the whole predicate no longer holds.
+    await this.issueRepo
+      .createQueryBuilder()
+      .update(BillingIssue)
+      .set({
+        status: 'auto_resolved',
+        resolved_at: () => 'NOW()',
+        resolution_reason: 'auto_cleared_job_reverted',
+      })
+      .where(
+        'id IN (' +
+          this.issueRepo
+            .createQueryBuilder('bi')
+            .select('bi.id')
+            .innerJoin(Job, 'j', 'j.id = bi.job_id')
+            .where('bi.tenant_id = :tenantId')
+            .andWhere('bi.issue_type = :completedUnpaidType')
+            .andWhere('bi.status IN (:...openStatuses)')
+            .andWhere('j.status != :completedStatus')
+            .getQuery() +
+          ')',
+      )
+      .setParameters({
+        tenantId,
+        completedUnpaidType: 'completed_unpaid',
+        openStatuses,
+        completedStatus: 'completed',
       })
       .execute();
 

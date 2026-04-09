@@ -41,6 +41,7 @@ const ISSUE_TYPES = [
   { key: "past_due_payment", label: "Past Due", icon: DollarSign, color: "var(--t-error)" },
   { key: "no_invoice", label: "No Invoice", icon: FileText, color: "var(--t-error)" },
   { key: "price_mismatch", label: "Price Mismatch", icon: AlertTriangle, color: "var(--t-warning)" },
+  { key: "completed_unpaid", label: "Completed Unpaid", icon: Ban, color: "var(--t-error)" },
 ];
 
 const STATUS_FILTERS = [
