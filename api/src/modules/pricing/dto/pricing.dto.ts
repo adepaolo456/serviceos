@@ -265,4 +265,12 @@ export class CalculatePriceDto {
   @IsOptional()
   @IsUUID()
   jobId?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Customer ID for client-level pricing override resolution. When provided, a matching client_pricing_overrides row will be applied to base_price. All other pricing fields fall back to the global rule. Pass 1 scope: base_price only.',
+  })
+  @IsOptional()
+  @IsUUID()
+  customerId?: string;
 }

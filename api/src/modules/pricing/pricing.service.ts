@@ -9,6 +9,7 @@ import { PricingRule } from './entities/pricing-rule.entity';
 import { PricingTemplate } from './entities/pricing-template.entity';
 import { TenantFee } from './entities/tenant-fee.entity';
 import { PricingSnapshot } from './entities/pricing-snapshot.entity';
+import { ClientPricingOverride } from './entities/client-pricing-override.entity';
 import { Yard } from '../yards/yard.entity';
 import {
   CreatePricingRuleDto,
@@ -31,6 +32,8 @@ export class PricingService {
     private tenantFeeRepo: Repository<TenantFee>,
     @InjectRepository(PricingSnapshot)
     private snapshotRepo: Repository<PricingSnapshot>,
+    @InjectRepository(ClientPricingOverride)
+    private clientPricingRepo: Repository<ClientPricingOverride>,
   ) {}
 
   async create(
@@ -283,7 +286,27 @@ export class PricingService {
       }
     }
 
-    const basePrice = Number(rule.base_price);
+    // ── Client pricing override (Pass 1 scope: base_price only) ──
+    // When a customer is specified AND has an active base_price override for
+    // this rule, use the override. Every other field (weight allowance,
+    // overage, distance, extra-day rate, fees, deposit, commercial/residential
+    // policies) continues to use the global rule exactly as before.
+    // Scoped by tenant_id + customer_id — no cross-tenant leakage possible.
+    let basePrice = Number(rule.base_price);
+    if (dto.customerId) {
+      const today = new Date().toISOString().split('T')[0];
+      const override = await this.clientPricingRepo
+        .createQueryBuilder('o')
+        .where('o.tenant_id = :tenantId', { tenantId })
+        .andWhere('o.customer_id = :customerId', { customerId: dto.customerId })
+        .andWhere('o.pricing_rule_id = :ruleId', { ruleId: rule.id })
+        .andWhere('o.effective_from <= :today', { today })
+        .andWhere('(o.effective_to IS NULL OR o.effective_to >= :today)', { today })
+        .getOne();
+      if (override?.base_price != null) {
+        basePrice = Number(override.base_price);
+      }
+    }
     let subtotal = basePrice + extraDayCharges + distanceBand.distanceCharge + jobFee;
 
     if (exchangeDiscount > 0) {

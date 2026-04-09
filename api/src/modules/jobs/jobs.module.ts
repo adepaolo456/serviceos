@@ -4,6 +4,7 @@ import { Job } from './entities/job.entity';
 import { JobPricingAudit } from './entities/job-pricing-audit.entity';
 import { Asset } from '../assets/entities/asset.entity';
 import { PricingRule } from '../pricing/entities/pricing-rule.entity';
+import { ClientPricingOverride } from '../pricing/entities/client-pricing-override.entity';
 import { Notification } from '../notifications/entities/notification.entity';
 import { Customer } from '../customers/entities/customer.entity';
 import { Route } from '../dispatch/entities/route.entity';
@@ -20,7 +21,7 @@ import { JobsController } from './jobs.controller';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Job, JobPricingAudit, Asset, PricingRule, Notification, Customer, Route, Invoice, CreditMemo, RentalChain, TaskChainLink]),
+    TypeOrmModule.forFeature([Job, JobPricingAudit, Asset, PricingRule, ClientPricingOverride, Notification, Customer, Route, Invoice, CreditMemo, RentalChain, TaskChainLink]),
     BillingModule,
     PricingModule,
     RentalChainsModule,

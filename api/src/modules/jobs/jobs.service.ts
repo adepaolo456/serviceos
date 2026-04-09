@@ -8,6 +8,7 @@ import { Repository, In } from 'typeorm';
 import { Job } from './entities/job.entity';
 import { Asset } from '../assets/entities/asset.entity';
 import { PricingRule } from '../pricing/entities/pricing-rule.entity';
+import { ClientPricingOverride } from '../pricing/entities/client-pricing-override.entity';
 import { Notification } from '../notifications/entities/notification.entity';
 import { Customer } from '../customers/entities/customer.entity';
 import { Route } from '../dispatch/entities/route.entity';
@@ -49,6 +50,8 @@ export class JobsService {
     private assetRepo: Repository<Asset>,
     @InjectRepository(PricingRule)
     private pricingRepo: Repository<PricingRule>,
+    @InjectRepository(ClientPricingOverride)
+    private clientPricingRepo: Repository<ClientPricingOverride>,
     @InjectRepository(Notification)
     private notifRepo: Repository<Notification>,
     @InjectRepository(Customer)
@@ -106,6 +109,23 @@ export class JobsService {
       });
       if (rule) {
         basePrice = Number(rule.base_price);
+        // ── Client pricing override (Pass 1 scope: base_price only) ──
+        // Tenant-scoped override lookup. Other fields (rental days, overage,
+        // etc.) continue to fall back to the global rule unchanged.
+        if (dto.customerId) {
+          const today = new Date().toISOString().split('T')[0];
+          const override = await this.clientPricingRepo
+            .createQueryBuilder('o')
+            .where('o.tenant_id = :tenantId', { tenantId })
+            .andWhere('o.customer_id = :customerId', { customerId: dto.customerId })
+            .andWhere('o.pricing_rule_id = :ruleId', { ruleId: rule.id })
+            .andWhere('o.effective_from <= :today', { today })
+            .andWhere('(o.effective_to IS NULL OR o.effective_to >= :today)', { today })
+            .getOne();
+          if (override?.base_price != null) {
+            basePrice = Number(override.base_price);
+          }
+        }
         rentalDays = rentalDays ?? rule.rental_period_days ?? 14;
 
         // Check customer discount
