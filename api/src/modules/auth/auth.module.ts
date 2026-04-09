@@ -9,10 +9,11 @@ import { JwtStrategy } from './jwt.strategy';
 // GoogleStrategy removed — using manual OAuth flow for serverless compatibility
 import { User } from './entities/user.entity';
 import { Tenant } from '../tenants/entities/tenant.entity';
+import { TenantSettings } from '../tenant-settings/entities/tenant-settings.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([User, Tenant]),
+    TypeOrmModule.forFeature([User, Tenant, TenantSettings]),
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({
       imports: [ConfigModule],

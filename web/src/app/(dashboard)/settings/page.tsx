@@ -531,6 +531,7 @@ interface NotifPref { notification_type: string; email_enabled: boolean; sms_ena
 function NotificationsTab({ profile }: { profile: Profile | null }) {
   const canManageSms = profile?.role === "owner";
   const [prefs, setPrefs] = useState<NotifPref[]>([]);
+  const [settings, setSettings] = useState<Record<string, any> | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<string | null>(null);
   const [testEmail, setTestEmail] = useState("");
@@ -543,6 +544,7 @@ function NotificationsTab({ profile }: { profile: Profile | null }) {
       setPrefs(Array.isArray(d) ? d : []);
       setLoading(false);
     }).catch(() => setLoading(false));
+    api.get<Record<string, any>>("/tenant-settings").then(setSettings).catch(() => {});
   }, []);
 
   const getPref = (type: string) => prefs.find(p => p.notification_type === type) || { notification_type: type, email_enabled: true, sms_enabled: false };
@@ -658,8 +660,27 @@ function NotificationsTab({ profile }: { profile: Profile | null }) {
       <div className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5">
         <h3 className="text-sm font-semibold text-[var(--t-text-primary)] mb-3">Sender Settings</h3>
         <div className="space-y-2 text-sm">
-          <div className="flex justify-between"><span style={{ color: "var(--t-text-muted)" }}>From Email</span><span style={{ color: "var(--t-text-primary)" }}>noreply@rentthis.com</span></div>
-          <div className="flex justify-between"><span style={{ color: "var(--t-text-muted)" }}>SMS Number</span><span style={{ color: "var(--t-text-primary)" }}>+1 (877) 706-1147</span></div>
+          <div className="flex justify-between">
+            <span style={{ color: "var(--t-text-muted)" }}>Support Email</span>
+            <span style={{ color: settings?.support_email ? "var(--t-text-primary)" : "var(--t-text-muted)" }}>
+              {settings?.support_email || "Not configured"}
+            </span>
+          </div>
+          <div className="flex justify-between">
+            <span style={{ color: "var(--t-text-muted)" }}>SMS Number</span>
+            <span style={{ color: settings?.sms_phone_number ? "var(--t-text-primary)" : "var(--t-text-muted)" }}>
+              {settings?.sms_phone_number
+                ? (() => {
+                    const digits = String(settings.sms_phone_number).replace(/\D/g, "");
+                    if (digits.length === 11 && digits.startsWith("1")) {
+                      const d = digits.slice(1);
+                      return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`;
+                    }
+                    return settings.sms_phone_number;
+                  })()
+                : "Not configured"}
+            </span>
+          </div>
         </div>
         <p className="mt-3 text-xs" style={{ color: "var(--t-text-muted)" }}>Custom sender domain — coming soon</p>
       </div>
