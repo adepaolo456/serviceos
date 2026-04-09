@@ -4,19 +4,27 @@ import {
   Post,
   Delete,
   Param,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { SmsReleaseService } from './sms-release.service';
-import { TenantId, CurrentUser } from '../../common/decorators';
+import { TenantId, CurrentUser, Roles } from '../../common/decorators';
+import { RolesGuard } from '../../common/guards';
 
 /**
  * Tenant-facing endpoints. Tenants CANNOT release a Twilio number directly —
  * they can only request removal. The actual provider release is gated behind
  * the ServiceOS admin endpoints in sms-release-admin.controller.ts.
+ *
+ * Owner-only: releasing a tenant's Twilio number is destructive and affects
+ * every SMS flow (quotes, follow-ups, notifications, STOP/START). Only the
+ * tenant owner may initiate, view, or cancel a release request.
  */
 @ApiTags('SMS Number Release')
 @ApiBearerAuth()
 @Controller('tenant-settings/sms/release-request')
+@UseGuards(RolesGuard)
+@Roles('owner')
 export class SmsReleaseController {
   constructor(private readonly service: SmsReleaseService) {}
 
