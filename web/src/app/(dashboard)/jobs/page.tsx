@@ -27,6 +27,8 @@ import { api } from "@/lib/api";
 import SlideOver from "@/components/slide-over";
 import Dropdown from "@/components/dropdown";
 import { useToast } from "@/components/toast";
+import { JOB_BOARD_LABELS } from "@/lib/job-board-labels";
+import { CreditCard, FileWarning, MapPinOff } from "lucide-react";
 
 /* ─── Types ─── */
 
@@ -199,6 +201,13 @@ export default function JobsPage() {
   const [overdueCount, setOverdueCount] = useState(0);
   const [selectedJobIds, setSelectedJobIds] = useState<Set<string>>(new Set());
   const [bulkProgress, setBulkProgress] = useState<string | null>(null);
+  // Tenant-wide blocker counts for the top strip tiles. Sourced from the
+  // new /analytics/jobs-by-blocker endpoint, refreshed on mount.
+  const [blockerCounts, setBlockerCounts] = useState<{
+    payment_blocked: number;
+    billing_issue: number;
+    unassigned_active: number;
+  }>({ payment_blocked: 0, billing_issue: 0, unassigned_active: 0 });
 
   // Multi-status KPI groups: tile filter value → actual stored API statuses
   const MULTI_STATUS: Record<string, string[]> = {
@@ -251,6 +260,13 @@ export default function JobsPage() {
   useEffect(() => {
     api.get<StatusCount[]>("/analytics/jobs-by-status").then(setStatusCounts).catch(() => {});
     api.get<any[]>("/automation/overdue").then((r) => setOverdueCount(r.length)).catch(() => {});
+    // Tenant-wide blocker counts for the new Payment Blocked tile.
+    api
+      .get<{ payment_blocked: number; billing_issue: number; unassigned_active: number }>(
+        "/analytics/jobs-by-blocker",
+      )
+      .then(setBlockerCounts)
+      .catch(() => {});
   }, []);
 
   useEffect(() => { setPage(1); }, [statusFilter, dateRange]);
@@ -605,16 +621,10 @@ export default function JobsPage() {
                         )}
                       </td>
 
-                      {/* Status */}
+                      {/* Status — dispatch lifecycle only; payment state renders beside Price */}
                       <td style={{ padding: "12px 16px" }}>
                         {(() => {
-                          // Pass linked invoice status so pending_payment
-                          // renders correctly (was rendering as "unassigned"
-                          // before the enrichment wire-up).
-                          const displayStatus = deriveDisplayStatus(
-                            job.status,
-                            job.linked_invoice?.status,
-                          );
+                          const displayStatus = deriveDisplayStatus(job.status);
                           return (
                             <span style={{ fontSize: 11, fontWeight: 600, color: displayStatusColor(displayStatus) }}>
                               {DISPLAY_STATUS_LABELS[displayStatus]}
@@ -628,7 +638,7 @@ export default function JobsPage() {
                         )}
                       </td>
 
-                      {/* Price */}
+                      {/* Price + payment indicator */}
                       <td style={{ padding: "12px 16px", textAlign: "right" }}>
                         {job.total_price > 0 ? (
                           <span style={{ fontSize: 13, fontWeight: 600, color: "var(--t-text-primary)", fontVariantNumeric: "tabular-nums" }}>
@@ -637,6 +647,28 @@ export default function JobsPage() {
                         ) : (
                           <span style={{ color: "var(--t-text-tertiary)" }}>&mdash;</span>
                         )}
+                        {(() => {
+                          // Secondary badge: payment state lives next to Price,
+                          // NOT in the Status column. Status column is dispatch
+                          // lifecycle only.
+                          const inv = job.linked_invoice;
+                          if (!inv) return null;
+                          if (inv.status === "partial") {
+                            return (
+                              <span style={{ display: "block", marginTop: 2, fontSize: 10, fontWeight: 600, color: "var(--t-warning)" }}>
+                                Partial
+                              </span>
+                            );
+                          }
+                          if (Number(inv.balance_due) > 0 && inv.status !== "paid") {
+                            return (
+                              <span style={{ display: "block", marginTop: 2, fontSize: 10, fontWeight: 600, color: "var(--t-error)" }}>
+                                Pending Payment
+                              </span>
+                            );
+                          }
+                          return null;
+                        })()}
                       </td>
 
                       {/* Actions */}
