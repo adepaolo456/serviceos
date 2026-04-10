@@ -1408,6 +1408,118 @@ export const FEATURE_REGISTRY: Record<string, FeatureDescription> = {
     routeOrSurface: "credit_audit", tenantOverrideKey: "credit_audit_filter_customer",
     isUserFacing: true, isGuideEligible: false, keywords: ["filter", "customer"],
   },
+
+  // ── Phase 8: credit control analytics dashboard ──
+  credit_analytics_dashboard: {
+    id: "credit_analytics_dashboard", label: "Credit Control Analytics", category: "analytics",
+    shortDescription: "Operational insights from credit-control activity — holds, overrides, policy changes, and trends.",
+    guideDescription: "The Credit Control Analytics dashboard provides at-a-glance operational metrics for the credit-control system. Summary cards show current active holds, manual holds, and 30-day counts of booking overrides, dispatch overrides, and policy changes. A trend chart visualizes daily event volumes over the last 30 days. Top Customers shows which customers trigger the most credit events. Top Overriders shows which operators override credit holds most frequently. Use this to identify systemic payment problems, monitor override frequency, and track the effectiveness of credit policy changes. Viewable by admin and owner roles only.",
+    routeOrSurface: "credit_analytics", tenantOverrideKey: "credit_analytics_dashboard",
+    isUserFacing: true, isGuideEligible: true,
+    keywords: ["analytics", "credit", "holds", "overrides", "trends", "dashboard"],
+  },
+  credit_analytics_active_holds: {
+    id: "credit_analytics_active_holds", label: "Active Holds", category: "analytics",
+    shortDescription: "Count of customers currently on manual credit hold.",
+    guideDescription: "", routeOrSurface: "credit_analytics", tenantOverrideKey: "credit_analytics_active_holds",
+    isUserFacing: true, isGuideEligible: false, keywords: ["active holds"],
+  },
+  credit_analytics_manual_holds: {
+    id: "credit_analytics_manual_holds", label: "Manual Holds", category: "analytics",
+    shortDescription: "Subset of active holds that are manually set (vs policy-driven).",
+    guideDescription: "", routeOrSurface: "credit_analytics", tenantOverrideKey: "credit_analytics_manual_holds",
+    isUserFacing: true, isGuideEligible: false, keywords: ["manual holds"],
+  },
+  credit_analytics_booking_overrides: {
+    id: "credit_analytics_booking_overrides", label: "Booking Overrides", category: "analytics",
+    shortDescription: "Number of booking overrides in the last 30 days.",
+    guideDescription: "", routeOrSurface: "credit_analytics", tenantOverrideKey: "credit_analytics_booking_overrides",
+    isUserFacing: true, isGuideEligible: false, keywords: ["booking overrides"],
+  },
+  credit_analytics_dispatch_overrides: {
+    id: "credit_analytics_dispatch_overrides", label: "Dispatch Overrides", category: "analytics",
+    shortDescription: "Number of dispatch overrides in the last 30 days.",
+    guideDescription: "", routeOrSurface: "credit_analytics", tenantOverrideKey: "credit_analytics_dispatch_overrides",
+    isUserFacing: true, isGuideEligible: false, keywords: ["dispatch overrides"],
+  },
+  credit_analytics_policy_changes: {
+    id: "credit_analytics_policy_changes", label: "Policy Changes", category: "analytics",
+    shortDescription: "Number of credit policy updates in the last 30 days.",
+    guideDescription: "", routeOrSurface: "credit_analytics", tenantOverrideKey: "credit_analytics_policy_changes",
+    isUserFacing: true, isGuideEligible: false, keywords: ["policy changes"],
+  },
+  credit_analytics_trends_title: {
+    id: "credit_analytics_trends_title", label: "Event Trends (Last 30 Days)", category: "analytics",
+    shortDescription: "Chart title for the daily credit event trend visualization.",
+    guideDescription: "", routeOrSurface: "credit_analytics", tenantOverrideKey: "credit_analytics_trends_title",
+    isUserFacing: true, isGuideEligible: false, keywords: ["trends", "chart"],
+  },
+  credit_analytics_top_customers: {
+    id: "credit_analytics_top_customers", label: "Top Customers", category: "analytics",
+    shortDescription: "Table showing customers with the most credit-control events.",
+    guideDescription: "", routeOrSurface: "credit_analytics", tenantOverrideKey: "credit_analytics_top_customers",
+    isUserFacing: true, isGuideEligible: false, keywords: ["top customers"],
+  },
+  credit_analytics_top_users: {
+    id: "credit_analytics_top_users", label: "Top Overriders", category: "analytics",
+    shortDescription: "Table showing operators who override credit holds most frequently.",
+    guideDescription: "", routeOrSurface: "credit_analytics", tenantOverrideKey: "credit_analytics_top_users",
+    isUserFacing: true, isGuideEligible: false, keywords: ["top users", "overriders"],
+  },
+  credit_analytics_col_customer: {
+    id: "credit_analytics_col_customer", label: "Customer", category: "analytics",
+    shortDescription: "Column header.", guideDescription: "",
+    routeOrSurface: "credit_analytics", tenantOverrideKey: "credit_analytics_col_customer",
+    isUserFacing: true, isGuideEligible: false, keywords: ["customer"],
+  },
+  credit_analytics_col_holds: {
+    id: "credit_analytics_col_holds", label: "Holds", category: "analytics",
+    shortDescription: "Column header.", guideDescription: "",
+    routeOrSurface: "credit_analytics", tenantOverrideKey: "credit_analytics_col_holds",
+    isUserFacing: true, isGuideEligible: false, keywords: ["holds"],
+  },
+  credit_analytics_col_overrides: {
+    id: "credit_analytics_col_overrides", label: "Overrides", category: "analytics",
+    shortDescription: "Column header.", guideDescription: "",
+    routeOrSurface: "credit_analytics", tenantOverrideKey: "credit_analytics_col_overrides",
+    isUserFacing: true, isGuideEligible: false, keywords: ["overrides"],
+  },
+  credit_analytics_col_last: {
+    id: "credit_analytics_col_last", label: "Last Event", category: "analytics",
+    shortDescription: "Column header.", guideDescription: "",
+    routeOrSurface: "credit_analytics", tenantOverrideKey: "credit_analytics_col_last",
+    isUserFacing: true, isGuideEligible: false, keywords: ["last event"],
+  },
+  credit_analytics_col_user: {
+    id: "credit_analytics_col_user", label: "User", category: "analytics",
+    shortDescription: "Column header.", guideDescription: "",
+    routeOrSurface: "credit_analytics", tenantOverrideKey: "credit_analytics_col_user",
+    isUserFacing: true, isGuideEligible: false, keywords: ["user"],
+  },
+  credit_analytics_col_booking: {
+    id: "credit_analytics_col_booking", label: "Booking", category: "analytics",
+    shortDescription: "Column header.", guideDescription: "",
+    routeOrSurface: "credit_analytics", tenantOverrideKey: "credit_analytics_col_booking",
+    isUserFacing: true, isGuideEligible: false, keywords: ["booking"],
+  },
+  credit_analytics_col_dispatch: {
+    id: "credit_analytics_col_dispatch", label: "Dispatch", category: "analytics",
+    shortDescription: "Column header.", guideDescription: "",
+    routeOrSurface: "credit_analytics", tenantOverrideKey: "credit_analytics_col_dispatch",
+    isUserFacing: true, isGuideEligible: false, keywords: ["dispatch"],
+  },
+  credit_analytics_col_total: {
+    id: "credit_analytics_col_total", label: "Total", category: "analytics",
+    shortDescription: "Column header.", guideDescription: "",
+    routeOrSurface: "credit_analytics", tenantOverrideKey: "credit_analytics_col_total",
+    isUserFacing: true, isGuideEligible: false, keywords: ["total"],
+  },
+  credit_analytics_view_audit_log: {
+    id: "credit_analytics_view_audit_log", label: "View Full Audit Log", category: "analytics",
+    shortDescription: "Link to the Phase 7 credit audit event log.", guideDescription: "",
+    routeOrSurface: "credit_analytics", tenantOverrideKey: "credit_analytics_view_audit_log",
+    isUserFacing: true, isGuideEligible: false, keywords: ["audit log"],
+  },
 };
 
 // ── Category display labels ──
