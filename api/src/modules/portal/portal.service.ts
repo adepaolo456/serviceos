@@ -570,6 +570,7 @@ export class PortalService {
    */
   async getPricingEstimate(
     tenantId: string,
+    customerId: string | null,
     params: { size: string; lat?: number; lng?: number; rentalDays?: number },
   ) {
     try {
@@ -580,11 +581,14 @@ export class PortalService {
         customerLat: params.lat,
         customerLng: params.lng,
         rentalDays: params.rentalDays,
+        ...(customerId ? { customerId } : {}),
       } as any);
       return {
         total: result.breakdown.total,
         size: params.size,
         rental_days: result.breakdown.rentalDays,
+        included_days: result.breakdown.includedDays,
+        extra_days_billable: !result.breakdown.unlimitedDays && result.breakdown.extraDayRate > 0,
         available: true,
       };
     } catch {
@@ -592,6 +596,8 @@ export class PortalService {
         total: null,
         size: params.size,
         rental_days: params.rentalDays ?? null,
+        included_days: null,
+        extra_days_billable: true,
         available: false,
       };
     }
