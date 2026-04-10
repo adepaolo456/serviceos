@@ -97,6 +97,24 @@ export class TenantSettingsService {
     if (patch.allow_office_override !== undefined) {
       next.allow_office_override = patch.allow_office_override;
     }
+    if (patch.dispatch_enforcement !== undefined) {
+      // Merge with defaults so partial DTO updates don't erase fields.
+      const prev = next.dispatch_enforcement;
+      const de = patch.dispatch_enforcement;
+      next.dispatch_enforcement = {
+        enabled: de.enabled,
+        block_on_hold: de.block_on_hold ?? prev?.block_on_hold ?? false,
+        block_actions: {
+          assignment: de.block_actions?.assignment ?? prev?.block_actions?.assignment ?? false,
+          en_route: de.block_actions?.en_route ?? prev?.block_actions?.en_route ?? false,
+          arrived: de.block_actions?.arrived ?? prev?.block_actions?.arrived ?? false,
+          completed: de.block_actions?.completed ?? prev?.block_actions?.completed ?? false,
+        },
+        allow_override: de.allow_override ?? prev?.allow_override ?? true,
+        override_roles: de.override_roles ?? prev?.override_roles ?? ['owner', 'admin'],
+        require_override_reason: de.require_override_reason ?? prev?.require_override_reason ?? true,
+      };
+    }
 
     const updatedSettings: Record<string, any> = {
       ...settings,

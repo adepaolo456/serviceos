@@ -18,12 +18,14 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
+  IsArray,
   IsBoolean,
   IsIn,
   IsInt,
   IsNumber,
   IsObject,
   IsOptional,
+  IsString,
   Min,
   ValidateNested,
 } from 'class-validator';
@@ -133,4 +135,69 @@ export class UpdateCreditPolicyDto {
   @IsOptional()
   @IsBoolean()
   allow_office_override?: boolean;
+
+  @ApiPropertyOptional({ type: () => DispatchEnforcementDto })
+  @IsOptional()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => DispatchEnforcementDto)
+  dispatch_enforcement?: DispatchEnforcementDto;
+}
+
+/* ─── Phase 5: Dispatch enforcement ─── */
+
+class DispatchBlockActionsDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  assignment?: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  en_route?: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  arrived?: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  completed?: boolean;
+}
+
+class DispatchEnforcementDto {
+  @ApiProperty()
+  @IsBoolean()
+  enabled!: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  block_on_hold?: boolean;
+
+  @ApiPropertyOptional({ type: DispatchBlockActionsDto })
+  @IsOptional()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => DispatchBlockActionsDto)
+  block_actions?: DispatchBlockActionsDto;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  allow_override?: boolean;
+
+  @ApiPropertyOptional({ type: [String] })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  override_roles?: string[];
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  require_override_reason?: boolean;
 }

@@ -21,12 +21,19 @@ import {
 } from './dto/job.dto';
 import { TenantId, CurrentUser, Roles } from '../../common/decorators';
 import { RolesGuard } from '../../common/guards';
+import {
+  DispatchCreditEnforcementService,
+  type DispatchAction,
+} from '../dispatch/dispatch-credit-enforcement.service';
 
 @ApiTags('Jobs')
 @ApiBearerAuth()
 @Controller('jobs')
 export class JobsController {
-  constructor(private readonly jobsService: JobsService) {}
+  constructor(
+    private readonly jobsService: JobsService,
+    private readonly dispatchCreditEnforcement: DispatchCreditEnforcementService,
+  ) {}
 
   @Post()
   @ApiOperation({ summary: 'Create a new job' })
@@ -117,12 +124,39 @@ export class JobsController {
 
   @Patch(':id/status')
   @ApiOperation({ summary: 'Change job status' })
-  changeStatus(
+  async changeStatus(
     @TenantId() tenantId: string,
     @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: ChangeStatusDto,
+    @Body() dto: ChangeStatusDto & { creditOverride?: { reason?: string } },
     @CurrentUser('role') userRole: string,
+    @CurrentUser('id') userId: string,
   ) {
+    // Phase 5 — dispatch credit enforcement for status transitions.
+    const ENFORCED_STATUSES: Record<string, DispatchAction> = {
+      en_route: 'en_route',
+      arrived: 'arrived',
+      completed: 'completed',
+    };
+    const action = ENFORCED_STATUSES[dto.status];
+    if (action) {
+      const job = await this.jobsService.findOne(tenantId, id);
+      const enforcement = await this.dispatchCreditEnforcement.enforceForDispatch({
+        tenantId,
+        customerId: job.customer_id ?? null,
+        userId,
+        userRole,
+        action,
+        creditOverride: dto.creditOverride ?? null,
+      });
+      // If override was applied, write audit note to job.
+      if (enforcement.overrideNote) {
+        const currentNotes = job.placement_notes || '';
+        const separator = currentNotes ? '\n' : '';
+        await this.jobsService.updateNotes(tenantId, id, {
+          placement_notes: currentNotes + separator + enforcement.overrideNote,
+        });
+      }
+    }
     return this.jobsService.changeStatus(tenantId, id, dto, userRole);
   }
 
@@ -130,11 +164,33 @@ export class JobsController {
   @UseGuards(RolesGuard)
   @Roles('admin', 'owner', 'dispatcher')
   @ApiOperation({ summary: 'Assign or unassign driver and/or asset' })
-  assign(
+  async assign(
     @TenantId() tenantId: string,
     @Param('id', ParseUUIDPipe) id: string,
     @Body() body: Record<string, unknown>,
+    @CurrentUser('role') userRole: string,
+    @CurrentUser('id') userId: string,
   ) {
+    // Phase 5 — dispatch credit enforcement for assignment.
+    // Only enforce when assigning (not unassigning).
+    if (body.assignedDriverId) {
+      const job = await this.jobsService.findOne(tenantId, id);
+      const enforcement = await this.dispatchCreditEnforcement.enforceForDispatch({
+        tenantId,
+        customerId: job.customer_id ?? null,
+        userId,
+        userRole,
+        action: 'assignment',
+        creditOverride: body.creditOverride as { reason?: string } | null ?? null,
+      });
+      if (enforcement.overrideNote) {
+        const currentNotes = job.placement_notes || '';
+        const separator = currentNotes ? '\n' : '';
+        await this.jobsService.updateNotes(tenantId, id, {
+          placement_notes: currentNotes + separator + enforcement.overrideNote,
+        });
+      }
+    }
     return this.jobsService.assignJob(tenantId, id, body);
   }
 

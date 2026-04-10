@@ -42,6 +42,29 @@ interface RuleShape {
   days_overdue?: number;
 }
 
+interface DispatchEnforcement {
+  enabled: boolean;
+  block_on_hold: boolean;
+  block_actions: {
+    assignment: boolean;
+    en_route: boolean;
+    arrived: boolean;
+    completed: boolean;
+  };
+  allow_override: boolean;
+  override_roles: string[];
+  require_override_reason: boolean;
+}
+
+const DEFAULT_DISPATCH_ENFORCEMENT: DispatchEnforcement = {
+  enabled: false,
+  block_on_hold: false,
+  block_actions: { assignment: false, en_route: false, arrived: false, completed: false },
+  allow_override: true,
+  override_roles: ["owner", "admin"],
+  require_override_reason: true,
+};
+
 interface CreditPolicy {
   default_payment_terms?: PaymentTerms;
   default_credit_limit?: number | null;
@@ -49,6 +72,7 @@ interface CreditPolicy {
   overdue_block?: RuleShape;
   unpaid_exceptions_block?: RuleShape;
   allow_office_override?: boolean;
+  dispatch_enforcement?: DispatchEnforcement;
 }
 
 interface Profile {
@@ -105,6 +129,7 @@ export function CreditPolicySettingsTab({ profile }: CreditPolicySettingsTabProp
   const [arRule, setArRule] = useState<RuleShape>({ enabled: false });
   const [exceptionsRule, setExceptionsRule] = useState<RuleShape>({ enabled: false });
   const [allowOverride, setAllowOverride] = useState<boolean>(false);
+  const [dispatchEnforcement, setDispatchEnforcement] = useState<DispatchEnforcement>({ ...DEFAULT_DISPATCH_ENFORCEMENT });
 
   const canEdit = profile?.role === "admin" || profile?.role === "owner";
 
@@ -125,6 +150,7 @@ export function CreditPolicySettingsTab({ profile }: CreditPolicySettingsTabProp
         setArRule(p.ar_threshold_block ?? { enabled: false });
         setExceptionsRule(p.unpaid_exceptions_block ?? { enabled: false });
         setAllowOverride(!!p.allow_office_override);
+        setDispatchEnforcement({ ...DEFAULT_DISPATCH_ENFORCEMENT, ...p.dispatch_enforcement, block_actions: { ...DEFAULT_DISPATCH_ENFORCEMENT.block_actions, ...p.dispatch_enforcement?.block_actions } });
       })
       .catch(() => {
         if (!cancelled) setLoadError(true);
@@ -154,6 +180,7 @@ export function CreditPolicySettingsTab({ profile }: CreditPolicySettingsTabProp
         overdue_block: overdueRule,
         unpaid_exceptions_block: exceptionsRule,
         allow_office_override: allowOverride,
+        dispatch_enforcement: dispatchEnforcement,
       };
       const next = await api.patch<CreditPolicy>("/tenant-settings/credit-policy", body);
       setPolicy(next);
@@ -306,6 +333,100 @@ export function CreditPolicySettingsTab({ profile }: CreditPolicySettingsTabProp
         >
           {labelFor("tenant_credit_policy_field_allow_office_override", "Allow Office Override")}
         </label>
+      </div>
+
+      {/* Dispatch enforcement (Phase 5) */}
+      <div
+        className="rounded-[14px] border px-4 py-4 mb-5 mt-2"
+        style={{ borderColor: "var(--t-border)", background: "var(--t-bg-elevated, var(--t-bg-card))" }}
+      >
+        <div className="flex items-center gap-2 mb-3">
+          <input
+            id="dispatch-enforcement-enabled"
+            type="checkbox"
+            checked={dispatchEnforcement.enabled}
+            onChange={(e) => setDispatchEnforcement((prev) => ({ ...prev, enabled: e.target.checked }))}
+            disabled={!canEdit}
+            className="h-4 w-4 cursor-pointer accent-[var(--t-accent)]"
+          />
+          <label htmlFor="dispatch-enforcement-enabled" className="text-sm font-semibold cursor-pointer" style={{ color: "var(--t-text-primary)" }}>
+            {labelFor("dispatch_enforcement_enabled", "Enable dispatch enforcement")}
+          </label>
+        </div>
+        {dispatchEnforcement.enabled && (
+          <div className="ml-6 space-y-3">
+            <div className="flex items-center gap-2">
+              <input
+                id="dispatch-block-on-hold"
+                type="checkbox"
+                checked={dispatchEnforcement.block_on_hold}
+                onChange={(e) => setDispatchEnforcement((prev) => ({ ...prev, block_on_hold: e.target.checked }))}
+                disabled={!canEdit}
+                className="h-4 w-4 cursor-pointer accent-[var(--t-accent)]"
+              />
+              <label htmlFor="dispatch-block-on-hold" className="text-sm cursor-pointer" style={{ color: "var(--t-text-primary)" }}>
+                {labelFor("dispatch_enforcement_block_on_hold", "Block dispatch actions when customer is on hold")}
+              </label>
+            </div>
+            {dispatchEnforcement.block_on_hold && (
+              <div className="ml-6 space-y-2">
+                <p className="text-[11px] uppercase tracking-wider font-semibold" style={{ color: "var(--t-text-muted)" }}>Blocked actions</p>
+                {([
+                  ["assignment", "dispatch_enforcement_action_assignment", "Block driver assignment"],
+                  ["en_route", "dispatch_enforcement_action_en_route", "Block en route"],
+                  ["arrived", "dispatch_enforcement_action_arrived", "Block arrived"],
+                  ["completed", "dispatch_enforcement_action_completed", "Block completed"],
+                ] as const).map(([key, regId, fallback]) => (
+                  <div key={key} className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={dispatchEnforcement.block_actions[key]}
+                      onChange={(e) =>
+                        setDispatchEnforcement((prev) => ({
+                          ...prev,
+                          block_actions: { ...prev.block_actions, [key]: e.target.checked },
+                        }))
+                      }
+                      disabled={!canEdit}
+                      className="h-3.5 w-3.5 cursor-pointer accent-[var(--t-accent)]"
+                    />
+                    <span className="text-xs" style={{ color: "var(--t-text-primary)" }}>
+                      {labelFor(regId, fallback)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="flex items-center gap-2">
+              <input
+                id="dispatch-allow-override"
+                type="checkbox"
+                checked={dispatchEnforcement.allow_override}
+                onChange={(e) => setDispatchEnforcement((prev) => ({ ...prev, allow_override: e.target.checked }))}
+                disabled={!canEdit}
+                className="h-4 w-4 cursor-pointer accent-[var(--t-accent)]"
+              />
+              <label htmlFor="dispatch-allow-override" className="text-sm cursor-pointer" style={{ color: "var(--t-text-primary)" }}>
+                {labelFor("dispatch_enforcement_allow_override", "Allow dispatch override")}
+              </label>
+            </div>
+            {dispatchEnforcement.allow_override && (
+              <div className="ml-6 flex items-center gap-2">
+                <input
+                  id="dispatch-require-reason"
+                  type="checkbox"
+                  checked={dispatchEnforcement.require_override_reason}
+                  onChange={(e) => setDispatchEnforcement((prev) => ({ ...prev, require_override_reason: e.target.checked }))}
+                  disabled={!canEdit}
+                  className="h-3.5 w-3.5 cursor-pointer accent-[var(--t-accent)]"
+                />
+                <label htmlFor="dispatch-require-reason" className="text-xs cursor-pointer" style={{ color: "var(--t-text-primary)" }}>
+                  {labelFor("dispatch_enforcement_require_reason", "Require override reason")}
+                </label>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Save */}

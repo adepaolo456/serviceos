@@ -1272,6 +1272,22 @@ export class JobsService {
     return this.findOne(tenantId, id);
   }
 
+  /**
+   * Phase 5 — lightweight notes update for dispatch credit override
+   * audit trail. Only updates the specified notes fields without
+   * triggering any side effects.
+   */
+  async updateNotes(
+    tenantId: string,
+    id: string,
+    notes: { dispatch_notes?: string; placement_notes?: string },
+  ): Promise<void> {
+    await this.jobsRepository.update(
+      { id, tenant_id: tenantId },
+      notes,
+    );
+  }
+
   async findByDateRange(tenantId: string, date: string, days: number) {
     const endDate = new Date(date);
     endDate.setDate(endDate.getDate() + days);
