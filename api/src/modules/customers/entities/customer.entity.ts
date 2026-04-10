@@ -104,6 +104,51 @@ export class Customer {
   @Column({ name: 'is_active', default: true })
   is_active!: boolean;
 
+  // ── Phase 1: Credit-control foundation (schema only) ──────────
+  // These columns are populated by future phases. In Phase 1 they
+  // are stored on writes but no application code reads or enforces
+  // them. See migrations/2026-04-09-credit-control-foundation.sql.
+  //
+  // payment_terms: customer-specific override for invoice payment
+  // terms. NULL means "use the tenant default credit policy". The
+  // database CHECK constraint enforces the allowed enum values; the
+  // TypeScript const at api/src/modules/customers/payment-terms.ts
+  // mirrors them for application-level type safety.
+  @Column({ name: 'payment_terms', type: 'text', nullable: true })
+  payment_terms!: string | null;
+
+  // credit_limit: customer-specific credit ceiling (USD). NULL means
+  // "no customer-specific override; use tenant default if any". Not
+  // enforced anywhere in Phase 1.
+  @Column({ name: 'credit_limit', type: 'decimal', precision: 12, scale: 2, nullable: true })
+  credit_limit!: number | null;
+
+  // credit_hold: explicit manual hold flag. FALSE by default. Future
+  // phases will block dispatch / booking when TRUE. Phase 1 stores
+  // it but does NOT consult it.
+  @Column({ name: 'credit_hold', type: 'boolean', default: false })
+  credit_hold!: boolean;
+
+  // Hold audit metadata. When the hold flips TRUE, set_by/set_at/
+  // reason must be populated in the same write. When the hold is
+  // released, credit_hold flips back to FALSE and released_by/
+  // released_at are populated while set_by/set_at/reason stay intact
+  // as forensic history.
+  @Column({ name: 'credit_hold_reason', type: 'text', nullable: true })
+  credit_hold_reason!: string | null;
+
+  @Column({ name: 'credit_hold_set_by', type: 'uuid', nullable: true })
+  credit_hold_set_by!: string | null;
+
+  @Column({ name: 'credit_hold_set_at', type: 'timestamptz', nullable: true })
+  credit_hold_set_at!: Date | null;
+
+  @Column({ name: 'credit_hold_released_by', type: 'uuid', nullable: true })
+  credit_hold_released_by!: string | null;
+
+  @Column({ name: 'credit_hold_released_at', type: 'timestamptz', nullable: true })
+  credit_hold_released_at!: Date | null;
+
   @Column({ name: 'portal_password_hash', nullable: true, select: false })
   portal_password_hash!: string;
 
