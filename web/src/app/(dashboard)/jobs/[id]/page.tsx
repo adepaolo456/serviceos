@@ -35,6 +35,7 @@ import MapboxMap from "@/components/mapbox-map";
 import AddressAutocomplete, { type AddressValue } from "@/components/address-autocomplete";
 import { FEATURE_REGISTRY } from "@/lib/feature-registry";
 import { getBlockedReason } from "@/lib/blocked-job";
+import { JobBlockedResolutionDrawer } from "@/components/job-blocked-resolution-drawer";
 
 /* --- Types --- */
 
@@ -188,6 +189,9 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
   // which uses the same backend filter the Billing Issues page scoped
   // banner uses, so both surfaces agree on what's open.
   const [openBillingIssueCount, setOpenBillingIssueCount] = useState(0);
+  // Phase 4: Job Blocked Resolution Drawer state. Opens from the
+  // contextual blocked panel's primary "Fix Billing" CTA.
+  const [resolveDrawerOpen, setResolveDrawerOpen] = useState(false);
   const [editingAddress, setEditingAddress] = useState(false);
   const [editAddress, setEditAddress] = useState<AddressValue>({ street: "", city: "", state: "", zip: "", lat: null, lng: null });
   const [savingAddress, setSavingAddress] = useState(false);
@@ -494,24 +498,49 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
                 </div>
               </div>
               <div className="flex items-center gap-2 shrink-0">
+                {/*
+                 * Primary CTA — opens the Phase 4 job-scoped resolution
+                 * drawer. The drawer keeps the operator on the Job page
+                 * and offers root-cause-first resolution (record payment
+                 * inline, related issues clear automatically) instead of
+                 * forcing a Job → Billing Issues → Invoice → back-to-Job
+                 * round trip.
+                 */}
+                <button
+                  type="button"
+                  onClick={() => setResolveDrawerOpen(true)}
+                  className="inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold transition-opacity hover:opacity-90"
+                  style={{ backgroundColor: "var(--t-error)", color: "var(--t-error-on-error, #fff)" }}
+                  title={FEATURE_REGISTRY.job_blocked_resolution_drawer?.shortDescription}
+                >
+                  <AlertTriangle className="h-3.5 w-3.5" />
+                  {FEATURE_REGISTRY.job_blocked_resolution_cta_primary?.label ?? "Fix Billing"}
+                </button>
+                {/*
+                 * Secondary fallback CTAs preserved for operators who
+                 * prefer the dedicated Billing Issues / Invoice surfaces
+                 * (e.g., complex resolutions that the inline drawer
+                 * cannot handle). The drawer is the recommended path,
+                 * but the existing deep-links still work.
+                 */}
                 {reason === "billing_issue" && (
                   <Link
                     href={`/billing-issues?jobId=${id}`}
-                    className="inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold transition-opacity hover:opacity-90"
-                    style={{ backgroundColor: "var(--t-error)", color: "var(--t-error-on-error, #fff)" }}
+                    className="inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors"
+                    style={{ borderColor: "var(--t-border)", color: "var(--t-text-secondary)" }}
                     title={FEATURE_REGISTRY.job_blocked_panel_cta_review_issues?.shortDescription}
                   >
-                    <FileText className="h-3.5 w-3.5" /> {reviewIssuesLabel}
+                    <FileText className="h-3 w-3" /> {reviewIssuesLabel}
                   </Link>
                 )}
                 {reason === "unpaid_completed_invoice" && invoice && (
                   <Link
                     href={`/invoices/${invoice.id}?openPayment=1`}
-                    className="inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold transition-opacity hover:opacity-90"
-                    style={{ backgroundColor: "var(--t-error)", color: "var(--t-error-on-error, #fff)" }}
+                    className="inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors"
+                    style={{ borderColor: "var(--t-border)", color: "var(--t-text-secondary)" }}
                     title={FEATURE_REGISTRY.job_blocked_panel_cta_open_invoice?.shortDescription}
                   >
-                    <DollarSign className="h-3.5 w-3.5" /> {openInvoiceLabel}
+                    <DollarSign className="h-3 w-3" /> {openInvoiceLabel}
                   </Link>
                 )}
               </div>
@@ -519,6 +548,26 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
           </div>
         );
       })()}
+
+      {/* ─── Job Blocked Resolution Drawer (Phase 4) ─── */}
+      {/*
+       * Mounted unconditionally so SlideOver can animate in/out, but
+       * only fetches its scoped issue list when `open === true`. The
+       * `onRefetch` callback wires the drawer back into this page's
+       * existing fetch routines so the contextual panel reflects the
+       * latest invoice + issue state immediately after a payment.
+       */}
+      <JobBlockedResolutionDrawer
+        open={resolveDrawerOpen}
+        onClose={() => setResolveDrawerOpen(false)}
+        jobId={id as string}
+        invoice={invoice}
+        onRefetch={() => {
+          fetchJob();
+          fetchInvoice();
+          fetchOpenBillingIssues();
+        }}
+      />
 
       {/* --- Post-Create Billing Banner --- */}
       {isPostCreate && invoice && invoice.balance_due > 0 && (
