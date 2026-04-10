@@ -267,6 +267,17 @@ export class Job {
   @Column({ name: 'route_order', type: 'int', nullable: true })
   route_order!: number;
 
+  // ── Placement pin (Phase 20) ──
+
+  @Column({ name: 'placement_lat', type: 'decimal', precision: 10, scale: 7, nullable: true })
+  placement_lat!: number | null;
+
+  @Column({ name: 'placement_lng', type: 'decimal', precision: 10, scale: 7, nullable: true })
+  placement_lng!: number | null;
+
+  @Column({ name: 'placement_pin_notes', type: 'text', nullable: true })
+  placement_pin_notes!: string | null;
+
   // ── Pricing lock fields (pricing engine v2) ──
 
   @Column({ name: 'pricing_snapshot', type: 'jsonb', nullable: true })

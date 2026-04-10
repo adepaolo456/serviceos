@@ -5,6 +5,9 @@ import { portalApi } from "@/lib/portal-api";
 import { formatCurrency } from "@/lib/utils";
 import { deriveCustomerTimeline, formatRentalTitle, type CustomerTimelineStep } from "@/lib/job-status";
 import { Package, Calendar, MapPin, ChevronRight, CalendarClock } from "lucide-react";
+import dynamic from "next/dynamic";
+
+const PortalPlacementMap = dynamic(() => import("@/components/portal-placement-map"), { ssr: false });
 
 interface Rental {
   id: string;
@@ -150,6 +153,13 @@ export default function PortalRentalsPage() {
             <div><span className="text-[var(--t-text-muted)]">Total Cost</span><p className="font-medium text-[var(--t-text-primary)] mt-0.5">{formatCurrency(detail.total_price)}</p></div>
             <div><span className="text-[var(--t-text-muted)]">Asset</span><p className="font-medium text-[var(--t-text-primary)] mt-0.5">{detail.asset?.identifier || "—"}</p></div>
           </div>
+
+          {/* Placement Map */}
+          {!["completed", "cancelled"].includes(detail.status) && (
+            <div className="mt-6">
+              <PortalPlacementMap jobId={detail.id} serviceAddress={detail.service_address} />
+            </div>
+          )}
 
           {/* Change Date / Reschedule */}
           {canChangeDate && (
