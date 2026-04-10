@@ -22,6 +22,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
   const [accountStatus, setAccountStatus] = useState<{ account_status: string; status_message: string | null } | null>(null);
   const [bannerDismissed, setBannerDismissed] = useState(false);
 
+  // Auth check on pathname change
   useEffect(() => {
     const c = portalApi.getCustomer();
     if (!c && pathname !== "/portal/login") {
@@ -29,13 +30,17 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
       return;
     }
     setCustomer(c);
-    // Fetch account status for banner (best-effort)
+  }, [pathname, router]);
+
+  // Fetch account summary once on mount (not per-navigation)
+  useEffect(() => {
+    const c = portalApi.getCustomer();
     if (c) {
       portalApi.get<{ account_status: string; status_message: string | null }>("/portal/account-summary")
         .then(setAccountStatus)
         .catch(() => {});
     }
-  }, [pathname, router]);
+  }, []);
 
   useEffect(() => { setMobileOpen(false); }, [pathname]);
 
