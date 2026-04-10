@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Param, Body, UseGuards, Req } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Param, Body, Query, UseGuards, Req } from '@nestjs/common';
 import { PortalAuthGuard } from './portal.guard';
 import { PortalService } from './portal.service';
 import { ServiceRequestDto, ExtendRentalDto, UpdatePortalProfileDto, SignAgreementDto, ChangePasswordDto } from './portal.dto';
@@ -90,6 +90,17 @@ export class PortalController {
   getAccountSummary(@Req() req: Request) {
     const user = req.user as PortalUser;
     return this.portalService.getAccountSummary(user.customerId, user.tenantId);
+  }
+
+  @Get('pricing/estimate')
+  getPricingEstimate(@Req() req: Request, @Query() query: { size: string; lat?: string; lng?: string; days?: string }) {
+    const user = req.user as PortalUser;
+    return this.portalService.getPricingEstimate(user.tenantId, {
+      size: query.size,
+      lat: query.lat ? parseFloat(query.lat) : undefined,
+      lng: query.lng ? parseFloat(query.lng) : undefined,
+      rentalDays: query.days ? parseInt(query.days) : undefined,
+    });
   }
 
   @Post('report-issue')

@@ -7,6 +7,7 @@ import { Customer } from '../customers/entities/customer.entity';
 import { Job } from '../jobs/entities/job.entity';
 import { Invoice } from '../billing/entities/invoice.entity';
 import { Payment } from '../billing/entities/payment.entity';
+import { PricingService } from '../pricing/pricing.service';
 
 /**
  * Customer-safe projection of a Job for portal responses.
@@ -62,6 +63,7 @@ export class PortalService {
     @InjectRepository(Invoice) private invoiceRepo: Repository<Invoice>,
     @InjectRepository(Payment) private paymentRepo: Repository<Payment>,
     private jwtService: JwtService,
+    private pricingService: PricingService,
   ) {}
 
   /**
@@ -557,6 +559,42 @@ export class PortalService {
       status_message: STATUS_MESSAGES[accountStatus] ?? null,
       payment_eligible: currentBalance > 0,
     };
+  }
+
+  /**
+   * Phase 15 — Portal-safe pricing estimate.
+   *
+   * Calls PricingService.calculate() (the same path booking uses)
+   * and returns ONLY the customer-safe total. No internal pricing
+   * breakdown, distance bands, yard coordinates, or margin logic.
+   */
+  async getPricingEstimate(
+    tenantId: string,
+    params: { size: string; lat?: number; lng?: number; rentalDays?: number },
+  ) {
+    try {
+      const result = await this.pricingService.calculate(tenantId, {
+        serviceType: 'dumpster_rental',
+        assetSubtype: params.size,
+        jobType: 'delivery',
+        customerLat: params.lat,
+        customerLng: params.lng,
+        rentalDays: params.rentalDays,
+      } as any);
+      return {
+        total: result.breakdown.total,
+        size: params.size,
+        rental_days: result.breakdown.rentalDays,
+        available: true,
+      };
+    } catch {
+      return {
+        total: null,
+        size: params.size,
+        rental_days: params.rentalDays ?? null,
+        available: false,
+      };
+    }
   }
 
   async reportIssue(customerId: string, tenantId: string, dto: { jobId?: string; reason: string; notes?: string }) {
