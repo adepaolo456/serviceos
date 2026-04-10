@@ -138,6 +138,11 @@ export class CreateWithBookingDto {
   @Type(() => CreditOverrideDto)
   creditOverride?: CreditOverrideDto;
 
+  // Origin source (e.g., 'portal', 'phone')
+  @IsOptional()
+  @IsString()
+  source?: string;
+
   // Idempotency
   @IsOptional()
   @IsUUID()

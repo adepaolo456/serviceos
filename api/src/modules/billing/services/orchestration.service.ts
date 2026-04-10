@@ -303,6 +303,7 @@ export class OrchestrationService {
             total: totalPrice,
           },
           pricingTierUsed: 'global',
+          source: dto.source,
         }, queryRunner.manager);
         savedInvoice = completionResult.invoice;
       }
