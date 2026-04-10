@@ -1,4 +1,4 @@
-import { Controller, Get, UseGuards, ForbiddenException } from '@nestjs/common';
+import { Controller, Get, UseGuards, ForbiddenException, Inject, forwardRef } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { TenantId, CurrentUser, Roles } from '../../common/decorators';
 import { RolesGuard } from '../../common/guards';
@@ -13,6 +13,7 @@ import { PermissionService } from '../permissions/permission.service';
 export class CreditAnalyticsController {
   constructor(
     private readonly analyticsService: CreditAnalyticsService,
+    @Inject(forwardRef(() => PermissionService))
     private readonly permissionService: PermissionService,
   ) {}
 
