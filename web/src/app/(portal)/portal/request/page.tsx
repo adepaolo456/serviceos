@@ -6,36 +6,38 @@ import { portalApi } from "@/lib/portal-api";
 import { formatCurrency } from "@/lib/utils";
 import { FEATURE_REGISTRY } from "@/lib/feature-registry";
 import AddressAutocomplete, { type AddressValue } from "@/components/address-autocomplete";
-import { Package, CheckCircle2, Loader2 } from "lucide-react";
+import { Package, CheckCircle2, Loader2, Calendar } from "lucide-react";
 
 function label(id: string, fallback: string): string {
   return FEATURE_REGISTRY[id]?.label ?? fallback;
 }
 
-const sizes = [
-  { value: "10yd", label: "10 YD", desc: "Small cleanouts" },
-  { value: "15yd", label: "15 YD", desc: "Garage / basement" },
-  { value: "20yd", label: "20 YD", desc: "Renovation debris" },
-  { value: "30yd", label: "30 YD", desc: "Large projects" },
-  { value: "40yd", label: "40 YD", desc: "Commercial / demo" },
-];
+/** Same helper used by BookingWizard + NewCustomerForm + OrchestrationService */
+function addDays(dateStr: string, days: number): string {
+  const d = new Date(dateStr + "T00:00:00");
+  d.setDate(d.getDate() + days);
+  return d.toISOString().split("T")[0];
+}
 
-const durations = [
-  { value: 7, label: "7 days" },
-  { value: 14, label: "14 days" },
-  { value: 30, label: "30 days" },
-];
+interface SizeOption {
+  asset_subtype: string;
+  rental_period_days: number;
+  base_price: number;
+}
 
 interface PriceEstimate {
   total: number | null;
   size: string;
   rental_days: number | null;
+  included_days: number | null;
+  extra_days_billable: boolean;
   available: boolean;
 }
 
 export default function PortalRequestPage() {
   const router = useRouter();
-  const [size, setSize] = useState("20yd");
+  const [sizeOptions, setSizeOptions] = useState<SizeOption[]>([]);
+  const [size, setSize] = useState("");
   const [address, setAddress] = useState<Partial<AddressValue>>({});
   const [date, setDate] = useState("");
   const [rentalDays, setRentalDays] = useState(14);
@@ -49,14 +51,39 @@ export default function PortalRequestPage() {
   const [estimate, setEstimate] = useState<PriceEstimate | null>(null);
   const [priceLoading, setPriceLoading] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const dateInputRef = useRef<HTMLInputElement>(null);
 
   const hasAddress = !!(address.lat && address.lng);
+  const selectedSize = sizeOptions.find(s => s.asset_subtype === size);
+
+  // Derived pickup date — same logic as BookingWizard / NewCustomerForm
+  const pickupDate = date && rentalDays ? addDays(date, rentalDays) : null;
+
+  // Load size options from backend pricing rules (same as BookingWizard)
+  useEffect(() => {
+    portalApi.get<{ data: SizeOption[] }>("/pricing?limit=100")
+      .then(res => {
+        const opts = (res.data || []).filter(r => r.asset_subtype);
+        setSizeOptions(opts);
+        if (opts.length > 0 && !size) {
+          setSize(opts[0].asset_subtype);
+          setRentalDays(opts[0].rental_period_days || 14);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  // Sync rental days to pricing rule when size changes (same as BookingWizard lines 435-440)
+  useEffect(() => {
+    const rule = sizeOptions.find(o => o.asset_subtype === size);
+    if (rule?.rental_period_days) setRentalDays(rule.rental_period_days);
+  }, [size, sizeOptions]);
 
   // Fetch pricing estimate with debounce
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
 
-    if (!hasAddress) {
+    if (!hasAddress || !size) {
       setEstimate(null);
       return;
     }
@@ -73,7 +100,7 @@ export default function PortalRequestPage() {
         const result = await portalApi.get<PriceEstimate>(`/portal/pricing/estimate?${params}`);
         setEstimate(result);
       } catch {
-        setEstimate({ total: null, size, rental_days: rentalDays, available: false });
+        setEstimate({ total: null, size, rental_days: rentalDays, included_days: null, extra_days_billable: true, available: false });
       } finally {
         setPriceLoading(false);
       }
@@ -118,7 +145,7 @@ export default function PortalRequestPage() {
           <button onClick={() => router.push("/portal")} className="rounded-full border border-[var(--t-border)] px-4 py-2 text-sm font-medium text-[var(--t-text-primary)] hover:bg-[var(--t-bg-card-hover)] transition-colors">
             {label("portal_back_to_dashboard", "Back to Dashboard")}
           </button>
-          <button onClick={() => { setSubmitted(false); setSize("20yd"); setDate(""); setAddress({}); setInstructions(""); setEstimate(null); }}
+          <button onClick={() => { setSubmitted(false); setSize(sizeOptions[0]?.asset_subtype || ""); setDate(""); setAddress({}); setInstructions(""); setEstimate(null); }}
             className="rounded-full bg-[var(--t-accent)] px-4 py-2 text-sm font-semibold text-[var(--t-accent-on-accent)] hover:opacity-90 transition-opacity">
             {label("portal_request_another", "Request Another")}
           </button>
@@ -137,19 +164,21 @@ export default function PortalRequestPage() {
       <form onSubmit={handleSubmit} className="space-y-6">
         {error && <div className="rounded-[20px] bg-[var(--t-error-soft)] px-4 py-3 text-sm text-[var(--t-error)]">{error}</div>}
 
-        {/* Size selector — no prices shown until address entered */}
+        {/* Size selector — from backend pricing rules */}
         <div>
           <label className="block text-sm font-semibold text-[var(--t-text-primary)] mb-3">{label("portal_request_select_size", "Select Size")}</label>
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-            {sizes.map(s => (
-              <button key={s.value} type="button" onClick={() => setSize(s.value)}
+            {sizeOptions.length > 0 ? sizeOptions.map(s => (
+              <button key={s.asset_subtype} type="button" onClick={() => setSize(s.asset_subtype)}
                 className={`rounded-[20px] border-2 p-4 text-center transition-all ${
-                  size === s.value ? "border-[var(--t-accent)] bg-[var(--t-accent-soft)]" : "border-[var(--t-border)] bg-[var(--t-bg-card)] hover:border-[var(--t-text-muted)]"
+                  size === s.asset_subtype ? "border-[var(--t-accent)] bg-[var(--t-accent-soft)]" : "border-[var(--t-border)] bg-[var(--t-bg-card)] hover:border-[var(--t-text-muted)]"
                 }`}>
-                <p className="text-lg font-bold text-[var(--t-text-primary)]">{s.label}</p>
-                <p className="text-xs text-[var(--t-text-muted)] mt-0.5">{s.desc}</p>
+                <p className="text-lg font-bold text-[var(--t-text-primary)]">{s.asset_subtype.replace(/yd$/i, " YD").toUpperCase()}</p>
+                <p className="text-xs text-[var(--t-text-muted)] mt-0.5">{s.rental_period_days} {label("portal_request_days_included", "days included")}</p>
               </button>
-            ))}
+            )) : (
+              <div className="col-span-full h-16 rounded-[20px] bg-[var(--t-bg-card)] border border-[var(--t-border)] animate-pulse" />
+            )}
           </div>
         </div>
 
@@ -159,26 +188,40 @@ export default function PortalRequestPage() {
           <AddressAutocomplete value={address} onChange={setAddress} placeholder="Enter delivery address" />
         </div>
 
-        {/* Date + Duration row */}
+        {/* Date — clicking anywhere in field opens picker */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-semibold text-[var(--t-text-primary)] mb-2">{label("portal_request_date", "Preferred Delivery Date")}</label>
-            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} required
-              min={new Date().toISOString().split("T")[0]}
-              className="w-full rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-2.5 text-sm text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)] focus:ring-1 focus:ring-[var(--t-accent)]" />
-          </div>
-          <div>
-            <label className="block text-sm font-semibold text-[var(--t-text-primary)] mb-2">{label("portal_request_duration", "Rental Duration")}</label>
-            <div className="flex gap-2">
-              {durations.map(d => (
-                <button key={d.value} type="button" onClick={() => setRentalDays(d.value)}
-                  className={`flex-1 rounded-full border px-3 py-2.5 text-sm font-medium transition-colors ${
-                    rentalDays === d.value ? "border-[var(--t-accent)] text-[var(--t-accent)] bg-[var(--t-accent-soft)]" : "border-[var(--t-border)] text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)]"
-                  }`}>
-                  {d.label}
-                </button>
-              ))}
+            <div
+              className="relative cursor-pointer"
+              onClick={() => dateInputRef.current?.showPicker?.()}
+            >
+              <input
+                ref={dateInputRef}
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                required
+                min={new Date().toISOString().split("T")[0]}
+                className="w-full rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-2.5 text-sm text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)] focus:ring-1 focus:ring-[var(--t-accent)] cursor-pointer"
+              />
+              <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--t-text-muted)] pointer-events-none" />
             </div>
+          </div>
+          {/* Pickup date — auto-derived from delivery + included days */}
+          <div>
+            <label className="block text-sm font-semibold text-[var(--t-text-primary)] mb-2">{label("portal_request_pickup_date", "Estimated Pickup Date")}</label>
+            <div className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-elevated, var(--t-bg-card))] px-4 py-2.5 text-sm" style={{ color: pickupDate ? "var(--t-text-primary)" : "var(--t-text-muted)" }}>
+              {pickupDate ? new Date(pickupDate + "T00:00:00").toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric", year: "numeric" }) : label("portal_request_pickup_auto", "Set delivery date to see pickup date")}
+            </div>
+            {selectedSize && (
+              <p className="text-xs mt-1" style={{ color: "var(--t-text-muted)" }}>
+                {selectedSize.rental_period_days} {label("portal_request_days_included", "days included")}
+                {estimate && !estimate.extra_days_billable && (
+                  <span> · {label("portal_request_no_extra_charge", "no additional charge for extra days")}</span>
+                )}
+              </p>
+            )}
           </div>
         </div>
 
@@ -189,7 +232,7 @@ export default function PortalRequestPage() {
             className="w-full rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-2.5 text-sm text-[var(--t-text-primary)] placeholder-[var(--t-text-muted)] outline-none focus:border-[var(--t-accent)] focus:ring-1 focus:ring-[var(--t-accent)] resize-none" />
         </div>
 
-        {/* Price estimate — backend-driven */}
+        {/* Price estimate — backend-driven with customer context */}
         <div className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5">
           <h3 className="text-sm font-semibold text-[var(--t-text-primary)] mb-3">{label("portal_request_estimated_cost", "Estimated Cost")}</h3>
           {!hasAddress ? (
@@ -200,7 +243,7 @@ export default function PortalRequestPage() {
             </div>
           ) : estimate && estimate.available && estimate.total != null ? (
             <div className="space-y-1.5 text-sm">
-              <div className="flex justify-between border-t-0 font-semibold text-[var(--t-text-primary)]">
+              <div className="flex justify-between font-semibold text-[var(--t-text-primary)]">
                 <span>{label("portal_request_estimated_total", "Estimated Total")}</span>
                 <span>{formatCurrency(estimate.total)}</span>
               </div>

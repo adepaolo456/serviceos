@@ -95,7 +95,7 @@ export class PortalController {
   @Get('pricing/estimate')
   getPricingEstimate(@Req() req: Request, @Query() query: { size: string; lat?: string; lng?: string; days?: string }) {
     const user = req.user as PortalUser;
-    return this.portalService.getPricingEstimate(user.tenantId, {
+    return this.portalService.getPricingEstimate(user.tenantId, user.customerId, {
       size: query.size,
       lat: query.lat ? parseFloat(query.lat) : undefined,
       lng: query.lng ? parseFloat(query.lng) : undefined,
