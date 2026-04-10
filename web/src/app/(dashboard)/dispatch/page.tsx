@@ -24,6 +24,7 @@ import { formatPhone } from "@/lib/utils";
 import { useToast } from "@/components/toast";
 import QuickView, { QuickViewSkeleton } from "@/components/quick-view";
 import Dropdown from "@/components/dropdown";
+import { FEATURE_REGISTRY } from "@/lib/feature-registry";
 
 /* ---- Types ---- */
 
@@ -47,6 +48,21 @@ interface DispatchJob {
 interface Driver { id: string; firstName: string; lastName: string; phone: string; vehicleInfo?: { year?: string; make?: string; model?: string } | null; }
 interface DriverColumn { driver: Driver; route: { id: string; status: string; total_stops: number } | null; jobs: DispatchJob[]; jobCount: number; }
 interface DispatchBoard { date: string; drivers: DriverColumn[]; unassigned: DispatchJob[]; }
+
+/* ---- Credit state (Phase 4D — dispatch QuickView warning) ---- */
+type DispatchHoldReason =
+  | { type: "manual_hold"; set_by: string | null; set_at: string | null; reason: string | null }
+  | { type: "credit_limit_exceeded"; limit: number; current_ar: number }
+  | { type: "overdue_threshold_exceeded"; threshold_days: number; oldest_past_due_days: number };
+
+interface DispatchCreditState {
+  hold: {
+    effective_active: boolean;
+    manual_active: boolean;
+    policy_active: boolean;
+    reasons: DispatchHoldReason[];
+  };
+}
 
 /* ---- Mapbox ---- */
 
@@ -138,6 +154,7 @@ export default function DispatchPage() {
   const [quickViewJob, setQuickViewJob] = useState<DispatchJob | null>(null);
   const [qvDetail, setQvDetail] = useState<any>(null);
   const [qvLoading, setQvLoading] = useState(false);
+  const [qvCreditState, setQvCreditState] = useState<DispatchCreditState | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [collapsedCols, setCollapsedCols] = useState<Set<string>>(new Set());
   const [hiddenCols, setHiddenCols] = useState<Set<string>>(new Set());
@@ -464,7 +481,18 @@ export default function DispatchPage() {
     }
   };
 
-  const openQuickView = (j: DispatchJob) => { setQuickViewJob(j); setQvLoading(true); setQvDetail(null); api.get(`/jobs/${j.id}`).then(setQvDetail).catch(() => {}).finally(() => setQvLoading(false)); };
+  const openQuickView = (j: DispatchJob) => {
+    setQuickViewJob(j);
+    setQvLoading(true);
+    setQvDetail(null);
+    setQvCreditState(null);
+    // Fetch job detail and credit state in parallel. Credit state is
+    // best-effort — a failure does not block the QuickView from opening.
+    api.get(`/jobs/${j.id}`).then(setQvDetail).catch(() => {}).finally(() => setQvLoading(false));
+    if (j.customer?.id) {
+      api.get<DispatchCreditState>(`/customers/${j.customer.id}/credit-state`).then(setQvCreditState).catch(() => {});
+    }
+  };
 
   // Move job to top or bottom within its column
   const handleMoveJob = useCallback(async (jobId: string, position: "top" | "bottom") => {
@@ -794,7 +822,7 @@ export default function DispatchPage() {
       )}
 
       {/* ── QuickView ── */}
-      <QuickView isOpen={!!quickViewJob} onClose={() => { setQuickViewJob(null); setQvDetail(null); }}
+      <QuickView isOpen={!!quickViewJob} onClose={() => { setQuickViewJob(null); setQvDetail(null); setQvCreditState(null); }}
         title={quickViewJob ? `${quickViewJob.asset_subtype || quickViewJob.asset?.subtype || ""} ${getTypeLabel(quickViewJob.job_type)}`.trim() : ""}
         subtitle={quickViewJob?.job_number}
         actions={quickViewJob ? <Link href={`/jobs/${quickViewJob.id}`} className="rounded-full px-3 py-1.5 text-xs font-medium" style={{ background: "var(--t-bg-card-hover)", color: "var(--t-text-primary)" }}><ExternalLink className="h-3 w-3 inline mr-1" />Full Detail</Link> : undefined}
@@ -807,7 +835,7 @@ export default function DispatchPage() {
         ) : undefined}
       >
         {quickViewJob && qvLoading ? <QuickViewSkeleton /> : quickViewJob && qvDetail ? (
-          <QVContent job={quickViewJob} detail={qvDetail} board={board} onAssign={async (jid, did) => {
+          <QVContent job={quickViewJob} detail={qvDetail} board={board} creditState={qvCreditState} onAssign={async (jid, did) => {
             try { await api.patch(`/jobs/${jid}/assign`, { assignedDriverId: did }); toast("success", "Reassigned"); await fetchBoard(true); } catch { toast("error", "Failed"); }
           }} onRefresh={() => fetchBoard(true)} toast={toast} />
         ) : null}
@@ -1598,8 +1626,9 @@ function JobTileGhost({ job, bulkCount = 1 }: { job: DispatchJob; bulkCount?: nu
    QuickView Content
    ═══════════════════════════════════════════════════ */
 
-function QVContent({ job, detail, board, onAssign, onRefresh, toast }: {
+function QVContent({ job, detail, board, creditState, onAssign, onRefresh, toast }: {
   job: DispatchJob; detail: any; board: DispatchBoard | null;
+  creditState: DispatchCreditState | null;
   onAssign: (jobId: string, driverId: string | null) => Promise<void>;
   onRefresh: () => Promise<void>;
   toast: (type: "success" | "error" | "warning", msg: string) => void;
@@ -1663,6 +1692,60 @@ function QVContent({ job, detail, board, onAssign, onRefresh, toast }: {
               View Account
             </Link>
           )}
+        </div>
+      )}
+
+      {/* Credit hold warning (Phase 4D — informational only, no dispatch blocking) */}
+      {creditState?.hold.effective_active && (
+        <div className="rounded-[14px] px-4 py-3" style={{ background: "var(--t-warning-soft, #FFF8E1)", border: "1px solid var(--t-warning, #F59E0B)" }}>
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" style={{ color: "var(--t-warning, #F59E0B)" }} />
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-bold" style={{ color: "var(--t-text-primary)" }}>
+                {FEATURE_REGISTRY.dispatch_credit_hold_header?.label ?? "Customer Credit Hold"}
+              </p>
+              <p className="text-[10px] mt-0.5" style={{ color: "var(--t-text-muted)" }}>
+                {FEATURE_REGISTRY.dispatch_credit_hold_disclaimer?.label ?? "Informational only — dispatch is not blocked"}
+              </p>
+              {/* Structured hold reasons — concise for dense dispatch context */}
+              <div className="mt-2 space-y-1.5">
+                {creditState.hold.reasons.map((r, i) => {
+                  if (r.type === "manual_hold") {
+                    return (
+                      <div key={i} className="text-[11px]" style={{ color: "var(--t-text-secondary)" }}>
+                        <span className="font-semibold">{FEATURE_REGISTRY.dispatch_credit_hold_manual?.label ?? "Manual hold"}</span>
+                        {r.reason && <span> — {r.reason}</span>}
+                        {r.set_by && <span className="block text-[10px]" style={{ color: "var(--t-text-muted)" }}>Set by {r.set_by}{r.set_at ? ` on ${new Date(r.set_at).toLocaleDateString()}` : ""}</span>}
+                      </div>
+                    );
+                  }
+                  if (r.type === "credit_limit_exceeded") {
+                    return (
+                      <div key={i} className="text-[11px]" style={{ color: "var(--t-text-secondary)" }}>
+                        <span className="font-semibold">{FEATURE_REGISTRY.dispatch_credit_hold_credit_limit?.label ?? "Credit limit exceeded"}</span>
+                        <span className="tabular-nums"> — ${Number(r.current_ar).toLocaleString()} / ${Number(r.limit).toLocaleString()}</span>
+                      </div>
+                    );
+                  }
+                  if (r.type === "overdue_threshold_exceeded") {
+                    return (
+                      <div key={i} className="text-[11px]" style={{ color: "var(--t-text-secondary)" }}>
+                        <span className="font-semibold">{FEATURE_REGISTRY.dispatch_credit_hold_overdue?.label ?? "Past due threshold exceeded"}</span>
+                        <span className="tabular-nums"> — {r.oldest_past_due_days}d past due (threshold: {r.threshold_days}d)</span>
+                      </div>
+                    );
+                  }
+                  return null;
+                })}
+              </div>
+            </div>
+            {cust?.id && (
+              <Link href={`/customers/${cust.id}`} className="shrink-0 text-[10px] font-semibold rounded-full px-2.5 py-1 border"
+                style={{ borderColor: "var(--t-warning, #F59E0B)", color: "var(--t-warning, #F59E0B)" }}>
+                {FEATURE_REGISTRY.dispatch_credit_hold_view_account?.label ?? "View Account"}
+              </Link>
+            )}
+          </div>
         </div>
       )}
 
