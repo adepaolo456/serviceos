@@ -104,7 +104,7 @@ export default function CreditAuditPage() {
           className="flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium disabled:opacity-50"
           style={{ borderColor: "var(--t-border)", color: "var(--t-text-primary)" }}
         >
-          <RefreshCw className={`h-3 w-3 ${loading ? "animate-spin" : ""}`} /> Refresh
+          <RefreshCw className={`h-3 w-3 ${loading ? "animate-spin" : ""}`} /> {FEATURE_REGISTRY.ui_refresh?.label ?? "Refresh"}
         </button>
       </div>
 
@@ -145,11 +145,11 @@ export default function CreditAuditPage() {
         </div>
 
         {loading && events.length === 0 && (
-          <div className="px-4 py-8 text-center text-sm" style={{ color: "var(--t-text-muted)" }}>Loading...</div>
+          <div className="px-4 py-8 text-center text-sm" style={{ color: "var(--t-text-muted)" }}>{FEATURE_REGISTRY.ui_loading?.label ?? "Loading..."}</div>
         )}
 
         {!loading && events.length === 0 && (
-          <div className="px-4 py-8 text-center text-sm" style={{ color: "var(--t-text-muted)" }}>No audit events found</div>
+          <div className="px-4 py-8 text-center text-sm" style={{ color: "var(--t-text-muted)" }}>{FEATURE_REGISTRY.credit_audit_empty?.label ?? "No audit events found"}</div>
         )}
 
         {events.map((ev) => {
@@ -220,10 +220,10 @@ export default function CreditAuditPage() {
             className="rounded-full border px-4 py-1.5 text-xs font-medium disabled:opacity-40"
             style={{ borderColor: "var(--t-border)", color: "var(--t-text-primary)" }}
           >
-            Prev
+            {FEATURE_REGISTRY.ui_prev?.label ?? "Prev"}
           </button>
           <span className="text-xs tabular-nums" style={{ color: "var(--t-text-muted)" }}>
-            Page {meta.page} of {meta.totalPages}
+            {meta.page} / {meta.totalPages}
           </span>
           <button
             onClick={() => setPage((p) => Math.min(meta.totalPages, p + 1))}
@@ -231,7 +231,7 @@ export default function CreditAuditPage() {
             className="rounded-full border px-4 py-1.5 text-xs font-medium disabled:opacity-40"
             style={{ borderColor: "var(--t-border)", color: "var(--t-text-primary)" }}
           >
-            Next
+            {FEATURE_REGISTRY.ui_next?.label ?? "Next"}
           </button>
         </div>
       )}

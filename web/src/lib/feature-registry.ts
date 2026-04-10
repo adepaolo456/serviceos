@@ -1737,6 +1737,16 @@ export const FEATURE_REGISTRY: Record<string, FeatureDescription> = {
     routeOrSurface: "credit_queue", tenantOverrideKey: "credit_queue_timeline_header",
     isUserFacing: true, isGuideEligible: false, keywords: ["timeline", "collections"],
   },
+
+  // ── Shared UI micro-labels (pagination, loading, etc.) ──
+  ui_loading: { id: "ui_loading", label: "Loading...", category: "operations", shortDescription: "Loading indicator text.", guideDescription: "", routeOrSurface: "global", tenantOverrideKey: "ui_loading", isUserFacing: true, isGuideEligible: false, keywords: ["loading"] },
+  ui_refresh: { id: "ui_refresh", label: "Refresh", category: "operations", shortDescription: "Refresh button label.", guideDescription: "", routeOrSurface: "global", tenantOverrideKey: "ui_refresh", isUserFacing: true, isGuideEligible: false, keywords: ["refresh"] },
+  ui_prev: { id: "ui_prev", label: "Prev", category: "operations", shortDescription: "Previous page button.", guideDescription: "", routeOrSurface: "global", tenantOverrideKey: "ui_prev", isUserFacing: true, isGuideEligible: false, keywords: ["prev"] },
+  ui_next: { id: "ui_next", label: "Next", category: "operations", shortDescription: "Next page button.", guideDescription: "", routeOrSurface: "global", tenantOverrideKey: "ui_next", isUserFacing: true, isGuideEligible: false, keywords: ["next"] },
+  credit_audit_empty: { id: "credit_audit_empty", label: "No audit events found", category: "admin", shortDescription: "Empty state for audit dashboard.", guideDescription: "", routeOrSurface: "credit_audit", tenantOverrideKey: "credit_audit_empty", isUserFacing: true, isGuideEligible: false, keywords: ["empty"] },
+  credit_analytics_empty_trends: { id: "credit_analytics_empty_trends", label: "No events in the last 30 days", category: "analytics", shortDescription: "Empty state for trends chart.", guideDescription: "", routeOrSurface: "credit_analytics", tenantOverrideKey: "credit_analytics_empty_trends", isUserFacing: true, isGuideEligible: false, keywords: ["empty", "trends"] },
+  credit_analytics_empty_customers: { id: "credit_analytics_empty_customers", label: "No customer events recorded", category: "analytics", shortDescription: "Empty state for top customers.", guideDescription: "", routeOrSurface: "credit_analytics", tenantOverrideKey: "credit_analytics_empty_customers", isUserFacing: true, isGuideEligible: false, keywords: ["empty", "customers"] },
+  credit_analytics_empty_users: { id: "credit_analytics_empty_users", label: "No overrides recorded", category: "analytics", shortDescription: "Empty state for top users.", guideDescription: "", routeOrSurface: "credit_analytics", tenantOverrideKey: "credit_analytics_empty_users", isUserFacing: true, isGuideEligible: false, keywords: ["empty", "overrides"] },
 };
 
 // ── Category display labels ──
