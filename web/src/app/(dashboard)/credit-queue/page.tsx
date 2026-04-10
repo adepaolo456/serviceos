@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { ClipboardList, Shield, AlertTriangle, ExternalLink, ChevronDown, ChevronUp, RefreshCw, X } from "lucide-react";
+import { ClipboardList, Shield, AlertTriangle, ExternalLink, ChevronDown, ChevronUp, RefreshCw, X, Bell, Phone, FileText, ArrowUpRight } from "lucide-react";
 import { api } from "@/lib/api";
 import { formatCurrency } from "@/lib/utils";
 import { FEATURE_REGISTRY } from "@/lib/feature-registry";
@@ -47,6 +47,14 @@ interface AuditEvent {
   created_at: string;
 }
 
+interface CollectionEvent {
+  id: string;
+  event_type: string;
+  user_id: string;
+  note: string | null;
+  created_at: string;
+}
+
 /* ── Helpers ── */
 
 function label(id: string, fallback: string): string {
@@ -66,6 +74,9 @@ export default function CreditQueuePage() {
   const [detailCredit, setDetailCredit] = useState<CreditState | null>(null);
   const [detailEvents, setDetailEvents] = useState<AuditEvent[]>([]);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [timeline, setTimeline] = useState<CollectionEvent[]>([]);
+  const [noteInput, setNoteInput] = useState("");
+  const [actionLoading, setActionLoading] = useState(false);
 
   const fetchQueue = useCallback(async () => {
     setLoading(true);
@@ -86,20 +97,38 @@ export default function CreditQueuePage() {
     setSelectedId(customerId);
     setDetailCredit(null);
     setDetailEvents([]);
+    setTimeline([]);
+    setNoteInput("");
     setDetailLoading(true);
     try {
-      const [credit, events] = await Promise.all([
+      const [credit, events, tl] = await Promise.all([
         api.get<CreditState>(`/customers/${customerId}/credit-state`).catch(() => null),
         api.get<{ data: AuditEvent[] }>(`/credit-audit/events?customerId=${customerId}&limit=15`).then(r => r.data).catch(() => []),
+        api.get<CollectionEvent[]>(`/credit-workflow/timeline?customer_id=${customerId}&limit=30`).catch(() => []),
       ]);
       setDetailCredit(credit);
       setDetailEvents(events);
+      setTimeline(tl);
     } finally {
       setDetailLoading(false);
     }
   };
 
-  const closeDetail = () => { setSelectedId(null); setDetailCredit(null); setDetailEvents([]); };
+  const refreshTimeline = async (customerId: string) => {
+    const tl = await api.get<CollectionEvent[]>(`/credit-workflow/timeline?customer_id=${customerId}&limit=30`).catch(() => []);
+    setTimeline(tl);
+  };
+
+  const handleAction = async (endpoint: string, customerId: string, note?: string) => {
+    setActionLoading(true);
+    try {
+      await api.post(`/credit-workflow/${endpoint}`, { customer_id: customerId, note: note || undefined });
+      await refreshTimeline(customerId);
+    } catch { /* action failed silently */ }
+    finally { setActionLoading(false); }
+  };
+
+  const closeDetail = () => { setSelectedId(null); setDetailCredit(null); setDetailEvents([]); setTimeline([]); };
 
   const selected = queue.find(c => c.customer_id === selectedId) ?? null;
 
@@ -257,7 +286,59 @@ export default function CreditQueuePage() {
                     </div>
                   )}
 
-                  {/* Actions */}
+                  {/* Workflow actions */}
+                  <div className="pt-2" style={{ borderTop: "1px solid var(--t-border)" }}>
+                    <p className="text-[10px] uppercase tracking-wider font-semibold mb-2" style={{ color: "var(--t-text-muted)" }}>
+                      {label("credit_queue_actions_header", "Actions")}
+                    </p>
+                    <div className="grid grid-cols-2 gap-2 mb-2">
+                      <button disabled={actionLoading} onClick={() => handleAction("reminder", selected.customer_id)} className="flex items-center justify-center gap-1 rounded-full border py-1.5 text-[10px] font-medium disabled:opacity-50" style={{ borderColor: "var(--t-warning, #F59E0B)", color: "var(--t-warning, #F59E0B)" }}>
+                        <Bell className="h-3 w-3" /> {label("credit_queue_action_reminder", "Reminder")}
+                      </button>
+                      <button disabled={actionLoading} onClick={() => handleAction("contacted", selected.customer_id)} className="flex items-center justify-center gap-1 rounded-full border py-1.5 text-[10px] font-medium disabled:opacity-50" style={{ borderColor: "var(--t-accent)", color: "var(--t-accent)" }}>
+                        <Phone className="h-3 w-3" /> {label("credit_queue_action_contacted", "Contacted")}
+                      </button>
+                      <button disabled={actionLoading} onClick={() => handleAction("escalate", selected.customer_id)} className="flex items-center justify-center gap-1 rounded-full border py-1.5 text-[10px] font-medium disabled:opacity-50" style={{ borderColor: "var(--t-error)", color: "var(--t-error)" }}>
+                        <ArrowUpRight className="h-3 w-3" /> {label("credit_queue_action_escalate", "Escalate")}
+                      </button>
+                      <button disabled={actionLoading || !noteInput.trim()} onClick={async () => { await handleAction("note", selected.customer_id, noteInput); setNoteInput(""); }} className="flex items-center justify-center gap-1 rounded-full border py-1.5 text-[10px] font-medium disabled:opacity-50" style={{ borderColor: "var(--t-border)", color: "var(--t-text-primary)" }}>
+                        <FileText className="h-3 w-3" /> {label("credit_queue_action_note", "Add Note")}
+                      </button>
+                    </div>
+                    <input
+                      value={noteInput} onChange={(e) => setNoteInput(e.target.value)}
+                      placeholder={label("credit_queue_note_placeholder", "Note text...")}
+                      className="w-full rounded-lg border px-3 py-1.5 text-xs outline-none mb-3"
+                      style={{ borderColor: "var(--t-border)", color: "var(--t-text-primary)", background: "var(--t-bg-input, var(--t-bg-card))" }}
+                    />
+                  </div>
+
+                  {/* Collections Timeline */}
+                  {timeline.length > 0 && (
+                    <div>
+                      <p className="text-[10px] uppercase tracking-wider font-semibold mb-2" style={{ color: "var(--t-text-muted)" }}>
+                        {label("credit_queue_timeline_header", "Collections Timeline")}
+                      </p>
+                      <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                        {timeline.map((ev) => (
+                          <div key={ev.id} className="rounded-lg border px-2.5 py-1.5" style={{ borderColor: "var(--t-border)" }}>
+                            <div className="flex items-center gap-2 text-[10px]">
+                              <span className="font-semibold px-1.5 py-0.5 rounded-full" style={{
+                                background: ev.event_type === "escalated" ? "var(--t-error-soft)" : ev.event_type === "reminder_sent" ? "var(--t-warning-soft, #FFF8E1)" : "var(--t-accent-soft)",
+                                color: ev.event_type === "escalated" ? "var(--t-error)" : ev.event_type === "reminder_sent" ? "var(--t-warning, #F59E0B)" : "var(--t-accent)",
+                              }}>
+                                {ev.event_type.replace(/_/g, " ")}
+                              </span>
+                              <span className="tabular-nums" style={{ color: "var(--t-text-muted)" }}>{new Date(ev.created_at).toLocaleDateString()}</span>
+                            </div>
+                            {ev.note && <p className="text-[11px] mt-1" style={{ color: "var(--t-text-secondary)" }}>{ev.note}</p>}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Navigation links */}
                   <div className="flex flex-col gap-2 pt-2" style={{ borderTop: "1px solid var(--t-border)" }}>
                     <Link href={`/customers/${selected.customer_id}`} className="flex items-center justify-center gap-1.5 rounded-full border py-2 text-xs font-medium" style={{ borderColor: "var(--t-accent)", color: "var(--t-accent)" }}>
                       <ExternalLink className="h-3 w-3" /> {label("credit_queue_view_customer", "View Customer")}
