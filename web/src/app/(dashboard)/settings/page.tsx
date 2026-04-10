@@ -11,6 +11,7 @@ import { useToast } from "@/components/toast";
 import SlideOver from "@/components/slide-over";
 import AddressAutocomplete, { type AddressValue } from "@/components/address-autocomplete";
 import { SMS_LABELS } from "@/lib/sms-settings-labels";
+import { CreditPolicySettingsTab } from "@/components/credit-policy-settings-tab";
 
 interface Profile {
   id: string; email: string; firstName: string; lastName: string; role: string;
@@ -31,6 +32,7 @@ const TABS = [
   { key: "locations", label: "Locations", icon: MapPin },
   { key: "team", label: "Team", icon: Users },
   { key: "billing", label: "Billing", icon: CreditCard },
+  { key: "credit", label: "Credit", icon: Lock },
   { key: "notifications", label: "Notifications", icon: Bell },
   { key: "integrations", label: "Integrations", icon: Plug },
   { key: "website", label: "Website", icon: Globe },
@@ -80,6 +82,7 @@ export default function SettingsPage() {
       {tab === "locations" && <LocationsTab />}
       {tab === "team" && <TeamTab />}
       {tab === "billing" && <BillingTab profile={profile} />}
+      {tab === "credit" && <CreditPolicySettingsTab profile={profile} />}
       {tab === "notifications" && <NotificationsTab profile={profile} />}
       {tab === "integrations" && <IntegrationsTab profile={profile} />}
       {tab === "website" && profile && <WebsiteTab slug={profile.tenant.slug} />}

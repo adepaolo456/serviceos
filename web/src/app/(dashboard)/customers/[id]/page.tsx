@@ -16,6 +16,7 @@ import SlideOver from "@/components/slide-over";
 import AddressAutocomplete, { type AddressValue } from "@/components/address-autocomplete";
 import MapboxMap from "@/components/mapbox-map";
 import { CUSTOMER_DASHBOARD_LABELS } from "@/lib/customer-dashboard-labels";
+import { CustomerCreditPanel } from "@/components/customer-credit-panel";
 
 /* ---- Types ---- */
 
@@ -323,6 +324,10 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
       {/* ===== BILLING TAB ===== */}
       {tab === "billing" && (
         <div className="space-y-4 max-w-2xl">
+          {/* Phase 3 — visibility-only Accounting & Credit panel.
+              Self-contained: fetches its own credit-state + profile,
+              gates inline edits on admin/owner, never enforces. */}
+          <CustomerCreditPanel customerId={id} />
           <div className="grid grid-cols-2 gap-4">
             <Card title="Current Balance"><p className={`text-2xl font-bold tabular-nums ${netBalance > 0 ? "text-[var(--t-error)]" : "text-[var(--t-accent)]"}`}>{netBalance < 0 ? `-${fmtMoney(Math.abs(netBalance))}` : fmtMoney(netBalance)}</p>{totalCredits > 0 && <p className="text-xs mt-1" style={{ color: "var(--t-accent)" }}>{fmtMoney(totalCredits)} credit available</p>}</Card>
             <Card title="Lifetime Revenue"><p className="text-2xl font-bold text-[var(--t-text-primary)] tabular-nums">{fmtMoney(customer.lifetime_revenue)}</p></Card>
