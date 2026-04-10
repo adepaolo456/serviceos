@@ -6,11 +6,13 @@ import { CreditAuditService } from './credit-audit.service';
 import { CreditAuditController } from './credit-audit.controller';
 import { CreditAnalyticsService } from './credit-analytics.service';
 import { CreditAnalyticsController } from './credit-analytics.controller';
+import { CreditWorkflowService } from './credit-workflow.service';
+import { CreditWorkflowController } from './credit-workflow.controller';
 
 @Module({
   imports: [TypeOrmModule.forFeature([CreditAuditEvent, Customer])],
-  controllers: [CreditAuditController, CreditAnalyticsController],
-  providers: [CreditAuditService, CreditAnalyticsService],
+  controllers: [CreditAuditController, CreditAnalyticsController, CreditWorkflowController],
+  providers: [CreditAuditService, CreditAnalyticsService, CreditWorkflowService],
   exports: [CreditAuditService],
 })
 export class CreditAuditModule {}
