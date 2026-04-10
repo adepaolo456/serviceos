@@ -60,8 +60,8 @@ export default function PortalPlacementMap({ jobId, serviceAddress }: Props) {
       container: mapContainer.current,
       style: "mapbox://styles/mapbox/satellite-streets-v12",
       center: [lng ?? centerLng, lat ?? centerLat],
-      zoom: 18,
-      pitch: 35,
+      zoom: 17.5,
+      maxZoom: 18,
     });
 
     const marker = new mapboxgl.Marker({ draggable: true, color: "#FACC15", scale: 1.15 })
