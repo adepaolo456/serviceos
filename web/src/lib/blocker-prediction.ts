@@ -92,7 +92,15 @@ export type PredictiveSummaryKind =
   | "mixed"
   | "non_payment_only"
   | "uncertain_only"
-  | "no_blockers";
+  | "no_blockers"
+  // Phase 6 — payment-actionable cases where no individual issue is
+  // explicitly classified as payment_rooted (e.g., a single
+  // price_mismatch on an unpaid invoice). The drawer still leads with
+  // payment because the invoice itself is unpaid; these kinds give
+  // the lead phrase the right copy without claiming explicit
+  // payment-rooted blocker counts that don't exist.
+  | "payment_first_no_classified"
+  | "payment_first_with_review";
 
 export interface PredictiveSummary {
   kind: PredictiveSummaryKind;
@@ -151,6 +159,13 @@ const BLOCKER_TYPE_RULES: Record<string, BlockerGroup> = {
   // High-confidence payment-rooted — direct backend auto-resolve on payment.
   past_due_payment: "payment_rooted",
   completed_unpaid: "payment_rooted",
+  // Phase 6 fix: defensive coverage for legacy/variant data. The
+  // detector currently emits `completed_unpaid` (verified by reading
+  // billing-issue-detector.service.ts), but legacy tenants and the
+  // existing `blocked_reason_billing_issue.guideDescription` mention
+  // `completed_unpaid_review` as an example flag. If it ever appears
+  // in live data we treat it identically to `completed_unpaid`.
+  completed_unpaid_review: "payment_rooted",
 
   // High-confidence non-payment — payment doesn't fix the underlying problem.
   missing_dump_slip: "non_payment",
@@ -161,6 +176,11 @@ const BLOCKER_TYPE_RULES: Record<string, BlockerGroup> = {
 
   // Conservative uncertain — backend may auto-clear via the invoice-closed
   // pass, but the underlying mismatch may still warrant operator review.
+  // NOTE: this is a MESSAGING classification, not an action-hierarchy
+  // classification. When the linked invoice is unpaid, payment is still
+  // the primary action even if a price_mismatch is the only open issue —
+  // see `generatePredictiveSummary` which honors `paymentActionable`
+  // when picking the lead-phrase kind.
   price_mismatch: "uncertain",
 };
 
@@ -210,9 +230,29 @@ export function classifyBlockers(
 }
 
 /**
- * Decide which discriminated `kind` of summary to render and how to
- * count each bucket. The UI uses `kind` to look up the matching
- * registry label.
+ * Decide which discriminated `kind` of summary to render.
+ *
+ * Phase 6 fix — `paymentActionable` short-circuit:
+ *   When the linked invoice is actionable (real `balance_due > 0` and
+ *   not in `paid`/`voided`), payment IS the primary action regardless
+ *   of how the issue types classify. The lead phrase always reflects
+ *   payment-first messaging, even if every visible issue happens to
+ *   land in the `uncertain` or `non_payment` buckets. The previous
+ *   behavior produced misleading "may need manual review" copy on
+ *   jobs where payment was clearly the next step (the JOB-20260417-WZCP
+ *   class of bug).
+ *
+ *   Concretely: when `paymentActionable === true` we never return
+ *   `non_payment_only`, `uncertain_only`, or `no_blockers`. We pick
+ *   one of the payment-leading kinds instead. When payment is NOT
+ *   actionable we fall through to the conservative review messaging.
+ *
+ * Action hierarchy vs prediction copy are intentionally separate:
+ *   - the drawer's payment form rendering is gated on
+ *     `summary.paymentActionable` (which mirrors `isPaymentActionable`)
+ *   - the lead phrase comes from `summary.kind` via this function
+ *   The two used to disagree when the action was payment but the
+ *   prediction was conservative; this fix makes them agree.
  */
 export function generatePredictiveSummary(
   classification: BlockerClassification,
@@ -221,26 +261,41 @@ export function generatePredictiveSummary(
   const p = classification.paymentRooted.length;
   const n = classification.nonPayment.length;
   const u = classification.uncertain.length;
+  const actionable = isPaymentActionable(invoice);
 
   const summary = (kind: PredictiveSummaryKind): PredictiveSummary => ({
     kind,
     paymentRootedCount: p,
     nonPaymentCount: n,
     uncertainCount: u,
-    paymentActionable: isPaymentActionable(invoice),
+    paymentActionable: actionable,
   });
 
-  if (p === 0 && n === 0 && u === 0) return summary("no_blockers");
+  if (actionable) {
+    // Payment IS the primary action. Always lead with payment.
+    if (p > 0 && n === 0 && u === 0) return summary("all_payment_clear");
+    if (p > 0 && n > 0 && u === 0) return summary("payment_with_remaining");
+    if (p > 0 && n === 0 && u > 0) return summary("payment_with_uncertain");
+    if (p > 0 && n > 0 && u > 0) return summary("mixed");
+    // p === 0 with payment actionable — the unpaid invoice itself is
+    // the actionable surface even though no individual issue rolled
+    // up to payment_rooted. New kinds keep the copy honest.
+    if (n === 0 && u === 0) return summary("payment_first_no_classified");
+    return summary("payment_first_with_review");
+  }
 
+  // Payment NOT actionable — fall through to conservative review messaging.
+  if (p === 0 && n === 0 && u === 0) return summary("no_blockers");
+  if (p === 0 && n > 0 && u === 0) return summary("non_payment_only");
+  if (p === 0 && u > 0 && n === 0) return summary("uncertain_only");
+  // p === 0 && n > 0 && u > 0 — still mostly manual-review-driven.
+  // The p > 0 cases shouldn't reach here because classifyBlockers
+  // downgrades payment_rooted to uncertain when payment isn't
+  // actionable, but we keep defensive fallbacks for completeness.
   if (p > 0 && n === 0 && u === 0) return summary("all_payment_clear");
   if (p > 0 && n > 0 && u === 0) return summary("payment_with_remaining");
   if (p > 0 && n === 0 && u > 0) return summary("payment_with_uncertain");
   if (p > 0 && n > 0 && u > 0) return summary("mixed");
-
-  if (p === 0 && n > 0 && u === 0) return summary("non_payment_only");
-  if (p === 0 && u > 0 && n === 0) return summary("uncertain_only");
-
-  // p === 0 && n > 0 && u > 0  → still mostly manual-review-driven
   return summary("non_payment_only");
 }
 
@@ -269,15 +324,38 @@ export function compareBlockerSets(
 
 /* ─── Internals ─────────────────────────────────────────────────── */
 
-const PAID_INVOICE_STATUSES: ReadonlyArray<string> = [
+/**
+ * Invoice statuses where the OPERATOR cannot record additional
+ * payment. This is intentionally NOT the same list as the backend's
+ * `terminalInvoiceStatuses` (which is `['paid','partial','voided']`)
+ * because the two predicates serve different purposes:
+ *
+ *   - Backend `resolveStaleIssues` Pass 4 treats `partial` as terminal
+ *     for the `completed_unpaid` issue type — any payment is "good
+ *     enough" for the issue row to auto-clear.
+ *
+ *   - Frontend `isPaymentActionable` answers: "can the operator record
+ *     more payment from the resolution drawer?" A `partial` invoice
+ *     with `balance_due > 0` absolutely qualifies — there's still
+ *     money to collect.
+ *
+ * Lumping `partial` here was the JOB-20260417-WZCP root cause: jobs
+ * with partial invoices were misclassified as not-actionable, every
+ * payment-rooted blocker downgraded to uncertain, and the drawer fell
+ * into a passive review-only state instead of leading with payment.
+ *
+ * Renamed from `PAID_INVOICE_STATUSES` (which was misleading since
+ * `partial` is technically a paid status but not a terminal one for
+ * action purposes).
+ */
+const NON_ACTIONABLE_INVOICE_STATUSES: ReadonlyArray<string> = [
   "paid",
-  "partial",
   "voided",
 ];
 
 function isPaymentActionable(invoice: PredictableInvoice | null): boolean {
   if (!invoice) return false;
   if (Number(invoice.balance_due) <= 0) return false;
-  if (PAID_INVOICE_STATUSES.includes(invoice.status)) return false;
+  if (NON_ACTIONABLE_INVOICE_STATUSES.includes(invoice.status)) return false;
   return true;
 }
