@@ -29,6 +29,7 @@ import {
   Moon,
   ChevronLeft,
   ChevronRight,
+  ClipboardList,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useTheme } from "@/components/theme-provider";
@@ -44,7 +45,10 @@ interface UserProfile {
   tenant?: { enabledModules?: string[] };
 }
 
-const navigation = [
+const navigation: ReadonlyArray<{
+  name: string; href: string; icon: typeof LayoutDashboard;
+  module?: string; roles?: readonly string[];
+}> = [
   { name: "Dashboard", href: "/", icon: LayoutDashboard },
   { name: "Customers", href: "/customers", icon: Users },
   { name: "Assets", href: "/assets", icon: Box },
@@ -60,10 +64,13 @@ const navigation = [
   { name: "Team", href: "/team", icon: Users },
   { name: "Vehicles", href: "/vehicles", icon: CarFront },
   { name: "Analytics", href: "/analytics", icon: BarChart3 },
+  { name: "Credit Analytics", href: "/credit-analytics", icon: BarChart3, roles: ["owner", "admin"] },
+  { name: "Credit Audit", href: "/credit-audit", icon: Shield, roles: ["owner", "admin"] },
+  { name: "Credit Queue", href: "/credit-queue", icon: ClipboardList, roles: ["owner", "admin"] },
   { name: "Marketplace", href: "/marketplace", icon: Store },
   { name: "Settings", href: "/settings", icon: Settings },
   { name: "Help Center", href: "/help", icon: HelpCircle },
-] as const;
+];
 
 
 /* ---- Tooltip for collapsed mode ---- */
@@ -120,9 +127,16 @@ export default function Sidebar() {
   };
 
   const filteredNav = navigation.filter((item) => {
-    if (!("module" in item) || !item.module) return true;
-    const mods = user?.tenant?.enabledModules || [];
-    return mods.length === 0 || mods.includes(item.module);
+    // Module gating
+    if (item.module) {
+      const mods = user?.tenant?.enabledModules || [];
+      if (mods.length > 0 && !mods.includes(item.module)) return false;
+    }
+    // Role gating
+    if (item.roles) {
+      if (!user?.role || !item.roles.includes(user.role)) return false;
+    }
+    return true;
   });
 
   /* ---- Full sidebar content (for mobile + expanded desktop) ---- */
