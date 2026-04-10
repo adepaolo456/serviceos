@@ -646,6 +646,63 @@ export class PortalService {
     }
   }
 
+  /**
+   * Phase 20 — Update placement pin on a job.
+   * Customer-scoped: verifies job belongs to customerId + tenantId.
+   * Validates lat/lng ranges strictly.
+   */
+  async updatePlacement(
+    customerId: string,
+    tenantId: string,
+    jobId: string,
+    body: { placement_lat?: number | null; placement_lng?: number | null; placement_pin_notes?: string | null },
+  ) {
+    const job = await this.jobRepo.findOne({
+      where: { id: jobId, customer_id: customerId, tenant_id: tenantId },
+    });
+    if (!job) throw new NotFoundException('Job not found');
+
+    if (body.placement_lat != null) {
+      if (body.placement_lat < -90 || body.placement_lat > 90) {
+        throw new BadRequestException('Invalid latitude');
+      }
+    }
+    if (body.placement_lng != null) {
+      if (body.placement_lng < -180 || body.placement_lng > 180) {
+        throw new BadRequestException('Invalid longitude');
+      }
+    }
+
+    await this.jobRepo.update(
+      { id: jobId, tenant_id: tenantId },
+      {
+        placement_lat: body.placement_lat ?? null,
+        placement_lng: body.placement_lng ?? null,
+        placement_pin_notes: body.placement_pin_notes ?? null,
+      },
+    );
+
+    return { success: true };
+  }
+
+  /**
+   * Get placement data for a job. Customer-scoped.
+   */
+  async getPlacement(customerId: string, tenantId: string, jobId: string) {
+    const job = await this.jobRepo.findOne({
+      where: { id: jobId, customer_id: customerId, tenant_id: tenantId },
+      select: ['id', 'placement_lat', 'placement_lng', 'placement_pin_notes', 'service_address'],
+    });
+    if (!job) throw new NotFoundException('Job not found');
+
+    return {
+      placement_lat: job.placement_lat ? Number(job.placement_lat) : null,
+      placement_lng: job.placement_lng ? Number(job.placement_lng) : null,
+      placement_pin_notes: job.placement_pin_notes ?? null,
+      service_address: job.service_address,
+    };
+  }
+
   async reportIssue(customerId: string, tenantId: string, dto: { jobId?: string; reason: string; notes?: string }) {
     // Create a notification/alert for the office
     const customer = await this.customerRepo.findOne({ where: { id: customerId, tenant_id: tenantId } });

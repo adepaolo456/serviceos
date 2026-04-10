@@ -109,6 +109,22 @@ export class PortalController {
     return this.portalService.reportIssue(user.customerId, user.tenantId, body);
   }
 
+  @Patch('jobs/:id/placement')
+  updatePlacement(@Req() req: Request, @Param('id') id: string, @Body() body: {
+    placement_lat?: number | null;
+    placement_lng?: number | null;
+    placement_pin_notes?: string | null;
+  }) {
+    const user = req.user as PortalUser;
+    return this.portalService.updatePlacement(user.customerId, user.tenantId, id, body);
+  }
+
+  @Get('jobs/:id/placement')
+  getPlacement(@Req() req: Request, @Param('id') id: string) {
+    const user = req.user as PortalUser;
+    return this.portalService.getPlacement(user.customerId, user.tenantId, id);
+  }
+
   @Post('payments/prepare')
   preparePayment(@Req() req: Request, @Body() body: { invoiceId: string; amount?: number }) {
     const user = req.user as PortalUser;
