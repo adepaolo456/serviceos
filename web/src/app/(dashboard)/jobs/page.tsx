@@ -29,6 +29,7 @@ import Dropdown from "@/components/dropdown";
 import { useToast } from "@/components/toast";
 import { CreditCard, FileWarning, MapPinOff } from "lucide-react";
 import { FEATURE_REGISTRY } from "@/lib/feature-registry";
+import { getBlockedReason, isJobBlocked } from "@/lib/blocked-job";
 
 /* ─── Types ─── */
 
@@ -161,57 +162,6 @@ function fmtAddress(addr: Record<string, string> | null): string {
 function daysBetween(a: string, b: string): number {
   if (!a || !b) return 0;
   return Math.round((new Date(b).getTime() - new Date(a).getTime()) / 86400000);
-}
-
-/**
- * Reasons a job can be flagged as Blocked. Ordered by priority —
- * `getBlockedReason` returns the first matching reason, so
- * `billing_issue` takes precedence over `unpaid_completed_invoice`
- * when a job satisfies both. A billing issue is an explicit flag raised
- * by a detector (stronger signal), while the completed-unpaid case is
- * a fallback derivation from invoice state.
- *
- * "Blocked" and every reason below are purely a computed UI + analytics
- * layer. Nothing here is written to job.status, and neither
- * deriveDisplayStatus nor any lifecycle logic consults this value.
- */
-type BlockedReason = "billing_issue" | "unpaid_completed_invoice" | null;
-
-/**
- * Derive the blocked reason from an enriched Job row. Uses ONLY fields
- * that are already present on the jobs API response when
- * `enrichment=board` is set — no extra fetches, no cross-tenant reads.
- *
- * MUST stay in lockstep with the backend aggregate at
- * AnalyticsService.getJobsSummary() — if a tenant has N blocked jobs
- * per the analytics tile, this helper must classify exactly N rows.
- * The UNION of `billing_issue` and `unpaid_completed_invoice` is
- * therefore identical to `isJobBlocked` by construction (see below).
- */
-function getBlockedReason(job: Job): BlockedReason {
-  if ((job.open_billing_issue_count ?? 0) > 0) {
-    return "billing_issue";
-  }
-  const inv = job.linked_invoice;
-  if (
-    job.status === "completed" &&
-    inv &&
-    Number(inv.balance_due) > 0 &&
-    !["paid", "partial", "voided"].includes(inv.status)
-  ) {
-    return "unpaid_completed_invoice";
-  }
-  return null;
-}
-
-/**
- * Per-row Blocked predicate. Delegates to `getBlockedReason` so the
- * "is it blocked?" answer and the "why is it blocked?" answer can
- * never drift. MUST also stay in lockstep with
- * AnalyticsService.getJobsSummary() on the backend.
- */
-function isJobBlocked(job: Job): boolean {
-  return getBlockedReason(job) !== null;
 }
 
 function getDateRange(range: string): { dateFrom?: string; dateTo?: string } {

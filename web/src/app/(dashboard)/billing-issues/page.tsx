@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   AlertTriangle, Clock, Scale, FileX, Tag, DollarSign, FileText,
   RefreshCw, CheckCircle2, XCircle, Ban, Search, Plus, LinkIcon, MapPin, ExternalLink,
@@ -10,6 +11,7 @@ import { api } from "@/lib/api";
 import { useToast } from "@/components/toast";
 import { formatCurrency } from "@/lib/utils";
 import SlideOver from "@/components/slide-over";
+import { FEATURE_REGISTRY } from "@/lib/feature-registry";
 
 const fmt = (n: number | null | undefined) => formatCurrency(n as number);
 
@@ -311,6 +313,14 @@ interface InvoiceDetail {
 }
 
 export default function BillingIssuesPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  // Scope to a single job when deep-linked from the Jobs page
+  // "Billing Issue" reason chip. Tenant isolation is enforced on the
+  // backend; this is purely a UX scope filter layered on top of the
+  // existing tenant-scoped list. `null` = not scoped, show all.
+  const jobIdScope = searchParams.get("jobId");
+  const [scopedJob, setScopedJob] = useState<{ id: string; job_number: string } | null>(null);
   const [issues, setIssues] = useState<BillingIssue[]>([]);
   const [summary, setSummary] = useState<Summary>({ total: 0, by_type: {} });
   const [loading, setLoading] = useState(true);
@@ -342,6 +352,10 @@ export default function BillingIssuesPage() {
       if (statusFilter) params.set("status", statusFilter);
       else if (showResolved) params.set("status", "all");
       if (typeFilter) params.set("issueType", typeFilter);
+      // jobId scoping is additive — the existing status/type filters
+      // still apply on top, so operators can further narrow within the
+      // job's issues. jobId is set by backend at the database layer.
+      if (jobIdScope) params.set("jobId", jobIdScope);
       const [res, sum] = await Promise.all([
         api.get<{ data: BillingIssue[]; meta: { total: number } }>(`/billing-issues?${params}`),
         api.get<Summary>("/billing-issues/summary"),
@@ -350,10 +364,41 @@ export default function BillingIssuesPage() {
       setTotal(res.meta.total);
       setSummary(sum);
     } catch { /* */ } finally { setLoading(false); }
-  }, [page, statusFilter, typeFilter, showResolved]);
+  }, [page, statusFilter, typeFilter, showResolved, jobIdScope]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
-  useEffect(() => { setPage(1); }, [statusFilter, typeFilter, showResolved]);
+  useEffect(() => { setPage(1); }, [statusFilter, typeFilter, showResolved, jobIdScope]);
+
+  // Fetch the job metadata for the scoped banner (just the job_number)
+  // so operators see which job they are scoped to, not a raw UUID. If
+  // the fetch fails or returns 404 we clear the scope — the URL param
+  // was stale and the user should land on the full list.
+  useEffect(() => {
+    if (!jobIdScope) {
+      setScopedJob(null);
+      return;
+    }
+    let cancelled = false;
+    api
+      .get<{ id: string; job_number: string }>(`/jobs/${jobIdScope}`)
+      .then((j) => {
+        if (!cancelled) setScopedJob({ id: j.id, job_number: j.job_number });
+      })
+      .catch(() => {
+        if (!cancelled) setScopedJob(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [jobIdScope]);
+
+  /** Clear the jobId URL scope without touching other filters. */
+  const clearJobScope = () => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("jobId");
+    const qs = params.toString();
+    router.replace(`/billing-issues${qs ? `?${qs}` : ""}`);
+  };
   useEffect(() => { api.get<{ data: typeof pricingRules }>("/pricing").then(r => setPricingRules(r.data || [])).catch(() => {}); }, []);
 
   const handleDetect = async () => {
@@ -559,6 +604,65 @@ export default function BillingIssuesPage() {
           </button>
         </div>
       </div>
+
+      {/* ─── Job scope banner (deep-link from Jobs page) ─── */}
+      {/*
+       * Shown only when `?jobId=` is present in the URL. Confirms which
+       * job is being scoped and offers a one-click escape back to the
+       * full list. Additive to the existing status/type filters — the
+       * banner does not override them, so operators can still narrow
+       * further within the scoped view.
+       */}
+      {jobIdScope && (
+        <div
+          className="mb-6 flex items-center justify-between rounded-[16px] border-l-4 px-5 py-3"
+          style={{
+            backgroundColor: "var(--t-accent-soft)",
+            borderColor: "var(--t-accent)",
+            borderTop: "1px solid var(--t-border)",
+            borderRight: "1px solid var(--t-border)",
+            borderBottom: "1px solid var(--t-border)",
+          }}
+          role="status"
+          aria-live="polite"
+        >
+          <div className="flex items-center gap-3">
+            <LinkIcon className="h-4 w-4" style={{ color: "var(--t-accent)" }} />
+            <div>
+              <p className="text-sm font-semibold" style={{ color: "var(--t-text-primary)" }}>
+                {FEATURE_REGISTRY.billing_issues_job_scope?.label ?? "Showing issues for this job"}
+                {scopedJob?.job_number && (
+                  <span className="ml-1 font-mono" style={{ color: "var(--t-text-secondary)" }}>
+                    #{scopedJob.job_number}
+                  </span>
+                )}
+              </p>
+              <p className="text-[11px]" style={{ color: "var(--t-text-muted)" }}>
+                Status and type filters still apply on top of this scope.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            {scopedJob && (
+              <Link
+                href={`/jobs/${scopedJob.id}`}
+                className="inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors"
+                style={{ borderColor: "var(--t-border)", color: "var(--t-text-secondary)" }}
+              >
+                <ExternalLink className="h-3 w-3" /> Open Job
+              </Link>
+            )}
+            <button
+              onClick={clearJobScope}
+              className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition-opacity hover:opacity-90"
+              style={{ backgroundColor: "var(--t-accent)", color: "var(--t-accent-on-accent, #fff)" }}
+            >
+              <XCircle className="h-3 w-3" />
+              {FEATURE_REGISTRY.billing_issues_clear_job_scope?.label ?? "View all issues"}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Summary Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3 mb-6">

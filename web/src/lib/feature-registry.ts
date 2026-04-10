@@ -501,6 +501,54 @@ export const FEATURE_REGISTRY: Record<string, FeatureDescription> = {
     isUserFacing: true, isGuideEligible: true,
     keywords: ["blocked", "reason", "unpaid", "completed", "invoice", "collect", "balance", "delivered"],
   },
+  billing_issues_job_scope: {
+    id: "billing_issues_job_scope", label: "Showing issues for this job", category: "operations",
+    shortDescription: "The Billing Issues list is currently scoped to a single job via deep-link from the Jobs page.",
+    guideDescription: "When you click a Billing Issue reason chip on the Jobs page, you are deep-linked to the Billing Issues page scoped to that specific job. A scoped banner at the top of the list confirms which job you are viewing and the existing status and type filters still apply on top of the scope so you can further narrow within the job's issues. Click 'View all issues' in the banner to clear the scope and return to the full Billing Issues list.",
+    routeOrSurface: "billing_issues", tenantOverrideKey: "billing_issues_job_scope",
+    isUserFacing: true, isGuideEligible: true,
+    keywords: ["billing", "issues", "scope", "job", "deep-link", "filter", "drill-down"],
+  },
+  billing_issues_clear_job_scope: {
+    id: "billing_issues_clear_job_scope", label: "View all issues", category: "operations",
+    shortDescription: "Clear the current job scope and return to the full Billing Issues list.",
+    guideDescription: "",
+    routeOrSurface: "billing_issues", tenantOverrideKey: "billing_issues_clear_job_scope",
+    // Not guide-eligible — this is a UI action label for the scoped banner.
+    // The workflow is documented under `billing_issues_job_scope`; a
+    // separate guide entry for the clear-scope button would duplicate
+    // that text with no new information.
+    isUserFacing: true, isGuideEligible: false,
+    keywords: ["clear", "all", "billing", "issues", "back", "scope"],
+  },
+  job_blocked_panel: {
+    id: "job_blocked_panel", label: "Job is blocked", category: "operations",
+    shortDescription: "Contextual panel on the Job detail page shown when the job is blocked by a billing issue or unpaid completed invoice.",
+    guideDescription: "When you open a Blocked job the Job detail page shows a contextual panel above the quick actions that tells you WHY the job is blocked (billing issue vs. unpaid completed invoice), how many open issues exist for this job, and gives you one-click CTAs to the right resolution workflow — Review in Billing Issues for the billing_issue case, or Open Invoice for the unpaid_completed_invoice case. The panel is a navigation surface only; it never resolves or dismisses issues directly. Blocked resolution still happens on the Billing Issues page or the Invoice page using the existing, authorized resolution flows.",
+    routeOrSurface: "job_detail", tenantOverrideKey: "job_blocked_panel",
+    isUserFacing: true, isGuideEligible: true,
+    keywords: ["job", "detail", "blocked", "panel", "billing", "issue", "unpaid", "invoice", "resolve"],
+  },
+  job_blocked_panel_cta_review_issues: {
+    id: "job_blocked_panel_cta_review_issues", label: "Review in Billing Issues", category: "operations",
+    shortDescription: "Deep-link from the Job detail blocked panel to the scoped Billing Issues list for this job.",
+    guideDescription: "",
+    routeOrSurface: "job_detail", tenantOverrideKey: "job_blocked_panel_cta_review_issues",
+    // Not guide-eligible — CTA button label. The workflow it triggers
+    // is documented under `job_blocked_panel` and `billing_issues_job_scope`.
+    isUserFacing: true, isGuideEligible: false,
+    keywords: ["review", "billing", "issues", "blocked", "cta"],
+  },
+  job_blocked_panel_cta_open_invoice: {
+    id: "job_blocked_panel_cta_open_invoice", label: "Open Invoice", category: "operations",
+    shortDescription: "Deep-link from the Job detail blocked panel to the linked invoice for collection or write-off.",
+    guideDescription: "",
+    routeOrSurface: "job_detail", tenantOverrideKey: "job_blocked_panel_cta_open_invoice",
+    // Not guide-eligible — CTA button label. The workflow is documented
+    // under `job_blocked_panel`.
+    isUserFacing: true, isGuideEligible: false,
+    keywords: ["open", "invoice", "collect", "payment", "blocked", "cta"],
+  },
 };
 
 // ── Category display labels ──
