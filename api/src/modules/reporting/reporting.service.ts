@@ -51,14 +51,18 @@ export class ReportingService {
       .andWhere('i.due_date < :today', { today: new Date().toISOString().split('T')[0] })
       .getRawOne();
 
-    const bySource = await this.invoiceRepo.createQueryBuilder('i')
-      .select('i.source', 'source')
-      .addSelect('SUM(i.total)', 'amount')
-      .where('i.tenant_id = :tid', { tid: tenantId })
-      .andWhere('i.created_at >= :start', { start })
-      .andWhere('i.created_at <= :end', { end: end + 'T23:59:59' })
-      .groupBy('i.source')
-      .getRawMany();
+    // Revenue by source: JOIN through jobs to get source (invoices
+    // table does not have a source column — it lives on jobs).
+    const bySource = await this.dataSource.query(
+      `SELECT COALESCE(j.source, 'other') as source, SUM(i.total) as amount
+       FROM invoices i
+       LEFT JOIN jobs j ON j.id = i.job_id AND j.tenant_id = i.tenant_id
+       WHERE i.tenant_id = $1
+         AND i.created_at >= $2
+         AND i.created_at <= $3
+       GROUP BY COALESCE(j.source, 'other')`,
+      [tenantId, start, end + 'T23:59:59'],
+    );
 
     const daily = await this.invoiceRepo.createQueryBuilder('i')
       .select("DATE(i.created_at)", 'date')
