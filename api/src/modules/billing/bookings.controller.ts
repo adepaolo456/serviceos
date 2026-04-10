@@ -223,18 +223,12 @@ export class BookingsController {
 
     const { deliveryJob: savedDelivery, pickupJob: savedPickup, invoice: savedInvoice, rentalChainId, autoApproved, assignedAsset } = completion;
 
-    // 4. Payment recording (caller-specific)
-    const isPaid = body.paymentMethod === 'card';
-    if (isPaid) {
-      const paymentRepo = this.dataSource.getRepository(Payment);
-      await paymentRepo.save(paymentRepo.create({
-        tenant_id: tenantId,
-        invoice_id: savedInvoice.id,
-        amount: body.totalPrice,
-        payment_method: 'card',
-        status: 'completed',
-      }));
-    }
+    // 4. Payment recording
+    // Card selection means "payment method chosen", NOT "payment captured".
+    // Invoice remains unpaid until real Stripe confirmation. No phantom
+    // payment records created here. Only cash/check create immediate
+    // records because those are operator-confirmed at point of sale.
+    const isPaid = false; // card payments require external confirmation
 
     // 5. Opt-in invoice send (caller-specific — BW only)
     if (!isPaid && body.sendInvoiceNow) {

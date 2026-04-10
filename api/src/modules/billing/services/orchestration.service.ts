@@ -321,26 +321,12 @@ export class OrchestrationService {
     let nextAction: OrchestrationResult['nextAction'] = 'show_unpaid_state';
 
     if (dto.paymentMethod === 'card') {
-      try {
-        // Import StripeService dynamically to avoid circular deps
-        const stripeService = this.dataSource.manager.connection.options;
-        // Use direct payment record approach (matching existing booking flow)
-        const paymentRepo = this.dataSource.getRepository(Payment);
-        await paymentRepo.save(paymentRepo.create({
-          tenant_id: tenantId,
-          invoice_id: savedInvoice.id,
-          amount: savedInvoice.total,
-          payment_method: 'card',
-          status: 'completed',
-        }));
-        // Reconcile balance
-        await this.reconcileInvoice(savedInvoice.id, savedInvoice.total);
-        paymentStatus = 'payment_succeeded';
-        nextAction = 'go_to_customer';
-      } catch {
-        paymentStatus = 'payment_failed';
-        nextAction = 'retry_payment_available';
-      }
+      // Card selected = payment method chosen, NOT payment captured.
+      // Invoice remains unpaid until a real Stripe payment confirmation
+      // arrives via POST /portal/payments/prepare → Stripe redirect/webhook.
+      // DO NOT create a phantom payment record here.
+      paymentStatus = 'invoice_unpaid';
+      nextAction = 'show_unpaid_state';
     } else if (dto.paymentMethod === 'cash' || dto.paymentMethod === 'check') {
       paymentStatus = 'invoice_unpaid';
       nextAction = 'show_unpaid_state';
