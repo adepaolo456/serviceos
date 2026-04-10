@@ -84,6 +84,7 @@ import { RateLimitLog } from './common/entities/rate-limit-log.entity';
 import { HelpAnalyticsEvent } from './modules/analytics/entities/help-analytics-event.entity';
 import { CreditAuditModule } from './modules/credit-audit/credit-audit.module';
 import { CreditAuditEvent } from './modules/credit-audit/credit-audit-event.entity';
+import { CreditCollectionEvent } from './modules/credit-audit/credit-collection-event.entity';
 import { PermissionModule } from './modules/permissions/permission.module';
 
 @Module({
@@ -153,6 +154,7 @@ import { PermissionModule } from './modules/permissions/permission.module';
             RateLimitLog,
             HelpAnalyticsEvent,
             CreditAuditEvent,
+            CreditCollectionEvent,
           ],
           synchronize: isTest,
           ssl: isTest ? false : { rejectUnauthorized: false },

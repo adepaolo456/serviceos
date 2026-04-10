@@ -1690,6 +1690,53 @@ export const FEATURE_REGISTRY: Record<string, FeatureDescription> = {
     routeOrSurface: "settings", tenantOverrideKey: "perm_save",
     isUserFacing: true, isGuideEligible: false, keywords: ["save"],
   },
+
+  // ── Phase 11: collections workflow actions + timeline ──
+  credit_queue_actions_header: {
+    id: "credit_queue_actions_header", label: "Actions", category: "operations",
+    shortDescription: "Section header for collection workflow action buttons.",
+    guideDescription: "Manual workflow actions let operators record what they've done about a customer's credit situation. Send Reminder logs that a payment reminder was sent (no actual message is sent — this is a manual record). Mark Contacted records that the customer was reached. Add Note attaches a free-text note to the customer's collections timeline. Escalate flags the customer for higher-level review. All actions are recorded with the operator's identity and timestamp.",
+    routeOrSurface: "credit_queue", tenantOverrideKey: "credit_queue_actions_header",
+    isUserFacing: true, isGuideEligible: true,
+    keywords: ["actions", "collections", "workflow", "reminder", "contacted", "escalate", "note"],
+  },
+  credit_queue_action_reminder: {
+    id: "credit_queue_action_reminder", label: "Reminder", category: "operations",
+    shortDescription: "Log that a payment reminder was sent.", guideDescription: "",
+    routeOrSurface: "credit_queue", tenantOverrideKey: "credit_queue_action_reminder",
+    isUserFacing: true, isGuideEligible: false, keywords: ["reminder"],
+  },
+  credit_queue_action_contacted: {
+    id: "credit_queue_action_contacted", label: "Contacted", category: "operations",
+    shortDescription: "Record that the customer was contacted.", guideDescription: "",
+    routeOrSurface: "credit_queue", tenantOverrideKey: "credit_queue_action_contacted",
+    isUserFacing: true, isGuideEligible: false, keywords: ["contacted"],
+  },
+  credit_queue_action_escalate: {
+    id: "credit_queue_action_escalate", label: "Escalate", category: "operations",
+    shortDescription: "Flag customer for escalated review.", guideDescription: "",
+    routeOrSurface: "credit_queue", tenantOverrideKey: "credit_queue_action_escalate",
+    isUserFacing: true, isGuideEligible: false, keywords: ["escalate"],
+  },
+  credit_queue_action_note: {
+    id: "credit_queue_action_note", label: "Add Note", category: "operations",
+    shortDescription: "Add a free-text collections note.", guideDescription: "",
+    routeOrSurface: "credit_queue", tenantOverrideKey: "credit_queue_action_note",
+    isUserFacing: true, isGuideEligible: false, keywords: ["note"],
+  },
+  credit_queue_note_placeholder: {
+    id: "credit_queue_note_placeholder", label: "Note text...", category: "operations",
+    shortDescription: "Placeholder for note input.", guideDescription: "",
+    routeOrSurface: "credit_queue", tenantOverrideKey: "credit_queue_note_placeholder",
+    isUserFacing: true, isGuideEligible: false, keywords: ["placeholder"],
+  },
+  credit_queue_timeline_header: {
+    id: "credit_queue_timeline_header", label: "Collections Timeline", category: "operations",
+    shortDescription: "Section header for the chronological collections activity log.",
+    guideDescription: "",
+    routeOrSurface: "credit_queue", tenantOverrideKey: "credit_queue_timeline_header",
+    isUserFacing: true, isGuideEligible: false, keywords: ["timeline", "collections"],
+  },
 };
 
 // ── Category display labels ──
