@@ -549,6 +549,48 @@ export const FEATURE_REGISTRY: Record<string, FeatureDescription> = {
     isUserFacing: true, isGuideEligible: false,
     keywords: ["open", "invoice", "collect", "payment", "blocked", "cta"],
   },
+  job_blocked_resolution_drawer: {
+    id: "job_blocked_resolution_drawer", label: "Resolve Blockers", category: "operations",
+    shortDescription: "Job-scoped resolution surface that consolidates billing blockers and offers the shortest correct next action without page bouncing.",
+    guideDescription: "The Resolve Blockers drawer opens from the Job detail blocked panel and stays on the Job page. It groups every actionable billing blocker for the current job, identifies whether the root cause is unpaid invoice (in which case it offers Record Payment inline using the same authorized payment endpoint as the Invoice page) or a non-payment billing issue (price mismatch, missing dump slip, etc.), and surfaces the smallest set of correct next actions. When you record payment from the drawer, the backend's billing-issue auto-resolution passes clear any related past_due_payment and completed_unpaid issues automatically — you do not need to resolve them one by one. The drawer then refetches and either closes (if all blockers cleared) or shows the remaining issues that still need separate attention via the existing Billing Issues workflow.",
+    routeOrSurface: "job_detail", tenantOverrideKey: "job_blocked_resolution_drawer",
+    isUserFacing: true, isGuideEligible: true,
+    keywords: ["resolve", "blockers", "drawer", "job", "payment", "billing", "issues", "root cause", "unpaid"],
+  },
+  job_blocked_resolution_cta_primary: {
+    id: "job_blocked_resolution_cta_primary", label: "Fix Billing", category: "operations",
+    shortDescription: "Open the Job Blocked Resolution Drawer.",
+    guideDescription: "",
+    routeOrSurface: "job_detail", tenantOverrideKey: "job_blocked_resolution_cta_primary",
+    // Not guide-eligible — CTA button label. The workflow is documented
+    // under `job_blocked_resolution_drawer`.
+    isUserFacing: true, isGuideEligible: false,
+    keywords: ["fix", "billing", "resolve", "blockers", "cta"],
+  },
+  job_blocked_resolution_payment_first: {
+    id: "job_blocked_resolution_payment_first", label: "Record Payment", category: "operations",
+    shortDescription: "Section title inside the resolution drawer for the inline payment-first action.",
+    guideDescription: "",
+    routeOrSurface: "job_detail", tenantOverrideKey: "job_blocked_resolution_payment_first",
+    isUserFacing: true, isGuideEligible: false,
+    keywords: ["record", "payment", "resolve", "blockers", "drawer", "section"],
+  },
+  job_blocked_resolution_other_issues: {
+    id: "job_blocked_resolution_other_issues", label: "Other open issues", category: "operations",
+    shortDescription: "Section title for billing issues on this job that need separate attention.",
+    guideDescription: "",
+    routeOrSurface: "job_detail", tenantOverrideKey: "job_blocked_resolution_other_issues",
+    isUserFacing: true, isGuideEligible: false,
+    keywords: ["other", "issues", "billing", "resolve", "drawer", "section"],
+  },
+  job_blocked_resolution_open_in_billing_issues: {
+    id: "job_blocked_resolution_open_in_billing_issues", label: "Open in Billing Issues", category: "operations",
+    shortDescription: "Fallback CTA from the resolution drawer to the scoped Billing Issues page for full issue resolution flows.",
+    guideDescription: "",
+    routeOrSurface: "job_detail", tenantOverrideKey: "job_blocked_resolution_open_in_billing_issues",
+    isUserFacing: true, isGuideEligible: false,
+    keywords: ["open", "billing", "issues", "fallback", "scoped"],
+  },
 };
 
 // ── Category display labels ──
