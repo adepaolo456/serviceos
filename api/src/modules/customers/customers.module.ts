@@ -15,6 +15,7 @@ import { CustomerCreditService } from './services/customer-credit.service';
 import { CustomersController } from './customers.controller';
 import { MapboxModule } from '../mapbox/mapbox.module';
 import { SmsModule } from '../sms/sms.module';
+import { CreditAuditModule } from '../credit-audit/credit-audit.module';
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { SmsModule } from '../sms/sms.module';
     ]),
     MapboxModule,
     SmsModule,
+    CreditAuditModule,
   ],
   controllers: [CustomersController],
   providers: [CustomersService, CustomerDashboardService, CustomerCreditService],

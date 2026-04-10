@@ -24,6 +24,7 @@ import {
   getCreditPolicy,
 } from '../tenants/credit-policy';
 import { normalizePhone } from '../../common/utils/phone';
+import { CreditAuditService } from '../credit-audit/credit-audit.service';
 
 @Injectable()
 export class TenantSettingsService {
@@ -34,6 +35,7 @@ export class TenantSettingsService {
     private settingsRepo: Repository<TenantSettings>,
     @InjectRepository(Tenant)
     private tenantRepo: Repository<Tenant>,
+    private readonly auditService: CreditAuditService,
   ) {}
 
   /* ─── Phase 2: tenant credit policy ─────────────────────────── */
@@ -63,6 +65,7 @@ export class TenantSettingsService {
   async updateCreditPolicy(
     tenantId: string,
     patch: UpdateCreditPolicyDto,
+    userId?: string,
   ): Promise<CreditPolicySettings> {
     const tenant = await this.tenantRepo.findOne({ where: { id: tenantId } });
     if (!tenant) throw new NotFoundException(`Tenant ${tenantId} not found`);
@@ -121,6 +124,18 @@ export class TenantSettingsService {
       credit_policy: next as unknown as Record<string, any>,
     };
     await this.tenantRepo.update(tenantId, { settings: updatedSettings });
+    if (userId) {
+      this.auditService.record({
+        tenantId,
+        eventType: 'credit_policy_updated',
+        userId,
+        metadata: {
+          changed_fields: Object.keys(patch).filter(
+            (k) => (patch as Record<string, unknown>)[k] !== undefined,
+          ),
+        },
+      });
+    }
     return next;
   }
 

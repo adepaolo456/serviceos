@@ -1338,6 +1338,76 @@ export const FEATURE_REGISTRY: Record<string, FeatureDescription> = {
     isUserFacing: true, isGuideEligible: false,
     keywords: ["view profile", "credit details"],
   },
+
+  // ── Phase 7: credit control audit dashboard ──
+  credit_audit_dashboard: {
+    id: "credit_audit_dashboard", label: "Credit Control Audit", category: "admin",
+    shortDescription: "Centralized log of all credit-control actions — holds, overrides, policy changes, and credit settings updates.",
+    guideDescription: "The Credit Control Audit dashboard provides a centralized, chronological record of every sensitive credit-control action taken by operators. Events tracked: manual hold set/released, booking overrides, dispatch overrides, tenant credit policy updates, and customer credit settings changes. Each event captures who performed the action, when, the customer or job involved, the reason (if applicable), and structured metadata. Viewable by admin and owner roles only. Use this to answer questions like: Who overrode a booking block? When was a customer placed on hold? Who changed the credit policy?",
+    routeOrSurface: "credit_audit", tenantOverrideKey: "credit_audit_dashboard",
+    isUserFacing: true, isGuideEligible: true,
+    keywords: ["audit", "credit", "hold", "override", "policy", "governance"],
+  },
+  credit_audit_event_hold_set: {
+    id: "credit_audit_event_hold_set", label: "Hold Set", category: "admin",
+    shortDescription: "A manual credit hold was placed on a customer.",
+    guideDescription: "", routeOrSurface: "credit_audit", tenantOverrideKey: "credit_audit_event_hold_set",
+    isUserFacing: true, isGuideEligible: false, keywords: ["hold set"],
+  },
+  credit_audit_event_hold_released: {
+    id: "credit_audit_event_hold_released", label: "Hold Released", category: "admin",
+    shortDescription: "A manual credit hold was released from a customer.",
+    guideDescription: "", routeOrSurface: "credit_audit", tenantOverrideKey: "credit_audit_event_hold_released",
+    isUserFacing: true, isGuideEligible: false, keywords: ["hold released"],
+  },
+  credit_audit_event_booking_override: {
+    id: "credit_audit_event_booking_override", label: "Booking Override", category: "admin",
+    shortDescription: "A booking was allowed despite a credit hold via operator override.",
+    guideDescription: "", routeOrSurface: "credit_audit", tenantOverrideKey: "credit_audit_event_booking_override",
+    isUserFacing: true, isGuideEligible: false, keywords: ["booking", "override"],
+  },
+  credit_audit_event_dispatch_override: {
+    id: "credit_audit_event_dispatch_override", label: "Dispatch Override", category: "admin",
+    shortDescription: "A dispatch action was allowed despite a credit hold via operator override.",
+    guideDescription: "", routeOrSurface: "credit_audit", tenantOverrideKey: "credit_audit_event_dispatch_override",
+    isUserFacing: true, isGuideEligible: false, keywords: ["dispatch", "override"],
+  },
+  credit_audit_event_policy_updated: {
+    id: "credit_audit_event_policy_updated", label: "Policy Updated", category: "admin",
+    shortDescription: "The tenant credit policy was modified.",
+    guideDescription: "", routeOrSurface: "credit_audit", tenantOverrideKey: "credit_audit_event_policy_updated",
+    isUserFacing: true, isGuideEligible: false, keywords: ["policy", "updated"],
+  },
+  credit_audit_event_settings_updated: {
+    id: "credit_audit_event_settings_updated", label: "Settings Updated", category: "admin",
+    shortDescription: "Customer-level credit settings (payment terms or credit limit) were changed.",
+    guideDescription: "", routeOrSurface: "credit_audit", tenantOverrideKey: "credit_audit_event_settings_updated",
+    isUserFacing: true, isGuideEligible: false, keywords: ["settings", "credit limit", "payment terms"],
+  },
+  credit_audit_col_timestamp: {
+    id: "credit_audit_col_timestamp", label: "Timestamp", category: "admin",
+    shortDescription: "Column header for event timestamp.", guideDescription: "",
+    routeOrSurface: "credit_audit", tenantOverrideKey: "credit_audit_col_timestamp",
+    isUserFacing: true, isGuideEligible: false, keywords: ["timestamp"],
+  },
+  credit_audit_col_event: {
+    id: "credit_audit_col_event", label: "Event", category: "admin",
+    shortDescription: "Column header for event type.", guideDescription: "",
+    routeOrSurface: "credit_audit", tenantOverrideKey: "credit_audit_col_event",
+    isUserFacing: true, isGuideEligible: false, keywords: ["event"],
+  },
+  credit_audit_col_summary: {
+    id: "credit_audit_col_summary", label: "Summary", category: "admin",
+    shortDescription: "Column header for event summary.", guideDescription: "",
+    routeOrSurface: "credit_audit", tenantOverrideKey: "credit_audit_col_summary",
+    isUserFacing: true, isGuideEligible: false, keywords: ["summary"],
+  },
+  credit_audit_filter_customer: {
+    id: "credit_audit_filter_customer", label: "Customer ID...", category: "admin",
+    shortDescription: "Placeholder for the customer ID filter input.", guideDescription: "",
+    routeOrSurface: "credit_audit", tenantOverrideKey: "credit_audit_filter_customer",
+    isUserFacing: true, isGuideEligible: false, keywords: ["filter", "customer"],
+  },
 };
 
 // ── Category display labels ──

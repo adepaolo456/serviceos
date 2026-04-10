@@ -14,6 +14,7 @@ import {
   CreditPolicySettings,
   getCreditPolicy,
 } from '../../tenants/credit-policy';
+import { CreditAuditService } from '../../credit-audit/credit-audit.service';
 
 /**
  * Phase 4B — Server-authoritative credit-hold enforcement for booking
@@ -110,6 +111,7 @@ export class BookingCreditEnforcementService {
     private readonly creditService: CustomerCreditService,
     @InjectRepository(Tenant)
     private readonly tenantRepo: Repository<Tenant>,
+    private readonly auditService: CreditAuditService,
   ) {}
 
   /**
@@ -204,11 +206,21 @@ export class BookingCreditEnforcementService {
     const trimmedReason = params.creditOverride?.reason?.trim() ?? '';
 
     if (overrideRequested && overrideAllowed && trimmedReason.length > 0) {
-      // Override accepted — build the audit note from authenticated
-      // server-side context. The reason comes from the payload, but
-      // userId and timestamp come from JWT and the server clock so
-      // the audit trail cannot be forged client-side.
       const note = `[Credit Override] ${trimmedReason} (by ${params.userId} at ${new Date().toISOString()})`;
+      this.auditService.record({
+        tenantId: params.tenantId,
+        eventType: 'booking_override',
+        userId: params.userId,
+        customerId: params.customerId,
+        reason: trimmedReason,
+        metadata: {
+          action: 'booking_create',
+          effective_active: creditState.hold.effective_active,
+          manual_active: creditState.hold.manual_active,
+          policy_active: creditState.hold.policy_active,
+          reason_count: creditState.hold.reasons.length,
+        },
+      });
       return { allowed: true, overrideNote: note };
     }
 
