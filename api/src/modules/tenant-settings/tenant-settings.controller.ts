@@ -9,6 +9,7 @@ import {
   UpdateQuoteSettingsDto,
   UpdateQuoteTemplatesDto,
 } from './dto/tenant-settings.dto';
+import { UpdateCreditPolicyDto } from './dto/credit-policy.dto';
 import { TenantId, Roles, CurrentUser } from '../../common/decorators';
 import { RolesGuard } from '../../common/guards';
 
@@ -89,5 +90,32 @@ export class TenantSettingsController {
     @Body() dto: UpdateQuoteTemplatesDto,
   ) {
     return this.settingsService.updateQuoteTemplates(tenantId, dto, userRole);
+  }
+
+  /* ─── Phase 2: tenant credit policy ─────────────────────────── */
+  // Storage lives in tenants.settings.credit_policy (JSONB on the
+  // tenants table) per Phase 1 documentation. The service loads
+  // the Tenant entity, mutates the JSONB key, and saves.
+
+  @Get('credit-policy')
+  @Roles('dispatcher', 'admin', 'owner')
+  @ApiOperation({
+    summary:
+      'Read the tenant credit policy stored in tenants.settings.credit_policy. Returns an empty object when not configured.',
+  })
+  getCreditPolicy(@TenantId() tenantId: string) {
+    return this.settingsService.getCreditPolicySettings(tenantId);
+  }
+
+  @Patch('credit-policy')
+  @ApiOperation({
+    summary:
+      'Update the tenant credit policy. Partial — only fields present in the body are merged. Admin/owner only via the controller-level RolesGuard.',
+  })
+  updateCreditPolicy(
+    @TenantId() tenantId: string,
+    @Body() dto: UpdateCreditPolicyDto,
+  ) {
+    return this.settingsService.updateCreditPolicy(tenantId, dto);
   }
 }
