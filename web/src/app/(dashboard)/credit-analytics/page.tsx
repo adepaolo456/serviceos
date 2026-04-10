@@ -113,7 +113,7 @@ export default function CreditAnalyticsPage() {
         {loading ? (
           <div className="h-48 rounded-lg animate-pulse" style={{ background: "var(--t-bg-elevated)" }} />
         ) : chartData.length === 0 ? (
-          <p className="text-xs py-12 text-center" style={{ color: "var(--t-text-muted)" }}>No events in the last 30 days</p>
+          <p className="text-xs py-12 text-center" style={{ color: "var(--t-text-muted)" }}>{label("credit_analytics_empty_trends", "No events in the last 30 days")}</p>
         ) : (
           <ResponsiveContainer width="100%" height={220}>
             <BarChart data={chartData} barCategoryGap="20%">
@@ -141,7 +141,7 @@ export default function CreditAnalyticsPage() {
           {loading ? (
             <div className="space-y-2">{[1, 2, 3].map((i) => <div key={i} className="h-8 rounded animate-pulse" style={{ background: "var(--t-bg-elevated)" }} />)}</div>
           ) : topCustomers.length === 0 ? (
-            <p className="text-xs py-6 text-center" style={{ color: "var(--t-text-muted)" }}>No customer events recorded</p>
+            <p className="text-xs py-6 text-center" style={{ color: "var(--t-text-muted)" }}>{label("credit_analytics_empty_customers", "No customer events recorded")}</p>
           ) : (
             <div className="space-y-0">
               <div className="grid grid-cols-[1fr_60px_60px_80px] gap-2 pb-2 text-[10px] uppercase tracking-wider font-semibold" style={{ color: "var(--t-text-muted)", borderBottom: "1px solid var(--t-border)" }}>
@@ -171,7 +171,7 @@ export default function CreditAnalyticsPage() {
           {loading ? (
             <div className="space-y-2">{[1, 2, 3].map((i) => <div key={i} className="h-8 rounded animate-pulse" style={{ background: "var(--t-bg-elevated)" }} />)}</div>
           ) : topUsers.length === 0 ? (
-            <p className="text-xs py-6 text-center" style={{ color: "var(--t-text-muted)" }}>No overrides recorded</p>
+            <p className="text-xs py-6 text-center" style={{ color: "var(--t-text-muted)" }}>{label("credit_analytics_empty_users", "No overrides recorded")}</p>
           ) : (
             <div className="space-y-0">
               <div className="grid grid-cols-[1fr_70px_70px_60px] gap-2 pb-2 text-[10px] uppercase tracking-wider font-semibold" style={{ color: "var(--t-text-muted)", borderBottom: "1px solid var(--t-border)" }}>

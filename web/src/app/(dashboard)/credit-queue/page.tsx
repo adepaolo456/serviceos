@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ClipboardList, Shield, AlertTriangle, ExternalLink, ChevronDown, ChevronUp, RefreshCw, X, Bell, Phone, FileText, ArrowUpRight } from "lucide-react";
 import { api } from "@/lib/api";
 import { formatCurrency } from "@/lib/utils";
+import { useToast } from "@/components/toast";
 import { FEATURE_REGISTRY } from "@/lib/feature-registry";
 
 /* ── Types ── */
@@ -119,13 +120,17 @@ export default function CreditQueuePage() {
     setTimeline(tl);
   };
 
+  const { toast } = useToast();
+
   const handleAction = async (endpoint: string, customerId: string, note?: string) => {
     setActionLoading(true);
     try {
       await api.post(`/credit-workflow/${endpoint}`, { customer_id: customerId, note: note || undefined });
+      toast("success", `${endpoint.replace(/_/g, " ")} recorded`);
       await refreshTimeline(customerId);
-    } catch { /* action failed silently */ }
-    finally { setActionLoading(false); }
+    } catch {
+      toast("error", "Action failed — please try again");
+    } finally { setActionLoading(false); }
   };
 
   const closeDetail = () => { setSelectedId(null); setDetailCredit(null); setDetailEvents([]); setTimeline([]); };
@@ -150,7 +155,7 @@ export default function CreditQueuePage() {
         <div className="flex items-center gap-3">
           <span className="text-xs tabular-nums" style={{ color: "var(--t-text-muted)" }}>{meta.total} customer{meta.total !== 1 ? "s" : ""}</span>
           <button onClick={() => fetchQueue()} disabled={loading} className="flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium disabled:opacity-50" style={{ borderColor: "var(--t-border)", color: "var(--t-text-primary)" }}>
-            <RefreshCw className={`h-3 w-3 ${loading ? "animate-spin" : ""}`} /> Refresh
+            <RefreshCw className={`h-3 w-3 ${loading ? "animate-spin" : ""}`} /> {label("ui_refresh", "Refresh")}
           </button>
         </div>
       </div>
@@ -170,7 +175,7 @@ export default function CreditQueuePage() {
             </div>
 
             {loading && queue.length === 0 && (
-              <div className="px-4 py-8 text-center text-sm" style={{ color: "var(--t-text-muted)" }}>Loading...</div>
+              <div className="px-4 py-8 text-center text-sm" style={{ color: "var(--t-text-muted)" }}>{label("ui_loading", "Loading...")}</div>
             )}
             {!loading && queue.length === 0 && (
               <div className="px-4 py-8 text-center">
@@ -213,9 +218,9 @@ export default function CreditQueuePage() {
           {/* Pagination */}
           {meta.totalPages > 1 && (
             <div className="flex items-center justify-between mt-4">
-              <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1} className="rounded-full border px-4 py-1.5 text-xs font-medium disabled:opacity-40" style={{ borderColor: "var(--t-border)", color: "var(--t-text-primary)" }}>Prev</button>
-              <span className="text-xs tabular-nums" style={{ color: "var(--t-text-muted)" }}>Page {meta.page} of {meta.totalPages}</span>
-              <button onClick={() => setPage(p => Math.min(meta.totalPages, p + 1))} disabled={page >= meta.totalPages} className="rounded-full border px-4 py-1.5 text-xs font-medium disabled:opacity-40" style={{ borderColor: "var(--t-border)", color: "var(--t-text-primary)" }}>Next</button>
+              <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1} className="rounded-full border px-4 py-1.5 text-xs font-medium disabled:opacity-40" style={{ borderColor: "var(--t-border)", color: "var(--t-text-primary)" }}>{label("ui_prev", "Prev")}</button>
+              <span className="text-xs tabular-nums" style={{ color: "var(--t-text-muted)" }}>{meta.page} / {meta.totalPages}</span>
+              <button onClick={() => setPage(p => Math.min(meta.totalPages, p + 1))} disabled={page >= meta.totalPages} className="rounded-full border px-4 py-1.5 text-xs font-medium disabled:opacity-40" style={{ borderColor: "var(--t-border)", color: "var(--t-text-primary)" }}>{label("ui_next", "Next")}</button>
             </div>
           )}
         </div>
