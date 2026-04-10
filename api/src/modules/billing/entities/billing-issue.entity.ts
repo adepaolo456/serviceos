@@ -68,6 +68,23 @@ export class BillingIssue {
   @Column({ name: 'resolution_reason', type: 'text', nullable: true })
   resolution_reason!: string;
 
+  /**
+   * Phase 6 — high-level audit category. Constrained at the database
+   * level via CHECK constraint to one of:
+   *   'paid' | 'operator_resolved' | 'legacy_cleanup' | 'stale_auto_resolved'
+   *
+   * Works alongside `resolution_reason` (which holds the detailed
+   * pass-specific string like 'auto_cleared_balance_paid'). This
+   * column is the audit-friendly classification; the reason column
+   * keeps the forensic detail.
+   *
+   * See migrations/2026-04-09-billing-issues-resolution-category.sql
+   * for the schema definition and BillingAuditService for the
+   * classification + cleanup pipeline that consumes it.
+   */
+  @Column({ name: 'resolution_category', type: 'text', nullable: true })
+  resolution_category!: string | null;
+
   @Column({ name: 'resolution_notes', type: 'text', nullable: true })
   resolution_notes!: string;
 

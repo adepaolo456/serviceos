@@ -318,6 +318,9 @@ export class BillingIssueDetectorService {
     if (reason) issue.resolution_reason = reason;
     if (notes) issue.resolution_notes = notes;
     if (linkedInvoiceId) issue.invoice_id = linkedInvoiceId;
+    // Phase 6 — stamp the high-level audit category. Manual resolution
+    // through this method is by definition operator-driven.
+    issue.resolution_category = 'operator_resolved';
     return this.issueRepo.save(issue);
   }
 
@@ -339,6 +342,8 @@ export class BillingIssueDetectorService {
     issue.status = 'dismissed';
     issue.resolved_by = userId;
     issue.resolved_at = new Date();
+    // Phase 6 — dismiss is an explicit operator action.
+    issue.resolution_category = 'operator_resolved';
     return this.issueRepo.save(issue);
   }
 
@@ -435,6 +440,9 @@ export class BillingIssueDetectorService {
         status: 'auto_resolved',
         resolved_at: () => 'NOW()',
         resolution_reason: 'auto_cleared_balance_paid',
+        // Phase 6 — high-level audit category for the existing
+        // background pass. Mirrors the legacy detail string above.
+        resolution_category: 'stale_auto_resolved',
       })
       .where(
         'id IN (' +
@@ -465,6 +473,7 @@ export class BillingIssueDetectorService {
         status: 'auto_resolved',
         resolved_at: () => 'NOW()',
         resolution_reason: 'auto_cleared_invoice_closed',
+        resolution_category: 'stale_auto_resolved',
       })
       .where(
         'id IN (' +
@@ -496,6 +505,7 @@ export class BillingIssueDetectorService {
         status: 'auto_resolved',
         resolved_at: () => 'NOW()',
         resolution_reason: 'auto_cleared_not_dump_eligible',
+        resolution_category: 'stale_auto_resolved',
       })
       .where(
         'id IN (' +
@@ -528,6 +538,7 @@ export class BillingIssueDetectorService {
         status: 'auto_resolved',
         resolved_at: () => 'NOW()',
         resolution_reason: 'auto_cleared_invoice_resolved',
+        resolution_category: 'stale_auto_resolved',
       })
       .where(
         'id IN (' +
@@ -563,6 +574,7 @@ export class BillingIssueDetectorService {
         status: 'auto_resolved',
         resolved_at: () => 'NOW()',
         resolution_reason: 'auto_cleared_job_reverted',
+        resolution_category: 'stale_auto_resolved',
       })
       .where(
         'id IN (' +

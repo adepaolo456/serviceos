@@ -15,8 +15,10 @@ import { Notification } from '../notifications/entities/notification.entity';
 import { PricingRule } from '../pricing/entities/pricing-rule.entity';
 import { InvoiceService } from './services/invoice.service';
 import { BillingIssueDetectorService } from './services/billing-issue-detector.service';
+import { BillingAuditService } from './services/billing-audit.service';
 import { InvoiceController } from './controllers/invoice.controller';
 import { BillingIssueController } from './controllers/billing-issue.controller';
+import { BillingAuditController } from './controllers/billing-audit.controller';
 import { BookingsController } from './bookings.controller';
 import { BillingService } from './billing.service';
 import { PaymentsController } from './billing.controller';
@@ -51,8 +53,8 @@ import { BookingCompletionService } from './services/booking-completion.service'
     PricingModule,
     MapboxModule,
   ],
-  controllers: [InvoiceController, BillingIssueController, PaymentsController, BookingsController],
-  providers: [InvoiceService, BillingIssueDetectorService, BillingService, OrchestrationService, BookingCompletionService],
-  exports: [InvoiceService, BillingService, BillingIssueDetectorService, OrchestrationService, BookingCompletionService],
+  controllers: [InvoiceController, BillingIssueController, BillingAuditController, PaymentsController, BookingsController],
+  providers: [InvoiceService, BillingIssueDetectorService, BillingAuditService, BillingService, OrchestrationService, BookingCompletionService],
+  exports: [InvoiceService, BillingService, BillingIssueDetectorService, BillingAuditService, OrchestrationService, BookingCompletionService],
 })
 export class BillingModule {}
