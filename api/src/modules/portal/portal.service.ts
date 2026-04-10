@@ -298,11 +298,28 @@ export class PortalService {
       },
     );
 
-    // Return a portal-safe response shape
+    // Determine payment requirement from invoice state + customer terms
+    let invoiceBalanceDue = 0;
+    let paymentRequired = false;
+    if (result.invoiceId) {
+      const invoice = await this.invoiceRepo.findOne({
+        where: { id: result.invoiceId, tenant_id: tenantId },
+        select: ['id', 'balance_due'],
+      });
+      invoiceBalanceDue = Number(invoice?.balance_due ?? 0);
+      // Payment is required when there's a balance and the customer
+      // is on due_on_receipt or cod terms (not net terms).
+      const terms = customer.payment_terms;
+      const immediateTerms = !terms || terms === 'due_on_receipt' || terms === 'cod';
+      paymentRequired = invoiceBalanceDue > 0 && immediateTerms;
+    }
+
     return {
-      job_number: result.bookingId ? `Booking ${result.bookingId.slice(0, 8)}` : 'Submitted',
+      job_number: result.jobId ? result.jobId.slice(0, 8).toUpperCase() : 'Submitted',
       status: result.status,
-      customer_id: result.customerId,
+      invoice_id: result.invoiceId ?? null,
+      balance_due: Math.round(invoiceBalanceDue * 100) / 100,
+      payment_required: paymentRequired,
     };
   }
 

@@ -6,7 +6,7 @@ import { portalApi } from "@/lib/portal-api";
 import { formatCurrency } from "@/lib/utils";
 import { FEATURE_REGISTRY } from "@/lib/feature-registry";
 import AddressAutocomplete, { type AddressValue } from "@/components/address-autocomplete";
-import { Package, CheckCircle2, Loader2, Calendar } from "lucide-react";
+import { Package, CheckCircle2, Loader2, Calendar, CreditCard } from "lucide-react";
 
 function label(id: string, fallback: string): string {
   return FEATURE_REGISTRY[id]?.label ?? fallback;
@@ -46,6 +46,12 @@ export default function PortalRequestPage() {
   const [submitted, setSubmitted] = useState(false);
   const [jobNumber, setJobNumber] = useState("");
   const [error, setError] = useState("");
+  const [bookingResult, setBookingResult] = useState<{
+    invoice_id: string | null;
+    balance_due: number;
+    payment_required: boolean;
+  } | null>(null);
+  const [payingInvoice, setPayingInvoice] = useState(false);
 
   // Pricing state
   const [estimate, setEstimate] = useState<PriceEstimate | null>(null);
@@ -114,7 +120,12 @@ export default function PortalRequestPage() {
     setError("");
     setSubmitting(true);
     try {
-      const result = await portalApi.post<{ job_number: string }>("/portal/request", {
+      const result = await portalApi.post<{
+        job_number: string;
+        invoice_id: string | null;
+        balance_due: number;
+        payment_required: boolean;
+      }>("/portal/request", {
         serviceType: "dumpster_rental",
         size,
         serviceAddress: address,
@@ -123,6 +134,11 @@ export default function PortalRequestPage() {
         instructions,
       });
       setJobNumber(result.job_number);
+      setBookingResult({
+        invoice_id: result.invoice_id,
+        balance_due: result.balance_due,
+        payment_required: result.payment_required,
+      });
       setSubmitted(true);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "";
@@ -138,6 +154,54 @@ export default function PortalRequestPage() {
   };
 
   if (submitted) {
+    // Payment required — route to payment
+    if (bookingResult?.payment_required && bookingResult.invoice_id && bookingResult.balance_due > 0) {
+      return (
+        <div className="flex flex-col items-center justify-center py-16">
+          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[var(--t-warning-soft, #FFF8E1)] mb-4">
+            <CreditCard className="h-8 w-8" style={{ color: "var(--t-warning, #F59E0B)" }} />
+          </div>
+          <h2 className="text-xl font-bold text-[var(--t-frame-text)]">{label("portal_booking_payment_required", "Payment Required to Complete Booking")}</h2>
+          <p className="mt-2 text-sm text-[var(--t-frame-text-muted)] text-center max-w-sm">
+            {label("portal_booking_payment_message", "Your booking will be scheduled after payment is confirmed.")}
+          </p>
+          <div className="mt-4 rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-6 py-4 text-center">
+            <p className="text-xs uppercase tracking-wider font-semibold" style={{ color: "var(--t-text-muted)" }}>{label("portal_booking_amount_due", "Amount Due")}</p>
+            <p className="text-3xl font-bold tabular-nums mt-1" style={{ color: "var(--t-text-primary)" }}>{formatCurrency(bookingResult.balance_due)}</p>
+          </div>
+          <div className="mt-6 flex flex-col gap-3 items-center">
+            <button
+              onClick={async () => {
+                if (payingInvoice) return;
+                setPayingInvoice(true);
+                try {
+                  const res = await portalApi.post<{ url?: string }>("/portal/payments/prepare", {
+                    invoiceId: bookingResult.invoice_id,
+                    amount: bookingResult.balance_due,
+                  });
+                  if (res.url) { window.location.href = res.url; return; }
+                  router.push("/portal/invoices");
+                } catch {
+                  setError(label("portal_payment_failed", "Payment could not be processed") + ". " + label("portal_payment_try_again", "Please try again or contact us."));
+                  setPayingInvoice(false);
+                }
+              }}
+              disabled={payingInvoice}
+              className="flex items-center gap-2 rounded-full bg-[var(--t-accent)] px-8 py-3 text-sm font-semibold text-[var(--t-accent-on-accent)] hover:opacity-90 disabled:opacity-40 transition-opacity"
+            >
+              <CreditCard className="h-4 w-4" />
+              {payingInvoice ? label("portal_payment_processing", "Processing payment...") : label("portal_pay_now", "Pay Now")}
+            </button>
+            <button onClick={() => router.push("/portal/invoices")} className="text-xs font-medium" style={{ color: "var(--t-accent)" }}>
+              {label("portal_booking_pay_later", "Pay Later")} →
+            </button>
+          </div>
+          {error && <p className="mt-4 text-sm text-[var(--t-error)] text-center max-w-sm">{error}</p>}
+        </div>
+      );
+    }
+
+    // No payment required — confirmation
     return (
       <div className="flex flex-col items-center justify-center py-16">
         <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[var(--t-accent-soft)] mb-4">
@@ -145,13 +209,13 @@ export default function PortalRequestPage() {
         </div>
         <h2 className="text-xl font-bold text-[var(--t-frame-text)]">{label("portal_request_submitted", "Request Submitted!")}</h2>
         <p className="mt-2 text-sm text-[var(--t-frame-text-muted)] text-center max-w-sm">
-          {label("portal_request_confirmation", "Your request has been received. We'll confirm availability and contact you shortly.")} {jobNumber && `(${jobNumber})`}
+          {label("portal_request_confirmation", "Your request has been received. We'll confirm availability and contact you shortly.")}
         </p>
         <div className="mt-6 flex gap-3">
           <button onClick={() => router.push("/portal")} className="rounded-full border border-[var(--t-border)] px-4 py-2 text-sm font-medium text-[var(--t-text-primary)] hover:bg-[var(--t-bg-card-hover)] transition-colors">
             {label("portal_back_to_dashboard", "Back to Dashboard")}
           </button>
-          <button onClick={() => { setSubmitted(false); setSize(sizeOptions[0]?.asset_subtype || ""); setDate(""); setAddress({}); setInstructions(""); setEstimate(null); }}
+          <button onClick={() => { setSubmitted(false); setBookingResult(null); setSize(sizeOptions[0]?.asset_subtype || ""); setDate(""); setAddress({}); setInstructions(""); setEstimate(null); }}
             className="rounded-full bg-[var(--t-accent)] px-4 py-2 text-sm font-semibold text-[var(--t-accent-on-accent)] hover:opacity-90 transition-opacity">
             {label("portal_request_another", "Request Another")}
           </button>
