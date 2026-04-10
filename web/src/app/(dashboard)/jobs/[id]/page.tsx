@@ -822,7 +822,7 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
                       )}
                     </div>
                   )}
-                  {addr.lat && addr.lng && (
+                  {addr.lat && addr.lng && !((job as any).placement_lat && (job as any).placement_lng) && (
                     <div className="mt-3">
                       <MapboxMap
                         markers={[{ id: job.id, lat: Number(addr.lat), lng: Number(addr.lng), type: job.job_type as any, label: job.asset?.subtype?.replace("yd","") || "" }]}
