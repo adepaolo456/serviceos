@@ -110,6 +110,9 @@ const PREDICTION_KIND_LABEL_KEYS: Record<PredictiveSummaryKind, string> = {
   non_payment_only: "blocker_prediction_non_payment_only",
   uncertain_only: "blocker_prediction_uncertain_only",
   no_blockers: "blocker_prediction_no_blockers",
+  // Phase 6 — payment-actionable but zero classified payment_rooted blockers.
+  payment_first_no_classified: "blocker_prediction_payment_first_no_classified",
+  payment_first_with_review: "blocker_prediction_payment_first_with_review",
 };
 
 export function JobBlockedResolutionDrawer({
@@ -319,54 +322,6 @@ export function JobBlockedResolutionDrawer({
           </div>
         )}
 
-        {/* ─── Phase 5: predictive lead phrase ─── */}
-        {/*
-         * Rendered whenever we have classified data (i.e. issues
-         * loaded successfully). Uses the discriminated `kind` to pick
-         * the matching registry label so the user-facing copy is never
-         * hardcoded. Counts are inserted next to the lead phrase so
-         * the operator immediately sees the magnitude of each bucket.
-         */}
-        {!loadError && issues !== null && !comparisonResult && summary.kind !== "no_blockers" && predictionLeadLabel && (
-          <div
-            className="rounded-[14px] border px-4 py-3"
-            style={{
-              backgroundColor: "var(--t-bg-card)",
-              borderColor: "var(--t-border)",
-            }}
-          >
-            <p className="text-sm" style={{ color: "var(--t-text-primary)" }}>
-              {predictionLeadLabel}
-            </p>
-            <ul className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px]" style={{ color: "var(--t-text-muted)" }}>
-              {summary.paymentRootedCount > 0 && (
-                <li>
-                  <span className="font-semibold tabular-nums" style={{ color: "var(--t-text-primary)" }}>
-                    {summary.paymentRootedCount}
-                  </span>{" "}
-                  {sectionPaymentLabel.toLowerCase()}
-                </li>
-              )}
-              {summary.nonPaymentCount > 0 && (
-                <li>
-                  <span className="font-semibold tabular-nums" style={{ color: "var(--t-text-primary)" }}>
-                    {summary.nonPaymentCount}
-                  </span>{" "}
-                  {sectionNonPaymentLabel.toLowerCase()}
-                </li>
-              )}
-              {summary.uncertainCount > 0 && (
-                <li>
-                  <span className="font-semibold tabular-nums" style={{ color: "var(--t-text-primary)" }}>
-                    {summary.uncertainCount}
-                  </span>{" "}
-                  {sectionUncertainLabel.toLowerCase()}
-                </li>
-              )}
-            </ul>
-          </div>
-        )}
-
         {/* ─── Phase 5: post-action result summary ─── */}
         {/*
          * Replaces the predictive section once payment has been
@@ -480,6 +435,60 @@ export function JobBlockedResolutionDrawer({
               onSuccess={handlePaymentSuccess}
             />
           </section>
+        )}
+
+        {/* ─── Phase 6 fix: predictive lead phrase (moved BELOW payment-first) ─── */}
+        {/*
+         * Rendered whenever we have classified data. Phase 6 moved this
+         * block from above the payment-first section to BELOW it so the
+         * action hierarchy (form first) is visually primary. The lead
+         * phrase becomes supporting context that explains what to
+         * expect, rather than a misleading "may need review" headline
+         * shown above an actionable payment form.
+         *
+         * Uses the discriminated `kind` to pick the matching registry
+         * label so the user-facing copy is never hardcoded. Counts are
+         * inserted next to the lead phrase so the operator immediately
+         * sees the magnitude of each bucket.
+         */}
+        {!loadError && issues !== null && !comparisonResult && summary.kind !== "no_blockers" && predictionLeadLabel && (
+          <div
+            className="rounded-[14px] border px-4 py-3"
+            style={{
+              backgroundColor: "var(--t-bg-card)",
+              borderColor: "var(--t-border)",
+            }}
+          >
+            <p className="text-sm" style={{ color: "var(--t-text-primary)" }}>
+              {predictionLeadLabel}
+            </p>
+            <ul className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px]" style={{ color: "var(--t-text-muted)" }}>
+              {summary.paymentRootedCount > 0 && (
+                <li>
+                  <span className="font-semibold tabular-nums" style={{ color: "var(--t-text-primary)" }}>
+                    {summary.paymentRootedCount}
+                  </span>{" "}
+                  {sectionPaymentLabel.toLowerCase()}
+                </li>
+              )}
+              {summary.nonPaymentCount > 0 && (
+                <li>
+                  <span className="font-semibold tabular-nums" style={{ color: "var(--t-text-primary)" }}>
+                    {summary.nonPaymentCount}
+                  </span>{" "}
+                  {sectionNonPaymentLabel.toLowerCase()}
+                </li>
+              )}
+              {summary.uncertainCount > 0 && (
+                <li>
+                  <span className="font-semibold tabular-nums" style={{ color: "var(--t-text-primary)" }}>
+                    {summary.uncertainCount}
+                  </span>{" "}
+                  {sectionUncertainLabel.toLowerCase()}
+                </li>
+              )}
+            </ul>
+          </div>
         )}
 
         {/* Uncertain section — softer copy, no inline action */}

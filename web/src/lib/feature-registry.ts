@@ -654,6 +654,22 @@ export const FEATURE_REGISTRY: Record<string, FeatureDescription> = {
     isUserFacing: true, isGuideEligible: false,
     keywords: ["predict", "empty", "no blockers"],
   },
+  blocker_prediction_payment_first_no_classified: {
+    id: "blocker_prediction_payment_first_no_classified", label: "Recording payment will close the unpaid balance on this invoice.", category: "operations",
+    shortDescription: "Lead phrase shown when the linked invoice has an unpaid balance and there are no individually classified blockers — payment is still the recommended action.",
+    guideDescription: "",
+    routeOrSurface: "job_detail", tenantOverrideKey: "blocker_prediction_payment_first_no_classified",
+    isUserFacing: true, isGuideEligible: false,
+    keywords: ["predict", "payment", "first", "unpaid", "balance"],
+  },
+  blocker_prediction_payment_first_with_review: {
+    id: "blocker_prediction_payment_first_with_review", label: "Recording payment will close the unpaid balance. Some blockers may still need a closer look afterward.", category: "operations",
+    shortDescription: "Lead phrase shown when the linked invoice is unpaid AND there are uncertain or non-payment blockers that may still need attention after payment.",
+    guideDescription: "",
+    routeOrSurface: "job_detail", tenantOverrideKey: "blocker_prediction_payment_first_with_review",
+    isUserFacing: true, isGuideEligible: false,
+    keywords: ["predict", "payment", "first", "review", "afterward"],
+  },
   blocker_prediction_section_payment_rooted: {
     id: "blocker_prediction_section_payment_rooted", label: "Will clear after payment", category: "operations",
     shortDescription: "Section header inside the drawer for blockers that backend auto-resolution will clear once payment is recorded.",
