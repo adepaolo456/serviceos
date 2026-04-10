@@ -118,7 +118,7 @@ export default function CreditAnalyticsPage() {
           <ResponsiveContainer width="100%" height={220}>
             <BarChart data={chartData} barCategoryGap="20%">
               <CartesianGrid strokeDasharray="3 3" stroke="var(--t-border)" />
-              <XAxis dataKey="day" tick={{ fontSize: 10, fill: "var(--t-text-muted)" }} tickFormatter={(v) => { try { const d = new Date(v); return d.toLocaleDateString(undefined, { month: "short", day: "numeric" }); } catch { return String(v); } }} />
+              <XAxis dataKey="day" tick={{ fontSize: 10, fill: "var(--t-text-muted)" }} tickFormatter={(v) => { const d = new Date(String(v) + "T00:00:00"); return isNaN(d.getTime()) ? String(v) : d.toLocaleDateString(undefined, { month: "short", day: "numeric" }); }} />
               <YAxis tick={{ fontSize: 10, fill: "var(--t-text-muted)" }} allowDecimals={false} />
               <Tooltip contentStyle={{ fontSize: 11, borderRadius: 10, border: "1px solid var(--t-border)", background: "var(--t-bg-card)" }} />
               <Bar dataKey="credit_hold_set" name="Hold Set" fill="#EF4444" radius={[3, 3, 0, 0]} />
