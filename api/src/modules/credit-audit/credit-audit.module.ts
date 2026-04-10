@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { CreditAuditEvent } from './credit-audit-event.entity';
 import { Customer } from '../customers/entities/customer.entity';
@@ -11,7 +11,7 @@ import { CreditWorkflowController } from './credit-workflow.controller';
 import { PermissionModule } from '../permissions/permission.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([CreditAuditEvent, Customer]), PermissionModule],
+  imports: [TypeOrmModule.forFeature([CreditAuditEvent, Customer]), forwardRef(() => PermissionModule)],
   controllers: [CreditAuditController, CreditAnalyticsController, CreditWorkflowController],
   providers: [CreditAuditService, CreditAnalyticsService, CreditWorkflowService],
   exports: [CreditAuditService],
