@@ -312,6 +312,24 @@ interface InvoiceDetail {
   job: { id: string; job_number?: string; job_type?: string; asset_subtype: string; service_address?: Record<string, string> | null; scheduled_date?: string; dump_overage_items?: any[] } | null;
 }
 
+/* ── Customer credit context (Phase 6 — informational only) ── */
+type CreditHoldReason =
+  | { type: "manual_hold"; set_by: string | null; set_at: string | null; reason: string | null }
+  | { type: "credit_limit_exceeded"; limit: number; current_ar: number }
+  | { type: "overdue_threshold_exceeded"; threshold_days: number; oldest_past_due_days: number };
+
+interface CustomerCreditContext {
+  customer_id: string;
+  receivable: { total_open_ar: number };
+  past_due: { total_past_due_ar: number; oldest_past_due_days: number | null };
+  hold: {
+    effective_active: boolean;
+    manual_active: boolean;
+    policy_active: boolean;
+    reasons: CreditHoldReason[];
+  };
+}
+
 /**
  * Page content lives in a child component because this page calls
  * `useSearchParams` (for the `?jobId=` deep-link scope from the Jobs
@@ -353,6 +371,7 @@ function BillingIssuesPageContent() {
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<string | null>(null);
   const [pricingRules, setPricingRules] = useState<{ asset_subtype: string; base_price: number; rental_period_days: number; included_tons: number; delivery_fee: number; customer_type?: string; service_type?: string }[]>([]);
   const [invoiceDetail, setInvoiceDetail] = useState<InvoiceDetail | null>(null);
+  const [creditContext, setCreditContext] = useState<CustomerCreditContext | null>(null);
   const { toast } = useToast();
 
   const fetchData = useCallback(async () => {
@@ -428,6 +447,7 @@ function BillingIssuesPageContent() {
     setSelectedAction("");
     setJobDetail(null);
     setInvoiceDetail(null);
+    setCreditContext(null);
     setInvoiceSearch("");
     setInvoiceResults([]);
     setSelectedInvoiceId(null);
@@ -437,6 +457,10 @@ function BillingIssuesPageContent() {
       try {
         const job = await api.get<JobDetail>(`/jobs/${issue.job_id}`);
         setJobDetail(job);
+        // Fetch credit context for the job's customer (best-effort)
+        if (job.customer?.id) {
+          api.get<CustomerCreditContext>(`/customers/${job.customer.id}/credit-state`).then(setCreditContext).catch(() => {});
+        }
       } catch { /* */ }
       finally { setJobLoading(false); }
     }
@@ -447,7 +471,17 @@ function BillingIssuesPageContent() {
         // For PRICE_MISMATCH: also load jobDetail from invoice's linked job if issue has no direct job_id
         if (!issue.job_id && inv.job?.id) {
           setJobLoading(true);
-          api.get<JobDetail>(`/jobs/${inv.job.id}`).then(setJobDetail).catch(() => {}).finally(() => setJobLoading(false));
+          api.get<JobDetail>(`/jobs/${inv.job.id}`).then(j => {
+            setJobDetail(j);
+            // Fetch credit context from invoice's linked job customer
+            if (j.customer?.id && !creditContext) {
+              api.get<CustomerCreditContext>(`/customers/${j.customer.id}/credit-state`).then(setCreditContext).catch(() => {});
+            }
+          }).catch(() => {}).finally(() => setJobLoading(false));
+        }
+        // If no job_id on issue but invoice has customer, fetch credit context directly
+        if (!issue.job_id && inv.customer?.id) {
+          api.get<CustomerCreditContext>(`/customers/${inv.customer.id}/credit-state`).then(setCreditContext).catch(() => {});
         }
       }).catch(() => {});
     }
@@ -905,6 +939,85 @@ function BillingIssuesPageContent() {
               {resolveTarget.suggested_action && (
                 <div className="rounded-xl border p-3 text-xs" style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)", color: "var(--t-text-muted)" }}>
                   <span className="font-semibold" style={{ color: "var(--t-text-primary)" }}>{UI_LABELS.suggested}</span> {resolveTarget.suggested_action}
+                </div>
+              )}
+
+              {/* Customer Credit Context (Phase 6 — informational, separate from job issue) */}
+              {creditContext && (
+                <div className="rounded-xl border p-4" style={{ background: "var(--t-bg-card)", borderColor: creditContext.hold.effective_active ? "var(--t-warning, #F59E0B)" : "var(--t-border)" }}>
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-[11px] uppercase tracking-wider font-semibold" style={{ color: "var(--t-text-muted)" }}>
+                      {FEATURE_REGISTRY.billing_issue_credit_context_header?.label ?? "Customer Credit Context"}
+                    </p>
+                    <span
+                      className="text-[10px] font-medium px-2 py-0.5 rounded-full"
+                      style={{
+                        background: creditContext.hold.effective_active ? "var(--t-warning-soft, #FFF8E1)" : "var(--t-accent-soft)",
+                        color: creditContext.hold.effective_active ? "var(--t-warning, #F59E0B)" : "var(--t-accent)",
+                      }}
+                    >
+                      {creditContext.hold.effective_active
+                        ? (FEATURE_REGISTRY.billing_issue_credit_on_hold?.label ?? "On Hold")
+                        : (FEATURE_REGISTRY.billing_issue_credit_no_hold?.label ?? "No Hold")}
+                    </span>
+                  </div>
+                  <p className="text-[10px] mb-3" style={{ color: "var(--t-text-muted)" }}>
+                    {FEATURE_REGISTRY.billing_issue_credit_context_disclaimer?.label ?? "Customer-level context — separate from this job issue"}
+                  </p>
+                  <div className="grid grid-cols-3 gap-3 text-xs">
+                    <div>
+                      <p className="text-[10px] uppercase tracking-wider" style={{ color: "var(--t-text-muted)" }}>Open AR</p>
+                      <p className="font-semibold tabular-nums" style={{ color: "var(--t-text-primary)" }}>{fmt(creditContext.receivable.total_open_ar)}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] uppercase tracking-wider" style={{ color: "var(--t-text-muted)" }}>Past Due</p>
+                      <p className="font-semibold tabular-nums" style={{ color: creditContext.past_due.total_past_due_ar > 0 ? "var(--t-error)" : "var(--t-text-primary)" }}>{fmt(creditContext.past_due.total_past_due_ar)}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] uppercase tracking-wider" style={{ color: "var(--t-text-muted)" }}>Oldest Past Due</p>
+                      <p className="font-semibold tabular-nums" style={{ color: "var(--t-text-primary)" }}>
+                        {creditContext.past_due.oldest_past_due_days != null ? `${creditContext.past_due.oldest_past_due_days}d` : "—"}
+                      </p>
+                    </div>
+                  </div>
+                  {/* Hold reasons (concise) */}
+                  {creditContext.hold.effective_active && creditContext.hold.reasons.length > 0 && (
+                    <div className="mt-3 pt-3 space-y-1" style={{ borderTop: "1px solid var(--t-border)" }}>
+                      {creditContext.hold.reasons.map((r, i) => {
+                        if (r.type === "manual_hold") return (
+                          <p key={i} className="text-[11px]" style={{ color: "var(--t-text-secondary)" }}>
+                            <span className="font-semibold">{FEATURE_REGISTRY.dispatch_credit_hold_manual?.label ?? "Manual hold"}</span>
+                            {r.reason && <span> — {r.reason}</span>}
+                          </p>
+                        );
+                        if (r.type === "credit_limit_exceeded") return (
+                          <p key={i} className="text-[11px]" style={{ color: "var(--t-text-secondary)" }}>
+                            <span className="font-semibold">{FEATURE_REGISTRY.dispatch_credit_hold_credit_limit?.label ?? "Credit limit exceeded"}</span>
+                            <span className="tabular-nums"> — {fmt(r.current_ar)} / {fmt(r.limit)}</span>
+                          </p>
+                        );
+                        if (r.type === "overdue_threshold_exceeded") return (
+                          <p key={i} className="text-[11px]" style={{ color: "var(--t-text-secondary)" }}>
+                            <span className="font-semibold">{FEATURE_REGISTRY.dispatch_credit_hold_overdue?.label ?? "Past due threshold exceeded"}</span>
+                            <span className="tabular-nums"> — {r.oldest_past_due_days}d (threshold: {r.threshold_days}d)</span>
+                          </p>
+                        );
+                        return null;
+                      })}
+                    </div>
+                  )}
+                  {/* Link to full profile */}
+                  {(jobDetail?.customer?.id || invoiceDetail?.customer?.id) && (
+                    <div className="mt-3 pt-2" style={{ borderTop: creditContext.hold.effective_active ? "none" : "1px solid var(--t-border)" }}>
+                      <Link
+                        href={`/customers/${jobDetail?.customer?.id || invoiceDetail?.customer?.id}`}
+                        className="text-[10px] font-semibold"
+                        style={{ color: "var(--t-accent)" }}
+                      >
+                        {FEATURE_REGISTRY.billing_issue_credit_view_profile?.label ?? "Full Credit Details"} →
+                      </Link>
+                    </div>
+                  )}
                 </div>
               )}
 

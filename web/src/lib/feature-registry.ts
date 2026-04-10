@@ -1296,6 +1296,48 @@ export const FEATURE_REGISTRY: Record<string, FeatureDescription> = {
     isUserFacing: true, isGuideEligible: false,
     keywords: ["override", "continue", "dispatch"],
   },
+
+  // ── Phase 6: billing issues — customer credit context ──
+  billing_issue_credit_context_header: {
+    id: "billing_issue_credit_context_header", label: "Customer Credit Context", category: "billing",
+    shortDescription: "Section header in the billing issue resolution panel showing the customer's overall credit posture.",
+    guideDescription: "The Customer Credit Context section in the billing issue resolution panel shows whether this job's billing issue is part of a broader customer credit problem. It displays the customer's hold status, total open AR, past-due AR, and hold reasons if any. This is informational only — resolving a billing issue does not change a credit hold, and a credit hold does not create or resolve billing issues. They are separate concepts: a billing issue is about a specific job's invoice state, while a credit hold is about the customer's aggregate financial posture.",
+    routeOrSurface: "billing_issues", tenantOverrideKey: "billing_issue_credit_context_header",
+    isUserFacing: true, isGuideEligible: true,
+    keywords: ["credit context", "billing issue", "customer", "hold", "ar"],
+  },
+  billing_issue_credit_context_disclaimer: {
+    id: "billing_issue_credit_context_disclaimer", label: "Customer-level context — separate from this job issue", category: "billing",
+    shortDescription: "Disclaimer clarifying that credit context is informational and separate from the billing issue itself.",
+    guideDescription: "",
+    routeOrSurface: "billing_issues", tenantOverrideKey: "billing_issue_credit_context_disclaimer",
+    isUserFacing: true, isGuideEligible: false,
+    keywords: ["disclaimer", "separate", "context"],
+  },
+  billing_issue_credit_on_hold: {
+    id: "billing_issue_credit_on_hold", label: "On Hold", category: "billing",
+    shortDescription: "Badge shown when the customer has an active credit hold.",
+    guideDescription: "",
+    routeOrSurface: "billing_issues", tenantOverrideKey: "billing_issue_credit_on_hold",
+    isUserFacing: true, isGuideEligible: false,
+    keywords: ["on hold", "credit"],
+  },
+  billing_issue_credit_no_hold: {
+    id: "billing_issue_credit_no_hold", label: "No Hold", category: "billing",
+    shortDescription: "Badge shown when the customer has no active credit hold.",
+    guideDescription: "",
+    routeOrSurface: "billing_issues", tenantOverrideKey: "billing_issue_credit_no_hold",
+    isUserFacing: true, isGuideEligible: false,
+    keywords: ["no hold", "clear"],
+  },
+  billing_issue_credit_view_profile: {
+    id: "billing_issue_credit_view_profile", label: "Full Credit Details", category: "billing",
+    shortDescription: "Link to the customer profile for full credit information.",
+    guideDescription: "",
+    routeOrSurface: "billing_issues", tenantOverrideKey: "billing_issue_credit_view_profile",
+    isUserFacing: true, isGuideEligible: false,
+    keywords: ["view profile", "credit details"],
+  },
 };
 
 // ── Category display labels ──
