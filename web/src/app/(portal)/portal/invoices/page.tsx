@@ -91,11 +91,11 @@ export default function PortalInvoicesPage() {
         window.location.href = result.url;
         return;
       }
-      setPayResult({ success: true, message: result.message || "Payment submitted successfully. You will receive a confirmation shortly." });
+      setPayResult({ success: true, message: result.message || label("portal_payment_success", "Payment submitted successfully") });
       // Refresh invoices
       portalApi.get<Invoice[]>("/portal/invoices").then(setInvoices).catch(() => {});
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "Payment could not be processed. Please try again or contact the office.";
+      const message = err instanceof Error ? err.message : `${label("portal_payment_failed", "Payment could not be processed")}. ${label("portal_payment_try_again", "Please try again or contact us.")}`;
       setPayResult({ success: false, message });
     } finally {
       setPaying(false);
