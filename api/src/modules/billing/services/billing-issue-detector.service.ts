@@ -351,6 +351,7 @@ export class BillingIssueDetectorService {
     query: {
       status?: string;
       issueType?: string;
+      jobId?: string;
       page?: number;
       limit?: number;
     },
@@ -377,6 +378,16 @@ export class BillingIssueDetectorService {
       qb.andWhere('bi.issue_type = :issueType', {
         issueType: query.issueType,
       });
+
+    // Scope to a single job — used by the Jobs page "Billing Issue"
+    // blocked-reason chip (deep-link into the scoped billing issues
+    // list) and by the Job detail page blocked panel to count open
+    // issues for the current job. Tenant scoping is still enforced by
+    // the outer `bi.tenant_id = :tenantId` predicate above; this
+    // additional clause only narrows within the authorized set.
+    if (query.jobId) {
+      qb.andWhere('bi.job_id = :jobId', { jobId: query.jobId });
+    }
 
     qb.orderBy('bi.created_at', 'DESC').skip(skip).take(limit);
     const [data, total] = await qb.getManyAndCount();

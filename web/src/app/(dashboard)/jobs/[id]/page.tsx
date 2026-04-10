@@ -33,6 +33,8 @@ import Dropdown from "@/components/dropdown";
 import { useToast } from "@/components/toast";
 import MapboxMap from "@/components/mapbox-map";
 import AddressAutocomplete, { type AddressValue } from "@/components/address-autocomplete";
+import { FEATURE_REGISTRY } from "@/lib/feature-registry";
+import { getBlockedReason } from "@/lib/blocked-job";
 
 /* --- Types --- */
 
@@ -181,6 +183,11 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
   const [showRevisions, setShowRevisions] = useState<string | null>(null);
   const [invoice, setInvoice] = useState<{ id: string; invoice_number: number; status: string; total: number; balance_due: number } | null>(null);
   const [invoiceOpen, setInvoiceOpen] = useState(true);
+  // Open billing issues for THIS job — used by the contextual blocked
+  // panel. Count comes from a scoped fetch of /billing-issues?jobId=...
+  // which uses the same backend filter the Billing Issues page scoped
+  // banner uses, so both surfaces agree on what's open.
+  const [openBillingIssueCount, setOpenBillingIssueCount] = useState(0);
   const [editingAddress, setEditingAddress] = useState(false);
   const [editAddress, setEditAddress] = useState<AddressValue>({ street: "", city: "", state: "", zip: "", lat: null, lng: null });
   const [savingAddress, setSavingAddress] = useState(false);
@@ -212,7 +219,16 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
     } catch { /* */ }
   };
 
-  useEffect(() => { fetchJob(); fetchDumpTickets(); fetchInvoice(); }, [id]);
+  const fetchOpenBillingIssues = async () => {
+    try {
+      const res = await api.get<{ data: Array<{ id: string }>; meta: { total: number } }>(
+        `/billing-issues?jobId=${id}&status=open&limit=1`,
+      );
+      setOpenBillingIssueCount(res.meta?.total ?? 0);
+    } catch { /* silent — panel simply won't indicate billing issues */ }
+  };
+
+  useEffect(() => { fetchJob(); fetchDumpTickets(); fetchInvoice(); fetchOpenBillingIssues(); }, [id]);
 
   // Detect one-time postCreate flag and consume it
   useEffect(() => {
@@ -405,6 +421,104 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
           </Dropdown>
         </div>
       </div>
+
+      {/* ─── Blocked panel (contextual — only shown when this job is blocked) ─── */}
+      {/*
+       * Uses the shared `getBlockedReason` helper from
+       * @/lib/blocked-job so this panel and the Jobs page stay
+       * perfectly in sync on "is this job blocked and why". The panel
+       * is a navigation surface only — it never resolves issues
+       * directly; operators click through to the authorized Billing
+       * Issues or Invoice workflows. Labels and tooltips come from
+       * FEATURE_REGISTRY.
+       */}
+      {(() => {
+        const blockedShape = {
+          status: job.status,
+          open_billing_issue_count: openBillingIssueCount,
+          linked_invoice: invoice
+            ? { status: invoice.status, balance_due: invoice.balance_due }
+            : null,
+        };
+        const reason = getBlockedReason(blockedShape);
+        if (!reason) return null;
+        const panelFeature = FEATURE_REGISTRY.job_blocked_panel;
+        const reasonFeature =
+          reason === "billing_issue"
+            ? FEATURE_REGISTRY.blocked_reason_billing_issue
+            : FEATURE_REGISTRY.blocked_reason_unpaid_completed_invoice;
+        const reviewIssuesLabel =
+          FEATURE_REGISTRY.job_blocked_panel_cta_review_issues?.label ?? "Review in Billing Issues";
+        const openInvoiceLabel =
+          FEATURE_REGISTRY.job_blocked_panel_cta_open_invoice?.label ?? "Open Invoice";
+        return (
+          <div
+            className="mb-4 rounded-[20px] border-l-4 px-5 py-4"
+            style={{
+              backgroundColor: "var(--t-error-soft)",
+              borderColor: "var(--t-error)",
+              borderTop: "1px solid var(--t-border)",
+              borderRight: "1px solid var(--t-border)",
+              borderBottom: "1px solid var(--t-border)",
+            }}
+            role="alert"
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex items-start gap-3 min-w-0">
+                <AlertTriangle className="h-5 w-5 shrink-0 mt-0.5" style={{ color: "var(--t-error)" }} />
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold" style={{ color: "var(--t-text-primary)" }}>
+                    {panelFeature?.label ?? "Job is blocked"}
+                  </p>
+                  <p className="text-xs mt-0.5" style={{ color: "var(--t-text-secondary)" }}>
+                    {reasonFeature?.shortDescription ?? reasonFeature?.label ?? reason}
+                  </p>
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <span
+                      className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold"
+                      style={{ backgroundColor: "var(--t-error)", color: "var(--t-error-on-error, #fff)" }}
+                    >
+                      {reasonFeature?.label ?? reason}
+                    </span>
+                    {reason === "billing_issue" && openBillingIssueCount > 0 && (
+                      <span className="text-[11px]" style={{ color: "var(--t-text-muted)" }}>
+                        {openBillingIssueCount} open issue{openBillingIssueCount !== 1 ? "s" : ""} for this job
+                      </span>
+                    )}
+                    {reason === "unpaid_completed_invoice" && invoice && (
+                      <span className="text-[11px]" style={{ color: "var(--t-text-muted)" }}>
+                        Invoice #{invoice.invoice_number} — {fmt(invoice.balance_due)} due
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                {reason === "billing_issue" && (
+                  <Link
+                    href={`/billing-issues?jobId=${id}`}
+                    className="inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold transition-opacity hover:opacity-90"
+                    style={{ backgroundColor: "var(--t-error)", color: "var(--t-error-on-error, #fff)" }}
+                    title={FEATURE_REGISTRY.job_blocked_panel_cta_review_issues?.shortDescription}
+                  >
+                    <FileText className="h-3.5 w-3.5" /> {reviewIssuesLabel}
+                  </Link>
+                )}
+                {reason === "unpaid_completed_invoice" && invoice && (
+                  <Link
+                    href={`/invoices/${invoice.id}?openPayment=1`}
+                    className="inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold transition-opacity hover:opacity-90"
+                    style={{ backgroundColor: "var(--t-error)", color: "var(--t-error-on-error, #fff)" }}
+                    title={FEATURE_REGISTRY.job_blocked_panel_cta_open_invoice?.shortDescription}
+                  >
+                    <DollarSign className="h-3.5 w-3.5" /> {openInvoiceLabel}
+                  </Link>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* --- Post-Create Billing Banner --- */}
       {isPostCreate && invoice && invoice.balance_due > 0 && (

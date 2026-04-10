@@ -25,6 +25,7 @@ export class BillingIssueController {
     query: {
       status?: string;
       issueType?: string;
+      jobId?: string;
       page?: string;
       limit?: string;
     },
@@ -32,6 +33,7 @@ export class BillingIssueController {
     return this.detector.findAll(tenantId, {
       status: query.status,
       issueType: query.issueType,
+      jobId: query.jobId,
       page: query.page ? parseInt(query.page) : undefined,
       limit: query.limit ? parseInt(query.limit) : undefined,
     });
