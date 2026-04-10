@@ -125,7 +125,13 @@ export default function PortalRequestPage() {
       setJobNumber(result.job_number);
       setSubmitted(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : label("portal_request_error", "Something went wrong. Please try again."));
+      const msg = err instanceof Error ? err.message : "";
+      // Credit enforcement blocks show as customer-safe service restriction
+      if (msg.includes("credit hold") || msg.includes("CREDIT_HOLD")) {
+        setError(label("portal_request_service_restricted", "Your account has an outstanding balance that must be resolved before new service can be scheduled. Please make a payment or contact us."));
+      } else {
+        setError(msg || label("portal_request_error", "Something went wrong. Please try again."));
+      }
     } finally {
       setSubmitting(false);
     }
