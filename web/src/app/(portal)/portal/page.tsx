@@ -42,27 +42,26 @@ const ISSUE_REASONS = [
   "Other",
 ] as const;
 
-const STATUS_COLORS: Record<string, string> = {
-  pending: "text-yellow-500",
-  confirmed: "text-blue-400",
-  dispatched: "text-indigo-400",
-  en_route: "text-purple-400",
-  arrived: "text-cyan-400",
-  in_progress: "text-[var(--t-accent)]",
-  completed: "text-[var(--t-text-muted)]",
-  cancelled: "text-[var(--t-error)]",
-};
-
-const STATUS_LABELS: Record<string, string> = {
-  pending: "Pending",
-  confirmed: "Confirmed",
-  dispatched: "Dispatched",
-  en_route: "En Route",
-  arrived: "Arrived",
-  in_progress: "Delivered",
-  completed: "Completed",
-  cancelled: "Cancelled",
-};
+/* Customer-safe status mapping — never expose raw internal states */
+function customerStatus(internalStatus: string): { label: string; color: string } {
+  switch (internalStatus) {
+    case "pending":
+    case "confirmed":
+    case "dispatched":
+      return { label: FEATURE_REGISTRY.portal_status_scheduled?.label ?? "Scheduled", color: "var(--t-accent)" };
+    case "en_route":
+      return { label: FEATURE_REGISTRY.portal_status_on_the_way?.label ?? "On the Way", color: "#8B5CF6" };
+    case "arrived":
+    case "in_progress":
+      return { label: FEATURE_REGISTRY.portal_status_in_progress?.label ?? "In Progress", color: "var(--t-accent)" };
+    case "completed":
+      return { label: FEATURE_REGISTRY.portal_status_completed?.label ?? "Completed", color: "var(--t-text-muted)" };
+    case "cancelled":
+      return { label: FEATURE_REGISTRY.portal_status_cancelled?.label ?? "Cancelled", color: "var(--t-error)" };
+    default:
+      return { label: FEATURE_REGISTRY.portal_status_scheduled?.label ?? "Scheduled", color: "var(--t-text-muted)" };
+  }
+}
 
 function daysRemaining(endDate: string | null): number | null {
   if (!endDate) return null;
@@ -153,6 +152,7 @@ export default function PortalHomePage() {
 
   const active = rentals.filter(r => !["completed", "cancelled"].includes(r.status) && r.job_type === "delivery");
   const upcoming = rentals.filter(r => r.status === "pending" && r.job_type === "delivery");
+  const history = rentals.filter(r => r.status === "completed" && r.job_type === "delivery").slice(0, 5);
 
   return (
     <div className="space-y-8">
@@ -250,7 +250,7 @@ export default function PortalHomePage() {
 
       {/* Active Rentals */}
       <section>
-        <h2 className="text-lg font-bold text-[var(--t-text-primary)] mb-4">Active Rentals</h2>
+        <h2 className="text-lg font-bold text-[var(--t-text-primary)] mb-4">{FEATURE_REGISTRY.portal_section_active_rentals?.label ?? "Active Rentals"}</h2>
         {loading ? (
           <div className="space-y-3">
             {[1, 2].map(i => <div key={i} className="h-40 rounded-[20px] bg-[var(--t-bg-card)] border border-[var(--t-border)] animate-pulse" />)}
@@ -258,7 +258,7 @@ export default function PortalHomePage() {
         ) : active.length === 0 ? (
           <div className="rounded-[20px] border border-dashed border-[var(--t-border)] bg-[var(--t-bg-card)] p-8 text-center">
             <Package className="mx-auto h-10 w-10 text-[var(--t-text-muted)]/30 mb-3" />
-            <p className="text-sm font-medium text-[var(--t-text-muted)]">No active rentals</p>
+            <p className="text-sm font-medium text-[var(--t-text-muted)]">{FEATURE_REGISTRY.portal_empty_active?.label ?? "No active rentals"}</p>
             <Link href="/portal/request" className="mt-3 inline-flex items-center gap-1 text-sm font-medium text-[var(--t-accent)] hover:underline">
               Request a dumpster <ArrowUpRight className="h-3.5 w-3.5" />
             </Link>
@@ -274,7 +274,7 @@ export default function PortalHomePage() {
                     <div>
                       <div className="flex items-center gap-2">
                         <p className="text-sm font-bold text-[var(--t-text-primary)]">{formatRentalTitle(r)}</p>
-                        <span className={`text-xs font-medium ${STATUS_COLORS[r.status] || ""}`}>{STATUS_LABELS[r.status] || r.status}</span>
+                        <span className="text-xs font-medium" style={{ color: customerStatus(r.status).color }}>{customerStatus(r.status).label}</span>
                       </div>
                       <p className="text-xs text-[var(--t-text-muted)] mt-1">{r.job_number}</p>
                     </div>
@@ -298,15 +298,15 @@ export default function PortalHomePage() {
                   <div className="flex flex-wrap gap-2 mt-4">
                     <Link href={`/portal/rentals?id=${r.id}`}
                       className="rounded-full border border-[var(--t-border)] px-3 py-1.5 text-xs font-medium text-[var(--t-text-primary)] hover:bg-[var(--t-bg-card-hover)] transition-colors">
-                      View Details
+                      {FEATURE_REGISTRY.portal_action_view_details?.label ?? "View Details"}
                     </Link>
                     <button onClick={() => { setExtendJobId(r.id); setExtendDate(r.rental_end_date || ""); }} disabled={actionLoading}
                       className="rounded-full border border-[var(--t-border)] px-3 py-1.5 text-xs font-medium text-[var(--t-text-primary)] hover:bg-[var(--t-bg-card-hover)] transition-colors disabled:opacity-50">
-                      Extend Rental
+                      {FEATURE_REGISTRY.portal_action_extend?.label ?? "Extend Rental"}
                     </button>
                     <button onClick={() => handleEarlyPickup(r.id)} disabled={actionLoading}
                       className="rounded-full border border-[var(--t-error)]/20 px-3 py-1.5 text-xs font-medium text-[var(--t-error)] hover:bg-[var(--t-error-soft)] transition-colors disabled:opacity-50">
-                      Request Early Pickup
+                      {FEATURE_REGISTRY.portal_action_early_pickup?.label ?? "Request Early Pickup"}
                     </button>
                   </div>
                 </div>
@@ -319,7 +319,7 @@ export default function PortalHomePage() {
       {/* Upcoming */}
       {upcoming.length > 0 && (
         <section>
-          <h2 className="text-lg font-bold text-[var(--t-text-primary)] mb-4">Upcoming</h2>
+          <h2 className="text-lg font-bold text-[var(--t-text-primary)] mb-4">{FEATURE_REGISTRY.portal_section_upcoming?.label ?? "Upcoming"}</h2>
           <div className="grid gap-3">
             {upcoming.map(r => (
               <div key={r.id} className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-4 flex items-center justify-between">
@@ -330,13 +330,34 @@ export default function PortalHomePage() {
                     Scheduled: {r.scheduled_date ? new Date(r.scheduled_date).toLocaleDateString() : "TBD"}
                   </p>
                 </div>
-                <span className={`text-xs font-medium ${STATUS_COLORS[r.status] || ""}`}>{STATUS_LABELS[r.status] || r.status}</span>
+                <span className="text-xs font-medium" style={{ color: customerStatus(r.status).color }}>{customerStatus(r.status).label}</span>
               </div>
             ))}
           </div>
         </section>
       )}
       {/* Extend Modal */}
+      {/* Service History */}
+      {!loading && history.length > 0 && (
+        <section>
+          <h2 className="text-lg font-bold text-[var(--t-text-primary)] mb-4">{FEATURE_REGISTRY.portal_section_history?.label ?? "Service History"}</h2>
+          <div className="space-y-2">
+            {history.map(r => (
+              <div key={r.id} className="rounded-[16px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-3 flex items-center justify-between" style={{ opacity: 0.7 }}>
+                <div>
+                  <p className="text-sm font-medium text-[var(--t-text-primary)]">{formatRentalTitle(r)}</p>
+                  <p className="text-xs text-[var(--t-text-muted)] mt-0.5">
+                    {r.scheduled_date && new Date(r.scheduled_date).toLocaleDateString()}
+                    {r.service_address && ` · ${r.service_address.street || r.service_address.formatted || ""}`}
+                  </p>
+                </div>
+                <span className="text-xs font-medium" style={{ color: customerStatus(r.status).color }}>{customerStatus(r.status).label}</span>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
       {extendJobId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setExtendJobId(null)}>
           <div className="rounded-2xl border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6 w-80" onClick={e => e.stopPropagation()}>
