@@ -30,6 +30,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ClipboardList,
+  Globe,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useTheme } from "@/components/theme-provider";
@@ -64,6 +65,7 @@ const navigation: ReadonlyArray<{
   { name: "Team", href: "/team", icon: Users },
   { name: "Vehicles", href: "/vehicles", icon: CarFront },
   { name: "Analytics", href: "/analytics", icon: BarChart3 },
+  { name: "Portal Activity", href: "/portal-activity", icon: Globe, roles: ["owner", "admin", "dispatcher"] },
   { name: "Credit Analytics", href: "/credit-analytics", icon: BarChart3, roles: ["owner", "admin"] },
   { name: "Credit Audit", href: "/credit-audit", icon: Shield, roles: ["owner", "admin"] },
   { name: "Credit Queue", href: "/credit-queue", icon: ClipboardList, roles: ["owner", "admin"] },

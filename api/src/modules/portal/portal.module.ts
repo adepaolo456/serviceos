@@ -5,6 +5,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { PassportModule } from '@nestjs/passport';
 import { PortalAuthController } from './portal-auth.controller';
 import { PortalController } from './portal.controller';
+import { PortalActivityController } from './portal-activity.controller';
 import { PortalService } from './portal.service';
 import { PortalJwtStrategy } from './portal-jwt.strategy';
 import { Customer } from '../customers/entities/customer.entity';
@@ -29,7 +30,7 @@ import { BillingModule } from '../billing/billing.module';
       }),
     }),
   ],
-  controllers: [PortalAuthController, PortalController],
+  controllers: [PortalAuthController, PortalController, PortalActivityController],
   providers: [PortalService, PortalJwtStrategy],
 })
 export class PortalModule {}

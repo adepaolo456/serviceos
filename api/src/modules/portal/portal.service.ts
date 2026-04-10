@@ -287,6 +287,7 @@ export class PortalService {
         rentalDays: dto.rentalDays,
         placementNotes: dto.instructions,
         paymentMethod: 'invoice',
+        source: 'portal',
         confirmedCreateDespiteDuplicate: true,
       },
       {

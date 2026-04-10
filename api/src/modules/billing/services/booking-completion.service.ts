@@ -28,6 +28,7 @@ export interface BookingCompletionParams {
   placementNotes?: string;
   pricingSnapshot?: Record<string, any>;
   pricingTierUsed?: string;
+  source?: string;
 }
 
 export interface BookingCompletionResult {
@@ -125,7 +126,7 @@ export class BookingCompletionService {
       asset_subtype: dumpsterSize,
       status: jobStatus,
       priority: 'normal',
-      source: 'phone',
+      source: params.source ?? 'phone',
       scheduled_date: deliveryDate,
       service_address: siteAddress as Record<string, string>,
       placement_notes: placementNotes,
@@ -146,7 +147,7 @@ export class BookingCompletionService {
       asset_subtype: dumpsterSize,
       status: 'pending',
       priority: 'normal',
-      source: 'phone',
+      source: params.source ?? 'phone',
       scheduled_date: pickupDate,
       service_address: siteAddress as Record<string, string>,
       base_price: 0,
