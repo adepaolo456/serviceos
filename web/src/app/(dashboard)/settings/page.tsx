@@ -12,6 +12,7 @@ import SlideOver from "@/components/slide-over";
 import AddressAutocomplete, { type AddressValue } from "@/components/address-autocomplete";
 import { SMS_LABELS } from "@/lib/sms-settings-labels";
 import { CreditPolicySettingsTab } from "@/components/credit-policy-settings-tab";
+import { TeamPermissionsTab } from "@/components/team-permissions-tab";
 
 interface Profile {
   id: string; email: string; firstName: string; lastName: string; role: string;
@@ -37,6 +38,7 @@ const TABS = [
   { key: "integrations", label: "Integrations", icon: Plug },
   { key: "website", label: "Website", icon: Globe },
   { key: "quotes", label: "Quotes", icon: FileText },
+  { key: "permissions", label: "Permissions", icon: Shield },
   { key: "account", label: "Account", icon: Shield },
 ] as const;
 
@@ -83,6 +85,7 @@ export default function SettingsPage() {
       {tab === "team" && <TeamTab />}
       {tab === "billing" && <BillingTab profile={profile} />}
       {tab === "credit" && <CreditPolicySettingsTab profile={profile} />}
+      {tab === "permissions" && <TeamPermissionsTab profile={profile} />}
       {tab === "notifications" && <NotificationsTab profile={profile} />}
       {tab === "integrations" && <IntegrationsTab profile={profile} />}
       {tab === "website" && profile && <WebsiteTab slug={profile.tenant.slug} />}

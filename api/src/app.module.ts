@@ -84,6 +84,7 @@ import { RateLimitLog } from './common/entities/rate-limit-log.entity';
 import { HelpAnalyticsEvent } from './modules/analytics/entities/help-analytics-event.entity';
 import { CreditAuditModule } from './modules/credit-audit/credit-audit.module';
 import { CreditAuditEvent } from './modules/credit-audit/credit-audit-event.entity';
+import { PermissionModule } from './modules/permissions/permission.module';
 
 @Module({
   imports: [
@@ -191,6 +192,7 @@ import { CreditAuditEvent } from './modules/credit-audit/credit-audit-event.enti
     AiModule,
     GeocodingModule,
     CreditAuditModule,
+    PermissionModule,
   ],
   controllers: [AppController],
   providers: [
