@@ -378,7 +378,7 @@ export default function DashboardPage() {
       <div className="grid grid-cols-5 gap-4 mb-12">
         {/* Revenue — hero card, 2 cols */}
         <Link
-          href="/analytics"
+          href="/analytics?tab=revenue"
           className="col-span-2 no-underline rounded-[16px] px-7 py-7 transition-all"
           style={{
             background: "var(--t-hero-bg)",
@@ -407,7 +407,7 @@ export default function DashboardPage() {
         ].map((kpi) => (
           <Link
             key={kpi.label}
-            href="/analytics"
+            href="/analytics?tab=revenue"
             className="no-underline rounded-[14px] px-5 py-4 transition-all flex flex-col justify-center"
             style={{ background: "var(--t-bg-card)", border: "1px solid var(--t-border)", boxShadow: "var(--t-shadow-card)" }}
             onMouseEnter={(e) => { e.currentTarget.style.background = "var(--t-bg-card-hover)"; e.currentTarget.style.borderColor = "var(--t-border-strong)"; e.currentTarget.style.boxShadow = "var(--t-shadow-lg)"; }}

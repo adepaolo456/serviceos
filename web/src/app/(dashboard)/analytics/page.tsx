@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   BarChart3,
   DollarSign,
@@ -737,12 +738,20 @@ function DumpSlipsTab({
 /* ─── Main Page ─── */
 
 export default function AnalyticsPage() {
+  return <Suspense fallback={null}><AnalyticsPageContent /></Suspense>;
+}
+
+function AnalyticsPageContent() {
+  const searchParams = useSearchParams();
+  const tabParam = searchParams.get("tab");
+  const initialTab: TabKey = tabParam && ["revenue", "dump-costs", "profit", "drivers", "assets", "customers", "receivables", "dump-slips"].includes(tabParam) ? tabParam as TabKey : "revenue";
+
   const now = new Date();
   const [startDate, setStartDate] = useState(
     new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split("T")[0]
   );
   const [endDate, setEndDate] = useState(now.toISOString().split("T")[0]);
-  const [activeTab, setActiveTab] = useState<TabKey>("revenue");
+  const [activeTab, setActiveTab] = useState<TabKey>(initialTab);
   const [loading, setLoading] = useState(false);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
