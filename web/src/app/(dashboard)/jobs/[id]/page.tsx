@@ -786,20 +786,29 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
                   <p className="text-sm text-[var(--t-text-primary)]">{[addr.street, addr.city, addr.state, addr.zip].filter(Boolean).join(", ")}</p>
                   {job.placement_notes && <p className="mt-1 text-xs text-[var(--t-text-muted)] italic">Placement: {job.placement_notes}</p>}
                   {(job as any).placement_lat && (job as any).placement_lng && (
-                    <div className="mt-1.5 flex items-center gap-2">
-                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: "var(--t-accent-soft)", color: "var(--t-accent)" }}>
-                        {FEATURE_REGISTRY.portal_placement_view?.label ?? "Drop Pin Set"}
-                      </span>
-                      {(job as any).placement_pin_notes && <span className="text-[11px] italic" style={{ color: "var(--t-text-muted)" }}>{(job as any).placement_pin_notes}</span>}
-                      <a
-                        href={`https://www.google.com/maps?q=${(job as any).placement_lat},${(job as any).placement_lng}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-[10px] font-medium"
-                        style={{ color: "var(--t-accent)" }}
-                      >
-                        {FEATURE_REGISTRY.portal_placement_open_maps?.label ?? "Open in Maps"}
-                      </a>
+                    <div className="mt-3 rounded-[14px] border px-4 py-3" style={{ borderColor: "var(--t-accent)", background: "var(--t-accent-soft)" }}>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <div className="flex items-center gap-2">
+                          <MapPin className="h-3.5 w-3.5" style={{ color: "var(--t-accent)" }} />
+                          <span className="text-xs font-bold" style={{ color: "var(--t-accent)" }}>
+                            {FEATURE_REGISTRY.portal_placement_view?.label ?? "Drop Pin Set"}
+                          </span>
+                        </div>
+                        <a
+                          href={`https://www.google.com/maps?q=${(job as any).placement_lat},${(job as any).placement_lng}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-[10px] font-semibold rounded-full border px-2.5 py-0.5"
+                          style={{ borderColor: "var(--t-accent)", color: "var(--t-accent)" }}
+                        >
+                          {FEATURE_REGISTRY.portal_placement_open_maps?.label ?? "Open in Maps"} →
+                        </a>
+                      </div>
+                      {(job as any).placement_pin_notes && (
+                        <p className="text-xs mt-1" style={{ color: "var(--t-text-secondary)" }}>
+                          <span className="font-semibold" style={{ color: "var(--t-text-muted)" }}>Driver notes:</span> {(job as any).placement_pin_notes}
+                        </p>
+                      )}
                     </div>
                   )}
                   {addr.lat && addr.lng && (
