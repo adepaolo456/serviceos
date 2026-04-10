@@ -1,9 +1,15 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import { portalApi } from "@/lib/portal-api";
 import { formatCurrency } from "@/lib/utils";
+import { FEATURE_REGISTRY } from "@/lib/feature-registry";
 import { FileText, CreditCard, CheckCircle2, AlertTriangle, Clock } from "lucide-react";
+
+function label(id: string, fallback: string): string {
+  return FEATURE_REGISTRY[id]?.label ?? fallback;
+}
 
 interface Invoice {
   id: string;
@@ -96,6 +102,14 @@ export default function PortalInvoicesPage() {
     }
   };
 
+  // Sort: unpaid/overdue first (by due_date asc), then paid (by date desc)
+  const sortedInvoices = [...invoices].sort((a, b) => {
+    const aUnpaid = a.status === "open" && Number(a.balance_due) > 0 ? 1 : 0;
+    const bUnpaid = b.status === "open" && Number(b.balance_due) > 0 ? 1 : 0;
+    if (aUnpaid !== bUnpaid) return bUnpaid - aUnpaid; // unpaid first
+    if (aUnpaid && bUnpaid) return new Date(a.due_date).getTime() - new Date(b.due_date).getTime(); // oldest due first
+    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime(); // newest first for paid
+  });
   const unpaid = invoices.filter(i => i.status === "open");
   const totalOwed = unpaid.reduce((sum, i) => sum + Number(i.balance_due), 0);
 
@@ -201,32 +215,43 @@ export default function PortalInvoicesPage() {
       ) : invoices.length === 0 ? (
         <div className="rounded-[20px] border border-dashed border-[var(--t-border)] bg-[var(--t-bg-card)] p-8 text-center">
           <FileText className="mx-auto h-10 w-10 text-[var(--t-text-muted)]/30 mb-3" />
-          <p className="text-sm font-medium text-[var(--t-text-muted)]">No invoices yet</p>
+          <p className="text-sm font-medium text-[var(--t-text-muted)]">{label("portal_no_invoices", "No invoices yet")}</p>
         </div>
       ) : (
         <div className="space-y-3">
-          {invoices.map(inv => (
-            <button key={inv.id} onClick={() => openDetail(inv)}
-              className="w-full text-left rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-4 hover:bg-[var(--t-bg-card-hover)] transition-colors">
-              <div className="flex items-center justify-between">
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-1">
-                    <p className="text-sm font-semibold text-[var(--t-text-primary)]">#{inv.invoice_number}</p>
-                    {invoiceStatusText(inv.status, inv.due_date)}
+          {sortedInvoices.map(inv => {
+            const isOverdue = inv.status === "open" && inv.due_date && new Date(inv.due_date) < new Date();
+            const isUnpaid = inv.status === "open" && Number(inv.balance_due) > 0;
+            return (
+              <button key={inv.id} onClick={() => openDetail(inv)}
+                className="w-full text-left rounded-[20px] border p-4 hover:bg-[var(--t-bg-card-hover)] transition-colors"
+                style={{
+                  borderColor: isOverdue ? "var(--t-error)" : isUnpaid ? "var(--t-warning, #F59E0B)" : "var(--t-border)",
+                  backgroundColor: "var(--t-bg-card)",
+                }}>
+                <div className="flex items-center justify-between">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-1">
+                      <p className="text-sm font-semibold text-[var(--t-text-primary)]">#{inv.invoice_number}</p>
+                      {invoiceStatusText(inv.status, inv.due_date)}
+                    </div>
+                    <div className="flex flex-wrap gap-x-4 text-xs text-[var(--t-text-muted)]">
+                      <span>Due: {inv.due_date ? new Date(inv.due_date).toLocaleDateString() : "—"}</span>
+                      <span className="font-medium text-[var(--t-text-primary)]">{formatCurrency(inv.total)}</span>
+                      {isUnpaid && <span className="font-semibold" style={{ color: isOverdue ? "var(--t-error)" : "var(--t-warning, #F59E0B)" }}>Balance: {formatCurrency(inv.balance_due)}</span>}
+                    </div>
                   </div>
-                  <div className="flex flex-wrap gap-x-4 text-xs text-[var(--t-text-muted)]">
-                    <span>Due: {inv.due_date ? new Date(inv.due_date).toLocaleDateString() : "—"}</span>
-                    <span className="font-medium text-[var(--t-text-primary)]">{formatCurrency(inv.total)}</span>
-                    {Number(inv.balance_due) > 0 && <span className="text-amber-500">Balance: {formatCurrency(inv.balance_due)}</span>}
-                  </div>
+                  {isUnpaid && (
+                    <button onClick={(e) => { e.stopPropagation(); if (!paying) { setPayConfirmInvoice(inv); setPayResult(null); } }}
+                      disabled={paying}
+                      className="rounded-full bg-[var(--t-accent)] px-4 py-2 text-xs font-semibold text-[var(--t-accent-on-accent)] shrink-0 ml-2 hover:opacity-90 transition-opacity disabled:opacity-40">
+                      {label("portal_pay_now", "Pay Now")}
+                    </button>
+                  )}
                 </div>
-                {inv.status === "open" && Number(inv.balance_due) > 0 && (
-                  <span onClick={(e) => { e.stopPropagation(); setPayConfirmInvoice(inv); setPayResult(null); }}
-                    className="rounded-full bg-[var(--t-accent)] px-3 py-1.5 text-xs font-semibold text-[var(--t-accent-on-accent)] shrink-0 ml-2 hover:opacity-90 transition-opacity cursor-pointer">Pay Now</span>
-                )}
-              </div>
-            </button>
-          ))}
+              </button>
+            );
+          })}
         </div>
       )}
 
@@ -244,17 +269,25 @@ export default function PortalInvoicesPage() {
                   )}
                 </div>
                 <h3 className="text-sm font-semibold text-[var(--t-text-primary)] mb-1">
-                  {payResult.success ? "Payment Submitted" : "Payment Failed"}
+                  {payResult.success ? label("portal_payment_success", "Payment submitted successfully") : label("portal_payment_failed", "Payment could not be processed")}
                 </h3>
-                <p className="text-xs text-[var(--t-text-muted)]">{payResult.message}</p>
-                <button onClick={() => { setPayConfirmInvoice(null); setPayResult(null); }}
-                  className="mt-4 rounded-full bg-[var(--t-accent)] px-5 py-2 text-sm font-semibold text-[var(--t-accent-on-accent)] hover:opacity-90 transition-opacity">
-                  Done
-                </button>
+                <p className="text-xs text-[var(--t-text-muted)]">
+                  {payResult.success ? payResult.message : label("portal_payment_try_again", "Please try again or contact us.")}
+                </p>
+                <div className="flex gap-2 justify-center mt-4">
+                  <button onClick={() => { setPayConfirmInvoice(null); setPayResult(null); }}
+                    className="rounded-full bg-[var(--t-accent)] px-5 py-2 text-sm font-semibold text-[var(--t-accent-on-accent)] hover:opacity-90 transition-opacity">
+                    {label("portal_account_view_invoices", "View Invoices")}
+                  </button>
+                  <Link href="/portal"
+                    className="rounded-full border border-[var(--t-border)] px-5 py-2 text-sm font-medium text-[var(--t-text-primary)] hover:bg-[var(--t-bg-card-hover)] transition-colors">
+                    {label("portal_back_to_dashboard", "Back to Dashboard")}
+                  </Link>
+                </div>
               </div>
             ) : (
               <>
-                <h3 className="text-sm font-semibold text-[var(--t-text-primary)] mb-2">Confirm Payment</h3>
+                <h3 className="text-sm font-semibold text-[var(--t-text-primary)] mb-2">{label("portal_confirm_payment", "Confirm Payment")}</h3>
                 <p className="text-sm text-[var(--t-text-muted)] mb-4">
                   Pay <span className="font-bold text-[var(--t-text-primary)]">{formatCurrency(payConfirmInvoice.balance_due)}</span> for Invoice <span className="font-bold text-[var(--t-text-primary)]">#{payConfirmInvoice.invoice_number}</span>?
                 </p>
@@ -278,7 +311,7 @@ export default function PortalInvoicesPage() {
                   <button onClick={() => handlePayInvoice(payConfirmInvoice)} disabled={paying}
                     className="flex items-center gap-1.5 rounded-full bg-[var(--t-accent)] px-5 py-2 text-sm font-semibold text-[var(--t-accent-on-accent)] disabled:opacity-40 hover:opacity-90 transition-opacity">
                     <CreditCard className="h-4 w-4" />
-                    {paying ? "Processing..." : `Pay ${formatCurrency(payConfirmInvoice.balance_due)}`}
+                    {paying ? label("portal_payment_processing", "Processing payment...") : `Pay ${formatCurrency(payConfirmInvoice.balance_due)}`}
                   </button>
                 </div>
               </>
