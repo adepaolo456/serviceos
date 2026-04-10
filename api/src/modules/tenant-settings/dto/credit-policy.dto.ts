@@ -79,6 +79,64 @@ export class UnpaidExceptionsRuleDto {
   mode?: 'warn' | 'block';
 }
 
+/* ─── Phase 5: Dispatch enforcement ─── */
+
+class DispatchBlockActionsDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  assignment?: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  en_route?: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  arrived?: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  completed?: boolean;
+}
+
+class DispatchEnforcementDto {
+  @ApiProperty()
+  @IsBoolean()
+  enabled!: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  block_on_hold?: boolean;
+
+  @ApiPropertyOptional({ type: DispatchBlockActionsDto })
+  @IsOptional()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => DispatchBlockActionsDto)
+  block_actions?: DispatchBlockActionsDto;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  allow_override?: boolean;
+
+  @ApiPropertyOptional({ type: [String] })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  override_roles?: string[];
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  require_override_reason?: boolean;
+}
+
 /**
  * Patch payload for `tenants.settings.credit_policy`. Every field is
  * optional — only the fields present in the request body get merged
@@ -142,62 +200,4 @@ export class UpdateCreditPolicyDto {
   @ValidateNested()
   @Type(() => DispatchEnforcementDto)
   dispatch_enforcement?: DispatchEnforcementDto;
-}
-
-/* ─── Phase 5: Dispatch enforcement ─── */
-
-class DispatchBlockActionsDto {
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsBoolean()
-  assignment?: boolean;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsBoolean()
-  en_route?: boolean;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsBoolean()
-  arrived?: boolean;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsBoolean()
-  completed?: boolean;
-}
-
-class DispatchEnforcementDto {
-  @ApiProperty()
-  @IsBoolean()
-  enabled!: boolean;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsBoolean()
-  block_on_hold?: boolean;
-
-  @ApiPropertyOptional({ type: DispatchBlockActionsDto })
-  @IsOptional()
-  @IsObject()
-  @ValidateNested()
-  @Type(() => DispatchBlockActionsDto)
-  block_actions?: DispatchBlockActionsDto;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsBoolean()
-  allow_override?: boolean;
-
-  @ApiPropertyOptional({ type: [String] })
-  @IsOptional()
-  @IsArray()
-  @IsString({ each: true })
-  override_roles?: string[];
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsBoolean()
-  require_override_reason?: boolean;
 }
