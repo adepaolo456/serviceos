@@ -58,12 +58,13 @@ export default function PortalPlacementMap({ jobId, serviceAddress }: Props) {
     mapboxgl.accessToken = MAPBOX_TOKEN;
     const map = new mapboxgl.Map({
       container: mapContainer.current,
-      style: "mapbox://styles/mapbox/streets-v12",
+      style: "mapbox://styles/mapbox/satellite-streets-v12",
       center: [lng ?? centerLng, lat ?? centerLat],
-      zoom: 17,
+      zoom: 18,
+      pitch: 35,
     });
 
-    const marker = new mapboxgl.Marker({ draggable: true, color: "#22C55E" })
+    const marker = new mapboxgl.Marker({ draggable: true, color: "#FACC15", scale: 1.15 })
       .setLngLat([lng ?? centerLng, lat ?? centerLat])
       .addTo(map);
 
