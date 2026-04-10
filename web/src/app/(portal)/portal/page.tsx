@@ -196,9 +196,14 @@ export default function PortalHomePage() {
             </div>
           </div>
           {accountSummary.payment_eligible && (
-            <Link href="/portal/invoices" className="flex items-center gap-2 rounded-full bg-[var(--t-accent)] px-5 py-2.5 text-sm font-semibold text-[var(--t-accent-on-accent)] hover:opacity-90 transition-opacity w-fit">
-              <CreditCard className="h-4 w-4" /> {FEATURE_REGISTRY.portal_account_view_invoices?.label ?? "View Invoices"} <ArrowUpRight className="h-3.5 w-3.5" />
-            </Link>
+            <div className="flex items-center gap-3">
+              <Link href="/portal/invoices" className="flex items-center gap-2 rounded-full bg-[var(--t-accent)] px-5 py-2.5 text-sm font-semibold text-[var(--t-accent-on-accent)] hover:opacity-90 transition-opacity">
+                <CreditCard className="h-4 w-4" /> {FEATURE_REGISTRY.portal_pay_now?.label ?? "Pay Now"} <ArrowUpRight className="h-3.5 w-3.5" />
+              </Link>
+              <Link href="/portal/invoices" className="text-xs font-medium" style={{ color: "var(--t-accent)" }}>
+                {FEATURE_REGISTRY.portal_account_view_invoices?.label ?? "View Invoices"} →
+              </Link>
+            </div>
           )}
         </div>
       )}

@@ -136,9 +136,14 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
             <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" style={{ color: accountStatus.account_status === "service_restricted" ? "var(--t-error)" : "var(--t-warning, #F59E0B)" }} />
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium" style={{ color: "var(--t-text-primary)" }}>{accountStatus.status_message}</p>
-              <Link href="/portal/invoices" className="text-xs font-semibold mt-1 inline-block" style={{ color: "var(--t-accent)" }}>
-                {FEATURE_REGISTRY.portal_account_view_invoices?.label ?? "View Invoices"} →
-              </Link>
+              <div className="flex items-center gap-3 mt-2">
+                <Link href="/portal/invoices" className="text-xs font-semibold rounded-full bg-[var(--t-accent)] px-3 py-1 text-[var(--t-accent-on-accent)]">
+                  {FEATURE_REGISTRY.portal_pay_now?.label ?? "Pay Now"}
+                </Link>
+                <Link href="/portal/invoices" className="text-xs font-medium" style={{ color: "var(--t-accent)" }}>
+                  {FEATURE_REGISTRY.portal_account_view_invoices?.label ?? "View Invoices"} →
+                </Link>
+              </div>
             </div>
             <button onClick={() => setBannerDismissed(true)} className="shrink-0 p-1 rounded-lg" style={{ color: "var(--t-text-muted)" }}>
               <X className="h-3.5 w-3.5" />
