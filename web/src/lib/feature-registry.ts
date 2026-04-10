@@ -1602,6 +1602,94 @@ export const FEATURE_REGISTRY: Record<string, FeatureDescription> = {
     routeOrSurface: "credit_queue", tenantOverrideKey: "credit_queue_view_audit",
     isUserFacing: true, isGuideEligible: false, keywords: ["view audit"],
   },
+
+  // ── Phase 10: team permissions ──
+  team_permissions_section: {
+    id: "team_permissions_section", label: "Team Permissions", category: "settings",
+    shortDescription: "Control which roles can perform credit-control actions.",
+    guideDescription: "Team Permissions lets the tenant owner configure which roles (Admin, Dispatcher, Office) can perform specific credit-control actions. Owner always has full access and cannot be restricted. Permissions include: editing credit policy, managing credit holds, overriding booking and dispatch blocks, viewing audit dashboards, analytics, and the review queue. When no configuration exists, defaults match the pre-configured behavior (admins have all credit permissions, dispatchers and office have none). Changes are audited.",
+    routeOrSurface: "settings", tenantOverrideKey: "team_permissions_section",
+    isUserFacing: true, isGuideEligible: true,
+    keywords: ["permissions", "roles", "team", "admin", "dispatcher", "office", "rbac"],
+  },
+  perm_credit_policy_edit: {
+    id: "perm_credit_policy_edit", label: "Edit credit policy", category: "settings",
+    shortDescription: "Permission to modify tenant credit policy settings.",
+    guideDescription: "", routeOrSurface: "settings", tenantOverrideKey: "perm_credit_policy_edit",
+    isUserFacing: true, isGuideEligible: false, keywords: ["credit policy", "edit"],
+  },
+  perm_credit_hold_manage: {
+    id: "perm_credit_hold_manage", label: "Manage credit holds", category: "settings",
+    shortDescription: "Permission to set and release manual credit holds on customers.",
+    guideDescription: "", routeOrSurface: "settings", tenantOverrideKey: "perm_credit_hold_manage",
+    isUserFacing: true, isGuideEligible: false, keywords: ["credit hold", "manage"],
+  },
+  perm_booking_override: {
+    id: "perm_booking_override", label: "Override booking blocks", category: "settings",
+    shortDescription: "Permission to override credit-hold blocks during booking.",
+    guideDescription: "", routeOrSurface: "settings", tenantOverrideKey: "perm_booking_override",
+    isUserFacing: true, isGuideEligible: false, keywords: ["booking", "override"],
+  },
+  perm_dispatch_override: {
+    id: "perm_dispatch_override", label: "Override dispatch blocks", category: "settings",
+    shortDescription: "Permission to override credit-hold blocks during dispatch actions.",
+    guideDescription: "", routeOrSurface: "settings", tenantOverrideKey: "perm_dispatch_override",
+    isUserFacing: true, isGuideEligible: false, keywords: ["dispatch", "override"],
+  },
+  perm_credit_audit_view: {
+    id: "perm_credit_audit_view", label: "View audit dashboard", category: "settings",
+    shortDescription: "Permission to view the credit audit event log.",
+    guideDescription: "", routeOrSurface: "settings", tenantOverrideKey: "perm_credit_audit_view",
+    isUserFacing: true, isGuideEligible: false, keywords: ["audit", "view"],
+  },
+  perm_credit_analytics_view: {
+    id: "perm_credit_analytics_view", label: "View analytics", category: "settings",
+    shortDescription: "Permission to view the credit analytics dashboard.",
+    guideDescription: "", routeOrSurface: "settings", tenantOverrideKey: "perm_credit_analytics_view",
+    isUserFacing: true, isGuideEligible: false, keywords: ["analytics", "view"],
+  },
+  perm_credit_queue_manage: {
+    id: "perm_credit_queue_manage", label: "Access review queue", category: "settings",
+    shortDescription: "Permission to access and use the credit review queue.",
+    guideDescription: "", routeOrSurface: "settings", tenantOverrideKey: "perm_credit_queue_manage",
+    isUserFacing: true, isGuideEligible: false, keywords: ["queue", "review"],
+  },
+  perm_role_owner: {
+    id: "perm_role_owner", label: "Owner", category: "settings",
+    shortDescription: "Owner role — always has full access.", guideDescription: "",
+    routeOrSurface: "settings", tenantOverrideKey: "perm_role_owner",
+    isUserFacing: true, isGuideEligible: false, keywords: ["owner"],
+  },
+  perm_role_admin: {
+    id: "perm_role_admin", label: "Admin", category: "settings",
+    shortDescription: "Admin role.", guideDescription: "",
+    routeOrSurface: "settings", tenantOverrideKey: "perm_role_admin",
+    isUserFacing: true, isGuideEligible: false, keywords: ["admin"],
+  },
+  perm_role_dispatcher: {
+    id: "perm_role_dispatcher", label: "Dispatcher", category: "settings",
+    shortDescription: "Dispatcher role.", guideDescription: "",
+    routeOrSurface: "settings", tenantOverrideKey: "perm_role_dispatcher",
+    isUserFacing: true, isGuideEligible: false, keywords: ["dispatcher"],
+  },
+  perm_role_office: {
+    id: "perm_role_office", label: "Office", category: "settings",
+    shortDescription: "Office/staff role.", guideDescription: "",
+    routeOrSurface: "settings", tenantOverrideKey: "perm_role_office",
+    isUserFacing: true, isGuideEligible: false, keywords: ["office", "staff"],
+  },
+  perm_col_permission: {
+    id: "perm_col_permission", label: "Permission", category: "settings",
+    shortDescription: "Column header for permission name.", guideDescription: "",
+    routeOrSurface: "settings", tenantOverrideKey: "perm_col_permission",
+    isUserFacing: true, isGuideEligible: false, keywords: ["permission"],
+  },
+  perm_save: {
+    id: "perm_save", label: "Save permissions", category: "settings",
+    shortDescription: "Save button for permissions config.", guideDescription: "",
+    routeOrSurface: "settings", tenantOverrideKey: "perm_save",
+    isUserFacing: true, isGuideEligible: false, keywords: ["save"],
+  },
 };
 
 // ── Category display labels ──

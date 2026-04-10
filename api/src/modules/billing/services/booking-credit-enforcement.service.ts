@@ -15,6 +15,7 @@ import {
   getCreditPolicy,
 } from '../../tenants/credit-policy';
 import { CreditAuditService } from '../../credit-audit/credit-audit.service';
+import { PermissionService } from '../../permissions/permission.service';
 
 /**
  * Phase 4B — Server-authoritative credit-hold enforcement for booking
@@ -112,6 +113,7 @@ export class BookingCreditEnforcementService {
     @InjectRepository(Tenant)
     private readonly tenantRepo: Repository<Tenant>,
     private readonly auditService: CreditAuditService,
+    private readonly permissionService: PermissionService,
   ) {}
 
   /**
@@ -198,9 +200,10 @@ export class BookingCreditEnforcementService {
     }
 
     // Case 6 — block. Validate override request before throwing.
-    const overrideAllowed =
-      policy.allow_office_override === true &&
-      (params.userRole === 'admin' || params.userRole === 'owner');
+    const hasOverridePerm = await this.permissionService.hasPermission(
+      params.tenantId, params.userRole ?? '', 'booking_override',
+    );
+    const overrideAllowed = policy.allow_office_override === true && hasOverridePerm;
 
     const overrideRequested = !!params.creditOverride;
     const trimmedReason = params.creditOverride?.reason?.trim() ?? '';

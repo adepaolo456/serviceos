@@ -1,8 +1,9 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Query, UseGuards, ForbiddenException } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { TenantId, Roles } from '../../common/decorators';
+import { TenantId, CurrentUser, Roles } from '../../common/decorators';
 import { RolesGuard } from '../../common/guards';
 import { CreditAuditService } from './credit-audit.service';
+import { PermissionService } from '../permissions/permission.service';
 
 @ApiTags('Credit Audit')
 @ApiBearerAuth()
@@ -10,15 +11,19 @@ import { CreditAuditService } from './credit-audit.service';
 @UseGuards(RolesGuard)
 @Roles('admin', 'owner')
 export class CreditAuditController {
-  constructor(private readonly auditService: CreditAuditService) {}
+  constructor(
+    private readonly auditService: CreditAuditService,
+    private readonly permissionService: PermissionService,
+  ) {}
 
   @Get('events')
   @ApiOperation({
     summary:
       'Paginated credit audit events. Admin/owner only. Tenant-scoped.',
   })
-  findAll(
+  async findAll(
     @TenantId() tenantId: string,
+    @CurrentUser('role') userRole: string,
     @Query()
     query: {
       eventType?: string;
@@ -30,6 +35,9 @@ export class CreditAuditController {
       limit?: string;
     },
   ) {
+    if (!(await this.permissionService.hasPermission(tenantId, userRole, 'credit_audit_view'))) {
+      throw new ForbiddenException('Insufficient permissions for credit audit view');
+    }
     return this.auditService.findAll(tenantId, {
       eventType: query.eventType,
       userId: query.userId,

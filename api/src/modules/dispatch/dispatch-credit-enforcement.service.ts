@@ -14,6 +14,7 @@ import {
   getDispatchEnforcement,
 } from '../tenants/credit-policy';
 import { CreditAuditService } from '../credit-audit/credit-audit.service';
+import { PermissionService } from '../permissions/permission.service';
 
 /**
  * Phase 5 — Dispatch credit-hold enforcement.
@@ -66,6 +67,7 @@ export class DispatchCreditEnforcementService {
     @InjectRepository(Tenant)
     private readonly tenantRepo: Repository<Tenant>,
     private readonly auditService: CreditAuditService,
+    private readonly permissionService: PermissionService,
   ) {}
 
   /**
@@ -150,9 +152,10 @@ export class DispatchCreditEnforcementService {
     }
 
     // 7. Action is blocked — validate override.
-    const overrideAllowed =
-      config.allow_override &&
-      config.override_roles.includes(params.userRole ?? '');
+    const hasOverridePerm = await this.permissionService.hasPermission(
+      params.tenantId, params.userRole ?? '', 'dispatch_override',
+    );
+    const overrideAllowed = config.allow_override && hasOverridePerm;
 
     const overrideRequested = !!params.creditOverride;
     const trimmedReason = params.creditOverride?.reason?.trim() ?? '';

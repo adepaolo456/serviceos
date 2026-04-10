@@ -7,6 +7,7 @@ import { Tenant } from '../tenants/entities/tenant.entity';
 import { JobsModule } from '../jobs/jobs.module';
 import { CustomersModule } from '../customers/customers.module';
 import { CreditAuditModule } from '../credit-audit/credit-audit.module';
+import { PermissionModule } from '../permissions/permission.module';
 import { DispatchService } from './dispatch.service';
 import { DispatchCreditEnforcementService } from './dispatch-credit-enforcement.service';
 import { DispatchController } from './dispatch.controller';
@@ -17,6 +18,7 @@ import { DispatchController } from './dispatch.controller';
     JobsModule,
     CustomersModule,
     CreditAuditModule,
+    PermissionModule,
   ],
   controllers: [DispatchController],
   providers: [DispatchService, DispatchCreditEnforcementService],
