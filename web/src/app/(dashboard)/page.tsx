@@ -279,7 +279,7 @@ export default function DashboardPage() {
     { label: "Overdue Invoices", count: attentionOverdue, icon: FileWarning, color: "var(--t-error)", href: "/invoices" },
     { label: "Review Pickups", count: attentionPickups, icon: Truck, color: "var(--t-warning)", href: "/jobs" },
     { label: "Unassigned Today", count: attentionUnassigned, icon: CalendarX, color: "var(--t-warning)", href: "/dispatch" },
-    { label: "Needs Reschedule", count: attentionReschedule, icon: AlertTriangle, color: "var(--t-error)", href: "/dispatch" },
+    { label: "Needs Reschedule", count: attentionReschedule, icon: AlertTriangle, color: "var(--t-error)", href: "/jobs" },
   ].filter((item) => item.count > 0);
 
   return (
@@ -401,13 +401,13 @@ export default function DashboardPage() {
 
         {/* Secondary metrics — 3 cards in remaining 3 cols */}
         {[
-          { label: "Jobs This Month", value: jobsThisMonth },
-          { label: "Completed", value: completedJobs },
-          { label: "Active Rentals", value: activeRentals },
+          { label: "Jobs This Month", value: jobsThisMonth, href: "/jobs" },
+          { label: "Completed", value: completedJobs, href: "/jobs" },
+          { label: "Active Rentals", value: activeRentals, href: "/jobs" },
         ].map((kpi) => (
           <Link
             key={kpi.label}
-            href="/analytics?tab=revenue"
+            href={kpi.href}
             className="no-underline rounded-[14px] px-5 py-4 transition-all flex flex-col justify-center"
             style={{ background: "var(--t-bg-card)", border: "1px solid var(--t-border)", boxShadow: "var(--t-shadow-card)" }}
             onMouseEnter={(e) => { e.currentTarget.style.background = "var(--t-bg-card-hover)"; e.currentTarget.style.borderColor = "var(--t-border-strong)"; e.currentTarget.style.boxShadow = "var(--t-shadow-lg)"; }}
