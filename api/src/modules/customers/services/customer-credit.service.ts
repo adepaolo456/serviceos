@@ -307,7 +307,10 @@ export class CustomerCreditService {
         'past_due_invoice_count',
       )
       .addSelect(
-        `EXTRACT(DAY FROM CURRENT_DATE - MIN(CASE WHEN i.balance_due > 0 AND i.due_date < CURRENT_DATE THEN i.due_date END))::int`,
+        // PostgreSQL `date - date` returns integer days directly — no
+        // need (and not allowed) to wrap with EXTRACT(DAY FROM ...)
+        // since the result is already an integer, not an interval.
+        `(CURRENT_DATE - MIN(CASE WHEN i.balance_due > 0 AND i.due_date < CURRENT_DATE THEN i.due_date END))::int`,
         'oldest_past_due_days',
       )
       .where('i.tenant_id = :tenantId', { tenantId })
