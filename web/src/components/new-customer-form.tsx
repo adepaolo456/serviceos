@@ -356,6 +356,16 @@ export default function NewCustomerForm({ onOrchestrated, onClose, forceCustomer
       const addr = billingAddress.street ? { street: billingAddress.street, city: billingAddress.city, state: billingAddress.state, zip: billingAddress.zip, lat: billingAddress.lat, lng: billingAddress.lng } : undefined;
       const siteAddr = schedBillingSameAsSite ? billingAddress : schedSiteAddress;
 
+      // Phase 4B — backend is server-authoritative for credit
+      // enforcement and audit trail. The follow-up PATCH from
+      // Phase 4A is removed because the orchestration service now
+      // accepts creditOverride + placementNotes in the DTO and writes
+      // the audit note to the new job's placement_notes inside the
+      // same transaction as the booking creation.
+      const creditOverridePayload = creditEnforcement.overrideActive
+        ? { reason: creditEnforcement.overrideReason }
+        : undefined;
+
       const result = await api.post<OrchestrationResult>("/bookings/create-with-booking", {
         ...(selectedCustomerId ? { customerId: selectedCustomerId } : {}),
         type, firstName, lastName,
@@ -378,22 +388,8 @@ export default function NewCustomerForm({ onOrchestrated, onClose, forceCustomer
         } : {}),
         idempotencyKey,
         confirmedCreateDespiteDuplicate: duplicateChecked,
+        creditOverride: creditOverridePayload,
       });
-
-      // Phase 4 — if a credit override was applied, append the audit
-      // note to the newly-created job's driver_notes via a follow-up
-      // PATCH. The /bookings/create-with-booking DTO does not accept a
-      // placementNotes field, so we attach the audit trail after the
-      // job exists. Best-effort: a failure here does not roll back the
-      // booking — the operator already approved the override.
-      const overrideNote = creditEnforcement.buildOverrideNote();
-      if (overrideNote && result.jobId) {
-        try {
-          await api.patch(`/jobs/${result.jobId}`, { driver_notes: overrideNote });
-        } catch {
-          // Best-effort audit trail — booking already succeeded.
-        }
-      }
 
       onOrchestrated(result);
     } catch (err: unknown) {

@@ -27,13 +27,14 @@
  *        - state === 'block'
  *        - tenant policy `allow_office_override === true`
  *        - user role in ('admin', 'owner')
- *   4. Provides a `buildOverrideNote()` helper that returns the
- *      audit note string the consumer must append to the new job's
- *      driver/placement notes for forensic record.
  *
- * The hook does NOT bypass backend enforcement. Phase 4 is
- * frontend-side gating + auditable override trail. True backend
- * enforcement of holds is a separate phase.
+ * Phase 4B — backend is now server-authoritative. Consumers should
+ * forward `enforcement.overrideReason` to the booking POST body as
+ * `creditOverride: { reason }`. The backend builds the audit note
+ * from JWT user + ISO timestamp and writes it to the new job's
+ * placement_notes inside the same transaction as the booking.
+ * The hook no longer exposes a `buildOverrideNote()` helper —
+ * client-side note construction was a Phase 4A artifact.
  *
  * Multi-tenant safety: every fetch uses existing tenant-scoped
  * endpoints. The hook never receives or sends a tenant ID.
@@ -114,15 +115,6 @@ export interface UseCreditEnforcementResult {
    * True when state === 'block' AND no override is active.
    */
   shouldBlockSubmit: boolean;
-  /**
-   * Build the audit note to append to the new job's driver/placement
-   * notes when an override is active. Returns null when no override is
-   * applied (so callers can spread it conditionally).
-   *
-   * Format:
-   *   "[Credit Override] {reason} (by {userId} at {ISO timestamp})"
-   */
-  buildOverrideNote: () => string | null;
   /** True while any of the three required fetches are in flight. */
   loading: boolean;
   /** Force a refetch (e.g., after the operator opens a new customer). */
@@ -279,13 +271,6 @@ export function useCreditEnforcement(
     setOverrideActive(false);
   }, []);
 
-  const buildOverrideNote = useCallback((): string | null => {
-    if (!overrideActive || !overrideReason.trim()) return null;
-    const userId = profile?.id ?? "unknown";
-    const ts = new Date().toISOString();
-    return `[Credit Override] ${overrideReason.trim()} (by ${userId} at ${ts})`;
-  }, [overrideActive, overrideReason, profile]);
-
   const refetch = useCallback(() => {
     setRefetchKey((k) => k + 1);
   }, []);
@@ -299,7 +284,6 @@ export function useCreditEnforcement(
     applyOverride,
     clearOverride,
     shouldBlockSubmit,
-    buildOverrideNote,
     loading,
     refetch,
   };

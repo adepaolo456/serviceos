@@ -603,15 +603,17 @@ export default function BookingWizard({
         return;
       }
 
-      // Phase 4 — append credit override note to placementNotes if an
-      // override was applied during this booking session. The note is
-      // formatted by useCreditEnforcement.buildOverrideNote() and
-      // includes user ID + timestamp for forensic audit.
-      const overrideNote = creditEnforcement.buildOverrideNote();
-      const combinedPlacementNotes =
-        overrideNote && driverNotes
-          ? `${driverNotes}\n${overrideNote}`
-          : overrideNote ?? (driverNotes || undefined);
+      // Phase 4B — backend is server-authoritative for credit
+      // enforcement and the override audit trail. We no longer build
+      // the override note client-side; we just forward the operator's
+      // typed reason in `creditOverride.reason`. The backend validates
+      // role + tenant policy from JWT (NOT from the payload), builds
+      // the audit note from the JWT user + ISO timestamp, and writes
+      // it to the new job's placement_notes via
+      // BookingCompletionService.
+      const creditOverridePayload = creditEnforcement.overrideActive
+        ? { reason: creditEnforcement.overrideReason }
+        : undefined;
 
       // Standard delivery path — existing BookingCompletionService flow
       const bookingResult = await api.post<{ deliveryJob: { id: string }; pickupJob: { id: string }; invoice: { id: string } }>("/bookings/complete", {
@@ -633,13 +635,14 @@ export default function BookingWizard({
         deliveryDate,
         pickupDate: autoSchedulePickup ? pickupDateStr : pickupDateStr,
         rentalDays: rentalLength,
-        placementNotes: combinedPlacementNotes,
+        placementNotes: driverNotes || undefined,
         basePrice: priceQuote?.base_price || 0,
         deliveryFee: priceQuote?.distanceCharge || 0,
         taxAmount: 0,
         totalPrice: priceQuote?.total || priceQuote?.base_price || 0,
         paymentMethod: resolvedMethod,
         sendInvoiceNow: resolvedMethod === "invoice" && sendInvoiceNow ? true : undefined,
+        creditOverride: creditOverridePayload,
       });
       toast("success", "Booking created successfully");
       onComplete?.(bookingResult.deliveryJob?.id);
