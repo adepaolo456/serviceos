@@ -1520,6 +1520,88 @@ export const FEATURE_REGISTRY: Record<string, FeatureDescription> = {
     routeOrSurface: "credit_analytics", tenantOverrideKey: "credit_analytics_view_audit_log",
     isUserFacing: true, isGuideEligible: false, keywords: ["audit log"],
   },
+
+  // ── Phase 9: credit review / workflow queue ──
+  credit_queue_dashboard: {
+    id: "credit_queue_dashboard", label: "Credit Review Queue", category: "operations",
+    shortDescription: "Customers needing credit-related attention — holds, frequent overrides, and high activity.",
+    guideDescription: "The Credit Review Queue surfaces customers who need credit-related follow-up in a single operational worklist. Customers appear if they are on manual credit hold, have had booking or dispatch overrides in the last 30 days, or have 3+ credit events recently. This is a workflow tool — it does not enforce anything or change what's blocked. Use it to identify systemic payment problems, prioritize follow-up calls, and track which customers need attention. Click a row to see full credit state, hold reasons, and recent audit activity. Links to customer profiles and audit logs are provided for deeper investigation.",
+    routeOrSurface: "credit_queue", tenantOverrideKey: "credit_queue_dashboard",
+    isUserFacing: true, isGuideEligible: true,
+    keywords: ["queue", "review", "workflow", "credit", "follow-up", "collections"],
+  },
+  credit_queue_col_customer: {
+    id: "credit_queue_col_customer", label: "Customer", category: "operations",
+    shortDescription: "Column header.", guideDescription: "",
+    routeOrSurface: "credit_queue", tenantOverrideKey: "credit_queue_col_customer",
+    isUserFacing: true, isGuideEligible: false, keywords: ["customer"],
+  },
+  credit_queue_col_status: {
+    id: "credit_queue_col_status", label: "Status", category: "operations",
+    shortDescription: "Column header.", guideDescription: "",
+    routeOrSurface: "credit_queue", tenantOverrideKey: "credit_queue_col_status",
+    isUserFacing: true, isGuideEligible: false, keywords: ["status"],
+  },
+  credit_queue_col_overrides: {
+    id: "credit_queue_col_overrides", label: "Overrides", category: "operations",
+    shortDescription: "Column header — override count in last 30 days.", guideDescription: "",
+    routeOrSurface: "credit_queue", tenantOverrideKey: "credit_queue_col_overrides",
+    isUserFacing: true, isGuideEligible: false, keywords: ["overrides"],
+  },
+  credit_queue_col_events: {
+    id: "credit_queue_col_events", label: "Events", category: "operations",
+    shortDescription: "Column header — total credit events in last 30 days.", guideDescription: "",
+    routeOrSurface: "credit_queue", tenantOverrideKey: "credit_queue_col_events",
+    isUserFacing: true, isGuideEligible: false, keywords: ["events"],
+  },
+  credit_queue_col_last_activity: {
+    id: "credit_queue_col_last_activity", label: "Last Activity", category: "operations",
+    shortDescription: "Column header.", guideDescription: "",
+    routeOrSurface: "credit_queue", tenantOverrideKey: "credit_queue_col_last_activity",
+    isUserFacing: true, isGuideEligible: false, keywords: ["last activity"],
+  },
+  credit_queue_col_reason: {
+    id: "credit_queue_col_reason", label: "Reason", category: "operations",
+    shortDescription: "Column header — why this customer is in the queue.", guideDescription: "",
+    routeOrSurface: "credit_queue", tenantOverrideKey: "credit_queue_col_reason",
+    isUserFacing: true, isGuideEligible: false, keywords: ["reason"],
+  },
+  credit_queue_status_on_hold: {
+    id: "credit_queue_status_on_hold", label: "On Hold", category: "operations",
+    shortDescription: "Badge for customers currently on credit hold.", guideDescription: "",
+    routeOrSurface: "credit_queue", tenantOverrideKey: "credit_queue_status_on_hold",
+    isUserFacing: true, isGuideEligible: false, keywords: ["on hold"],
+  },
+  credit_queue_status_normal: {
+    id: "credit_queue_status_normal", label: "Active", category: "operations",
+    shortDescription: "Badge for customers not on hold but needing review.", guideDescription: "",
+    routeOrSurface: "credit_queue", tenantOverrideKey: "credit_queue_status_normal",
+    isUserFacing: true, isGuideEligible: false, keywords: ["active"],
+  },
+  credit_queue_empty_title: {
+    id: "credit_queue_empty_title", label: "Queue is clear", category: "operations",
+    shortDescription: "Title when no customers need review.", guideDescription: "",
+    routeOrSurface: "credit_queue", tenantOverrideKey: "credit_queue_empty_title",
+    isUserFacing: true, isGuideEligible: false, keywords: ["empty", "clear"],
+  },
+  credit_queue_empty_desc: {
+    id: "credit_queue_empty_desc", label: "No customers currently need credit review.", category: "operations",
+    shortDescription: "Description when queue is empty.", guideDescription: "",
+    routeOrSurface: "credit_queue", tenantOverrideKey: "credit_queue_empty_desc",
+    isUserFacing: true, isGuideEligible: false, keywords: ["empty"],
+  },
+  credit_queue_view_customer: {
+    id: "credit_queue_view_customer", label: "View Customer", category: "operations",
+    shortDescription: "Link to the customer profile.", guideDescription: "",
+    routeOrSurface: "credit_queue", tenantOverrideKey: "credit_queue_view_customer",
+    isUserFacing: true, isGuideEligible: false, keywords: ["view customer"],
+  },
+  credit_queue_view_audit: {
+    id: "credit_queue_view_audit", label: "View Audit Log", category: "operations",
+    shortDescription: "Link to filtered audit log for this customer.", guideDescription: "",
+    routeOrSurface: "credit_queue", tenantOverrideKey: "credit_queue_view_audit",
+    isUserFacing: true, isGuideEligible: false, keywords: ["view audit"],
+  },
 };
 
 // ── Category display labels ──
