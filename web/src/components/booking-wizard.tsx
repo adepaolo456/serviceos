@@ -8,6 +8,8 @@ import { formatCurrency } from "@/lib/utils";
 import AddressAutocomplete, { type AddressValue } from "@/components/address-autocomplete";
 import { useActiveOnsiteDumpsters } from "@/lib/use-active-onsite-dumpsters";
 import { getFeatureTooltip } from "@/lib/feature-registry";
+import { useCreditEnforcement } from "@/lib/use-credit-enforcement";
+import { CreditEnforcementBanner } from "@/components/credit-enforcement-banner";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -247,6 +249,15 @@ export default function BookingWizard({
   const [sendInvoiceNow, setSendInvoiceNow] = useState(false);
   const [preferredPaymentMethod, setPreferredPaymentMethod] = useState<"card" | "cash" | "check" | "invoice">("invoice");
   const [rentalsLoading, setRentalsLoading] = useState(false);
+
+  // Phase 4 — credit-control booking-flow enforcement.
+  // Re-evaluates live whenever the selected customer changes. The hook
+  // owns the override state; the banner renders the warn/block UI; we
+  // gate the submit buttons on `shouldBlockSubmit` and append the
+  // audit override note to placementNotes when an override is active.
+  // New customers (no selectedCustomer.id) get state === 'unknown' so
+  // no enforcement triggers — they have no credit history yet.
+  const creditEnforcement = useCreditEnforcement(selectedCustomer?.id);
 
   // Smart exchange detection
   const [jobTypeManuallySet, setJobTypeManuallySet] = useState(false);
@@ -592,6 +603,16 @@ export default function BookingWizard({
         return;
       }
 
+      // Phase 4 — append credit override note to placementNotes if an
+      // override was applied during this booking session. The note is
+      // formatted by useCreditEnforcement.buildOverrideNote() and
+      // includes user ID + timestamp for forensic audit.
+      const overrideNote = creditEnforcement.buildOverrideNote();
+      const combinedPlacementNotes =
+        overrideNote && driverNotes
+          ? `${driverNotes}\n${overrideNote}`
+          : overrideNote ?? (driverNotes || undefined);
+
       // Standard delivery path — existing BookingCompletionService flow
       const bookingResult = await api.post<{ deliveryJob: { id: string }; pickupJob: { id: string }; invoice: { id: string } }>("/bookings/complete", {
         customerId: selectedCustomer?.id || undefined,
@@ -612,7 +633,7 @@ export default function BookingWizard({
         deliveryDate,
         pickupDate: autoSchedulePickup ? pickupDateStr : pickupDateStr,
         rentalDays: rentalLength,
-        placementNotes: driverNotes || undefined,
+        placementNotes: combinedPlacementNotes,
         basePrice: priceQuote?.base_price || 0,
         deliveryFee: priceQuote?.distanceCharge || 0,
         taxAmount: 0,
@@ -1417,6 +1438,13 @@ export default function BookingWizard({
               </label>
 
               {/* Footer buttons */}
+              {/* Phase 4 — credit-control booking enforcement banner.
+                  Renders nothing in normal/loading/unknown states.
+                  Yellow warning in warn state, red block in block state.
+                  When the operator applies an override the banner
+                  switches to a green confirmation card and the submit
+                  buttons re-enable below. */}
+              <CreditEnforcementBanner enforcement={creditEnforcement} />
               <div className="flex gap-3">
                 <button
                   type="button"
@@ -1428,7 +1456,7 @@ export default function BookingWizard({
                 </button>
                 <button
                   type="button"
-                  disabled={submitting || !exchangeReady}
+                  disabled={submitting || !exchangeReady || creditEnforcement.shouldBlockSubmit}
                   onClick={() => handleSubmit(false)}
                   className="flex-1 rounded-full py-3 text-sm font-semibold border transition-opacity disabled:opacity-50"
                   style={{ borderColor: "var(--t-accent)", color: "var(--t-accent)" }}
@@ -1437,7 +1465,7 @@ export default function BookingWizard({
                 </button>
                 <button
                   type="button"
-                  disabled={submitting || !exchangeReady}
+                  disabled={submitting || !exchangeReady || creditEnforcement.shouldBlockSubmit}
                   onClick={() => handleSubmit(true)}
                   className="flex-1 rounded-full py-3 text-sm font-semibold transition-opacity disabled:opacity-50"
                   style={{ backgroundColor: "var(--t-accent)", color: "#fff" }}
