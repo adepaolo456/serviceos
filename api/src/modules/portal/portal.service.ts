@@ -8,6 +8,7 @@ import { Job } from '../jobs/entities/job.entity';
 import { Invoice } from '../billing/entities/invoice.entity';
 import { Payment } from '../billing/entities/payment.entity';
 import { PricingService } from '../pricing/pricing.service';
+import { OrchestrationService } from '../billing/services/orchestration.service';
 
 /**
  * Customer-safe projection of a Job for portal responses.
@@ -64,6 +65,7 @@ export class PortalService {
     @InjectRepository(Payment) private paymentRepo: Repository<Payment>,
     private jwtService: JwtService,
     private pricingService: PricingService,
+    private orchestrationService: OrchestrationService,
   ) {}
 
   /**
@@ -253,32 +255,55 @@ export class PortalService {
     };
   }
 
+  /**
+   * Phase 17 — Portal service request now routes through the SAME
+   * OrchestrationService.createWithBooking() path as tenant-side
+   * bookings. This ensures:
+   *   - Credit enforcement (Phase 4B)
+   *   - Invoice creation (BookingCompletionService)
+   *   - Payment gating (same rules as tenant-side)
+   *   - Rental chain creation (delivery + pickup linked)
+   *   - Dispatch eligibility under same rules
+   *   - Reporting/dashboard parity
+   *
+   * The portal customer is an existing customer (authenticated via
+   * JWT), so we always pass customerId and skip duplicate detection.
+   */
   async submitServiceRequest(customerId: string, tenantId: string, dto: any) {
-    const customer = await this.customerRepo.findOne({ where: { id: customerId, tenant_id: tenantId } });
+    const customer = await this.customerRepo.findOne({
+      where: { id: customerId, tenant_id: tenantId },
+    });
     if (!customer) throw new NotFoundException('Customer not found');
 
-    const date = new Date();
-    const dateStr = date.toISOString().slice(0, 10).replace(/-/g, '');
-    const seq = Math.floor(Math.random() * 9000) + 1000;
-    const jobNumber = `JOB-${dateStr}-${seq}`;
+    const result = await this.orchestrationService.createWithBooking(
+      tenantId,
+      {
+        intent: 'schedule_job',
+        customerId,
+        dumpsterSize: dto.size,
+        deliveryDate: dto.preferredDate,
+        pickupTBD: true,
+        siteAddress: dto.serviceAddress,
+        rentalDays: dto.rentalDays,
+        placementNotes: dto.instructions,
+        paymentMethod: 'invoice',
+        confirmedCreateDespiteDuplicate: true,
+      },
+      {
+        // Portal customer auth context — customerId acts as userId
+        // for credit enforcement. Role is undefined so overrides
+        // are not available from portal (intentional).
+        userId: customerId,
+        userRole: undefined,
+      },
+    );
 
-    const job = this.jobRepo.create({
-      tenant_id: tenantId,
-      job_number: jobNumber,
-      customer_id: customerId,
-      job_type: 'delivery',
-      service_type: dto.serviceType || 'dumpster_rental',
-      priority: 'normal',
-      scheduled_date: dto.preferredDate,
-      service_address: dto.serviceAddress,
-      placement_notes: dto.instructions,
-      rental_days: dto.rentalDays || 14,
-      status: 'pending',
-      source: 'portal',
-    });
-
-    const saved = await this.jobRepo.save(job);
-    return this.toPortalJob(saved);
+    // Return a portal-safe response shape
+    return {
+      job_number: result.bookingId ? `Booking ${result.bookingId.slice(0, 8)}` : 'Submitted',
+      status: result.status,
+      customer_id: result.customerId,
+    };
   }
 
   async extendRental(customerId: string, tenantId: string, jobId: string, newEndDate: string) {
