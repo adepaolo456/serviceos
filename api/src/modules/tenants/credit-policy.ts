@@ -59,6 +59,35 @@ export interface UnpaidExceptionsRule {
 }
 
 /**
+ * Phase 5 — Dispatch enforcement configuration.
+ *
+ * Controls whether dispatch actions (assignment, status transitions)
+ * are restricted when a customer is on credit hold. OFF by default
+ * so no tenant experiences blocking until explicitly enabled.
+ *
+ * Stored in `tenants.settings.credit_policy.dispatch_enforcement`.
+ */
+export interface DispatchEnforcementConfig {
+  /** Master switch — must be true for any dispatch enforcement. Default false. */
+  enabled: boolean;
+  /** Whether to block dispatch actions when customer is on hold. Default false. */
+  block_on_hold: boolean;
+  /** Per-action toggles — only enforced when enabled + block_on_hold are both true. */
+  block_actions: {
+    assignment: boolean;
+    en_route: boolean;
+    arrived: boolean;
+    completed: boolean;
+  };
+  /** Allow eligible roles to override the block. Default true. */
+  allow_override: boolean;
+  /** Roles permitted to override. Default ['owner', 'admin']. */
+  override_roles: string[];
+  /** Require a non-empty reason when overriding. Default true. */
+  require_override_reason: boolean;
+}
+
+/**
  * Tenant-level credit policy. All fields are optional — an unset
  * field means "no rule configured" for the corresponding behavior.
  * Future phases consume these settings; Phase 1 only stores them.
@@ -101,6 +130,13 @@ export interface CreditPolicySettings {
    * audited (future phase will record who/when/why on the action).
    */
   allow_office_override?: boolean;
+
+  /**
+   * Phase 5 — Dispatch enforcement. OFF by default (all fields
+   * default to disabled/false). No tenant experiences dispatch
+   * blocking until this is explicitly configured.
+   */
+  dispatch_enforcement?: DispatchEnforcementConfig;
 }
 
 /**
@@ -119,4 +155,45 @@ export function getCreditPolicy(tenant: {
   const raw = tenant.settings?.credit_policy;
   if (!raw || typeof raw !== 'object') return {};
   return raw as CreditPolicySettings;
+}
+
+/** Default dispatch enforcement — everything OFF. */
+const DEFAULT_DISPATCH_ENFORCEMENT: DispatchEnforcementConfig = {
+  enabled: false,
+  block_on_hold: false,
+  block_actions: {
+    assignment: false,
+    en_route: false,
+    arrived: false,
+    completed: false,
+  },
+  allow_override: true,
+  override_roles: ['owner', 'admin'],
+  require_override_reason: true,
+};
+
+/**
+ * Safe accessor for dispatch enforcement config. Returns fully
+ * populated config with all defaults applied. Never throws.
+ */
+export function getDispatchEnforcement(
+  policy: CreditPolicySettings,
+): DispatchEnforcementConfig {
+  const raw = policy.dispatch_enforcement;
+  if (!raw) return { ...DEFAULT_DISPATCH_ENFORCEMENT };
+  return {
+    enabled: raw.enabled ?? false,
+    block_on_hold: raw.block_on_hold ?? false,
+    block_actions: {
+      assignment: raw.block_actions?.assignment ?? false,
+      en_route: raw.block_actions?.en_route ?? false,
+      arrived: raw.block_actions?.arrived ?? false,
+      completed: raw.block_actions?.completed ?? false,
+    },
+    allow_override: raw.allow_override ?? true,
+    override_roles: Array.isArray(raw.override_roles)
+      ? raw.override_roles
+      : ['owner', 'admin'],
+    require_override_reason: raw.require_override_reason ?? true,
+  };
 }

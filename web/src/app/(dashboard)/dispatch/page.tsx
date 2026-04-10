@@ -102,6 +102,19 @@ function getJobCoords(job: DispatchJob): [number, number] | null {
   return null;
 }
 
+/* ---- Credit enforcement error helper ---- */
+
+function isCreditBlockError(err: unknown): string | null {
+  if (!err || typeof err !== "object") return null;
+  const msg = (err as Error).message || "";
+  // The API client throws Error with the message from the JSON body.
+  // Credit block messages contain "credit hold" or the structured code.
+  if (msg.includes("credit hold") || msg.includes("DISPATCH_CREDIT")) {
+    return FEATURE_REGISTRY.dispatch_credit_block_message?.label ?? msg;
+  }
+  return null;
+}
+
 /* ---- Constants ---- */
 
 // Styling-only map (letter + stripe). Labels come from JOB_TYPE_LABELS registry.
@@ -727,9 +740,9 @@ export default function DispatchPage() {
                   <div className="shrink-0" style={{ transition: "width 0.2s ease" }}>
                     <ColumnCard columnId="unassigned" title="Unassigned" isUnassigned count={board.unassigned.length}
                       jobs={filterJobs(board.unassigned, filter, search)} drivers={board.drivers.map(d => d.driver)}
-                      onAssign={async (jid, did) => { try { await api.patch(`/jobs/${jid}/assign`, { assignedDriverId: did }); toast("success", "Assigned"); await fetchBoard(true); } catch { toast("error", "Failed"); } }}
+                      onAssign={async (jid, did) => { try { await api.patch(`/jobs/${jid}/assign`, { assignedDriverId: did }); toast("success", "Assigned"); await fetchBoard(true); } catch (err) { toast("error", isCreditBlockError(err) ?? "Failed"); } }}
                       onQuickView={openQuickView} onCtxMenu={handleContextMenu} activeId={activeId}
-                      onStatusChange={async (jid, s) => { try { await api.patch(`/jobs/${jid}/status`, { status: s, cancellationReason: s === "failed" ? "Dispatcher override" : undefined }); toast("success", `Status → ${s.replace(/_/g, " ")}`); await fetchBoard(true); } catch { toast("error", "Failed"); } }}
+                      onStatusChange={async (jid, s) => { try { await api.patch(`/jobs/${jid}/status`, { status: s, cancellationReason: s === "failed" ? "Dispatcher override" : undefined }); toast("success", `Status → ${s.replace(/_/g, " ")}`); await fetchBoard(true); } catch (err) { toast("error", isCreditBlockError(err) ?? "Failed"); } }}
                       collapsed={collapsedCols.has("unassigned")} onToggleCollapse={() => toggleCollapse("unassigned")}
                       onHide={() => setUnassignedRail(true)}
                       driverJobCities={driverJobCities}
@@ -745,7 +758,7 @@ export default function DispatchPage() {
                   jobs={filterJobs(col.jobs, filter, search)}
                   onUnassign={async (jid) => { try { await api.patch(`/jobs/${jid}/assign`, { assignedDriverId: null }); toast("success", "Unassigned"); await fetchBoard(true); } catch { toast("error", "Failed"); } }}
                   onQuickView={openQuickView} onCtxMenu={handleContextMenu} activeId={activeId}
-                  onStatusChange={async (jid, s) => { try { await api.patch(`/jobs/${jid}/status`, { status: s, cancellationReason: s === "failed" ? "Dispatcher override" : undefined }); toast("success", `Status → ${s.replace(/_/g, " ")}`); await fetchBoard(true); } catch { toast("error", "Failed"); } }}
+                  onStatusChange={async (jid, s) => { try { await api.patch(`/jobs/${jid}/status`, { status: s, cancellationReason: s === "failed" ? "Dispatcher override" : undefined }); toast("success", `Status → ${s.replace(/_/g, " ")}`); await fetchBoard(true); } catch (err) { toast("error", isCreditBlockError(err) ?? "Failed"); } }}
                   collapsed={collapsedCols.has(col.driver.id)} onToggleCollapse={() => toggleCollapse(col.driver.id)}
                   onHide={() => hideColumn(col.driver.id)}
                   onColumnDrag={makeColumnDrag(col.driver.id)}
@@ -835,8 +848,8 @@ export default function DispatchPage() {
         ) : undefined}
       >
         {quickViewJob && qvLoading ? <QuickViewSkeleton /> : quickViewJob && qvDetail ? (
-          <QVContent job={quickViewJob} detail={qvDetail} board={board} creditState={qvCreditState} onAssign={async (jid, did) => {
-            try { await api.patch(`/jobs/${jid}/assign`, { assignedDriverId: did }); toast("success", "Reassigned"); await fetchBoard(true); } catch { toast("error", "Failed"); }
+          <QVContent job={quickViewJob} detail={qvDetail} board={board} creditState={qvCreditState} onAssign={async (jid, did, creditOverride) => {
+            await api.patch(`/jobs/${jid}/assign`, { assignedDriverId: did, ...(creditOverride ? { creditOverride } : {}) }); toast("success", "Reassigned"); await fetchBoard(true);
           }} onRefresh={() => fetchBoard(true)} toast={toast} />
         ) : null}
       </QuickView>
@@ -1629,7 +1642,7 @@ function JobTileGhost({ job, bulkCount = 1 }: { job: DispatchJob; bulkCount?: nu
 function QVContent({ job, detail, board, creditState, onAssign, onRefresh, toast }: {
   job: DispatchJob; detail: any; board: DispatchBoard | null;
   creditState: DispatchCreditState | null;
-  onAssign: (jobId: string, driverId: string | null) => Promise<void>;
+  onAssign: (jobId: string, driverId: string | null, creditOverride?: { reason: string }) => Promise<void>;
   onRefresh: () => Promise<void>;
   toast: (type: "success" | "error" | "warning", msg: string) => void;
 }) {
@@ -1642,6 +1655,10 @@ function QVContent({ job, detail, board, creditState, onAssign, onRefresh, toast
   const [savingNotes, setSavingNotes] = useState(false);
   const [editingPlacement, setEditingPlacement] = useState(false);
   const [placementValue, setPlacementValue] = useState("");
+  // Phase 5 — dispatch credit enforcement override state
+  const [creditBlock, setCreditBlock] = useState<{ action: string; hold: any } | null>(null);
+  const [overrideReason, setOverrideReason] = useState("");
+  const [overriding, setOverriding] = useState(false);
   const [savingPlacement, setSavingPlacement] = useState(false);
   const tc = TYPE_CONFIG[job.job_type] || { letter: "?", stripe: "#8A8A8A" };
   const typeLabel = getTypeLabel(job.job_type);
@@ -1695,8 +1712,80 @@ function QVContent({ job, detail, board, creditState, onAssign, onRefresh, toast
         </div>
       )}
 
+      {/* Credit block override panel (Phase 5 — only shown after a blocked action) */}
+      {creditBlock && (
+        <div className="rounded-[14px] px-4 py-3" style={{ background: "var(--t-error-soft)", border: "1px solid var(--t-error)" }}>
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" style={{ color: "var(--t-error)" }} />
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-bold" style={{ color: "var(--t-error)" }}>
+                {FEATURE_REGISTRY.dispatch_credit_block_message?.label ?? "Action blocked — customer is on credit hold"}
+              </p>
+              <p className="text-[10px] mt-0.5" style={{ color: "var(--t-text-muted)" }}>
+                {creditBlock.action.replace(/_/g, " ")} is restricted by tenant credit policy
+              </p>
+              {creditBlock.hold?.override_allowed && (
+                <div className="mt-2 space-y-2">
+                  <textarea
+                    value={overrideReason}
+                    onChange={(e) => setOverrideReason(e.target.value)}
+                    placeholder="Override reason (required)"
+                    rows={2}
+                    className="w-full rounded-[10px] border px-3 py-2 text-xs outline-none resize-none"
+                    style={{ borderColor: "var(--t-border)", color: "var(--t-text-primary)", background: "var(--t-bg-input, var(--t-bg-card))" }}
+                  />
+                  <div className="flex gap-2">
+                    <button
+                      onClick={async () => {
+                        if (!overrideReason.trim()) { toast("error", "Reason required"); return; }
+                        setOverriding(true);
+                        try {
+                          if (creditBlock.action === "assignment") {
+                            await onAssign(job.id, job.assigned_driver?.id ?? "", { reason: overrideReason });
+                          } else {
+                            await api.patch(`/jobs/${job.id}/status`, {
+                              status: creditBlock.action,
+                              creditOverride: { reason: overrideReason },
+                            });
+                            toast("success", `Status → ${creditBlock.action.replace(/_/g, " ")}`);
+                            await onRefresh();
+                          }
+                          setCreditBlock(null);
+                          setOverrideReason("");
+                        } catch (err) {
+                          toast("error", isCreditBlockError(err) ?? "Override failed");
+                        } finally {
+                          setOverriding(false);
+                        }
+                      }}
+                      disabled={overriding || !overrideReason.trim()}
+                      className="rounded-full px-3 py-1 text-[10px] font-semibold disabled:opacity-50"
+                      style={{ background: "var(--t-accent)", color: "var(--t-accent-on-accent)" }}
+                    >
+                      {overriding ? "Overriding..." : FEATURE_REGISTRY.dispatch_credit_override_cta?.label ?? "Override & Continue"}
+                    </button>
+                    <button
+                      onClick={() => { setCreditBlock(null); setOverrideReason(""); }}
+                      className="rounded-full px-3 py-1 text-[10px]"
+                      style={{ color: "var(--t-text-muted)" }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+              {!creditBlock.hold?.override_allowed && (
+                <p className="mt-2 text-[10px]" style={{ color: "var(--t-text-muted)" }}>
+                  Override not available — contact an administrator.
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Credit hold warning (Phase 4D — informational only, no dispatch blocking) */}
-      {creditState?.hold.effective_active && (
+      {creditState?.hold.effective_active && !creditBlock && (
         <div className="rounded-[14px] px-4 py-3" style={{ background: "var(--t-warning-soft, #FFF8E1)", border: "1px solid var(--t-warning, #F59E0B)" }}>
           <div className="flex items-start gap-3">
             <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" style={{ color: "var(--t-warning, #F59E0B)" }} />
@@ -1858,7 +1947,14 @@ function QVContent({ job, detail, board, creditState, onAssign, onRefresh, toast
           <div className="mt-3 pt-3" style={{ borderTop: "1px solid var(--t-border)" }}>
             {!job.assigned_driver && board.drivers.length === 1 ? (
               <button
-                onClick={() => onAssign(job.id, board.drivers[0].driver.id)}
+                onClick={async () => {
+                  try { await onAssign(job.id, board.drivers[0].driver.id); }
+                  catch (err) {
+                    const msg = isCreditBlockError(err);
+                    if (msg) { setCreditBlock({ action: "assignment", hold: { override_allowed: true } }); }
+                    else { toast("error", "Failed"); }
+                  }
+                }}
                 className="text-xs font-medium rounded-full px-3 py-1.5 transition-all duration-150 active:scale-95"
                 style={{ background: "var(--t-accent)", color: "var(--t-accent-on-accent)", border: "none", cursor: "pointer" }}
               >
@@ -1866,9 +1962,16 @@ function QVContent({ job, detail, board, creditState, onAssign, onRefresh, toast
               </button>
             ) : (
               <Dropdown trigger={<button className="text-xs font-medium" style={{ color: "var(--t-accent)" }}>{job.assigned_driver ? "Reassign" : "Assign Driver"}</button>}>
-                <button onClick={() => onAssign(job.id, null)} className="flex w-full items-center gap-2 px-3 py-2 text-xs" style={{ color: "var(--t-error)" }}>Unassign</button>
+                <button onClick={() => onAssign(job.id, null).catch(() => toast("error", "Failed"))} className="flex w-full items-center gap-2 px-3 py-2 text-xs" style={{ color: "var(--t-error)" }}>Unassign</button>
                 {board.drivers.map(col => (
-                  <button key={col.driver.id} onClick={() => onAssign(job.id, col.driver.id)} className="flex w-full items-center gap-2 px-3 py-2 text-xs whitespace-nowrap" style={{ color: "var(--t-text-primary)" }}>
+                  <button key={col.driver.id} onClick={async () => {
+                    try { await onAssign(job.id, col.driver.id); }
+                    catch (err) {
+                      const msg = isCreditBlockError(err);
+                      if (msg) { setCreditBlock({ action: "assignment", hold: { override_allowed: true } }); }
+                      else { toast("error", "Failed"); }
+                    }
+                  }} className="flex w-full items-center gap-2 px-3 py-2 text-xs whitespace-nowrap" style={{ color: "var(--t-text-primary)" }}>
                     <div className="flex h-5 w-5 items-center justify-center rounded-full text-[8px] font-bold" style={{ background: "var(--t-accent-soft)", color: "var(--t-accent)" }}>{col.driver.firstName[0]}{col.driver.lastName[0]}</div>
                     {col.driver.firstName} {col.driver.lastName}
                   </button>
