@@ -11,10 +11,12 @@ import { Customer } from '../customers/entities/customer.entity';
 import { Job } from '../jobs/entities/job.entity';
 import { Invoice } from '../billing/entities/invoice.entity';
 import { Payment } from '../billing/entities/payment.entity';
+import { PricingModule } from '../pricing/pricing.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Customer, Job, Invoice, Payment]),
+    PricingModule,
     PassportModule.register({ defaultStrategy: 'portal-jwt' }),
     JwtModule.registerAsync({
       imports: [ConfigModule],
