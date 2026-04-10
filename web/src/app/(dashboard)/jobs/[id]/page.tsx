@@ -786,28 +786,39 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
                   <p className="text-sm text-[var(--t-text-primary)]">{[addr.street, addr.city, addr.state, addr.zip].filter(Boolean).join(", ")}</p>
                   {job.placement_notes && <p className="mt-1 text-xs text-[var(--t-text-muted)] italic">Placement: {job.placement_notes}</p>}
                   {(job as any).placement_lat && (job as any).placement_lng && (
-                    <div className="mt-3 rounded-[14px] border px-4 py-3" style={{ borderColor: "var(--t-accent)", background: "var(--t-accent-soft)" }}>
-                      <div className="flex items-center justify-between mb-1.5">
+                    <div className="mt-4 rounded-[20px] border overflow-hidden" style={{ borderColor: "var(--t-accent)", boxShadow: "0 2px 12px rgba(0,0,0,0.06)" }}>
+                      <div className="px-4 py-3 flex items-center justify-between" style={{ background: "var(--t-accent-soft)" }}>
                         <div className="flex items-center gap-2">
-                          <MapPin className="h-3.5 w-3.5" style={{ color: "var(--t-accent)" }} />
-                          <span className="text-xs font-bold" style={{ color: "var(--t-accent)" }}>
-                            {FEATURE_REGISTRY.portal_placement_view?.label ?? "Drop Pin Set"}
+                          <div className="flex h-7 w-7 items-center justify-center rounded-lg" style={{ background: "var(--t-accent)" }}>
+                            <MapPin className="h-3.5 w-3.5" style={{ color: "var(--t-accent-on-accent, #fff)" }} />
+                          </div>
+                          <span className="text-sm font-bold" style={{ color: "var(--t-accent)" }}>
+                            {FEATURE_REGISTRY.portal_placement_title?.label ?? "Drop Location"}
                           </span>
                         </div>
                         <a
                           href={`https://www.google.com/maps?q=${(job as any).placement_lat},${(job as any).placement_lng}`}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="text-[10px] font-semibold rounded-full border px-2.5 py-0.5"
+                          className="text-[11px] font-semibold rounded-full border px-3 py-1"
                           style={{ borderColor: "var(--t-accent)", color: "var(--t-accent)" }}
                         >
                           {FEATURE_REGISTRY.portal_placement_open_maps?.label ?? "Open in Maps"} →
                         </a>
                       </div>
+                      {/* Static satellite preview */}
+                      <img
+                        src={`https://api.mapbox.com/styles/v1/mapbox/satellite-streets-v12/static/pin-l+FACC15(${(job as any).placement_lng},${(job as any).placement_lat})/${(job as any).placement_lng},${(job as any).placement_lat},17.5,0/600x200@2x?access_token=${process.env.NEXT_PUBLIC_MAPBOX_TOKEN}`}
+                        alt="Drop location"
+                        className="w-full h-[160px] object-cover"
+                        loading="lazy"
+                      />
                       {(job as any).placement_pin_notes && (
-                        <p className="text-xs mt-1" style={{ color: "var(--t-text-secondary)" }}>
-                          <span className="font-semibold" style={{ color: "var(--t-text-muted)" }}>Driver notes:</span> {(job as any).placement_pin_notes}
-                        </p>
+                        <div className="px-4 py-3" style={{ borderTop: "1px solid var(--t-border)", background: "var(--t-bg-card)" }}>
+                          <p className="text-xs" style={{ color: "var(--t-text-secondary)" }}>
+                            <span className="font-semibold" style={{ color: "var(--t-text-primary)" }}>{FEATURE_REGISTRY.portal_placement_notes_label?.label ?? "Notes for the driver"}:</span> {(job as any).placement_pin_notes}
+                          </p>
+                        </div>
                       )}
                     </div>
                   )}
