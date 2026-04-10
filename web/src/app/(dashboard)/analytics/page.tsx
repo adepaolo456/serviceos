@@ -25,11 +25,11 @@ import { formatCurrency } from "@/lib/utils";
 
 interface RevenueData {
   totalRevenue: number;
-  collected: number;
-  outstanding: number;
-  overdue: number;
-  revenueBySource: { source: string; amount: number }[];
-  revenueBySize: { size: string; amount: number; count: number }[];
+  totalCollected: number;
+  totalOutstanding: number;
+  totalOverdue: number;
+  revenueBySource: Record<string, number> | { source: string; amount: number }[];
+  dailyRevenue: { date: string; amount: number }[];
 }
 
 interface DumpCostsData {
@@ -283,24 +283,30 @@ function DataTable({ headers, rows }: { headers: string[]; rows: (string | numbe
 function RevenueTab({ data, loading }: { data: RevenueData | null; loading: boolean }) {
   if (loading) return <><KPISkeleton /><TableSkeleton /></>;
   if (!data) return <EmptyState text="No revenue data available" />;
+
+  // Normalize revenueBySource: backend returns Record<string, number>, convert to array
+  const sourceEntries = Array.isArray(data.revenueBySource)
+    ? data.revenueBySource
+    : Object.entries(data.revenueBySource || {}).map(([source, amount]) => ({ source, amount: Number(amount) }));
+
   return (
     <div className="space-y-6">
       <KPIGrid>
         <KPI label="Total Revenue" value={formatCurrency(data.totalRevenue)} color="text-[var(--t-accent)]" />
-        <KPI label="Collected" value={formatCurrency(data.collected)} color="text-[var(--t-accent)]" />
-        <KPI label="Outstanding" value={formatCurrency(data.outstanding)} color="text-[var(--t-warning)]" />
-        <KPI label="Overdue" value={formatCurrency(data.overdue)} color="text-[var(--t-error)]" />
+        <KPI label="Collected" value={formatCurrency(data.totalCollected)} color="text-[var(--t-accent)]" />
+        <KPI label="Outstanding" value={formatCurrency(data.totalOutstanding)} color="text-[var(--t-warning)]" />
+        <KPI label="Overdue" value={formatCurrency(data.totalOverdue)} color="text-[var(--t-error)]" />
       </KPIGrid>
-      {data.revenueBySource?.length > 0 && (
+      {sourceEntries.length > 0 && (
         <div className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5">
           <h3 className="text-sm font-semibold text-[var(--t-text-primary)] mb-4">Revenue by Source</h3>
-          <DataTable headers={["Source", "Amount"]} rows={data.revenueBySource.map((r) => [r.source, formatCurrency(r.amount)])} />
+          <DataTable headers={["Source", "Amount"]} rows={sourceEntries.map((r) => [r.source, formatCurrency(r.amount)])} />
         </div>
       )}
-      {data.revenueBySize?.length > 0 && (
+      {data.dailyRevenue?.length > 0 && (
         <div className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5">
-          <h3 className="text-sm font-semibold text-[var(--t-text-primary)] mb-4">Revenue by Size</h3>
-          <DataTable headers={["Size", "Jobs", "Amount"]} rows={data.revenueBySize.map((r) => [r.size, fmtNum(r.count), formatCurrency(r.amount)])} />
+          <h3 className="text-sm font-semibold text-[var(--t-text-primary)] mb-4">Daily Revenue</h3>
+          <DataTable headers={["Date", "Amount"]} rows={data.dailyRevenue.map((d) => [new Date(d.date + "T00:00:00").toLocaleDateString(), formatCurrency(d.amount)])} />
         </div>
       )}
     </div>
