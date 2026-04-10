@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { Suspense, useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -312,7 +312,17 @@ interface InvoiceDetail {
   job: { id: string; job_number?: string; job_type?: string; asset_subtype: string; service_address?: Record<string, string> | null; scheduled_date?: string; dump_overage_items?: any[] } | null;
 }
 
-export default function BillingIssuesPage() {
+/**
+ * Page content lives in a child component because this page calls
+ * `useSearchParams` (for the `?jobId=` deep-link scope from the Jobs
+ * page blocked reason chip). Next.js App Router requires any
+ * `useSearchParams` consumer to be wrapped in a `<Suspense>` boundary
+ * so the static prerender can skip the param-dependent subtree — the
+ * default export below provides that boundary. Without the split the
+ * production build fails with "useSearchParams() should be wrapped in
+ * a suspense boundary at page '/billing-issues'".
+ */
+function BillingIssuesPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   // Scope to a single job when deep-linked from the Jobs page
@@ -1222,5 +1232,25 @@ export default function BillingIssuesPage() {
         })()}
       </SlideOver>
     </div>
+  );
+}
+
+/**
+ * Default export — Suspense boundary required by Next.js App Router
+ * because `BillingIssuesPageContent` calls `useSearchParams`. The
+ * fallback is intentionally minimal: by the time hydration runs, the
+ * real loading skeletons inside the content component take over.
+ */
+export default function BillingIssuesPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="p-6 text-sm" style={{ color: "var(--t-text-muted)" }}>
+          Loading…
+        </div>
+      }
+    >
+      <BillingIssuesPageContent />
+    </Suspense>
   );
 }
