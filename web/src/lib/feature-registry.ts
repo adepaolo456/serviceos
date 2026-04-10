@@ -551,11 +551,11 @@ export const FEATURE_REGISTRY: Record<string, FeatureDescription> = {
   },
   job_blocked_resolution_drawer: {
     id: "job_blocked_resolution_drawer", label: "Resolve Blockers", category: "operations",
-    shortDescription: "Job-scoped resolution surface that consolidates billing blockers and offers the shortest correct next action without page bouncing.",
-    guideDescription: "The Resolve Blockers drawer opens from the Job detail blocked panel and stays on the Job page. It groups every actionable billing blocker for the current job, identifies whether the root cause is unpaid invoice (in which case it offers Record Payment inline using the same authorized payment endpoint as the Invoice page) or a non-payment billing issue (price mismatch, missing dump slip, etc.), and surfaces the smallest set of correct next actions. When you record payment from the drawer, the backend's billing-issue auto-resolution passes clear any related past_due_payment and completed_unpaid issues automatically — you do not need to resolve them one by one. The drawer then refetches and either closes (if all blockers cleared) or shows the remaining issues that still need separate attention via the existing Billing Issues workflow.",
+    shortDescription: "Job-scoped resolution surface that consolidates billing blockers, predicts which will clear after payment, and offers the shortest correct next action without page bouncing.",
+    guideDescription: "The Resolve Blockers drawer opens from the Job detail blocked panel and stays on the Job page. It groups every actionable billing blocker for the current job, classifies them by likely root cause (payment-related vs needs separate review vs uncertain), and tells you in advance how many are expected to clear if you record payment versus how many will still need attention. When the linked invoice has an unpaid balance, the drawer offers Record Payment inline using the same authorized payment endpoint as the Invoice page — you never leave the Job page. After you record payment, the drawer compares the issue list before and after, shows you exactly what cleared, and auto-closes if everything is resolved (1.5s after success). Backend auto-resolution clears the related past_due_payment and completed_unpaid issues automatically — you do not need to resolve them one by one. For non-payment issues that need separate attention (price mismatch, missing dump slip, etc.), the drawer offers a fallback to the existing Billing Issues workflow. The prediction layer is conservative: when uncertain it says so, never overpromises, and always preserves a path to the dedicated Billing Issues page for full guided resolution.",
     routeOrSurface: "job_detail", tenantOverrideKey: "job_blocked_resolution_drawer",
     isUserFacing: true, isGuideEligible: true,
-    keywords: ["resolve", "blockers", "drawer", "job", "payment", "billing", "issues", "root cause", "unpaid"],
+    keywords: ["resolve", "blockers", "drawer", "job", "payment", "billing", "issues", "root cause", "unpaid", "predict", "guidance"],
   },
   job_blocked_resolution_cta_primary: {
     id: "job_blocked_resolution_cta_primary", label: "Fix Billing", category: "operations",
@@ -590,6 +590,117 @@ export const FEATURE_REGISTRY: Record<string, FeatureDescription> = {
     routeOrSurface: "job_detail", tenantOverrideKey: "job_blocked_resolution_open_in_billing_issues",
     isUserFacing: true, isGuideEligible: false,
     keywords: ["open", "billing", "issues", "fallback", "scoped"],
+  },
+
+  // ── Phase 5: predictive blocker intelligence ──
+  // All non-guide-eligible — these are micro-copy for the resolution
+  // drawer's predictive summary section. The drawer concept itself is
+  // documented under `job_blocked_resolution_drawer` above; adding
+  // separate guide entries for individual prediction phrases would
+  // duplicate that text with no new conceptual content.
+  blocker_prediction_payment_will_clear: {
+    id: "blocker_prediction_payment_will_clear", label: "Recording payment is expected to clear these blockers.", category: "operations",
+    shortDescription: "Lead phrase shown in the resolution drawer when every visible blocker is expected to clear after payment.",
+    guideDescription: "",
+    routeOrSurface: "job_detail", tenantOverrideKey: "blocker_prediction_payment_will_clear",
+    isUserFacing: true, isGuideEligible: false,
+    keywords: ["predict", "payment", "blockers", "clear"],
+  },
+  blocker_prediction_payment_with_remaining: {
+    id: "blocker_prediction_payment_with_remaining", label: "Recording payment is expected to clear payment-related blockers. Others will still need separate review.", category: "operations",
+    shortDescription: "Lead phrase shown when payment will clear some blockers but others need manual attention.",
+    guideDescription: "",
+    routeOrSurface: "job_detail", tenantOverrideKey: "blocker_prediction_payment_with_remaining",
+    isUserFacing: true, isGuideEligible: false,
+    keywords: ["predict", "payment", "remaining", "review"],
+  },
+  blocker_prediction_payment_with_uncertain: {
+    id: "blocker_prediction_payment_with_uncertain", label: "Recording payment is expected to clear most blockers. A few may also clear but warrant a quick review.", category: "operations",
+    shortDescription: "Lead phrase when payment will clear obvious blockers but uncertain ones may also clear.",
+    guideDescription: "",
+    routeOrSurface: "job_detail", tenantOverrideKey: "blocker_prediction_payment_with_uncertain",
+    isUserFacing: true, isGuideEligible: false,
+    keywords: ["predict", "payment", "uncertain", "review"],
+  },
+  blocker_prediction_mixed: {
+    id: "blocker_prediction_mixed", label: "Recording payment is expected to clear payment-related blockers. Other blockers will need separate review and a few may need a closer look.", category: "operations",
+    shortDescription: "Lead phrase for the mixed case: payment-rooted + non-payment + uncertain blockers all present.",
+    guideDescription: "",
+    routeOrSurface: "job_detail", tenantOverrideKey: "blocker_prediction_mixed",
+    isUserFacing: true, isGuideEligible: false,
+    keywords: ["predict", "payment", "mixed", "review"],
+  },
+  blocker_prediction_non_payment_only: {
+    id: "blocker_prediction_non_payment_only", label: "These blockers need manual review and aren’t payment-related.", category: "operations",
+    shortDescription: "Lead phrase when no blocker is payment-rooted — operators must use the dedicated Billing Issues workflow.",
+    guideDescription: "",
+    routeOrSurface: "job_detail", tenantOverrideKey: "blocker_prediction_non_payment_only",
+    isUserFacing: true, isGuideEligible: false,
+    keywords: ["predict", "manual", "review", "non-payment"],
+  },
+  blocker_prediction_uncertain_only: {
+    id: "blocker_prediction_uncertain_only", label: "These blockers may need manual review.", category: "operations",
+    shortDescription: "Conservative lead phrase when only uncertain-bucket blockers are present.",
+    guideDescription: "",
+    routeOrSurface: "job_detail", tenantOverrideKey: "blocker_prediction_uncertain_only",
+    isUserFacing: true, isGuideEligible: false,
+    keywords: ["predict", "uncertain", "review"],
+  },
+  blocker_prediction_no_blockers: {
+    id: "blocker_prediction_no_blockers", label: "No actionable blockers found for this job.", category: "operations",
+    shortDescription: "Empty-state lead phrase when the drawer's classification produces zero blockers.",
+    guideDescription: "",
+    routeOrSurface: "job_detail", tenantOverrideKey: "blocker_prediction_no_blockers",
+    isUserFacing: true, isGuideEligible: false,
+    keywords: ["predict", "empty", "no blockers"],
+  },
+  blocker_prediction_section_payment_rooted: {
+    id: "blocker_prediction_section_payment_rooted", label: "Will clear after payment", category: "operations",
+    shortDescription: "Section header inside the drawer for blockers that backend auto-resolution will clear once payment is recorded.",
+    guideDescription: "",
+    routeOrSurface: "job_detail", tenantOverrideKey: "blocker_prediction_section_payment_rooted",
+    isUserFacing: true, isGuideEligible: false,
+    keywords: ["section", "payment", "clear", "rooted"],
+  },
+  blocker_prediction_section_non_payment: {
+    id: "blocker_prediction_section_non_payment", label: "Needs separate review", category: "operations",
+    shortDescription: "Section header for blockers that require manual handling on the Billing Issues page.",
+    guideDescription: "",
+    routeOrSurface: "job_detail", tenantOverrideKey: "blocker_prediction_section_non_payment",
+    isUserFacing: true, isGuideEligible: false,
+    keywords: ["section", "manual", "review"],
+  },
+  blocker_prediction_section_uncertain: {
+    id: "blocker_prediction_section_uncertain", label: "May need review", category: "operations",
+    shortDescription: "Section header for blockers the drawer can't confidently classify.",
+    guideDescription: "",
+    routeOrSurface: "job_detail", tenantOverrideKey: "blocker_prediction_section_uncertain",
+    isUserFacing: true, isGuideEligible: false,
+    keywords: ["section", "uncertain", "review"],
+  },
+  blocker_result_all_cleared: {
+    id: "blocker_result_all_cleared", label: "All blockers cleared", category: "operations",
+    shortDescription: "Post-action result shown when the after-refetch comparison finds zero remaining blockers.",
+    guideDescription: "",
+    routeOrSurface: "job_detail", tenantOverrideKey: "blocker_result_all_cleared",
+    isUserFacing: true, isGuideEligible: false,
+    keywords: ["result", "cleared", "success"],
+  },
+  blocker_result_some_cleared: {
+    id: "blocker_result_some_cleared", label: "Some blockers cleared. Others still need attention.", category: "operations",
+    shortDescription: "Post-action result shown when payment cleared at least one blocker but at least one remains.",
+    guideDescription: "",
+    routeOrSurface: "job_detail", tenantOverrideKey: "blocker_result_some_cleared",
+    isUserFacing: true, isGuideEligible: false,
+    keywords: ["result", "partial", "remaining"],
+  },
+  blocker_result_none_cleared: {
+    id: "blocker_result_none_cleared", label: "No blockers cleared yet — backend is catching up. Refresh in a moment if state still looks stale.", category: "operations",
+    shortDescription: "Post-action result shown when the refetch returns the same blocker set, usually because the 60s stale-cleanup cooldown is in effect.",
+    guideDescription: "",
+    routeOrSurface: "job_detail", tenantOverrideKey: "blocker_result_none_cleared",
+    isUserFacing: true, isGuideEligible: false,
+    keywords: ["result", "stale", "cooldown", "catching up"],
   },
 };
 
