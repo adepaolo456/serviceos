@@ -6,6 +6,8 @@ import { api } from "@/lib/api";
 import { formatCurrency, formatDumpsterSize } from "@/lib/utils";
 import AddressAutocomplete, { type AddressValue } from "@/components/address-autocomplete";
 import { useActiveOnsiteDumpsters, type OnsiteDumpster } from "@/lib/use-active-onsite-dumpsters";
+import { useCreditEnforcement } from "@/lib/use-credit-enforcement";
+import { CreditEnforcementBanner } from "@/components/credit-enforcement-banner";
 
 /* ── Types ── */
 
@@ -114,6 +116,12 @@ export default function NewCustomerForm({ onOrchestrated, onClose, forceCustomer
 
   // Customer autocomplete
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
+
+  // Phase 4 — credit-control booking-flow enforcement.
+  // Only meaningful when an existing customer is selected AND the
+  // form is in scheduling mode. New customers (no selectedCustomerId)
+  // get state === 'unknown' from the hook so no enforcement triggers.
+  const creditEnforcement = useCreditEnforcement(selectedCustomerId);
   const [searchResults, setSearchResults] = useState<{ id: string; first_name: string; last_name: string; email: string; phone: string; billing_address?: Record<string, any>; service_addresses?: Record<string, any>[] }[]>([]);
   const [showDropdown, setShowDropdown] = useState(false);
   const [customerServiceSites, setCustomerServiceSites] = useState<AddressValue[]>([]);
@@ -371,6 +379,21 @@ export default function NewCustomerForm({ onOrchestrated, onClose, forceCustomer
         idempotencyKey,
         confirmedCreateDespiteDuplicate: duplicateChecked,
       });
+
+      // Phase 4 — if a credit override was applied, append the audit
+      // note to the newly-created job's driver_notes via a follow-up
+      // PATCH. The /bookings/create-with-booking DTO does not accept a
+      // placementNotes field, so we attach the audit trail after the
+      // job exists. Best-effort: a failure here does not roll back the
+      // booking — the operator already approved the override.
+      const overrideNote = creditEnforcement.buildOverrideNote();
+      if (overrideNote && result.jobId) {
+        try {
+          await api.patch(`/jobs/${result.jobId}`, { driver_notes: overrideNote });
+        } catch {
+          // Best-effort audit trail — booking already succeeded.
+        }
+      }
 
       onOrchestrated(result);
     } catch (err: unknown) {
@@ -723,11 +746,21 @@ export default function NewCustomerForm({ onOrchestrated, onClose, forceCustomer
             {workflowDecision === "exchange" && <span style={{ marginLeft: 6, fontSize: 11, color: "var(--t-accent)", fontWeight: 600 }}>EXCHANGE</span>}
             {workflowDecision === "new_rental" && <span style={{ marginLeft: 6, fontSize: 11, color: "var(--t-text-muted)", fontWeight: 600 }}>NEW RENTAL</span>}
           </div>
-          <button type="submit" disabled={saving || checkingDuplicate}
-            style={{ backgroundColor: "var(--t-accent)", color: "var(--t-accent-on-accent)", fontSize: 14, fontWeight: 700, padding: "12px 28px", borderRadius: 24, border: "none", cursor: saving || checkingDuplicate ? "default" : "pointer", opacity: saving || checkingDuplicate ? 0.5 : 1, transition: "opacity 0.15s ease", whiteSpace: "nowrap" }}>
+          <button type="submit" disabled={saving || checkingDuplicate || (showScheduling && !!selectedCustomerId && creditEnforcement.shouldBlockSubmit)}
+            style={{ backgroundColor: "var(--t-accent)", color: "var(--t-accent-on-accent)", fontSize: 14, fontWeight: 700, padding: "12px 28px", borderRadius: 24, border: "none", cursor: (saving || checkingDuplicate || (showScheduling && !!selectedCustomerId && creditEnforcement.shouldBlockSubmit)) ? "default" : "pointer", opacity: (saving || checkingDuplicate || (showScheduling && !!selectedCustomerId && creditEnforcement.shouldBlockSubmit)) ? 0.5 : 1, transition: "opacity 0.15s ease", whiteSpace: "nowrap" }}>
             {submitLabel}
           </button>
         </div>
+        {/* Phase 4 — credit-control booking enforcement banner.
+            Only meaningful when an existing customer is selected and
+            we're in scheduling mode. The banner renders nothing in
+            normal/loading/unknown states, so it's safe to mount
+            unconditionally — the hook gates internally on customerId. */}
+        {showScheduling && selectedCustomerId && (
+          <div className="px-6 pb-4">
+            <CreditEnforcementBanner enforcement={creditEnforcement} />
+          </div>
+        )}
     </form>
   );
 }
