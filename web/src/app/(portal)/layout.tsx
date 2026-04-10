@@ -3,8 +3,9 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Package, FileText, PlusCircle, UserCircle, Menu, X, LogOut } from "lucide-react";
+import { Package, FileText, PlusCircle, UserCircle, Menu, X, LogOut, AlertTriangle } from "lucide-react";
 import { portalApi } from "@/lib/portal-api";
+import { FEATURE_REGISTRY } from "@/lib/feature-registry";
 
 const nav = [
   { name: "My Rentals", href: "/portal", icon: Package },
@@ -18,6 +19,8 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
   const router = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [customer, setCustomer] = useState<{ firstName: string; lastName: string } | null>(null);
+  const [accountStatus, setAccountStatus] = useState<{ account_status: string; status_message: string | null } | null>(null);
+  const [bannerDismissed, setBannerDismissed] = useState(false);
 
   useEffect(() => {
     const c = portalApi.getCustomer();
@@ -26,6 +29,12 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
       return;
     }
     setCustomer(c);
+    // Fetch account status for banner (best-effort)
+    if (c) {
+      portalApi.get<{ account_status: string; status_message: string | null }>("/portal/account-summary")
+        .then(setAccountStatus)
+        .catch(() => {});
+    }
   }, [pathname, router]);
 
   useEffect(() => { setMobileOpen(false); }, [pathname]);
@@ -110,6 +119,30 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
                 Log out
               </button>
             </nav>
+          </div>
+        </div>
+      )}
+
+      {/* Account status banner */}
+      {accountStatus && accountStatus.account_status !== "good_standing" && accountStatus.status_message && !bannerDismissed && (
+        <div className="mx-auto max-w-5xl px-4 pt-4">
+          <div
+            className="rounded-[14px] px-4 py-3 flex items-start gap-3"
+            style={{
+              background: accountStatus.account_status === "service_restricted" ? "var(--t-error-soft)" : "var(--t-warning-soft, #FFF8E1)",
+              border: `1px solid ${accountStatus.account_status === "service_restricted" ? "var(--t-error)" : "var(--t-warning, #F59E0B)"}`,
+            }}
+          >
+            <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" style={{ color: accountStatus.account_status === "service_restricted" ? "var(--t-error)" : "var(--t-warning, #F59E0B)" }} />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium" style={{ color: "var(--t-text-primary)" }}>{accountStatus.status_message}</p>
+              <Link href="/portal/invoices" className="text-xs font-semibold mt-1 inline-block" style={{ color: "var(--t-accent)" }}>
+                {FEATURE_REGISTRY.portal_account_view_invoices?.label ?? "View Invoices"} →
+              </Link>
+            </div>
+            <button onClick={() => setBannerDismissed(true)} className="shrink-0 p-1 rounded-lg" style={{ color: "var(--t-text-muted)" }}>
+              <X className="h-3.5 w-3.5" />
+            </button>
           </div>
         </div>
       )}

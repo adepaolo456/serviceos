@@ -86,6 +86,12 @@ export class PortalController {
     return this.portalService.getDashboard(user.customerId, user.tenantId);
   }
 
+  @Get('account-summary')
+  getAccountSummary(@Req() req: Request) {
+    const user = req.user as PortalUser;
+    return this.portalService.getAccountSummary(user.customerId, user.tenantId);
+  }
+
   @Post('report-issue')
   reportIssue(@Req() req: Request, @Body() body: { jobId?: string; reason: string; notes?: string }) {
     const user = req.user as PortalUser;
