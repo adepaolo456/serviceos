@@ -727,7 +727,7 @@ export const FEATURE_REGISTRY: Record<string, FeatureDescription> = {
   customer_credit_panel: {
     id: "customer_credit_panel", label: "Accounting & Credit", category: "operations",
     shortDescription: "Per-customer Accounting & Credit visibility panel — open AR, past due, payment terms, credit limit, manual + policy hold state. Booking-flow enforcement is server-authoritative.",
-    guideDescription: "The Accounting & Credit panel on the customer detail page shows the full credit posture for a customer in one place: total open AR, total past due, oldest past-due age, the effective payment terms (with source — customer override vs tenant default vs system default), the effective credit limit and available credit, and the hold state (manual + policy + effective). When a hold is active the panel surfaces structured reason cards explaining why. Admin and owner roles see inline controls to edit payment terms, set credit limit, and set or release a manual hold with a required reason. ENFORCEMENT (Phase 4A + 4B): the booking flow respects this state at both layers. The frontend (Phase 4A) gates the booking submit button and surfaces a warn/block banner so operators see the hold immediately. The backend (Phase 4B) is now server-authoritative — booking creation endpoints (POST /bookings/complete and POST /bookings/create-with-booking) call CustomerCreditService directly, evaluate the same warn/block aggregation server-side, and reject the request with a structured 403 (CREDIT_HOLD_BLOCK) if the customer is on a block-mode hold. Bypassing the frontend by hitting the API directly will not work — the backend will reject the booking with the same structured error the banner renders. When 'Allow Office Override' is enabled in the tenant credit policy AND the operator's JWT role is admin or owner, the booking POST can include `creditOverride: { reason }` to override the block. The backend validates eligibility (role from JWT, not payload; policy from DB, not payload), builds the audit note from the JWT user + ISO timestamp + the supplied reason, and writes it to the new job's placement_notes inside the same booking-creation transaction. Audit format: '[Credit Override] {reason} (by {userId} at {timestamp})'. If credit-state evaluation cannot be performed (database unavailable, etc.) the backend fails CLOSED — the booking is rejected with a 503 (CREDIT_STATE_UNAVAILABLE) rather than silently allowed. Dispatch, the Jobs page, and existing scheduled jobs are NOT affected — only new booking creation. The hold state is re-evaluated live from the API on every booking attempt.",
+    guideDescription: "The Accounting & Credit panel on the customer detail page shows the full credit posture for a customer in one place: total open AR, total past due, oldest past-due age, the effective payment terms (with source — customer override vs tenant default vs system default), the effective credit limit and available credit, and the hold state (manual + policy + effective). When a hold is active the panel surfaces structured reason cards explaining why. Admin and owner roles see inline controls to edit payment terms, set credit limit, and set or release a manual hold with a required reason. ENFORCEMENT (Phase 4A + 4B): the booking flow respects this state at both layers. The frontend (Phase 4A) gates the booking submit button and surfaces a warn/block banner so operators see the hold immediately. The backend (Phase 4B) is now server-authoritative — booking creation endpoints (POST /bookings/complete and POST /bookings/create-with-booking) call CustomerCreditService directly, evaluate the same warn/block aggregation server-side, and reject the request with a structured 403 (CREDIT_HOLD_BLOCK) if the customer is on a block-mode hold. Bypassing the frontend by hitting the API directly will not work — the backend will reject the booking with the same structured error the banner renders. When 'Allow Office Override' is enabled in the tenant credit policy AND the operator's JWT role is admin or owner, the booking POST can include `creditOverride: { reason }` to override the block. The backend validates eligibility (role from JWT, not payload; policy from DB, not payload), builds the audit note from the JWT user + ISO timestamp + the supplied reason, and writes it to the new job's placement_notes inside the same booking-creation transaction. Audit format: '[Credit Override] {reason} (by {userId} at {timestamp})'. If credit-state evaluation cannot be performed (database unavailable, etc.) the backend fails CLOSED — the booking is rejected with a 503 (CREDIT_STATE_UNAVAILABLE) rather than silently allowed. DISPATCH VISIBILITY (Phase 4D): the dispatch QuickView panel (opened by double-clicking a job card) shows a warning banner when the customer is on credit hold. This is informational only — dispatch operations (assignment, drag-drop, status changes) remain fully functional regardless of credit hold state. The warning shows structured hold reasons (manual hold with reason/who/when, credit limit exceeded with AR vs limit, or past due threshold exceeded with actual vs threshold days) and a link to the full customer profile. The dispatch board itself does not show credit indicators on job cards to avoid N+1 performance issues — the credit state is fetched on demand only when the QuickView opens. Important: 'job blocked' (billing issue or unpaid completed invoice on a specific job) and 'customer credit hold' (aggregate AR/policy state) are distinct concepts. A job can be blocked without the customer being on hold, and vice versa. The Jobs page, and existing scheduled jobs are NOT affected by credit holds — only new booking creation is enforced. The hold state is re-evaluated live from the API on every booking attempt.",
     routeOrSurface: "customer_detail", tenantOverrideKey: "customer_credit_panel",
     isUserFacing: true, isGuideEligible: true,
     keywords: ["accounting", "credit", "ar", "past due", "payment terms", "credit limit", "hold", "billing", "invoice", "customer", "booking", "enforcement", "override", "server-authoritative", "fail-closed"],
@@ -1031,8 +1031,8 @@ export const FEATURE_REGISTRY: Record<string, FeatureDescription> = {
     keywords: ["block"],
   },
   tenant_credit_policy_visibility_only_notice: {
-    id: "tenant_credit_policy_visibility_only_notice", label: "Booking flows now enforce this policy. Dispatch and existing jobs are not yet affected.", category: "settings",
-    shortDescription: "Disclaimer shown on the credit policy section. Booking-flow enforcement is active as of Phase 4; dispatch and other surfaces still ignore the policy.",
+    id: "tenant_credit_policy_visibility_only_notice", label: "Booking flows enforce this policy. Dispatch shows warnings but is not blocked.", category: "settings",
+    shortDescription: "Disclaimer shown on the credit policy section. Booking-flow enforcement is active as of Phase 4. Dispatch shows informational credit hold warnings in QuickView as of Phase 4D but does not block operations.",
     guideDescription: "",
     routeOrSurface: "settings", tenantOverrideKey: "tenant_credit_policy_visibility_only_notice",
     isUserFacing: true, isGuideEligible: false,
@@ -1154,6 +1154,57 @@ export const FEATURE_REGISTRY: Record<string, FeatureDescription> = {
     routeOrSurface: "booking", tenantOverrideKey: "booking_credit_override_not_permitted",
     isUserFacing: true, isGuideEligible: false,
     keywords: ["override not permitted", "administrator"],
+  },
+
+  // ── Credit-control Phase 4D: dispatch QuickView credit hold warnings ──
+  // Warning-only — dispatch remains fully operational. No blocking.
+  dispatch_credit_hold_header: {
+    id: "dispatch_credit_hold_header", label: "Customer Credit Hold", category: "operations",
+    shortDescription: "Header shown in the dispatch QuickView when the customer has an active credit hold.",
+    guideDescription: "",
+    routeOrSurface: "dispatch", tenantOverrideKey: "dispatch_credit_hold_header",
+    isUserFacing: true, isGuideEligible: false,
+    keywords: ["dispatch", "credit hold", "warning"],
+  },
+  dispatch_credit_hold_disclaimer: {
+    id: "dispatch_credit_hold_disclaimer", label: "Informational only — dispatch is not blocked", category: "operations",
+    shortDescription: "Disclaimer shown below the credit hold header in dispatch QuickView. Clarifies that the warning does not restrict dispatch actions.",
+    guideDescription: "",
+    routeOrSurface: "dispatch", tenantOverrideKey: "dispatch_credit_hold_disclaimer",
+    isUserFacing: true, isGuideEligible: false,
+    keywords: ["dispatch", "informational", "not blocked"],
+  },
+  dispatch_credit_hold_manual: {
+    id: "dispatch_credit_hold_manual", label: "Manual hold", category: "operations",
+    shortDescription: "Label for a manual credit hold reason in dispatch QuickView.",
+    guideDescription: "",
+    routeOrSurface: "dispatch", tenantOverrideKey: "dispatch_credit_hold_manual",
+    isUserFacing: true, isGuideEligible: false,
+    keywords: ["manual hold", "dispatch"],
+  },
+  dispatch_credit_hold_credit_limit: {
+    id: "dispatch_credit_hold_credit_limit", label: "Credit limit exceeded", category: "operations",
+    shortDescription: "Label for a credit-limit-exceeded hold reason in dispatch QuickView.",
+    guideDescription: "",
+    routeOrSurface: "dispatch", tenantOverrideKey: "dispatch_credit_hold_credit_limit",
+    isUserFacing: true, isGuideEligible: false,
+    keywords: ["credit limit", "exceeded", "dispatch"],
+  },
+  dispatch_credit_hold_overdue: {
+    id: "dispatch_credit_hold_overdue", label: "Past due threshold exceeded", category: "operations",
+    shortDescription: "Label for an overdue-threshold-exceeded hold reason in dispatch QuickView.",
+    guideDescription: "",
+    routeOrSurface: "dispatch", tenantOverrideKey: "dispatch_credit_hold_overdue",
+    isUserFacing: true, isGuideEligible: false,
+    keywords: ["past due", "overdue", "threshold", "dispatch"],
+  },
+  dispatch_credit_hold_view_account: {
+    id: "dispatch_credit_hold_view_account", label: "View Account", category: "operations",
+    shortDescription: "Link label in dispatch QuickView credit hold section that navigates to the customer's full profile.",
+    guideDescription: "",
+    routeOrSurface: "dispatch", tenantOverrideKey: "dispatch_credit_hold_view_account",
+    isUserFacing: true, isGuideEligible: false,
+    keywords: ["view account", "customer", "dispatch"],
   },
 };
 
