@@ -6,6 +6,7 @@ import { User } from '../auth/entities/user.entity';
 import { Tenant } from '../tenants/entities/tenant.entity';
 import { JobsModule } from '../jobs/jobs.module';
 import { CustomersModule } from '../customers/customers.module';
+import { CreditAuditModule } from '../credit-audit/credit-audit.module';
 import { DispatchService } from './dispatch.service';
 import { DispatchCreditEnforcementService } from './dispatch-credit-enforcement.service';
 import { DispatchController } from './dispatch.controller';
@@ -15,6 +16,7 @@ import { DispatchController } from './dispatch.controller';
     TypeOrmModule.forFeature([Route, Job, User, Tenant]),
     JobsModule,
     CustomersModule,
+    CreditAuditModule,
   ],
   controllers: [DispatchController],
   providers: [DispatchService, DispatchCreditEnforcementService],

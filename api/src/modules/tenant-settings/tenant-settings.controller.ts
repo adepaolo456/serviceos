@@ -114,8 +114,9 @@ export class TenantSettingsController {
   })
   updateCreditPolicy(
     @TenantId() tenantId: string,
+    @CurrentUser('id') userId: string,
     @Body() dto: UpdateCreditPolicyDto,
   ) {
-    return this.settingsService.updateCreditPolicy(tenantId, dto);
+    return this.settingsService.updateCreditPolicy(tenantId, dto, userId);
   }
 }

@@ -82,6 +82,8 @@ import { TenantSettings } from './modules/tenant-settings/entities/tenant-settin
 import { AiSuggestionLog } from './modules/ai/entities/ai-suggestion-log.entity';
 import { RateLimitLog } from './common/entities/rate-limit-log.entity';
 import { HelpAnalyticsEvent } from './modules/analytics/entities/help-analytics-event.entity';
+import { CreditAuditModule } from './modules/credit-audit/credit-audit.module';
+import { CreditAuditEvent } from './modules/credit-audit/credit-audit-event.entity';
 
 @Module({
   imports: [
@@ -149,6 +151,7 @@ import { HelpAnalyticsEvent } from './modules/analytics/entities/help-analytics-
             AiSuggestionLog,
             RateLimitLog,
             HelpAnalyticsEvent,
+            CreditAuditEvent,
           ],
           synchronize: isTest,
           ssl: isTest ? false : { rejectUnauthorized: false },
@@ -187,6 +190,7 @@ import { HelpAnalyticsEvent } from './modules/analytics/entities/help-analytics-
     TenantSettingsModule,
     AiModule,
     GeocodingModule,
+    CreditAuditModule,
   ],
   controllers: [AppController],
   providers: [

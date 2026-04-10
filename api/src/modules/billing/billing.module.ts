@@ -31,6 +31,7 @@ import { PricingModule } from '../pricing/pricing.module';
 import { MapboxModule } from '../mapbox/mapbox.module';
 import { OrchestrationService } from './services/orchestration.service';
 import { BookingCompletionService } from './services/booking-completion.service';
+import { CreditAuditModule } from '../credit-audit/credit-audit.module';
 
 @Module({
   imports: [
@@ -58,6 +59,7 @@ import { BookingCompletionService } from './services/booking-completion.service'
     // BookingCreditEnforcementService depends on. This is a one-way
     // dependency: CustomersModule does NOT import BillingModule.
     CustomersModule,
+    CreditAuditModule,
   ],
   controllers: [InvoiceController, BillingIssueController, BillingAuditController, PaymentsController, BookingsController],
   providers: [InvoiceService, BillingIssueDetectorService, BillingAuditService, BookingCreditEnforcementService, BillingService, OrchestrationService, BookingCompletionService],

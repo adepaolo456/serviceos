@@ -19,6 +19,7 @@ import { PricingModule } from '../pricing/pricing.module';
 import { RentalChainsModule } from '../rental-chains/rental-chains.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { CustomersModule } from '../customers/customers.module';
+import { CreditAuditModule } from '../credit-audit/credit-audit.module';
 import { DispatchCreditEnforcementService } from '../dispatch/dispatch-credit-enforcement.service';
 import { JobsService } from './jobs.service';
 import { JobsController } from './jobs.controller';
@@ -31,6 +32,7 @@ import { JobsController } from './jobs.controller';
     RentalChainsModule,
     NotificationsModule,
     CustomersModule,
+    CreditAuditModule,
   ],
   controllers: [JobsController],
   providers: [JobsService, DispatchCreditEnforcementService],

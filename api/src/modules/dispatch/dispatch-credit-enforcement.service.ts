@@ -13,6 +13,7 @@ import {
   getCreditPolicy,
   getDispatchEnforcement,
 } from '../tenants/credit-policy';
+import { CreditAuditService } from '../credit-audit/credit-audit.service';
 
 /**
  * Phase 5 — Dispatch credit-hold enforcement.
@@ -64,6 +65,7 @@ export class DispatchCreditEnforcementService {
     private readonly creditService: CustomerCreditService,
     @InjectRepository(Tenant)
     private readonly tenantRepo: Repository<Tenant>,
+    private readonly auditService: CreditAuditService,
   ) {}
 
   /**
@@ -161,6 +163,20 @@ export class DispatchCreditEnforcementService {
       (!config.require_override_reason || trimmedReason.length > 0)
     ) {
       const note = `[Dispatch Credit Override] ${trimmedReason || '(no reason required)'} (by ${params.userId} at ${new Date().toISOString()}) [action: ${params.action}]`;
+      this.auditService.record({
+        tenantId: params.tenantId,
+        eventType: 'dispatch_override',
+        userId: params.userId,
+        customerId: params.customerId,
+        reason: trimmedReason || null,
+        metadata: {
+          action: params.action,
+          effective_active: creditState.hold.effective_active,
+          manual_active: creditState.hold.manual_active,
+          policy_active: creditState.hold.policy_active,
+          reason_count: creditState.hold.reasons.length,
+        },
+      });
       return {
         allowed: true,
         overrideNote: note,

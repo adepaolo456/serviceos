@@ -22,6 +22,7 @@ import {
   EffectiveSource,
   HoldReason,
 } from './customer-credit.types';
+import { CreditAuditService } from '../../credit-audit/credit-audit.service';
 
 /**
  * Phase 2 — Credit-control: shared accounting + credit + hold state
@@ -74,6 +75,7 @@ export class CustomerCreditService {
     private readonly invoiceRepo: Repository<Invoice>,
     @InjectRepository(Tenant)
     private readonly tenantRepo: Repository<Tenant>,
+    private readonly auditService: CreditAuditService,
   ) {}
 
   /* ─── READ ───────────────────────────────────────────────────── */
@@ -177,6 +179,7 @@ export class CustomerCreditService {
     tenantId: string,
     customerId: string,
     patch: { payment_terms?: PaymentTerms | null; credit_limit?: number | null },
+    userId?: string,
   ): Promise<Customer> {
     const customer = await this.customerRepo.findOne({
       where: { id: customerId, tenant_id: tenantId },
@@ -203,7 +206,21 @@ export class CustomerCreditService {
       customer.credit_limit = patch.credit_limit;
     }
 
-    return this.customerRepo.save(customer);
+    const saved = await this.customerRepo.save(customer);
+    if (userId) {
+      this.auditService.record({
+        tenantId,
+        eventType: 'credit_settings_updated',
+        userId,
+        customerId,
+        metadata: {
+          changed_fields: Object.keys(patch).filter(
+            (k) => (patch as Record<string, unknown>)[k] !== undefined,
+          ),
+        },
+      });
+    }
+    return saved;
   }
 
   /* ─── WRITE: manual credit hold ──────────────────────────────── */
@@ -243,7 +260,16 @@ export class CustomerCreditService {
     // the hold is released.
     customer.credit_hold_released_by = null;
     customer.credit_hold_released_at = null;
-    return this.customerRepo.save(customer);
+    const saved = await this.customerRepo.save(customer);
+    this.auditService.record({
+      tenantId,
+      eventType: 'credit_hold_set',
+      userId,
+      customerId,
+      reason: reason.trim(),
+      metadata: { hold_status: true },
+    });
+    return saved;
   }
 
   /**
@@ -267,7 +293,15 @@ export class CustomerCreditService {
     customer.credit_hold = false;
     customer.credit_hold_released_by = userId;
     customer.credit_hold_released_at = new Date();
-    return this.customerRepo.save(customer);
+    const saved = await this.customerRepo.save(customer);
+    this.auditService.record({
+      tenantId,
+      eventType: 'credit_hold_released',
+      userId,
+      customerId,
+      metadata: { hold_status: false },
+    });
+    return saved;
   }
 
   /* ─── INTERNAL: AR aggregation ───────────────────────────────── */

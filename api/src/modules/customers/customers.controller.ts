@@ -126,13 +126,14 @@ export class CustomersController {
   })
   updateCreditSettings(
     @TenantId() tenantId: string,
+    @CurrentUser('id') userId: string,
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateCustomerCreditSettingsDto,
   ) {
     return this.creditService.updateCreditSettings(tenantId, id, {
       payment_terms: dto.payment_terms,
       credit_limit: dto.credit_limit,
-    });
+    }, userId);
   }
 
   @Post(':id/credit-hold')
