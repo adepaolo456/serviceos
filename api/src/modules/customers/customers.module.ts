@@ -8,8 +8,10 @@ import { BillingIssue } from '../billing/entities/billing-issue.entity';
 import { RentalChain } from '../rental-chains/entities/rental-chain.entity';
 import { TaskChainLink } from '../rental-chains/entities/task-chain-link.entity';
 import { CustomerNote } from '../notes/note.entity';
+import { Tenant } from '../tenants/entities/tenant.entity';
 import { CustomersService } from './customers.service';
 import { CustomerDashboardService } from './customer-dashboard.service';
+import { CustomerCreditService } from './services/customer-credit.service';
 import { CustomersController } from './customers.controller';
 import { MapboxModule } from '../mapbox/mapbox.module';
 import { SmsModule } from '../sms/sms.module';
@@ -25,12 +27,13 @@ import { SmsModule } from '../sms/sms.module';
       RentalChain,
       TaskChainLink,
       CustomerNote,
+      Tenant,
     ]),
     MapboxModule,
     SmsModule,
   ],
   controllers: [CustomersController],
-  providers: [CustomersService, CustomerDashboardService],
-  exports: [CustomersService],
+  providers: [CustomersService, CustomerDashboardService, CustomerCreditService],
+  exports: [CustomersService, CustomerCreditService],
 })
 export class CustomersModule {}

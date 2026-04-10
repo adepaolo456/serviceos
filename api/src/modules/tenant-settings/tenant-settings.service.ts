@@ -4,10 +4,12 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Not } from 'typeorm';
 import { TenantSettings } from './entities/tenant-settings.entity';
+import { Tenant } from '../tenants/entities/tenant.entity';
 import {
   UpdateTenantSettingsDto,
   UpdateBrandingDto,
@@ -16,6 +18,11 @@ import {
   UpdateQuoteSettingsDto,
   UpdateQuoteTemplatesDto,
 } from './dto/tenant-settings.dto';
+import { UpdateCreditPolicyDto } from './dto/credit-policy.dto';
+import {
+  CreditPolicySettings,
+  getCreditPolicy,
+} from '../tenants/credit-policy';
 import { normalizePhone } from '../../common/utils/phone';
 
 @Injectable()
@@ -25,7 +32,79 @@ export class TenantSettingsService {
   constructor(
     @InjectRepository(TenantSettings)
     private settingsRepo: Repository<TenantSettings>,
+    @InjectRepository(Tenant)
+    private tenantRepo: Repository<Tenant>,
   ) {}
+
+  /* ─── Phase 2: tenant credit policy ─────────────────────────── */
+  // Storage location: tenants.settings.credit_policy (JSONB on the
+  // tenants table). Per Phase 1 documentation, the credit policy
+  // lives inside the existing tenant.settings JSONB blob — no
+  // dedicated tenant_settings columns needed. The methods below
+  // load the Tenant entity, mutate the JSONB key, and save.
+
+  /**
+   * Read the tenant's credit policy. Returns an empty object when
+   * not yet configured. Tenant-scoped via the load query.
+   */
+  async getCreditPolicySettings(tenantId: string): Promise<CreditPolicySettings> {
+    const tenant = await this.tenantRepo.findOne({ where: { id: tenantId } });
+    if (!tenant) throw new NotFoundException(`Tenant ${tenantId} not found`);
+    return getCreditPolicy(tenant);
+  }
+
+  /**
+   * Patch the tenant's credit policy. Merges only the fields present
+   * in the DTO into the existing JSONB blob — fields not in the DTO
+   * are preserved. Pass null on a top-level field to clear it.
+   *
+   * Tenant-scoped via the load query. Returns the merged policy.
+   */
+  async updateCreditPolicy(
+    tenantId: string,
+    patch: UpdateCreditPolicyDto,
+  ): Promise<CreditPolicySettings> {
+    const tenant = await this.tenantRepo.findOne({ where: { id: tenantId } });
+    if (!tenant) throw new NotFoundException(`Tenant ${tenantId} not found`);
+
+    const settings = (tenant.settings as Record<string, unknown> | null) ?? {};
+    const current = (settings.credit_policy as CreditPolicySettings | undefined) ?? {};
+
+    // Field-by-field merge so partial updates work cleanly. Top-level
+    // fields with `null` values clear the entry; nested rule objects
+    // are replaced wholesale (not deep-merged) so operators can flip
+    // an entire rule on/off in one PATCH.
+    const next: CreditPolicySettings = { ...current };
+    if (patch.default_payment_terms !== undefined) {
+      if (patch.default_payment_terms === null) {
+        delete next.default_payment_terms;
+      } else {
+        next.default_payment_terms = patch.default_payment_terms;
+      }
+    }
+    if (patch.default_credit_limit !== undefined) {
+      next.default_credit_limit = patch.default_credit_limit;
+    }
+    if (patch.ar_threshold_block !== undefined) {
+      next.ar_threshold_block = patch.ar_threshold_block;
+    }
+    if (patch.overdue_block !== undefined) {
+      next.overdue_block = patch.overdue_block;
+    }
+    if (patch.unpaid_exceptions_block !== undefined) {
+      next.unpaid_exceptions_block = patch.unpaid_exceptions_block;
+    }
+    if (patch.allow_office_override !== undefined) {
+      next.allow_office_override = patch.allow_office_override;
+    }
+
+    const updatedSettings: Record<string, any> = {
+      ...settings,
+      credit_policy: next as unknown as Record<string, any>,
+    };
+    await this.tenantRepo.update(tenantId, { settings: updatedSettings });
+    return next;
+  }
 
   async getSettings(tenantId: string): Promise<TenantSettings> {
     let settings = await this.settingsRepo.findOne({
