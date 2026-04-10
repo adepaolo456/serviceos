@@ -11,7 +11,18 @@ import { PricingService } from '../../pricing/pricing.service';
 import { MapboxService } from '../../mapbox/mapbox.service';
 import { BillingService } from '../billing.service';
 import { BookingCompletionService } from './booking-completion.service';
+import { BookingCreditEnforcementService } from './booking-credit-enforcement.service';
 import { CreateWithBookingDto } from '../dto/create-with-booking.dto';
+
+/**
+ * Phase 4B — auth context plumbed into the orchestration entry point
+ * so server-authoritative credit enforcement can validate the user
+ * role + identity from the JWT, not from the request body.
+ */
+export interface OrchestrationAuthContext {
+  userId: string;
+  userRole: string | undefined;
+}
 
 export interface OrchestrationResult {
   customerId: string;
@@ -35,9 +46,14 @@ export class OrchestrationService {
     private bookingCompletionService: BookingCompletionService,
     private billingService: BillingService,
     private mapboxService: MapboxService,
+    private bookingCreditEnforcementService: BookingCreditEnforcementService,
   ) {}
 
-  async createWithBooking(tenantId: string, dto: CreateWithBookingDto): Promise<OrchestrationResult> {
+  async createWithBooking(
+    tenantId: string,
+    dto: CreateWithBookingDto,
+    auth: OrchestrationAuthContext,
+  ): Promise<OrchestrationResult> {
     // Idempotency check
     if (dto.idempotencyKey) {
       const existing = await this.dataSource.query(
@@ -103,6 +119,20 @@ export class OrchestrationService {
     if (!dto.dumpsterSize || !dto.deliveryDate) {
       throw new BadRequestException('Dumpster size and delivery date are required for scheduling');
     }
+
+    // Phase 4B — server-authoritative credit-hold enforcement.
+    // Throws 403 (block), 503 (eval failure), or 400 (malformed
+    // override) BEFORE the transaction starts so we don't allocate
+    // any state on a rejected booking. New customers (no dto.customerId)
+    // skip enforcement at the service level — they have no credit
+    // history yet.
+    const enforcement = await this.bookingCreditEnforcementService.enforceForBooking({
+      tenantId,
+      customerId: dto.customerId ?? null,
+      userId: auth.userId,
+      userRole: auth.userRole,
+      creditOverride: dto.creditOverride ?? null,
+    });
 
     // Resolve tenant-scoped default rental period from pricing rule (no hardcoded fallback)
     const pricingRule = await this.dataSource.getRepository('PricingRule').findOne({
@@ -204,6 +234,11 @@ export class OrchestrationService {
         const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
         const seq = Math.floor(Math.random() * 9000) + 1000;
 
+        // Phase 4B — attach the credit override audit note to the
+        // exchange job's placement_notes when an override was applied.
+        // The standard delivery path threads the note via
+        // BookingCompletionService; the exchange path bypasses that
+        // service so we set it directly here.
         const exchangeJob = jobRepo.create({
           tenant_id: tenantId, customer_id: customerId,
           job_number: `JOB-${dateStr}-${seq}`, job_type: 'exchange',
@@ -212,6 +247,9 @@ export class OrchestrationService {
           status: 'pending', priority: 'normal', source: 'quick_quote_exchange',
           scheduled_date: dto.deliveryDate!, rental_days: rentalDays,
           scheduled_window_start: '08:00', scheduled_window_end: '17:00',
+          placement_notes: enforcement.overrideNote && dto.placementNotes
+            ? `${dto.placementNotes}\n${enforcement.overrideNote}`
+            : enforcement.overrideNote ?? dto.placementNotes ?? null,
         } as Partial<Job> as Job);
         const savedJob = await jobRepo.save(exchangeJob);
 
@@ -232,6 +270,14 @@ export class OrchestrationService {
         } as any;
         savedInvoice = savedInv;
       } else {
+        // Phase 4B — splice the server-built credit override audit
+        // note into placementNotes when an override was applied.
+        // Backend is authoritative for the audit trail.
+        const combinedPlacementNotes =
+          enforcement.overrideNote && dto.placementNotes
+            ? `${dto.placementNotes}\n${enforcement.overrideNote}`
+            : enforcement.overrideNote ?? dto.placementNotes;
+
         // Standard delivery path
         completionResult = await this.bookingCompletionService.completeBooking({
           tenantId,
@@ -245,6 +291,7 @@ export class OrchestrationService {
           basePrice,
           distanceSurcharge,
           totalPrice,
+          placementNotes: combinedPlacementNotes,
           pricingSnapshot: {
             capturedAt: new Date().toISOString(),
             pricingRuleId: priceResult.rule.id,

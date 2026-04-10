@@ -16,12 +16,14 @@ import { PricingRule } from '../pricing/entities/pricing-rule.entity';
 import { InvoiceService } from './services/invoice.service';
 import { BillingIssueDetectorService } from './services/billing-issue-detector.service';
 import { BillingAuditService } from './services/billing-audit.service';
+import { BookingCreditEnforcementService } from './services/booking-credit-enforcement.service';
 import { InvoiceController } from './controllers/invoice.controller';
 import { BillingIssueController } from './controllers/billing-issue.controller';
 import { BillingAuditController } from './controllers/billing-audit.controller';
 import { BookingsController } from './bookings.controller';
 import { BillingService } from './billing.service';
 import { PaymentsController } from './billing.controller';
+import { CustomersModule } from '../customers/customers.module';
 import { RentalChain } from '../rental-chains/entities/rental-chain.entity';
 import { TaskChainLink } from '../rental-chains/entities/task-chain-link.entity';
 import { NotificationsModule } from '../notifications/notifications.module';
@@ -52,9 +54,13 @@ import { BookingCompletionService } from './services/booking-completion.service'
     NotificationsModule,
     PricingModule,
     MapboxModule,
+    // Phase 4B — CustomersModule exports CustomerCreditService which
+    // BookingCreditEnforcementService depends on. This is a one-way
+    // dependency: CustomersModule does NOT import BillingModule.
+    CustomersModule,
   ],
   controllers: [InvoiceController, BillingIssueController, BillingAuditController, PaymentsController, BookingsController],
-  providers: [InvoiceService, BillingIssueDetectorService, BillingAuditService, BillingService, OrchestrationService, BookingCompletionService],
-  exports: [InvoiceService, BillingService, BillingIssueDetectorService, BillingAuditService, OrchestrationService, BookingCompletionService],
+  providers: [InvoiceService, BillingIssueDetectorService, BillingAuditService, BookingCreditEnforcementService, BillingService, OrchestrationService, BookingCompletionService],
+  exports: [InvoiceService, BillingService, BillingIssueDetectorService, BillingAuditService, BookingCreditEnforcementService, OrchestrationService, BookingCompletionService],
 })
 export class BillingModule {}

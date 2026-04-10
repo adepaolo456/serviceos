@@ -16,6 +16,7 @@ import { Payment } from './entities/payment.entity';
 import { NotificationsService } from '../notifications/notifications.service';
 import { OrchestrationService } from './services/orchestration.service';
 import { BookingCompletionService } from './services/booking-completion.service';
+import { BookingCreditEnforcementService } from './services/booking-credit-enforcement.service';
 import { CreateWithBookingDto } from './dto/create-with-booking.dto';
 
 @ApiTags('Bookings')
@@ -37,6 +38,7 @@ export class BookingsController {
     private notificationsService: NotificationsService,
     private orchestrationService: OrchestrationService,
     private bookingCompletionService: BookingCompletionService,
+    private bookingCreditEnforcementService: BookingCreditEnforcementService,
   ) {}
 
   @Post('create-with-booking')
@@ -44,8 +46,11 @@ export class BookingsController {
     @Req() req: Request,
     @Body() dto: CreateWithBookingDto,
   ) {
-    const user = req.user as { tenantId: string; sub: string };
-    return this.orchestrationService.createWithBooking(user.tenantId, dto);
+    const user = req.user as { tenantId: string; sub: string; role?: string };
+    return this.orchestrationService.createWithBooking(user.tenantId, dto, {
+      userId: user.sub,
+      userRole: user.role,
+    });
   }
 
   @Post('complete')
@@ -82,10 +87,29 @@ export class BookingsController {
       paymentMethod: 'card' | 'invoice';
       stripeToken?: string;
       sendInvoiceNow?: boolean;
+      // Phase 4B — server-authoritative credit override payload.
+      creditOverride?: { reason?: string };
     },
   ) {
-    const user = req.user as { tenantId: string; sub: string };
+    const user = req.user as { tenantId: string; sub: string; role?: string };
     const tenantId = user.tenantId;
+
+    // Phase 4B — server-authoritative credit-hold enforcement.
+    // Throws 403 with structured hold payload when blocked, 503 when
+    // enforcement cannot be evaluated, 400 on malformed override
+    // request. Returns an audit note string when override is applied,
+    // null otherwise. We splice the note into placementNotes below
+    // before forwarding to the booking completion service.
+    //
+    // Runs BEFORE any customer create/update so a held customer's
+    // record is not touched on a rejected booking.
+    const enforcement = await this.bookingCreditEnforcementService.enforceForBooking({
+      tenantId,
+      customerId: body.customerId ?? null,
+      userId: user.sub,
+      userRole: user.role,
+      creditOverride: body.creditOverride ?? null,
+    });
 
     // 1. Create or find customer
     let customerId = body.customerId;
@@ -169,6 +193,15 @@ export class BookingsController {
       }
     } catch { /* non-fatal */ }
 
+    // Phase 4B — splice the server-built credit override audit note
+    // into placementNotes when an override was applied. Backend is
+    // authoritative for the audit trail; the frontend no longer
+    // builds or sends an override note.
+    const combinedPlacementNotes =
+      enforcement.overrideNote && body.placementNotes
+        ? `${body.placementNotes}\n${enforcement.overrideNote}`
+        : enforcement.overrideNote ?? body.placementNotes;
+
     // 3. Shared booking completion (jobs, invoice, line items, rental chain)
     const completion = await this.bookingCompletionService.completeBooking({
       tenantId,
@@ -183,7 +216,7 @@ export class BookingsController {
       distanceSurcharge: body.deliveryFee || 0,
       totalPrice: body.totalPrice,
       taxAmount: body.taxAmount || 0,
-      placementNotes: body.placementNotes,
+      placementNotes: combinedPlacementNotes,
       pricingSnapshot,
       pricingTierUsed: 'global',
     });
