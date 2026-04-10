@@ -5,7 +5,8 @@ import Link from "next/link";
 import { portalApi } from "@/lib/portal-api";
 import { formatCurrency } from "@/lib/utils";
 import { formatRentalTitle, rentalSizeLabel } from "@/lib/job-status";
-import { Package, FileText, PlusCircle, Phone, Calendar, MapPin, Clock, ArrowUpRight, AlertCircle, CreditCard, CalendarClock, AlertTriangle } from "lucide-react";
+import { Package, FileText, PlusCircle, Phone, Calendar, MapPin, Clock, ArrowUpRight, AlertCircle, CreditCard, CalendarClock, AlertTriangle, DollarSign } from "lucide-react";
+import { FEATURE_REGISTRY } from "@/lib/feature-registry";
 
 interface Rental {
   id: string;
@@ -83,15 +84,21 @@ export default function PortalHomePage() {
   const [issueJobId, setIssueJobId] = useState("");
   const [issueSubmitting, setIssueSubmitting] = useState(false);
   const [issueSuccess, setIssueSuccess] = useState(false);
+  const [accountSummary, setAccountSummary] = useState<{
+    current_balance: number; past_due_amount: number; unpaid_invoice_count: number;
+    account_status: string; status_message: string | null; payment_eligible: boolean;
+  } | null>(null);
   const customer = portalApi.getCustomer();
 
   useEffect(() => {
     Promise.all([
       portalApi.get<Rental[]>("/portal/rentals").catch(() => [] as Rental[]),
       portalApi.get<Invoice[]>("/portal/invoices").catch(() => [] as Invoice[]),
-    ]).then(([r, i]) => {
+      portalApi.get<typeof accountSummary>("/portal/account-summary").catch(() => null),
+    ]).then(([r, i, s]) => {
       setRentals(r);
       setInvoices(i);
+      if (s) setAccountSummary(s);
     }).finally(() => setLoading(false));
   }, []);
 
@@ -157,18 +164,42 @@ export default function PortalHomePage() {
         <p className="mt-1 text-sm" style={{ color: "var(--t-frame-text-muted)" }}>Here&apos;s an overview of your rentals and account.</p>
       </div>
 
-      {/* Outstanding Balance */}
-      {totalOutstanding > 0 && (
-        <div className="rounded-[20px] border border-amber-500/30 bg-amber-500/5 p-5 flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <p className="text-xs font-medium text-amber-500 mb-1">Outstanding Balance</p>
-            <p className="text-2xl font-bold text-[var(--t-text-primary)]">{formatCurrency(totalOutstanding)}</p>
-            <p className="text-xs text-[var(--t-text-muted)] mt-0.5">{unpaidInvoices.length} unpaid invoice{unpaidInvoices.length !== 1 ? "s" : ""}</p>
+      {/* Account Summary */}
+      {accountSummary && accountSummary.account_status !== "good_standing" && (
+        <div className="rounded-[20px] border p-5" style={{
+          borderColor: accountSummary.account_status === "service_restricted" ? "var(--t-error)" : accountSummary.account_status === "past_due" ? "var(--t-warning, #F59E0B)" : "var(--t-border)",
+          background: accountSummary.account_status === "service_restricted" ? "var(--t-error-soft)" : accountSummary.account_status === "past_due" ? "var(--t-warning-soft, #FFF8E1)" : "var(--t-bg-card)",
+        }}>
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--t-text-muted)" }}>
+              {FEATURE_REGISTRY.portal_account_summary_title?.label ?? "Account Summary"}
+            </p>
+            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{
+              background: accountSummary.account_status === "service_restricted" ? "var(--t-error-soft)" : accountSummary.account_status === "past_due" ? "var(--t-warning-soft, #FFF8E1)" : "var(--t-accent-soft)",
+              color: accountSummary.account_status === "service_restricted" ? "var(--t-error)" : accountSummary.account_status === "past_due" ? "var(--t-warning, #F59E0B)" : "var(--t-accent)",
+            }}>
+              {FEATURE_REGISTRY[`portal_account_status_${accountSummary.account_status}`]?.label ?? accountSummary.account_status.replace(/_/g, " ")}
+            </span>
           </div>
-          <Link href="/portal/invoices"
-            className="flex items-center gap-2 rounded-full bg-[var(--t-accent)] px-5 py-2.5 text-sm font-semibold text-[var(--t-accent-on-accent)] hover:opacity-90 transition-opacity">
-            <CreditCard className="h-4 w-4" /> Pay Now <ArrowUpRight className="h-3.5 w-3.5" />
-          </Link>
+          <div className="grid grid-cols-3 gap-4 mb-3">
+            <div>
+              <p className="text-[10px] uppercase tracking-wider" style={{ color: "var(--t-text-muted)" }}>{FEATURE_REGISTRY.portal_account_current_balance?.label ?? "Current Balance"}</p>
+              <p className="text-xl font-bold tabular-nums" style={{ color: "var(--t-text-primary)" }}>{formatCurrency(accountSummary.current_balance)}</p>
+            </div>
+            <div>
+              <p className="text-[10px] uppercase tracking-wider" style={{ color: "var(--t-text-muted)" }}>{FEATURE_REGISTRY.portal_account_past_due?.label ?? "Past Due"}</p>
+              <p className="text-xl font-bold tabular-nums" style={{ color: accountSummary.past_due_amount > 0 ? "var(--t-error)" : "var(--t-text-primary)" }}>{formatCurrency(accountSummary.past_due_amount)}</p>
+            </div>
+            <div>
+              <p className="text-[10px] uppercase tracking-wider" style={{ color: "var(--t-text-muted)" }}>{FEATURE_REGISTRY.portal_account_unpaid_invoices?.label ?? "Unpaid Invoices"}</p>
+              <p className="text-xl font-bold tabular-nums" style={{ color: "var(--t-text-primary)" }}>{accountSummary.unpaid_invoice_count}</p>
+            </div>
+          </div>
+          {accountSummary.payment_eligible && (
+            <Link href="/portal/invoices" className="flex items-center gap-2 rounded-full bg-[var(--t-accent)] px-5 py-2.5 text-sm font-semibold text-[var(--t-accent-on-accent)] hover:opacity-90 transition-opacity w-fit">
+              <CreditCard className="h-4 w-4" /> {FEATURE_REGISTRY.portal_account_view_invoices?.label ?? "View Invoices"} <ArrowUpRight className="h-3.5 w-3.5" />
+            </Link>
+          )}
         </div>
       )}
 

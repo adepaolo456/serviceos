@@ -497,6 +497,68 @@ export class PortalService {
     };
   }
 
+  /**
+   * Phase 13B — Customer-safe account summary.
+   *
+   * Aggregates invoice balances and reads customer.credit_hold
+   * to derive a customer-facing account status. No internal hold
+   * mechanics, credit limits, or audit data exposed.
+   */
+  async getAccountSummary(customerId: string, tenantId: string) {
+    const [customer, result] = await Promise.all([
+      this.customerRepo.findOne({
+        where: { id: customerId, tenant_id: tenantId },
+        select: ['id', 'credit_hold'],
+      }),
+      this.invoiceRepo
+        .createQueryBuilder('i')
+        .select('COALESCE(SUM(CASE WHEN i.balance_due > 0 THEN i.balance_due ELSE 0 END), 0)', 'current_balance')
+        .addSelect(
+          `COALESCE(SUM(CASE WHEN i.balance_due > 0 AND i.due_date < CURRENT_DATE THEN i.balance_due ELSE 0 END), 0)`,
+          'past_due_amount',
+        )
+        .addSelect('COUNT(CASE WHEN i.balance_due > 0 THEN 1 END)::int', 'unpaid_invoice_count')
+        .where('i.customer_id = :customerId', { customerId })
+        .andWhere('i.tenant_id = :tenantId', { tenantId })
+        .andWhere('i.status NOT IN (:...excluded)', { excluded: ['voided', 'draft'] })
+        .getRawOne<{
+          current_balance: string;
+          past_due_amount: string;
+          unpaid_invoice_count: number;
+        }>(),
+    ]);
+
+    const currentBalance = Number(result?.current_balance ?? 0);
+    const pastDueAmount = Number(result?.past_due_amount ?? 0);
+    const unpaidInvoiceCount = Number(result?.unpaid_invoice_count ?? 0);
+    const isRestricted = !!customer?.credit_hold;
+
+    let accountStatus: string;
+    if (isRestricted) accountStatus = 'service_restricted';
+    else if (pastDueAmount > 0) accountStatus = 'past_due';
+    else if (currentBalance > 0) accountStatus = 'payment_due';
+    else accountStatus = 'good_standing';
+
+    // Status messages are intentionally server-side so they can be
+    // tenant-overridden in the future via registry. No internal
+    // terminology used.
+    const STATUS_MESSAGES: Record<string, string | null> = {
+      good_standing: null,
+      payment_due: 'You have invoices ready for payment.',
+      past_due: 'Your account has past due invoices. Please make a payment to avoid service interruption.',
+      service_restricted: 'Your account has an outstanding balance that must be resolved before new service can be scheduled. Please contact us or make a payment.',
+    };
+
+    return {
+      current_balance: Math.round(currentBalance * 100) / 100,
+      past_due_amount: Math.round(pastDueAmount * 100) / 100,
+      unpaid_invoice_count: unpaidInvoiceCount,
+      account_status: accountStatus,
+      status_message: STATUS_MESSAGES[accountStatus] ?? null,
+      payment_eligible: currentBalance > 0,
+    };
+  }
+
   async reportIssue(customerId: string, tenantId: string, dto: { jobId?: string; reason: string; notes?: string }) {
     // Create a notification/alert for the office
     const customer = await this.customerRepo.findOne({ where: { id: customerId, tenant_id: tenantId } });
