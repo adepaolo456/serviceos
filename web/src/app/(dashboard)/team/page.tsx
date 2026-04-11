@@ -127,13 +127,15 @@ export default function TeamPage() {
       </div>
 
       {/* Filters */}
-      <div className="flex gap-1 mb-5">
-        {FILTERS.map(f => (
-          <button key={f} onClick={() => setFilter(f)}
-            className={`rounded-full px-3 py-1.5 text-xs font-medium capitalize transition-colors ${filter === f ? "bg-[var(--t-accent-soft)] text-[var(--t-accent)]" : "text-[var(--t-frame-text-muted)] hover:text-[var(--t-frame-text)]"}`}>
-            {f}
-          </button>
-        ))}
+      <div className="mb-5">
+        <div style={{ display: "inline-flex", borderRadius: 22, backgroundColor: "var(--t-bg-secondary)", border: "1px solid var(--t-border)", padding: 3, gap: 2 }}>
+          {FILTERS.map(f => (
+            <button key={f} onClick={() => setFilter(f)}
+              style={{ fontSize: 12, fontWeight: 600, padding: "5px 12px", borderRadius: 18, border: "none", cursor: "pointer", textTransform: "capitalize", transition: "all 0.15s ease", backgroundColor: filter === f ? "var(--t-accent)" : "transparent", color: filter === f ? "#fff" : "var(--t-text-muted)" }}>
+              {f}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Team List */}
