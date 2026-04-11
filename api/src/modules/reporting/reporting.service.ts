@@ -90,7 +90,7 @@ export class ReportingService {
     const { start, end } = this.dateRange(startDate, endDate);
     const rows = await this.dataSource.query(
       `SELECT i.id, i.invoice_number as "invoiceNumber",
-              c.name as "customerName", i.total, i.amount_paid as "amountPaid",
+              COALESCE(NULLIF(TRIM(COALESCE(c.first_name, '') || ' ' || COALESCE(c.last_name, '')), ''), 'Unknown Customer') as "customerName", i.total, i.amount_paid as "amountPaid",
               i.balance_due as "balanceDue", i.status, i.created_at as "createdAt",
               j.id as "jobId", j.job_number as "jobNumber"
        FROM invoices i
