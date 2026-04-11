@@ -208,6 +208,17 @@ export default function JobsPage() {
   const [overdueCount, setOverdueCount] = useState(0);
   const [selectedJobIds, setSelectedJobIds] = useState<Set<string>>(new Set());
   const [bulkProgress, setBulkProgress] = useState<string | null>(null);
+  // Lifecycle view state
+  const [chains, setChains] = useState<Array<{
+    id: string; status: string; dumpster_size: string; rental_days: number;
+    drop_off_date: string; expected_pickup_date: string | null;
+    customer: { id: string; first_name: string; last_name: string } | null;
+    asset: { id: string; identifier: string; subtype: string } | null;
+    links: Array<{ job_id: string; task_type: string; sequence_number: number; status: string; scheduled_date: string;
+      job: { id: string; job_number: string; status: string; service_address: Record<string, string> | null; asset_subtype?: string } | null;
+    }>;
+  }>>([]);
+  const [chainsLoading, setChainsLoading] = useState(true);
   // Tenant-wide blocker counts for the top strip tiles. Sourced from the
   // new /analytics/jobs-by-blocker endpoint, refreshed on mount.
   const [blockerCounts, setBlockerCounts] = useState<{
@@ -316,6 +327,11 @@ export default function JobsPage() {
       }>("/analytics/jobs-summary")
       .then(setSummary)
       .catch(() => {});
+    // Fetch rental chains for lifecycle view
+    api.get<typeof chains>("/rental-chains")
+      .then(setChains)
+      .catch(() => {})
+      .finally(() => setChainsLoading(false));
   }, []);
 
   useEffect(() => { setPage(1); }, [statusFilter, dateRange]);
@@ -405,6 +421,55 @@ export default function JobsPage() {
     });
     return result;
   }, [jobs, searchQuery, sortBy, statusFilter, blockedSubview, jobTypeFilter]);
+
+  // ── Lifecycle rows derived from rental chains ──
+  const chainedJobIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const c of chains) for (const l of c.links) if (l.job_id) ids.add(l.job_id);
+    return ids;
+  }, [chains]);
+
+  function deriveLifecycleStatus(chain: typeof chains[0]): string {
+    if (chain.status === "completed") return FEATURE_REGISTRY.lifecycle_status_completed?.label ?? "Completed";
+    if (chain.status === "cancelled") return "Cancelled";
+    const dropOff = chain.links.find(l => l.task_type === "drop_off");
+    const pickUp = chain.links.find(l => l.task_type === "pick_up");
+    const hasExchange = chain.links.some(l => l.task_type === "exchange");
+    if (hasExchange) return FEATURE_REGISTRY.lifecycle_status_exchange?.label ?? "Exchange Scheduled";
+    if (dropOff?.job?.status === "completed" && pickUp && pickUp.job?.status !== "completed")
+      return FEATURE_REGISTRY.lifecycle_status_awaiting_pickup?.label ?? "Awaiting Pickup";
+    if (dropOff?.job?.status === "completed" && !pickUp)
+      return FEATURE_REGISTRY.lifecycle_status_on_site?.label ?? "On Site";
+    return FEATURE_REGISTRY.lifecycle_status_awaiting_delivery?.label ?? "Awaiting Delivery";
+  }
+
+  const filteredChains = useMemo(() => {
+    let result = [...chains];
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter(c => {
+        const cName = c.customer ? `${c.customer.first_name} ${c.customer.last_name}`.toLowerCase() : "";
+        const addr = c.links[0]?.job?.service_address ? fmtAddress(c.links[0].job.service_address).toLowerCase() : "";
+        const jobNums = c.links.map(l => l.job?.job_number || "").join(" ").toLowerCase();
+        const size = (c.dumpster_size || "").toLowerCase();
+        return cName.includes(q) || addr.includes(q) || jobNums.includes(q) || size.includes(q);
+      });
+    }
+    if (dateRange !== "all") {
+      const range = getDateRange(dateRange);
+      result = result.filter(c => {
+        if (range.dateFrom && c.drop_off_date < range.dateFrom) return false;
+        if (range.dateTo && c.drop_off_date > range.dateTo) return false;
+        return true;
+      });
+    }
+    result.sort((a, b) => (b.drop_off_date || "").localeCompare(a.drop_off_date || ""));
+    return result;
+  }, [chains, searchQuery, dateRange]);
+
+  const standaloneJobs = useMemo(() => {
+    return filteredJobs.filter(j => !chainedJobIds.has(j.id));
+  }, [filteredJobs, chainedJobIds]);
 
   const thStyle: React.CSSProperties = { padding: "10px 16px", textAlign: "left", fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--t-text-muted)", whiteSpace: "nowrap" };
 
@@ -670,56 +735,24 @@ export default function JobsPage() {
         </div>
       )}
 
-      {/* ─── Job Table ─── */}
-      {loading ? (
+      {/* ─── Lifecycle Rows ─── */}
+      {(loading || chainsLoading) ? (
         <div className="space-y-2">
           {Array.from({ length: 6 }).map((_, i) => (
             <div key={i} className="h-14 w-full skeleton" style={{ borderRadius: 14 }} />
           ))}
         </div>
-      ) : filteredJobs.length === 0 ? (
+      ) : filteredChains.length === 0 && standaloneJobs.length === 0 ? (
         <div className="surface-card py-16 flex flex-col items-center justify-center text-center">
           <Briefcase size={40} style={{ color: "var(--t-text-tertiary)" }} className="mb-3" />
-          {(() => {
-            // Contextual empty state. Blocked + sub-filter gets its own
-            // copy so operators understand WHY the list is empty — the
-            // sub-filter may be hiding rows that exist in "All Blocked".
-            let heading: string;
-            let description: string;
-            if (statusFilter === "blocked") {
-              const rangeSuffix = dateRange === "all" ? "" : " in this date range";
-              if (blockedSubview === "billing_issue") {
-                const label = FEATURE_REGISTRY.blocked_reason_billing_issue?.label ?? "Billing Issue";
-                heading = `No blocked jobs with a ${label}`;
-                description = `No jobs currently have open billing issues${rangeSuffix}. Try another reason or clear the sub-filter.`;
-              } else if (blockedSubview === "unpaid_completed_invoice") {
-                const label = FEATURE_REGISTRY.blocked_reason_unpaid_completed_invoice?.label ?? "Unpaid Invoice";
-                heading = `No blocked jobs with an ${label}`;
-                description = `No completed jobs currently have an unpaid invoice${rangeSuffix}. Try another reason or clear the sub-filter.`;
-              } else {
-                heading = "No blocked jobs";
-                description = `Everything is unblocked${rangeSuffix} — nice.`;
-              }
-            } else if (statusFilter !== "all" || dateRange !== "all" || searchQuery) {
-              heading = "No matching jobs";
-              description = "Try adjusting your filters or search";
-            } else {
-              heading = "No jobs yet";
-              description = "Create your first job to get started";
-            }
-            return (
-              <>
-                <h2 style={{ fontSize: 15, fontWeight: 600, color: "var(--t-text-primary)" }} className="mb-1">
-                  {heading}
-                </h2>
-                <p style={{ fontSize: 12, color: "var(--t-text-muted)" }} className="mb-5">
-                  {description}
-                </p>
-              </>
-            );
-          })()}
-          {(statusFilter !== "all" || dateRange !== "all" || searchQuery) ? (
-            <button onClick={() => { setStatusFilter("all"); setDateRange("all"); setSearchQuery(""); }}
+          <h2 style={{ fontSize: 15, fontWeight: 600, color: "var(--t-text-primary)" }} className="mb-1">
+            {searchQuery || dateRange !== "all" ? "No matching rentals" : "No rentals yet"}
+          </h2>
+          <p style={{ fontSize: 12, color: "var(--t-text-muted)" }} className="mb-5">
+            {searchQuery || dateRange !== "all" ? "Try adjusting your filters or search" : "Create your first booking to get started"}
+          </p>
+          {(searchQuery || dateRange !== "all") ? (
+            <button onClick={() => { setDateRange("all"); setSearchQuery(""); }}
               className="inline-flex items-center gap-1.5 rounded-full border px-4 py-2 text-sm font-medium transition-colors"
               style={{ borderColor: "var(--t-border)", color: "var(--t-text-muted)" }}>
               Clear Filters
@@ -731,291 +764,133 @@ export default function JobsPage() {
           )}
         </div>
       ) : (
-        <div className="surface-card" style={{ overflow: "hidden", padding: 0 }}>
-          <div className="table-scroll">
-            <table className="w-full" style={{ fontSize: 13, borderCollapse: "collapse" }}>
-              <thead>
-                <tr className="table-header" style={{ borderBottom: "1px solid var(--t-border)" }}>
-                  <th style={{ ...thStyle, padding: "10px 6px 10px 14px", width: 36 }}>
-                    <input
-                      type="checkbox"
-                      checked={filteredJobs.length > 0 && filteredJobs.every(j => selectedJobIds.has(j.id))}
-                      onChange={() => {
-                        const allSelected = filteredJobs.every(j => selectedJobIds.has(j.id));
-                        setSelectedJobIds(prev => {
-                          const next = new Set(prev);
-                          if (allSelected) filteredJobs.forEach(j => next.delete(j.id));
-                          else filteredJobs.forEach(j => next.add(j.id));
-                          return next;
-                        });
-                      }}
-                      className="h-3.5 w-3.5 rounded cursor-pointer accent-[var(--t-accent)]"
-                    />
-                  </th>
-                  <th style={{ ...thStyle, width: 72 }}>Size</th>
-                  <th style={{ ...thStyle, width: 80 }}>Type</th>
-                  <th style={thStyle}>Customer</th>
-                  <th style={thStyle}>Address</th>
-                  <th style={{ ...thStyle, width: 130 }}>Schedule</th>
-                  <th style={{ ...thStyle, width: 100 }}>Driver</th>
-                  <th style={{ ...thStyle, width: 90 }}>Status</th>
-                  <th style={{ ...thStyle, textAlign: "right", width: 90 }}>Price</th>
-                  <th style={{ ...thStyle, width: 40 }}></th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredJobs.map((job) => {
-                  const customerName = job.customer ? `${job.customer.first_name} ${job.customer.last_name}` : "";
-                  const address = fmtAddress(job.service_address);
-
-                  return (
-                    <tr
-                      key={job.id}
-                      onClick={() => router.push(`/jobs/${job.id}`)}
-                      className="table-row cursor-pointer"
-                      style={(() => {
-                        // Visual priority ladder. Exactly ONE border per row.
-                        //   1. Blocked      → red    (overrides everything)
-                        //   2. Unassigned   → orange
-                        //   3. Assigned/En Route → blue
-                        //   4. Completed    → green
-                        // Blocked uses the isJobBlocked() predicate, which
-                        // mirrors AnalyticsService.getJobsSummary() so the
-                        // top-strip count and the borders never diverge.
-                        const base: React.CSSProperties = { borderBottom: "1px solid var(--t-border-subtle)" };
-                        if (isJobBlocked(job)) {
-                          return { ...base, borderLeft: "3px solid var(--t-error)" };
-                        }
-                        if (["pending", "confirmed"].includes(job.status)) {
-                          return { ...base, borderLeft: "3px solid var(--t-warning)" };
-                        }
-                        if (["dispatched", "en_route"].includes(job.status)) {
-                          return { ...base, borderLeft: "3px solid var(--t-info, #3b82f6)" };
-                        }
-                        if (job.status === "completed") {
-                          return { ...base, borderLeft: "3px solid var(--t-success, #22c55e)" };
-                        }
-                        return { ...base, borderLeft: "3px solid transparent" };
-                      })()}
-                    >
-                      <td style={{ padding: "12px 6px 12px 14px", width: 36 }}>
-                        <input
-                          type="checkbox"
-                          checked={selectedJobIds.has(job.id)}
-                          onClick={(e) => e.stopPropagation()}
-                          onChange={(e) => {
-                            e.stopPropagation();
-                            setSelectedJobIds(prev => {
-                              const next = new Set(prev);
-                              if (next.has(job.id)) next.delete(job.id); else next.add(job.id);
-                              return next;
-                            });
-                          }}
-                          className="h-3.5 w-3.5 rounded cursor-pointer accent-[var(--t-accent)]"
-                        />
-                      </td>
-
-                      {/* Size */}
-                      <td style={{ padding: "12px 16px 12px 12px" }}>
-                        {(job.asset_subtype || job.asset?.subtype) ? (
-                          <span style={{ fontSize: 13, fontWeight: 800, color: "var(--t-text-primary)", background: "var(--t-accent-soft)", padding: "2px 7px", borderRadius: 5, whiteSpace: "nowrap", letterSpacing: "0.02em" }}>
-                            {(job.asset_subtype || job.asset?.subtype || "").replace(/yd$/i, "Y").toUpperCase()}
-                          </span>
-                        ) : (
-                          <span style={{ color: "var(--t-text-tertiary)" }}>&mdash;</span>
-                        )}
-                      </td>
-
-                      {/* Type */}
-                      <td style={{ padding: "12px 16px" }}>
-                        <span className={jobTypeTextClass(job.job_type)} style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em" }}>
-                          {job.job_type}
-                        </span>
-                      </td>
-
-                      {/* Customer (primary) + Job # (secondary) + blocked reason (blocked view only) */}
-                      <td style={{ padding: "12px 16px" }}>
-                        <p style={{ fontWeight: 600, fontSize: 13, color: "var(--t-text-primary)", lineHeight: 1.3 }}>{customerName || <span style={{ color: "var(--t-text-tertiary)" }}>No customer</span>}</p>
-                        <p style={{ fontSize: 11, color: "var(--t-text-muted)", fontVariantNumeric: "tabular-nums", marginTop: 1 }}>{job.job_number}</p>
-                        {statusFilter === "blocked" && (() => {
-                          // Reason badge with quick-action navigation. Only rendered
-                          // in the Blocked drill-down view. Clicking the badge jumps
-                          // to the existing workflow for that reason — reuse, not
-                          // new routes. `stopPropagation` prevents the row-click
-                          // from also firing (which would navigate to the job).
-                          const reason = getBlockedReason(job);
-                          if (!reason) return null;
-                          const featureId = reason === "billing_issue"
-                            ? "blocked_reason_billing_issue"
-                            : "blocked_reason_unpaid_completed_invoice";
-                          const feature = FEATURE_REGISTRY[featureId];
-                          const target = reason === "billing_issue"
-                            ? `/billing-issues?jobId=${job.id}`
-                            : `/invoices?jobId=${job.id}`;
-                          return (
-                            <button
-                              type="button"
-                              onClick={(e) => { e.stopPropagation(); router.push(target); }}
-                              title={feature?.shortDescription}
-                              style={{
-                                display: "inline-flex", alignItems: "center", gap: 4,
-                                marginTop: 4, padding: "1px 6px",
-                                borderRadius: 4, border: "none", cursor: "pointer",
-                                background: "var(--t-error-soft)",
-                                color: "var(--t-error)",
-                                fontSize: 10, fontWeight: 600,
-                              }}
-                            >
-                              {feature?.label ?? reason}
-                              <ArrowRight style={{ width: 9, height: 9 }} />
-                            </button>
-                          );
-                        })()}
-                      </td>
-
-                      {/* Address */}
-                      <td style={{ padding: "12px 16px", maxWidth: 240 }}>
-                        {address ? (
-                          <span style={{ fontSize: 12, color: "var(--t-text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>{address}</span>
-                        ) : (
-                          <span style={{ color: "var(--t-text-tertiary)" }}>&mdash;</span>
-                        )}
-                      </td>
-
-                      {/* Schedule */}
-                      <td style={{ padding: "12px 16px" }}>
-                        <p style={{ fontSize: 12, fontWeight: 500, color: "var(--t-text-primary)", lineHeight: 1.3 }}>
-                          {job.scheduled_date ? fmtDate(job.scheduled_date) : <span style={{ color: "var(--t-text-tertiary)" }}>TBD</span>}
-                        </p>
-                        {job.scheduled_window_start && (
-                          <p style={{ fontSize: 11, color: "var(--t-text-muted)", fontVariantNumeric: "tabular-nums", marginTop: 1 }}>
-                            {fmtTime(job.scheduled_window_start)}{job.scheduled_window_end ? `–${fmtTime(job.scheduled_window_end)}` : ""}
-                          </p>
-                        )}
-                      </td>
-
-                      {/* Driver */}
-                      <td style={{ padding: "12px 16px" }}>
-                        {job.assigned_driver ? (
-                          <span style={{ fontSize: 12, color: "var(--t-text-secondary)" }}>
-                            {job.assigned_driver.first_name} {job.assigned_driver.last_name?.[0]}.
-                          </span>
-                        ) : (
-                          <span className="badge-warning" style={{ fontSize: 10, padding: "1px 6px" }}>Unassigned</span>
-                        )}
-                      </td>
-
-                      {/* Status — dispatch lifecycle only; payment state renders beside Price */}
-                      <td style={{ padding: "12px 16px" }}>
-                        {(() => {
-                          const displayStatus = deriveDisplayStatus(job.status);
-                          return (
-                            <span style={{ fontSize: 11, fontWeight: 600, color: displayStatusColor(displayStatus) }}>
-                              {DISPLAY_STATUS_LABELS[displayStatus]}
-                            </span>
-                          );
-                        })()}
-                        {job.is_overdue && (
-                          <p className="badge-error" style={{ fontSize: 9, fontWeight: 700, marginTop: 3, padding: "0px 5px", display: "inline-block" }}>
-                            +{job.extra_days}d
-                          </p>
-                        )}
-                      </td>
-
-                      {/* Price + payment indicator */}
-                      <td style={{ padding: "12px 16px", textAlign: "right" }}>
-                        {job.total_price > 0 ? (
-                          <span style={{ fontSize: 13, fontWeight: 600, color: "var(--t-text-primary)", fontVariantNumeric: "tabular-nums" }}>
-                            ${Number(job.total_price).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                          </span>
-                        ) : (
-                          <span style={{ color: "var(--t-text-tertiary)" }}>&mdash;</span>
-                        )}
-                        {(() => {
-                          // Secondary badge: payment state lives next to Price,
-                          // NOT in the Status column. Status column is dispatch
-                          // lifecycle only.
-                          const inv = job.linked_invoice;
-                          if (!inv) return null;
-                          if (inv.status === "partial") {
-                            return (
-                              <span style={{ display: "block", marginTop: 2, fontSize: 10, fontWeight: 600, color: "var(--t-warning)" }}>
-                                Partial
-                              </span>
-                            );
-                          }
-                          if (Number(inv.balance_due) > 0 && inv.status !== "paid") {
-                            return (
-                              <span style={{ display: "block", marginTop: 2, fontSize: 10, fontWeight: 600, color: "var(--t-error)" }}>
-                                Pending Payment
-                              </span>
-                            );
-                          }
-                          return null;
-                        })()}
-                      </td>
-
-                      {/* Actions */}
-                      <td style={{ padding: "12px 8px 12px 0", textAlign: "center" }}>
-                        <Dropdown
-                          trigger={
-                            <button
-                              onClick={(e) => e.stopPropagation()}
-                              className="btn-ghost rounded-md p-1"
-                              style={{ color: "var(--t-text-tertiary)" }}
-                            >
-                              <MoreHorizontal className="h-4 w-4" />
-                            </button>
-                          }
-                          align="right"
-                        >
-                          <button
-                            onClick={async (e) => {
-                              e.stopPropagation();
-                              try {
-                                await api.patch(`/jobs/${job.id}/status`, { status: "completed" });
-                                toast("success", "Job marked complete");
-                                fetchJobs();
-                              } catch { toast("error", "Failed to update status"); }
-                            }}
-                            className="flex w-full items-center gap-2 px-4 py-2 text-sm transition-colors"
-                            style={{ color: "var(--t-text-primary)", border: "none", background: "none", cursor: "pointer" }}
-                          >
-                            <CheckCircle2 className="h-3.5 w-3.5" style={{ color: "var(--t-accent)" }} /> Mark Complete
-                          </button>
-                          <button
-                            onClick={async (e) => {
-                              e.stopPropagation();
-                              try {
-                                await api.patch(`/jobs/${job.id}/status`, { status: "dispatched" });
-                                toast("success", "Job sent to driver");
-                                fetchJobs();
-                              } catch { toast("error", "Failed to update status"); }
-                            }}
-                            className="flex w-full items-center gap-2 px-4 py-2 text-sm transition-colors"
-                            style={{ color: "var(--t-text-primary)", border: "none", background: "none", cursor: "pointer" }}
-                          >
-                            <Send className="h-3.5 w-3.5" style={{ color: "var(--t-warning)" }} /> Send to Driver
-                          </button>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              router.push(`/invoices?jobId=${job.id}`);
-                            }}
-                            className="flex w-full items-center gap-2 px-4 py-2 text-sm transition-colors"
-                            style={{ color: "var(--t-text-primary)", border: "none", background: "none", cursor: "pointer" }}
-                          >
-                            <FileText className="h-3.5 w-3.5" style={{ color: "var(--t-text-muted)" }} /> View Invoice
-                          </button>
-                        </Dropdown>
-                      </td>
+        <>
+          {/* Lifecycle rows */}
+          {filteredChains.length > 0 && (
+            <div className="surface-card" style={{ overflow: "hidden", padding: 0 }}>
+              <div className="table-scroll">
+                <table className="w-full" style={{ fontSize: 13, borderCollapse: "collapse" }}>
+                  <thead>
+                    <tr className="table-header" style={{ borderBottom: "1px solid var(--t-border)" }}>
+                      <th style={{ ...thStyle, width: 72 }}>Size</th>
+                      <th style={thStyle}>Customer</th>
+                      <th style={thStyle}>Address</th>
+                      <th style={{ ...thStyle, width: 110 }}>Delivered</th>
+                      <th style={{ ...thStyle, width: 110 }}>Pickup</th>
+                      <th style={{ ...thStyle, width: 120 }}>Tasks</th>
+                      <th style={{ ...thStyle, width: 130 }}>Status</th>
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
+                  </thead>
+                  <tbody>
+                    {filteredChains.map(chain => {
+                      const cName = chain.customer ? `${chain.customer.first_name} ${chain.customer.last_name}` : "";
+                      const addr = chain.links[0]?.job?.service_address ? fmtAddress(chain.links[0].job.service_address) : "";
+                      const size = chain.dumpster_size || chain.asset?.subtype || "";
+                      const completedTasks = chain.links.filter(l => l.job?.status === "completed").length;
+                      const totalTasks = chain.links.length;
+                      const lcStatus = deriveLifecycleStatus(chain);
+                      const isCompleted = chain.status === "completed";
+                      return (
+                        <tr key={chain.id} onClick={() => router.push(`/rentals/${chain.id}`)} className="table-row cursor-pointer"
+                          style={{
+                            borderBottom: "1px solid var(--t-border-subtle)",
+                            borderLeft: isCompleted ? "3px solid var(--t-success, #22c55e)" : "3px solid var(--t-accent)",
+                          }}>
+                          <td style={{ padding: "12px 16px 12px 12px" }}>
+                            {size ? (
+                              <span style={{ fontSize: 13, fontWeight: 800, color: "var(--t-text-primary)", background: "var(--t-accent-soft)", padding: "2px 7px", borderRadius: 5, whiteSpace: "nowrap" }}>
+                                {size.replace(/yd$/i, "Y").toUpperCase()}
+                              </span>
+                            ) : <span style={{ color: "var(--t-text-tertiary)" }}>&mdash;</span>}
+                          </td>
+                          <td style={{ padding: "12px 16px" }}>
+                            <p style={{ fontWeight: 600, fontSize: 13, color: "var(--t-text-primary)", lineHeight: 1.3 }}>{cName || <span style={{ color: "var(--t-text-tertiary)" }}>No customer</span>}</p>
+                            <p style={{ fontSize: 11, color: "var(--t-text-muted)", marginTop: 1 }}>{chain.links.map(l => l.job?.job_number).filter(Boolean).join(" · ")}</p>
+                          </td>
+                          <td style={{ padding: "12px 16px", maxWidth: 220 }}>
+                            <span style={{ fontSize: 12, color: "var(--t-text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>{addr || "—"}</span>
+                          </td>
+                          <td style={{ padding: "12px 16px" }}>
+                            <span style={{ fontSize: 12, fontWeight: 500, color: "var(--t-text-primary)" }}>{chain.drop_off_date ? fmtDate(chain.drop_off_date) : "—"}</span>
+                          </td>
+                          <td style={{ padding: "12px 16px" }}>
+                            <span style={{ fontSize: 12, fontWeight: 500, color: "var(--t-text-primary)" }}>{chain.expected_pickup_date ? fmtDate(chain.expected_pickup_date) : "—"}</span>
+                          </td>
+                          <td style={{ padding: "12px 16px" }}>
+                            <span style={{ fontSize: 11, color: "var(--t-text-muted)" }}>{completedTasks}/{totalTasks} {FEATURE_REGISTRY.lifecycle_task_summary_format?.label ?? "tasks complete"}</span>
+                          </td>
+                          <td style={{ padding: "12px 16px" }}>
+                            <span style={{ fontSize: 11, fontWeight: 600, color: isCompleted ? "var(--t-success, #22c55e)" : "var(--t-accent)" }}>{lcStatus}</span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Standalone Jobs */}
+          {standaloneJobs.length > 0 && (
+            <div className="mt-6">
+              <h2 className="text-sm font-semibold text-[var(--t-text-muted)] mb-3">
+                {FEATURE_REGISTRY.lifecycle_standalone_jobs?.label ?? "Standalone Jobs"} ({standaloneJobs.length})
+              </h2>
+              <div className="surface-card" style={{ overflow: "hidden", padding: 0 }}>
+                <div className="table-scroll">
+                  <table className="w-full" style={{ fontSize: 13, borderCollapse: "collapse" }}>
+                    <thead>
+                      <tr className="table-header" style={{ borderBottom: "1px solid var(--t-border)" }}>
+                        <th style={{ ...thStyle, width: 72 }}>Size</th>
+                        <th style={{ ...thStyle, width: 80 }}>Type</th>
+                        <th style={thStyle}>Customer</th>
+                        <th style={thStyle}>Address</th>
+                        <th style={{ ...thStyle, width: 110 }}>Date</th>
+                        <th style={{ ...thStyle, width: 90 }}>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {standaloneJobs.map(job => {
+                        const customerName = job.customer ? `${job.customer.first_name} ${job.customer.last_name}` : "";
+                        const address = fmtAddress(job.service_address);
+                        const displayStatus = deriveDisplayStatus(job.status);
+                        return (
+                          <tr key={job.id} onClick={() => router.push(`/jobs/${job.id}`)} className="table-row cursor-pointer"
+                            style={{ borderBottom: "1px solid var(--t-border-subtle)", borderLeft: "3px solid var(--t-border)" }}>
+                            <td style={{ padding: "10px 16px 10px 12px" }}>
+                              {(job.asset_subtype || job.asset?.subtype) ? (
+                                <span style={{ fontSize: 12, fontWeight: 800, color: "var(--t-text-primary)", background: "var(--t-accent-soft)", padding: "2px 6px", borderRadius: 5 }}>
+                                  {(job.asset_subtype || job.asset?.subtype || "").replace(/yd$/i, "Y").toUpperCase()}
+                                </span>
+                              ) : <span style={{ color: "var(--t-text-tertiary)" }}>&mdash;</span>}
+                            </td>
+                            <td style={{ padding: "10px 16px" }}>
+                              <span className={jobTypeTextClass(job.job_type)} style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase" }}>{job.job_type}</span>
+                            </td>
+                            <td style={{ padding: "10px 16px" }}>
+                              <p style={{ fontWeight: 600, fontSize: 12, color: "var(--t-text-primary)" }}>{customerName || <span style={{ color: "var(--t-text-tertiary)" }}>—</span>}</p>
+                              <p style={{ fontSize: 10, color: "var(--t-text-muted)", marginTop: 1 }}>{job.job_number}</p>
+                            </td>
+                            <td style={{ padding: "10px 16px", maxWidth: 200 }}>
+                              <span style={{ fontSize: 12, color: "var(--t-text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>{address || "—"}</span>
+                            </td>
+                            <td style={{ padding: "10px 16px" }}>
+                              <span style={{ fontSize: 12, color: "var(--t-text-primary)" }}>{job.scheduled_date ? fmtDate(job.scheduled_date) : "—"}</span>
+                            </td>
+                            <td style={{ padding: "10px 16px" }}>
+                              <span style={{ fontSize: 11, fontWeight: 600, color: displayStatusColor(displayStatus) }}>{DISPLAY_STATUS_LABELS[displayStatus]}</span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+        </>
       )}
 
       {/* Pagination */}
