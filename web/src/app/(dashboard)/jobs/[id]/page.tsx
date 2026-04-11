@@ -79,6 +79,8 @@ interface Job {
   extra_days?: number;
   extra_day_rate?: number;
   extra_day_charges?: number;
+  parent_job_id?: string | null;
+  linked_job_ids?: string[];
 }
 
 /* --- Constants --- */
@@ -200,7 +202,7 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
   const [overrideTarget, setOverrideTarget] = useState("");
   const [overrideReason, setOverrideReason] = useState("");
   // Related jobs (lifecycle context)
-  const [relatedJobs, setRelatedJobs] = useState<Array<{ id: string; job_number: string; job_type: string; scheduled_date: string; status: string }>>([]);
+  const [relatedJobs, setRelatedJobs] = useState<Array<{ id: string; job_number: string; job_type: string; scheduled_date: string; status: string; relation: string }>>([]);
 
   const fetchJob = async () => {
     try {
@@ -236,25 +238,61 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
   };
 
   const fetchRelatedJobs = async (currentJob: Job) => {
-    if (!currentJob.customer?.id) return;
+    const linkedIds = new Set<string>();
+    // Collect explicitly linked job IDs
+    if (currentJob.parent_job_id) linkedIds.add(currentJob.parent_job_id);
+    if (currentJob.linked_job_ids?.length) currentJob.linked_job_ids.forEach(lid => linkedIds.add(lid));
+
+    if (linkedIds.size === 0) {
+      // No explicit linkage — show nothing rather than guessing
+      setRelatedJobs([]);
+      return;
+    }
+
     try {
-      const res = await api.get<{ data: Array<{ id: string; job_number: string; job_type: string; scheduled_date: string; status: string; service_address: Record<string, string> | null }> }>(
-        `/jobs?customerId=${currentJob.customer.id}&limit=50&fields=id,job_number,job_type,scheduled_date,status,service_address`
+      // Fetch each linked job individually (small set — typically 1-3 jobs)
+      type LinkedJob = { id: string; job_number: string; job_type: string; scheduled_date: string; status: string; parent_job_id?: string | null; linked_job_ids?: string[] };
+      const fetches = Array.from(linkedIds).map(lid =>
+        api.get<LinkedJob>(`/jobs/${lid}`).catch(() => null)
       );
-      const allJobs = res.data || [];
-      const normalize = (s: string | undefined | null) => (s || "").toLowerCase().trim()
-        .replace(/\bstreet\b/g, "st").replace(/\bcircle\b/g, "cir").replace(/\bdrive\b/g, "dr")
-        .replace(/\bavenue\b/g, "ave").replace(/(?<![a-z])road\b/g, "rd").replace(/\blane\b/g, "ln")
-        .replace(/\bcourt\b/g, "ct").replace(/\bplace\b/g, "pl").replace(/\bboulevard\b/g, "blvd");
-      const currentAddr = normalize(currentJob.service_address?.street);
-      // Try address-based grouping first
-      const addrMatched = currentAddr
-        ? allJobs.filter(j => normalize(j.service_address?.street) === currentAddr)
-        : [];
-      // Use address group if it has 2+ jobs (including current), otherwise fall back to all customer jobs
-      const pool = addrMatched.length >= 2 ? addrMatched : allJobs;
-      const related = pool
-        .sort((a, b) => (a.scheduled_date || "").localeCompare(b.scheduled_date || ""));
+      const results = (await Promise.all(fetches)).filter((j): j is LinkedJob => j !== null);
+
+      // Also walk one level deeper: if a linked job has its own links we haven't seen
+      const deepIds = new Set<string>();
+      for (const rj of results) {
+        if (rj.parent_job_id && rj.parent_job_id !== currentJob.id && !linkedIds.has(rj.parent_job_id)) deepIds.add(rj.parent_job_id);
+        if (rj.linked_job_ids?.length) rj.linked_job_ids.forEach(lid => { if (lid !== currentJob.id && !linkedIds.has(lid)) deepIds.add(lid); });
+      }
+      if (deepIds.size > 0) {
+        const deepFetches = Array.from(deepIds).map(lid =>
+          api.get<LinkedJob>(`/jobs/${lid}`).catch(() => null)
+        );
+        const deepResults = (await Promise.all(deepFetches)).filter((j): j is LinkedJob => j !== null);
+        results.push(...deepResults);
+      }
+
+      // Deduplicate and assign relation labels
+      const seen = new Set<string>([currentJob.id]);
+      const related: Array<{ id: string; job_number: string; job_type: string; scheduled_date: string; status: string; relation: string }> = [];
+      for (const rj of results) {
+        if (seen.has(rj.id)) continue;
+        seen.add(rj.id);
+        let relation = rj.job_type === "delivery" ? "delivery" : rj.job_type === "pickup" ? "pickup" : "exchange";
+        // Refine: if this job is the parent of the current job
+        if (rj.id === currentJob.parent_job_id) {
+          relation = rj.job_type === "delivery" ? "previous_delivery" : "parent";
+        }
+        // If this job is a child (in linked_job_ids)
+        if (currentJob.linked_job_ids?.includes(rj.id)) {
+          relation = rj.job_type === "pickup" ? "next_pickup" : rj.job_type === "exchange" ? "exchange" : "linked";
+        }
+        related.push({ id: rj.id, job_number: rj.job_number, job_type: rj.job_type, scheduled_date: rj.scheduled_date, status: rj.status, relation });
+      }
+
+      // Add current job and sort chronologically
+      related.push({ id: currentJob.id, job_number: currentJob.job_number, job_type: currentJob.job_type, scheduled_date: currentJob.scheduled_date, status: currentJob.status, relation: "current" });
+      related.sort((a, b) => (a.scheduled_date || "").localeCompare(b.scheduled_date || ""));
+
       setRelatedJobs(related);
     } catch { /* silent */ }
   };
@@ -773,14 +811,51 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
         {/* Left Column (60%) */}
         <div className="space-y-6 lg:col-span-3">
-          {/* Service Details */}
-          <Card title="Service Details" icon={Truck}>
+          {/* Job Summary — unified service details + scheduling */}
+          <Card title={FEATURE_REGISTRY.job_detail_summary?.label ?? "Job Summary"} icon={Truck}>
             <div className="grid grid-cols-2 gap-4">
               <Field label="Job Type" value={job.job_type} capitalize />
               <Field label="Service" value={job.service_type?.replace(/_/g, " ") || "—"} capitalize />
               <Field label="Asset" value={job.asset ? `${job.asset.identifier} (${job.asset.subtype})` : "None assigned"} />
               <Field label="Priority" value={job.priority} capitalize />
             </div>
+            {/* Dates — context-aware by job type */}
+            <div className="mt-4 pt-4 border-t border-[var(--t-border)] grid grid-cols-2 gap-4">
+              {(() => {
+                const pickupFromRelated = relatedJobs.find(rj => rj.relation === "next_pickup");
+                const deliveryFromRelated = relatedJobs.find(rj => rj.relation === "previous_delivery");
+                if (job.job_type === "delivery") {
+                  return (<>
+                    <Field label={FEATURE_REGISTRY.job_detail_delivery_date?.label ?? "Delivery Date"} value={job.scheduled_date ? fmtDateFull(job.scheduled_date) : "—"} />
+                    <Field label={FEATURE_REGISTRY.job_detail_pickup_date?.label ?? "Pickup Date"} value={pickupFromRelated?.scheduled_date ? fmtDateFull(pickupFromRelated.scheduled_date) : "—"} />
+                  </>);
+                }
+                if (job.job_type === "pickup") {
+                  return (<>
+                    <Field label={FEATURE_REGISTRY.job_detail_delivery_date?.label ?? "Delivery Date"} value={deliveryFromRelated?.scheduled_date ? fmtDateFull(deliveryFromRelated.scheduled_date) : "—"} />
+                    <Field label={FEATURE_REGISTRY.job_detail_pickup_date?.label ?? "Pickup Date"} value={job.scheduled_date ? fmtDateFull(job.scheduled_date) : "—"} />
+                  </>);
+                }
+                // Exchange: show both contexts
+                return (<>
+                  <Field label={FEATURE_REGISTRY.job_detail_delivery_date?.label ?? "Delivery Date"} value={deliveryFromRelated?.scheduled_date ? fmtDateFull(deliveryFromRelated.scheduled_date) : "—"} />
+                  <Field label="Exchange Date" value={job.scheduled_date ? fmtDateFull(job.scheduled_date) : "—"} />
+                  {pickupFromRelated && <Field label={FEATURE_REGISTRY.job_detail_pickup_date?.label ?? "Pickup Date"} value={fmtDateFull(pickupFromRelated.scheduled_date)} />}
+                </>);
+              })()}
+              <Field label="Time Window" value={
+                job.scheduled_window_start
+                  ? `${fmtTime(job.scheduled_window_start)}${job.scheduled_window_end ? ` – ${fmtTime(job.scheduled_window_end)}` : ""}`
+                  : "Any time"
+              } />
+              {rentalDays ? <Field label="Rental Days" value={`${rentalDays} days`} /> : null}
+            </div>
+            {job.rental_start_date && job.rental_end_date && (
+              <div className="mt-3 pt-3 border-t border-[var(--t-border)] text-xs text-[var(--t-text-muted)]">
+                {fmtDateFull(job.rental_start_date)} <ArrowRight className="inline h-3 w-3 mx-1" /> {fmtDateFull(job.rental_end_date)} ({rentalDays} days)
+              </div>
+            )}
+            {/* Address */}
             <div className="mt-4 pt-4 border-t border-[var(--t-border)]">
               <div className="flex items-center justify-between mb-1">
                 <p className="text-xs text-[var(--t-text-muted)]">Service Address</p>
@@ -833,7 +908,6 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
                           {FEATURE_REGISTRY.portal_placement_open_maps?.label ?? "Open in Maps"} →
                         </a>
                       </div>
-                      {/* Static satellite preview */}
                       <img
                         src={`https://api.mapbox.com/styles/v1/mapbox/satellite-streets-v12/static/pin-l+FACC15(${(job as any).placement_lng},${(job as any).placement_lat})/${(job as any).placement_lng},${(job as any).placement_lat},17.5,0/600x200@2x?access_token=${process.env.NEXT_PUBLIC_MAPBOX_TOKEN}`}
                         alt="Drop location"
@@ -869,49 +943,44 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
             </div>
           </Card>
 
-          {/* Scheduling */}
-          <Card title="Scheduling" icon={Calendar}>
-            <div className="grid grid-cols-2 gap-4">
-              <Field label="Scheduled Date" value={job.scheduled_date ? fmtDateFull(job.scheduled_date) : "Not set"} />
-              <Field label="Time Window" value={
-                job.scheduled_window_start
-                  ? `${fmtTime(job.scheduled_window_start)}${job.scheduled_window_end ? ` – ${fmtTime(job.scheduled_window_end)}` : ""}`
-                  : "Any time"
-              } />
-              {job.rental_start_date && <Field label="Rental Start" value={fmtDateFull(job.rental_start_date)} />}
-              {job.rental_end_date && <Field label="Rental End" value={fmtDateFull(job.rental_end_date)} />}
-              {rentalDays ? <Field label="Rental Days" value={`${rentalDays} days`} /> : null}
-            </div>
-            {job.rental_start_date && job.rental_end_date && (
-              <div className="mt-3 pt-3 border-t border-[var(--t-border)] text-xs text-[var(--t-text-muted)]">
-                {fmtDateFull(job.rental_start_date)} <ArrowRight className="inline h-3 w-3 mx-1" /> {fmtDateFull(job.rental_end_date)} ({rentalDays} days)
-              </div>
-            )}
-          </Card>
-
-          {/* Related Jobs (lifecycle context) */}
-          {relatedJobs.length > 0 && (
-            <Card title={FEATURE_REGISTRY.related_jobs?.label ?? "Related Jobs"} icon={ArrowRight}>
-              <div className="space-y-2">
-                {relatedJobs.map(rj => {
-                  const ds = deriveDisplayStatus(rj.status);
-                  const typeColor = JOB_TYPE_COLORS[rj.job_type] || "text-[var(--t-text-muted)]";
-                  const isCurrent = rj.id === id;
-                  return (
-                    <Link key={rj.id} href={`/jobs/${rj.id}`}
-                      className={`flex items-center justify-between rounded-[14px] border px-3.5 py-2.5 transition-colors ${isCurrent ? "border-[var(--t-accent)] bg-[var(--t-accent-soft)]" : "border-[var(--t-border)] hover:bg-[var(--t-bg-card-hover)]"}`}>
-                      <div className="flex items-center gap-3 min-w-0">
-                        <span className={`text-xs font-semibold capitalize ${typeColor}`}>{rj.job_type}</span>
-                        <span className="text-xs font-medium text-[var(--t-text-primary)]">{rj.job_number}</span>
-                        {rj.scheduled_date && <span className="text-xs text-[var(--t-text-muted)]">{fmtDateFull(rj.scheduled_date)}</span>}
-                      </div>
-                      <span className="text-[10px] font-semibold" style={{ color: displayStatusColor(ds) }}>
-                        {DISPLAY_STATUS_LABELS[ds] || rj.status}
-                      </span>
-                    </Link>
-                  );
-                })}
-              </div>
+          {/* Job Lifecycle */}
+          {(job.parent_job_id || (job.linked_job_ids && job.linked_job_ids.length > 0)) && (
+            <Card title={FEATURE_REGISTRY.related_jobs?.label ?? "Job Lifecycle"} icon={ArrowRight}>
+              {relatedJobs.length > 0 ? (
+                <div className="space-y-2">
+                  {relatedJobs.map(rj => {
+                    const ds = deriveDisplayStatus(rj.status);
+                    const typeColor = JOB_TYPE_COLORS[rj.job_type] || "text-[var(--t-text-muted)]";
+                    const isCurrent = rj.relation === "current";
+                    const RELATION_LABELS: Record<string, string> = {
+                      current: FEATURE_REGISTRY.related_jobs_current?.label ?? "Current",
+                      previous_delivery: FEATURE_REGISTRY.related_jobs_previous_delivery?.label ?? "Original Delivery",
+                      next_pickup: FEATURE_REGISTRY.related_jobs_next_pickup?.label ?? "Scheduled Pickup",
+                      parent: "Parent",
+                      exchange: "Exchange",
+                      delivery: "Delivery",
+                      pickup: "Pickup",
+                      linked: "Linked",
+                    };
+                    return (
+                      <Link key={rj.id} href={`/jobs/${rj.id}`}
+                        className={`flex items-center justify-between rounded-[14px] border px-3.5 py-2.5 transition-colors ${isCurrent ? "border-[var(--t-accent)] bg-[var(--t-accent-soft)]" : "border-[var(--t-border)] hover:bg-[var(--t-bg-card-hover)]"}`}>
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <span className="text-[10px] font-semibold uppercase tracking-wider text-[var(--t-text-muted)] w-[90px] shrink-0">{RELATION_LABELS[rj.relation] || rj.relation}</span>
+                          <span className={`text-xs font-semibold capitalize ${typeColor}`}>{rj.job_type}</span>
+                          <span className="text-xs font-medium text-[var(--t-text-primary)]">{rj.job_number}</span>
+                          {rj.scheduled_date && <span className="text-xs text-[var(--t-text-muted)]">{fmtDateFull(rj.scheduled_date)}</span>}
+                        </div>
+                        <span className="text-[10px] font-semibold" style={{ color: displayStatusColor(ds) }}>
+                          {DISPLAY_STATUS_LABELS[ds] || rj.status}
+                        </span>
+                      </Link>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="text-xs text-[var(--t-text-muted)]">{FEATURE_REGISTRY.related_jobs_no_linked?.label ?? "No linked jobs in this lifecycle"}</p>
+              )}
               {/* Future action placeholders */}
               <div className="flex gap-2 mt-3 pt-3 border-t border-[var(--t-border)]">
                 <button disabled className="rounded-full border border-[var(--t-border)] px-3 py-1.5 text-xs font-medium text-[var(--t-text-muted)] opacity-40 cursor-not-allowed">
