@@ -116,6 +116,7 @@ function PortalInvoicesPage() {
         "/portal/payments/prepare",
         { invoiceId: inv.id, amount: inv.balance_due }
       );
+      console.error("PAY_DEBUG result:", JSON.stringify(result));
       // Check for structured error returned in response body (belt-and-suspenders with catch block)
       if (result.message?.includes("ONLINE_PAYMENTS_NOT_CONFIGURED") || result.statusCode === 400) {
         const msg = result.message?.includes("ONLINE_PAYMENTS_NOT_CONFIGURED")
@@ -132,6 +133,7 @@ function PortalInvoicesPage() {
       // No checkout URL returned — something went wrong server-side
       setPayResult({ success: false, message: `${label("portal_payment_failed", "Payment could not be processed")}. ${label("portal_payment_try_again", "Please try again or contact us.")}` });
     } catch (err: unknown) {
+      console.error("PAY_DEBUG error:", err, typeof err, err instanceof Error ? err.message : "not Error instance");
       const errMsg = err instanceof Error ? err.message : String(err);
       const message = errMsg.includes("ONLINE_PAYMENTS_NOT_CONFIGURED")
         ? label("portal_payment_not_configured", "Online payments are not yet available. Please contact us to arrange payment.")
@@ -318,11 +320,8 @@ function PortalInvoicesPage() {
                   )}
                 </div>
                 <h3 className="text-sm font-semibold text-[var(--t-text-primary)] mb-1">
-                  {payResult.success ? label("portal_payment_success", "Payment submitted successfully") : label("portal_payment_failed", "Payment could not be processed")}
+                  {payResult.success ? label("portal_payment_success", "Payment submitted successfully") : payResult.message}
                 </h3>
-                <p className="text-xs text-[var(--t-text-muted)]">
-                  {payResult.success ? payResult.message : label("portal_payment_try_again", "Please try again or contact us.")}
-                </p>
                 <div className="flex gap-2 justify-center mt-4">
                   <button onClick={() => { setPayConfirmInvoice(null); setPayResult(null); }}
                     className="rounded-full bg-[var(--t-accent)] px-5 py-2 text-sm font-semibold text-[var(--t-accent-on-accent)] hover:opacity-90 transition-opacity">
