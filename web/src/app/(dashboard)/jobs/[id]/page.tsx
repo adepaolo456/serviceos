@@ -203,15 +203,34 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
   const [overrideReason, setOverrideReason] = useState("");
   // Related jobs (lifecycle context)
   const [relatedJobs, setRelatedJobs] = useState<Array<{ id: string; job_number: string; job_type: string; scheduled_date: string; status: string; relation: string }>>([]);
+  // Rental chain ID for lifecycle link
+  const [chainId, setChainId] = useState<string | null>(null);
 
   const fetchJob = async () => {
     try {
       const data = await api.get<Job>(`/jobs/${id}`);
       setJob(data);
       fetchRelatedJobs(data);
+      resolveChainId(data);
     } catch { /* */ } finally {
       setLoading(false);
     }
+  };
+
+  const resolveChainId = async (currentJob: Job) => {
+    if (!currentJob.customer?.id) return;
+    try {
+      const chains = await api.get<Array<{ id: string; links?: Array<{ job_id: string }> }>>(
+        `/rental-chains?customerId=${currentJob.customer.id}`
+      );
+      // The findAll returns chains with links — find the chain that contains this job
+      for (const chain of chains) {
+        if (chain.links?.some(l => l.job_id === currentJob.id)) {
+          setChainId(chain.id);
+          return;
+        }
+      }
+    } catch { /* silent */ }
   };
 
   const fetchDumpTickets = async () => {
@@ -408,9 +427,16 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
 
   return (
     <div>
-      <Link href="/jobs" className="mb-6 inline-flex items-center gap-2 text-sm text-[var(--t-frame-text-muted)] transition-colors hover:text-[var(--t-frame-text)]">
-        <ArrowLeft className="h-4 w-4" /> Back to Jobs
-      </Link>
+      <div className="mb-6 flex items-center justify-between">
+        <Link href="/jobs" className="inline-flex items-center gap-2 text-sm text-[var(--t-frame-text-muted)] transition-colors hover:text-[var(--t-frame-text)]">
+          <ArrowLeft className="h-4 w-4" /> Back to Jobs
+        </Link>
+        {chainId && (
+          <Link href={`/rentals/${chainId}`} className="inline-flex items-center gap-1.5 rounded-full border border-[var(--t-accent)] px-3.5 py-1.5 text-xs font-semibold text-[var(--t-accent)] hover:bg-[var(--t-accent-soft)] transition-colors">
+            {FEATURE_REGISTRY.rental_lifecycle_view_full?.label ?? "View Full Lifecycle"} <ArrowRight className="h-3 w-3" />
+          </Link>
+        )}
+      </div>
 
       {/* --- Header --- */}
       <div className="mb-8 flex items-start justify-between">
