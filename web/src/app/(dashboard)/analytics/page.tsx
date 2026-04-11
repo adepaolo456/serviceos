@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { formatCurrency, formatSourceLabel } from "@/lib/utils";
+import SlideOver from "@/components/slide-over";
 
 /* ─── Types ─── */
 
@@ -30,6 +31,19 @@ interface RevenueData {
   totalOverdue: number;
   revenueBySource: Record<string, number> | { source: string; amount: number }[];
   dailyRevenue: { date: string; amount: number }[];
+}
+
+interface SourceDetailInvoice {
+  id: string;
+  invoiceNumber: string;
+  customerName: string;
+  total: number;
+  amountPaid: number;
+  balanceDue: number;
+  status: string;
+  createdAt: string;
+  jobId: string;
+  jobNumber: string;
 }
 
 interface DumpCostsData {
@@ -203,6 +217,13 @@ function downloadCSV(data: Record<string, unknown>[], filename: string) {
   URL.revokeObjectURL(url);
 }
 
+function safeDateStr(d: string | null | undefined): string {
+  if (!d) return "—";
+  const parsed = new Date(d);
+  if (isNaN(parsed.getTime())) return "—";
+  return parsed.toLocaleDateString();
+}
+
 function fmtPct(n: number | undefined | null): string {
   if (n === null || n === undefined || isNaN(n)) return "0%";
   return `${n.toFixed(1)}%`;
@@ -252,8 +273,9 @@ function EmptyState({ text }: { text: string }) {
   );
 }
 
-function DataTable({ headers, rows }: { headers: string[]; rows: (string | number)[][] }) {
+function DataTable({ headers, rows, onRowClick }: { headers: string[]; rows: (string | number)[][]; onRowClick?: (rowIndex: number) => void }) {
   if (!rows.length) return <EmptyState text="No data for this period" />;
+  const clickable = !!onRowClick;
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
@@ -266,10 +288,20 @@ function DataTable({ headers, rows }: { headers: string[]; rows: (string | numbe
         </thead>
         <tbody>
           {rows.map((row, i) => (
-            <tr key={i} className="border-b border-[var(--t-border)] hover:bg-[var(--t-bg-card-hover)] transition-colors">
+            <tr
+              key={i}
+              className={`border-b border-[var(--t-border)] hover:bg-[var(--t-bg-card-hover)] transition-colors ${clickable ? "cursor-pointer" : ""}`}
+              onClick={clickable ? () => onRowClick(i) : undefined}
+              onKeyDown={clickable ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onRowClick(i); } } : undefined}
+              tabIndex={clickable ? 0 : undefined}
+              role={clickable ? "button" : undefined}
+            >
               {row.map((cell, j) => (
                 <td key={j} className="py-3 px-3 text-[var(--t-text-primary)] tabular-nums">{cell}</td>
               ))}
+              {clickable && (
+                <td className="py-3 px-1 text-[var(--t-text-muted)]"><ChevronRight className="h-4 w-4" /></td>
+              )}
             </tr>
           ))}
         </tbody>
@@ -280,7 +312,26 @@ function DataTable({ headers, rows }: { headers: string[]; rows: (string | numbe
 
 /* ─── Tab Content Components ─── */
 
-function RevenueTab({ data, loading }: { data: RevenueData | null; loading: boolean }) {
+function RevenueTab({ data, loading, startDate, endDate }: { data: RevenueData | null; loading: boolean; startDate: string; endDate: string }) {
+  const [drillSource, setDrillSource] = useState<string | null>(null);
+  const [drillData, setDrillData] = useState<SourceDetailInvoice[]>([]);
+  const [drillLoading, setDrillLoading] = useState(false);
+
+  const openDrill = async (rawSource: string) => {
+    setDrillSource(rawSource);
+    setDrillLoading(true);
+    try {
+      const res = await api.get<{ invoices: SourceDetailInvoice[] }>(
+        `/reporting/revenue/source-detail?source=${encodeURIComponent(rawSource)}&startDate=${startDate}&endDate=${endDate}`
+      );
+      setDrillData(res.invoices);
+    } catch {
+      setDrillData([]);
+    } finally {
+      setDrillLoading(false);
+    }
+  };
+
   if (loading) return <><KPISkeleton /><TableSkeleton /></>;
   if (!data) return <EmptyState text="No revenue data available" />;
 
@@ -288,6 +339,13 @@ function RevenueTab({ data, loading }: { data: RevenueData | null; loading: bool
   const sourceEntries = Array.isArray(data.revenueBySource)
     ? data.revenueBySource
     : Object.entries(data.revenueBySource || {}).map(([source, amount]) => ({ source, amount: Number(amount) }));
+
+  const statusColor = (s: string) => {
+    if (s === "paid") return "text-[var(--t-accent)]";
+    if (s === "overdue") return "text-[var(--t-error)]";
+    if (s === "partial") return "text-[var(--t-warning)]";
+    return "text-[var(--t-text-muted)]";
+  };
 
   return (
     <div className="space-y-6">
@@ -300,15 +358,62 @@ function RevenueTab({ data, loading }: { data: RevenueData | null; loading: bool
       {sourceEntries.length > 0 && (
         <div className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5">
           <h3 className="text-sm font-semibold text-[var(--t-text-primary)] mb-4">Revenue by Source</h3>
-          <DataTable headers={["Source", "Amount"]} rows={sourceEntries.map((r) => [formatSourceLabel(r.source), formatCurrency(r.amount)])} />
+          <DataTable
+            headers={["Source", "Amount"]}
+            rows={sourceEntries.map((r) => [formatSourceLabel(r.source), formatCurrency(r.amount)])}
+            onRowClick={(i) => openDrill(sourceEntries[i].source)}
+          />
         </div>
       )}
       {data.dailyRevenue?.length > 0 && (
         <div className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5">
           <h3 className="text-sm font-semibold text-[var(--t-text-primary)] mb-4">Daily Revenue</h3>
-          <DataTable headers={["Date", "Amount"]} rows={data.dailyRevenue.map((d) => [new Date(d.date + "T00:00:00").toLocaleDateString(), formatCurrency(d.amount)])} />
+          <DataTable headers={["Date", "Amount"]} rows={data.dailyRevenue.map((d) => [safeDateStr(d.date ? d.date + "T00:00:00" : null), formatCurrency(d.amount)])} />
         </div>
       )}
+
+      <SlideOver
+        open={drillSource !== null}
+        onClose={() => { setDrillSource(null); setDrillData([]); }}
+        title={drillSource ? `${formatSourceLabel(drillSource)} — Invoices` : ""}
+        wide
+      >
+        <p className="text-xs text-[var(--t-text-muted)] mb-4">
+          {safeDateStr(startDate)} – {safeDateStr(endDate)} · {drillData.length} invoice{drillData.length !== 1 ? "s" : ""}
+        </p>
+        {drillLoading ? (
+          <div className="flex items-center justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-[var(--t-text-muted)]" /></div>
+        ) : drillData.length === 0 ? (
+          <EmptyState text="No invoices found for this source" />
+        ) : (
+          <div className="space-y-3">
+            {drillData.map((inv) => (
+              <div key={inv.id} className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-4">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-sm font-semibold text-[var(--t-text-primary)]">
+                    {inv.invoiceNumber || "—"}
+                  </span>
+                  <span className={`text-xs font-medium uppercase ${statusColor(inv.status)}`}>
+                    {inv.status}
+                  </span>
+                </div>
+                <p className="text-xs text-[var(--t-text-muted)]">{inv.customerName || "Unknown customer"}</p>
+                {inv.jobNumber && (
+                  <p className="text-xs text-[var(--t-text-muted)]">Job {inv.jobNumber}</p>
+                )}
+                <div className="flex items-center gap-4 mt-2 text-xs tabular-nums">
+                  <span className="text-[var(--t-text-primary)] font-medium">{formatCurrency(inv.total)}</span>
+                  <span className="text-[var(--t-text-muted)]">Paid {formatCurrency(inv.amountPaid)}</span>
+                  {inv.balanceDue > 0 && (
+                    <span className="text-[var(--t-warning)]">Due {formatCurrency(inv.balanceDue)}</span>
+                  )}
+                </div>
+                <p className="text-[11px] text-[var(--t-text-muted)] mt-1">{safeDateStr(inv.createdAt)}</p>
+              </div>
+            ))}
+          </div>
+        )}
+      </SlideOver>
     </div>
   );
 }
@@ -642,7 +747,7 @@ function DumpSlipsTab({
                         className="cursor-pointer transition-colors hover:bg-[var(--t-bg-card-hover)]"
                         style={{ borderBottom: isExpanded ? "none" : "1px solid var(--t-border-subtle, var(--t-border))" }}
                       >
-                        <td className="py-3 px-4 tabular-nums" style={{ color: "var(--t-text-secondary)" }}>{t.submittedAt ? new Date(t.submittedAt).toLocaleDateString("en-US", { month: "2-digit", day: "2-digit" }) : "—"}</td>
+                        <td className="py-3 px-4 tabular-nums" style={{ color: "var(--t-text-secondary)" }}>{safeDateStr(t.submittedAt)}</td>
                         <td className="py-3 px-4 font-medium" style={{ color: "var(--t-text-primary)" }}>{t.ticketNumber || "—"}</td>
                         <td className="py-3 px-4" style={{ color: "var(--t-text-secondary)" }}>{t.jobNumber || "—"}</td>
                         <td className="py-3 px-4" style={{ color: "var(--t-text-primary)" }}>{t.customerName}</td>
@@ -920,7 +1025,7 @@ function AnalyticsPageContent() {
 
       {/* Tab Content */}
       <div className="min-h-[400px]">
-        {activeTab === "revenue" && <RevenueTab data={tabData.revenue} loading={loading && !tabData.revenue} />}
+        {activeTab === "revenue" && <RevenueTab data={tabData.revenue} loading={loading && !tabData.revenue} startDate={startDate} endDate={endDate} />}
         {activeTab === "dump-costs" && <DumpCostsTab data={tabData["dump-costs"]} loading={loading && !tabData["dump-costs"]} />}
         {activeTab === "profit" && <ProfitTab data={tabData.profit} loading={loading && !tabData.profit} />}
         {activeTab === "drivers" && <DriversTab data={tabData.drivers} loading={loading && !tabData.drivers} />}
