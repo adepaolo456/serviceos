@@ -13,6 +13,11 @@ function classifyRecord(createdAt: string | Date): 'legacy' | 'post-correction' 
   return new Date(createdAt) < new Date(CORRECTION_CUTOFF) ? 'legacy' : 'post-correction';
 }
 
+/** Statuses that count as booked revenue. Drafts and voided invoices are excluded. */
+const REVENUE_STATUSES = ['open', 'paid', 'partial'] as const;
+/** SQL fragment for WHERE clause (parameterised queries) */
+const REVENUE_STATUS_SQL = `i.status IN ('open', 'paid', 'partial')`;
+
 @Injectable()
 export class ReportingService {
   constructor(
@@ -35,19 +40,24 @@ export class ReportingService {
   async getRevenue(tenantId: string, startDate?: string, endDate?: string) {
     const { start, end } = this.dateRange(startDate, endDate);
 
+    const endTs = end + 'T23:59:59';
+
     const totals = await this.invoiceRepo.createQueryBuilder('i')
       .select('SUM(i.total)', 'totalRevenue')
       .addSelect('SUM(i.amount_paid)', 'totalCollected')
       .addSelect(`SUM(CASE WHEN i.status IN ('open', 'partial') THEN i.balance_due ELSE 0 END)`, 'totalOutstanding')
       .where('i.tenant_id = :tid', { tid: tenantId })
+      .andWhere('i.status IN (:...rstats)', { rstats: [...REVENUE_STATUSES] })
       .andWhere('i.created_at >= :start', { start })
-      .andWhere('i.created_at <= :end', { end: end + 'T23:59:59' })
+      .andWhere('i.created_at <= :end', { end: endTs })
       .getRawOne();
 
     const overdue = await this.invoiceRepo.createQueryBuilder('i')
       .select('SUM(i.balance_due)', 'totalOverdue')
       .where('i.tenant_id = :tid', { tid: tenantId })
       .andWhere('i.status IN (:...statuses)', { statuses: ['open', 'partial'] })
+      .andWhere('i.created_at >= :start', { start })
+      .andWhere('i.created_at <= :end', { end: endTs })
       .andWhere('i.due_date < :today', { today: new Date().toISOString().split('T')[0] })
       .getRawOne();
 
@@ -58,18 +68,20 @@ export class ReportingService {
        FROM invoices i
        LEFT JOIN jobs j ON j.id = i.job_id AND j.tenant_id = i.tenant_id
        WHERE i.tenant_id = $1
+         AND ${REVENUE_STATUS_SQL}
          AND i.created_at >= $2
          AND i.created_at <= $3
        GROUP BY COALESCE(j.source, 'other')`,
-      [tenantId, start, end + 'T23:59:59'],
+      [tenantId, start, endTs],
     );
 
     const daily = await this.invoiceRepo.createQueryBuilder('i')
       .select("DATE(i.created_at)", 'date')
       .addSelect('SUM(i.total)', 'amount')
       .where('i.tenant_id = :tid', { tid: tenantId })
+      .andWhere('i.status IN (:...rstats)', { rstats: [...REVENUE_STATUSES] })
       .andWhere('i.created_at >= :start', { start })
-      .andWhere('i.created_at <= :end', { end: end + 'T23:59:59' })
+      .andWhere('i.created_at <= :end', { end: endTs })
       .andWhere('i.created_at IS NOT NULL')
       .groupBy("DATE(i.created_at)")
       .orderBy("DATE(i.created_at)", 'ASC')
@@ -89,20 +101,7 @@ export class ReportingService {
     };
   }
 
-  async getRevenueBySourceDetail(tenantId: string, source: string, startDate?: string, endDate?: string) {
-    const { start, end } = this.dateRange(startDate, endDate);
-    const rows = await this.dataSource.query(
-      `${this.invoiceDetailSelect}
-       WHERE i.tenant_id = $1
-         AND i.created_at >= $2
-         AND i.created_at <= $3
-         AND COALESCE(j.source, 'other') = $4
-       ORDER BY i.created_at DESC`,
-      [tenantId, start, end + 'T23:59:59', source],
-    );
-    return { source, invoices: this.mapInvoiceRows(rows) };
-  }
-
+  /** Shared SELECT for invoice drill-down queries */
   private invoiceDetailSelect = `
     SELECT i.id, i.invoice_number as "invoiceNumber",
            COALESCE(NULLIF(TRIM(COALESCE(c.first_name, '') || ' ' || COALESCE(c.last_name, '')), ''), 'Unknown Customer') as "customerName",
@@ -128,10 +127,26 @@ export class ReportingService {
     }));
   }
 
+  async getRevenueBySourceDetail(tenantId: string, source: string, startDate?: string, endDate?: string) {
+    const { start, end } = this.dateRange(startDate, endDate);
+    const rows = await this.dataSource.query(
+      `${this.invoiceDetailSelect}
+       WHERE i.tenant_id = $1
+         AND ${REVENUE_STATUS_SQL}
+         AND i.created_at >= $2
+         AND i.created_at <= $3
+         AND COALESCE(j.source, 'other') = $4
+       ORDER BY i.created_at DESC`,
+      [tenantId, start, end + 'T23:59:59', source],
+    );
+    return { source, invoices: this.mapInvoiceRows(rows) };
+  }
+
   async getRevenueByDailyDetail(tenantId: string, date: string) {
     const rows = await this.dataSource.query(
       `${this.invoiceDetailSelect}
        WHERE i.tenant_id = $1
+         AND ${REVENUE_STATUS_SQL}
          AND DATE(i.created_at) = $2
        ORDER BY i.created_at DESC`,
       [tenantId, date],
@@ -141,21 +156,25 @@ export class ReportingService {
 
   async getRevenueInvoices(tenantId: string, filter: string, startDate?: string, endDate?: string) {
     const { start, end } = this.dateRange(startDate, endDate);
+    let statusFilter = REVENUE_STATUS_SQL;
     let whereExtra = '';
     const params: any[] = [tenantId, start, end + 'T23:59:59'];
 
     if (filter === 'collected') {
-      whereExtra = ` AND i.status = 'paid'`;
+      statusFilter = `i.status = 'paid'`;
     } else if (filter === 'outstanding') {
-      whereExtra = ` AND i.status IN ('open', 'partial') AND i.balance_due > 0`;
+      statusFilter = `i.status IN ('open', 'partial')`;
+      whereExtra = ` AND i.balance_due > 0`;
     } else if (filter === 'overdue') {
-      whereExtra = ` AND i.status IN ('open', 'partial') AND i.due_date < $4`;
+      statusFilter = `i.status IN ('open', 'partial')`;
+      whereExtra = ` AND i.due_date < $4`;
       params.push(new Date().toISOString().split('T')[0]);
     }
 
     const rows = await this.dataSource.query(
       `${this.invoiceDetailSelect}
        WHERE i.tenant_id = $1
+         AND ${statusFilter}
          AND i.created_at >= $2
          AND i.created_at <= $3
          ${whereExtra}
@@ -590,7 +609,7 @@ export class ReportingService {
          COUNT(DISTINCT i.id) FILTER (WHERE i.status = 'paid') as paid_count
        FROM invoices i
        LEFT JOIN invoice_line_items li ON li.invoice_id = i.id
-       WHERE i.tenant_id = $1 AND i.voided_at IS NULL AND ${dateFilter}`,
+       WHERE i.tenant_id = $1 AND ${REVENUE_STATUS_SQL} AND ${dateFilter}`,
       [tenantId],
     );
 
@@ -729,13 +748,13 @@ export class ReportingService {
 
     const revenue = await this.invoiceRepo.query(
       `SELECT COALESCE(SUM(total), 0) as revenue FROM invoices
-       WHERE tenant_id = $1 AND created_at::date = $2 AND voided_at IS NULL`,
+       WHERE tenant_id = $1 AND created_at::date = $2 AND ${REVENUE_STATUS_SQL}`,
       [tenantId, today],
     );
     const ar = await this.invoiceRepo.query(
       `SELECT COALESCE(SUM(CASE WHEN status IN ('open','partial') THEN balance_due ELSE 0 END), 0) as open_ar,
               COALESCE(SUM(CASE WHEN status IN ('open','partial') AND sent_at < NOW() - INTERVAL '30 days' THEN balance_due ELSE 0 END), 0) as overdue_ar
-       FROM invoices WHERE tenant_id = $1 AND voided_at IS NULL`,
+       FROM invoices WHERE tenant_id = $1 AND ${REVENUE_STATUS_SQL}`,
       [tenantId],
     );
     const jobs = await this.jobRepo.query(
