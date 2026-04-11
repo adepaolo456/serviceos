@@ -18,6 +18,20 @@ export function formatPhone(phone: string | null | undefined): string {
   return phone; // return as-is if non-standard length
 }
 
+/** Map internal booking/job source codes to business-friendly display labels */
+const SOURCE_DISPLAY_LABELS: Record<string, string> = {
+  phone: "Phone Orders",
+  portal: "Online Bookings",
+  manual: "Manual Entry",
+  schedule_next: "Scheduled Follow-Ups",
+  rescheduled_from_failure: "Rescheduled Jobs",
+  other: "Other",
+};
+
+export function formatSourceLabel(source: string): string {
+  return SOURCE_DISPLAY_LABELS[source] ?? source.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
 /** Format currency to $X,XXX.XX (always 2 decimals, comma separators) */
 export function formatCurrency(amount: number | string | null | undefined): string {
   if (amount === null || amount === undefined) return "$0.00";

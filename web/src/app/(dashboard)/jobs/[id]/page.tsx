@@ -140,7 +140,7 @@ const TIMELINE_STEPS = [
 
 /* --- Helpers --- */
 
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, formatSourceLabel } from "@/lib/utils";
 function fmt(n: number | null | undefined): string {
   if (n === null || n === undefined) return "—";
   return formatCurrency(n);
@@ -370,7 +370,7 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
             </Link>
           )}
           <p className="text-xs text-[var(--t-frame-text-muted)] mt-0.5">
-            Created {new Date(job.created_at).toLocaleDateString()} {job.source && `· Source: ${job.source}`}
+            Created {new Date(job.created_at).toLocaleDateString()} {job.source && `· Source: ${formatSourceLabel(job.source)}`}
           </p>
         </div>
 
