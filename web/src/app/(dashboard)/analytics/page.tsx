@@ -1169,14 +1169,10 @@ function AnalyticsPageContent() {
         <h1 className="text-[28px] font-bold tracking-[-1px] text-[var(--t-frame-text)]">Reports</h1>
         <div className="flex flex-wrap items-center gap-3">
           {/* Preset pills */}
-          <div className="flex gap-1">
+          <div style={{ display: "inline-flex", borderRadius: 22, backgroundColor: "var(--t-bg-secondary)", border: "1px solid var(--t-border)", padding: 3, gap: 2 }}>
             {(activeTab === "dump-slips" ? ["week", "month", "quarter", "year"] as const : ["month", "quarter", "year"] as const).map((p) => (
               <button key={p} onClick={() => setPreset(p)}
-                className={`rounded-full px-4 py-1.5 text-xs font-medium transition-colors ${
-                  presetActive(p)
-                    ? "bg-[var(--t-accent-soft)] text-[var(--t-accent)]"
-                    : "text-[var(--t-frame-text-muted)] hover:text-[var(--t-frame-text)]"
-                }`}>
+                style={{ fontSize: 11, fontWeight: 600, padding: "4px 10px", borderRadius: 18, border: "none", cursor: "pointer", transition: "all 0.15s ease", backgroundColor: presetActive(p) ? "var(--t-accent)" : "transparent", color: presetActive(p) ? "#fff" : "var(--t-text-muted)" }}>
                 This {p.charAt(0).toUpperCase() + p.slice(1)}
               </button>
             ))}
@@ -1200,23 +1196,21 @@ function AnalyticsPageContent() {
       </div>
 
       {/* Tab Row */}
-      <div className="flex overflow-x-auto gap-1 mb-6 pb-1 -mx-1 px-1 scrollbar-hide">
-        {TABS.map((tab) => {
-          const Icon = tab.icon;
-          const isActive = activeTab === tab.key;
-          return (
-            <button key={tab.key} onClick={() => setActiveTab(tab.key)}
-              className={`flex items-center gap-1.5 whitespace-nowrap rounded-full px-4 py-2 text-xs font-medium transition-all shrink-0 ${
-                isActive
-                  ? "bg-[var(--t-accent-soft)] text-[var(--t-accent)]"
-                  : "text-[var(--t-frame-text-muted)] hover:text-[var(--t-frame-text)]"
-              }`}>
-              <Icon className="h-3.5 w-3.5" />
-              {tab.label}
-              {loading && isActive && <Loader2 className="h-3 w-3 animate-spin ml-1" />}
-            </button>
-          );
-        })}
+      <div className="flex overflow-x-auto mb-6 pb-1 -mx-1 px-1 scrollbar-hide">
+        <div style={{ display: "inline-flex", borderRadius: 22, backgroundColor: "var(--t-bg-secondary)", border: "1px solid var(--t-border)", padding: 3, gap: 2 }}>
+          {TABS.map((tab) => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.key;
+            return (
+              <button key={tab.key} onClick={() => setActiveTab(tab.key)}
+                style={{ display: "inline-flex", alignItems: "center", gap: 5, whiteSpace: "nowrap", padding: "5px 12px", borderRadius: 18, fontSize: 12, fontWeight: 600, border: "none", cursor: "pointer", transition: "all 0.15s ease", background: isActive ? "var(--t-accent)" : "transparent", color: isActive ? "#fff" : "var(--t-text-muted)", flexShrink: 0 }}>
+                <Icon style={{ width: 13, height: 13 }} />
+                {tab.label}
+                {loading && isActive && <Loader2 className="h-3 w-3 animate-spin" />}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {/* Tab Content */}

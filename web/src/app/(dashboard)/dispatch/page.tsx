@@ -616,10 +616,10 @@ export default function DispatchPage() {
           </div>
         </div>
         <div className="flex items-center gap-3 mt-3">
-          <div className="flex gap-1">
+          <div style={{ display: "inline-flex", borderRadius: 22, backgroundColor: "var(--t-bg-secondary)", border: "1px solid var(--t-border)", padding: 3, gap: 2 }}>
             {FILTER_TABS.map(t => (
-              <button key={t.key} onClick={() => setFilter(t.key)} className="rounded-full px-3 py-1.5 text-xs font-medium"
-                style={{ background: filter === t.key ? "var(--t-accent-soft)" : "var(--t-bg-card)", color: filter === t.key ? "var(--t-accent)" : "var(--t-frame-text-muted)" }}>
+              <button key={t.key} onClick={() => setFilter(t.key)}
+                style={{ fontSize: 12, fontWeight: 600, padding: "5px 12px", borderRadius: 18, border: "none", cursor: "pointer", backgroundColor: filter === t.key ? "var(--t-accent)" : "transparent", color: filter === t.key ? "#fff" : "var(--t-text-muted)", transition: "all 0.15s ease" }}>
                 {t.label}
               </button>
             ))}

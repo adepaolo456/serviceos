@@ -539,18 +539,10 @@ export default function QuotesPage() {
             style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)", color: "var(--t-text-primary)" }}
           />
         </div>
-        <div className="flex gap-1">
+        <div style={{ display: "inline-flex", borderRadius: 22, backgroundColor: "var(--t-bg-secondary)", border: "1px solid var(--t-border)", padding: 3, gap: 2 }}>
           {STATUS_FILTERS.map((f) => (
-            <button
-              key={f.key}
-              onClick={() => setStatusFilter(f.key)}
-              className="rounded-full px-3 py-1.5 text-[12px] font-semibold transition-colors"
-              style={{
-                background: statusFilter === f.key ? "var(--t-accent)" : "var(--t-bg-card)",
-                color: statusFilter === f.key ? "var(--t-accent-on-accent)" : "var(--t-text-muted)",
-                border: `1px solid ${statusFilter === f.key ? "var(--t-accent)" : "var(--t-border)"}`,
-              }}
-            >
+            <button key={f.key} onClick={() => setStatusFilter(f.key)}
+              style={{ fontSize: 12, fontWeight: 600, padding: "5px 12px", borderRadius: 18, border: "none", cursor: "pointer", transition: "all 0.15s ease", backgroundColor: statusFilter === f.key ? "var(--t-accent)" : "transparent", color: statusFilter === f.key ? "#fff" : "var(--t-text-muted)" }}>
               {f.label}
             </button>
           ))}

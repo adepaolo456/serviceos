@@ -209,23 +209,10 @@ export default function CustomersPage() {
             </span>
           )}
         </div>
-        <div style={{ display: "flex", gap: 6 }}>
+        <div style={{ display: "inline-flex", borderRadius: 22, backgroundColor: "var(--t-bg-secondary)", border: "1px solid var(--t-border)", padding: 3, gap: 2 }}>
           {FILTERS.map((f) => (
-            <button
-              key={f.key}
-              onClick={() => setTypeFilter(f.key)}
-              style={{
-                padding: "8px 16px",
-                borderRadius: 24,
-                fontSize: 13,
-                fontWeight: 600,
-                border: "none",
-                cursor: "pointer",
-                transition: "all 0.15s ease",
-                backgroundColor: typeFilter === f.key ? "var(--t-accent-soft)" : "var(--t-frame-hover)",
-                color: typeFilter === f.key ? "var(--t-accent)" : "var(--t-frame-text-muted)",
-              }}
-            >
+            <button key={f.key} onClick={() => setTypeFilter(f.key)}
+              style={{ padding: "5px 14px", borderRadius: 18, fontSize: 12, fontWeight: 600, border: "none", cursor: "pointer", transition: "all 0.15s ease", backgroundColor: typeFilter === f.key ? "var(--t-accent)" : "transparent", color: typeFilter === f.key ? "#fff" : "var(--t-text-muted)" }}>
               {f.label}
             </button>
           ))}

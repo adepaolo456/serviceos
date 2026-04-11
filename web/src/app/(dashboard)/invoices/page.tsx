@@ -355,27 +355,20 @@ export default function InvoicesPage() {
       )}
 
       {/* Filter Tabs */}
-      <div className="mb-6 flex gap-1">
-        {TABS.map((t) => {
-          const stats = tabStats[t] || { count: 0, amount: 0 };
-          const isActive = tab === t;
-          return (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
-              className="rounded-full px-4 py-1.5 text-sm font-medium transition-all duration-150"
-              style={{
-                background: isActive ? "var(--t-accent-soft)" : "var(--t-frame-hover)",
-                color: isActive ? "var(--t-accent)" : "var(--t-frame-text-muted)",
-              }}
-            >
-              {TAB_LABELS[t]}
-              <span className="ml-1.5 text-xs" style={{ opacity: isActive ? 0.8 : 0.5 }}>
-                {stats.count}
-              </span>
-            </button>
-          );
-        })}
+      <div className="mb-6">
+        <div style={{ display: "inline-flex", borderRadius: 22, backgroundColor: "var(--t-bg-secondary)", border: "1px solid var(--t-border)", padding: 3, gap: 2 }}>
+          {TABS.map((t) => {
+            const stats = tabStats[t] || { count: 0, amount: 0 };
+            const isActive = tab === t;
+            return (
+              <button key={t} onClick={() => setTab(t)}
+                style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 12px", borderRadius: 18, fontSize: 12, fontWeight: 600, border: "none", cursor: "pointer", transition: "all 0.15s ease", background: isActive ? "var(--t-accent)" : "transparent", color: isActive ? "#fff" : "var(--t-text-muted)" }}>
+                {TAB_LABELS[t]}
+                <span style={{ fontSize: 10, fontWeight: 700, opacity: isActive ? 0.85 : 0.6 }}>{stats.count}</span>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {/* Search & Sort */}

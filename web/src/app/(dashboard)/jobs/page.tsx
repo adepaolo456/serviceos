@@ -494,51 +494,35 @@ export default function JobsPage() {
       {/* ─── Controls bar ─── */}
       <div className="surface-card mb-5" style={{ padding: "10px 14px", display: "flex", flexDirection: "column", gap: 10 }}>
         {/* Row 1: Primary filters + secondary overflow + date range */}
-        <div className="flex items-center gap-1 flex-wrap">
+        <div className="flex items-center gap-3 flex-wrap">
           {/* Primary statuses */}
-          {PRIMARY_STATUSES.map((s) => {
-            const isActive = statusFilter === s;
-            const count = getCount(s);
-            return (
-              <button
-                key={s}
-                onClick={() => setStatusFilter(s)}
-                style={{
-                  display: "inline-flex", alignItems: "center", gap: 5,
-                  padding: "5px 12px", borderRadius: 8, fontSize: 12, fontWeight: isActive ? 600 : 500,
-                  background: isActive ? "var(--t-accent-soft)" : "transparent",
-                  color: isActive ? "var(--t-accent-text)" : "var(--t-text-secondary)",
-                  border: "none", cursor: "pointer", transition: "all 0.12s ease",
-                }}
-              >
-                {STATUS_LABELS[s]}
-                {count > 0 && <span style={{ fontSize: 10, fontWeight: 700, opacity: isActive ? 1 : 0.6, color: s === "overdue" ? "var(--t-error)" : undefined }}>{count}</span>}
-              </button>
-            );
-          })}
-          {/* Separator */}
-          <span style={{ width: 1, height: 16, background: "var(--t-border)", margin: "0 4px" }} />
+          <div style={{ display: "inline-flex", borderRadius: 22, backgroundColor: "var(--t-bg-secondary)", border: "1px solid var(--t-border)", padding: 3, gap: 2 }}>
+            {PRIMARY_STATUSES.map((s) => {
+              const isActive = statusFilter === s;
+              const count = getCount(s);
+              return (
+                <button key={s} onClick={() => setStatusFilter(s)}
+                  style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 12px", borderRadius: 18, fontSize: 12, fontWeight: 600, background: isActive ? "var(--t-accent)" : "transparent", color: isActive ? "#fff" : "var(--t-text-muted)", border: "none", cursor: "pointer", transition: "all 0.15s ease" }}>
+                  {STATUS_LABELS[s]}
+                  {count > 0 && <span style={{ fontSize: 10, fontWeight: 700, opacity: isActive ? 0.85 : 0.6, color: !isActive && s === "overdue" ? "var(--t-error)" : undefined }}>{count}</span>}
+                </button>
+              );
+            })}
+          </div>
           {/* Secondary statuses */}
-          {SECONDARY_STATUSES.map((s) => {
-            const isActive = statusFilter === s;
-            const count = getCount(s);
-            return (
-              <button
-                key={s}
-                onClick={() => setStatusFilter(s)}
-                style={{
-                  display: "inline-flex", alignItems: "center", gap: 5,
-                  padding: "5px 10px", borderRadius: 8, fontSize: 11, fontWeight: isActive ? 600 : 400,
-                  background: isActive ? "var(--t-accent-soft)" : "transparent",
-                  color: isActive ? "var(--t-accent-text)" : "var(--t-text-muted)",
-                  border: "none", cursor: "pointer", transition: "all 0.12s ease",
-                }}
-              >
-                {STATUS_LABELS[s]}
-                {count > 0 && <span style={{ fontSize: 10, fontWeight: 600, opacity: isActive ? 1 : 0.4 }}>{count}</span>}
-              </button>
-            );
-          })}
+          <div style={{ display: "inline-flex", borderRadius: 22, backgroundColor: "var(--t-bg-secondary)", border: "1px solid var(--t-border)", padding: 3, gap: 2 }}>
+            {SECONDARY_STATUSES.map((s) => {
+              const isActive = statusFilter === s;
+              const count = getCount(s);
+              return (
+                <button key={s} onClick={() => setStatusFilter(s)}
+                  style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 10px", borderRadius: 18, fontSize: 11, fontWeight: 600, background: isActive ? "var(--t-accent)" : "transparent", color: isActive ? "#fff" : "var(--t-text-muted)", border: "none", cursor: "pointer", transition: "all 0.15s ease" }}>
+                  {STATUS_LABELS[s]}
+                  {count > 0 && <span style={{ fontSize: 10, fontWeight: 700, opacity: isActive ? 0.85 : 0.5 }}>{count}</span>}
+                </button>
+              );
+            })}
+          </div>
           {/* Date range — pushed right */}
           <div className="ml-auto" style={{ display: "flex", borderRadius: 8, border: "1px solid var(--t-border)", overflow: "hidden" }}>
             {DATE_RANGE_OPTIONS.map((opt) => (

@@ -109,18 +109,15 @@ export default function PortalActivityPage() {
       )}
 
       {/* Filters */}
-      <div className="flex items-center gap-2 mb-4 flex-wrap">
-        {FILTERS.map(f => (
-          <button key={f.key} onClick={() => { setFilter(f.key); setPage(1); }}
-            className="rounded-full px-3 py-1.5 text-xs font-medium transition-colors"
-            style={{
-              background: filter === f.key ? "var(--t-accent-soft)" : "transparent",
-              color: filter === f.key ? "var(--t-accent)" : "var(--t-text-muted)",
-              border: `1px solid ${filter === f.key ? "var(--t-accent)" : "var(--t-border)"}`,
-            }}>
-            {label(f.label, f.fallback)}
-          </button>
-        ))}
+      <div className="flex items-center mb-4 flex-wrap">
+        <div style={{ display: "inline-flex", borderRadius: 22, backgroundColor: "var(--t-bg-secondary)", border: "1px solid var(--t-border)", padding: 3, gap: 2 }}>
+          {FILTERS.map(f => (
+            <button key={f.key} onClick={() => { setFilter(f.key); setPage(1); }}
+              style={{ fontSize: 12, fontWeight: 600, padding: "5px 12px", borderRadius: 18, border: "none", cursor: "pointer", transition: "all 0.15s ease", backgroundColor: filter === f.key ? "var(--t-accent)" : "transparent", color: filter === f.key ? "#fff" : "var(--t-text-muted)" }}>
+              {label(f.label, f.fallback)}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Table */}
