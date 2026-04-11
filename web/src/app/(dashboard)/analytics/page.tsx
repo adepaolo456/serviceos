@@ -236,9 +236,16 @@ function fmtNum(n: number | undefined | null): string {
 
 /* ─── Sub-components ─── */
 
-function KPI({ label, value, sub, color }: { label: string; value: string; sub?: string; color?: string }) {
+function KPI({ label, value, sub, color, onClick }: { label: string; value: string; sub?: string; color?: string; onClick?: () => void }) {
+  const cls = `rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-4 ${onClick ? "cursor-pointer hover:border-[var(--t-accent)] transition-colors" : ""}`;
   return (
-    <div className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-4">
+    <div
+      className={cls}
+      onClick={onClick}
+      onKeyDown={onClick ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick(); } } : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      role={onClick ? "button" : undefined}
+    >
       <p className="text-[13px] font-semibold uppercase tracking-wide text-[var(--t-text-muted)]">{label}</p>
       <p className={`text-[24px] font-bold mt-1 tabular-nums ${color || "text-[var(--t-text-primary)]"}`}>{value}</p>
       {sub && <p className="text-[13px] text-[var(--t-text-muted)] mt-0.5">{sub}</p>}
@@ -312,18 +319,102 @@ function DataTable({ headers, rows, onRowClick }: { headers: string[]; rows: (st
 
 /* ─── Tab Content Components ─── */
 
+function InvoiceCard({ inv, statusColor }: { inv: SourceDetailInvoice; statusColor: (s: string) => string }) {
+  return (
+    <a
+      href={`/invoices/${inv.id}`}
+      className="block rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-4 hover:border-[var(--t-accent)] transition-colors cursor-pointer"
+    >
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-sm font-semibold text-[var(--t-text-primary)]">
+          {inv.invoiceNumber || "—"}
+        </span>
+        <div className="flex items-center gap-2">
+          <span className={`text-xs font-medium uppercase ${statusColor(inv.status)}`}>
+            {inv.status}
+          </span>
+          <ChevronRight className="h-3.5 w-3.5 text-[var(--t-text-muted)]" />
+        </div>
+      </div>
+      <p className="text-xs text-[var(--t-text-muted)]">{inv.customerName || "Unknown customer"}</p>
+      {inv.jobNumber && (
+        <p className="text-xs text-[var(--t-text-muted)]">Job {inv.jobNumber}</p>
+      )}
+      <div className="flex items-center gap-4 mt-2 text-xs tabular-nums">
+        <span className="text-[var(--t-text-primary)] font-medium">{formatCurrency(inv.total)}</span>
+        <span className="text-[var(--t-text-muted)]">Paid {formatCurrency(inv.amountPaid)}</span>
+        {inv.balanceDue > 0 && (
+          <span className="text-[var(--t-warning)]">Due {formatCurrency(inv.balanceDue)}</span>
+        )}
+      </div>
+      <p className="text-[11px] text-[var(--t-text-muted)] mt-1">{safeDateStr(inv.createdAt)}</p>
+    </a>
+  );
+}
+
+function InvoiceSlideOver({
+  open, onClose, title, subtitle, invoices, loading,
+}: {
+  open: boolean; onClose: () => void; title: string; subtitle: string;
+  invoices: SourceDetailInvoice[]; loading: boolean;
+}) {
+  const statusColor = (s: string) => {
+    if (s === "paid") return "text-[var(--t-accent)]";
+    if (s === "overdue") return "text-[var(--t-error)]";
+    if (s === "partial") return "text-[var(--t-warning)]";
+    return "text-[var(--t-text-muted)]";
+  };
+
+  return (
+    <SlideOver open={open} onClose={onClose} title={title} wide>
+      <p className="text-xs text-[var(--t-text-muted)] mb-4">
+        {subtitle} · {invoices.length} invoice{invoices.length !== 1 ? "s" : ""}
+      </p>
+      {loading ? (
+        <div className="flex items-center justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-[var(--t-text-muted)]" /></div>
+      ) : invoices.length === 0 ? (
+        <EmptyState text="No invoices found" />
+      ) : (
+        <div className="space-y-3">
+          {invoices.map((inv) => (
+            <InvoiceCard key={inv.id} inv={inv} statusColor={statusColor} />
+          ))}
+        </div>
+      )}
+    </SlideOver>
+  );
+}
+
+type DrillState =
+  | { type: "source"; source: string }
+  | { type: "daily"; date: string }
+  | { type: "tile"; filter: "all" | "collected" | "outstanding" | "overdue" }
+  | null;
+
+const TILE_LABELS: Record<string, string> = {
+  all: "Total Revenue",
+  collected: "Collected",
+  outstanding: "Outstanding",
+  overdue: "Overdue",
+};
+
 function RevenueTab({ data, loading, startDate, endDate }: { data: RevenueData | null; loading: boolean; startDate: string; endDate: string }) {
-  const [drillSource, setDrillSource] = useState<string | null>(null);
+  const [drill, setDrill] = useState<DrillState>(null);
   const [drillData, setDrillData] = useState<SourceDetailInvoice[]>([]);
   const [drillLoading, setDrillLoading] = useState(false);
 
-  const openDrill = async (rawSource: string) => {
-    setDrillSource(rawSource);
+  const openDrill = async (next: NonNullable<DrillState>) => {
+    setDrill(next);
     setDrillLoading(true);
     try {
-      const res = await api.get<{ invoices: SourceDetailInvoice[] }>(
-        `/reporting/revenue/source-detail?source=${encodeURIComponent(rawSource)}&startDate=${startDate}&endDate=${endDate}`
-      );
+      let res: { invoices: SourceDetailInvoice[] };
+      if (next.type === "source") {
+        res = await api.get(`/reporting/revenue/source-detail?source=${encodeURIComponent(next.source)}&startDate=${startDate}&endDate=${endDate}`);
+      } else if (next.type === "daily") {
+        res = await api.get(`/reporting/revenue/daily-detail?date=${next.date}`);
+      } else {
+        res = await api.get(`/reporting/revenue/invoices?filter=${next.filter}&startDate=${startDate}&endDate=${endDate}`);
+      }
       setDrillData(res.invoices);
     } catch {
       setDrillData([]);
@@ -331,6 +422,8 @@ function RevenueTab({ data, loading, startDate, endDate }: { data: RevenueData |
       setDrillLoading(false);
     }
   };
+
+  const closeDrill = () => { setDrill(null); setDrillData([]); };
 
   if (loading) return <><KPISkeleton /><TableSkeleton /></>;
   if (!data) return <EmptyState text="No revenue data available" />;
@@ -340,20 +433,22 @@ function RevenueTab({ data, loading, startDate, endDate }: { data: RevenueData |
     ? data.revenueBySource
     : Object.entries(data.revenueBySource || {}).map(([source, amount]) => ({ source, amount: Number(amount) }));
 
-  const statusColor = (s: string) => {
-    if (s === "paid") return "text-[var(--t-accent)]";
-    if (s === "overdue") return "text-[var(--t-error)]";
-    if (s === "partial") return "text-[var(--t-warning)]";
-    return "text-[var(--t-text-muted)]";
-  };
+  const drillTitle = !drill ? "" :
+    drill.type === "source" ? `${formatSourceLabel(drill.source)} — Invoices` :
+    drill.type === "daily" ? `${safeDateStr(drill.date)} — Invoices` :
+    `${TILE_LABELS[drill.filter]} — Invoices`;
+
+  const drillSubtitle = !drill ? "" :
+    drill.type === "daily" ? drill.date :
+    `${safeDateStr(startDate)} – ${safeDateStr(endDate)}`;
 
   return (
     <div className="space-y-6">
       <KPIGrid>
-        <KPI label="Total Revenue" value={formatCurrency(data.totalRevenue)} color="text-[var(--t-accent)]" />
-        <KPI label="Collected" value={formatCurrency(data.totalCollected)} color="text-[var(--t-accent)]" />
-        <KPI label="Outstanding" value={formatCurrency(data.totalOutstanding)} color="text-[var(--t-warning)]" />
-        <KPI label="Overdue" value={formatCurrency(data.totalOverdue)} color="text-[var(--t-error)]" />
+        <KPI label="Total Revenue" value={formatCurrency(data.totalRevenue)} color="text-[var(--t-accent)]" onClick={() => openDrill({ type: "tile", filter: "all" })} />
+        <KPI label="Collected" value={formatCurrency(data.totalCollected)} color="text-[var(--t-accent)]" onClick={() => openDrill({ type: "tile", filter: "collected" })} />
+        <KPI label="Outstanding" value={formatCurrency(data.totalOutstanding)} color="text-[var(--t-warning)]" onClick={() => openDrill({ type: "tile", filter: "outstanding" })} />
+        <KPI label="Overdue" value={formatCurrency(data.totalOverdue)} color="text-[var(--t-error)]" onClick={() => openDrill({ type: "tile", filter: "overdue" })} />
       </KPIGrid>
       {sourceEntries.length > 0 && (
         <div className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5">
@@ -361,59 +456,29 @@ function RevenueTab({ data, loading, startDate, endDate }: { data: RevenueData |
           <DataTable
             headers={["Source", "Amount"]}
             rows={sourceEntries.map((r) => [formatSourceLabel(r.source), formatCurrency(r.amount)])}
-            onRowClick={(i) => openDrill(sourceEntries[i].source)}
+            onRowClick={(i) => openDrill({ type: "source", source: sourceEntries[i].source })}
           />
         </div>
       )}
       {data.dailyRevenue?.length > 0 && (
         <div className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5">
           <h3 className="text-sm font-semibold text-[var(--t-text-primary)] mb-4">Daily Revenue</h3>
-          <DataTable headers={["Date", "Amount"]} rows={data.dailyRevenue.map((d) => [safeDateStr(d.date ? d.date + "T00:00:00" : null), formatCurrency(d.amount)])} />
+          <DataTable
+            headers={["Date", "Amount"]}
+            rows={data.dailyRevenue.map((d) => [safeDateStr(d.date), formatCurrency(d.amount)])}
+            onRowClick={(i) => { const d = data.dailyRevenue[i]; if (d?.date) openDrill({ type: "daily", date: d.date }); }}
+          />
         </div>
       )}
 
-      <SlideOver
-        open={drillSource !== null}
-        onClose={() => { setDrillSource(null); setDrillData([]); }}
-        title={drillSource ? `${formatSourceLabel(drillSource)} — Invoices` : ""}
-        wide
-      >
-        <p className="text-xs text-[var(--t-text-muted)] mb-4">
-          {safeDateStr(startDate)} – {safeDateStr(endDate)} · {drillData.length} invoice{drillData.length !== 1 ? "s" : ""}
-        </p>
-        {drillLoading ? (
-          <div className="flex items-center justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-[var(--t-text-muted)]" /></div>
-        ) : drillData.length === 0 ? (
-          <EmptyState text="No invoices found for this source" />
-        ) : (
-          <div className="space-y-3">
-            {drillData.map((inv) => (
-              <div key={inv.id} className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-4">
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-sm font-semibold text-[var(--t-text-primary)]">
-                    {inv.invoiceNumber || "—"}
-                  </span>
-                  <span className={`text-xs font-medium uppercase ${statusColor(inv.status)}`}>
-                    {inv.status}
-                  </span>
-                </div>
-                <p className="text-xs text-[var(--t-text-muted)]">{inv.customerName || "Unknown customer"}</p>
-                {inv.jobNumber && (
-                  <p className="text-xs text-[var(--t-text-muted)]">Job {inv.jobNumber}</p>
-                )}
-                <div className="flex items-center gap-4 mt-2 text-xs tabular-nums">
-                  <span className="text-[var(--t-text-primary)] font-medium">{formatCurrency(inv.total)}</span>
-                  <span className="text-[var(--t-text-muted)]">Paid {formatCurrency(inv.amountPaid)}</span>
-                  {inv.balanceDue > 0 && (
-                    <span className="text-[var(--t-warning)]">Due {formatCurrency(inv.balanceDue)}</span>
-                  )}
-                </div>
-                <p className="text-[11px] text-[var(--t-text-muted)] mt-1">{safeDateStr(inv.createdAt)}</p>
-              </div>
-            ))}
-          </div>
-        )}
-      </SlideOver>
+      <InvoiceSlideOver
+        open={drill !== null}
+        onClose={closeDrill}
+        title={drillTitle}
+        subtitle={drillSubtitle}
+        invoices={drillData}
+        loading={drillLoading}
+      />
     </div>
   );
 }

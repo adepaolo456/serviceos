@@ -20,6 +20,26 @@ export class ReportingController {
     return this.service.getRevenueBySourceDetail(tid, source, s, e);
   }
 
+  @Get('revenue/daily-detail')
+  @ApiOperation({ summary: 'Invoice-level detail for a single day' })
+  revenueDailyDetail(
+    @TenantId() tid: string,
+    @Query('date') date: string,
+  ) {
+    return this.service.getRevenueByDailyDetail(tid, date);
+  }
+
+  @Get('revenue/invoices')
+  @ApiOperation({ summary: 'Filtered invoice list for revenue tiles' })
+  revenueInvoices(
+    @TenantId() tid: string,
+    @Query('filter') filter: string,
+    @Query('startDate') s?: string,
+    @Query('endDate') e?: string,
+  ) {
+    return this.service.getRevenueInvoices(tid, filter, s, e);
+  }
+
   @Get('revenue')
   @ApiOperation({ summary: 'Revenue report' })
   revenue(@TenantId() tid: string, @Query('startDate') s?: string, @Query('endDate') e?: string) {
