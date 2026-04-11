@@ -199,11 +199,14 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
   const [overrideOpen, setOverrideOpen] = useState(false);
   const [overrideTarget, setOverrideTarget] = useState("");
   const [overrideReason, setOverrideReason] = useState("");
+  // Related jobs (lifecycle context)
+  const [relatedJobs, setRelatedJobs] = useState<Array<{ id: string; job_number: string; job_type: string; scheduled_date: string; status: string }>>([]);
 
   const fetchJob = async () => {
     try {
       const data = await api.get<Job>(`/jobs/${id}`);
       setJob(data);
+      fetchRelatedJobs(data);
     } catch { /* */ } finally {
       setLoading(false);
     }
@@ -230,6 +233,30 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
       );
       setOpenBillingIssueCount(res.meta?.total ?? 0);
     } catch { /* silent — panel simply won't indicate billing issues */ }
+  };
+
+  const fetchRelatedJobs = async (currentJob: Job) => {
+    if (!currentJob.customer?.id) return;
+    try {
+      const res = await api.get<{ data: Array<{ id: string; job_number: string; job_type: string; scheduled_date: string; status: string; service_address: Record<string, string> | null }> }>(
+        `/jobs?customerId=${currentJob.customer.id}&limit=50&fields=id,job_number,job_type,scheduled_date,status,service_address`
+      );
+      const allJobs = res.data || [];
+      const normalize = (s: string | undefined | null) => (s || "").toLowerCase().trim()
+        .replace(/\bstreet\b/g, "st").replace(/\bcircle\b/g, "cir").replace(/\bdrive\b/g, "dr")
+        .replace(/\bavenue\b/g, "ave").replace(/(?<![a-z])road\b/g, "rd").replace(/\blane\b/g, "ln")
+        .replace(/\bcourt\b/g, "ct").replace(/\bplace\b/g, "pl").replace(/\bboulevard\b/g, "blvd");
+      const currentAddr = normalize(currentJob.service_address?.street);
+      // Try address-based grouping first
+      const addrMatched = currentAddr
+        ? allJobs.filter(j => normalize(j.service_address?.street) === currentAddr)
+        : [];
+      // Use address group if it has 2+ jobs (including current), otherwise fall back to all customer jobs
+      const pool = addrMatched.length >= 2 ? addrMatched : allJobs;
+      const related = pool
+        .sort((a, b) => (a.scheduled_date || "").localeCompare(b.scheduled_date || ""));
+      setRelatedJobs(related);
+    } catch { /* silent */ }
   };
 
   useEffect(() => { fetchJob(); fetchDumpTickets(); fetchInvoice(); fetchOpenBillingIssues(); }, [id]);
@@ -861,6 +888,41 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
               </div>
             )}
           </Card>
+
+          {/* Related Jobs (lifecycle context) */}
+          {relatedJobs.length > 0 && (
+            <Card title={FEATURE_REGISTRY.related_jobs?.label ?? "Related Jobs"} icon={ArrowRight}>
+              <div className="space-y-2">
+                {relatedJobs.map(rj => {
+                  const ds = deriveDisplayStatus(rj.status);
+                  const typeColor = JOB_TYPE_COLORS[rj.job_type] || "text-[var(--t-text-muted)]";
+                  const isCurrent = rj.id === id;
+                  return (
+                    <Link key={rj.id} href={`/jobs/${rj.id}`}
+                      className={`flex items-center justify-between rounded-[14px] border px-3.5 py-2.5 transition-colors ${isCurrent ? "border-[var(--t-accent)] bg-[var(--t-accent-soft)]" : "border-[var(--t-border)] hover:bg-[var(--t-bg-card-hover)]"}`}>
+                      <div className="flex items-center gap-3 min-w-0">
+                        <span className={`text-xs font-semibold capitalize ${typeColor}`}>{rj.job_type}</span>
+                        <span className="text-xs font-medium text-[var(--t-text-primary)]">{rj.job_number}</span>
+                        {rj.scheduled_date && <span className="text-xs text-[var(--t-text-muted)]">{fmtDateFull(rj.scheduled_date)}</span>}
+                      </div>
+                      <span className="text-[10px] font-semibold" style={{ color: displayStatusColor(ds) }}>
+                        {DISPLAY_STATUS_LABELS[ds] || rj.status}
+                      </span>
+                    </Link>
+                  );
+                })}
+              </div>
+              {/* Future action placeholders */}
+              <div className="flex gap-2 mt-3 pt-3 border-t border-[var(--t-border)]">
+                <button disabled className="rounded-full border border-[var(--t-border)] px-3 py-1.5 text-xs font-medium text-[var(--t-text-muted)] opacity-40 cursor-not-allowed">
+                  {FEATURE_REGISTRY.related_jobs_reschedule?.label ?? "Reschedule"}
+                </button>
+                <button disabled className="rounded-full border border-[var(--t-border)] px-3 py-1.5 text-xs font-medium text-[var(--t-text-muted)] opacity-40 cursor-not-allowed">
+                  {FEATURE_REGISTRY.related_jobs_edit_pickup?.label ?? "Edit Pickup Date"}
+                </button>
+              </div>
+            </Card>
+          )}
 
           {/* Driver Notes */}
           {job.driver_notes && (

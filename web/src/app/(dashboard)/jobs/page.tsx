@@ -197,6 +197,7 @@ export default function JobsPage() {
   const [blockedSubview, setBlockedSubview] = useState<
     "all" | "billing_issue" | "unpaid_completed_invoice"
   >("all");
+  const [jobTypeFilter, setJobTypeFilter] = useState<Set<string>>(new Set());
   const [dateRange, setDateRange] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState("date_desc");
@@ -357,8 +358,20 @@ export default function JobsPage() {
     return { all: jobs.length, billing_issue, unpaid_completed_invoice };
   }, [jobs, statusFilter]);
 
+  const toggleJobType = (t: string) => {
+    setJobTypeFilter(prev => {
+      const next = new Set(prev);
+      if (next.has(t)) next.delete(t); else next.add(t);
+      return next;
+    });
+  };
+
   const filteredJobs = useMemo(() => {
     let result = [...jobs];
+    // Job type filter (client-side, multi-select)
+    if (jobTypeFilter.size > 0) {
+      result = result.filter((j) => jobTypeFilter.has(j.job_type));
+    }
     // Blocked drill-down: narrow the already-fetched blocked slice by
     // reason. Pure client-side — no extra fetch.
     if (statusFilter === "blocked" && blockedSubview !== "all") {
@@ -391,7 +404,7 @@ export default function JobsPage() {
       return 0;
     });
     return result;
-  }, [jobs, searchQuery, sortBy, statusFilter, blockedSubview]);
+  }, [jobs, searchQuery, sortBy, statusFilter, blockedSubview, jobTypeFilter]);
 
   const thStyle: React.CSSProperties = { padding: "10px 16px", textAlign: "left", fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--t-text-muted)", whiteSpace: "nowrap" };
 
@@ -519,6 +532,19 @@ export default function JobsPage() {
                   style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 10px", borderRadius: 18, fontSize: 11, fontWeight: 600, background: isActive ? "var(--t-accent)" : "transparent", color: isActive ? "#fff" : "var(--t-text-muted)", border: "none", cursor: "pointer", transition: "all 0.15s ease" }}>
                   {STATUS_LABELS[s]}
                   {count > 0 && <span style={{ fontSize: 10, fontWeight: 700, opacity: isActive ? 0.85 : 0.5 }}>{count}</span>}
+                </button>
+              );
+            })}
+          </div>
+          {/* Job type filters */}
+          <div style={{ display: "inline-flex", borderRadius: 22, backgroundColor: "var(--t-bg-secondary)", border: "1px solid var(--t-border)", padding: 3, gap: 2 }}>
+            {(["delivery", "pickup", "exchange"] as const).map((t) => {
+              const isActive = jobTypeFilter.has(t);
+              const registryKey = `jobs_filter_${t}` as keyof typeof FEATURE_REGISTRY;
+              return (
+                <button key={t} onClick={() => toggleJobType(t)}
+                  style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 10px", borderRadius: 18, fontSize: 11, fontWeight: 600, background: isActive ? "var(--t-accent)" : "transparent", color: isActive ? "#fff" : "var(--t-text-muted)", border: "none", cursor: "pointer", transition: "all 0.15s ease" }}>
+                  {FEATURE_REGISTRY[registryKey]?.label ?? t.charAt(0).toUpperCase() + t.slice(1)}
                 </button>
               );
             })}
