@@ -44,13 +44,24 @@ export class ReportingService {
 
     const totals = await this.invoiceRepo.createQueryBuilder('i')
       .select('SUM(i.total)', 'totalRevenue')
-      .addSelect('SUM(i.amount_paid)', 'totalCollected')
       .addSelect(`SUM(CASE WHEN i.status IN ('open', 'partial') THEN i.balance_due ELSE 0 END)`, 'totalOutstanding')
       .where('i.tenant_id = :tid', { tid: tenantId })
       .andWhere('i.status IN (:...rstats)', { rstats: [...REVENUE_STATUSES] })
       .andWhere('i.created_at >= :start', { start })
       .andWhere('i.created_at <= :end', { end: endTs })
       .getRawOne();
+
+    // Collected: sum of actual completed payments, net of refunds,
+    // filtered by payment applied_at within the date range.
+    const collected = await this.dataSource.query(
+      `SELECT COALESCE(SUM(p.amount - p.refunded_amount), 0) as "totalCollected"
+       FROM payments p
+       WHERE p.tenant_id = $1
+         AND p.status = 'completed'
+         AND p.applied_at >= $2
+         AND p.applied_at <= $3`,
+      [tenantId, start, endTs],
+    );
 
     const overdue = await this.invoiceRepo.createQueryBuilder('i')
       .select('SUM(i.balance_due)', 'totalOverdue')
@@ -89,7 +100,7 @@ export class ReportingService {
 
     return {
       totalRevenue: Number(totals?.totalRevenue) || 0,
-      totalCollected: Number(totals?.totalCollected) || 0,
+      totalCollected: Number(collected[0]?.totalCollected) || 0,
       totalOutstanding: Number(totals?.totalOutstanding) || 0,
       totalOverdue: Number(overdue?.totalOverdue) || 0,
       revenueBySource: Object.fromEntries(bySource.map(r => [r.source || 'other', Number(r.amount)])),
@@ -156,13 +167,39 @@ export class ReportingService {
 
   async getRevenueInvoices(tenantId: string, filter: string, startDate?: string, endDate?: string) {
     const { start, end } = this.dateRange(startDate, endDate);
+    const endTs = end + 'T23:59:59';
+
+    // Collected: query invoices that received completed payments in the date range,
+    // using payment applied_at as the time axis (money actually received).
+    if (filter === 'collected') {
+      const rows = await this.dataSource.query(
+        `SELECT DISTINCT ON (i.id)
+                i.id, i.invoice_number as "invoiceNumber",
+                COALESCE(NULLIF(TRIM(COALESCE(c.first_name, '') || ' ' || COALESCE(c.last_name, '')), ''), 'Unknown Customer') as "customerName",
+                i.total,
+                (SELECT COALESCE(SUM(p2.amount - p2.refunded_amount), 0) FROM payments p2
+                 WHERE p2.invoice_id = i.id AND p2.status = 'completed') as "amountPaid",
+                i.balance_due as "balanceDue", i.status, i.created_at as "createdAt",
+                j.id as "jobId", j.job_number as "jobNumber"
+         FROM payments p
+         JOIN invoices i ON i.id = p.invoice_id AND i.tenant_id = p.tenant_id
+         LEFT JOIN jobs j ON j.id = i.job_id AND j.tenant_id = i.tenant_id
+         LEFT JOIN customers c ON c.id = i.customer_id AND c.tenant_id = i.tenant_id
+         WHERE p.tenant_id = $1
+           AND p.status = 'completed'
+           AND p.applied_at >= $2
+           AND p.applied_at <= $3
+         ORDER BY i.id, i.created_at DESC`,
+        [tenantId, start, endTs],
+      );
+      return { filter, invoices: this.mapInvoiceRows(rows) };
+    }
+
     let statusFilter = REVENUE_STATUS_SQL;
     let whereExtra = '';
-    const params: any[] = [tenantId, start, end + 'T23:59:59'];
+    const params: any[] = [tenantId, start, endTs];
 
-    if (filter === 'collected') {
-      statusFilter = `i.status = 'paid'`;
-    } else if (filter === 'outstanding') {
+    if (filter === 'outstanding') {
       statusFilter = `i.status IN ('open', 'partial')`;
       whereExtra = ` AND i.balance_due > 0`;
     } else if (filter === 'overdue') {
