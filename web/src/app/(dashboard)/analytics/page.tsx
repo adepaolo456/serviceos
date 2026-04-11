@@ -19,7 +19,7 @@ import {
   ExternalLink,
 } from "lucide-react";
 import { api } from "@/lib/api";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, formatSourceLabel } from "@/lib/utils";
 
 /* ─── Types ─── */
 
@@ -300,7 +300,7 @@ function RevenueTab({ data, loading }: { data: RevenueData | null; loading: bool
       {sourceEntries.length > 0 && (
         <div className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5">
           <h3 className="text-sm font-semibold text-[var(--t-text-primary)] mb-4">Revenue by Source</h3>
-          <DataTable headers={["Source", "Amount"]} rows={sourceEntries.map((r) => [r.source, formatCurrency(r.amount)])} />
+          <DataTable headers={["Source", "Amount"]} rows={sourceEntries.map((r) => [formatSourceLabel(r.source), formatCurrency(r.amount)])} />
         </div>
       )}
       {data.dailyRevenue?.length > 0 && (
