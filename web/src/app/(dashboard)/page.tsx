@@ -612,6 +612,7 @@ export default function DashboardPage() {
         setScheduleDate={setScheduleDate}
         todayJobs={todayJobs}
         unassignedJobs={unassignedJobs}
+        onNewJob={() => setJobPanelOpen(true)}
       />
 
       {/* Demoted settings notice */}
@@ -1012,11 +1013,12 @@ type ScheduleView = "today" | "week" | "month";
 
 interface DayJobCounts { total: number; deliveries: number; pickups: number; exchanges: number }
 
-function ScheduleModule({ scheduleDate, setScheduleDate, todayJobs, unassignedJobs }: {
+function ScheduleModule({ scheduleDate, setScheduleDate, todayJobs, unassignedJobs, onNewJob }: {
   scheduleDate: string;
   setScheduleDate: (d: string | ((prev: string) => string)) => void;
   todayJobs: TodayJob[];
   unassignedJobs: TodayJob[];
+  onNewJob: () => void;
 }) {
   const [view, setView] = useState<ScheduleView>("today");
   const [weekJobs, setWeekJobs] = useState<Record<string, DayJobCounts>>({});
@@ -1067,6 +1069,9 @@ function ScheduleModule({ scheduleDate, setScheduleDate, todayJobs, unassignedJo
     { key: "month", label: getFeatureLabel("dashboard_schedule_month") },
   ];
 
+  // Week total for header context
+  const weekTotal = view === "week" ? Object.values(weekJobs).reduce((s, d) => s + d.total, 0) : 0;
+
   return (
     <div className="mb-8" style={{ backgroundColor: "var(--t-bg-card)", border: "1px solid var(--t-border)", borderRadius: 14, overflow: "hidden", boxShadow: "var(--t-shadow-card)" }}>
       {/* Header */}
@@ -1077,17 +1082,30 @@ function ScheduleModule({ scheduleDate, setScheduleDate, todayJobs, unassignedJo
             <span style={{ fontSize: 15, fontWeight: 600, color: "var(--t-text-primary)" }}>{getFeatureLabel("dashboard_schedule")}</span>
             <HelpTooltip featureId="dashboard_schedule" />
           </div>
-          <div className="flex gap-1 ml-2">
+          {/* Segmented toggle */}
+          <div style={{ display: "inline-flex", borderRadius: 20, backgroundColor: "var(--t-bg-secondary)", border: "1px solid var(--t-border)", padding: 2, marginLeft: 6 }}>
             {viewLabels.map(v => (
               <button key={v.key} onClick={() => setView(v.key)}
-                className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${view === v.key ? "bg-[var(--t-accent-soft)] text-[var(--t-accent)]" : "text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)]"}`}
+                style={{
+                  fontSize: 11, fontWeight: 600, padding: "4px 12px", borderRadius: 18, border: "none", cursor: "pointer",
+                  backgroundColor: view === v.key ? "var(--t-accent)" : "transparent",
+                  color: view === v.key ? "#fff" : "var(--t-text-muted)",
+                  transition: "all 0.15s ease",
+                }}
               >{v.label}</button>
             ))}
           </div>
         </div>
-        <Link href="/dispatch" style={{ fontSize: 12, color: "var(--t-accent)", textDecoration: "none", display: "flex", alignItems: "center", gap: 4 }}>
-          Dispatch <ArrowRight style={{ width: 12, height: 12 }} />
-        </Link>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <button onClick={onNewJob}
+            style={{ fontSize: 11, fontWeight: 600, color: "var(--t-accent)", backgroundColor: "var(--t-accent-soft)", border: "none", borderRadius: 20, padding: "5px 12px", cursor: "pointer", transition: "opacity 0.15s ease" }}
+            onMouseEnter={(e) => { e.currentTarget.style.opacity = "0.8"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.opacity = "1"; }}
+          >+ New Job</button>
+          <Link href="/dispatch" style={{ fontSize: 12, color: "var(--t-accent)", textDecoration: "none", display: "flex", alignItems: "center", gap: 4 }}>
+            Dispatch <ArrowRight style={{ width: 12, height: 12 }} />
+          </Link>
+        </div>
       </div>
 
       {/* Today view */}
@@ -1103,9 +1121,12 @@ function ScheduleModule({ scheduleDate, setScheduleDate, todayJobs, unassignedJo
                 Today
               </button>
             )}
-            <div style={{ minWidth: 130, textAlign: "center", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+            <div style={{ minWidth: 160, textAlign: "center", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
               <span style={{ fontSize: 13, fontWeight: 600, color: "var(--t-text-primary)", whiteSpace: "nowrap" }}>{fmtShortDate(scheduleDate)}</span>
-              <span style={{ fontSize: 11, fontWeight: 700, color: "var(--t-accent)", fontVariantNumeric: "tabular-nums" }}>{todayJobs.length}</span>
+              <span style={{ fontSize: 11, fontWeight: 500, color: "var(--t-text-muted)" }}>·</span>
+              <span style={{ fontSize: 11, fontWeight: 600, color: todayJobs.length > 0 ? "var(--t-accent)" : "var(--t-text-muted)", fontVariantNumeric: "tabular-nums" }}>
+                {todayJobs.length} {todayJobs.length === 1 ? "job" : "jobs"}
+              </span>
             </div>
             <button onClick={() => setScheduleDate(d => shiftDate(d, 1))} style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 32, height: 32, borderRadius: 8, color: "var(--t-text-muted)", backgroundColor: "transparent", border: "none", cursor: "pointer" }}>
               <ChevronRight style={{ width: 16, height: 16 }} />
@@ -1114,10 +1135,20 @@ function ScheduleModule({ scheduleDate, setScheduleDate, todayJobs, unassignedJo
           {/* Job list */}
           <div key={scheduleDate} className="animate-fade-in">
             {todayJobs.length === 0 ? (
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: "48px 16px" }}>
-                <Briefcase style={{ width: 40, height: 40, color: "var(--t-text-tertiary)", marginBottom: 8 }} />
-                <p style={{ fontSize: 14, color: "var(--t-text-muted)" }}>No jobs scheduled for {fmtShortDate(scheduleDate).toLowerCase()}</p>
-                <Link href="/book" style={{ marginTop: 12, fontSize: 12, color: "var(--t-accent)", textDecoration: "none" }}>+ Create a job</Link>
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: "44px 24px" }}>
+                <Briefcase style={{ width: 36, height: 36, color: "var(--t-text-tertiary)", marginBottom: 10 }} />
+                <p style={{ fontSize: 15, fontWeight: 600, color: "var(--t-text-primary)", marginBottom: 4 }}>No jobs scheduled for {fmtShortDate(scheduleDate).toLowerCase()}</p>
+                <p style={{ fontSize: 12, color: "var(--t-text-muted)", marginBottom: 16, textAlign: "center", maxWidth: 320 }}>
+                  You&apos;re clear — good time to schedule work or review upcoming jobs.
+                </p>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button onClick={onNewJob}
+                    style={{ fontSize: 12, fontWeight: 600, color: "#fff", backgroundColor: "var(--t-accent)", border: "none", borderRadius: 20, padding: "7px 16px", cursor: "pointer" }}
+                  >+ Create Job</button>
+                  <Link href="/dispatch"
+                    style={{ fontSize: 12, fontWeight: 500, color: "var(--t-text-secondary)", backgroundColor: "transparent", border: "1px solid var(--t-border)", borderRadius: 20, padding: "6px 14px", textDecoration: "none", display: "flex", alignItems: "center", gap: 4 }}
+                  >Go to Dispatch</Link>
+                </div>
               </div>
             ) : (
               <div>
@@ -1166,12 +1197,19 @@ function ScheduleModule({ scheduleDate, setScheduleDate, todayJobs, unassignedJo
         for (let i = 0; i < 7; i++) days.push(shiftDate(today(), i));
         return (
           <div>
+            {/* Week summary bar */}
+            <div style={{ padding: "8px 20px", borderBottom: "1px solid var(--t-border-subtle)", display: "flex", alignItems: "center", gap: 6 }}>
+              <span style={{ fontSize: 12, fontWeight: 600, color: "var(--t-text-primary)" }}>Next 7 days</span>
+              <span style={{ fontSize: 11, fontWeight: 500, color: "var(--t-text-muted)" }}>·</span>
+              <span style={{ fontSize: 11, fontWeight: 600, color: weekTotal > 0 ? "var(--t-accent)" : "var(--t-text-muted)" }}>{weekTotal} {weekTotal === 1 ? "job" : "jobs"}</span>
+            </div>
             {days.map((d, idx) => {
               const isToday = d === today();
               const isSelected = d === scheduleDate;
               const data = weekJobs[d] || { total: 0, deliveries: 0, pickups: 0, exchanges: 0 };
               const dayName = new Date(d + "T00:00:00").toLocaleDateString("en-US", { weekday: "short" });
               const dayNum = new Date(d + "T00:00:00").getDate();
+              const monthName = new Date(d + "T00:00:00").toLocaleDateString("en-US", { month: "short" });
               const parts: string[] = [];
               if (data.deliveries) parts.push(`${data.deliveries}D`);
               if (data.pickups) parts.push(`${data.pickups}P`);
@@ -1179,32 +1217,32 @@ function ScheduleModule({ scheduleDate, setScheduleDate, todayJobs, unassignedJo
 
               return (
                 <button key={d} onClick={() => { setScheduleDate(d); setView("today"); }}
-                  style={{ display: "flex", width: "100%", alignItems: "center", justifyContent: "space-between", padding: "10px 20px", textAlign: "left", backgroundColor: isSelected ? "var(--t-accent-soft)" : "transparent", borderLeft: isSelected ? "3px solid var(--t-accent)" : "3px solid transparent", borderRight: "none", borderTop: "none", borderBottom: idx < days.length - 1 ? "1px solid var(--t-border-subtle)" : "none", cursor: "pointer", transition: "background 0.15s ease" }}
+                  style={{ display: "flex", width: "100%", alignItems: "center", justifyContent: "space-between", padding: "11px 20px", textAlign: "left", backgroundColor: isSelected ? "var(--t-accent-soft)" : "transparent", borderLeft: isSelected ? "3px solid var(--t-accent)" : "3px solid transparent", borderRight: "none", borderTop: "none", borderBottom: idx < days.length - 1 ? "1px solid var(--t-border-subtle)" : "none", cursor: "pointer", transition: "background 0.15s ease" }}
                   onMouseEnter={(e) => { if (!isSelected) e.currentTarget.style.backgroundColor = "var(--t-border-subtle)"; }}
-                  onMouseLeave={(e) => { if (!isSelected) e.currentTarget.style.backgroundColor = isSelected ? "var(--t-accent-soft)" : "transparent"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = isSelected ? "var(--t-accent-soft)" : "transparent"; }}
                 >
                   <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
                     <div style={{ width: 44, textAlign: "center" }}>
-                      <p style={{ fontSize: 10, textTransform: "uppercase", fontWeight: isToday ? 700 : 500, color: isToday ? "var(--t-accent)" : "var(--t-text-muted)" }}>{dayName}</p>
-                      <p style={{ fontSize: 16, fontWeight: 600, color: isToday ? "var(--t-accent)" : "var(--t-text-secondary)" }}>{dayNum}</p>
+                      <p style={{ fontSize: 10, textTransform: "uppercase", fontWeight: isToday ? 700 : 500, color: isToday ? "var(--t-accent)" : "var(--t-text-muted)", lineHeight: 1, marginBottom: 3 }}>{isToday ? "Today" : dayName}</p>
+                      <p style={{ fontSize: 16, fontWeight: 600, color: isToday ? "var(--t-accent)" : "var(--t-text-secondary)", lineHeight: 1 }}>{dayNum}</p>
+                      <p style={{ fontSize: 9, color: "var(--t-text-muted)", marginTop: 1, lineHeight: 1 }}>{monthName}</p>
                     </div>
                     {data.total > 0 ? (
                       <div>
                         <p style={{ fontSize: 14, fontWeight: 500, color: "var(--t-text-primary)" }}>{data.total} {data.total === 1 ? "job" : "jobs"}</p>
-                        <p style={{ fontSize: 11, color: "var(--t-text-muted)" }}>{parts.join(", ")}</p>
+                        {parts.length > 0 && <p style={{ fontSize: 11, color: "var(--t-text-muted)" }}>{parts.join(" · ")}</p>}
                       </div>
                     ) : (
-                      <p style={{ fontSize: 12, color: "var(--t-text-tertiary)" }}>No jobs</p>
+                      <p style={{ fontSize: 12, color: "var(--t-text-tertiary)", fontStyle: "italic" }}>No jobs</p>
                     )}
                   </div>
-                  {data.total > 0 && (
-                    <div style={{ display: "flex", gap: 3, alignItems: "center" }}>
-                      {Array.from({ length: Math.min(data.total, 5) }).map((_, i) => (
-                        <div key={i} style={{ width: 5, height: 5, borderRadius: "50%", backgroundColor: "var(--t-accent)", opacity: 0.5 }} />
-                      ))}
-                      {data.total > 5 && <span style={{ fontSize: 9, color: "var(--t-text-muted)" }}>+{data.total - 5}</span>}
-                    </div>
-                  )}
+                  <div style={{ display: "flex", gap: 3, alignItems: "center" }}>
+                    {data.total > 0 && Array.from({ length: Math.min(data.total, 6) }).map((_, i) => (
+                      <div key={i} style={{ width: 4, height: 4, borderRadius: "50%", backgroundColor: data.total >= 5 ? "var(--t-error)" : "var(--t-accent)", opacity: 0.6 }} />
+                    ))}
+                    {data.total > 6 && <span style={{ fontSize: 9, color: "var(--t-text-muted)", marginLeft: 2 }}>+{data.total - 6}</span>}
+                    <ChevronRight style={{ width: 14, height: 14, color: "var(--t-text-tertiary)", marginLeft: 4 }} />
+                  </div>
                 </button>
               );
             })}
@@ -1219,11 +1257,10 @@ function ScheduleModule({ scheduleDate, setScheduleDate, todayJobs, unassignedJo
         const mo = now.getMonth() + monthOffset;
         const first = new Date(yr, mo, 1);
         const daysInMonth = new Date(yr, mo + 1, 0).getDate();
-        const startDow = first.getDay(); // 0=Sun
+        const startDow = first.getDay();
         const monthLabel = first.toLocaleDateString("en-US", { month: "long", year: "numeric" });
         const todayStr = today();
 
-        // Build cells: leading empties + day strings + trailing empties to fill last row
         const cells: (string | null)[] = Array.from({ length: startDow }, () => null);
         for (let d = 1; d <= daysInMonth; d++) {
           cells.push(`${first.getFullYear()}-${String(first.getMonth() + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`);
@@ -1231,10 +1268,20 @@ function ScheduleModule({ scheduleDate, setScheduleDate, todayJobs, unassignedJo
         const trailingEmpty = (7 - (cells.length % 7)) % 7;
         for (let i = 0; i < trailingEmpty; i++) cells.push(null);
 
+        // Density thresholds for background intensity
+        const maxCount = Math.max(1, ...Object.values(monthJobs));
+        const densityBg = (count: number) => {
+          if (count === 0) return "transparent";
+          const intensity = Math.min(count / Math.max(maxCount, 5), 1);
+          if (intensity > 0.7) return "var(--t-error-soft)";
+          if (intensity > 0.3) return "var(--t-accent-soft)";
+          return "var(--t-bg-card-hover)";
+        };
+
         return (
           <div style={{ padding: "16px 20px" }}>
             {/* Month nav */}
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
               <button onClick={() => setMonthOffset(p => p - 1)} style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 28, height: 28, borderRadius: 8, color: "var(--t-text-muted)", backgroundColor: "transparent", border: "none", cursor: "pointer" }}>
                 <ChevronLeft style={{ width: 14, height: 14 }} />
               </button>
@@ -1257,9 +1304,9 @@ function ScheduleModule({ scheduleDate, setScheduleDate, todayJobs, unassignedJo
               ))}
             </div>
             {/* Calendar grid */}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 2 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 3 }}>
               {cells.map((ds, i) => {
-                if (!ds) return <div key={`e${i}`} style={{ minHeight: 42 }} />;
+                if (!ds) return <div key={`e${i}`} style={{ minHeight: 46 }} />;
                 const count = monthJobs[ds] || 0;
                 const isToday = ds === todayStr;
                 const isSelected = ds === scheduleDate;
@@ -1268,13 +1315,13 @@ function ScheduleModule({ scheduleDate, setScheduleDate, todayJobs, unassignedJo
                   <button key={ds} onClick={() => { setScheduleDate(ds); setView("today"); }}
                     style={{
                       display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
-                      padding: "4px 2px", borderRadius: 8,
+                      padding: "5px 2px", borderRadius: 10,
                       border: isSelected ? "1.5px solid var(--t-accent)" : "1.5px solid transparent",
-                      backgroundColor: isToday ? "var(--t-accent-soft)" : "transparent",
-                      cursor: "pointer", transition: "background 0.15s ease", minHeight: 42,
+                      backgroundColor: isToday ? "var(--t-accent-soft)" : densityBg(count),
+                      cursor: "pointer", transition: "all 0.15s ease", minHeight: 46,
                     }}
-                    onMouseEnter={(e) => { if (!isToday) e.currentTarget.style.backgroundColor = "var(--t-border-subtle)"; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = isToday ? "var(--t-accent-soft)" : "transparent"; }}
+                    onMouseEnter={(e) => { e.currentTarget.style.transform = "scale(1.05)"; e.currentTarget.style.boxShadow = "var(--t-shadow-card)"; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.transform = "scale(1)"; e.currentTarget.style.boxShadow = "none"; }}
                   >
                     <span style={{ fontSize: 12, fontWeight: isToday ? 700 : 500, color: isToday ? "var(--t-accent)" : "var(--t-text-secondary)", lineHeight: 1 }}>{dayNum}</span>
                     {count > 0 ? (
