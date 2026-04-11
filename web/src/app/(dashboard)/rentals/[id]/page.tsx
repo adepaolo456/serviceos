@@ -3,7 +3,7 @@
 import { useState, useEffect, use } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Truck, MapPin, Calendar, Package, DollarSign, CheckCircle2, Clock, ArrowRight, FileText } from "lucide-react";
+import { ArrowLeft, Truck, MapPin, Calendar, Package, DollarSign, CheckCircle2, Clock, ArrowRight, FileText, Pencil, CalendarClock } from "lucide-react";
 import { api } from "@/lib/api";
 import { formatCurrency } from "@/lib/utils";
 import { FEATURE_REGISTRY } from "@/lib/feature-registry";
@@ -87,6 +87,13 @@ export default function RentalLifecyclePage({ params }: { params: Promise<{ id: 
   const router = useRouter();
   const [data, setData] = useState<LifecycleData | null>(null);
   const [loading, setLoading] = useState(true);
+  // Edit pickup / extend modal state
+  const [pickupModalOpen, setPickupModalOpen] = useState(false);
+  const [pickupDate, setPickupDate] = useState("");
+  const [pickupSaving, setPickupSaving] = useState(false);
+  const [pickupError, setPickupError] = useState("");
+
+  const reload = () => api.get<LifecycleData>(`/rental-chains/${id}/lifecycle`).then(setData).catch(() => {});
 
   useEffect(() => {
     api.get<LifecycleData>(`/rental-chains/${id}/lifecycle`)
@@ -94,6 +101,34 @@ export default function RentalLifecyclePage({ params }: { params: Promise<{ id: 
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [id]);
+
+  const handlePickupDateUpdate = async () => {
+    if (!data || !pickupDate) return;
+    const pickupJob = data.jobs.find(j => j.taskType === "pick_up");
+    if (!pickupJob?.id) { setPickupError("No pickup task found"); return; }
+    // Validate: pickup must be after delivery
+    const deliveryDate = data.rentalChain.dropOffDate;
+    if (deliveryDate && pickupDate <= deliveryDate) {
+      setPickupError(FEATURE_REGISTRY.lifecycle_action_pickup_before_delivery?.label ?? "Pickup date must be after delivery date");
+      return;
+    }
+    setPickupSaving(true);
+    setPickupError("");
+    try {
+      await api.patch(`/jobs/${pickupJob.id}`, { scheduledDate: pickupDate });
+      // Note: rental_chain.expected_pickup_date is NOT synced here —
+      // no existing safe API path exposes a chain-level date update.
+      // The pickup JOB date is the source of truth for dispatch.
+      // Chain sync is a documented follow-up.
+      setPickupModalOpen(false);
+      setPickupDate("");
+      await reload();
+    } catch (err: unknown) {
+      setPickupError(err instanceof Error ? err.message : (FEATURE_REGISTRY.lifecycle_action_error?.label ?? "Failed to update"));
+    } finally {
+      setPickupSaving(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -160,7 +195,15 @@ export default function RentalLifecyclePage({ params }: { params: Promise<{ id: 
             <p className="text-[10px] font-medium uppercase tracking-wider text-[var(--t-text-muted)]">
               {FEATURE_REGISTRY.job_detail_pickup_date?.label ?? "Pickup Date"}
             </p>
-            <p className="text-sm font-semibold text-[var(--t-text-primary)] mt-0.5">{fmtDate(rentalChain.expectedPickupDate)}</p>
+            <div className="flex items-center gap-2 mt-0.5">
+              <p className="text-sm font-semibold text-[var(--t-text-primary)]">{fmtDate(rentalChain.expectedPickupDate)}</p>
+              {isActive && (
+                <button onClick={() => { setPickupModalOpen(true); setPickupDate(rentalChain.expectedPickupDate || ""); setPickupError(""); }}
+                  className="text-[var(--t-accent)] hover:opacity-70 transition-opacity" title={FEATURE_REGISTRY.lifecycle_action_edit_pickup?.label ?? "Edit Pickup Date"}>
+                  <Pencil className="h-3 w-3" />
+                </button>
+              )}
+            </div>
           </div>
           <div>
             <p className="text-[10px] font-medium uppercase tracking-wider text-[var(--t-text-muted)]">Dumpster</p>
@@ -180,6 +223,20 @@ export default function RentalLifecyclePage({ params }: { params: Promise<{ id: 
           </div>
         )}
       </div>
+
+      {/* Actions */}
+      {isActive && (
+        <div className="flex gap-2">
+          <button onClick={() => { setPickupModalOpen(true); setPickupDate(rentalChain.expectedPickupDate || ""); setPickupError(""); }}
+            className="inline-flex items-center gap-1.5 rounded-full border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-2 text-xs font-medium text-[var(--t-text-primary)] hover:bg-[var(--t-bg-card-hover)] transition-colors">
+            <Pencil className="h-3 w-3" /> {FEATURE_REGISTRY.lifecycle_action_edit_pickup?.label ?? "Edit Pickup Date"}
+          </button>
+          <button onClick={() => { setPickupModalOpen(true); setPickupDate(""); setPickupError(""); }}
+            className="inline-flex items-center gap-1.5 rounded-full border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-2 text-xs font-medium text-[var(--t-text-primary)] hover:bg-[var(--t-bg-card-hover)] transition-colors">
+            <CalendarClock className="h-3 w-3" /> {FEATURE_REGISTRY.lifecycle_action_extend?.label ?? "Extend Rental"}
+          </button>
+        </div>
+      )}
 
       {/* Connected Tasks */}
       <div className="rounded-[20px] bg-[var(--t-bg-card)] border border-[var(--t-border)] p-5">
@@ -304,6 +361,37 @@ export default function RentalLifecyclePage({ params }: { params: Promise<{ id: 
               </div>
             </div>
           )}
+        </div>
+      )}
+      {/* Edit Pickup Date / Extend Rental Modal */}
+      {pickupModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4" onClick={() => setPickupModalOpen(false)}>
+          <div className="rounded-2xl border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6 w-full max-w-sm" onClick={e => e.stopPropagation()}>
+            <h3 className="text-sm font-semibold text-[var(--t-text-primary)] mb-1">
+              {FEATURE_REGISTRY.lifecycle_action_edit_pickup?.label ?? "Edit Pickup Date"}
+            </h3>
+            <p className="text-xs text-[var(--t-text-muted)] mb-4">
+              {FEATURE_REGISTRY.lifecycle_action_pickup_description?.label ?? "Select a new pickup date for this rental."}
+            </p>
+            <label className="text-xs text-[var(--t-text-muted)] mb-1 block">
+              {FEATURE_REGISTRY.lifecycle_action_new_date?.label ?? "New pickup date"}
+            </label>
+            <input type="date" value={pickupDate} onChange={e => { setPickupDate(e.target.value); setPickupError(""); }}
+              min={rentalChain.dropOffDate ? new Date(new Date(rentalChain.dropOffDate).getTime() + 86400000).toISOString().split("T")[0] : undefined}
+              className="w-full rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-3 py-2 text-sm text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)] mb-3" />
+            {pickupError && (
+              <p className="text-xs text-[var(--t-error)] mb-3">{pickupError}</p>
+            )}
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setPickupModalOpen(false)} className="rounded-full px-4 py-2 text-xs font-medium text-[var(--t-text-muted)]">
+                Cancel
+              </button>
+              <button onClick={handlePickupDateUpdate} disabled={!pickupDate || pickupSaving}
+                className="rounded-full bg-[var(--t-accent)] px-4 py-2 text-xs font-semibold text-[var(--t-accent-on-accent)] disabled:opacity-40 hover:opacity-90 transition-opacity">
+                {pickupSaving ? (FEATURE_REGISTRY.lifecycle_action_saving?.label ?? "Saving...") : (FEATURE_REGISTRY.lifecycle_action_confirm?.label ?? "Confirm")}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
