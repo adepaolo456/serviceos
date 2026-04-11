@@ -456,12 +456,13 @@ export class ReportingService {
 
   async getCustomerAnalytics(tenantId: string, startDate?: string, endDate?: string) {
     const { start, end } = this.dateRange(startDate, endDate);
+    const endTs = end + 'T23:59:59';
 
     const total = await this.customerRepo.count({ where: { tenant_id: tenantId, is_active: true } });
     const newInPeriod = await this.customerRepo.createQueryBuilder('c')
       .where('c.tenant_id = :tid', { tid: tenantId })
       .andWhere('c.created_at >= :start', { start })
-      .andWhere('c.created_at <= :end', { end: end + 'T23:59:59' })
+      .andWhere('c.created_at <= :end', { end: endTs })
       .getCount();
 
     const byType = await this.customerRepo.createQueryBuilder('c')
@@ -472,23 +473,38 @@ export class ReportingService {
       .groupBy('c.type')
       .getRawMany();
 
-    const top = await this.customerRepo.createQueryBuilder('c')
-      .select('c.id', 'customerId')
-      .addSelect("CONCAT(c.first_name, ' ', c.last_name)", 'name')
-      .addSelect('c.type', 'type')
-      .addSelect('c.total_jobs', 'totalJobs')
-      .addSelect('c.lifetime_revenue', 'totalRevenue')
-      .where('c.tenant_id = :tid', { tid: tenantId })
-      .andWhere('c.is_active = true')
-      .orderBy('c.lifetime_revenue', 'DESC')
-      .limit(20)
-      .getRawMany();
+    // Top customers by actual invoiced revenue within the date range,
+    // not the denormalized lifetime_revenue column.
+    const top = await this.dataSource.query(
+      `SELECT c.id as "customerId",
+              COALESCE(NULLIF(TRIM(COALESCE(c.first_name, '') || ' ' || COALESCE(c.last_name, '')), ''), 'Unknown Customer') as name,
+              c.type,
+              COUNT(DISTINCT j.id)::int as "totalJobs",
+              COALESCE(SUM(i.total), 0) as "totalSpend"
+       FROM customers c
+       LEFT JOIN jobs j ON j.customer_id = c.id AND j.tenant_id = c.tenant_id
+         AND j.scheduled_date >= $2 AND j.scheduled_date <= $3
+       LEFT JOIN invoices i ON i.customer_id = c.id AND i.tenant_id = c.tenant_id
+         AND ${REVENUE_STATUS_SQL} AND i.created_at >= $2 AND i.created_at <= $4
+       WHERE c.tenant_id = $1 AND c.is_active = true
+       GROUP BY c.id, c.first_name, c.last_name, c.type
+       HAVING COALESCE(SUM(i.total), 0) > 0 OR COUNT(DISTINCT j.id) > 0
+       ORDER BY COALESCE(SUM(i.total), 0) DESC
+       LIMIT 20`,
+      [tenantId, start, end, endTs],
+    );
 
     return {
       totalCustomers: total,
       newCustomersInPeriod: newInPeriod,
       customersByType: Object.fromEntries(byType.map(t => [t.type, Number(t.count)])),
-      topCustomers: top.map(c => ({ ...c, totalJobs: Number(c.totalJobs), totalRevenue: Number(c.totalRevenue) })),
+      topCustomers: top.map((c: any) => ({
+        customerId: c.customerId,
+        name: c.name,
+        type: c.type,
+        totalJobs: Number(c.totalJobs),
+        totalSpend: Number(c.totalSpend),
+      })),
       period: { start, end },
     };
   }
