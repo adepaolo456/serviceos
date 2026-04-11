@@ -24,13 +24,31 @@ import SlideOver from "@/components/slide-over";
 
 /* ─── Types ─── */
 
+interface SourceRow {
+  source: string;
+  amount: number;
+  count: number;
+  paidCount: number;
+  outstanding: number;
+}
+
+interface PeriodRow {
+  date: string;
+  amount: number;
+  count: number;
+  paidCount: number;
+}
+
+type RevenueGrouping = "daily" | "weekly" | "monthly";
+
 interface RevenueData {
   totalRevenue: number;
   totalCollected: number;
   totalOutstanding: number;
   totalOverdue: number;
-  revenueBySource: Record<string, number> | { source: string; amount: number }[];
-  dailyRevenue: { date: string; amount: number }[];
+  revenueBySource: Record<string, number> | SourceRow[];
+  dailyRevenue: PeriodRow[];
+  grouping?: RevenueGrouping;
 }
 
 interface SourceDetailInvoice {
@@ -398,7 +416,10 @@ const TILE_LABELS: Record<string, string> = {
   overdue: "Overdue",
 };
 
-function RevenueTab({ data, loading, startDate, endDate }: { data: RevenueData | null; loading: boolean; startDate: string; endDate: string }) {
+function RevenueTab({ data, loading, startDate, endDate, grouping, onGroupingChange }: {
+  data: RevenueData | null; loading: boolean; startDate: string; endDate: string;
+  grouping: RevenueGrouping; onGroupingChange: (g: RevenueGrouping) => void;
+}) {
   const [drill, setDrill] = useState<DrillState>(null);
   const [drillData, setDrillData] = useState<SourceDetailInvoice[]>([]);
   const [drillLoading, setDrillLoading] = useState(false);
@@ -428,10 +449,21 @@ function RevenueTab({ data, loading, startDate, endDate }: { data: RevenueData |
   if (loading) return <><KPISkeleton /><TableSkeleton /></>;
   if (!data) return <EmptyState text="No revenue data available" />;
 
-  // Normalize revenueBySource: backend returns Record<string, number>, convert to array
-  const sourceEntries = Array.isArray(data.revenueBySource)
-    ? data.revenueBySource
-    : Object.entries(data.revenueBySource || {}).map(([source, amount]) => ({ source, amount: Number(amount) }));
+  // Normalize revenueBySource: backend may return old Record or new SourceRow[]
+  const sourceEntries: SourceRow[] = Array.isArray(data.revenueBySource)
+    ? data.revenueBySource.map((r: any) => ({
+        source: r.source, amount: Number(r.amount),
+        count: Number(r.count) || 0, paidCount: Number(r.paidCount) || 0,
+        outstanding: Number(r.outstanding) || 0,
+      }))
+    : Object.entries(data.revenueBySource || {}).map(([source, amount]) => ({
+        source, amount: Number(amount), count: 0, paidCount: 0, outstanding: 0,
+      }));
+
+  const periodRows: PeriodRow[] = (data.dailyRevenue || []).map((d: any) => ({
+    date: d.date, amount: Number(d.amount),
+    count: Number(d.count) || 0, paidCount: Number(d.paidCount) || 0,
+  }));
 
   const drillTitle = !drill ? "" :
     drill.type === "source" ? `${formatSourceLabel(drill.source)} — Invoices` :
@@ -442,6 +474,18 @@ function RevenueTab({ data, loading, startDate, endDate }: { data: RevenueData |
     drill.type === "daily" ? drill.date :
     `${safeDateStr(startDate)} – ${safeDateStr(endDate)}`;
 
+  const groupingLabel = grouping === "weekly" ? "Weekly" : grouping === "monthly" ? "Monthly" : "Daily";
+
+  const meta = (count: number, amount: number, paidCount?: number) => {
+    const avg = count > 0 ? amount / count : 0;
+    const parts = [`${fmtNum(count)} inv`, `avg ${formatCurrency(avg)}`];
+    if (paidCount !== undefined && count > 0) {
+      const unpaid = count - paidCount;
+      if (unpaid > 0) parts.push(`${unpaid} open`);
+    }
+    return parts.join(" · ");
+  };
+
   return (
     <div className="space-y-6">
       <KPIGrid>
@@ -450,24 +494,105 @@ function RevenueTab({ data, loading, startDate, endDate }: { data: RevenueData |
         <KPI label="Outstanding" value={formatCurrency(data.totalOutstanding)} color="text-[var(--t-warning)]" onClick={() => openDrill({ type: "tile", filter: "outstanding" })} />
         <KPI label="Overdue" value={formatCurrency(data.totalOverdue)} color="text-[var(--t-error)]" onClick={() => openDrill({ type: "tile", filter: "overdue" })} />
       </KPIGrid>
+
       {sourceEntries.length > 0 && (
         <div className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5">
           <h3 className="text-sm font-semibold text-[var(--t-text-primary)] mb-4">Revenue by Source</h3>
-          <DataTable
-            headers={["Source", "Amount"]}
-            rows={sourceEntries.map((r) => [formatSourceLabel(r.source), formatCurrency(r.amount)])}
-            onRowClick={(i) => openDrill({ type: "source", source: sourceEntries[i].source })}
-          />
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-[var(--t-border)]">
+                  <th className="text-left text-[12px] font-semibold uppercase tracking-wide text-[var(--t-text-muted)] py-3 px-3">Source</th>
+                  <th className="text-right text-[12px] font-semibold uppercase tracking-wide text-[var(--t-text-muted)] py-3 px-3">Amount</th>
+                  <th className="text-right text-[12px] font-semibold uppercase tracking-wide text-[var(--t-text-muted)] py-3 px-3">Outstanding</th>
+                  <th className="text-right text-[12px] font-semibold uppercase tracking-wide text-[var(--t-text-muted)] py-3 px-3 hidden sm:table-cell">Invoices</th>
+                  <th className="py-3 px-1"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {sourceEntries.map((r, i) => (
+                  <tr
+                    key={r.source}
+                    className="border-b border-[var(--t-border)] hover:bg-[var(--t-bg-card-hover)] transition-colors cursor-pointer"
+                    onClick={() => openDrill({ type: "source", source: r.source })}
+                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openDrill({ type: "source", source: r.source }); } }}
+                    tabIndex={0} role="button"
+                  >
+                    <td className="py-3 px-3">
+                      <span className="text-[var(--t-text-primary)]">{formatSourceLabel(r.source)}</span>
+                      <span className="block text-[11px] text-[var(--t-text-muted)] mt-0.5 sm:hidden">
+                        {meta(r.count, r.amount, r.paidCount)}
+                      </span>
+                    </td>
+                    <td className="py-3 px-3 text-right tabular-nums text-[var(--t-text-primary)] font-medium">{formatCurrency(r.amount)}</td>
+                    <td className="py-3 px-3 text-right tabular-nums text-[var(--t-warning)]">{r.outstanding > 0 ? formatCurrency(r.outstanding) : "—"}</td>
+                    <td className="py-3 px-3 text-right text-[var(--t-text-muted)] hidden sm:table-cell">
+                      {meta(r.count, r.amount, r.paidCount)}
+                    </td>
+                    <td className="py-3 px-1 text-[var(--t-text-muted)]"><ChevronRight className="h-4 w-4" /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
-      {data.dailyRevenue?.length > 0 && (
+
+      {periodRows.length > 0 && (
         <div className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5">
-          <h3 className="text-sm font-semibold text-[var(--t-text-primary)] mb-4">Daily Revenue</h3>
-          <DataTable
-            headers={["Date", "Amount"]}
-            rows={data.dailyRevenue.map((d) => [safeDateStr(d.date), formatCurrency(d.amount)])}
-            onRowClick={(i) => { const d = data.dailyRevenue[i]; if (d?.date) openDrill({ type: "daily", date: d.date }); }}
-          />
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-sm font-semibold text-[var(--t-text-primary)]">{groupingLabel} Revenue</h3>
+            <div className="flex gap-1">
+              {(["daily", "weekly", "monthly"] as const).map((g) => (
+                <button
+                  key={g}
+                  onClick={() => onGroupingChange(g)}
+                  className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                    grouping === g
+                      ? "bg-[var(--t-accent-soft)] text-[var(--t-accent)]"
+                      : "text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)]"
+                  }`}
+                >
+                  {g.charAt(0).toUpperCase() + g.slice(1)}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-[var(--t-border)]">
+                  <th className="text-left text-[12px] font-semibold uppercase tracking-wide text-[var(--t-text-muted)] py-3 px-3">Period</th>
+                  <th className="text-right text-[12px] font-semibold uppercase tracking-wide text-[var(--t-text-muted)] py-3 px-3">Amount</th>
+                  <th className="text-right text-[12px] font-semibold uppercase tracking-wide text-[var(--t-text-muted)] py-3 px-3 hidden sm:table-cell">Invoices</th>
+                  <th className="py-3 px-1"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {periodRows.map((d, i) => (
+                  <tr
+                    key={d.date ?? i}
+                    className="border-b border-[var(--t-border)] hover:bg-[var(--t-bg-card-hover)] transition-colors cursor-pointer"
+                    onClick={() => { if (d.date) openDrill({ type: "daily", date: d.date }); }}
+                    onKeyDown={(e) => { if ((e.key === "Enter" || e.key === " ") && d.date) { e.preventDefault(); openDrill({ type: "daily", date: d.date }); } }}
+                    tabIndex={0} role="button"
+                  >
+                    <td className="py-3 px-3">
+                      <span className="text-[var(--t-text-primary)]">{safeDateStr(d.date)}</span>
+                      <span className="block text-[11px] text-[var(--t-text-muted)] mt-0.5 sm:hidden">
+                        {meta(d.count, d.amount, d.paidCount)}
+                      </span>
+                    </td>
+                    <td className="py-3 px-3 text-right tabular-nums text-[var(--t-text-primary)] font-medium">{formatCurrency(d.amount)}</td>
+                    <td className="py-3 px-3 text-right text-[var(--t-text-muted)] hidden sm:table-cell">
+                      {meta(d.count, d.amount, d.paidCount)}
+                    </td>
+                    <td className="py-3 px-1 text-[var(--t-text-muted)]"><ChevronRight className="h-4 w-4" /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
@@ -935,6 +1060,7 @@ function AnalyticsPageContent() {
     revenue: null, "dump-costs": null, profit: null, drivers: null, assets: null, customers: null, receivables: null, "dump-slips": null,
   });
 
+  const [revenueGrouping, setRevenueGrouping] = useState<RevenueGrouping>("daily");
   const [dumpSlipParams, setDumpSlipParams] = useState<{ search?: string; dumpLocationId?: string; status?: string }>({});
 
   const setPreset = (preset: "week" | "month" | "quarter" | "year") => {
@@ -964,7 +1090,7 @@ function AnalyticsPageContent() {
         const qs = `startDate=${startDate}&endDate=${endDate}`;
         let result;
         switch (tab) {
-          case "revenue": result = await api.get<RevenueData>(`/reporting/revenue?${qs}`); break;
+          case "revenue": result = await api.get<RevenueData>(`/reporting/revenue?${qs}&grouping=${revenueGrouping}`); break;
           case "dump-costs": result = await api.get<DumpCostsData>(`/reporting/dump-costs?${qs}`); break;
           case "profit": result = await api.get<ProfitData>(`/reporting/profit?${qs}`); break;
           case "drivers": result = await api.get<DriversData>(`/reporting/drivers?${qs}`); break;
@@ -987,7 +1113,7 @@ function AnalyticsPageContent() {
         setLoading(false);
       }
     },
-    [startDate, endDate, dumpSlipParams]
+    [startDate, endDate, revenueGrouping, dumpSlipParams]
   );
 
   useEffect(() => {
@@ -1090,7 +1216,7 @@ function AnalyticsPageContent() {
 
       {/* Tab Content */}
       <div className="min-h-[400px]">
-        {activeTab === "revenue" && <RevenueTab data={tabData.revenue} loading={loading && !tabData.revenue} startDate={startDate} endDate={endDate} />}
+        {activeTab === "revenue" && <RevenueTab data={tabData.revenue} loading={loading && !tabData.revenue} startDate={startDate} endDate={endDate} grouping={revenueGrouping} onGroupingChange={setRevenueGrouping} />}
         {activeTab === "dump-costs" && <DumpCostsTab data={tabData["dump-costs"]} loading={loading && !tabData["dump-costs"]} />}
         {activeTab === "profit" && <ProfitTab data={tabData.profit} loading={loading && !tabData.profit} />}
         {activeTab === "drivers" && <DriversTab data={tabData.drivers} loading={loading && !tabData.drivers} />}
