@@ -124,8 +124,8 @@ function PortalInvoicesPage() {
       // No checkout URL returned — something went wrong server-side
       setPayResult({ success: false, message: `${label("portal_payment_failed", "Payment could not be processed")}. ${label("portal_payment_try_again", "Please try again or contact us.")}` });
     } catch (err: unknown) {
-      const errMsg = err instanceof Error ? err.message : "";
-      const message = errMsg === "ONLINE_PAYMENTS_NOT_CONFIGURED"
+      const errMsg = err instanceof Error ? err.message : String(err);
+      const message = errMsg.includes("ONLINE_PAYMENTS_NOT_CONFIGURED")
         ? label("portal_payment_not_configured", "Online payments are not yet available. Please contact us to arrange payment.")
         : `${label("portal_payment_failed", "Payment could not be processed")}. ${label("portal_payment_try_again", "Please try again or contact us.")}`;
       setPayResult({ success: false, message });
