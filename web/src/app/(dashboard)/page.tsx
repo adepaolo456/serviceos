@@ -26,6 +26,8 @@ import { api } from "@/lib/api";
 import SlideOver from "@/components/slide-over";
 import AddressAutocomplete, { type AddressValue } from "@/components/address-autocomplete";
 import { deriveDisplayStatus, DISPLAY_STATUS_LABELS, displayStatusColor } from "@/lib/job-status";
+import { getFeatureLabel } from "@/lib/feature-registry";
+import HelpTooltip from "@/components/ui/HelpTooltip";
 
 /* ---- Types ---- */
 
@@ -145,6 +147,7 @@ export default function DashboardPage() {
   const [attentionPickups, setAttentionPickups] = useState(0);
   const [attentionUnassigned, setAttentionUnassigned] = useState(0);
   const [attentionReschedule, setAttentionReschedule] = useState(0);
+  const [settingsIncomplete, setSettingsIncomplete] = useState(false);
 
   // Keyboard shortcuts: B=booking, arrows=date nav, T=today
   useEffect(() => {
@@ -181,7 +184,7 @@ export default function DashboardPage() {
       };
       if (!hasData("pricing")) missing.push({ key: "pricing", title: "No pricing added yet", desc: "Add dumpster sizes and pricing so jobs can be quoted correctly.", cta: "Manage Pricing", href: "/pricing" });
       if (!hasData("vehicles")) missing.push({ key: "vehicles", title: "No dumpsters added yet", desc: "Add your dumpsters to track inventory and availability.", cta: "Manage Assets", href: "/assets" });
-      if (!hasData("company_info")) missing.push({ key: "company_info", title: "Business settings incomplete", desc: "Add your company details and support email.", cta: "Open Settings", href: "/settings" });
+      if (!hasData("company_info")) setSettingsIncomplete(true);
       setConfigHints(missing);
     }).catch(() => {});
   }, []);
@@ -276,10 +279,10 @@ export default function DashboardPage() {
 
   // Action items — only items with count > 0
   const actionItems = [
-    { label: "Overdue Invoices", count: attentionOverdue, icon: FileWarning, color: "var(--t-error)", href: "/invoices" },
-    { label: "Review Pickups", count: attentionPickups, icon: Truck, color: "var(--t-warning)", href: "/jobs" },
+    { label: "Overdue Invoices", count: attentionOverdue, icon: FileWarning, color: "var(--t-error)", href: "/invoices?status=overdue" },
+    { label: getFeatureLabel("dashboard_pickups_attention"), count: attentionPickups, icon: Truck, color: "var(--t-warning)", href: "/jobs?status=completed&jobType=pickup" },
     { label: "Unassigned Today", count: attentionUnassigned, icon: CalendarX, color: "var(--t-warning)", href: "/dispatch" },
-    { label: "Needs Reschedule", count: attentionReschedule, icon: AlertTriangle, color: "var(--t-error)", href: "/jobs" },
+    { label: "Needs Reschedule", count: attentionReschedule, icon: AlertTriangle, color: "var(--t-error)", href: "/jobs?status=needs_reschedule" },
   ].filter((item) => item.count > 0);
 
   return (
@@ -392,7 +395,7 @@ export default function DashboardPage() {
         >
           <div style={{ position: "absolute", top: -50, right: -50, width: 180, height: 180, borderRadius: "50%", background: "radial-gradient(circle, var(--t-accent-soft) 0%, transparent 70%)", pointerEvents: "none" }} />
           <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: 1, background: "linear-gradient(90deg, transparent 0%, var(--t-accent-soft) 50%, transparent 100%)", pointerEvents: "none" }} />
-          <p style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--t-text-muted)", marginBottom: 8 }}>Revenue</p>
+          <p style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--t-text-muted)", marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>Revenue <HelpTooltip featureId="revenue_overview" /></p>
           <p style={{ fontSize: 46, fontWeight: 800, letterSpacing: "-0.03em", color: "var(--t-accent)", fontVariantNumeric: "tabular-nums", lineHeight: 1, textShadow: "0 0 40px var(--t-hero-glow)" }}>
             ${revenueThisMonth.toLocaleString()}
           </p>
@@ -423,7 +426,7 @@ export default function DashboardPage() {
       <div className="mb-12">
         <p style={{ fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.12em", color: "var(--t-text-tertiary)", marginBottom: 14, paddingLeft: 2 }}>Operations</p>
         <div className="grid grid-cols-2 gap-4">
-          {/* Fleet */}
+          {/* Asset Utilization — merged Fleet + Assets */}
           <Link
             href="/assets"
             className="no-underline rounded-[14px] px-5 py-5 transition-all flex items-center gap-4"
@@ -435,8 +438,11 @@ export default function DashboardPage() {
               <Truck className="h-[18px] w-[18px]" style={{ color: "var(--t-text-secondary)" }} />
             </div>
             <div className="min-w-0 flex-1">
-              <p style={{ fontSize: 14, fontWeight: 600, color: "var(--t-text-primary)" }}>Fleet</p>
-              <p style={{ fontSize: 11, color: "var(--t-text-muted)", marginTop: 2 }}>{deployed} deployed · {fleetTotal - deployed} available</p>
+              <div className="flex items-center gap-1.5">
+                <p style={{ fontSize: 14, fontWeight: 600, color: "var(--t-text-primary)" }}>{getFeatureLabel("dashboard_asset_utilization")}</p>
+                <HelpTooltip featureId="dashboard_asset_utilization" />
+              </div>
+              <p style={{ fontSize: 11, color: "var(--t-text-muted)", marginTop: 2 }}>{deployed} in use · {fleetTotal - deployed} available</p>
             </div>
             <span style={{ fontSize: 24, fontWeight: 700, fontVariantNumeric: "tabular-nums", color: "var(--t-text-primary)" }}>{fleetTotal}</span>
             <span className={`text-[12px] font-bold tabular-nums ${utilRate >= 80 ? "text-[var(--t-error)]" : "text-[var(--t-accent)]"}`}>{utilRate}%</span>
@@ -444,7 +450,7 @@ export default function DashboardPage() {
 
           {/* AR Outstanding */}
           <Link
-            href="/invoices"
+            href="/invoices?status=open"
             className="no-underline rounded-[14px] px-5 py-5 transition-all flex items-center gap-4"
             style={{ background: "var(--t-bg-card)", border: "1px solid var(--t-border)", boxShadow: "var(--t-shadow-card)" }}
             onMouseEnter={(e) => { e.currentTarget.style.background = "var(--t-bg-card-hover)"; e.currentTarget.style.borderColor = "var(--t-border-strong)"; }}
@@ -471,7 +477,7 @@ export default function DashboardPage() {
       {/* ---- SECTION 3: Action Items (only non-zero) ---- */}
       {actionItems.length > 0 && (
         <div className="mb-12">
-          <p style={{ fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.12em", color: "var(--t-text-tertiary)", marginBottom: 14, paddingLeft: 2 }}>Needs Attention</p>
+          <p style={{ fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.12em", color: "var(--t-text-tertiary)", marginBottom: 14, paddingLeft: 2, display: "flex", alignItems: "center", gap: 6 }}>{getFeatureLabel("dashboard_attention_required")} <HelpTooltip featureId="dashboard_attention_required" /></p>
           <div style={{ display: "flex", flexDirection: "column", gap: 0, borderRadius: 14, overflow: "hidden", background: "var(--t-bg-card)", border: "1px solid var(--t-border)", boxShadow: "var(--t-shadow-card)" }}>
             {actionItems.map((item, idx) => (
               <Link
@@ -881,6 +887,15 @@ export default function DashboardPage() {
           )}
         </div>
       </div>
+
+      {/* Demoted settings notice */}
+      {settingsIncomplete && (
+        <div className="mt-8 mb-4 text-center">
+          <Link href="/settings" className="text-xs text-[var(--t-text-muted)] hover:text-[var(--t-accent)] transition-colors no-underline">
+            Business settings incomplete — <span className="underline">Open Settings</span>
+          </Link>
+        </div>
+      )}
 
       {/* Quick Job Create SlideOver */}
       <SlideOver open={jobPanelOpen} onClose={() => setJobPanelOpen(false)} title="Quick Create Job">

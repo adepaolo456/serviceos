@@ -278,6 +278,32 @@ export const FEATURE_REGISTRY: Record<string, FeatureDescription> = {
     keywords: ["truck", "trailer", "fleet", "vehicle", "plate", "transport"],
   },
 
+  // ── Dashboard ──
+  dashboard_asset_utilization: {
+    id: "dashboard_asset_utilization", label: "Asset Utilization", category: "dashboard",
+    shortDescription: "Combined fleet and asset status on the dashboard.",
+    guideDescription: "The Asset Utilization tile shows your total dumpster count, how many are deployed vs available, and the overall utilization percentage. A high utilization rate (80%+) is flagged in red to indicate capacity pressure. Click the tile to open the full Assets page for details.",
+    routeOrSurface: "/", tenantOverrideKey: "dashboard_asset_utilization",
+    isUserFacing: true, isGuideEligible: true,
+    keywords: ["asset", "fleet", "utilization", "deployed", "available", "dumpster", "capacity"],
+  },
+  dashboard_attention_required: {
+    id: "dashboard_attention_required", label: "Needs Attention", category: "dashboard",
+    shortDescription: "Actionable items that require immediate review.",
+    guideDescription: "The Needs Attention section surfaces urgent operational items — overdue invoices, pickups needing review, unassigned jobs for today, and jobs requiring rescheduling. Each item links directly to its filtered page. The section is hidden when there are no items requiring attention.",
+    routeOrSurface: "/", tenantOverrideKey: "dashboard_attention_required",
+    isUserFacing: true, isGuideEligible: true,
+    keywords: ["attention", "overdue", "pickup", "unassigned", "reschedule", "urgent", "action"],
+  },
+  dashboard_pickups_attention: {
+    id: "dashboard_pickups_attention", label: "Pickups Needing Attention", category: "dashboard",
+    shortDescription: "Completed pickups that may need review before closing out.",
+    guideDescription: "This attention item shows pickup jobs marked as completed that may need review — for example, confirming dump slips, verifying weights, or closing out invoicing. Click to open the Jobs page filtered to these pickups.",
+    routeOrSurface: "/jobs", tenantOverrideKey: "dashboard_pickups_attention",
+    isUserFacing: true, isGuideEligible: true,
+    keywords: ["pickup", "review", "completed", "attention", "close", "dump", "verify"],
+  },
+
   // ── Analytics ──
   analytics: {
     id: "analytics", label: "Analytics", category: "analytics",
