@@ -66,10 +66,11 @@ export class ReportingService {
 
     const daily = await this.invoiceRepo.createQueryBuilder('i')
       .select("DATE(i.created_at)", 'date')
-      .addSelect('SUM(i.amount_paid)', 'amount')
+      .addSelect('SUM(i.total)', 'amount')
       .where('i.tenant_id = :tid', { tid: tenantId })
       .andWhere('i.created_at >= :start', { start })
       .andWhere('i.created_at <= :end', { end: end + 'T23:59:59' })
+      .andWhere('i.created_at IS NOT NULL')
       .groupBy("DATE(i.created_at)")
       .orderBy("DATE(i.created_at)", 'ASC')
       .getRawMany();

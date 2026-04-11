@@ -9,12 +9,6 @@ import { TenantId } from '../../common/decorators';
 export class ReportingController {
   constructor(private readonly service: ReportingService) {}
 
-  @Get('revenue')
-  @ApiOperation({ summary: 'Revenue report' })
-  revenue(@TenantId() tid: string, @Query('startDate') s?: string, @Query('endDate') e?: string) {
-    return this.service.getRevenue(tid, s, e);
-  }
-
   @Get('revenue/source-detail')
   @ApiOperation({ summary: 'Invoice-level detail for a revenue source' })
   revenueSourceDetail(
@@ -24,6 +18,12 @@ export class ReportingController {
     @Query('endDate') e?: string,
   ) {
     return this.service.getRevenueBySourceDetail(tid, source, s, e);
+  }
+
+  @Get('revenue')
+  @ApiOperation({ summary: 'Revenue report' })
+  revenue(@TenantId() tid: string, @Query('startDate') s?: string, @Query('endDate') e?: string) {
+    return this.service.getRevenue(tid, s, e);
   }
 
   @Get('dump-costs')
