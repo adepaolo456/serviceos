@@ -1215,21 +1215,26 @@ function ScheduleModule({ scheduleDate, setScheduleDate, todayJobs, unassignedJo
       {/* Month view */}
       {view === "month" && (() => {
         const now = new Date();
-        const first = new Date(now.getFullYear(), now.getMonth() + monthOffset, 1);
-        const daysInMonth = new Date(now.getFullYear(), now.getMonth() + monthOffset + 1, 0).getDate();
+        const yr = now.getFullYear();
+        const mo = now.getMonth() + monthOffset;
+        const first = new Date(yr, mo, 1);
+        const daysInMonth = new Date(yr, mo + 1, 0).getDate();
         const startDow = first.getDay(); // 0=Sun
         const monthLabel = first.toLocaleDateString("en-US", { month: "long", year: "numeric" });
         const todayStr = today();
+
+        // Build cells: leading empties + day strings + trailing empties to fill last row
         const cells: (string | null)[] = Array.from({ length: startDow }, () => null);
         for (let d = 1; d <= daysInMonth; d++) {
-          const ds = `${first.getFullYear()}-${String(first.getMonth() + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
-          cells.push(ds);
+          cells.push(`${first.getFullYear()}-${String(first.getMonth() + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`);
         }
+        const trailingEmpty = (7 - (cells.length % 7)) % 7;
+        for (let i = 0; i < trailingEmpty; i++) cells.push(null);
 
         return (
-          <div style={{ padding: "12px 16px" }}>
+          <div style={{ padding: "16px 20px" }}>
             {/* Month nav */}
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
               <button onClick={() => setMonthOffset(p => p - 1)} style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 28, height: 28, borderRadius: 8, color: "var(--t-text-muted)", backgroundColor: "transparent", border: "none", cursor: "pointer" }}>
                 <ChevronLeft style={{ width: 14, height: 14 }} />
               </button>
@@ -1245,13 +1250,16 @@ function ScheduleModule({ scheduleDate, setScheduleDate, todayJobs, unassignedJo
                 <ChevronRight style={{ width: 14, height: 14 }} />
               </button>
             </div>
-            {/* Day headers */}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 2 }}>
+            {/* Day-of-week headers */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 0, marginBottom: 4 }}>
               {["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map(d => (
                 <div key={d} style={{ textAlign: "center", fontSize: 10, fontWeight: 600, color: "var(--t-text-muted)", textTransform: "uppercase", padding: "4px 0" }}>{d}</div>
               ))}
+            </div>
+            {/* Calendar grid */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 2 }}>
               {cells.map((ds, i) => {
-                if (!ds) return <div key={`e${i}`} />;
+                if (!ds) return <div key={`e${i}`} style={{ minHeight: 42 }} />;
                 const count = monthJobs[ds] || 0;
                 const isToday = ds === todayStr;
                 const isSelected = ds === scheduleDate;
@@ -1260,16 +1268,19 @@ function ScheduleModule({ scheduleDate, setScheduleDate, todayJobs, unassignedJo
                   <button key={ds} onClick={() => { setScheduleDate(ds); setView("today"); }}
                     style={{
                       display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
-                      padding: "6px 2px", borderRadius: 8, border: isSelected ? "1px solid var(--t-accent)" : "1px solid transparent",
-                      backgroundColor: isToday ? "var(--t-accent-soft)" : "transparent", cursor: "pointer",
-                      transition: "background 0.15s ease", minHeight: 44,
+                      padding: "4px 2px", borderRadius: 8,
+                      border: isSelected ? "1.5px solid var(--t-accent)" : "1.5px solid transparent",
+                      backgroundColor: isToday ? "var(--t-accent-soft)" : "transparent",
+                      cursor: "pointer", transition: "background 0.15s ease", minHeight: 42,
                     }}
-                    onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--t-border-subtle)"; }}
+                    onMouseEnter={(e) => { if (!isToday) e.currentTarget.style.backgroundColor = "var(--t-border-subtle)"; }}
                     onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = isToday ? "var(--t-accent-soft)" : "transparent"; }}
                   >
-                    <span style={{ fontSize: 12, fontWeight: isToday ? 700 : 500, color: isToday ? "var(--t-accent)" : "var(--t-text-secondary)" }}>{dayNum}</span>
-                    {count > 0 && (
-                      <span style={{ fontSize: 9, fontWeight: 700, color: count >= 5 ? "var(--t-error)" : "var(--t-accent)", marginTop: 2, fontVariantNumeric: "tabular-nums" }}>{count}</span>
+                    <span style={{ fontSize: 12, fontWeight: isToday ? 700 : 500, color: isToday ? "var(--t-accent)" : "var(--t-text-secondary)", lineHeight: 1 }}>{dayNum}</span>
+                    {count > 0 ? (
+                      <span style={{ fontSize: 9, fontWeight: 700, color: count >= 5 ? "var(--t-error)" : "var(--t-accent)", marginTop: 3, fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>{count}</span>
+                    ) : (
+                      <span style={{ fontSize: 9, marginTop: 3, lineHeight: 1, visibility: "hidden" }}>0</span>
                     )}
                   </button>
                 );
