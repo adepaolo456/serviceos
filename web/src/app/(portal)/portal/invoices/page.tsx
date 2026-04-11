@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import Link from "next/link";
+import { useSearchParams, useRouter } from "next/navigation";
 import { portalApi } from "@/lib/portal-api";
 import { formatCurrency } from "@/lib/utils";
 import { FEATURE_REGISTRY } from "@/lib/feature-registry";
@@ -52,7 +53,17 @@ function invoiceStatusText(status: string, dueDate: string) {
   return <span className={`inline-flex items-center gap-1 text-xs font-medium ${s.cls}`}>{s.icon}{s.label}</span>;
 }
 
-export default function PortalInvoicesPage() {
+export default function PortalInvoicesPageWrapper() {
+  return (
+    <Suspense fallback={<div className="py-10 text-center text-sm" style={{ color: "var(--t-text-muted)" }}>Loading invoices...</div>}>
+      <PortalInvoicesPage />
+    </Suspense>
+  );
+}
+
+function PortalInvoicesPage() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
   const [detail, setDetail] = useState<Invoice | null>(null);
@@ -62,9 +73,28 @@ export default function PortalInvoicesPage() {
   const [paying, setPaying] = useState(false);
   const [payResult, setPayResult] = useState<{ success: boolean; message: string } | null>(null);
 
+  const loadInvoices = () => portalApi.get<Invoice[]>("/portal/invoices").then(setInvoices).catch(() => {});
+
   useEffect(() => {
-    portalApi.get<Invoice[]>("/portal/invoices").then(setInvoices).catch(() => {}).finally(() => setLoading(false));
+    loadInvoices().finally(() => setLoading(false));
   }, []);
+
+  // Handle Stripe checkout return via query params
+  useEffect(() => {
+    const paymentStatus = searchParams.get("payment");
+    const invoiceNum = searchParams.get("invoice");
+    if (!paymentStatus) return;
+
+    if (paymentStatus === "success") {
+      setPayResult({ success: true, message: `${label("portal_payment_success", "Payment submitted successfully")}${invoiceNum ? ` for Invoice #${invoiceNum}` : ""}. It may take a moment for your balance to update.` });
+      // Refresh invoices to pick up updated status from webhook
+      loadInvoices();
+    } else if (paymentStatus === "cancelled") {
+      setPayResult({ success: false, message: label("portal_payment_cancelled", "Payment was cancelled. No charge was made.") });
+    }
+    // Clean up URL params
+    router.replace("/portal/invoices", { scroll: false });
+  }, [searchParams, router]);
 
   const openDetail = async (inv: Invoice) => {
     setDetail(inv);
@@ -82,18 +112,17 @@ export default function PortalInvoicesPage() {
     setPaying(true);
     setPayResult(null);
     try {
-      const result = await portalApi.post<{ success?: boolean; url?: string; message?: string }>(
+      const result = await portalApi.post<{ url?: string }>(
         "/portal/payments/prepare",
         { invoiceId: inv.id, amount: inv.balance_due }
       );
       if (result.url) {
-        // Redirect to Stripe checkout if URL provided
+        // Redirect to Stripe Checkout — success/cancel handled via return URL params
         window.location.href = result.url;
         return;
       }
-      setPayResult({ success: true, message: result.message || label("portal_payment_success", "Payment submitted successfully") });
-      // Refresh invoices
-      portalApi.get<Invoice[]>("/portal/invoices").then(setInvoices).catch(() => {});
+      // No checkout URL returned — something went wrong server-side
+      setPayResult({ success: false, message: `${label("portal_payment_failed", "Payment could not be processed")}. ${label("portal_payment_try_again", "Please try again or contact us.")}` });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : `${label("portal_payment_failed", "Payment could not be processed")}. ${label("portal_payment_try_again", "Please try again or contact us.")}`;
       setPayResult({ success: false, message });
@@ -209,6 +238,15 @@ export default function PortalInvoicesPage() {
           </div>
         )}
       </div>
+
+      {/* Payment status banner (shown after Stripe checkout return) */}
+      {payResult && !payConfirmInvoice && (
+        <div className={`rounded-[14px] px-4 py-3 flex items-center gap-3 ${payResult.success ? "bg-[var(--t-accent-soft)] border border-[var(--t-accent)]" : "bg-[var(--t-error-soft)] border border-[var(--t-error)]"}`}>
+          {payResult.success ? <CheckCircle2 className="h-4 w-4 text-[var(--t-accent)] shrink-0" /> : <AlertTriangle className="h-4 w-4 text-[var(--t-error)] shrink-0" />}
+          <p className="text-sm font-medium text-[var(--t-text-primary)] flex-1">{payResult.message}</p>
+          <button onClick={() => setPayResult(null)} className="text-xs font-medium text-[var(--t-text-muted)] shrink-0">Dismiss</button>
+        </div>
+      )}
 
       {loading ? (
         <div className="space-y-3">{[1, 2, 3].map(i => <div key={i} className="h-20 rounded-[20px] bg-[var(--t-bg-card)] border border-[var(--t-border)] animate-pulse" />)}</div>

@@ -12,14 +12,17 @@ import { Customer } from '../customers/entities/customer.entity';
 import { Job } from '../jobs/entities/job.entity';
 import { Invoice } from '../billing/entities/invoice.entity';
 import { Payment } from '../billing/entities/payment.entity';
+import { Tenant } from '../tenants/entities/tenant.entity';
 import { PricingModule } from '../pricing/pricing.module';
 import { BillingModule } from '../billing/billing.module';
+import { StripeModule } from '../stripe/stripe.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Customer, Job, Invoice, Payment]),
+    TypeOrmModule.forFeature([Customer, Job, Invoice, Payment, Tenant]),
     PricingModule,
     BillingModule,
+    StripeModule,
     PassportModule.register({ defaultStrategy: 'portal-jwt' }),
     JwtModule.registerAsync({
       imports: [ConfigModule],
