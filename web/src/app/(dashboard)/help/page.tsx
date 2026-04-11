@@ -3,7 +3,7 @@
 import { useState, useMemo, useEffect, useRef, Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
-import { Search, ExternalLink, X } from "lucide-react";
+import { Search, ExternalLink, X, ChevronRight } from "lucide-react";
 import { usePathname } from "next/navigation";
 import {
   getFeature,
@@ -22,16 +22,19 @@ import {
   trackHelpTopicNotFound,
   type HelpAnalyticsSource,
 } from "@/lib/help-analytics";
+import SlideOver from "@/components/slide-over";
 
 const NAVIGABLE_ROUTES = new Set([
   "/", "/jobs", "/dispatch", "/customers", "/assets", "/invoices",
   "/billing-issues", "/pricing-qa", "/pricing", "/team", "/vehicles",
   "/analytics", "/notifications", "/marketplace", "/settings",
-  "/dump-locations", "/book", "/help",
+  "/dump-locations", "/book", "/help", "/portal-activity", "/quotes",
+  "/credit-queue", "/credit-audit", "/credit-analytics",
 ]);
 
 function isNavigableRoute(route: string): boolean {
-  return NAVIGABLE_ROUTES.has(route);
+  const base = route.split("?")[0];
+  return NAVIGABLE_ROUTES.has(base);
 }
 
 const POPULAR_IDS = ["quick_quote", "dashboard", "jobs", "dispatch_board", "pricing_issues"];
@@ -182,14 +185,9 @@ function HelpCenterPage() {
               : `No topics found for "${search}". Try a different search term.`}
           </p>
           {filtered.length > 0 && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {filtered.map(f => (
-                <div key={f.id} ref={f.id === selectedId ? selectedRef : undefined}>
-                  <TopicCard feature={f} isSelected={f.id === selectedId} onSelect={(id) => selectFeature(id, "search")} />
-                  {f.id === selectedId && selectedVisibleInSearch && relatedTopics.length > 0 && (
-                    <RelatedSection topics={relatedTopics} selectedId={selectedId} onSelect={selectRelatedTopic} />
-                  )}
-                </div>
+                <TopicCard key={f.id} feature={f} onSelect={(id) => selectFeature(id, "search")} />
               ))}
             </div>
           )}
@@ -200,11 +198,10 @@ function HelpCenterPage() {
           {popularTopics.length > 0 && (
             <div className="mb-10">
               <h2 className="text-[15px] font-bold tracking-[-0.3px] mb-3" style={{ color: "var(--t-frame-text)" }}>Popular Topics</h2>
-              <div className="flex flex-wrap gap-2">
+              <div style={{ display: "inline-flex", borderRadius: 22, backgroundColor: "var(--t-bg-secondary)", border: "1px solid var(--t-border)", padding: 3, gap: 2 }}>
                 {popularTopics.map(f => (
                   <button key={f.id} onClick={() => selectFeature(f.id)}
-                    className="rounded-full border px-4 py-2 text-sm font-medium transition-all"
-                    style={{ background: selectedId === f.id ? "var(--t-accent-soft)" : "var(--t-bg-card)", borderColor: selectedId === f.id ? "var(--t-accent)" : "var(--t-border)", color: selectedId === f.id ? "var(--t-accent)" : "var(--t-text-primary)" }}>
+                    style={{ fontSize: 12, fontWeight: 600, padding: "5px 14px", borderRadius: 18, border: "none", cursor: "pointer", transition: "all 0.15s ease", backgroundColor: selectedId === f.id ? "var(--t-accent)" : "transparent", color: selectedId === f.id ? "#fff" : "var(--t-text-muted)" }}>
                     {f.label}
                   </button>
                 ))}
@@ -221,14 +218,9 @@ function HelpCenterPage() {
                 <h2 className="text-[15px] font-bold tracking-[-0.3px] mb-4" style={{ color: "var(--t-frame-text)" }}>
                   {CATEGORY_LABELS[cat]}
                 </h2>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                   {features.sort((a, b) => a.label.localeCompare(b.label)).map(f => (
-                    <div key={f.id} ref={f.id === selectedId ? selectedRef : undefined}>
-                      <TopicCard feature={f} isSelected={f.id === selectedId} onSelect={selectFeature} />
-                      {f.id === selectedId && relatedTopics.length > 0 && (
-                        <RelatedSection topics={relatedTopics} selectedId={selectedId} onSelect={selectRelatedTopic} />
-                      )}
-                    </div>
+                    <TopicCard key={f.id} feature={f} onSelect={selectFeature} />
                   ))}
                 </div>
               </div>
@@ -237,34 +229,80 @@ function HelpCenterPage() {
         </div>
       )}
 
-      {/* Clear selection hint */}
-      {selectedId && (
-        <div className="fixed bottom-6 right-6 z-50">
-          <button onClick={clearSelection}
-            className="rounded-full border px-4 py-2 text-xs font-medium shadow-lg transition-all"
-            style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)", color: "var(--t-text-muted)" }}>
-            <X className="h-3 w-3 inline mr-1" /> Clear selection
-          </button>
-        </div>
-      )}
+      {/* Topic detail SlideOver */}
+      <SlideOver
+        open={!!selectedFeature}
+        onClose={clearSelection}
+        title={selectedFeature?.label || ""}
+        wide
+        headerActions={
+          selectedFeature && isNavigableRoute(selectedFeature.routeOrSurface) ? (
+            <Link href={selectedFeature.routeOrSurface} onClick={clearSelection}
+              className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium no-underline"
+              style={{ backgroundColor: "var(--t-accent)", color: "#fff" }}>
+              Open {selectedFeature.label} <ExternalLink className="h-3 w-3" />
+            </Link>
+          ) : undefined
+        }
+      >
+        {selectedFeature && (
+          <div>
+            <span className="inline-block text-[10px] font-semibold uppercase tracking-wider px-2.5 py-1 rounded-full mb-5"
+              style={{ backgroundColor: "var(--t-bg-elevated)", color: "var(--t-text-muted)" }}>
+              {CATEGORY_LABELS[selectedFeature.category]}
+            </span>
+            <p className="text-xs mb-6" style={{ color: "var(--t-text-muted)" }}>{selectedFeature.shortDescription}</p>
+            <div className="text-sm leading-relaxed" style={{ color: "var(--t-text-secondary)", maxWidth: 560 }}>
+              {selectedFeature.guideDescription.split(". ").reduce<string[][]>((acc, sentence, i, arr) => {
+                // Group into paragraphs of ~2-3 sentences
+                const last = acc[acc.length - 1];
+                if (last && last.length < 3) { last.push(sentence + (i < arr.length - 1 ? "." : "")); }
+                else { acc.push([sentence + (i < arr.length - 1 ? "." : "")]); }
+                return acc;
+              }, []).map((para, i) => (
+                <p key={i} className="mb-4">{para.join(" ")}</p>
+              ))}
+            </div>
+
+            {/* Related Topics */}
+            {relatedTopics.length > 0 && (
+              <div className="mt-8 pt-6" style={{ borderTop: "1px solid var(--t-border)" }}>
+                <p className="text-[11px] font-semibold uppercase tracking-wider mb-3" style={{ color: "var(--t-text-muted)" }}>Related Topics</p>
+                <div className="flex flex-col gap-2">
+                  {relatedTopics.map(f => (
+                    <button key={f.id} onClick={() => selectRelatedTopic(selectedFeature.id, f.id)}
+                      className="flex items-center gap-3 rounded-[12px] border p-3 text-left transition-all"
+                      style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)" }}
+                      onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--t-accent)"; }}
+                      onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--t-border)"; }}
+                    >
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-semibold" style={{ color: "var(--t-text-primary)" }}>{f.label}</p>
+                        <p className="text-[11px] leading-snug mt-0.5" style={{ color: "var(--t-text-muted)" }}>{f.shortDescription}</p>
+                      </div>
+                      <ChevronRight className="h-3.5 w-3.5 shrink-0" style={{ color: "var(--t-text-muted)" }} />
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </SlideOver>
     </div>
   );
 }
 
-/* ── Topic Card ── */
-function TopicCard({ feature, isSelected, onSelect }: { feature: FeatureDescription; isSelected?: boolean; onSelect?: (id: string) => void }) {
+/* ── Topic Card (Uniform, Truncated) ── */
+function TopicCard({ feature, onSelect }: { feature: FeatureDescription; onSelect?: (id: string) => void }) {
   const hasRoute = isNavigableRoute(feature.routeOrSurface);
   return (
     <div
       onClick={() => onSelect?.(feature.id)}
-      className="rounded-[14px] border p-4 transition-all cursor-pointer"
-      style={{
-        background: isSelected ? "var(--t-bg-elevated)" : "var(--t-bg-card)",
-        borderColor: isSelected ? "var(--t-accent)" : "var(--t-border)",
-        boxShadow: isSelected ? "0 0 0 1px var(--t-accent)" : "",
-      }}
-      onMouseEnter={e => { if (!isSelected) { e.currentTarget.style.borderColor = "var(--t-border-strong)"; e.currentTarget.style.boxShadow = "0 2px 8px var(--t-shadow)"; } }}
-      onMouseLeave={e => { if (!isSelected) { e.currentTarget.style.borderColor = "var(--t-border)"; e.currentTarget.style.boxShadow = ""; } }}
+      className="rounded-[14px] border p-4 transition-all cursor-pointer flex flex-col"
+      style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)", minHeight: 120 }}
+      onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--t-accent)"; e.currentTarget.style.boxShadow = "0 2px 8px var(--t-shadow)"; }}
+      onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--t-border)"; e.currentTarget.style.boxShadow = "none"; }}
     >
       <div className="flex items-start justify-between gap-2 mb-2">
         <h3 className="text-sm font-semibold" style={{ color: "var(--t-text-primary)" }}>{feature.label}</h3>
@@ -272,42 +310,19 @@ function TopicCard({ feature, isSelected, onSelect }: { feature: FeatureDescript
           {CATEGORY_LABELS[feature.category]}
         </span>
       </div>
-      <p className="text-xs leading-relaxed mb-3" style={{ color: "var(--t-text-secondary)" }}>
-        {feature.guideDescription}
+      <p className="text-xs leading-relaxed line-clamp-2 flex-1" style={{ color: "var(--t-text-secondary)" }}>
+        {feature.shortDescription}
       </p>
-      {hasRoute && (
-        <Link href={feature.routeOrSurface} onClick={e => e.stopPropagation()}
-          className="inline-flex items-center gap-1 text-xs font-medium" style={{ color: "var(--t-accent)" }}>
-          Open <ExternalLink className="h-3 w-3" />
-        </Link>
-      )}
-    </div>
-  );
-}
-
-/* ── Related Topics Section ── */
-function RelatedSection({ topics, selectedId, onSelect }: { topics: FeatureDescription[]; selectedId: string; onSelect: (fromId: string, toId: string) => void }) {
-  return (
-    <div className="mt-3 mb-2">
-      <p className="text-[11px] font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--t-text-muted)" }}>Related Topics</p>
-      <div className="flex gap-3 overflow-x-auto">
-        {topics.map(f => (
-          <button key={f.id} onClick={() => onSelect(selectedId, f.id)}
-            className="shrink-0 rounded-[12px] border p-3 text-left transition-all"
-            style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border-subtle)", minWidth: 180, maxWidth: 220 }}
-            onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--t-border-strong)"; }}
-            onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--t-border-subtle)"; }}
-          >
-            <p className="text-xs font-semibold mb-1" style={{ color: "var(--t-text-primary)" }}>{f.label}</p>
-            <p className="text-[11px] leading-snug line-clamp-2" style={{ color: "var(--t-text-muted)" }}>{f.shortDescription}</p>
-            {isNavigableRoute(f.routeOrSurface) && (
-              <Link href={f.routeOrSurface} onClick={e => e.stopPropagation()}
-                className="inline-flex items-center gap-0.5 text-[10px] font-medium mt-1.5" style={{ color: "var(--t-accent)" }}>
-                Open <ExternalLink className="h-2.5 w-2.5" />
-              </Link>
-            )}
-          </button>
-        ))}
+      <div className="flex items-center justify-between mt-3 pt-2" style={{ borderTop: "1px solid var(--t-border-subtle, var(--t-border))" }}>
+        {hasRoute ? (
+          <Link href={feature.routeOrSurface} onClick={e => e.stopPropagation()}
+            className="inline-flex items-center gap-1 text-[11px] font-medium no-underline" style={{ color: "var(--t-accent)" }}>
+            Open page <ExternalLink className="h-3 w-3" />
+          </Link>
+        ) : <span />}
+        <span className="text-[11px] font-medium flex items-center gap-0.5" style={{ color: "var(--t-text-muted)" }}>
+          Read more <ChevronRight className="h-3 w-3" />
+        </span>
       </div>
     </div>
   );
