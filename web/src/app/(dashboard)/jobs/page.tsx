@@ -545,13 +545,13 @@ export default function JobsPage() {
         {/* Row 2: Search + sort */}
         <div className="flex items-center gap-2">
           <div className="relative flex-1">
-            <Search style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", width: 14, height: 14, color: "var(--t-text-muted)" }} />
+            <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2" style={{ color: "var(--t-text-muted)" }} />
             <input
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search job #, customer, phone, address..."
-              className="input-field"
-              style={{ paddingLeft: 32, fontSize: 13, borderRadius: 8, padding: "7px 12px 7px 32px" }}
+              className="w-full rounded-[20px] py-2 pl-9 pr-4 text-sm outline-none"
+              style={{ background: "var(--t-bg-card)", border: "1px solid var(--t-border)", color: "var(--t-text-primary)" }}
             />
           </div>
           <Dropdown
@@ -652,8 +652,8 @@ export default function JobsPage() {
           ))}
         </div>
       ) : filteredJobs.length === 0 ? (
-        <div className="surface-card py-20 flex flex-col items-center justify-center text-center">
-          <Briefcase size={44} style={{ color: "var(--t-text-tertiary)" }} className="mb-3" />
+        <div className="surface-card py-16 flex flex-col items-center justify-center text-center">
+          <Briefcase size={40} style={{ color: "var(--t-text-tertiary)" }} className="mb-3" />
           {(() => {
             // Contextual empty state. Blocked + sub-filter gets its own
             // copy so operators understand WHY the list is empty — the
@@ -683,10 +683,10 @@ export default function JobsPage() {
             }
             return (
               <>
-                <h2 style={{ fontSize: 17, fontWeight: 600, color: "var(--t-text-primary)" }} className="mb-1">
+                <h2 style={{ fontSize: 15, fontWeight: 600, color: "var(--t-text-primary)" }} className="mb-1">
                   {heading}
                 </h2>
-                <p style={{ fontSize: 13, color: "var(--t-text-muted)" }} className="mb-5">
+                <p style={{ fontSize: 12, color: "var(--t-text-muted)" }} className="mb-5">
                   {description}
                 </p>
               </>

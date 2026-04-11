@@ -535,8 +535,8 @@ export default function QuotesPage() {
             placeholder="Search by name, email, or quote #..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full rounded-full border pl-9 pr-4 py-2 text-sm outline-none transition-colors focus:border-[var(--t-accent)]"
-            style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)", color: "var(--t-text-primary)" }}
+            className="w-full rounded-[20px] py-2 pl-9 pr-4 text-sm outline-none transition-colors focus:border-[var(--t-accent)]"
+            style={{ background: "var(--t-bg-card)", border: "1px solid var(--t-border)", color: "var(--t-text-primary)" }}
           />
         </div>
         <div style={{ display: "inline-flex", borderRadius: 22, backgroundColor: "var(--t-bg-secondary)", border: "1px solid var(--t-border)", padding: 3, gap: 2 }}>
@@ -555,17 +555,17 @@ export default function QuotesPage() {
           <Loader2 className="h-5 w-5 animate-spin" style={{ color: "var(--t-text-muted)" }} />
         </div>
       ) : quotes.length === 0 ? (
-        <div className="rounded-[14px] border p-12 text-center" style={{ background: "var(--t-bg-secondary)", borderColor: "var(--t-border)" }}>
-          <FileCheck className="h-10 w-10 mx-auto mb-3" style={{ color: "var(--t-text-muted)" }} />
-          <p className="text-sm font-medium" style={{ color: "var(--t-text-primary)" }}>
+        <div className="rounded-[20px] border py-16 text-center" style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)" }}>
+          <FileCheck className="h-10 w-10 mx-auto mb-3" style={{ color: "var(--t-text-muted)", opacity: 0.2 }} />
+          <p style={{ fontSize: 15, fontWeight: 600, color: "var(--t-text-primary)" }}>
             {statusFilter !== "all" ? "No quotes match this filter" : "No quotes yet"}
           </p>
-          <p className="text-xs mt-1" style={{ color: "var(--t-text-muted)" }}>
+          <p style={{ fontSize: 12, color: "var(--t-text-muted)", marginTop: 4 }}>
             {statusFilter === "all" ? "Quotes you send from Quick Quote will appear here" : "Try a different filter"}
           </p>
         </div>
       ) : (
-        <div className="rounded-[14px] border overflow-hidden" style={{ background: "var(--t-bg-secondary)", borderColor: "var(--t-border)" }}>
+        <div className="rounded-[20px] border overflow-hidden" style={{ background: "var(--t-bg-secondary)", borderColor: "var(--t-border)" }}>
           <table className="w-full text-sm">
             <thead>
               <tr style={{ borderBottom: "1px solid var(--t-border)" }}>
