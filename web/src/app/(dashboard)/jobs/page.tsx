@@ -27,7 +27,7 @@ import { api } from "@/lib/api";
 import SlideOver from "@/components/slide-over";
 import Dropdown from "@/components/dropdown";
 import { useToast } from "@/components/toast";
-import { CreditCard, FileWarning, MapPinOff } from "lucide-react";
+import { CreditCard, FileWarning, MapPinOff, Package } from "lucide-react";
 import { FEATURE_REGISTRY } from "@/lib/feature-registry";
 import { getBlockedReason, isJobBlocked } from "@/lib/blocked-job";
 
@@ -478,262 +478,79 @@ export default function JobsPage() {
       {/* ─── Header ─── */}
       <div className="flex items-start justify-between gap-4 mb-6">
         <div>
-          <h1 style={{ fontSize: 26, fontWeight: 700, letterSpacing: "-0.02em", color: "var(--t-text-primary)" }}>Jobs</h1>
+          <h1 style={{ fontSize: 26, fontWeight: 700, letterSpacing: "-0.02em", color: "var(--t-text-primary)" }}>
+            {FEATURE_REGISTRY.lifecycle_dashboard?.label ?? "Rental Lifecycles"}
+          </h1>
           <p className="mt-1" style={{ fontSize: 13, color: "var(--t-text-muted)" }}>
-            {totalCount} total{unassignedCount > 0 && <> &middot; <span style={{ fontWeight: 600, color: "var(--t-warning)" }}>{unassignedCount} unassigned</span></>}
+            {chains.length} rentals{standaloneJobs.length > 0 && <> &middot; {standaloneJobs.length} standalone</>}
           </p>
         </div>
       </div>
 
-      {/* ─── Stat strip ─── */}
-      {/*
-       * Registry-driven top strip. Labels + tooltips resolve through
-       * FEATURE_REGISTRY so tenant overrides and the Help Center stay in
-       * sync. Counts come from /analytics/jobs-summary (tenant-scoped on
-       * the server). Blocked is a computed union — see isJobBlocked().
-       */}
-      <div className="grid grid-cols-5 gap-3 mb-6">
-        {[
-          {
-            key: "unassigned",
-            featureId: "job_status_unassigned",
-            value: summary.unassigned,
-            color: summary.unassigned > 0 ? "var(--t-warning)" : "var(--t-text-primary)",
-            filter: "unassigned" as const,
-            icon: AlertCircle,
-            clickable: true,
-          },
-          {
-            key: "assigned",
-            featureId: "job_status_assigned",
-            value: summary.assigned,
-            color: "var(--t-info, #3b82f6)",
-            filter: "assigned" as const,
-            icon: Send,
-            clickable: true,
-          },
-          {
-            key: "en_route",
-            featureId: "job_status_en_route",
-            value: summary.enRoute,
-            color: "var(--t-info, #3b82f6)",
-            filter: "en_route" as const,
-            icon: Truck,
-            clickable: true,
-          },
-          {
-            key: "completed",
-            featureId: "job_status_completed",
-            value: summary.completed,
-            color: "var(--t-accent)",
-            filter: "completed" as const,
-            icon: CheckCircle2,
-            clickable: true,
-          },
-          {
-            key: "blocked",
-            featureId: "job_status_blocked",
-            value: summary.blocked,
-            color: summary.blocked > 0 ? "var(--t-error)" : "var(--t-text-primary)",
-            // Blocked is a computed UI layer, not a stored status — the
-            // fetchJobs branch for "blocked" handles the filtering by
-            // applying isJobBlocked to a wide enriched slice.
-            filter: "blocked" as const,
-            icon: FileWarning,
-          },
-        ].map((stat) => {
-          const feature = FEATURE_REGISTRY[stat.featureId];
-          const label = feature?.label ?? stat.key;
-          const tooltip = feature?.shortDescription;
-          const Icon = stat.icon;
-          return (
-            <button
-              key={stat.key}
-              onClick={() => { setStatusFilter(stat.filter); setDateRange("all"); }}
-              className="surface-card card-hover text-left px-4 py-3"
-              title={tooltip}
-            >
-              <div className="flex items-center justify-between mb-1">
-                <Icon style={{ width: 14, height: 14, color: stat.color }} />
-                {stat.key === "blocked" && stat.value > 0 && (
-                  <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--t-error)", display: "inline-block" }} />
-                )}
-                {stat.key === "unassigned" && stat.value > 0 && (
-                  <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--t-warning)", display: "inline-block" }} />
-                )}
-              </div>
-              <p style={{ fontSize: 24, fontWeight: 700, color: stat.color, fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>{stat.value}</p>
-              <p style={{ fontSize: 11, fontWeight: 500, color: "var(--t-text-muted)", marginTop: 4 }}>{label}</p>
-            </button>
-          );
-        })}
-      </div>
+      {/* ─── Lifecycle stat strip ─── */}
+      {(() => {
+        const active = chains.filter(c => c.status === "active").length;
+        const awaitingPickup = chains.filter(c => {
+          if (c.status !== "active") return false;
+          const d = c.links.find(l => l.task_type === "drop_off");
+          const p = c.links.find(l => l.task_type === "pick_up");
+          return d?.job?.status === "completed" && p && p.job?.status !== "completed";
+        }).length;
+        const overdue = chains.filter(c => c.status === "active" && c.expected_pickup_date && c.expected_pickup_date < new Date().toISOString().split("T")[0]).length;
+        const completed = chains.filter(c => c.status === "completed").length;
+        const stats = [
+          { label: FEATURE_REGISTRY.lifecycle_stat_active?.label ?? "Active Rentals", value: active, color: active > 0 ? "var(--t-accent)" : "var(--t-text-primary)", icon: Package },
+          { label: FEATURE_REGISTRY.lifecycle_status_awaiting_pickup?.label ?? "Awaiting Pickup", value: awaitingPickup, color: awaitingPickup > 0 ? "var(--t-warning)" : "var(--t-text-primary)", icon: Clock },
+          { label: "Overdue", value: overdue, color: overdue > 0 ? "var(--t-error)" : "var(--t-text-primary)", icon: AlertCircle },
+          { label: FEATURE_REGISTRY.lifecycle_status_completed?.label ?? "Completed", value: completed, color: "var(--t-text-primary)", icon: CheckCircle2 },
+        ];
+        return (
+          <div className="grid grid-cols-4 gap-3 mb-6">
+            {stats.map(s => {
+              const Icon = s.icon;
+              return (
+                <div key={s.label} className="surface-card text-left px-4 py-3">
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <Icon style={{ width: 13, height: 13, color: s.color }} />
+                  </div>
+                  <p style={{ fontSize: 22, fontWeight: 700, color: s.color, fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>{s.value}</p>
+                  <p style={{ fontSize: 11, fontWeight: 500, color: "var(--t-text-muted)", marginTop: 4 }}>{s.label}</p>
+                </div>
+              );
+            })}
+          </div>
+        );
+      })()}
 
       {/* ─── Controls bar ─── */}
-      <div className="surface-card mb-5" style={{ padding: "10px 14px", display: "flex", flexDirection: "column", gap: 10 }}>
-        {/* Row 1: Primary filters + secondary overflow + date range */}
-        <div className="flex items-center gap-3 flex-wrap">
-          {/* Primary statuses */}
-          <div style={{ display: "inline-flex", borderRadius: 22, backgroundColor: "var(--t-bg-secondary)", border: "1px solid var(--t-border)", padding: 3, gap: 2 }}>
-            {PRIMARY_STATUSES.map((s) => {
-              const isActive = statusFilter === s;
-              const count = getCount(s);
-              return (
-                <button key={s} onClick={() => setStatusFilter(s)}
-                  style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 12px", borderRadius: 18, fontSize: 12, fontWeight: 600, background: isActive ? "var(--t-accent)" : "transparent", color: isActive ? "#fff" : "var(--t-text-muted)", border: "none", cursor: "pointer", transition: "all 0.15s ease" }}>
-                  {STATUS_LABELS[s]}
-                  {count > 0 && <span style={{ fontSize: 10, fontWeight: 700, opacity: isActive ? 0.85 : 0.6, color: !isActive && s === "overdue" ? "var(--t-error)" : undefined }}>{count}</span>}
-                </button>
-              );
-            })}
-          </div>
-          {/* Secondary statuses */}
-          <div style={{ display: "inline-flex", borderRadius: 22, backgroundColor: "var(--t-bg-secondary)", border: "1px solid var(--t-border)", padding: 3, gap: 2 }}>
-            {SECONDARY_STATUSES.map((s) => {
-              const isActive = statusFilter === s;
-              const count = getCount(s);
-              return (
-                <button key={s} onClick={() => setStatusFilter(s)}
-                  style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 10px", borderRadius: 18, fontSize: 11, fontWeight: 600, background: isActive ? "var(--t-accent)" : "transparent", color: isActive ? "#fff" : "var(--t-text-muted)", border: "none", cursor: "pointer", transition: "all 0.15s ease" }}>
-                  {STATUS_LABELS[s]}
-                  {count > 0 && <span style={{ fontSize: 10, fontWeight: 700, opacity: isActive ? 0.85 : 0.5 }}>{count}</span>}
-                </button>
-              );
-            })}
-          </div>
-          {/* Job type filters */}
-          <div style={{ display: "inline-flex", borderRadius: 22, backgroundColor: "var(--t-bg-secondary)", border: "1px solid var(--t-border)", padding: 3, gap: 2 }}>
-            {(["delivery", "pickup", "exchange"] as const).map((t) => {
-              const isActive = jobTypeFilter.has(t);
-              const registryKey = `jobs_filter_${t}` as keyof typeof FEATURE_REGISTRY;
-              return (
-                <button key={t} onClick={() => toggleJobType(t)}
-                  style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 10px", borderRadius: 18, fontSize: 11, fontWeight: 600, background: isActive ? "var(--t-accent)" : "transparent", color: isActive ? "#fff" : "var(--t-text-muted)", border: "none", cursor: "pointer", transition: "all 0.15s ease" }}>
-                  {FEATURE_REGISTRY[registryKey]?.label ?? t.charAt(0).toUpperCase() + t.slice(1)}
-                </button>
-              );
-            })}
-          </div>
-          {/* Date range — pushed right */}
-          <div className="ml-auto" style={{ display: "flex", borderRadius: 8, border: "1px solid var(--t-border)", overflow: "hidden" }}>
-            {DATE_RANGE_OPTIONS.map((opt) => (
-              <button
-                key={opt.value}
-                onClick={() => setDateRange(opt.value)}
-                style={{
-                  padding: "5px 12px", fontSize: 11, fontWeight: 500, border: "none", cursor: "pointer",
-                  background: dateRange === opt.value ? "var(--t-accent-soft)" : "transparent",
-                  color: dateRange === opt.value ? "var(--t-accent-text)" : "var(--t-text-muted)",
-                  transition: "all 0.12s ease",
-                }}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
+      <div className="surface-card mb-5" style={{ padding: "10px 14px", display: "flex", alignItems: "center", gap: 10 }}>
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2" style={{ color: "var(--t-text-muted)" }} />
+          <input
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search customer, address, job #, dumpster size..."
+            className="w-full rounded-[20px] py-2 pl-9 pr-4 text-sm outline-none"
+            style={{ background: "var(--t-bg-card)", border: "1px solid var(--t-border)", color: "var(--t-text-primary)" }}
+          />
         </div>
-
-        {/* Row 2: Search + sort */}
-        <div className="flex items-center gap-2">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2" style={{ color: "var(--t-text-muted)" }} />
-            <input
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search job #, customer, phone, address..."
-              className="w-full rounded-[20px] py-2 pl-9 pr-4 text-sm outline-none"
-              style={{ background: "var(--t-bg-card)", border: "1px solid var(--t-border)", color: "var(--t-text-primary)" }}
-            />
-          </div>
-          <Dropdown
-            trigger={
-              <button className="btn-ghost" style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12, padding: "6px 10px", border: "1px solid var(--t-border)", borderRadius: 8 }}>
-                <ArrowDownUp className="h-3 w-3" />
-                {SORT_OPTIONS.find((o) => o.value === sortBy)?.label}
-              </button>
-            }
-            align="right"
-          >
-            {SORT_OPTIONS.map((opt) => (
-              <button
-                key={opt.value}
-                onClick={() => setSortBy(opt.value)}
-                className="block w-full px-4 py-2 text-left text-sm transition-colors"
-                style={{
-                  color: sortBy === opt.value ? "var(--t-accent-text)" : "var(--t-text-primary)",
-                  background: sortBy === opt.value ? "var(--t-accent-soft)" : "transparent",
-                  border: "none", cursor: "pointer",
-                }}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </Dropdown>
+        <div style={{ display: "flex", borderRadius: 8, border: "1px solid var(--t-border)", overflow: "hidden" }}>
+          {DATE_RANGE_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              onClick={() => setDateRange(opt.value)}
+              style={{
+                padding: "5px 12px", fontSize: 11, fontWeight: 500, border: "none", cursor: "pointer",
+                background: dateRange === opt.value ? "var(--t-accent-soft)" : "transparent",
+                color: dateRange === opt.value ? "var(--t-accent-text)" : "var(--t-text-muted)",
+                transition: "all 0.12s ease",
+              }}
+            >
+              {opt.label}
+            </button>
+          ))}
         </div>
       </div>
-
-      {/* ─── Blocked sub-filter (reason segmentation) ─── */}
-      {/*
-       * Only rendered when the Blocked tile is active. Pure client-side
-       * narrowing of the already-fetched blocked slice — no extra fetch,
-       * no new endpoint. Labels resolve through FEATURE_REGISTRY so
-       * tenant overrides and Help Center tooltips stay consistent with
-       * the Blocked tile itself.
-       */}
-      {statusFilter === "blocked" && (
-        <div className="surface-card mb-5" style={{ padding: "8px 14px", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-          <span style={{ fontSize: 11, fontWeight: 500, color: "var(--t-text-muted)" }}>
-            Reason:
-          </span>
-          {([
-            {
-              key: "all" as const,
-              // Fully registry-driven — no inline composition. The
-              // `blocked_subview_all` entry exists specifically to keep
-              // this label flowing through FEATURE_REGISTRY so tenant
-              // overrides apply uniformly across every pill.
-              label: FEATURE_REGISTRY.blocked_subview_all?.label ?? "All Blocked",
-              count: blockedReasonCounts.all,
-              featureId: "blocked_subview_all",
-            },
-            {
-              key: "billing_issue" as const,
-              label: FEATURE_REGISTRY.blocked_reason_billing_issue?.label ?? "Billing Issue",
-              count: blockedReasonCounts.billing_issue,
-              featureId: "blocked_reason_billing_issue",
-            },
-            {
-              key: "unpaid_completed_invoice" as const,
-              label: FEATURE_REGISTRY.blocked_reason_unpaid_completed_invoice?.label ?? "Unpaid Invoice",
-              count: blockedReasonCounts.unpaid_completed_invoice,
-              featureId: "blocked_reason_unpaid_completed_invoice",
-            },
-          ]).map((opt) => {
-            const isActive = blockedSubview === opt.key;
-            const tooltip = FEATURE_REGISTRY[opt.featureId]?.shortDescription;
-            return (
-              <button
-                key={opt.key}
-                onClick={() => setBlockedSubview(opt.key)}
-                title={tooltip}
-                style={{
-                  display: "inline-flex", alignItems: "center", gap: 5,
-                  padding: "4px 10px", borderRadius: 6,
-                  fontSize: 11, fontWeight: isActive ? 600 : 500,
-                  background: isActive ? "var(--t-error-soft)" : "transparent",
-                  color: isActive ? "var(--t-error)" : "var(--t-text-secondary)",
-                  border: "none", cursor: "pointer", transition: "all 0.12s ease",
-                }}
-              >
-                {opt.label}
-                <span style={{ fontSize: 10, fontWeight: 700, opacity: isActive ? 1 : 0.6 }}>
-                  {opt.count}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      )}
 
       {/* ─── Lifecycle Rows ─── */}
       {(loading || chainsLoading) ? (
@@ -817,10 +634,24 @@ export default function JobsPage() {
                             <span style={{ fontSize: 12, fontWeight: 500, color: "var(--t-text-primary)" }}>{chain.expected_pickup_date ? fmtDate(chain.expected_pickup_date) : "—"}</span>
                           </td>
                           <td style={{ padding: "12px 16px" }}>
-                            <span style={{ fontSize: 11, color: "var(--t-text-muted)" }}>{completedTasks}/{totalTasks} {FEATURE_REGISTRY.lifecycle_task_summary_format?.label ?? "tasks complete"}</span>
+                            {(() => {
+                              const parts: string[] = [];
+                              const dropOff = chain.links.find(l => l.task_type === "drop_off");
+                              const pickUp = chain.links.find(l => l.task_type === "pick_up");
+                              if (dropOff?.job?.status === "completed") parts.push("Delivered");
+                              else if (dropOff) parts.push("Delivery pending");
+                              if (chain.links.some(l => l.task_type === "exchange")) parts.push("Exchange");
+                              if (pickUp?.job?.status === "completed") parts.push("Picked up");
+                              else if (pickUp) parts.push("Pickup pending");
+                              return <span style={{ fontSize: 11, color: "var(--t-text-muted)", lineHeight: 1.4 }}>{parts.join(" · ")}</span>;
+                            })()}
                           </td>
                           <td style={{ padding: "12px 16px" }}>
-                            <span style={{ fontSize: 11, fontWeight: 600, color: isCompleted ? "var(--t-success, #22c55e)" : "var(--t-accent)" }}>{lcStatus}</span>
+                            <span style={{
+                              fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: 10,
+                              background: isCompleted ? "var(--t-bg-elevated)" : "var(--t-accent-soft)",
+                              color: isCompleted ? "var(--t-text-muted)" : "var(--t-accent)",
+                            }}>{lcStatus}</span>
                           </td>
                         </tr>
                       );
