@@ -26,6 +26,11 @@ export class StripeService {
     this.stripe = new Stripe(process.env.STRIPE_SECRET_KEY || 'sk_test_placeholder', { apiVersion: '2024-12-18.acacia' as any });
   }
 
+  /** Expose the Stripe client for modules that need direct API access (e.g. Checkout Sessions). */
+  getClient(): Stripe {
+    return this.stripe;
+  }
+
   async onboardConnect(tenantId: string) {
     const tenant = await this.tenantRepo.findOne({ where: { id: tenantId } });
     if (!tenant) throw new NotFoundException('Tenant not found');
@@ -267,6 +272,36 @@ export class StripeService {
               pi.metadata.invoiceId,
               pi.last_payment_error?.message || 'Unknown error',
             );
+          }
+        }
+        break;
+      }
+      case 'checkout.session.completed': {
+        const session = event.data.object as Stripe.Checkout.Session;
+        if (session.metadata?.invoiceId && session.payment_status === 'paid') {
+          const invId = session.metadata.invoiceId;
+          const tId = session.metadata.tenantId;
+          const inv = await this.invoiceRepo.findOne({ where: { id: invId } });
+          if (inv) {
+            const paidAmount = (session.amount_total || 0) / 100;
+            await this.paymentRepo.save(this.paymentRepo.create({
+              tenant_id: tId,
+              invoice_id: invId,
+              amount: paidAmount,
+              payment_method: 'stripe_checkout',
+              status: 'completed',
+              applied_at: new Date(),
+              notes: `Stripe Checkout Session ${session.id}`,
+            }));
+            const allPayments = await this.paymentRepo.find({ where: { invoice_id: invId, status: 'completed' } });
+            const totalPaid = allPayments.reduce((sum, p) => sum + Number(p.amount), 0);
+            const balanceDue = Math.max(Math.round((Number(inv.total) - totalPaid) * 100) / 100, 0);
+            await this.invoiceRepo.update(invId, {
+              status: balanceDue <= 0 ? 'paid' : totalPaid > 0 ? 'partial' : 'open',
+              amount_paid: Math.round(totalPaid * 100) / 100,
+              balance_due: balanceDue,
+              paid_at: balanceDue <= 0 ? new Date() : null,
+            });
           }
         }
         break;

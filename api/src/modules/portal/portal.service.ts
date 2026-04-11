@@ -7,8 +7,10 @@ import { Customer } from '../customers/entities/customer.entity';
 import { Job } from '../jobs/entities/job.entity';
 import { Invoice } from '../billing/entities/invoice.entity';
 import { Payment } from '../billing/entities/payment.entity';
+import { Tenant } from '../tenants/entities/tenant.entity';
 import { PricingService } from '../pricing/pricing.service';
 import { OrchestrationService } from '../billing/services/orchestration.service';
+import { StripeService } from '../stripe/stripe.service';
 
 /**
  * Customer-safe projection of a Job for portal responses.
@@ -63,9 +65,11 @@ export class PortalService {
     @InjectRepository(Job) private jobRepo: Repository<Job>,
     @InjectRepository(Invoice) private invoiceRepo: Repository<Invoice>,
     @InjectRepository(Payment) private paymentRepo: Repository<Payment>,
+    @InjectRepository(Tenant) private tenantRepo: Repository<Tenant>,
     private jwtService: JwtService,
     private pricingService: PricingService,
     private orchestrationService: OrchestrationService,
+    private stripeService: StripeService,
   ) {}
 
   /**
@@ -731,14 +735,38 @@ export class PortalService {
     const payAmount = amount || Number(invoice.balance_due);
     if (payAmount <= 0) throw new BadRequestException('Invalid payment amount');
 
-    // Return payment details for client-side Stripe checkout
-    return {
-      invoiceId: invoice.id,
-      invoiceNumber: invoice.invoice_number,
-      amount: payAmount,
-      balanceDue: Number(invoice.balance_due),
-      // The actual Stripe charge will go through the existing /stripe/charge-invoice endpoint
-      // Portal just needs to know the amount and confirm
-    };
+    const tenant = await this.tenantRepo.findOne({ where: { id: tenantId } });
+    const stripeCustomerId = await this.stripeService.getOrCreateStripeCustomer(tenantId, customerId);
+
+    const portalBase = process.env.FRONTEND_URL || 'https://serviceos-web-zeta.vercel.app';
+    const successUrl = `${portalBase}/portal/invoices?payment=success&invoice=${invoice.invoice_number}`;
+    const cancelUrl = `${portalBase}/portal/invoices?payment=cancelled&invoice=${invoice.invoice_number}`;
+
+    const stripe = this.stripeService.getClient();
+    const session = await stripe.checkout.sessions.create({
+      mode: 'payment',
+      customer: stripeCustomerId,
+      line_items: [{
+        price_data: {
+          currency: 'usd',
+          unit_amount: Math.round(payAmount * 100),
+          product_data: { name: `Invoice #${invoice.invoice_number}` },
+        },
+        quantity: 1,
+      }],
+      metadata: { invoiceId: invoice.id, tenantId, customerId },
+      success_url: successUrl,
+      cancel_url: cancelUrl,
+      ...(tenant?.stripe_connect_id ? {
+        payment_intent_data: {
+          application_fee_amount: Math.round(payAmount * 100 * (Number(process.env.STRIPE_PLATFORM_FEE_PERCENT || 2.9) / 100)),
+          transfer_data: { destination: tenant.stripe_connect_id },
+        },
+      } : {}),
+    }, tenant?.stripe_connect_id ? { stripeAccount: tenant.stripe_connect_id } : undefined);
+
+    if (!session.url) throw new BadRequestException('Could not create payment session');
+
+    return { url: session.url };
   }
 }
