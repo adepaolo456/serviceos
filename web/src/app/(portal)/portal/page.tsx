@@ -221,9 +221,7 @@ export default function PortalHomePage() {
                 </span>
               )}
               {accountSummary.payment_eligible && (
-                <span
-                  onClick={(e) => e.stopPropagation()}
-                  className="inline-flex items-center gap-1.5 rounded-full bg-[var(--t-accent)] px-4 py-2 text-xs font-semibold text-[var(--t-accent-on-accent)] hover:opacity-90 transition-opacity">
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--t-accent)] px-4 py-2 text-xs font-semibold text-[var(--t-accent-on-accent)] hover:opacity-90 transition-opacity">
                   <CreditCard className="h-3.5 w-3.5" />
                   {FEATURE_REGISTRY.portal_pay_now?.label ?? "Pay Now"}
                 </span>
