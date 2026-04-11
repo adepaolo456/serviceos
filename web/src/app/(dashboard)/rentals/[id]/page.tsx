@@ -114,11 +114,14 @@ export default function RentalLifecyclePage({ params }: { params: Promise<{ id: 
     );
   }
 
-  const { rentalChain, customer, jobs, invoices, payments, financials } = data;
+  const rentalChain = data.rentalChain;
+  const customer = data.customer;
+  const jobs = data.jobs?.filter(j => j?.id) ?? [];
+  const invoices = data.invoices ?? [];
+  const payments = data.payments ?? [];
+  const financials = data.financials ?? { revenue: 0, cost: 0, profit: 0, margin: 0 };
   const deliveryJob = jobs.find(j => j.taskType === "drop_off");
-  const pickupJob = jobs.find(j => j.taskType === "pick_up");
   const isActive = rentalChain.status === "active";
-  const totalPaid = payments.filter(p => p.status === "completed").reduce((s, p) => s + p.amount, 0);
 
   return (
     <div className="space-y-6">
@@ -165,7 +168,7 @@ export default function RentalLifecyclePage({ params }: { params: Promise<{ id: 
           </div>
           <div>
             <p className="text-[10px] font-medium uppercase tracking-wider text-[var(--t-text-muted)]">Rental Days</p>
-            <p className="text-sm font-semibold text-[var(--t-text-primary)] mt-0.5">{rentalChain.rentalDays} days</p>
+            <p className="text-sm font-semibold text-[var(--t-text-primary)] mt-0.5">{rentalChain.rentalDays ? `${rentalChain.rentalDays} days` : "—"}</p>
           </div>
         </div>
 
@@ -190,9 +193,10 @@ export default function RentalLifecyclePage({ params }: { params: Promise<{ id: 
         {/* Timeline */}
         <div className="space-y-2">
           {jobs.map((job, i) => {
-            const ds = deriveDisplayStatus(job.status);
-            const isDone = job.status === "completed";
-            const isCancelled = job.status === "cancelled";
+            const status = job.status || "pending";
+            const ds = deriveDisplayStatus(status);
+            const isDone = status === "completed";
+            const isCancelled = status === "cancelled";
             const typeColor = TASK_TYPE_COLORS[job.taskType] || "text-[var(--t-text-muted)]";
             return (
               <div key={job.id || i} className="flex items-center gap-3">
@@ -211,13 +215,13 @@ export default function RentalLifecyclePage({ params }: { params: Promise<{ id: 
                   className="flex-1 flex items-center justify-between rounded-[14px] border border-[var(--t-border)] px-3.5 py-2.5 hover:bg-[var(--t-bg-card-hover)] transition-colors">
                   <div className="flex items-center gap-3 min-w-0">
                     <span className={`text-xs font-semibold ${typeColor}`}>{TASK_TYPE_LABELS[job.taskType] || job.taskType}</span>
-                    <span className="text-xs font-medium text-[var(--t-text-primary)]">{job.jobNumber}</span>
+                    <span className="text-xs font-medium text-[var(--t-text-primary)]">{job.jobNumber || "—"}</span>
                     <span className="text-xs text-[var(--t-text-muted)]">{fmtDate(job.scheduledDate)}</span>
                     {job.driver && <span className="text-xs text-[var(--t-text-muted)]">· {job.driver.name}</span>}
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="text-[10px] font-semibold" style={{ color: displayStatusColor(ds) }}>
-                      {DISPLAY_STATUS_LABELS[ds] || job.status}
+                      {DISPLAY_STATUS_LABELS[ds] || status}
                     </span>
                     <ArrowRight className="h-3 w-3 text-[var(--t-text-muted)]" />
                   </div>
@@ -254,7 +258,7 @@ export default function RentalLifecyclePage({ params }: { params: Promise<{ id: 
             </div>
             <div>
               <p className="text-[10px] font-medium uppercase tracking-wider text-[var(--t-text-muted)]">Margin</p>
-              <p className="text-sm font-bold text-[var(--t-text-primary)] tabular-nums">{financials.margin.toFixed(1)}%</p>
+              <p className="text-sm font-bold text-[var(--t-text-primary)] tabular-nums">{(financials.margin ?? 0).toFixed(1)}%</p>
             </div>
           </div>
 
@@ -293,7 +297,7 @@ export default function RentalLifecyclePage({ params }: { params: Promise<{ id: 
               <div className="space-y-1.5">
                 {payments.map(p => (
                   <div key={p.id} className="flex items-center justify-between text-xs">
-                    <span className="text-[var(--t-text-muted)]">{p.paymentMethod} · {new Date(p.appliedAt).toLocaleDateString()}</span>
+                    <span className="text-[var(--t-text-muted)]">{p.paymentMethod || "—"} · {p.appliedAt ? new Date(p.appliedAt).toLocaleDateString() : "—"}</span>
                     <span className={`font-medium tabular-nums ${p.status === "completed" ? "text-[var(--t-accent)]" : "text-[var(--t-text-muted)]"}`}>{formatCurrency(p.amount)}</span>
                   </div>
                 ))}
