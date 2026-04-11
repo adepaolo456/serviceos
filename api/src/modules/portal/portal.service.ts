@@ -736,6 +736,10 @@ export class PortalService {
     if (payAmount <= 0) throw new BadRequestException('Invalid payment amount');
 
     const tenant = await this.tenantRepo.findOne({ where: { id: tenantId } });
+    if (!tenant?.stripe_connect_id || !tenant.stripe_onboarded) {
+      throw new BadRequestException('ONLINE_PAYMENTS_NOT_CONFIGURED');
+    }
+
     const stripeCustomerId = await this.stripeService.getOrCreateStripeCustomer(tenantId, customerId);
 
     const portalBase = process.env.FRONTEND_URL || 'https://serviceos-web-zeta.vercel.app';
