@@ -5,7 +5,7 @@ import Link from "next/link";
 import { portalApi } from "@/lib/portal-api";
 import { formatCurrency } from "@/lib/utils";
 import { formatRentalTitle, rentalSizeLabel } from "@/lib/job-status";
-import { Package, FileText, PlusCircle, Phone, Calendar, MapPin, Clock, ArrowUpRight, AlertCircle, CreditCard, CalendarClock, AlertTriangle, DollarSign } from "lucide-react";
+import { Package, FileText, PlusCircle, Calendar, MapPin, Clock, ArrowUpRight, AlertCircle, CreditCard, CalendarClock, ChevronRight, DollarSign } from "lucide-react";
 import { FEATURE_REGISTRY } from "@/lib/feature-registry";
 
 interface Rental {
@@ -42,6 +42,8 @@ const ISSUE_REASONS = [
   "Other",
 ] as const;
 
+const MAX_DASHBOARD_RENTALS = 3;
+
 /* Customer-safe status mapping — never expose raw internal states */
 function customerStatus(internalStatus: string): { label: string; color: string } {
   switch (internalStatus) {
@@ -74,8 +76,9 @@ export default function PortalHomePage() {
   const [rentals, setRentals] = useState<Rental[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
-  const [extendJobId, setExtendJobId] = useState<string | null>(null);
-  const [extendDate, setExtendDate] = useState("");
+  const [changePickupJobId, setChangePickupJobId] = useState<string | null>(null);
+  const [changePickupMode, setChangePickupMode] = useState<"extend" | "early" | null>(null);
+  const [changePickupDate, setChangePickupDate] = useState("");
   const [actionLoading, setActionLoading] = useState(false);
   const [issueOpen, setIssueOpen] = useState(false);
   const [issueReason, setIssueReason] = useState("");
@@ -101,9 +104,6 @@ export default function PortalHomePage() {
     }).finally(() => setLoading(false));
   }, []);
 
-  const unpaidInvoices = invoices.filter(i => i.status === "open");
-  const totalOutstanding = unpaidInvoices.reduce((sum, i) => sum + Number(i.balance_due), 0);
-
   const handleIssueSubmit = async () => {
     if (!issueReason) return;
     setIssueSubmitting(true);
@@ -127,191 +127,182 @@ export default function PortalHomePage() {
 
   const refreshRentals = () => portalApi.get<Rental[]>("/portal/rentals").then(setRentals).catch(() => {});
 
-  const handleExtend = async () => {
-    if (!extendJobId || !extendDate) return;
+  const handleChangePickup = async () => {
+    if (!changePickupJobId || !changePickupMode) return;
     setActionLoading(true);
     try {
-      await portalApi.post(`/portal/rentals/${extendJobId}/extend`, { newEndDate: extendDate });
+      if (changePickupMode === "extend") {
+        if (!changePickupDate) return;
+        await portalApi.post(`/portal/rentals/${changePickupJobId}/extend`, { newEndDate: changePickupDate });
+      } else {
+        await portalApi.post(`/portal/rentals/${changePickupJobId}/early-pickup`);
+      }
       await refreshRentals();
-      setExtendJobId(null);
-      setExtendDate("");
-    } catch (err: any) { alert(err.message || "Failed to extend rental"); }
-    finally { setActionLoading(false); }
-  };
-
-  const handleEarlyPickup = async (jobId: string) => {
-    if (!confirm("Request an early pickup for this rental?")) return;
-    setActionLoading(true);
-    try {
-      await portalApi.post(`/portal/rentals/${jobId}/early-pickup`);
-      alert("Early pickup requested! We'll be in touch to schedule.");
-      await refreshRentals();
-    } catch (err: any) { alert(err.message || "Failed to request pickup"); }
-    finally { setActionLoading(false); }
+      setChangePickupJobId(null);
+      setChangePickupMode(null);
+      setChangePickupDate("");
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to update pickup date";
+      alert(message);
+    } finally {
+      setActionLoading(false);
+    }
   };
 
   const active = rentals.filter(r => !["completed", "cancelled"].includes(r.status) && r.job_type === "delivery");
   const upcoming = rentals.filter(r => r.status === "pending" && r.job_type === "delivery");
   const history = rentals.filter(r => r.status === "completed" && r.job_type === "delivery").slice(0, 5);
 
+  // The rental being modified in the Change Pickup Date modal
+  const changePickupRental = changePickupJobId ? active.find(r => r.id === changePickupJobId) : null;
+
   return (
-    <div className="space-y-8">
-      {/* Welcome */}
+    <div className="space-y-6">
+      {/* Welcome + Quick Actions */}
       <div>
         <h1 className="text-[28px] font-bold tracking-[-1px]" style={{ color: "var(--t-frame-text)" }}>
           Welcome back, {customer?.firstName || "there"}
         </h1>
         <p className="mt-1 text-sm" style={{ color: "var(--t-frame-text-muted)" }}>Here&apos;s an overview of your rentals and account.</p>
+
+        {/* Quick Actions — compact row under welcome */}
+        <div className="flex flex-wrap gap-2 mt-4">
+          <Link href="/portal/request"
+            className="inline-flex items-center gap-2 rounded-full border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-2 text-sm font-medium text-[var(--t-text-primary)] hover:bg-[var(--t-bg-card-hover)] transition-colors">
+            <PlusCircle className="h-4 w-4 text-[var(--t-accent)]" />
+            Request Dumpster
+          </Link>
+          <Link href="/portal/rentals"
+            className="inline-flex items-center gap-2 rounded-full border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-2 text-sm font-medium text-[var(--t-text-primary)] hover:bg-[var(--t-bg-card-hover)] transition-colors">
+            <CalendarClock className="h-4 w-4 text-purple-400" />
+            {FEATURE_REGISTRY.portal_action_change_pickup_date?.label ?? "Change Pickup Date"}
+          </Link>
+          <button onClick={() => { setIssueOpen(true); setIssueSuccess(false); }}
+            className="inline-flex items-center gap-2 rounded-full border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-2 text-sm font-medium text-[var(--t-text-primary)] hover:bg-[var(--t-bg-card-hover)] transition-colors">
+            <AlertCircle className="h-4 w-4 text-[var(--t-error)]" />
+            Report an Issue
+          </button>
+          <Link href="/portal/invoices"
+            className="inline-flex items-center gap-2 rounded-full border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-2 text-sm font-medium text-[var(--t-text-primary)] hover:bg-[var(--t-bg-card-hover)] transition-colors">
+            <FileText className="h-4 w-4 text-blue-400" />
+            View Invoices
+          </Link>
+        </div>
       </div>
 
-      {/* Account Summary */}
-      {accountSummary && accountSummary.account_status !== "good_standing" && (
-        <div className="rounded-[20px] border p-5" style={{
-          borderColor: accountSummary.account_status === "service_restricted" ? "var(--t-error)" : accountSummary.account_status === "past_due" ? "var(--t-warning, #F59E0B)" : "var(--t-border)",
-          background: accountSummary.account_status === "service_restricted" ? "var(--t-error-soft)" : accountSummary.account_status === "past_due" ? "var(--t-warning-soft, #FFF8E1)" : "var(--t-bg-card)",
+      {/* Account Summary — compact, always visible, clickable */}
+      {accountSummary && (
+        <Link href="/portal/invoices" className="block rounded-[16px] border p-4 transition-colors hover:border-[var(--t-accent)]" style={{
+          borderColor: "var(--t-border)",
+          background: "var(--t-bg-card)",
         }}>
-          <div className="flex items-center justify-between mb-3">
-            <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--t-text-muted)" }}>
-              {FEATURE_REGISTRY.portal_account_summary_title?.label ?? "Account Summary"}
-            </p>
-            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{
-              background: accountSummary.account_status === "service_restricted" ? "var(--t-error-soft)" : accountSummary.account_status === "past_due" ? "var(--t-warning-soft, #FFF8E1)" : "var(--t-accent-soft)",
-              color: accountSummary.account_status === "service_restricted" ? "var(--t-error)" : accountSummary.account_status === "past_due" ? "var(--t-warning, #F59E0B)" : "var(--t-accent)",
-            }}>
-              {FEATURE_REGISTRY[`portal_account_status_${accountSummary.account_status}`]?.label ?? accountSummary.account_status.replace(/_/g, " ")}
-            </span>
-          </div>
-          <div className="grid grid-cols-3 gap-4 mb-3">
-            <div>
-              <p className="text-[10px] uppercase tracking-wider" style={{ color: "var(--t-text-muted)" }}>{FEATURE_REGISTRY.portal_account_current_balance?.label ?? "Current Balance"}</p>
-              <p className="text-xl font-bold tabular-nums" style={{ color: "var(--t-text-primary)" }}>{formatCurrency(accountSummary.current_balance)}</p>
-            </div>
-            <div>
-              <p className="text-[10px] uppercase tracking-wider" style={{ color: "var(--t-text-muted)" }}>{FEATURE_REGISTRY.portal_account_past_due?.label ?? "Past Due"}</p>
-              <p className="text-xl font-bold tabular-nums" style={{ color: accountSummary.past_due_amount > 0 ? "var(--t-error)" : "var(--t-text-primary)" }}>{formatCurrency(accountSummary.past_due_amount)}</p>
-            </div>
-            <div>
-              <p className="text-[10px] uppercase tracking-wider" style={{ color: "var(--t-text-muted)" }}>{FEATURE_REGISTRY.portal_account_unpaid_invoices?.label ?? "Unpaid Invoices"}</p>
-              <p className="text-xl font-bold tabular-nums" style={{ color: "var(--t-text-primary)" }}>{accountSummary.unpaid_invoice_count}</p>
-            </div>
-          </div>
-          {accountSummary.payment_eligible && (
+          <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <Link href="/portal/invoices" className="flex items-center gap-2 rounded-full bg-[var(--t-accent)] px-5 py-2.5 text-sm font-semibold text-[var(--t-accent-on-accent)] hover:opacity-90 transition-opacity">
-                <CreditCard className="h-4 w-4" /> {FEATURE_REGISTRY.portal_pay_now?.label ?? "Pay Now"} <ArrowUpRight className="h-3.5 w-3.5" />
-              </Link>
-              <Link href="/portal/invoices" className="text-xs font-medium" style={{ color: "var(--t-accent)" }}>
-                {FEATURE_REGISTRY.portal_account_view_invoices?.label ?? "View Invoices"} →
-              </Link>
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--t-accent-soft)]">
+                <DollarSign className="h-4 w-4 text-[var(--t-accent)]" />
+              </div>
+              <div>
+                <p className="text-[11px] font-medium uppercase tracking-wider" style={{ color: "var(--t-text-muted)" }}>
+                  {FEATURE_REGISTRY.portal_account_summary_title?.label ?? "Account Summary"}
+                </p>
+                <p className="text-lg font-bold tabular-nums" style={{ color: "var(--t-text-primary)" }}>
+                  {formatCurrency(accountSummary.current_balance)}
+                </p>
+              </div>
             </div>
-          )}
-        </div>
+            <div className="flex items-center gap-3">
+              {/* Inline past-due status pill */}
+              {accountSummary.account_status !== "good_standing" && (
+                <span className="text-[10px] font-semibold px-2.5 py-1 rounded-full" style={{
+                  background: accountSummary.account_status === "service_restricted" ? "var(--t-error-soft)" : accountSummary.account_status === "past_due" ? "var(--t-warning-soft, #FFF8E1)" : "var(--t-accent-soft)",
+                  color: accountSummary.account_status === "service_restricted" ? "var(--t-error)" : accountSummary.account_status === "past_due" ? "var(--t-warning, #F59E0B)" : "var(--t-accent)",
+                }}>
+                  {FEATURE_REGISTRY[`portal_account_status_${accountSummary.account_status}`]?.label ?? accountSummary.account_status.replace(/_/g, " ")}
+                </span>
+              )}
+              {accountSummary.payment_eligible && (
+                <span
+                  onClick={(e) => e.stopPropagation()}
+                  className="inline-flex items-center gap-1.5 rounded-full bg-[var(--t-accent)] px-4 py-2 text-xs font-semibold text-[var(--t-accent-on-accent)] hover:opacity-90 transition-opacity">
+                  <CreditCard className="h-3.5 w-3.5" />
+                  {FEATURE_REGISTRY.portal_pay_now?.label ?? "Pay Now"}
+                </span>
+              )}
+              <ChevronRight className="h-4 w-4 text-[var(--t-text-muted)]" />
+            </div>
+          </div>
+        </Link>
       )}
 
-      {/* Quick Actions */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <Link href="/portal/request" className="flex items-center gap-3 rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-4 hover:bg-[var(--t-bg-card-hover)] transition-colors">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[20px] bg-[var(--t-accent-soft)]">
-            <PlusCircle className="h-5 w-5 text-[var(--t-accent)]" />
-          </div>
-          <div className="min-w-0">
-            <p className="text-sm font-semibold text-[var(--t-text-primary)]">Request a Dumpster</p>
-            <p className="text-xs text-[var(--t-text-muted)]">Get a quote</p>
-          </div>
-        </Link>
-        <Link href="/portal/rentals" className="flex items-center gap-3 rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-4 hover:bg-[var(--t-bg-card-hover)] transition-colors">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[20px] bg-purple-500/10">
-            <CalendarClock className="h-5 w-5 text-purple-400" />
-          </div>
-          <div className="min-w-0">
-            <p className="text-sm font-semibold text-[var(--t-text-primary)]">Change Pickup Date</p>
-            <p className="text-xs text-[var(--t-text-muted)]">Reschedule</p>
-          </div>
-        </Link>
-        <button onClick={() => { setIssueOpen(true); setIssueSuccess(false); }} className="flex items-center gap-3 rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-4 hover:bg-[var(--t-bg-card-hover)] transition-colors text-left">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[20px] bg-[var(--t-error-soft)]">
-            <AlertCircle className="h-5 w-5 text-[var(--t-error)]" />
-          </div>
-          <div className="min-w-0">
-            <p className="text-sm font-semibold text-[var(--t-text-primary)]">Report an Issue</p>
-            <p className="text-xs text-[var(--t-text-muted)]">Get help</p>
-          </div>
-        </button>
-        <Link href="/portal/invoices" className="flex items-center gap-3 rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-4 hover:bg-[var(--t-bg-card-hover)] transition-colors">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[20px] bg-blue-500/10">
-            <FileText className="h-5 w-5 text-blue-400" />
-          </div>
-          <div className="min-w-0">
-            <p className="text-sm font-semibold text-[var(--t-text-primary)]">View Invoices</p>
-            <p className="text-xs text-[var(--t-text-muted)]">Pay & review</p>
-          </div>
-        </Link>
-      </div>
-
-      {/* Active Rentals */}
+      {/* My Rentals — compact summary module */}
       <section>
-        <h2 className="text-lg font-bold text-[var(--t-text-primary)] mb-4">{FEATURE_REGISTRY.portal_section_active_rentals?.label ?? "Active Rentals"}</h2>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-lg font-bold text-[var(--t-text-primary)]">{FEATURE_REGISTRY.portal_section_my_rentals?.label ?? "My Rentals"}</h2>
+          {active.length > MAX_DASHBOARD_RENTALS && (
+            <Link href="/portal/rentals" className="text-xs font-medium text-[var(--t-accent)] hover:underline flex items-center gap-1">
+              View all ({active.length}) <ArrowUpRight className="h-3 w-3" />
+            </Link>
+          )}
+        </div>
         {loading ? (
           <div className="space-y-3">
-            {[1, 2].map(i => <div key={i} className="h-40 rounded-[20px] bg-[var(--t-bg-card)] border border-[var(--t-border)] animate-pulse" />)}
+            {[1, 2].map(i => <div key={i} className="h-24 rounded-[16px] bg-[var(--t-bg-card)] border border-[var(--t-border)] animate-pulse" />)}
           </div>
         ) : active.length === 0 ? (
-          <div className="rounded-[20px] border border-dashed border-[var(--t-border)] bg-[var(--t-bg-card)] p-8 text-center">
-            <Package className="mx-auto h-10 w-10 text-[var(--t-text-muted)]/30 mb-3" />
+          <div className="rounded-[16px] border border-dashed border-[var(--t-border)] bg-[var(--t-bg-card)] p-6 text-center">
+            <Package className="mx-auto h-8 w-8 text-[var(--t-text-muted)]/30 mb-2" />
             <p className="text-sm font-medium text-[var(--t-text-muted)]">{FEATURE_REGISTRY.portal_empty_active?.label ?? "No active rentals"}</p>
-            <Link href="/portal/request" className="mt-3 inline-flex items-center gap-1 text-sm font-medium text-[var(--t-accent)] hover:underline">
+            <Link href="/portal/request" className="mt-2 inline-flex items-center gap-1 text-sm font-medium text-[var(--t-accent)] hover:underline">
               Request a dumpster <ArrowUpRight className="h-3.5 w-3.5" />
             </Link>
           </div>
         ) : (
-          <div className="grid gap-4">
-            {active.map(r => {
+          <div className="grid gap-3">
+            {active.slice(0, MAX_DASHBOARD_RENTALS).map(r => {
               const days = daysRemaining(r.rental_end_date);
               const overdue = days !== null && days < 0;
               return (
-                <div key={r.id} className={`rounded-[20px] border bg-[var(--t-bg-card)] p-5 ${overdue ? "border-[var(--t-error)]/30" : "border-[var(--t-border)]"}`}>
-                  <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
-                    <div>
-                      <div className="flex items-center gap-2">
+                <div key={r.id} className={`rounded-[16px] border bg-[var(--t-bg-card)] p-4 ${overdue ? "border-[var(--t-error)]/30" : "border-[var(--t-border)]"}`}>
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 mb-1">
                         <p className="text-sm font-bold text-[var(--t-text-primary)]">{formatRentalTitle(r)}</p>
-                        <span className="text-xs font-medium" style={{ color: customerStatus(r.status).color }}>{customerStatus(r.status).label}</span>
+                        <span className="text-[10px] font-medium" style={{ color: customerStatus(r.status).color }}>{customerStatus(r.status).label}</span>
+                        {days !== null && (
+                          <span className={`text-[10px] font-bold ${overdue ? "text-[var(--t-error)]" : days <= 2 ? "text-amber-500" : "text-[var(--t-accent)]"}`}>
+                            {overdue ? `${Math.abs(days)}d overdue` : `${days}d left`}
+                          </span>
+                        )}
                       </div>
-                      <p className="text-xs text-[var(--t-text-muted)] mt-1">{r.job_number}</p>
+                      <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-[var(--t-text-muted)]">
+                        {r.service_address && (
+                          <span className="flex items-center gap-1"><MapPin className="h-3 w-3" />{r.service_address.formatted || r.service_address.street || "—"}</span>
+                        )}
+                        {r.rental_end_date && (
+                          <span className="flex items-center gap-1"><Clock className="h-3 w-3" />Pickup: {new Date(r.rental_end_date).toLocaleDateString()}</span>
+                        )}
+                      </div>
                     </div>
-                    {days !== null && (
-                      <div className={`text-xs font-bold ${overdue ? "text-[var(--t-error)]" : days <= 2 ? "text-amber-500" : "text-[var(--t-accent)]"}`}>
-                        {overdue ? `${Math.abs(days)} days overdue` : `${days} days left`}
-                      </div>
-                    )}
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs text-[var(--t-text-muted)]">
-                    {r.service_address && (
-                      <div className="flex items-center gap-1.5"><MapPin className="h-3.5 w-3.5" />{r.service_address.formatted || r.service_address.street || "—"}</div>
-                    )}
-                    {r.rental_start_date && (
-                      <div className="flex items-center gap-1.5"><Calendar className="h-3.5 w-3.5" />Delivered: {new Date(r.rental_start_date).toLocaleDateString()}</div>
-                    )}
-                    {r.rental_end_date && (
-                      <div className="flex items-center gap-1.5"><Clock className="h-3.5 w-3.5" />Pickup: {new Date(r.rental_end_date).toLocaleDateString()}</div>
-                    )}
-                  </div>
-                  <div className="flex flex-wrap gap-2 mt-4">
-                    <Link href={`/portal/rentals?id=${r.id}`}
-                      className="rounded-full border border-[var(--t-border)] px-3 py-1.5 text-xs font-medium text-[var(--t-text-primary)] hover:bg-[var(--t-bg-card-hover)] transition-colors">
-                      {FEATURE_REGISTRY.portal_action_view_details?.label ?? "View Details"}
-                    </Link>
-                    <button onClick={() => { setExtendJobId(r.id); setExtendDate(r.rental_end_date || ""); }} disabled={actionLoading}
-                      className="rounded-full border border-[var(--t-border)] px-3 py-1.5 text-xs font-medium text-[var(--t-text-primary)] hover:bg-[var(--t-bg-card-hover)] transition-colors disabled:opacity-50">
-                      {FEATURE_REGISTRY.portal_action_extend?.label ?? "Extend Rental"}
-                    </button>
-                    <button onClick={() => handleEarlyPickup(r.id)} disabled={actionLoading}
-                      className="rounded-full border border-[var(--t-error)]/20 px-3 py-1.5 text-xs font-medium text-[var(--t-error)] hover:bg-[var(--t-error-soft)] transition-colors disabled:opacity-50">
-                      {FEATURE_REGISTRY.portal_action_early_pickup?.label ?? "Request Early Pickup"}
-                    </button>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button onClick={() => { setChangePickupJobId(r.id); setChangePickupMode(null); setChangePickupDate(r.rental_end_date || ""); }}
+                        className="rounded-full border border-[var(--t-border)] px-3 py-1.5 text-xs font-medium text-[var(--t-text-primary)] hover:bg-[var(--t-bg-card-hover)] transition-colors">
+                        {FEATURE_REGISTRY.portal_action_change_pickup_date?.label ?? "Change Pickup Date"}
+                      </button>
+                      <Link href={`/portal/rentals?id=${r.id}`}
+                        className="flex items-center gap-1 rounded-full border border-[var(--t-border)] px-3 py-1.5 text-xs font-medium text-[var(--t-text-primary)] hover:bg-[var(--t-bg-card-hover)] transition-colors">
+                        {FEATURE_REGISTRY.portal_action_view_details?.label ?? "View Details"} <ChevronRight className="h-3 w-3" />
+                      </Link>
+                    </div>
                   </div>
                 </div>
               );
             })}
+            {active.length > MAX_DASHBOARD_RENTALS && (
+              <Link href="/portal/rentals"
+                className="block text-center rounded-[16px] border border-dashed border-[var(--t-border)] bg-[var(--t-bg-card)] py-3 text-xs font-medium text-[var(--t-accent)] hover:bg-[var(--t-bg-card-hover)] transition-colors">
+                View all {active.length} rentals →
+              </Link>
+            )}
           </div>
         )}
       </section>
@@ -319,10 +310,10 @@ export default function PortalHomePage() {
       {/* Upcoming */}
       {upcoming.length > 0 && (
         <section>
-          <h2 className="text-lg font-bold text-[var(--t-text-primary)] mb-4">{FEATURE_REGISTRY.portal_section_upcoming?.label ?? "Upcoming"}</h2>
+          <h2 className="text-lg font-bold text-[var(--t-text-primary)] mb-3">{FEATURE_REGISTRY.portal_section_upcoming?.label ?? "Upcoming"}</h2>
           <div className="grid gap-3">
             {upcoming.map(r => (
-              <div key={r.id} className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-4 flex items-center justify-between">
+              <div key={r.id} className="rounded-[16px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-4 flex items-center justify-between">
                 <div>
                   <p className="text-sm font-medium text-[var(--t-text-primary)]">{rentalSizeLabel(r)} Delivery</p>
                   <p className="text-xs text-[var(--t-text-muted)] mt-0.5">
@@ -336,14 +327,14 @@ export default function PortalHomePage() {
           </div>
         </section>
       )}
-      {/* Extend Modal */}
+
       {/* Service History */}
       {!loading && history.length > 0 && (
         <section>
-          <h2 className="text-lg font-bold text-[var(--t-text-primary)] mb-4">{FEATURE_REGISTRY.portal_section_history?.label ?? "Service History"}</h2>
+          <h2 className="text-lg font-bold text-[var(--t-text-primary)] mb-3">{FEATURE_REGISTRY.portal_section_history?.label ?? "Service History"}</h2>
           <div className="space-y-2">
             {history.map(r => (
-              <div key={r.id} className="rounded-[16px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-3 flex items-center justify-between" style={{ opacity: 0.7 }}>
+              <div key={r.id} className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-3 flex items-center justify-between" style={{ opacity: 0.7 }}>
                 <div>
                   <p className="text-sm font-medium text-[var(--t-text-primary)]">{formatRentalTitle(r)}</p>
                   <p className="text-xs text-[var(--t-text-muted)] mt-0.5">
@@ -358,20 +349,60 @@ export default function PortalHomePage() {
         </section>
       )}
 
-      {extendJobId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setExtendJobId(null)}>
-          <div className="rounded-2xl border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6 w-80" onClick={e => e.stopPropagation()}>
-            <h3 className="text-sm font-semibold text-[var(--t-text-primary)] mb-4">Extend Rental</h3>
-            <label className="text-xs text-[var(--t-text-muted)] mb-1 block">New end date</label>
-            <input type="date" value={extendDate} onChange={e => setExtendDate(e.target.value)}
-              className="w-full rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-3 py-2 text-sm text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)] mb-4" />
-            <div className="flex gap-2 justify-end">
-              <button onClick={() => setExtendJobId(null)} className="rounded-full px-4 py-2 text-xs font-medium text-[var(--t-text-muted)]">Cancel</button>
-              <button onClick={handleExtend} disabled={!extendDate || actionLoading}
-                className="rounded-full bg-[var(--t-accent)] px-4 py-2 text-xs font-semibold text-[var(--t-accent-on-accent)] disabled:opacity-40">
-                {actionLoading ? "Extending..." : "Confirm Extension"}
-              </button>
-            </div>
+      {/* Change Pickup Date Modal */}
+      {changePickupJobId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4" onClick={() => { setChangePickupJobId(null); setChangePickupMode(null); }}>
+          <div className="rounded-2xl border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6 w-full max-w-sm" onClick={e => e.stopPropagation()}>
+            <h3 className="text-sm font-semibold text-[var(--t-text-primary)] mb-1">
+              {FEATURE_REGISTRY.portal_action_change_pickup_date?.label ?? "Change Pickup Date"}
+            </h3>
+            {changePickupRental && (
+              <p className="text-xs text-[var(--t-text-muted)] mb-4">{formatRentalTitle(changePickupRental)} · {changePickupRental.job_number}</p>
+            )}
+
+            {!changePickupMode ? (
+              <div className="space-y-2">
+                <p className="text-xs text-[var(--t-text-muted)] mb-3">What would you like to do?</p>
+                <button onClick={() => setChangePickupMode("extend")}
+                  className="w-full rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-primary)] p-3 text-left hover:border-[var(--t-accent)] transition-colors">
+                  <p className="text-sm font-medium text-[var(--t-text-primary)]">{FEATURE_REGISTRY.portal_action_extend?.label ?? "Extend Rental"}</p>
+                  <p className="text-xs text-[var(--t-text-muted)] mt-0.5">I need more time</p>
+                </button>
+                <button onClick={() => setChangePickupMode("early")}
+                  className="w-full rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-primary)] p-3 text-left hover:border-[var(--t-accent)] transition-colors">
+                  <p className="text-sm font-medium text-[var(--t-text-primary)]">{FEATURE_REGISTRY.portal_action_early_pickup?.label ?? "Request Early Pickup"}</p>
+                  <p className="text-xs text-[var(--t-text-muted)] mt-0.5">I&apos;m done early</p>
+                </button>
+                <div className="pt-2">
+                  <button onClick={() => { setChangePickupJobId(null); setChangePickupMode(null); }}
+                    className="rounded-full px-4 py-2 text-xs font-medium text-[var(--t-text-muted)]">Cancel</button>
+                </div>
+              </div>
+            ) : changePickupMode === "extend" ? (
+              <div>
+                <label className="text-xs text-[var(--t-text-muted)] mb-1 block">New end date</label>
+                <input type="date" value={changePickupDate} onChange={e => setChangePickupDate(e.target.value)}
+                  className="w-full rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-3 py-2 text-sm text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)] mb-4" />
+                <div className="flex gap-2 justify-end">
+                  <button onClick={() => setChangePickupMode(null)} className="rounded-full px-4 py-2 text-xs font-medium text-[var(--t-text-muted)]">Back</button>
+                  <button onClick={handleChangePickup} disabled={!changePickupDate || actionLoading}
+                    className="rounded-full bg-[var(--t-accent)] px-4 py-2 text-xs font-semibold text-[var(--t-accent-on-accent)] disabled:opacity-40">
+                    {actionLoading ? "Extending..." : "Confirm Extension"}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div>
+                <p className="text-sm text-[var(--t-text-secondary)] mb-4">Request an early pickup for this rental? We&apos;ll be in touch to schedule.</p>
+                <div className="flex gap-2 justify-end">
+                  <button onClick={() => setChangePickupMode(null)} className="rounded-full px-4 py-2 text-xs font-medium text-[var(--t-text-muted)]">Back</button>
+                  <button onClick={handleChangePickup} disabled={actionLoading}
+                    className="rounded-full bg-[var(--t-accent)] px-4 py-2 text-xs font-semibold text-[var(--t-accent-on-accent)] disabled:opacity-40">
+                    {actionLoading ? "Requesting..." : "Confirm Early Pickup"}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -399,7 +430,7 @@ export default function PortalHomePage() {
                   <div>
                     <label className="block text-xs font-medium text-[var(--t-text-primary)] mb-1">What happened?</label>
                     <select value={issueReason} onChange={e => setIssueReason(e.target.value)}
-                      className="w-full rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-3 py-2.5 text-sm text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)] appearance-none">
+                      className="w-full rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-3 py-2.5 text-sm text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)] appearance-none">
                       <option value="">Select a reason...</option>
                       {ISSUE_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
                     </select>
@@ -407,7 +438,7 @@ export default function PortalHomePage() {
                   <div>
                     <label className="block text-xs font-medium text-[var(--t-text-primary)] mb-1">Which rental? (optional)</label>
                     <select value={issueJobId} onChange={e => setIssueJobId(e.target.value)}
-                      className="w-full rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-3 py-2.5 text-sm text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)] appearance-none">
+                      className="w-full rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-3 py-2.5 text-sm text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)] appearance-none">
                       <option value="">All rentals</option>
                       {active.map(r => (
                         <option key={r.id} value={r.id}>
@@ -421,7 +452,7 @@ export default function PortalHomePage() {
                     <textarea value={issueNotes} onChange={e => setIssueNotes(e.target.value)}
                       placeholder="Tell us more about the issue..."
                       rows={3}
-                      className="w-full rounded-[16px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-3 py-2.5 text-sm text-[var(--t-text-primary)] placeholder-[var(--t-text-muted)] outline-none focus:border-[var(--t-accent)] resize-none" />
+                      className="w-full rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-3 py-2.5 text-sm text-[var(--t-text-primary)] placeholder-[var(--t-text-muted)] outline-none focus:border-[var(--t-accent)] resize-none" />
                   </div>
                 </div>
                 <div className="flex gap-2 justify-end mt-4">

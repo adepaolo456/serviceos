@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import { portalApi } from "@/lib/portal-api";
 import { formatCurrency } from "@/lib/utils";
 import { deriveCustomerTimeline, formatRentalTitle, type CustomerTimelineStep } from "@/lib/job-status";
@@ -99,7 +100,16 @@ const STATUS_LABELS: Record<string, string> = {
   cancelled: "Cancelled",
 };
 
-export default function PortalRentalsPage() {
+export default function PortalRentalsPageWrapper() {
+  return (
+    <Suspense fallback={<div className="py-10 text-center text-sm" style={{ color: "var(--t-text-muted)" }}>Loading rentals...</div>}>
+      <PortalRentalsPage />
+    </Suspense>
+  );
+}
+
+function PortalRentalsPage() {
+  const searchParams = useSearchParams();
   const [rentals, setRentals] = useState<Rental[]>([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<typeof tabs[number]>("Active");
@@ -112,6 +122,14 @@ export default function PortalRentalsPage() {
   useEffect(() => {
     portalApi.get<Rental[]>("/portal/rentals").then(setRentals).catch(() => {}).finally(() => setLoading(false));
   }, []);
+
+  // Deep-link: if ?id= is present, auto-select that rental once loaded
+  useEffect(() => {
+    const deepLinkId = searchParams.get("id");
+    if (!deepLinkId || loading || rentals.length === 0) return;
+    const match = rentals.find(r => r.id === deepLinkId);
+    if (match) setDetail(match);
+  }, [searchParams, loading, rentals]);
 
   const filtered = rentals.filter(r => {
     if (tab === "All") return true;
