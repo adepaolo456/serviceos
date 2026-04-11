@@ -21,6 +21,7 @@ import {
 import { api } from "@/lib/api";
 import { formatCurrency, formatSourceLabel } from "@/lib/utils";
 import SlideOver from "@/components/slide-over";
+import HelpTooltip from "@/components/ui/HelpTooltip";
 
 /* ─── Types ─── */
 
@@ -488,6 +489,10 @@ function RevenueTab({ data, loading, startDate, endDate, grouping, onGroupingCha
 
   return (
     <div className="space-y-6">
+      <div className="flex items-center gap-1.5 mb-1">
+        <HelpTooltip featureId="revenue_overview" />
+        <HelpTooltip featureId="revenue_collected_vs_booked" />
+      </div>
       <KPIGrid>
         <KPI label="Total Revenue" value={formatCurrency(data.totalRevenue)} color="text-[var(--t-accent)]" onClick={() => openDrill({ type: "tile", filter: "all" })} />
         <KPI label="Collected" value={formatCurrency(data.totalCollected)} color="text-[var(--t-accent)]" onClick={() => openDrill({ type: "tile", filter: "collected" })} />
@@ -497,7 +502,7 @@ function RevenueTab({ data, loading, startDate, endDate, grouping, onGroupingCha
 
       {sourceEntries.length > 0 && (
         <div className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5">
-          <h3 className="text-sm font-semibold text-[var(--t-text-primary)] mb-4">Revenue by Source</h3>
+          <h3 className="text-sm font-semibold text-[var(--t-text-primary)] mb-4 flex items-center gap-1.5">Revenue by Source <HelpTooltip featureId="revenue_by_source" /></h3>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -541,7 +546,7 @@ function RevenueTab({ data, loading, startDate, endDate, grouping, onGroupingCha
       {periodRows.length > 0 && (
         <div className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-semibold text-[var(--t-text-primary)]">{groupingLabel} Revenue</h3>
+            <h3 className="text-sm font-semibold text-[var(--t-text-primary)] flex items-center gap-1.5">{groupingLabel} Revenue <HelpTooltip featureId="revenue_period" /></h3>
             <div className="flex gap-1">
               {(["daily", "weekly", "monthly"] as const).map((g) => (
                 <button
