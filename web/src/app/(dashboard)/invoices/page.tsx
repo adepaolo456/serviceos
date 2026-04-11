@@ -399,8 +399,8 @@ export default function InvoicesPage() {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search invoice #, customer name..."
-            className="w-full rounded-[20px] border pl-10 pr-4 py-2 text-sm outline-none transition-all duration-150"
-            style={{ background: "var(--t-frame-hover)", borderColor: "var(--t-frame-border)", color: "var(--t-frame-text)" }}
+            className="w-full rounded-[20px] py-2 pl-9 pr-4 text-sm outline-none transition-all duration-150"
+            style={{ background: "var(--t-bg-card)", border: "1px solid var(--t-border)", color: "var(--t-text-primary)" }}
           />
         </div>
         <div className="flex rounded-full border overflow-hidden" style={{ borderColor: "var(--t-frame-border)" }}>
@@ -462,10 +462,10 @@ export default function InvoicesPage() {
           ))}
         </div>
       ) : filteredInvoices.length === 0 ? (
-        <div className="py-24 flex flex-col items-center justify-center text-center">
-          <FileText size={48} className="mb-4" style={{ color: "var(--t-text-muted)", opacity: 0.3 }} />
-          <h2 className="text-lg font-semibold mb-1" style={{ color: "var(--t-text-primary)" }}>{(tab !== "all" || searchQuery) ? "No matching invoices" : "No invoices yet"}</h2>
-          <p className="text-sm mb-6" style={{ color: "var(--t-text-muted)" }}>{(tab !== "all" || searchQuery) ? "Try adjusting your filters or search" : "Create an invoice or generate one from a completed job"}</p>
+        <div className="py-16 flex flex-col items-center justify-center text-center">
+          <FileText size={40} className="mb-3" style={{ color: "var(--t-text-muted)", opacity: 0.2 }} />
+          <h2 style={{ fontSize: 15, fontWeight: 600, color: "var(--t-text-primary)" }} className="mb-1">{(tab !== "all" || searchQuery) ? "No matching invoices" : "No invoices yet"}</h2>
+          <p style={{ fontSize: 12, color: "var(--t-text-muted)" }} className="mb-5">{(tab !== "all" || searchQuery) ? "Try adjusting your filters or search" : "Create an invoice or generate one from a completed job"}</p>
           {(tab !== "all" || searchQuery) ? (
             <button onClick={() => { setTab("all"); setSearchQuery(""); setDateRange("all"); }}
               className="inline-flex items-center gap-1.5 rounded-full border px-4 py-2 text-sm font-medium transition-colors"

@@ -757,7 +757,7 @@ function ListView({ assets, onSelect, onQuickStatus, onEdit, onDelete, bulkMode,
   bulkMode?: boolean; selectedIds?: Set<string>; onToggleSelect?: (id: string) => void; onToggleSelectAll?: () => void;
 }) {
   return (
-    <div style={{ borderRadius: 14, border: "1px solid var(--t-border)", background: "var(--t-bg-card)", overflow: "hidden" }}>
+    <div style={{ borderRadius: 20, border: "1px solid var(--t-border)", background: "var(--t-bg-card)", overflow: "hidden" }}>
       <div className="table-scroll">
         <table className="w-full text-sm">
           <thead>

@@ -185,22 +185,17 @@ export default function CustomersPage() {
       {/* Search + Filters */}
       <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 20 }} className="sm:!flex-row sm:!items-center">
         <div style={{ position: "relative", flex: 1, maxWidth: 420 }}>
-          <Search style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", width: 16, height: 16, color: "var(--t-frame-text-muted)" }} />
+          <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2" style={{ color: "var(--t-text-muted)" }} />
           <input
             type="text"
             placeholder="Search name, phone, email, address..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
+            className="w-full rounded-[20px] py-2 pl-9 pr-4 text-sm outline-none"
             style={{
-              width: "100%",
-              backgroundColor: "var(--t-frame-hover)",
-              border: "1px solid var(--t-frame-border)",
-              borderRadius: 24,
-              padding: "10px 40px 10px 38px",
-              fontSize: 14,
-              color: "var(--t-frame-text)",
-              outline: "none",
-              transition: "border-color 0.15s ease",
+              background: "var(--t-bg-card)",
+              border: "1px solid var(--t-border)",
+              color: "var(--t-text-primary)",
             }}
           />
           {search && (
@@ -212,7 +207,7 @@ export default function CustomersPage() {
         <div style={{ display: "inline-flex", borderRadius: 22, backgroundColor: "var(--t-bg-secondary)", border: "1px solid var(--t-border)", padding: 3, gap: 2 }}>
           {FILTERS.map((f) => (
             <button key={f.key} onClick={() => setTypeFilter(f.key)}
-              style={{ padding: "5px 14px", borderRadius: 18, fontSize: 12, fontWeight: 600, border: "none", cursor: "pointer", transition: "all 0.15s ease", backgroundColor: typeFilter === f.key ? "var(--t-accent)" : "transparent", color: typeFilter === f.key ? "#fff" : "var(--t-text-muted)" }}>
+              style={{ padding: "5px 12px", borderRadius: 18, fontSize: 12, fontWeight: 600, border: "none", cursor: "pointer", transition: "all 0.15s ease", backgroundColor: typeFilter === f.key ? "var(--t-accent)" : "transparent", color: typeFilter === f.key ? "#fff" : "var(--t-text-muted)" }}>
               {f.label}
             </button>
           ))}
@@ -223,7 +218,7 @@ export default function CustomersPage() {
       <div style={{
         backgroundColor: "var(--t-bg-card)",
         border: "1px solid var(--t-border)",
-        borderRadius: 14,
+        borderRadius: 20,
         overflow: "hidden",
       }}>
         <div className="table-scroll">
@@ -247,10 +242,10 @@ export default function CustomersPage() {
                 ))
               ) : sorted.length === 0 ? (
                 <tr>
-                  <td colSpan={8} style={{ padding: "64px 20px" }}>
+                  <td colSpan={8} style={{ padding: "48px 20px" }}>
                     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center" }}>
-                      <Users style={{ width: 48, height: 48, color: "var(--t-text-muted)", opacity: 0.2, marginBottom: 12 }} />
-                      <p style={{ fontSize: 14, fontWeight: 500, color: "var(--t-text-primary)", marginBottom: 4 }}>
+                      <Users style={{ width: 40, height: 40, color: "var(--t-text-muted)", opacity: 0.2, marginBottom: 10 }} />
+                      <p style={{ fontSize: 15, fontWeight: 600, color: "var(--t-text-primary)", marginBottom: 4 }}>
                         {search ? "No matches" : "No customers yet"}
                       </p>
                       <p style={{ fontSize: 12, color: "var(--t-text-muted)", marginBottom: 16 }}>
