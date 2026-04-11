@@ -15,6 +15,17 @@ export class ReportingController {
     return this.service.getRevenue(tid, s, e);
   }
 
+  @Get('revenue/source-detail')
+  @ApiOperation({ summary: 'Invoice-level detail for a revenue source' })
+  revenueSourceDetail(
+    @TenantId() tid: string,
+    @Query('source') source: string,
+    @Query('startDate') s?: string,
+    @Query('endDate') e?: string,
+  ) {
+    return this.service.getRevenueBySourceDetail(tid, source, s, e);
+  }
+
   @Get('dump-costs')
   @ApiOperation({ summary: 'Dump costs report' })
   dumpCosts(@TenantId() tid: string, @Query('startDate') s?: string, @Query('endDate') e?: string) {

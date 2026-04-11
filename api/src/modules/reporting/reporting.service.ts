@@ -85,6 +85,40 @@ export class ReportingService {
     };
   }
 
+  async getRevenueBySourceDetail(tenantId: string, source: string, startDate?: string, endDate?: string) {
+    const { start, end } = this.dateRange(startDate, endDate);
+    const rows = await this.dataSource.query(
+      `SELECT i.id, i.invoice_number as "invoiceNumber",
+              c.name as "customerName", i.total, i.amount_paid as "amountPaid",
+              i.balance_due as "balanceDue", i.status, i.created_at as "createdAt",
+              j.id as "jobId", j.job_number as "jobNumber"
+       FROM invoices i
+       LEFT JOIN jobs j ON j.id = i.job_id AND j.tenant_id = i.tenant_id
+       LEFT JOIN customers c ON c.id = i.customer_id AND c.tenant_id = i.tenant_id
+       WHERE i.tenant_id = $1
+         AND i.created_at >= $2
+         AND i.created_at <= $3
+         AND COALESCE(j.source, 'other') = $4
+       ORDER BY i.created_at DESC`,
+      [tenantId, start, end + 'T23:59:59', source],
+    );
+    return {
+      source,
+      invoices: rows.map(r => ({
+        id: r.id,
+        invoiceNumber: r.invoiceNumber,
+        customerName: r.customerName,
+        total: Number(r.total),
+        amountPaid: Number(r.amountPaid),
+        balanceDue: Number(r.balanceDue),
+        status: r.status,
+        createdAt: r.createdAt,
+        jobId: r.jobId,
+        jobNumber: r.jobNumber,
+      })),
+    };
+  }
+
   async getDumpCosts(tenantId: string, startDate?: string, endDate?: string) {
     const { start, end } = this.dateRange(startDate, endDate);
 
