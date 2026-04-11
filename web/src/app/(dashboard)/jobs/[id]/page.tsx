@@ -450,16 +450,9 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
 
   return (
     <div>
-      <div className="mb-6 flex items-center justify-between">
-        <Link href="/jobs" className="inline-flex items-center gap-2 text-sm text-[var(--t-frame-text-muted)] transition-colors hover:text-[var(--t-frame-text)]">
-          <ArrowLeft className="h-4 w-4" /> Back to Jobs
-        </Link>
-        {chainId && (
-          <Link href={`/rentals/${chainId}`} className="inline-flex items-center gap-1.5 rounded-full border border-[var(--t-accent)] px-3.5 py-1.5 text-xs font-semibold text-[var(--t-accent)] hover:bg-[var(--t-accent-soft)] transition-colors">
-            {FEATURE_REGISTRY.rental_lifecycle_view_full?.label ?? "View Full Lifecycle"} <ArrowRight className="h-3 w-3" />
-          </Link>
-        )}
-      </div>
+      <Link href="/jobs" className="mb-6 inline-flex items-center gap-2 text-sm text-[var(--t-frame-text-muted)] transition-colors hover:text-[var(--t-frame-text)]">
+        <ArrowLeft className="h-4 w-4" /> Back to Jobs
+      </Link>
 
       {/* --- Header --- */}
       <div className="mb-8 flex items-start justify-between">
