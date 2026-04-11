@@ -112,10 +112,18 @@ function PortalInvoicesPage() {
     setPaying(true);
     setPayResult(null);
     try {
-      const result = await portalApi.post<{ url?: string }>(
+      const result = await portalApi.post<{ url?: string; message?: string; statusCode?: number }>(
         "/portal/payments/prepare",
         { invoiceId: inv.id, amount: inv.balance_due }
       );
+      // Check for structured error returned in response body (belt-and-suspenders with catch block)
+      if (result.message?.includes("ONLINE_PAYMENTS_NOT_CONFIGURED") || result.statusCode === 400) {
+        const msg = result.message?.includes("ONLINE_PAYMENTS_NOT_CONFIGURED")
+          ? label("portal_payment_not_configured", "Online payments are not yet available. Please contact us to arrange payment.")
+          : `${label("portal_payment_failed", "Payment could not be processed")}. ${label("portal_payment_try_again", "Please try again or contact us.")}`;
+        setPayResult({ success: false, message: msg });
+        return;
+      }
       if (result.url) {
         // Redirect to Stripe Checkout — success/cancel handled via return URL params
         window.location.href = result.url;
