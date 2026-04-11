@@ -205,6 +205,12 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
   const [relatedJobs, setRelatedJobs] = useState<Array<{ id: string; job_number: string; job_type: string; scheduled_date: string; status: string; relation: string }>>([]);
   // Rental chain ID for lifecycle link
   const [chainId, setChainId] = useState<string | null>(null);
+  // Lifecycle strip data (compact summary from chain endpoint)
+  const [lifecycleStrip, setLifecycleStrip] = useState<{
+    dropOffDate: string | null; pickupDate: string | null; rentalDays: number | null;
+    chainStatus: string; dropOffStatus: string | null; pickupStatus: string | null;
+    hasExchange: boolean;
+  } | null>(null);
 
   const fetchJob = async () => {
     try {
@@ -223,10 +229,27 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
       const chains = await api.get<Array<{ id: string; links?: Array<{ job_id: string }> }>>(
         `/rental-chains?customerId=${currentJob.customer.id}`
       );
-      // The findAll returns chains with links — find the chain that contains this job
       for (const chain of chains) {
         if (chain.links?.some(l => l.job_id === currentJob.id)) {
           setChainId(chain.id);
+          // Fetch lifecycle data for the strip
+          api.get<{
+            rentalChain: { status: string; dropOffDate: string; expectedPickupDate: string | null; rentalDays: number };
+            jobs: Array<{ taskType: string; status: string; scheduledDate: string }>;
+          }>(`/rental-chains/${chain.id}/lifecycle`).then(lc => {
+            const dropOffTask = lc.jobs?.find(j => j.taskType === "drop_off");
+            const pickUpTask = lc.jobs?.find(j => j.taskType === "pick_up");
+            const hasExchange = lc.jobs?.some(j => j.taskType === "exchange") ?? false;
+            setLifecycleStrip({
+              dropOffDate: lc.rentalChain.dropOffDate,
+              pickupDate: lc.rentalChain.expectedPickupDate,
+              rentalDays: lc.rentalChain.rentalDays,
+              chainStatus: lc.rentalChain.status,
+              dropOffStatus: dropOffTask?.status ?? null,
+              pickupStatus: pickUpTask?.status ?? null,
+              hasExchange,
+            });
+          }).catch(() => {});
           return;
         }
       }
@@ -832,6 +855,44 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
           </div>
         )}
       </div>
+
+      {/* --- Lifecycle Strip --- */}
+      {chainId && lifecycleStrip && (
+        <Link href={`/rentals/${chainId}`}
+          className="block rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-5 py-3 mb-2 hover:border-[var(--t-accent)] transition-colors cursor-pointer">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div className="flex items-center gap-4 text-xs">
+              <span className="text-[var(--t-text-muted)]">
+                {FEATURE_REGISTRY.lifecycle_strip_delivered?.label ?? "Delivered"}:{" "}
+                <span className="font-semibold text-[var(--t-text-primary)]">{lifecycleStrip.dropOffDate ? fmtDateFull(lifecycleStrip.dropOffDate) : "—"}</span>
+              </span>
+              <ArrowRight className="h-3 w-3 text-[var(--t-text-muted)]" />
+              <span className="text-[var(--t-text-muted)]">
+                {FEATURE_REGISTRY.lifecycle_strip_pickup?.label ?? "Pickup"}:{" "}
+                <span className="font-semibold text-[var(--t-text-primary)]">{lifecycleStrip.pickupDate ? fmtDateFull(lifecycleStrip.pickupDate) : "—"}</span>
+              </span>
+              {lifecycleStrip.rentalDays && (
+                <span className="text-[var(--t-text-muted)]">({lifecycleStrip.rentalDays} days)</span>
+              )}
+            </div>
+            <span className={`text-[10px] font-semibold px-2.5 py-0.5 rounded-full ${
+              lifecycleStrip.chainStatus === "completed"
+                ? "bg-[var(--t-bg-elevated)] text-[var(--t-text-muted)]"
+                : "bg-[var(--t-accent-soft)] text-[var(--t-accent)]"
+            }`}>
+              {(() => {
+                if (lifecycleStrip.chainStatus === "completed") return FEATURE_REGISTRY.lifecycle_status_completed?.label ?? "Completed";
+                if (lifecycleStrip.hasExchange) return FEATURE_REGISTRY.lifecycle_status_exchange?.label ?? "Exchange Scheduled";
+                if (lifecycleStrip.dropOffStatus === "completed" && lifecycleStrip.pickupStatus && lifecycleStrip.pickupStatus !== "completed")
+                  return FEATURE_REGISTRY.lifecycle_status_awaiting_pickup?.label ?? "Awaiting Pickup";
+                if (lifecycleStrip.dropOffStatus === "completed" && !lifecycleStrip.pickupStatus)
+                  return FEATURE_REGISTRY.lifecycle_status_on_site?.label ?? "On Site";
+                return FEATURE_REGISTRY.lifecycle_status_awaiting_pickup?.label ?? "Awaiting Pickup";
+              })()}
+            </span>
+          </div>
+        </Link>
+      )}
 
       {/* --- Two Column Layout --- */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
