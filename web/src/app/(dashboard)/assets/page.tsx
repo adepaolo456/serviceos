@@ -455,39 +455,40 @@ export default function AssetsPage() {
         </div>
       )}
 
-      {/* ─── Filter Tabs (Pills) ─── */}
+      {/* ─── Filter Tabs (Segmented Pills) ─── */}
       {!loading && (
-        <div className="flex gap-2 mb-6 flex-wrap">
-          {STATUS_FILTERS.map((s) => {
-            const isActive = statusFilter === s;
-            const count = s === "all"
-              ? assets.length
-              : s === "on_site"
-                ? assets.filter((a) => a.status === "on_site" || a.status === "deployed").length
-                : assets.filter((a) => a.status === s).length;
-            return (
-              <button
-                key={s}
-                onClick={() => setStatusFilter(s)}
-                style={{
-                  display: "inline-flex", alignItems: "center", gap: 6,
-                  padding: "6px 14px", borderRadius: 24, fontSize: 13, fontWeight: 500,
-                  background: isActive ? "var(--t-accent-soft)" : "var(--t-frame-hover)",
-                  color: isActive ? "var(--t-accent-text)" : "var(--t-frame-text-muted)",
-                  border: isActive ? "1px solid transparent" : "1px solid var(--t-frame-border)",
-                  transition: "all 0.15s ease", cursor: "pointer",
-                }}
-              >
-                {STATUS_LABELS[s]}
-                <span style={{ fontSize: 11, opacity: 0.7 }}>{count}</span>
-              </button>
-            );
-          })}
+        <div className="flex items-center gap-3 mb-6 flex-wrap">
+          {/* Status group */}
+          <div style={{ display: "inline-flex", borderRadius: 22, backgroundColor: "var(--t-bg-secondary)", border: "1px solid var(--t-border)", padding: 3, gap: 2 }}>
+            {STATUS_FILTERS.map((s) => {
+              const isActive = statusFilter === s;
+              const count = s === "all"
+                ? assets.length
+                : s === "on_site"
+                  ? assets.filter((a) => a.status === "on_site" || a.status === "deployed").length
+                  : assets.filter((a) => a.status === s).length;
+              return (
+                <button
+                  key={s}
+                  onClick={() => setStatusFilter(s)}
+                  style={{
+                    display: "inline-flex", alignItems: "center", gap: 5,
+                    padding: "5px 12px", borderRadius: 18, fontSize: 12, fontWeight: 600,
+                    background: isActive ? "var(--t-accent)" : "transparent",
+                    color: isActive ? "#fff" : "var(--t-text-muted)",
+                    border: "none", transition: "all 0.15s ease", cursor: "pointer",
+                  }}
+                >
+                  {STATUS_LABELS[s]}
+                  <span style={{ fontSize: 10, fontWeight: 700, opacity: isActive ? 0.85 : 0.6 }}>{count}</span>
+                </button>
+              );
+            })}
+          </div>
 
-          {/* Size filter pills when no tile selected */}
+          {/* Size group */}
           {sizeGroups.length > 0 && (
-            <>
-              <span style={{ width: 1, background: "var(--t-frame-border)", margin: "0 4px", alignSelf: "stretch" }} />
+            <div style={{ display: "inline-flex", borderRadius: 22, backgroundColor: "var(--t-bg-secondary)", border: "1px solid var(--t-border)", padding: 3, gap: 2 }}>
               {sizeGroups.map((g) => {
                 const isActive = selectedSize === g.size;
                 return (
@@ -495,20 +496,19 @@ export default function AssetsPage() {
                     key={g.size}
                     onClick={() => handleTileClick(g.size)}
                     style={{
-                      display: "inline-flex", alignItems: "center", gap: 6,
-                      padding: "6px 14px", borderRadius: 24, fontSize: 13, fontWeight: 500,
-                      background: isActive ? "var(--t-accent-soft)" : "var(--t-frame-hover)",
-                      color: isActive ? "var(--t-accent-text)" : "var(--t-frame-text-muted)",
-                      border: isActive ? "1px solid transparent" : "1px solid var(--t-frame-border)",
-                      transition: "all 0.15s ease", cursor: "pointer",
+                      display: "inline-flex", alignItems: "center", gap: 5,
+                      padding: "5px 12px", borderRadius: 18, fontSize: 12, fontWeight: 600,
+                      background: isActive ? "var(--t-accent)" : "transparent",
+                      color: isActive ? "#fff" : "var(--t-text-muted)",
+                      border: "none", transition: "all 0.15s ease", cursor: "pointer",
                     }}
                   >
                     {g.size}
-                    <span style={{ fontSize: 11, opacity: 0.7 }}>{g.total}</span>
+                    <span style={{ fontSize: 10, fontWeight: 700, opacity: isActive ? 0.85 : 0.6 }}>{g.total}</span>
                   </button>
                 );
               })}
-            </>
+            </div>
           )}
         </div>
       )}
