@@ -288,6 +288,48 @@ export const FEATURE_REGISTRY: Record<string, FeatureDescription> = {
     keywords: ["report", "revenue", "profit", "chart", "performance", "data"],
   },
 
+  // ── Revenue Reporting ──
+  revenue_overview: {
+    id: "revenue_overview", label: "Revenue Overview", category: "analytics",
+    shortDescription: "How revenue metrics are calculated and what each tile means.",
+    guideDescription: "The Revenue report shows four summary tiles. Booked Revenue is the total value of all invoices with status open, paid, or partial — draft and voided invoices are excluded. Collected is the sum of actual completed payments received, net of refunds. Outstanding is the remaining balance on open and partially paid invoices. Overdue is the subset of outstanding where the due date has passed. Click any tile to drill down into the underlying invoices.",
+    routeOrSurface: "/analytics?tab=revenue", tenantOverrideKey: "revenue_overview",
+    isUserFacing: true, isGuideEligible: true,
+    keywords: ["revenue", "booked", "collected", "outstanding", "overdue", "invoice", "total", "tile"],
+  },
+  revenue_period: {
+    id: "revenue_period", label: "Daily / Weekly / Monthly Revenue", category: "analytics",
+    shortDescription: "Time-grouped revenue with invoice counts and averages.",
+    guideDescription: "The period revenue table groups invoices by day, week, or month using the toggle above the table. Each row shows the total booked revenue, number of invoices, average invoice value, and how many are still unpaid. Rows are sorted newest first. Click any row to see the individual invoices for that period. Changing the date range at the top of the page updates all views. Weekly grouping uses ISO weeks (Monday–Sunday) and monthly uses calendar months.",
+    routeOrSurface: "/analytics?tab=revenue", tenantOverrideKey: "revenue_period",
+    isUserFacing: true, isGuideEligible: true,
+    keywords: ["daily", "weekly", "monthly", "grouping", "period", "trend", "date", "average"],
+  },
+  revenue_by_source: {
+    id: "revenue_by_source", label: "Revenue by Source", category: "analytics",
+    shortDescription: "Revenue broken down by how each booking originated.",
+    guideDescription: "Revenue by Source shows where your bookings came from — Phone Orders, Online Bookings, Manual Entry, Scheduled Follow-Ups, Rescheduled Jobs, and Other. Each row shows booked revenue, outstanding balance, invoice count, and average value. The source totals always sum to the overall Booked Revenue. Click any source row to see the individual invoices attributed to that source.",
+    routeOrSurface: "/analytics?tab=revenue", tenantOverrideKey: "revenue_by_source",
+    isUserFacing: true, isGuideEligible: true,
+    keywords: ["source", "phone", "portal", "manual", "booking", "origin", "channel", "attribution"],
+  },
+  revenue_drilldown: {
+    id: "revenue_drilldown", label: "Revenue Drill-Down", category: "analytics",
+    shortDescription: "How to navigate from summary metrics to individual invoices.",
+    guideDescription: "Every clickable element in the Revenue report opens a slide-out panel showing the underlying invoices. From there, click any invoice card to navigate directly to the full invoice detail page. You can drill down from summary tiles (Total Revenue, Collected, Outstanding, Overdue), from Revenue by Source rows, and from period revenue rows. The drill-down always respects your current date range and filters. Use the Escape key or click outside the panel to close it.",
+    routeOrSurface: "/analytics?tab=revenue", tenantOverrideKey: "revenue_drilldown",
+    isUserFacing: true, isGuideEligible: true,
+    keywords: ["drill", "detail", "click", "invoice", "navigate", "panel", "slide", "filter"],
+  },
+  revenue_collected_vs_booked: {
+    id: "revenue_collected_vs_booked", label: "Collected vs Booked Revenue", category: "analytics",
+    shortDescription: "Why collected revenue may differ from booked revenue.",
+    guideDescription: "Booked Revenue reflects the total value of issued invoices — it represents what you have billed. Collected Revenue reflects actual payments received, sourced directly from your payment records and net of any refunds. These numbers may differ because invoices can remain unpaid or partially paid. Collected is filtered by payment date (when money was received), while booked is filtered by invoice creation date. A payment made today for an invoice created last month will appear in this month's Collected but last month's Booked Revenue.",
+    routeOrSurface: "/analytics?tab=revenue", tenantOverrideKey: "revenue_collected_vs_booked",
+    isUserFacing: true, isGuideEligible: true,
+    keywords: ["collected", "booked", "payment", "cash", "difference", "paid", "received", "accrual"],
+  },
+
   // ── Marketplace ──
   marketplace: {
     id: "marketplace", label: "Marketplace", category: "marketplace",
