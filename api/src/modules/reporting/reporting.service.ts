@@ -37,7 +37,7 @@ export class ReportingService {
     return { start, end };
   }
 
-  async getRevenue(tenantId: string, startDate?: string, endDate?: string) {
+  async getRevenue(tenantId: string, startDate?: string, endDate?: string, grouping?: string) {
     const { start, end } = this.dateRange(startDate, endDate);
 
     const endTs = end + 'T23:59:59';
@@ -72,42 +72,66 @@ export class ReportingService {
       .andWhere('i.due_date < :today', { today: new Date().toISOString().split('T')[0] })
       .getRawOne();
 
-    // Revenue by source: JOIN through jobs to get source (invoices
-    // table does not have a source column — it lives on jobs).
+    // Revenue by source: JOIN through jobs to get source with counts.
     const bySource = await this.dataSource.query(
-      `SELECT COALESCE(j.source, 'other') as source, SUM(i.total) as amount
+      `SELECT COALESCE(j.source, 'other') as source,
+              SUM(i.total) as amount,
+              COUNT(*)::int as count,
+              COUNT(*) FILTER (WHERE i.status = 'paid')::int as "paidCount",
+              SUM(CASE WHEN i.status IN ('open', 'partial') THEN i.balance_due ELSE 0 END) as outstanding
        FROM invoices i
        LEFT JOIN jobs j ON j.id = i.job_id AND j.tenant_id = i.tenant_id
        WHERE i.tenant_id = $1
          AND ${REVENUE_STATUS_SQL}
          AND i.created_at >= $2
          AND i.created_at <= $3
-       GROUP BY COALESCE(j.source, 'other')`,
+       GROUP BY COALESCE(j.source, 'other')
+       ORDER BY SUM(i.total) DESC`,
       [tenantId, start, endTs],
     );
 
-    const daily = await this.invoiceRepo.createQueryBuilder('i')
-      .select("DATE(i.created_at)", 'date')
-      .addSelect('SUM(i.total)', 'amount')
-      .where('i.tenant_id = :tid', { tid: tenantId })
-      .andWhere('i.status IN (:...rstats)', { rstats: [...REVENUE_STATUSES] })
-      .andWhere('i.created_at >= :start', { start })
-      .andWhere('i.created_at <= :end', { end: endTs })
-      .andWhere('i.created_at IS NOT NULL')
-      .groupBy("DATE(i.created_at)")
-      .orderBy("DATE(i.created_at)", 'ASC')
-      .getRawMany();
+    // Time-grouped revenue with counts (daily/weekly/monthly).
+    const groupExpr = grouping === 'weekly'
+      ? "DATE_TRUNC('week', i.created_at)::date"
+      : grouping === 'monthly'
+      ? "DATE_TRUNC('month', i.created_at)::date"
+      : "DATE(i.created_at)";
+
+    const periodRevenue = await this.dataSource.query(
+      `SELECT ${groupExpr} as date,
+              SUM(i.total) as amount,
+              COUNT(*)::int as count,
+              COUNT(*) FILTER (WHERE i.status = 'paid')::int as "paidCount"
+       FROM invoices i
+       WHERE i.tenant_id = $1
+         AND ${REVENUE_STATUS_SQL}
+         AND i.created_at >= $2
+         AND i.created_at <= $3
+         AND i.created_at IS NOT NULL
+       GROUP BY ${groupExpr}
+       ORDER BY ${groupExpr} DESC`,
+      [tenantId, start, endTs],
+    );
 
     return {
       totalRevenue: Number(totals?.totalRevenue) || 0,
       totalCollected: Number(collected[0]?.totalCollected) || 0,
       totalOutstanding: Number(totals?.totalOutstanding) || 0,
       totalOverdue: Number(overdue?.totalOverdue) || 0,
-      revenueBySource: Object.fromEntries(bySource.map(r => [r.source || 'other', Number(r.amount)])),
-      dailyRevenue: daily.map(d => ({
+      revenueBySource: bySource.map(r => ({
+        source: r.source || 'other',
+        amount: Number(r.amount),
+        count: Number(r.count),
+        paidCount: Number(r.paidCount),
+        outstanding: Number(r.outstanding),
+      })),
+      dailyRevenue: periodRevenue.map(d => ({
         date: d.date instanceof Date ? d.date.toISOString().split('T')[0] : typeof d.date === 'string' ? d.date.split('T')[0] : null,
         amount: Number(d.amount),
+        count: Number(d.count),
+        paidCount: Number(d.paidCount),
       })),
+      grouping: grouping || 'daily',
       period: { start, end },
     };
   }

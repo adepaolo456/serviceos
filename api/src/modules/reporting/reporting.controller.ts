@@ -42,8 +42,8 @@ export class ReportingController {
 
   @Get('revenue')
   @ApiOperation({ summary: 'Revenue report' })
-  revenue(@TenantId() tid: string, @Query('startDate') s?: string, @Query('endDate') e?: string) {
-    return this.service.getRevenue(tid, s, e);
+  revenue(@TenantId() tid: string, @Query('startDate') s?: string, @Query('endDate') e?: string, @Query('grouping') g?: string) {
+    return this.service.getRevenue(tid, s, e, g);
   }
 
   @Get('dump-costs')
