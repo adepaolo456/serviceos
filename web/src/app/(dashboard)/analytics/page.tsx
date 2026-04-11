@@ -75,30 +75,28 @@ interface DumpCostsData {
 }
 
 interface ProfitData {
-  revenue: number;
-  dumpCosts: number;
+  totalRevenue: number;
+  totalDumpCosts: number;
   grossProfit: number;
-  marginPercent: number;
+  grossMarginPercent: number;
 }
 
 interface DriverRow {
-  id: string;
-  name: string;
+  driverId: string;
+  driverName: string;
   totalJobs: number;
-  completed: number;
-  failed: number;
+  completedJobs: number;
+  failedJobs: number;
   deliveries: number;
   pickups: number;
 }
 
 interface DriversData {
-  totalDrivers: number;
-  totalCompleted: number;
-  drivers: DriverRow[];
+  driverStats: DriverRow[];
 }
 
 interface AssetSizeRow {
-  size: string;
+  subtype: string;
   total: number;
   available: number;
   deployed: number;
@@ -106,46 +104,47 @@ interface AssetSizeRow {
 }
 
 interface AssetsData {
-  total: number;
-  available: number;
-  deployed: number;
-  staged: number;
+  totalAssets: number;
+  byStatus: Record<string, number>;
   bySize: AssetSizeRow[];
 }
 
 interface CustomerRow {
-  id: string;
+  customerId: string;
   name: string;
   type: string;
   totalSpend: number;
-  jobCount: number;
+  totalJobs: number;
 }
 
 interface CustomersData {
-  total: number;
-  newCustomers: number;
-  byType: { type: string; count: number }[];
+  totalCustomers: number;
+  newCustomersInPeriod: number;
+  customersByType: Record<string, number>;
   topCustomers: CustomerRow[];
 }
 
-interface AgingBucket {
-  label: string;
-  amount: number;
-  count: number;
-}
-
 interface OverdueInvoice {
-  id: string;
-  customer: string;
+  invoiceId: string;
+  invoiceNumber: number;
+  customerName: string;
   amount: number;
   dueDate: string;
-  daysOverdue: number;
+  daysPastDue: number;
+}
+
+interface AgingData {
+  current: { count: number; amount: number };
+  days30: { count: number; amount: number };
+  days60: { count: number; amount: number };
+  days90: { count: number; amount: number };
+  days90plus: { count: number; amount: number };
 }
 
 interface ReceivablesData {
   totalOutstanding: number;
   totalOverdue: number;
-  aging: AgingBucket[];
+  aging: AgingData;
   overdueInvoices: OverdueInvoice[];
 }
 
@@ -645,10 +644,10 @@ function ProfitTab({ data, loading }: { data: ProfitData | null; loading: boolea
   if (!data) return <EmptyState text="No profit data available" />;
   return (
     <KPIGrid>
-      <KPI label="Revenue" value={formatCurrency(data.revenue)} />
-      <KPI label="Dump Costs" value={formatCurrency(data.dumpCosts)} color="text-[var(--t-error)]" />
+      <KPI label="Revenue (Collected)" value={formatCurrency(data.totalRevenue)} />
+      <KPI label="Dump Costs" value={formatCurrency(data.totalDumpCosts)} color="text-[var(--t-error)]" />
       <KPI label="Gross Profit" value={formatCurrency(data.grossProfit)} color="text-[var(--t-accent)]" />
-      <KPI label="Margin %" value={fmtPct(data.marginPercent)} color="text-[var(--t-accent)]" />
+      <KPI label="Margin %" value={fmtPct(data.grossMarginPercent)} color="text-[var(--t-accent)]" />
     </KPIGrid>
   );
 }
@@ -656,16 +655,18 @@ function ProfitTab({ data, loading }: { data: ProfitData | null; loading: boolea
 function DriversTab({ data, loading }: { data: DriversData | null; loading: boolean }) {
   if (loading) return <><KPISkeleton /><TableSkeleton /></>;
   if (!data) return <EmptyState text="No driver data available" />;
+  const stats = data.driverStats || [];
+  const totalCompleted = stats.reduce((s, d) => s + d.completedJobs, 0);
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 mb-6">
-        <KPI label="Total Drivers" value={fmtNum(data.totalDrivers)} />
-        <KPI label="Total Completed" value={fmtNum(data.totalCompleted)} color="text-[var(--t-accent)]" />
+        <KPI label="Total Drivers" value={fmtNum(stats.length)} />
+        <KPI label="Total Completed" value={fmtNum(totalCompleted)} color="text-[var(--t-accent)]" />
       </div>
-      {data.drivers?.length > 0 && (
+      {stats.length > 0 && (
         <div className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5">
           <h3 className="text-sm font-semibold text-[var(--t-text-primary)] mb-4">Driver Stats</h3>
-          <DataTable headers={["Name", "Jobs", "Completed", "Failed", "Deliveries", "Pickups"]} rows={data.drivers.map((d) => [d.name, fmtNum(d.totalJobs), fmtNum(d.completed), fmtNum(d.failed), fmtNum(d.deliveries), fmtNum(d.pickups)])} />
+          <DataTable headers={["Name", "Jobs", "Completed", "Failed", "Deliveries", "Pickups"]} rows={stats.map((d) => [d.driverName, fmtNum(d.totalJobs), fmtNum(d.completedJobs), fmtNum(d.failedJobs), fmtNum(d.deliveries), fmtNum(d.pickups)])} />
         </div>
       )}
     </div>
@@ -675,18 +676,23 @@ function DriversTab({ data, loading }: { data: DriversData | null; loading: bool
 function AssetsTab({ data, loading }: { data: AssetsData | null; loading: boolean }) {
   if (loading) return <><KPISkeleton /><TableSkeleton /></>;
   if (!data) return <EmptyState text="No asset data available" />;
+  const bs = data.byStatus || {};
+  const available = Number(bs.available) || 0;
+  const deployed = Number(bs.deployed) || Number(bs.on_site) || 0;
+  const staged = Number(bs.full_staged) || Number(bs.reserved) || 0;
   return (
     <div className="space-y-6">
+      <p className="text-xs text-[var(--t-text-muted)] -mb-4">Current snapshot — not filtered by date range</p>
       <KPIGrid>
-        <KPI label="Total" value={fmtNum(data.total)} />
-        <KPI label="Available" value={fmtNum(data.available)} color="text-[var(--t-accent)]" />
-        <KPI label="Deployed" value={fmtNum(data.deployed)} />
-        <KPI label="Staged" value={fmtNum(data.staged)} color="text-[var(--t-warning)]" />
+        <KPI label="Total" value={fmtNum(data.totalAssets)} />
+        <KPI label="Available" value={fmtNum(available)} color="text-[var(--t-accent)]" />
+        <KPI label="Deployed" value={fmtNum(deployed)} />
+        <KPI label="Staged" value={fmtNum(staged)} color="text-[var(--t-warning)]" />
       </KPIGrid>
       {data.bySize?.length > 0 && (
         <div className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5">
           <h3 className="text-sm font-semibold text-[var(--t-text-primary)] mb-4">Assets by Size</h3>
-          <DataTable headers={["Size", "Total", "Available", "Deployed", "Staged"]} rows={data.bySize.map((r) => [r.size, fmtNum(r.total), fmtNum(r.available), fmtNum(r.deployed), fmtNum(r.staged)])} />
+          <DataTable headers={["Size", "Total", "Available", "Deployed", "Staged"]} rows={data.bySize.map((r) => [r.subtype, fmtNum(r.total), fmtNum(r.available), fmtNum(r.deployed), fmtNum(r.staged)])} />
         </div>
       )}
     </div>
@@ -696,19 +702,20 @@ function AssetsTab({ data, loading }: { data: AssetsData | null; loading: boolea
 function CustomersTab({ data, loading }: { data: CustomersData | null; loading: boolean }) {
   if (loading) return <><KPISkeleton /><TableSkeleton /></>;
   if (!data) return <EmptyState text="No customer data available" />;
+  const typeEntries = data.customersByType ? Object.entries(data.customersByType) : [];
   return (
     <div className="space-y-6">
       <KPIGrid>
-        <KPI label="Total Customers" value={fmtNum(data.total)} />
-        <KPI label="New Customers" value={fmtNum(data.newCustomers)} color="text-[var(--t-accent)]" />
-        {data.byType?.slice(0, 2).map((t) => (
-          <KPI key={t.type} label={t.type} value={fmtNum(t.count)} />
+        <KPI label="Total Customers" value={fmtNum(data.totalCustomers)} />
+        <KPI label="New This Period" value={fmtNum(data.newCustomersInPeriod)} color="text-[var(--t-accent)]" />
+        {typeEntries.slice(0, 2).map(([type, count]) => (
+          <KPI key={type} label={type} value={fmtNum(count)} />
         ))}
       </KPIGrid>
       {data.topCustomers?.length > 0 && (
         <div className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5">
           <h3 className="text-sm font-semibold text-[var(--t-text-primary)] mb-4">Top Customers</h3>
-          <DataTable headers={["Name", "Type", "Jobs", "Total Spend"]} rows={data.topCustomers.map((c) => [c.name, c.type, fmtNum(c.jobCount), formatCurrency(c.totalSpend)])} />
+          <DataTable headers={["Name", "Type", "Jobs", "Total Spend"]} rows={data.topCustomers.map((c) => [c.name, c.type, fmtNum(c.totalJobs), formatCurrency(c.totalSpend)])} />
         </div>
       )}
     </div>
@@ -718,22 +725,31 @@ function CustomersTab({ data, loading }: { data: CustomersData | null; loading: 
 function ReceivablesTab({ data, loading }: { data: ReceivablesData | null; loading: boolean }) {
   if (loading) return <><KPISkeleton /><TableSkeleton /></>;
   if (!data) return <EmptyState text="No receivables data available" />;
+  const allAgingRows: [string, string, string][] = data.aging ? [
+    ["Current", fmtNum(data.aging.current.count), formatCurrency(data.aging.current.amount)],
+    ["1–30 Days", fmtNum(data.aging.days30.count), formatCurrency(data.aging.days30.amount)],
+    ["31–60 Days", fmtNum(data.aging.days60.count), formatCurrency(data.aging.days60.amount)],
+    ["61–90 Days", fmtNum(data.aging.days90.count), formatCurrency(data.aging.days90.amount)],
+    ["90+ Days", fmtNum(data.aging.days90plus.count), formatCurrency(data.aging.days90plus.amount)],
+  ] : [];
+  const agingRows = allAgingRows.filter(r => r[1] !== "0");
   return (
     <div className="space-y-6">
+      <p className="text-xs text-[var(--t-text-muted)] -mb-4">Current snapshot — not filtered by date range</p>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 mb-6">
         <KPI label="Outstanding" value={formatCurrency(data.totalOutstanding)} color="text-[var(--t-warning)]" />
         <KPI label="Overdue" value={formatCurrency(data.totalOverdue)} color="text-[var(--t-error)]" />
       </div>
-      {data.aging?.length > 0 && (
+      {agingRows.length > 0 && (
         <div className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5">
           <h3 className="text-sm font-semibold text-[var(--t-text-primary)] mb-4">Aging Summary</h3>
-          <DataTable headers={["Bucket", "Invoices", "Amount"]} rows={data.aging.map((a) => [a.label, fmtNum(a.count), formatCurrency(a.amount)])} />
+          <DataTable headers={["Bucket", "Invoices", "Amount"]} rows={agingRows} />
         </div>
       )}
       {data.overdueInvoices?.length > 0 && (
         <div className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5">
           <h3 className="text-sm font-semibold text-[var(--t-text-primary)] mb-4">Overdue Invoices</h3>
-          <DataTable headers={["Customer", "Amount", "Due Date", "Days Overdue"]} rows={data.overdueInvoices.map((inv) => [inv.customer, formatCurrency(inv.amount), inv.dueDate, fmtNum(inv.daysOverdue)])} />
+          <DataTable headers={["Customer", "Amount", "Due Date", "Days Past Due"]} rows={data.overdueInvoices.map((inv) => [inv.customerName, formatCurrency(inv.amount), safeDateStr(inv.dueDate), fmtNum(inv.daysPastDue)])} />
         </div>
       )}
     </div>
