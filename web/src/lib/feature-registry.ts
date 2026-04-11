@@ -300,8 +300,37 @@ export const FEATURE_REGISTRY: Record<string, FeatureDescription> = {
     shortDescription: "Completed pickups that may need review before closing out.",
     guideDescription: "This attention item shows pickup jobs marked as completed that may need review — for example, confirming dump slips, verifying weights, or closing out invoicing. Click to open the Jobs page filtered to these pickups.",
     routeOrSurface: "/jobs", tenantOverrideKey: "dashboard_pickups_attention",
-    isUserFacing: true, isGuideEligible: true,
+    isUserFacing: true, isGuideEligible: false,
     keywords: ["pickup", "review", "completed", "attention", "close", "dump", "verify"],
+  },
+  dashboard_schedule: {
+    id: "dashboard_schedule", label: "Schedule", category: "dashboard",
+    shortDescription: "Unified schedule view with Today, Week, and Month perspectives.",
+    guideDescription: "The Schedule module on the dashboard provides three views of your upcoming work. Today shows the full job list for a single day — time, customer, address, driver, and status — so you can preview the workload at a glance. Week shows the next 7 days with job counts and type breakdowns (deliveries, pickups, exchanges). Month shows a calendar grid with daily job counts for planning. Click any day in Week or Month view to switch the Today view to that date. Click any job row to open its detail page. Use the Dispatch link to jump into full dispatch management.",
+    routeOrSurface: "/", tenantOverrideKey: "dashboard_schedule",
+    isUserFacing: true, isGuideEligible: true,
+    keywords: ["schedule", "today", "week", "month", "calendar", "jobs", "dispatch", "plan"],
+  },
+  dashboard_schedule_today: {
+    id: "dashboard_schedule_today", label: "Today", category: "dashboard",
+    shortDescription: "Today's scheduled jobs.", guideDescription: "",
+    routeOrSurface: "/", tenantOverrideKey: "dashboard_schedule_today",
+    isUserFacing: true, isGuideEligible: false,
+    keywords: ["today", "schedule"],
+  },
+  dashboard_schedule_week: {
+    id: "dashboard_schedule_week", label: "Week", category: "dashboard",
+    shortDescription: "7-day job summary.", guideDescription: "",
+    routeOrSurface: "/", tenantOverrideKey: "dashboard_schedule_week",
+    isUserFacing: true, isGuideEligible: false,
+    keywords: ["week", "schedule"],
+  },
+  dashboard_schedule_month: {
+    id: "dashboard_schedule_month", label: "Month", category: "dashboard",
+    shortDescription: "Monthly calendar overview.", guideDescription: "",
+    routeOrSurface: "/", tenantOverrideKey: "dashboard_schedule_month",
+    isUserFacing: true, isGuideEligible: false,
+    keywords: ["month", "calendar", "schedule"],
   },
 
   // ── Analytics ──
