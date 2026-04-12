@@ -18,6 +18,7 @@ import {
   ListJobsQueryDto,
   ChangeStatusDto,
   CalendarQueryDto,
+  UpdateJobAssetDto,
 } from './dto/job.dto';
 import { TenantId, CurrentUser, Roles } from '../../common/decorators';
 import { RolesGuard } from '../../common/guards';
@@ -130,6 +131,7 @@ export class JobsController {
     @Body() dto: ChangeStatusDto & { creditOverride?: { reason?: string } },
     @CurrentUser('role') userRole: string,
     @CurrentUser('id') userId: string,
+    @CurrentUser('email') userEmail: string,
   ) {
     // Phase 5 — dispatch credit enforcement for status transitions.
     const ENFORCED_STATUSES: Record<string, DispatchAction> = {
@@ -157,7 +159,24 @@ export class JobsController {
         });
       }
     }
-    return this.jobsService.changeStatus(tenantId, id, dto, userRole);
+    return this.jobsService.changeStatus(tenantId, id, dto, userRole, userId, userEmail);
+  }
+
+  @Patch(':id/asset')
+  @UseGuards(RolesGuard)
+  @Roles('admin', 'owner', 'dispatcher')
+  @ApiOperation({
+    summary:
+      'Phase 11A — correct a job\'s asset assignment. Tenant-scoped, conflict-guarded, audited, and re-runs inventory sync when the job is already completed.',
+  })
+  async changeAsset(
+    @TenantId() tenantId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateJobAssetDto,
+    @CurrentUser('id') userId: string,
+    @CurrentUser('email') userEmail: string,
+  ) {
+    return this.jobsService.changeAsset(tenantId, id, dto, userId, userEmail);
   }
 
   @Patch(':id/assign')

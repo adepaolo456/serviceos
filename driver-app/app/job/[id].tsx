@@ -17,7 +17,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getJobDetail, updateJobStatus, uploadJobPhoto, getDumpLocations, submitDumpSlip, getYards, stageAtYard, failJob } from '../../src/api';
+import { getJobDetail, updateJobStatus, uploadJobPhoto, getDumpLocations, submitDumpSlip, getYards, stageAtYard, failJob, listAssetsForPicker, updateJobAsset } from '../../src/api';
 import { useAppTheme, type ThemeColors } from '../../constants/theme';
 
 interface PhotoEntry {
@@ -49,13 +49,33 @@ interface Job {
     email?: string;
     phone?: string;
   } | null;
-  asset: { identifier?: string; subtype?: string; size?: string } | null;
+  asset_id?: string | null;
+  asset: { id?: string; identifier?: string; subtype?: string; size?: string } | null;
   notes?: string;
   placement_notes?: string;
   driver_notes?: string;
   route_order: number | null;
   photos?: PhotoEntry[];
   signature_url?: string;
+  // Phase 11A — expected on-site asset for pickup/exchange (derived
+  // server-side from the rental chain's most recent completed
+  // delivery or exchange).
+  expected_on_site_asset?: {
+    asset_id: string;
+    identifier: string;
+    subtype: string | null;
+    source_job_id: string;
+    source_job_number: string;
+    source_task_type: string;
+  } | null;
+}
+
+interface AssetOption {
+  id: string;
+  identifier: string;
+  subtype?: string | null;
+  status: string;
+  current_location_type?: string | null;
 }
 
 const TYPE_COLORS: Record<string, string> = {
@@ -99,8 +119,18 @@ export default function JobDetailScreen() {
   const [photos, setPhotos] = useState<PhotoEntry[]>([]);
   const [signed, setSigned] = useState(false);
   const [showDumpsterModal, setShowDumpsterModal] = useState(false);
-  const [dumpsterPin, setDumpsterPin] = useState('');
   const [dumpsterConfirmed, setDumpsterConfirmed] = useState(false);
+  // Phase 11A — asset picker state (replaces the old pin prompt).
+  // Server-authoritative: saving the selection calls
+  // `PATCH /jobs/:id/asset` so the backend conflict guard + audit
+  // trail run even on the driver side.
+  const [assetOptions, setAssetOptions] = useState<AssetOption[]>([]);
+  const [loadingAssets, setLoadingAssets] = useState(false);
+  const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
+  const [assetSearch, setAssetSearch] = useState('');
+  const [savingAsset, setSavingAsset] = useState(false);
+  const [assetConflict, setAssetConflict] = useState<string | null>(null);
+  const [assetOverrideAck, setAssetOverrideAck] = useState(false);
   const [showWhereNext, setShowWhereNext] = useState(false);
   const [yards, setYards] = useState<Array<{ id: string; name: string; is_primary: boolean }>>([]);
   const [showYardPicker, setShowYardPicker] = useState(false);
@@ -149,10 +179,9 @@ export default function JobDetailScreen() {
     const transition = STATUS_FLOW[job.status];
     if (!transition) return;
 
-    // For "Complete Job" on arrived status — require dumpster confirmation first
+    // For "Complete Job" on arrived status — require asset confirmation first
     if ((job.status === 'arrived' || job.status === 'in_progress') && !dumpsterConfirmed) {
-      setDumpsterPin(job.asset?.identifier || '');
-      setShowDumpsterModal(true);
+      await openAssetPicker();
       return;
     }
 
@@ -172,10 +201,9 @@ export default function JobDetailScreen() {
         Linking.openURL(url).catch(() => {});
       }
 
-      // Step 2 complete: show dumpster confirmation
+      // Step 2 complete: open asset picker
       if (newStatus === 'arrived') {
-        setDumpsterPin(job.asset?.identifier || '');
-        setShowDumpsterModal(true);
+        await openAssetPicker();
       }
 
       // Step 3 complete: post-completion routing
@@ -195,10 +223,98 @@ export default function JobDetailScreen() {
     }
   };
 
-  const handleDumpsterConfirm = () => {
-    if (!dumpsterPin.trim()) { Alert.alert('Required', 'Enter the dumpster number'); return; }
-    setDumpsterConfirmed(true);
-    setShowDumpsterModal(false);
+  // Phase 11A — open the asset picker. Fetches tenant assets of the
+  // same subtype (falls back to all if the job has no subtype hint),
+  // pre-selects the currently-assigned or expected-on-site asset so
+  // the common case is a one-tap confirmation.
+  const openAssetPicker = useCallback(async () => {
+    if (!job) return;
+    setShowDumpsterModal(true);
+    setLoadingAssets(true);
+    setAssetConflict(null);
+    setAssetOverrideAck(false);
+    setAssetSearch('');
+
+    // Default selection: current asset_id → expected asset → none
+    const defaultSelection =
+      job.asset_id ||
+      job.asset?.id ||
+      job.expected_on_site_asset?.asset_id ||
+      null;
+    setSelectedAssetId(defaultSelection);
+
+    try {
+      const subtype = job.asset_subtype || job.asset?.subtype || undefined;
+      const list = await listAssetsForPicker(subtype);
+      // Available first, then in-use, excluding retired
+      const usable = (Array.isArray(list) ? list : []).filter(
+        (a: any) => a.status !== 'retired',
+      );
+      usable.sort((a: any, b: any) => {
+        const av = a.status === 'available' ? 0 : 1;
+        const bv = b.status === 'available' ? 0 : 1;
+        if (av !== bv) return av - bv;
+        return (a.identifier || '').localeCompare(b.identifier || '');
+      });
+      setAssetOptions(usable);
+    } catch {
+      setAssetOptions([]);
+    } finally {
+      setLoadingAssets(false);
+    }
+  }, [job]);
+
+  // Phase 11A — save the picker selection. Calls the authoritative
+  // `PATCH /jobs/:id/asset` endpoint so the backend conflict guard
+  // and audit trail run even from the driver side. On conflict, the
+  // UI re-opens with an override warning; a second tap submits with
+  // `override=true` and the backend records it in the audit trail.
+  const handleAssetSave = async () => {
+    if (!job || !selectedAssetId) {
+      Alert.alert('Required', 'Pick a dumpster before continuing');
+      return;
+    }
+    setSavingAsset(true);
+    setAssetConflict(null);
+    try {
+      await updateJobAsset(job.id, selectedAssetId, {
+        override: assetOverrideAck,
+      });
+      // Mirror the new asset locally so the header + complete-button
+      // flip without waiting for a full job refetch.
+      const picked = assetOptions.find((a) => a.id === selectedAssetId);
+      setJob((prev) =>
+        prev
+          ? {
+              ...prev,
+              asset_id: selectedAssetId,
+              asset: picked
+                ? {
+                    id: picked.id,
+                    identifier: picked.identifier,
+                    subtype: picked.subtype || undefined,
+                  }
+                : prev.asset,
+            }
+          : prev,
+      );
+      setDumpsterConfirmed(true);
+      setShowDumpsterModal(false);
+    } catch (err: any) {
+      const msg =
+        err?.response?.data?.message ||
+        err?.message ||
+        'Failed to save asset';
+      // Backend signals active-job conflict via the sentinel prefix
+      if (typeof msg === 'string' && msg.includes('asset_active_conflict')) {
+        setAssetConflict(msg.replace(/^asset_active_conflict:\s*/, ''));
+        setAssetOverrideAck(false);
+      } else {
+        Alert.alert('Error', msg);
+      }
+    } finally {
+      setSavingAsset(false);
+    }
   };
 
   const openMaps = () => {
@@ -755,7 +871,7 @@ export default function JobDetailScreen() {
           {(job.status === 'arrived' || job.status === 'in_progress') && !dumpsterConfirmed ? (
             <TouchableOpacity
               style={[s.actionBtn, { backgroundColor: '#22C55E' }]}
-              onPress={() => { setDumpsterPin(job.asset?.identifier || ''); setShowDumpsterModal(true); }}
+              onPress={openAssetPicker}
             >
               <Ionicons name="cube" size={20} color="#fff" />
               <Text style={s.actionBtnText}>Confirm Dumpster</Text>
@@ -800,36 +916,201 @@ export default function JobDetailScreen() {
         </View>
       )}
 
-      {/* Dumpster Confirmation Modal */}
+      {/* Dumpster / Asset Picker Modal — Phase 11A */}
       <Modal visible={showDumpsterModal} transparent animationType="slide">
         <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.5)' }}>
-          <View style={{ backgroundColor: colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40 }}>
+          <View style={{ backgroundColor: colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40, maxHeight: '85%' }}>
             <Text style={{ fontSize: 18, fontWeight: '800', color: colors.text, marginBottom: 4 }}>
               {job.job_type === 'delivery' ? 'Confirm Drop-Off' : job.job_type === 'exchange' ? 'Confirm Exchange' : 'Confirm Pickup'}
             </Text>
-            <Text style={{ fontSize: 14, color: colors.textSecondary, marginBottom: 16 }}>
-              {job.job_type === 'delivery' ? 'Enter the dumpster number you are dropping off' : 'Enter the dumpster number you are picking up'}
+            <Text style={{ fontSize: 13, color: colors.textSecondary, marginBottom: 12 }}>
+              Pick the dumpster on this job. Required to complete.
             </Text>
-            <View style={{ backgroundColor: colors.surfaceHover, borderRadius: 14, padding: 14, borderWidth: 1, borderColor: colors.border, marginBottom: 20 }}>
-              <Text style={{ fontSize: 11, fontWeight: '600', color: colors.textSecondary, marginBottom: 4 }}>DUMPSTER NUMBER</Text>
-              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                <Text style={{ fontSize: 24, fontWeight: '800', color: colors.text, flex: 1 }}>{dumpsterPin || '—'}</Text>
-                <TouchableOpacity onPress={() => {
-                  Alert.prompt ? Alert.prompt('Dumpster #', 'Enter identifier (e.g. D-2005)', (text: string) => setDumpsterPin(text), 'plain-text', dumpsterPin) :
-                  Alert.alert('Enter Dumpster #', 'Type the identifier on the Expo keyboard below', [{ text: 'OK' }]);
-                }}>
-                  <Ionicons name="pencil" size={20} color={colors.accent} />
+
+            {/* Expected on-site hint for pickup/exchange */}
+            {job.expected_on_site_asset && (
+              <View style={{ backgroundColor: colors.accentSoft, borderRadius: 12, padding: 10, marginBottom: 12 }}>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: colors.accent, marginBottom: 2 }}>
+                  EXPECTED ON-SITE
+                </Text>
+                <Text style={{ fontSize: 13, color: colors.text }}>
+                  {job.expected_on_site_asset.identifier}
+                  {job.expected_on_site_asset.subtype ? ` (${job.expected_on_site_asset.subtype})` : ''}
+                </Text>
+              </View>
+            )}
+
+            {/* Search */}
+            <TextInput
+              value={assetSearch}
+              onChangeText={setAssetSearch}
+              placeholder="Search by identifier…"
+              placeholderTextColor={colors.textSecondary}
+              style={{
+                backgroundColor: colors.surfaceHover,
+                borderRadius: 12,
+                paddingHorizontal: 14,
+                paddingVertical: 12,
+                fontSize: 15,
+                color: colors.text,
+                borderWidth: 1,
+                borderColor: colors.border,
+                marginBottom: 12,
+              }}
+            />
+
+            {/* Asset list */}
+            <ScrollView style={{ maxHeight: 320 }}>
+              {loadingAssets ? (
+                <View style={{ paddingVertical: 32, alignItems: 'center' }}>
+                  <ActivityIndicator color={colors.accent} />
+                </View>
+              ) : assetOptions.length === 0 ? (
+                <View style={{ paddingVertical: 32, alignItems: 'center' }}>
+                  <Text style={{ color: colors.textSecondary, fontSize: 13 }}>
+                    No assets available
+                  </Text>
+                </View>
+              ) : (
+                assetOptions
+                  .filter((a) =>
+                    assetSearch
+                      ? (a.identifier || '')
+                          .toLowerCase()
+                          .includes(assetSearch.toLowerCase())
+                      : true,
+                  )
+                  .map((a) => {
+                    const isSelected = selectedAssetId === a.id;
+                    const isInUse = a.status !== 'available';
+                    return (
+                      <TouchableOpacity
+                        key={a.id}
+                        onPress={() => {
+                          setSelectedAssetId(a.id);
+                          setAssetConflict(null);
+                          setAssetOverrideAck(false);
+                        }}
+                        style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          backgroundColor: isSelected ? colors.accentSoft : colors.surfaceHover,
+                          borderRadius: 12,
+                          padding: 12,
+                          marginBottom: 8,
+                          borderWidth: 1,
+                          borderColor: isSelected ? colors.accent : colors.border,
+                        }}
+                      >
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ fontSize: 15, fontWeight: '700', color: colors.text }}>
+                            {a.identifier}
+                            {a.subtype ? (
+                              <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textSecondary }}>
+                                {'  '}
+                                {a.subtype}
+                              </Text>
+                            ) : null}
+                          </Text>
+                        </View>
+                        <View
+                          style={{
+                            paddingHorizontal: 8,
+                            paddingVertical: 3,
+                            borderRadius: 6,
+                            backgroundColor: isInUse ? '#F59E0B22' : '#22C55E22',
+                          }}
+                        >
+                          <Text
+                            style={{
+                              fontSize: 10,
+                              fontWeight: '700',
+                              color: isInUse ? '#F59E0B' : '#22C55E',
+                              textTransform: 'uppercase',
+                            }}
+                          >
+                            {isInUse ? 'In Use' : 'Available'}
+                          </Text>
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })
+              )}
+            </ScrollView>
+
+            {/* Conflict warning */}
+            {assetConflict && (
+              <View
+                style={{
+                  backgroundColor: '#F59E0B22',
+                  borderRadius: 12,
+                  padding: 12,
+                  marginTop: 12,
+                  borderWidth: 1,
+                  borderColor: '#F59E0B',
+                }}
+              >
+                <Text style={{ fontSize: 12, fontWeight: '700', color: '#F59E0B', marginBottom: 4 }}>
+                  ASSET CONFLICT
+                </Text>
+                <Text style={{ fontSize: 13, color: colors.text, marginBottom: 8 }}>
+                  {assetConflict}
+                </Text>
+                <TouchableOpacity
+                  onPress={() => setAssetOverrideAck(true)}
+                  style={{
+                    backgroundColor: assetOverrideAck ? '#F59E0B' : 'transparent',
+                    borderWidth: 1,
+                    borderColor: '#F59E0B',
+                    borderRadius: 10,
+                    paddingVertical: 8,
+                    alignItems: 'center',
+                  }}
+                >
+                  <Text style={{ fontSize: 12, fontWeight: '700', color: assetOverrideAck ? '#000' : '#F59E0B' }}>
+                    {assetOverrideAck ? 'Override Ready — tap Confirm' : 'Override & Continue'}
+                  </Text>
                 </TouchableOpacity>
               </View>
-            </View>
-            <View style={{ flexDirection: 'row', gap: 12 }}>
-              <TouchableOpacity onPress={() => setShowDumpsterModal(false)}
-                style={{ flex: 1, paddingVertical: 16, borderRadius: 20, borderWidth: 1, borderColor: colors.border, alignItems: 'center' }}>
+            )}
+
+            <View style={{ flexDirection: 'row', gap: 12, marginTop: 16 }}>
+              <TouchableOpacity
+                onPress={() => setShowDumpsterModal(false)}
+                disabled={savingAsset}
+                style={{
+                  flex: 1,
+                  paddingVertical: 16,
+                  borderRadius: 20,
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                  alignItems: 'center',
+                  opacity: savingAsset ? 0.5 : 1,
+                }}
+              >
                 <Text style={{ fontSize: 15, fontWeight: '600', color: colors.text }}>Cancel</Text>
               </TouchableOpacity>
-              <TouchableOpacity onPress={handleDumpsterConfirm}
-                style={{ flex: 1, paddingVertical: 16, borderRadius: 20, backgroundColor: colors.accent, alignItems: 'center' }}>
-                <Text style={{ fontSize: 15, fontWeight: '700', color: '#000' }}>Confirm</Text>
+              <TouchableOpacity
+                onPress={handleAssetSave}
+                disabled={!selectedAssetId || savingAsset || (assetConflict && !assetOverrideAck) ? true : false}
+                style={{
+                  flex: 1,
+                  paddingVertical: 16,
+                  borderRadius: 20,
+                  backgroundColor: colors.accent,
+                  alignItems: 'center',
+                  opacity:
+                    !selectedAssetId || savingAsset || (assetConflict && !assetOverrideAck)
+                      ? 0.5
+                      : 1,
+                }}
+              >
+                {savingAsset ? (
+                  <ActivityIndicator color="#000" />
+                ) : (
+                  <Text style={{ fontSize: 15, fontWeight: '700', color: '#000' }}>Confirm</Text>
+                )}
               </TouchableOpacity>
             </View>
           </View>
