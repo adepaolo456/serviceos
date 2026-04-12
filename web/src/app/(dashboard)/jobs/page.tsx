@@ -29,6 +29,7 @@ import Dropdown from "@/components/dropdown";
 import { useToast } from "@/components/toast";
 import { CreditCard, FileWarning, MapPinOff, Package } from "lucide-react";
 import { FEATURE_REGISTRY } from "@/lib/feature-registry";
+import { useLifecycleSync, useVisibilityRefresh } from "@/lib/lifecycle-sync";
 import { getBlockedReason, isJobBlocked } from "@/lib/blocked-job";
 
 /* ─── Types ─── */
@@ -305,6 +306,12 @@ export default function JobsPage() {
   }, [page, statusFilter, dateRange]);
 
   useEffect(() => { fetchJobs(); }, [fetchJobs]);
+
+  // Phase 9: lifecycle mutations elsewhere (rentals lifecycle page,
+  // other tabs) should invalidate this list so a job that moved off
+  // today's view disappears immediately — no manual refresh.
+  useLifecycleSync(() => { fetchJobs(); });
+  useVisibilityRefresh(() => { fetchJobs(); });
 
   useEffect(() => {
     api.get<StatusCount[]>("/analytics/jobs-by-status").then(setStatusCounts).catch(() => {});

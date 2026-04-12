@@ -25,6 +25,7 @@ import { useToast } from "@/components/toast";
 import QuickView, { QuickViewSkeleton } from "@/components/quick-view";
 import Dropdown from "@/components/dropdown";
 import { FEATURE_REGISTRY } from "@/lib/feature-registry";
+import { useLifecycleSync, useVisibilityRefresh } from "@/lib/lifecycle-sync";
 
 /* ---- Types ---- */
 
@@ -309,6 +310,21 @@ export default function DispatchPage() {
 
   useEffect(() => { fetchBoard(); fetchYardQueue(); fetchRescheduleQueue(); }, [fetchBoard, fetchYardQueue, fetchRescheduleQueue]);
   useEffect(() => { const i = setInterval(() => { fetchBoard(true); fetchYardQueue(); fetchRescheduleQueue(); }, 30000); return () => clearInterval(i); }, [fetchBoard, fetchYardQueue, fetchRescheduleQueue]);
+
+  // Phase 9: refetch quietly when a rentals/lifecycle mutation fires
+  // a sync signal (same tab or cross-tab via BroadcastChannel) and
+  // when the tab regains visibility/focus after being backgrounded.
+  // Silent mode keeps scroll position intact.
+  useLifecycleSync(() => {
+    fetchBoard(true);
+    fetchYardQueue();
+    fetchRescheduleQueue();
+  });
+  useVisibilityRefresh(() => {
+    fetchBoard(true);
+    fetchYardQueue();
+    fetchRescheduleQueue();
+  });
 
   const handleOptimize = async () => {
     if (!board) return;

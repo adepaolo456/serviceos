@@ -8,6 +8,7 @@ import { api } from "@/lib/api";
 import { formatCurrency } from "@/lib/utils";
 import { FEATURE_REGISTRY } from "@/lib/feature-registry";
 import { deriveDisplayStatus, DISPLAY_STATUS_LABELS, displayStatusColor } from "@/lib/job-status";
+import { broadcastLifecycleChange } from "@/lib/lifecycle-sync";
 
 /* ── Types (from /rental-chains/:id/lifecycle response) ── */
 
@@ -168,6 +169,7 @@ export default function RentalLifecyclePage({ params }: { params: Promise<{ id: 
       await api.patch(`/rental-chains/${id}`, { expected_pickup_date: pickupDate });
       setPickupModalOpen(false);
       setPickupDate("");
+      broadcastLifecycleChange(id);
       await reload();
     } catch (err: unknown) {
       setPickupError(err instanceof Error ? err.message : (FEATURE_REGISTRY.lifecycle_action_error?.label ?? "Failed to update"));
@@ -191,6 +193,7 @@ export default function RentalLifecyclePage({ params }: { params: Promise<{ id: 
       });
       setDeliveryModalOpen(false);
       setDeliveryDate("");
+      broadcastLifecycleChange(id);
       await reload();
     } catch (err: unknown) {
       setDeliveryError(err instanceof Error ? err.message : (FEATURE_REGISTRY.lifecycle_update_error?.label ?? "Failed to update lifecycle"));
@@ -220,6 +223,7 @@ export default function RentalLifecyclePage({ params }: { params: Promise<{ id: 
       setEditExchangeLinkId(null);
       setEditExchangeDate("");
       setEditExchangeOverride("");
+      broadcastLifecycleChange(id);
       await reload();
     } catch (err: unknown) {
       setEditExchangeError(err instanceof Error ? err.message : (FEATURE_REGISTRY.lifecycle_update_error?.label ?? "Failed to update lifecycle"));
@@ -252,6 +256,7 @@ export default function RentalLifecyclePage({ params }: { params: Promise<{ id: 
       setExchangeDate("");
       setExchangeSize("");
       setExchangeOverridePickup("");
+      broadcastLifecycleChange(id);
       await reload();
     } catch (err: unknown) {
       setExchangeError(err instanceof Error ? err.message : (FEATURE_REGISTRY.lifecycle_update_error?.label ?? "Failed to schedule exchange"));
