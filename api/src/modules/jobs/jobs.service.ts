@@ -17,6 +17,7 @@ import { BillingIssue } from '../billing/entities/billing-issue.entity';
 import { CreditMemo } from '../billing/entities/credit-memo.entity';
 import { RentalChain } from '../rental-chains/entities/rental-chain.entity';
 import { TaskChainLink } from '../rental-chains/entities/task-chain-link.entity';
+import { DumpTicket } from '../dump-locations/entities/dump-ticket.entity';
 import { BillingService } from '../billing/billing.service';
 import { BillingIssueDetectorService } from '../billing/services/billing-issue-detector.service';
 import { RentalChainsService } from '../rental-chains/rental-chains.service';
@@ -73,6 +74,8 @@ export class JobsService {
     private rentalChainRepo: Repository<RentalChain>,
     @InjectRepository(TaskChainLink)
     private taskChainLinkRepo: Repository<TaskChainLink>,
+    @InjectRepository(DumpTicket)
+    private dumpTicketRepo: Repository<DumpTicket>,
     @InjectRepository(JobPricingAudit)
     private pricingAuditRepo: Repository<JobPricingAudit>,
     private billingService: BillingService,
@@ -753,6 +756,32 @@ export class JobsService {
       throw new BadRequestException(
         'asset_required: An asset must be assigned before completing this job',
       );
+    }
+
+    // Phase 11B — dump slip required for pickup/exchange completion.
+    // Runs AFTER the asset gate so the error ordering matches the
+    // driver UX: first pick the dumpster, then record the dump slip,
+    // then mark complete. Uses the existing `dump_tickets` table
+    // (no parallel model, no duplicated audit). Voided tickets do
+    // NOT satisfy the gate — only an active (non-voided, non-draft)
+    // submitted ticket counts.
+    if (
+      dto.status === 'completed' &&
+      (job.job_type === 'pickup' ||
+        job.job_type === 'exchange' ||
+        job.job_type === 'removal')
+    ) {
+      const ticket = await this.dumpTicketRepo
+        .createQueryBuilder('t')
+        .where('t.job_id = :jobId', { jobId: job.id })
+        .andWhere('t.tenant_id = :tenantId', { tenantId })
+        .andWhere('t.voided_at IS NULL')
+        .getOne();
+      if (!ticket) {
+        throw new BadRequestException(
+          'dump_slip_required: A dump slip is required before completing this job',
+        );
+      }
     }
 
     job.status = dto.status;

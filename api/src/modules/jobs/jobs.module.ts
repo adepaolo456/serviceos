@@ -14,6 +14,7 @@ import { CreditMemo } from '../billing/entities/credit-memo.entity';
 import { Tenant } from '../tenants/entities/tenant.entity';
 import { RentalChain } from '../rental-chains/entities/rental-chain.entity';
 import { TaskChainLink } from '../rental-chains/entities/task-chain-link.entity';
+import { DumpTicket } from '../dump-locations/entities/dump-ticket.entity';
 import { BillingModule } from '../billing/billing.module';
 import { PricingModule } from '../pricing/pricing.module';
 import { RentalChainsModule } from '../rental-chains/rental-chains.module';
@@ -27,7 +28,7 @@ import { JobsController } from './jobs.controller';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Job, JobPricingAudit, Asset, PricingRule, ClientPricingOverride, Notification, Customer, Route, Invoice, BillingIssue, CreditMemo, Tenant, RentalChain, TaskChainLink]),
+    TypeOrmModule.forFeature([Job, JobPricingAudit, Asset, PricingRule, ClientPricingOverride, Notification, Customer, Route, Invoice, BillingIssue, CreditMemo, Tenant, RentalChain, TaskChainLink, DumpTicket]),
     BillingModule,
     PricingModule,
     RentalChainsModule,

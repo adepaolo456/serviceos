@@ -27,6 +27,7 @@ import {
   ChevronUp,
   ExternalLink,
   AlertTriangle,
+  Plus,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import Dropdown from "@/components/dropdown";
@@ -266,6 +267,16 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
   // short, correct list.
   const [assetEditShowAll, setAssetEditShowAll] = useState(false);
   const [assetEditMismatchAck, setAssetEditMismatchAck] = useState(false);
+  // Phase 11B — Add Dump Slip modal state (office-side create, reuses
+  // existing POST /jobs/:id/dump-slip endpoint; no parallel logic).
+  const [addDumpSlipOpen, setAddDumpSlipOpen] = useState(false);
+  const [dumpLocations, setDumpLocations] = useState<Array<{ id: string; name: string }>>([]);
+  const [dumpSlipLocationId, setDumpSlipLocationId] = useState("");
+  const [dumpSlipTicketNumber, setDumpSlipTicketNumber] = useState("");
+  const [dumpSlipWeight, setDumpSlipWeight] = useState("");
+  const [dumpSlipWasteType, setDumpSlipWasteType] = useState("cnd");
+  const [dumpSlipSaving, setDumpSlipSaving] = useState(false);
+  const [dumpSlipError, setDumpSlipError] = useState("");
 
   const fetchJob = async () => {
     try {
@@ -311,6 +322,52 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
       setAssetOptions([]);
     } finally {
       setAssetOptionsLoading(false);
+    }
+  };
+
+  // Phase 11B — office-side Add Dump Slip. Lazy-loads dump locations
+  // on first open, then POSTs to the existing /jobs/:id/dump-slip
+  // endpoint so the backend's idempotency guard + syncJobCost +
+  // draft-invoice logic all run unchanged.
+  const openAddDumpSlip = async () => {
+    setAddDumpSlipOpen(true);
+    setDumpSlipLocationId("");
+    setDumpSlipTicketNumber("");
+    setDumpSlipWeight("");
+    setDumpSlipWasteType("cnd");
+    setDumpSlipError("");
+    if (dumpLocations.length === 0) {
+      try {
+        const res = await api.get<Array<{ id: string; name: string }> | { data: Array<{ id: string; name: string }> }>(`/dump-locations`);
+        const list = Array.isArray(res) ? res : (res as { data: Array<{ id: string; name: string }> }).data ?? [];
+        setDumpLocations(list);
+      } catch {
+        /* handled by empty state in picker */
+      }
+    }
+  };
+
+  const handleAddDumpSlipSave = async () => {
+    if (!dumpSlipLocationId) { setDumpSlipError("Disposal site is required"); return; }
+    if (!dumpSlipTicketNumber.trim()) { setDumpSlipError("Ticket number is required"); return; }
+    const weight = parseFloat(dumpSlipWeight);
+    if (!Number.isFinite(weight) || weight < 0) { setDumpSlipError("Weight must be a non-negative number"); return; }
+    setDumpSlipSaving(true);
+    setDumpSlipError("");
+    try {
+      await api.post(`/jobs/${id}/dump-slip`, {
+        dumpLocationId: dumpSlipLocationId,
+        ticketNumber: dumpSlipTicketNumber.trim(),
+        wasteType: dumpSlipWasteType,
+        weightTons: weight,
+      });
+      toast("success", FEATURE_REGISTRY.dump_slip_updated?.label ?? "Dump slip updated");
+      setAddDumpSlipOpen(false);
+      await Promise.all([fetchJob(), fetchDumpTickets()]);
+    } catch (err: unknown) {
+      setDumpSlipError(err instanceof Error ? err.message : "Failed to save dump slip");
+    } finally {
+      setDumpSlipSaving(false);
     }
   };
 
@@ -1289,6 +1346,31 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
             </Card>
           )}
 
+          {/* Phase 11B — empty state for pickup/exchange jobs missing a dump slip */}
+          {dumpTickets.length === 0 &&
+            (job.job_type === "pickup" || job.job_type === "exchange" || job.job_type === "removal") && (
+            <Card
+              title={FEATURE_REGISTRY.dump_slip?.label ?? "Dump Slip"}
+              icon={FileText}
+            >
+              <div className="flex items-center justify-between">
+                <p className="text-xs text-[var(--t-text-muted)]">
+                  {FEATURE_REGISTRY.no_dump_slip_recorded?.label ?? "No dump slip recorded"}
+                </p>
+                <button
+                  onClick={openAddDumpSlip}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-[var(--t-border)] bg-[var(--t-bg-card)] px-3 py-1.5 text-[11px] font-semibold text-[var(--t-accent)] hover:bg-[var(--t-bg-card-hover)] transition-colors"
+                >
+                  <Plus className="h-3 w-3" />
+                  {FEATURE_REGISTRY.add_dump_slip?.label ?? "Add Dump Slip"}
+                </button>
+              </div>
+              <p className="mt-2 text-[11px] text-[var(--t-text-muted)]">
+                Dump slips are required to complete pickup and exchange jobs.
+              </p>
+            </Card>
+          )}
+
           {/* Dump Tickets */}
           {dumpTickets.length > 0 && (
             <Card title={`Dump Tickets (${dumpTickets.length})`} icon={FileText}>
@@ -1856,6 +1938,92 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
         </div>
         );
       })()}
+
+      {/* --- Phase 11B: Add Dump Slip Modal --- */}
+      {addDumpSlipOpen && job && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setAddDumpSlipOpen(false)} />
+          <div className="relative rounded-[20px] p-6 w-full max-w-md shadow-2xl" style={{ backgroundColor: "var(--t-bg-secondary)", border: "1px solid var(--t-border)" }}>
+            <h3 className="text-base font-semibold mb-1" style={{ color: "var(--t-text-primary)" }}>
+              {FEATURE_REGISTRY.add_dump_slip?.label ?? "Add Dump Slip"}
+            </h3>
+            <p className="text-xs mb-4" style={{ color: "var(--t-text-muted)" }}>
+              Records disposal for this job. Cost sync, audit trail, and invoice creation run automatically.
+            </p>
+            <label className="text-[10px] font-semibold uppercase tracking-wider text-[var(--t-text-muted)] block mb-1">
+              Disposal Site
+            </label>
+            <select
+              value={dumpSlipLocationId}
+              onChange={(e) => { setDumpSlipLocationId(e.target.value); setDumpSlipError(""); }}
+              className="w-full rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-3 py-2 text-sm text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)] mb-3"
+            >
+              <option value="" disabled>Select a disposal site…</option>
+              {dumpLocations.map((loc) => (
+                <option key={loc.id} value={loc.id}>{loc.name}</option>
+              ))}
+            </select>
+
+            <label className="text-[10px] font-semibold uppercase tracking-wider text-[var(--t-text-muted)] block mb-1">
+              Ticket Number
+            </label>
+            <input
+              type="text"
+              value={dumpSlipTicketNumber}
+              onChange={(e) => { setDumpSlipTicketNumber(e.target.value); setDumpSlipError(""); }}
+              placeholder="e.g. T-12345"
+              className="w-full rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-3 py-2 text-sm text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)] mb-3"
+            />
+
+            <label className="text-[10px] font-semibold uppercase tracking-wider text-[var(--t-text-muted)] block mb-1">
+              Weight (tons)
+            </label>
+            <input
+              type="number"
+              step="0.01"
+              min="0"
+              value={dumpSlipWeight}
+              onChange={(e) => { setDumpSlipWeight(e.target.value); setDumpSlipError(""); }}
+              placeholder="0.00"
+              className="w-full rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-3 py-2 text-sm text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)] mb-3"
+            />
+
+            <label className="text-[10px] font-semibold uppercase tracking-wider text-[var(--t-text-muted)] block mb-1">
+              Waste Type
+            </label>
+            <select
+              value={dumpSlipWasteType}
+              onChange={(e) => setDumpSlipWasteType(e.target.value)}
+              className="w-full rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-3 py-2 text-sm text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)] mb-3"
+            >
+              <option value="cnd">Construction & Demolition</option>
+              <option value="msw">Municipal Solid Waste</option>
+              <option value="clean_fill">Clean Fill</option>
+              <option value="concrete">Concrete</option>
+              <option value="asphalt">Asphalt</option>
+              <option value="roofing">Roofing</option>
+              <option value="yard_waste">Yard Waste</option>
+            </select>
+
+            {dumpSlipError && (
+              <p className="text-xs text-[var(--t-error)] mb-3">{dumpSlipError}</p>
+            )}
+
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setAddDumpSlipOpen(false)} className="rounded-full px-4 py-2 text-xs font-medium text-[var(--t-text-muted)]">
+                Cancel
+              </button>
+              <button
+                onClick={handleAddDumpSlipSave}
+                disabled={dumpSlipSaving || !dumpSlipLocationId || !dumpSlipTicketNumber.trim() || !dumpSlipWeight}
+                className="rounded-full bg-[var(--t-accent)] px-4 py-2 text-xs font-semibold text-[var(--t-accent-on-accent)] disabled:opacity-40 hover:opacity-90 transition-opacity"
+              >
+                {dumpSlipSaving ? "Saving…" : "Save Dump Slip"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* --- Override Status Modal --- */}
       {overrideOpen && job && (
