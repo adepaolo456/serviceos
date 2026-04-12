@@ -113,6 +113,26 @@ export class JobsController {
     return this.jobsService.findOne(tenantId, id);
   }
 
+  /**
+   * Phase 15 — Connected Job Lifecycle (read-only).
+   *
+   * Returns the full rental-chain context for this job: chain
+   * summary, all sibling jobs ordered by scheduled_date ASC, and
+   * active alerts (chain-level + per-job) inlined. Consumed
+   * exclusively by the Job Detail page's Connected Job Lifecycle
+   * panel. Kept as a dedicated endpoint (rather than inlining on
+   * GET /jobs/:id) so the base job fetch stays lean — spec rule:
+   * "NOT bloat the base job detail fetch".
+   */
+  @Get(':id/lifecycle-context')
+  @ApiOperation({ summary: 'Get the full rental chain lifecycle context for a job (Phase 15)' })
+  getLifecycleContext(
+    @TenantId() tenantId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.jobsService.getLifecycleContext(tenantId, id);
+  }
+
   @Patch(':id')
   @ApiOperation({ summary: 'Update a job' })
   update(

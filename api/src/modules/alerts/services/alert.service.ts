@@ -11,6 +11,7 @@ import {
   AlertSummary,
   AlertSeverity,
   AlertType,
+  AlertEntityType,
 } from '../dto/alert.dto';
 import { AlertDetectorService } from './alert-detector.service';
 
@@ -105,6 +106,66 @@ export class AlertService {
       by_type,
       last_detected_at: this.detector.getLastDetectedAt(tenantId),
     };
+  }
+
+  /**
+   * Phase 15 — fetch all ACTIVE alerts for a specific set of
+   * (entity_type, entity_id) tuples, narrowly scoped. Used by the
+   * Connected Job Lifecycle panel to inline alert indicators for
+   * every job in a rental chain plus the chain itself in a single
+   * round trip.
+   *
+   * Does NOT trigger the detector cooldown — Phase 15 is a
+   * read-only surface and the /alerts page is still the canonical
+   * trigger for detection. This method only reads the existing
+   * stored state.
+   *
+   * Empty input → empty result (no wildcard query). An empty
+   * `entity_ids` array on one of the pairs is silently skipped so
+   * callers can pass the full shape without pre-filtering.
+   */
+  async findActiveForEntities(
+    tenantId: string,
+    pairs: Array<{ entity_type: AlertEntityType; entity_ids: string[] }>,
+  ): Promise<Alert[]> {
+    if (!pairs || pairs.length === 0) return [];
+
+    const qb = this.alertRepo
+      .createQueryBuilder('a')
+      .where('a.tenant_id = :tenantId', { tenantId })
+      .andWhere('a.status = :active', { active: 'active' });
+
+    // Build the (entity_type, entity_id IN (...)) OR (...) clause.
+    // Each non-empty pair contributes one sub-clause; empty pairs
+    // are skipped. If every pair was empty, short-circuit.
+    const nonEmpty = pairs.filter((p) => p.entity_ids && p.entity_ids.length > 0);
+    if (nonEmpty.length === 0) return [];
+
+    qb.andWhere(
+      (qbInner) => {
+        const orClauses: string[] = [];
+        const params: Record<string, unknown> = {};
+        nonEmpty.forEach((pair, idx) => {
+          const etKey = `et_${idx}`;
+          const idsKey = `ids_${idx}`;
+          orClauses.push(
+            `(a.entity_type = :${etKey} AND a.entity_id IN (:...${idsKey}))`,
+          );
+          params[etKey] = pair.entity_type;
+          params[idsKey] = pair.entity_ids;
+        });
+        qbInner.where(orClauses.join(' OR '), params);
+        return '';
+      },
+    );
+
+    return qb
+      .orderBy(
+        "CASE a.severity WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END",
+        'ASC',
+      )
+      .addOrderBy('a.created_at', 'DESC')
+      .getMany();
   }
 
   async getById(tenantId: string, id: string): Promise<Alert> {
