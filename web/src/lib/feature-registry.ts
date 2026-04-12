@@ -1576,6 +1576,24 @@ export const FEATURE_REGISTRY: Record<string, FeatureDescription> = {
     keywords: ["no change", "exchange"],
   },
 
+  // ── Phase B2 — navigation context preservation ──
+  // Rendered on the invoice detail page when the user arrived
+  // there from a customer detail page (via ?returnTo= query
+  // param). Preserves navigation context so clicking "back"
+  // returns to the customer instead of the global invoices list.
+  invoice_detail_back_to_customer: {
+    id: "invoice_detail_back_to_customer",
+    label: "Back to Customer",
+    category: "billing",
+    shortDescription: "Context-aware back button on the invoice detail page that returns to the customer detail page when the user navigated from there.",
+    guideDescription: "",
+    routeOrSurface: "/invoices",
+    tenantOverrideKey: "invoice_detail_back_to_customer",
+    isUserFacing: true,
+    isGuideEligible: false,
+    keywords: ["back", "customer", "navigation"],
+  },
+
   // ── Pickup modal header alias for Phase 16.1 ──
   // The new shared modal uses labelKey(jobType, "modal") to
   // pick the header. For pickup we reuse the existing

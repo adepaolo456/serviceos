@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo, useRef, type FormEvent } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   Plus,
   FileText,
@@ -167,12 +167,41 @@ function getDateRange(range: string): { dateFrom?: string; dateTo?: string } {
 
 /* --- Main Page --- */
 
+// Phase B2 — URL params that the invoices page honors on mount
+// to drive the initial tab state. The KPI cards on the home
+// dashboard (AR Outstanding, Overdue Invoices) link here with
+// these values. The "outstanding" composite tab is a real tab
+// key internally (line ~190 does a special two-fetch merge of
+// open + overdue) even though it isn't in TAB_LABELS — it is a
+// KPI-driven tab. Anything outside this allowlist falls through
+// to "all" silently so malformed URLs don't crash the page.
+const STATUS_TAB_ALLOWLIST = new Set([
+  "all",
+  "draft",
+  "open",
+  "sent",
+  "partial",
+  "paid",
+  "overdue",
+  "voided",
+  "outstanding",
+]);
+
 export default function InvoicesPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { toast } = useToast();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [total, setTotal] = useState(0);
-  const [tab, setTab] = useState("all");
+  // Phase B2 — initialize tab state from the ?status= URL param
+  // if present and in the allowlist. Fixes the AR Outstanding /
+  // Overdue Invoices tiles on the home dashboard which used to
+  // silently drop the query string.
+  const initialTab = (() => {
+    const fromUrl = searchParams.get("status");
+    return fromUrl && STATUS_TAB_ALLOWLIST.has(fromUrl) ? fromUrl : "all";
+  })();
+  const [tab, setTab] = useState(initialTab);
   const [dateRange, setDateRange] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState("date_desc");

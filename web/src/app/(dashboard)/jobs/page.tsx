@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo, useRef, type FormEvent } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useBooking } from "@/components/booking-provider";
 import {
   Plus,
@@ -186,13 +186,47 @@ function getDateRange(range: string): { dateFrom?: string; dateTo?: string } {
 
 /* ─── Main Page ─── */
 
+// Phase B2 — statusFilter values the jobs page honors on mount
+// from the ?status= URL param. Sourced directly from the values
+// the existing statusFilter state already supports internally
+// (see MULTI_STATUS, DISPLAY_TO_STORED, SECONDARY_STATUSES, and
+// the special "overdue" + "blocked" branches in fetchJobs). Any
+// value outside this allowlist falls through to "all" silently.
+const JOBS_STATUS_ALLOWLIST = new Set([
+  "all",
+  // Display keys used by the KPI tiles
+  "unassigned",
+  "assigned",
+  "arrived",
+  "overdue",
+  "blocked",
+  "pending_payment",
+  // Bare stored values (DISPLAY_TO_STORED fall-through path)
+  "pending",
+  "confirmed",
+  "dispatched",
+  "in_progress",
+  "en_route",
+  "completed",
+  "cancelled",
+]);
+
 export default function JobsPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { openWizard } = useBooking();
   const { toast } = useToast();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [total, setTotal] = useState(0);
-  const [statusFilter, setStatusFilter] = useState("all");
+  // Phase B2 — initialize statusFilter from the ?status= URL
+  // param if it's in the allowlist. Fixes the "Completed" KPI
+  // card on the home dashboard which used to land on the mixed
+  // jobs+lifecycles page with no filter applied.
+  const initialStatusFilter = (() => {
+    const fromUrl = searchParams.get("status");
+    return fromUrl && JOBS_STATUS_ALLOWLIST.has(fromUrl) ? fromUrl : "all";
+  })();
+  const [statusFilter, setStatusFilter] = useState(initialStatusFilter);
   // Blocked drill-down sub-filter. Only meaningful when statusFilter === "blocked".
   // Operates on the already-fetched blocked slice — does NOT re-fetch.
   const [blockedSubview, setBlockedSubview] = useState<

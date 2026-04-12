@@ -397,10 +397,17 @@ export default function DashboardPage() {
           <p style={{ fontSize: 12, color: "var(--t-text-muted)", marginTop: 10 }}>this month</p>
         </Link>
 
-        {/* Secondary metrics — 3 cards in remaining 3 cols */}
+        {/* Secondary metrics — 3 cards in remaining 3 cols.
+            Phase B2 — "Completed" now deep-links to the jobs
+            page with the "completed" statusFilter applied via
+            ?status=. The jobs page reads this on mount so the
+            user lands on a filtered view matching the KPI they
+            clicked. "Jobs This Month" and "Active Rentals" stay
+            on the unfiltered /jobs page for now — they were not
+            reported as broken in the Phase A audit. */}
         {[
           { label: "Jobs This Month", value: jobsThisMonth, href: "/jobs" },
-          { label: "Completed", value: completedJobs, href: "/jobs" },
+          { label: "Completed", value: completedJobs, href: "/jobs?status=completed" },
           { label: "Active Rentals", value: activeRentals, href: "/jobs" },
         ].map((kpi) => (
           <Link
