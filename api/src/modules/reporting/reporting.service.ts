@@ -2,11 +2,14 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import { Invoice } from '../billing/entities/invoice.entity';
+import { JobCost } from '../billing/entities/job-cost.entity';
 import { Job } from '../jobs/entities/job.entity';
 import { DumpTicket } from '../dump-locations/entities/dump-ticket.entity';
 import { Asset } from '../assets/entities/asset.entity';
 import { Customer } from '../customers/entities/customer.entity';
 import { User } from '../auth/entities/user.entity';
+import { RentalChain } from '../rental-chains/entities/rental-chain.entity';
+import { TaskChainLink } from '../rental-chains/entities/task-chain-link.entity';
 
 const CORRECTION_CUTOFF = '2026-04-02T00:00:00Z';
 function classifyRecord(createdAt: string | Date): 'legacy' | 'post-correction' {
@@ -22,11 +25,14 @@ const REVENUE_STATUS_SQL = `i.status IN ('open', 'paid', 'partial')`;
 export class ReportingService {
   constructor(
     @InjectRepository(Invoice) private invoiceRepo: Repository<Invoice>,
+    @InjectRepository(JobCost) private jobCostRepo: Repository<JobCost>,
     @InjectRepository(Job) private jobRepo: Repository<Job>,
     @InjectRepository(DumpTicket) private ticketRepo: Repository<DumpTicket>,
     @InjectRepository(Asset) private assetRepo: Repository<Asset>,
     @InjectRepository(Customer) private customerRepo: Repository<Customer>,
     @InjectRepository(User) private userRepo: Repository<User>,
+    @InjectRepository(RentalChain) private chainRepo: Repository<RentalChain>,
+    @InjectRepository(TaskChainLink) private linkRepo: Repository<TaskChainLink>,
     private dataSource: DataSource,
   ) {}
 
@@ -944,5 +950,388 @@ export class ReportingService {
       critical: { inconsistencies },
       actionRequired: { needsReschedule, overdueInvoices, overdueRentals },
     };
+  }
+
+  // ─────────────────────────────────────────────────────────
+  // PHASE 13 — Lifecycle KPI report
+  // ─────────────────────────────────────────────────────────
+
+  /**
+   * Lifecycle-aware KPI report. All financial math mirrors the
+   * single source of truth already used by
+   * `RentalChainsService.getFinancials`:
+   *   - revenue = SUM(invoices.total) WHERE invoices.rental_chain_id
+   *     matches AND voided_at IS NULL
+   *   - cost = SUM(job_costs.amount) via task_chain_links join
+   *   - profit = revenue - cost (never stored)
+   *
+   * Date-basis choices (explicit, so future devs don't mix them):
+   *   - Chain window filter: `rental_chains.drop_off_date` between
+   *     start/end. The window is when the rental STARTED.
+   *   - Trend grouping: same `drop_off_date` basis, bucketed by
+   *     day / week / month. Gaps are filled with zero rows so the
+   *     frontend chart is continuous.
+   *   - Completed count: chains whose `drop_off_date` falls in the
+   *     window AND `status = 'completed'`.
+   *   - Active / overdue: point-in-time on the returned chain set
+   *     (ignores the window for existence — so if a chain dropped
+   *     off inside the window and is still active today, it counts).
+   *   - Average rental duration: completed chains in the window,
+   *     `actual_pickup_date - drop_off_date` in days.
+   *
+   * Revenue date-basis note: existing `/reporting/revenue` uses
+   * `invoices.created_at` which is NOT necessarily aligned with the
+   * chain's `drop_off_date`. For lifecycle reporting we intentionally
+   * window by `drop_off_date` (the rental-level basis) rather than
+   * invoice created_at, because a rental is the unit of measurement
+   * here. This can diverge from the invoice-windowed revenue report
+   * and that's expected — different lenses on the same ledger.
+   *
+   * Batch strategy (avoids N+1):
+   *   1. One query: chains in window + customer + delivery link+job
+   *   2. One query: SUM(invoice.total) GROUP BY rental_chain_id
+   *   3. One query: SUM(job_costs.amount) GROUP BY rental_chain_id
+   *      (joined via task_chain_links)
+   *   4. One query: COUNT(*) WHERE task_type='exchange' GROUP BY
+   *      rental_chain_id
+   *   5. One query: standalone job count (no chain linkage)
+   * Everything else is assembled in memory. 50 chains = ~5 queries.
+   */
+  async getLifecycleReport(
+    tenantId: string,
+    startDate?: string,
+    endDate?: string,
+    statusFilter: 'active' | 'completed' | 'all' = 'all',
+    groupBy: 'day' | 'week' | 'month' = 'month',
+  ) {
+    const { start, end } = this.dateRange(startDate, endDate);
+    const today = new Date().toISOString().split('T')[0];
+
+    // ── 1. Chains in window with delivery job address ──
+    const chainQb = this.chainRepo
+      .createQueryBuilder('c')
+      .leftJoinAndSelect('c.customer', 'customer')
+      .where('c.tenant_id = :tenantId', { tenantId })
+      .andWhere('c.drop_off_date >= :start', { start })
+      .andWhere('c.drop_off_date <= :end', { end });
+    if (statusFilter === 'active') {
+      chainQb.andWhere('c.status = :st', { st: 'active' });
+    } else if (statusFilter === 'completed') {
+      chainQb.andWhere('c.status = :st', { st: 'completed' });
+    }
+    chainQb.orderBy('c.drop_off_date', 'DESC');
+    const chains = await chainQb.getMany();
+
+    const chainIds = chains.map((c) => c.id);
+
+    // Short-circuit if no chains — still return the full shape with
+    // empty data so the frontend chart can render the zero-filled
+    // trend series.
+    if (chainIds.length === 0) {
+      const standaloneJobs = await this.countStandaloneJobs(tenantId);
+      return {
+        summary: {
+          total_rental_revenue: 0,
+          total_lifecycle_cost: 0,
+          total_profit: 0,
+          average_rental_duration: 0,
+          active_rentals: 0,
+          overdue_rentals: 0,
+          completed_rentals: 0,
+          exchange_rate: 0,
+          revenue_per_chain: 0,
+          profit_per_chain: 0,
+          standalone_jobs: standaloneJobs,
+        },
+        chains: [],
+        trend: this.buildEmptyTrend(start, end, groupBy),
+      };
+    }
+
+    // ── 2. Revenue per chain (batched) ──
+    const revenueRows = await this.invoiceRepo
+      .createQueryBuilder('i')
+      .select('i.rental_chain_id', 'chain_id')
+      .addSelect('COALESCE(SUM(i.total), 0)', 'revenue')
+      .where('i.tenant_id = :tenantId', { tenantId })
+      .andWhere('i.rental_chain_id IN (:...chainIds)', { chainIds })
+      .andWhere('i.voided_at IS NULL')
+      .groupBy('i.rental_chain_id')
+      .getRawMany<{ chain_id: string; revenue: string }>();
+    const revenueByChain = new Map<string, number>();
+    for (const r of revenueRows) {
+      revenueByChain.set(r.chain_id, Number(r.revenue) || 0);
+    }
+
+    // ── 3. Cost per chain (batched via task_chain_links join) ──
+    const costRows = await this.dataSource.query<
+      Array<{ chain_id: string; cost: string }>
+    >(
+      `SELECT tcl.rental_chain_id AS chain_id, COALESCE(SUM(jc.amount), 0) AS cost
+       FROM job_costs jc
+       INNER JOIN task_chain_links tcl ON tcl.job_id = jc.job_id
+       WHERE jc.tenant_id = $1
+         AND tcl.rental_chain_id = ANY($2::uuid[])
+       GROUP BY tcl.rental_chain_id`,
+      [tenantId, chainIds],
+    );
+    const costByChain = new Map<string, number>();
+    for (const r of costRows) {
+      costByChain.set(r.chain_id, Number(r.cost) || 0);
+    }
+
+    // ── 4. Exchange counts per chain (batched) ──
+    const exchangeRows = await this.linkRepo
+      .createQueryBuilder('l')
+      .select('l.rental_chain_id', 'chain_id')
+      .addSelect('COUNT(*)', 'count')
+      .where('l.rental_chain_id IN (:...chainIds)', { chainIds })
+      .andWhere('l.task_type = :ex', { ex: 'exchange' })
+      .andWhere('l.status != :cancelled', { cancelled: 'cancelled' })
+      .groupBy('l.rental_chain_id')
+      .getRawMany<{ chain_id: string; count: string }>();
+    const exchangeByChain = new Map<string, number>();
+    for (const r of exchangeRows) {
+      exchangeByChain.set(r.chain_id, Number(r.count) || 0);
+    }
+
+    // ── 5. Delivery addresses per chain via task_chain_links + jobs ──
+    const addressRows = await this.dataSource.query<
+      Array<{ chain_id: string; address: Record<string, string> | null }>
+    >(
+      `SELECT tcl.rental_chain_id AS chain_id, j.service_address AS address
+       FROM task_chain_links tcl
+       INNER JOIN jobs j ON j.id = tcl.job_id
+       WHERE tcl.rental_chain_id = ANY($1::uuid[])
+         AND tcl.task_type = 'drop_off'
+         AND j.tenant_id = $2`,
+      [chainIds, tenantId],
+    );
+    const addressByChain = new Map<string, string>();
+    for (const r of addressRows) {
+      const a = r.address ?? {};
+      const parts = [a.street, a.city, a.state].filter(Boolean);
+      addressByChain.set(r.chain_id, parts.join(', ') || '—');
+    }
+
+    // ── Assemble chain rows ──
+    const chainRows = chains.map((c) => {
+      const revenue = revenueByChain.get(c.id) ?? 0;
+      const cost = costByChain.get(c.id) ?? 0;
+      const exchangeCount = exchangeByChain.get(c.id) ?? 0;
+      const duration =
+        c.actual_pickup_date && c.drop_off_date
+          ? this.daysBetween(c.drop_off_date, c.actual_pickup_date)
+          : null;
+      return {
+        chain_id: c.id,
+        customer_name: c.customer
+          ? `${c.customer.first_name ?? ''} ${c.customer.last_name ?? ''}`.trim() ||
+            '(no name)'
+          : '(no customer)',
+        address: addressByChain.get(c.id) ?? '—',
+        dumpster_size: c.dumpster_size ?? '',
+        drop_off_date: c.drop_off_date,
+        expected_pickup_date: c.expected_pickup_date,
+        actual_pickup_date: c.actual_pickup_date ?? null,
+        status: c.status,
+        revenue,
+        cost,
+        profit: Math.round((revenue - cost) * 100) / 100,
+        duration_days: duration,
+        exchange_count: exchangeCount,
+      };
+    });
+
+    // ── Summary KPIs ──
+    const totalRevenue = chainRows.reduce((s, r) => s + r.revenue, 0);
+    const totalCost = chainRows.reduce((s, r) => s + r.cost, 0);
+    const totalProfit = Math.round((totalRevenue - totalCost) * 100) / 100;
+
+    const completedChains = chainRows.filter((r) => r.status === 'completed');
+    const activeChains = chainRows.filter((r) => r.status === 'active');
+    const overdueChains = activeChains.filter(
+      (r) => r.expected_pickup_date && r.expected_pickup_date < today,
+    );
+    const chainsWithExchange = chainRows.filter((r) => r.exchange_count > 0);
+    const avgDuration =
+      completedChains.length > 0
+        ? Math.round(
+            (completedChains.reduce(
+              (s, r) => s + (r.duration_days ?? 0),
+              0,
+            ) /
+              completedChains.length) *
+              10,
+          ) / 10
+        : 0;
+
+    const revenuePerChain =
+      chainRows.length > 0
+        ? Math.round((totalRevenue / chainRows.length) * 100) / 100
+        : 0;
+    const profitPerChain =
+      chainRows.length > 0
+        ? Math.round((totalProfit / chainRows.length) * 100) / 100
+        : 0;
+    const exchangeRate =
+      chainRows.length > 0
+        ? Math.round((chainsWithExchange.length / chainRows.length) * 1000) / 10
+        : 0;
+
+    // ── Standalone jobs — cleanup metric, kept separate from KPIs ──
+    const standaloneJobs = await this.countStandaloneJobs(tenantId);
+
+    // ── Trend with zero-filled gaps ──
+    const trend = this.buildTrend(chainRows, start, end, groupBy);
+
+    return {
+      summary: {
+        total_rental_revenue: Math.round(totalRevenue * 100) / 100,
+        total_lifecycle_cost: Math.round(totalCost * 100) / 100,
+        total_profit: totalProfit,
+        average_rental_duration: avgDuration,
+        active_rentals: activeChains.length,
+        overdue_rentals: overdueChains.length,
+        completed_rentals: completedChains.length,
+        exchange_rate: exchangeRate,
+        revenue_per_chain: revenuePerChain,
+        profit_per_chain: profitPerChain,
+        standalone_jobs: standaloneJobs,
+      },
+      chains: chainRows,
+      trend,
+    };
+  }
+
+  /** Count jobs in this tenant that are not part of any rental chain. */
+  private async countStandaloneJobs(tenantId: string): Promise<number> {
+    const row = await this.dataSource.query<Array<{ count: string }>>(
+      `SELECT COUNT(*) AS count
+       FROM jobs j
+       WHERE j.tenant_id = $1
+         AND NOT EXISTS (
+           SELECT 1 FROM task_chain_links tcl
+           INNER JOIN rental_chains rc ON rc.id = tcl.rental_chain_id
+           WHERE tcl.job_id = j.id AND rc.tenant_id = j.tenant_id
+         )`,
+      [tenantId],
+    );
+    return Number(row[0]?.count ?? 0);
+  }
+
+  private daysBetween(from: string, to: string): number {
+    const a = new Date(`${from}T00:00:00Z`).getTime();
+    const b = new Date(`${to}T00:00:00Z`).getTime();
+    return Math.round((b - a) / 86400000);
+  }
+
+  /** Bucket label for a YYYY-MM-DD date at the given granularity. */
+  private periodKey(
+    date: string,
+    groupBy: 'day' | 'week' | 'month',
+  ): string {
+    if (groupBy === 'day') return date;
+    const d = new Date(`${date}T00:00:00Z`);
+    if (groupBy === 'month') {
+      return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+    }
+    // week: ISO week number
+    const tmp = new Date(
+      Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()),
+    );
+    tmp.setUTCDate(tmp.getUTCDate() + 4 - (tmp.getUTCDay() || 7));
+    const yearStart = new Date(Date.UTC(tmp.getUTCFullYear(), 0, 1));
+    const week = Math.ceil(
+      ((tmp.getTime() - yearStart.getTime()) / 86400000 + 1) / 7,
+    );
+    return `${tmp.getUTCFullYear()}-W${String(week).padStart(2, '0')}`;
+  }
+
+  /**
+   * Walk every bucket between start and end at the given granularity
+   * and return an ordered list of period keys. Used for zero-filling
+   * the trend series so the chart has no gaps.
+   */
+  private buildPeriodSequence(
+    start: string,
+    end: string,
+    groupBy: 'day' | 'week' | 'month',
+  ): string[] {
+    const seq: string[] = [];
+    const cursor = new Date(`${start}T00:00:00Z`);
+    const endDate = new Date(`${end}T00:00:00Z`);
+    const seen = new Set<string>();
+    while (cursor.getTime() <= endDate.getTime()) {
+      const key = this.periodKey(
+        cursor.toISOString().split('T')[0],
+        groupBy,
+      );
+      if (!seen.has(key)) {
+        seen.add(key);
+        seq.push(key);
+      }
+      if (groupBy === 'day') {
+        cursor.setUTCDate(cursor.getUTCDate() + 1);
+      } else if (groupBy === 'week') {
+        cursor.setUTCDate(cursor.getUTCDate() + 7);
+      } else {
+        cursor.setUTCMonth(cursor.getUTCMonth() + 1);
+      }
+    }
+    return seq;
+  }
+
+  private buildEmptyTrend(
+    start: string,
+    end: string,
+    groupBy: 'day' | 'week' | 'month',
+  ) {
+    return this.buildPeriodSequence(start, end, groupBy).map((period) => ({
+      period,
+      revenue: 0,
+      cost: 0,
+      profit: 0,
+      completed_chains: 0,
+    }));
+  }
+
+  private buildTrend(
+    chainRows: Array<{
+      drop_off_date: string;
+      status: string;
+      revenue: number;
+      cost: number;
+      profit: number;
+    }>,
+    start: string,
+    end: string,
+    groupBy: 'day' | 'week' | 'month',
+  ) {
+    const seq = this.buildPeriodSequence(start, end, groupBy);
+    const byPeriod = new Map<
+      string,
+      { revenue: number; cost: number; profit: number; completed_chains: number }
+    >();
+    for (const key of seq) {
+      byPeriod.set(key, { revenue: 0, cost: 0, profit: 0, completed_chains: 0 });
+    }
+    for (const r of chainRows) {
+      if (!r.drop_off_date) continue;
+      const key = this.periodKey(r.drop_off_date, groupBy);
+      const bucket = byPeriod.get(key);
+      if (!bucket) continue; // chain outside the requested window (shouldn't happen)
+      bucket.revenue += r.revenue;
+      bucket.cost += r.cost;
+      bucket.profit += r.profit;
+      if (r.status === 'completed') bucket.completed_chains += 1;
+    }
+    return seq.map((period) => ({
+      period,
+      revenue: Math.round((byPeriod.get(period)?.revenue ?? 0) * 100) / 100,
+      cost: Math.round((byPeriod.get(period)?.cost ?? 0) * 100) / 100,
+      profit: Math.round((byPeriod.get(period)?.profit ?? 0) * 100) / 100,
+      completed_chains: byPeriod.get(period)?.completed_chains ?? 0,
+    }));
   }
 }
