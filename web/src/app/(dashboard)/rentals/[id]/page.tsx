@@ -521,13 +521,32 @@ export default function RentalLifecyclePage({ params }: { params: Promise<{ id: 
           </div>
         </div>
 
-        {/* Address from delivery job */}
-        {deliveryJob?.asset && (
-          <div className="mt-4 pt-4 border-t border-[var(--t-border)] flex items-center gap-2 text-sm text-[var(--t-text-muted)]">
-            <Package className="h-3.5 w-3.5" />
-            <span>Asset: <span className="text-[var(--t-text-primary)] font-medium">{deliveryJob.asset.identifier} ({deliveryJob.asset.subtype})</span></span>
-          </div>
-        )}
+        {/* Phase 11A — current on-site asset, derived from the most
+            recent completed delivery or exchange in the chain so it
+            correctly reflects the physical state after exchanges. */}
+        {(() => {
+          const onSite = (jobs ?? [])
+            .slice()
+            .reverse()
+            .find(
+              (j) =>
+                (j.taskType === "drop_off" || j.taskType === "exchange") &&
+                j.status === "completed" &&
+                j.asset,
+            );
+          if (!onSite?.asset) return null;
+          return (
+            <div className="mt-4 pt-4 border-t border-[var(--t-border)] flex items-center gap-2 text-sm text-[var(--t-text-muted)]">
+              <Package className="h-3.5 w-3.5" />
+              <span>
+                On-site asset:{" "}
+                <span className="text-[var(--t-text-primary)] font-medium">
+                  {onSite.asset.identifier} ({onSite.asset.subtype})
+                </span>
+              </span>
+            </div>
+          );
+        })()}
       </div>
 
       {/* Actions */}

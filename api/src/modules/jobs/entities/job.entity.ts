@@ -258,6 +258,28 @@ export class Job {
   @Column({ name: 'driver_notes', type: 'text', nullable: true })
   driver_notes!: string;
 
+  // Phase 11A — asset enforcement + audit trail.
+  // Each entry is appended whenever an asset is assigned, corrected,
+  // or overridden (active-conflict override). Stored directly on the
+  // job so the job detail view can show a full asset history without
+  // an extra query. Canonical asset state lives on the Asset entity
+  // via `operational_history`; this is the job-side mirror.
+  @Column({
+    name: 'asset_change_history',
+    type: 'jsonb',
+    nullable: false,
+    default: () => `'[]'::jsonb`,
+  })
+  asset_change_history!: Array<{
+    previous_asset_id: string | null;
+    new_asset_id: string;
+    changed_by: string | null;
+    changed_by_name: string | null;
+    changed_at: string;
+    reason: string | null;
+    override_conflict?: boolean;
+  }>;
+
   @Column({ nullable: true })
   source!: string;
 

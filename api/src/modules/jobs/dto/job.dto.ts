@@ -261,6 +261,48 @@ export class ChangeStatusDto {
   @IsOptional()
   @IsString()
   cancellationReason?: string;
+
+  // Phase 11A — drivers can pass the asset they are confirming on
+  // arrival/completion in the same transition. When present, the
+  // backend updates `jobs.asset_id` (with audit entry) before
+  // enforcing the asset-required gate on `completed`.
+  @ApiPropertyOptional({ example: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890' })
+  @IsOptional()
+  @IsUUID()
+  assetId?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Explicit override when the chosen asset is already assigned to another active job. Logged in the asset_change_history audit trail.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  overrideAssetConflict?: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  assetChangeReason?: string;
+}
+
+// Phase 11A — dedicated DTO for `PATCH /jobs/:id/asset`
+// (office-side asset correction after completion). Separate from the
+// general UpdateJobDto so the correction surface is explicit and the
+// audit trail always runs.
+export class UpdateJobAssetDto {
+  @ApiProperty({ example: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890' })
+  @IsUUID()
+  assetId: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  overrideAssetConflict?: boolean;
+
+  @ApiPropertyOptional({ example: 'Driver recorded wrong dumpster' })
+  @IsOptional()
+  @IsString()
+  reason?: string;
 }
 
 export class AssignDto {

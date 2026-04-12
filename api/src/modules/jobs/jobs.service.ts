@@ -476,6 +476,22 @@ export class JobsService {
       }
     }
 
+    // Phase 11A: for incomplete pickup/exchange tasks, surface the
+    // expected on-site asset from the rental chain so the driver app
+    // can pre-populate the picker and office staff can see the hint.
+    if (
+      job.status !== 'completed' &&
+      job.status !== 'cancelled' &&
+      (job.job_type === 'pickup' ||
+        job.job_type === 'removal' ||
+        job.job_type === 'exchange')
+    ) {
+      const expected = await this.deriveExpectedOnSiteAsset(tenantId, job.id);
+      if (expected) {
+        (job as Job & { expected_on_site_asset?: unknown }).expected_on_site_asset = expected;
+      }
+    }
+
     return job;
   }
 
@@ -679,6 +695,8 @@ export class JobsService {
     id: string,
     dto: ChangeStatusDto,
     userRole?: string,
+    userId?: string,
+    userName?: string,
   ): Promise<Job> {
     const job = await this.findOne(tenantId, id);
     const isAdmin = ['owner', 'admin', 'dispatcher'].includes(userRole || '');
@@ -692,6 +710,36 @@ export class JobsService {
           `Cannot transition from '${job.status}' to '${dto.status}'`,
         );
       }
+    }
+
+    // Phase 11A — if the driver is passing an asset in the same
+    // transition (typical flow: tap Complete → asset picker → save),
+    // assign it first so the completion gate below sees the new id.
+    // Runs the full correction path (tenant-scope, active-conflict
+    // guard, audit, inventory sync) so a mid-flight assignment is
+    // treated identically to a later office correction.
+    if (dto.assetId && dto.assetId !== job.asset_id) {
+      await this.assignAssetToJob(
+        tenantId,
+        job,
+        dto.assetId,
+        {
+          overrideConflict: !!dto.overrideAssetConflict,
+          reason: dto.assetChangeReason ?? null,
+          userId: userId ?? null,
+          userName: userName ?? null,
+        },
+      );
+    }
+
+    // Phase 11A — asset-required gate for completion. Server-
+    // authoritative: frontend validation is a UX guard, this is the
+    // truth. Applies to every job type (delivery, pickup, exchange,
+    // drop_off, removal, dump_run, dump_and_return).
+    if (dto.status === 'completed' && !job.asset_id) {
+      throw new BadRequestException(
+        'asset_required: An asset must be assigned before completing this job',
+      );
     }
 
     job.status = dto.status;
@@ -1236,6 +1284,238 @@ export class JobsService {
         } as any);
         break;
     }
+  }
+
+  // ─────────────────────────────────────────────────────────
+  // PHASE 11A — asset enforcement helpers
+  // ─────────────────────────────────────────────────────────
+
+  /**
+   * Find any other active (non-completed, non-cancelled) job on the
+   * same tenant that already has this asset assigned. Used by the
+   * active-assignment guard (Step 7B).
+   */
+  async findActiveAssignmentConflict(
+    tenantId: string,
+    assetId: string,
+    excludeJobId: string,
+  ): Promise<{
+    id: string;
+    job_number: string;
+    job_type: string;
+    status: string;
+    scheduled_date: string;
+  } | null> {
+    const conflict = await this.jobsRepository
+      .createQueryBuilder('j')
+      .select([
+        'j.id',
+        'j.job_number',
+        'j.job_type',
+        'j.status',
+        'j.scheduled_date',
+      ])
+      .where('j.tenant_id = :tenantId', { tenantId })
+      .andWhere('j.asset_id = :assetId', { assetId })
+      .andWhere('j.id != :excludeId', { excludeId: excludeJobId })
+      .andWhere('j.status NOT IN (:...terminal)', {
+        terminal: ['completed', 'cancelled', 'failed'],
+      })
+      .orderBy('j.scheduled_date', 'ASC')
+      .limit(1)
+      .getOne();
+    if (!conflict) return null;
+    return {
+      id: conflict.id,
+      job_number: conflict.job_number,
+      job_type: conflict.job_type,
+      status: conflict.status,
+      scheduled_date: conflict.scheduled_date,
+    };
+  }
+
+  /**
+   * Core asset assignment/correction path. Validates tenant scoping
+   * on the new asset, runs the active-assignment conflict guard,
+   * mutates `jobs.asset_id`, appends an audit entry to
+   * `asset_change_history`, and — when the job is already completed —
+   * re-runs the inventory sync for both the old and new assets so
+   * yard/customer location state mirrors the correction.
+   *
+   * Called from two paths:
+   *  - `changeStatus` when the driver passes `assetId` in the same
+   *    transition (confirmation on arrival/completion)
+   *  - `changeAsset` office correction endpoint
+   */
+  private async assignAssetToJob(
+    tenantId: string,
+    job: Job,
+    newAssetId: string,
+    opts: {
+      overrideConflict: boolean;
+      reason: string | null;
+      userId: string | null;
+      userName: string | null;
+    },
+  ): Promise<Job> {
+    // Tenant-scoped asset load
+    const asset = await this.assetRepo.findOne({
+      where: { id: newAssetId, tenant_id: tenantId },
+    });
+    if (!asset) {
+      throw new BadRequestException(
+        'asset_not_found: Asset does not exist in this tenant',
+      );
+    }
+
+    // Active-assignment conflict guard (Step 7B)
+    const conflict = await this.findActiveAssignmentConflict(
+      tenantId,
+      newAssetId,
+      job.id,
+    );
+    if (conflict && !opts.overrideConflict) {
+      throw new BadRequestException(
+        `asset_active_conflict: Asset is already assigned to active job ${conflict.job_number} (${conflict.job_type}, ${conflict.scheduled_date}). Pass overrideAssetConflict=true to override.`,
+      );
+    }
+
+    const previousAssetId = job.asset_id ?? null;
+
+    // Mutate + audit (jsonb array append)
+    job.asset_id = newAssetId;
+    const history = Array.isArray(job.asset_change_history)
+      ? [...job.asset_change_history]
+      : [];
+    history.push({
+      previous_asset_id: previousAssetId,
+      new_asset_id: newAssetId,
+      changed_by: opts.userId,
+      changed_by_name: opts.userName,
+      changed_at: new Date().toISOString(),
+      reason: opts.reason,
+      ...(conflict ? { override_conflict: true } : {}),
+    });
+    // Cap at 100 entries so the column can never explode
+    if (history.length > 100) history.splice(0, history.length - 100);
+    job.asset_change_history = history;
+
+    return job;
+  }
+
+  /**
+   * Office-side asset correction (`PATCH /jobs/:id/asset`). Applies
+   * the new asset via `assignAssetToJob` and — when the job is
+   * already completed — reverts the old asset's inventory state
+   * (available / yard) and re-runs `handleCompletedAsset` to move the
+   * new asset into the correct state for the job's type.
+   */
+  async changeAsset(
+    tenantId: string,
+    jobId: string,
+    dto: {
+      assetId: string;
+      overrideAssetConflict?: boolean;
+      reason?: string;
+    },
+    userId: string | null,
+    userName: string | null,
+  ): Promise<Job> {
+    const job = await this.findOne(tenantId, jobId);
+    const previousAssetId = job.asset_id ?? null;
+    const wasCompleted = job.status === 'completed';
+
+    await this.assignAssetToJob(tenantId, job, dto.assetId, {
+      overrideConflict: !!dto.overrideAssetConflict,
+      reason: dto.reason ?? null,
+      userId,
+      userName,
+    });
+
+    const saved = await this.jobsRepository.save(job);
+
+    // If the job was completed, revert the previous asset's state and
+    // reapply the new asset's state so the yard/customer location
+    // books match the correction.
+    if (wasCompleted) {
+      if (previousAssetId) {
+        await this.assetRepo.update(
+          { id: previousAssetId, tenant_id: tenantId } as any,
+          {
+            status: 'available',
+            current_job_id: null,
+            current_location_type: 'yard',
+          } as any,
+        );
+      }
+      await this.handleCompletedAsset(saved);
+    }
+
+    return saved;
+  }
+
+  /**
+   * Derive the asset the driver should expect to find on-site for a
+   * pickup or exchange task. Walks the rental chain and returns the
+   * asset from the most recently COMPLETED delivery or exchange.
+   * Cancelled and future-scheduled jobs are intentionally excluded
+   * because they do not represent physical reality. Returns null for
+   * standalone jobs or chains with no completed prior task.
+   */
+  async deriveExpectedOnSiteAsset(
+    tenantId: string,
+    jobId: string,
+  ): Promise<{
+    asset_id: string;
+    identifier: string;
+    subtype: string | null;
+    source_job_id: string;
+    source_job_number: string;
+    source_task_type: string;
+  } | null> {
+    // Look up the job's chain link
+    const link = await this.taskChainLinkRepo.findOne({
+      where: { job_id: jobId },
+    });
+    if (!link) return null;
+
+    // Tenant-scope the chain
+    const chain = await this.rentalChainRepo.findOne({
+      where: { id: link.rental_chain_id, tenant_id: tenantId },
+    });
+    if (!chain) return null;
+
+    // Walk earlier links in the same chain looking for a completed
+    // delivery or exchange with an asset. Sorted DESC so the most
+    // recent wins.
+    const priorLinks = await this.taskChainLinkRepo
+      .createQueryBuilder('l')
+      .leftJoinAndSelect('l.job', 'job')
+      .leftJoinAndSelect('job.asset', 'asset')
+      .where('l.rental_chain_id = :chainId', { chainId: chain.id })
+      .andWhere('l.sequence_number < :seq', { seq: link.sequence_number })
+      .andWhere('l.task_type IN (:...types)', {
+        types: ['drop_off', 'exchange'],
+      })
+      .andWhere('l.status != :cancelled', { cancelled: 'cancelled' })
+      .orderBy('l.sequence_number', 'DESC')
+      .getMany();
+
+    for (const l of priorLinks) {
+      const j = l.job;
+      if (!j || j.tenant_id !== tenantId) continue;
+      if (j.status !== 'completed') continue;
+      if (!j.asset_id || !j.asset) continue;
+      return {
+        asset_id: j.asset_id,
+        identifier: j.asset.identifier,
+        subtype: j.asset.subtype ?? null,
+        source_job_id: j.id,
+        source_job_number: j.job_number,
+        source_task_type: l.task_type,
+      };
+    }
+    return null;
   }
 
   private async handleCompletedAsset(job: Job): Promise<void> {
