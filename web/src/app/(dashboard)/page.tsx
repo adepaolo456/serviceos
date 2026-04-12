@@ -26,6 +26,8 @@ import AddressAutocomplete, { type AddressValue } from "@/components/address-aut
 import { deriveDisplayStatus, DISPLAY_STATUS_LABELS, displayStatusColor } from "@/lib/job-status";
 import { getFeatureLabel } from "@/lib/feature-registry";
 import HelpTooltip from "@/components/ui/HelpTooltip";
+import { useTenantTimezone } from "@/lib/use-modules";
+import { getTenantToday, getTenantNowParts } from "@/lib/utils/tenantDate";
 
 /* ---- Types ---- */
 
@@ -71,6 +73,11 @@ interface UserProfile {
   tenant: {
     id: string;
     name: string;
+    // Phase B3 — tenant-wide timezone threaded through the existing
+    // /auth/profile response. May be undefined on older responses
+    // that pre-date the backend change; consumers fall back to the
+    // helper's canonical 'America/New_York' default.
+    timezone?: string;
   };
 }
 
@@ -104,18 +111,30 @@ function formatTime(t: string | null): string {
   return t.slice(0, 5);
 }
 
-function today(): string {
-  return new Date().toISOString().split("T")[0];
+// Phase B3 — delegates to the tenant-aware helper. Keeping the
+// local `today()` name avoids rewriting every call site in this
+// long file; the tz argument is optional so older unmigrated
+// call sites still work (they fall back to 'America/New_York').
+function today(tz?: string): string {
+  return getTenantToday(tz);
 }
 
 function shiftDate(d: string, n: number): string {
-  const dt = new Date(d + "T00:00:00");
-  dt.setDate(dt.getDate() + n);
-  return dt.toISOString().split("T")[0];
+  // Pure YYYY-MM-DD arithmetic — tz-independent. We explicitly
+  // construct in UTC and format via UTC getters so there is no
+  // browser-local rollover. Do not replace with local-parse
+  // helpers.
+  const [y, m, dd] = d.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, (m || 1) - 1, dd || 1));
+  dt.setUTCDate(dt.getUTCDate() + n);
+  const yy = dt.getUTCFullYear();
+  const mm = String(dt.getUTCMonth() + 1).padStart(2, "0");
+  const ddd = String(dt.getUTCDate()).padStart(2, "0");
+  return `${yy}-${mm}-${ddd}`;
 }
 
-function fmtShortDate(d: string): string {
-  const t = today();
+function fmtShortDate(d: string, tz?: string): string {
+  const t = today(tz);
   if (d === t) return "Today";
   if (d === shiftDate(t, 1)) return "Tomorrow";
   if (d === shiftDate(t, -1)) return "Yesterday";
@@ -130,6 +149,11 @@ function fmtLongDate(d: string): string {
 
 export default function DashboardPage() {
   const router = useRouter();
+  // Phase B3 — tenant-wide timezone. Shares the /auth/profile cache
+  // with useModules so this adds no extra fetch. Passed to every
+  // `today(tz)` / `fmtShortDate(d, tz)` / `getTenantNowParts(tz)`
+  // call in this component and down to <ScheduleModule> via prop.
+  const timezone = useTenantTimezone();
   const [user, setUser] = useState<UserProfile | null>(null);
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
   const [todayJobs, setTodayJobs] = useState<TodayJob[]>([]);
@@ -140,7 +164,7 @@ export default function DashboardPage() {
   const [fleet, setFleet] = useState<{ totalAssets: number; byStatus: Record<string, number> } | null>(null);
   const [arSummary, setArSummary] = useState<{ totalOutstanding: number; totalOverdue: number } | null>(null);
   const [jobPanelOpen, setJobPanelOpen] = useState(false);
-  const [scheduleDate, setScheduleDate] = useState(today);
+  const [scheduleDate, setScheduleDate] = useState(() => today(timezone));
   const [attentionOverdue, setAttentionOverdue] = useState(0);
   const [attentionUnassigned, setAttentionUnassigned] = useState(0);
   const [attentionReschedule, setAttentionReschedule] = useState(0);
@@ -152,11 +176,11 @@ export default function DashboardPage() {
       if (e.target !== document.body || e.metaKey || e.ctrlKey) return;
       if (e.key === "ArrowLeft") setScheduleDate(d => shiftDate(d, -1));
       else if (e.key === "ArrowRight") setScheduleDate(d => shiftDate(d, 1));
-      else if (e.key === "t") setScheduleDate(today());
+      else if (e.key === "t") setScheduleDate(today(timezone));
     };
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  }, [router]);
+  }, [router, timezone]);
 
   // Search
   const [searchQuery, setSearchQuery] = useState("");
@@ -209,10 +233,10 @@ export default function DashboardPage() {
     }).catch(() => {});
     // Needs Attention data
     api.get<{data: any[]}>("/invoices?status=overdue&limit=1").then(res => setAttentionOverdue(res.data?.length ?? 0)).catch(() => {});
-    const todayDate = today();
+    const todayDate = today(timezone);
     api.get<{data: any[], meta: {total: number}}>(`/jobs?status=pending&dateFrom=${todayDate}&dateTo=${todayDate}&limit=1`).then(res => setAttentionUnassigned(res.meta?.total ?? res.data?.length ?? 0)).catch(() => {});
     api.get<{data: any[], meta: {total: number}}>("/jobs?status=needs_reschedule&limit=1").then(r => setAttentionReschedule(r.meta?.total ?? r.data?.length ?? 0)).catch(() => {});
-  }, []);
+  }, [timezone]);
 
   // Load jobs for selected schedule date
   useEffect(() => {
@@ -289,7 +313,7 @@ export default function DashboardPage() {
             {getGreeting()}, {user?.firstName || "Anthony"}
           </h1>
           <p className="mt-1 text-[13px] text-[var(--t-frame-text-muted)]">
-            {fmtLongDate(today())} &middot; {todayJobs.length} job{todayJobs.length !== 1 ? "s" : ""} today
+            {fmtLongDate(today(timezone))} &middot; {todayJobs.length} job{todayJobs.length !== 1 ? "s" : ""} today
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -620,6 +644,7 @@ export default function DashboardPage() {
         todayJobs={todayJobs}
         unassignedJobs={unassignedJobs}
         onNewJob={() => setJobPanelOpen(true)}
+        timezone={timezone}
       />
 
       {/* Demoted settings notice */}
@@ -633,7 +658,7 @@ export default function DashboardPage() {
 
       {/* Quick Job Create SlideOver */}
       <SlideOver open={jobPanelOpen} onClose={() => setJobPanelOpen(false)} title="Quick Create Job">
-        <QuickJobForm onSuccess={() => { setJobPanelOpen(false); window.location.reload(); }} />
+        <QuickJobForm timezone={timezone} onSuccess={() => { setJobPanelOpen(false); window.location.reload(); }} />
       </SlideOver>
     </div>
   );
@@ -645,7 +670,7 @@ interface CustomerOption { id: string; first_name: string; last_name: string; ph
 interface AssetOption { id: string; identifier: string; asset_type: string; subtype: string; }
 interface PriceQuote { breakdown: { total: number; basePrice: number } }
 
-function QuickJobForm({ onSuccess }: { onSuccess: () => void }) {
+function QuickJobForm({ onSuccess, timezone }: { onSuccess: () => void; timezone: string | undefined }) {
   const [step, setStep] = useState(1);
   // Customer
   const [customerSearch, setCustomerSearch] = useState("");
@@ -660,8 +685,11 @@ function QuickJobForm({ onSuccess }: { onSuccess: () => void }) {
   const [jobType, setJobType] = useState("delivery");
   const [assetSubtype, setAssetSubtype] = useState("20yd");
   const [scheduledDate, setScheduledDate] = useState(() => {
-    const d = new Date(); d.setDate(d.getDate() + 1);
-    return d.toISOString().split("T")[0];
+    // Phase B3 — default "tomorrow" = tenant-today + 1 day.
+    // Browser `new Date()` here would show the wrong default at
+    // 8pm Eastern because it'd roll to tomorrow-UTC before the
+    // tenant's actual midnight.
+    return shiftDate(today(timezone), 1);
   });
   const [timeWindow, setTimeWindow] = useState("morning");
   // Address
@@ -1020,12 +1048,16 @@ type ScheduleView = "today" | "week" | "month";
 
 interface DayJobCounts { total: number; deliveries: number; pickups: number; exchanges: number }
 
-function ScheduleModule({ scheduleDate, setScheduleDate, todayJobs, unassignedJobs, onNewJob }: {
+function ScheduleModule({ scheduleDate, setScheduleDate, todayJobs, unassignedJobs, onNewJob, timezone }: {
   scheduleDate: string;
   setScheduleDate: (d: string | ((prev: string) => string)) => void;
   todayJobs: TodayJob[];
   unassignedJobs: TodayJob[];
   onNewJob: () => void;
+  // Phase B3 — passed from DashboardPage so week/month range
+  // derivations anchor to the tenant's "today", not the browser's
+  // UTC-rolled day.
+  timezone: string | undefined;
 }) {
   const [view, setView] = useState<ScheduleView>("today");
   const [weekJobs, setWeekJobs] = useState<Record<string, DayJobCounts>>({});
@@ -1035,7 +1067,7 @@ function ScheduleModule({ scheduleDate, setScheduleDate, todayJobs, unassignedJo
   // Load week data
   useEffect(() => {
     const days: string[] = [];
-    for (let i = 0; i < 7; i++) days.push(shiftDate(today(), i));
+    for (let i = 0; i < 7; i++) days.push(shiftDate(today(timezone), i));
     api.get<JobsResponse>(`/jobs?dateFrom=${days[0]}&dateTo=${days[6]}&limit=200`).then(res => {
       const byDay: Record<string, DayJobCounts> = {};
       for (const d of days) byDay[d] = { total: 0, deliveries: 0, pickups: 0, exchanges: 0 };
@@ -1050,16 +1082,21 @@ function ScheduleModule({ scheduleDate, setScheduleDate, todayJobs, unassignedJo
       }
       setWeekJobs(byDay);
     }).catch(() => {});
-  }, []);
+  }, [timezone]);
 
   // Load month data
   useEffect(() => {
     if (view !== "month") return;
-    const now = new Date();
-    const first = new Date(now.getFullYear(), now.getMonth() + monthOffset, 1);
-    const last = new Date(now.getFullYear(), now.getMonth() + monthOffset + 1, 0);
-    const from = first.toISOString().split("T")[0];
-    const to = last.toISOString().split("T")[0];
+    // Phase B3 — anchor to the tenant's "today" year/month, not
+    // the browser's local now. We then do pure UTC date math to
+    // derive the month bounds so no browser-local drift leaks in.
+    const { year, month } = getTenantNowParts(timezone);
+    const first = new Date(Date.UTC(year, month - 1 + monthOffset, 1));
+    const last = new Date(Date.UTC(year, month + monthOffset, 0));
+    const fmtUTC = (dt: Date) =>
+      `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, "0")}-${String(dt.getUTCDate()).padStart(2, "0")}`;
+    const from = fmtUTC(first);
+    const to = fmtUTC(last);
     api.get<JobsResponse>(`/jobs?dateFrom=${from}&dateTo=${to}&limit=500`).then(res => {
       const counts: Record<string, number> = {};
       for (const j of res.data) {
@@ -1068,7 +1105,7 @@ function ScheduleModule({ scheduleDate, setScheduleDate, todayJobs, unassignedJo
       }
       setMonthJobs(counts);
     }).catch(() => {});
-  }, [view, monthOffset]);
+  }, [view, monthOffset, timezone]);
 
   const viewLabels: { key: ScheduleView; label: string }[] = [
     { key: "today", label: getFeatureLabel("dashboard_schedule_today") },
@@ -1123,13 +1160,13 @@ function ScheduleModule({ scheduleDate, setScheduleDate, todayJobs, unassignedJo
             <button onClick={() => setScheduleDate(d => shiftDate(d, -1))} style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 32, height: 32, borderRadius: 8, color: "var(--t-text-muted)", backgroundColor: "transparent", border: "none", cursor: "pointer" }}>
               <ChevronLeft style={{ width: 16, height: 16 }} />
             </button>
-            {scheduleDate !== today() && (
-              <button onClick={() => setScheduleDate(today())} style={{ fontSize: 11, fontWeight: 600, color: "var(--t-accent)", backgroundColor: "var(--t-accent-soft)", border: "none", borderRadius: 20, padding: "3px 10px", cursor: "pointer", margin: "0 4px" }}>
+            {scheduleDate !== today(timezone) && (
+              <button onClick={() => setScheduleDate(today(timezone))} style={{ fontSize: 11, fontWeight: 600, color: "var(--t-accent)", backgroundColor: "var(--t-accent-soft)", border: "none", borderRadius: 20, padding: "3px 10px", cursor: "pointer", margin: "0 4px" }}>
                 Today
               </button>
             )}
             <div style={{ minWidth: 160, textAlign: "center", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
-              <span style={{ fontSize: 13, fontWeight: 600, color: "var(--t-text-primary)", whiteSpace: "nowrap" }}>{fmtShortDate(scheduleDate)}</span>
+              <span style={{ fontSize: 13, fontWeight: 600, color: "var(--t-text-primary)", whiteSpace: "nowrap" }}>{fmtShortDate(scheduleDate, timezone)}</span>
               <span style={{ fontSize: 11, fontWeight: 500, color: "var(--t-text-muted)" }}>·</span>
               <span style={{ fontSize: 11, fontWeight: 600, color: todayJobs.length > 0 ? "var(--t-accent)" : "var(--t-text-muted)", fontVariantNumeric: "tabular-nums" }}>
                 {todayJobs.length} {todayJobs.length === 1 ? "job" : "jobs"}
@@ -1144,7 +1181,7 @@ function ScheduleModule({ scheduleDate, setScheduleDate, todayJobs, unassignedJo
             {todayJobs.length === 0 ? (
               <div style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: "44px 24px" }}>
                 <Briefcase style={{ width: 36, height: 36, color: "var(--t-text-tertiary)", marginBottom: 10 }} />
-                <p style={{ fontSize: 15, fontWeight: 600, color: "var(--t-text-primary)", marginBottom: 4 }}>No jobs scheduled for {fmtShortDate(scheduleDate).toLowerCase()}</p>
+                <p style={{ fontSize: 15, fontWeight: 600, color: "var(--t-text-primary)", marginBottom: 4 }}>No jobs scheduled for {fmtShortDate(scheduleDate, timezone).toLowerCase()}</p>
                 <p style={{ fontSize: 12, color: "var(--t-text-muted)", marginBottom: 16, textAlign: "center", maxWidth: 320 }}>
                   You&apos;re clear — good time to schedule work or review upcoming jobs.
                 </p>
@@ -1201,7 +1238,7 @@ function ScheduleModule({ scheduleDate, setScheduleDate, todayJobs, unassignedJo
       {/* Week view */}
       {view === "week" && (() => {
         const days: string[] = [];
-        for (let i = 0; i < 7; i++) days.push(shiftDate(today(), i));
+        for (let i = 0; i < 7; i++) days.push(shiftDate(today(timezone), i));
         return (
           <div>
             {/* Week summary bar */}
@@ -1211,7 +1248,7 @@ function ScheduleModule({ scheduleDate, setScheduleDate, todayJobs, unassignedJo
               <span style={{ fontSize: 11, fontWeight: 600, color: weekTotal > 0 ? "var(--t-accent)" : "var(--t-text-muted)" }}>{weekTotal} {weekTotal === 1 ? "job" : "jobs"}</span>
             </div>
             {days.map((d, idx) => {
-              const isToday = d === today();
+              const isToday = d === today(timezone);
               const isSelected = d === scheduleDate;
               const data = weekJobs[d] || { total: 0, deliveries: 0, pickups: 0, exchanges: 0 };
               const dayName = new Date(d + "T00:00:00").toLocaleDateString("en-US", { weekday: "short" });
@@ -1259,18 +1296,21 @@ function ScheduleModule({ scheduleDate, setScheduleDate, todayJobs, unassignedJo
 
       {/* Month view */}
       {view === "month" && (() => {
-        const now = new Date();
-        const yr = now.getFullYear();
-        const mo = now.getMonth() + monthOffset;
-        const first = new Date(yr, mo, 1);
-        const daysInMonth = new Date(yr, mo + 1, 0).getDate();
-        const startDow = first.getDay();
-        const monthLabel = first.toLocaleDateString("en-US", { month: "long", year: "numeric" });
-        const todayStr = today();
+        // Phase B3 — anchor month to tenant-local year/month and
+        // walk days purely in UTC so grid cells and "today"
+        // highlight match the tenant's wall clock.
+        const parts = getTenantNowParts(timezone);
+        const yr = parts.year;
+        const mo = parts.month - 1 + monthOffset;
+        const first = new Date(Date.UTC(yr, mo, 1));
+        const daysInMonth = new Date(Date.UTC(yr, mo + 1, 0)).getUTCDate();
+        const startDow = first.getUTCDay();
+        const monthLabel = first.toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
+        const todayStr = today(timezone);
 
         const cells: (string | null)[] = Array.from({ length: startDow }, () => null);
         for (let d = 1; d <= daysInMonth; d++) {
-          cells.push(`${first.getFullYear()}-${String(first.getMonth() + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`);
+          cells.push(`${first.getUTCFullYear()}-${String(first.getUTCMonth() + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`);
         }
         const trailingEmpty = (7 - (cells.length % 7)) % 7;
         for (let i = 0; i < trailingEmpty; i++) cells.push(null);

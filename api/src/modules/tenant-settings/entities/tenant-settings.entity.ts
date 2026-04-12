@@ -93,6 +93,13 @@ export class TenantSettings {
   @Column({ name: 'quote_templates', type: 'jsonb', nullable: true })
   quote_templates!: Record<string, string> | null;
 
+  // Phase B3 — tenant-wide canonical timezone. IANA identifier used
+  // by the tenant-date helpers (api/src/common/utils/tenant-date.util.ts)
+  // as the single source of truth for "today" and date-range
+  // filter boundaries. Defaulted so existing tenants keep working.
+  @Column({ name: 'timezone', type: 'text', default: 'America/New_York' })
+  timezone!: string;
+
   @CreateDateColumn({ name: 'created_at' })
   created_at!: Date;
 

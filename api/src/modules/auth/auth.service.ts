@@ -256,6 +256,20 @@ export class AuthService {
       throw new UnauthorizedException('User not found');
     }
 
+    // Phase B3 — load tenant-wide settings so the frontend can
+    // thread `tenant.timezone` into tenant-aware date helpers.
+    // Lazy-create mirrors TenantSettingsService.getSettings() so
+    // older tenants that never wrote a settings row still receive
+    // the canonical 'America/New_York' default without erroring.
+    let settings = await this.tenantSettingsRepository.findOne({
+      where: { tenant_id: user.tenant.id },
+    });
+    if (!settings) {
+      settings = await this.tenantSettingsRepository.save(
+        this.tenantSettingsRepository.create({ tenant_id: user.tenant.id }),
+      );
+    }
+
     return {
       id: user.id,
       email: user.email,
@@ -290,6 +304,11 @@ export class AuthService {
         yardLatitude: user.tenant.yard_latitude ? Number(user.tenant.yard_latitude) : null,
         yardLongitude: user.tenant.yard_longitude ? Number(user.tenant.yard_longitude) : null,
         yardAddress: user.tenant.yard_address,
+        // Phase B3 — tenant-wide timezone. Always present in the
+        // response; falls back to 'America/New_York' when the
+        // column value is somehow null to keep frontend date
+        // helpers tenant-aware in all cases.
+        timezone: settings.timezone ?? 'America/New_York',
       },
     };
   }

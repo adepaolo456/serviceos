@@ -7,30 +7,103 @@ interface TenantModules {
   loading: boolean;
 }
 
-let cachedModules: { businessType: string; enabledModules: string[] } | null = null;
+// Phase B3 — this file now caches the full slice of `/auth/profile`
+// that cross-page hooks care about (modules AND timezone), so both
+// `useModules` and `useTenantTimezone` share a single fetch. Adding
+// a separate fetch just for timezone would violate the "no new fetch
+// for timezone" rule; co-locating the cache here avoids that while
+// keeping the existing `useModules` API unchanged.
+interface CachedProfile {
+  businessType: string;
+  enabledModules: string[];
+  timezone: string | null;
+}
+
+let cachedProfile: CachedProfile | null = null;
+let inflight: Promise<CachedProfile> | null = null;
+
+interface ProfileResponse {
+  tenant?: {
+    businessType?: string;
+    enabledModules?: string[];
+    timezone?: string | null;
+  };
+}
+
+function loadProfile(): Promise<CachedProfile> {
+  if (cachedProfile) return Promise.resolve(cachedProfile);
+  if (inflight) return inflight;
+  inflight = api
+    .get<ProfileResponse>("/auth/profile")
+    .then((p) => {
+      const result: CachedProfile = {
+        businessType: p.tenant?.businessType || "waste",
+        enabledModules: p.tenant?.enabledModules || [],
+        timezone: p.tenant?.timezone ?? null,
+      };
+      cachedProfile = result;
+      return result;
+    })
+    .catch(() => {
+      const fallback: CachedProfile = {
+        businessType: "waste",
+        enabledModules: [],
+        timezone: null,
+      };
+      cachedProfile = fallback;
+      return fallback;
+    })
+    .finally(() => {
+      inflight = null;
+    });
+  return inflight;
+}
 
 export function useModules(): TenantModules {
-  const [data, setData] = useState<{ businessType: string; enabledModules: string[] }>(
-    cachedModules || { businessType: "waste", enabledModules: [] }
+  const [data, setData] = useState<CachedProfile>(
+    cachedProfile || { businessType: "waste", enabledModules: [], timezone: null }
   );
-  const [loading, setLoading] = useState(!cachedModules);
+  const [loading, setLoading] = useState(!cachedProfile);
 
   useEffect(() => {
-    if (cachedModules) return;
-    api.get<{ tenant: { businessType: string; enabledModules: string[] } }>("/auth/profile")
-      .then((p) => {
-        const modules = {
-          businessType: p.tenant?.businessType || "waste",
-          enabledModules: p.tenant?.enabledModules || [],
-        };
-        cachedModules = modules;
-        setData(modules);
-      })
-      .catch(() => {})
+    if (cachedProfile) return;
+    loadProfile()
+      .then((p) => setData(p))
       .finally(() => setLoading(false));
   }, []);
 
-  return { ...data, loading };
+  return {
+    businessType: data.businessType,
+    enabledModules: data.enabledModules,
+    loading,
+  };
+}
+
+/**
+ * Phase B3 — tenant-wide timezone hook. Shares the `/auth/profile`
+ * cache with `useModules` so there is no extra fetch. Returns the
+ * tenant's IANA timezone string (e.g. "America/New_York") or
+ * `undefined` while the profile is still loading. Consumers pass
+ * the value directly to `getTenantToday(tz)` /
+ * `getTenantDateRangeToday(tz)` from `@/lib/utils/tenantDate`,
+ * which fall back to 'America/New_York' when the argument is
+ * undefined — so the first render before the profile resolves is
+ * already tenant-safe for default-timezone tenants.
+ */
+export function useTenantTimezone(): string | undefined {
+  const [tz, setTz] = useState<string | undefined>(
+    cachedProfile?.timezone ?? undefined
+  );
+
+  useEffect(() => {
+    if (cachedProfile) {
+      setTz(cachedProfile.timezone ?? undefined);
+      return;
+    }
+    loadProfile().then((p) => setTz(p.timezone ?? undefined));
+  }, []);
+
+  return tz;
 }
 
 export function isModuleEnabled(enabledModules: string[], mod: string): boolean {

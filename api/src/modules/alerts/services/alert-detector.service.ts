@@ -6,9 +6,11 @@ import { RentalChain } from '../../rental-chains/entities/rental-chain.entity';
 import { Job } from '../../jobs/entities/job.entity';
 import { BillingIssue } from '../../billing/entities/billing-issue.entity';
 import { DumpTicket } from '../../dump-locations/entities/dump-ticket.entity';
+import { TenantSettings } from '../../tenant-settings/entities/tenant-settings.entity';
 import { ReportingService } from '../../reporting/reporting.service';
 import { DerivedAlert } from '../dto/alert.dto';
 import { getDisposalThreshold } from '../helpers/disposal-thresholds';
+import { getTenantToday } from '../../../common/utils/tenant-date.util';
 
 /**
  * Phase 14 — AlertDetectorService
@@ -48,6 +50,8 @@ export class AlertDetectorService {
     private readonly billingIssueRepo: Repository<BillingIssue>,
     @InjectRepository(DumpTicket)
     private readonly dumpTicketRepo: Repository<DumpTicket>,
+    @InjectRepository(TenantSettings)
+    private readonly tenantSettingsRepo: Repository<TenantSettings>,
     private readonly reportingService: ReportingService,
     private readonly dataSource: DataSource,
   ) {}
@@ -62,6 +66,22 @@ export class AlertDetectorService {
    * alerts, and auto-resolves any stale ones whose conditions no
    * longer hold. Cooldown-gated; pass `force = true` to bypass.
    */
+  /**
+   * Phase B3 — tenant-wide timezone loader for day-boundary
+   * detectors. One DB read per `detectAllForTenant` run, passed
+   * down to the detectors that actually compute "today". Falls
+   * back to undefined so `getTenantToday(tz)` uses its own
+   * canonical default ('America/New_York').
+   */
+  private async loadTenantTimezone(
+    tenantId: string,
+  ): Promise<string | undefined> {
+    const s = await this.tenantSettingsRepo.findOne({
+      where: { tenant_id: tenantId },
+    });
+    return s?.timezone ?? undefined;
+  }
+
   async detectAllForTenant(tenantId: string, force = false): Promise<void> {
     if (!force) {
       const last = this.lastDetectedAt.get(tenantId) ?? 0;
@@ -70,16 +90,17 @@ export class AlertDetectorService {
     this.lastDetectedAt.set(tenantId, Date.now());
 
     const derived: DerivedAlert[] = [];
+    const tz = await this.loadTenantTimezone(tenantId);
 
     // Run detectors sequentially — each one is cheap enough that
     // parallelism would not win much, and the sequential order
     // makes logs readable during debugging.
     try {
-      derived.push(...(await this.detectOverdueRental(tenantId)));
+      derived.push(...(await this.detectOverdueRental(tenantId, tz)));
       derived.push(...(await this.detectMissingDumpSlip(tenantId)));
       derived.push(...(await this.detectMissingAsset(tenantId)));
       derived.push(...(await this.detectAbnormalDisposal(tenantId)));
-      derived.push(...(await this.detectLowMarginChain(tenantId)));
+      derived.push(...(await this.detectLowMarginChain(tenantId, tz)));
       derived.push(...(await this.detectLifecycleIntegrity(tenantId)));
       derived.push(...(await this.detectDateRuleConflict(tenantId)));
     } catch (err) {
@@ -105,10 +126,17 @@ export class AlertDetectorService {
     alert: Alert,
   ): Promise<boolean> {
     const target = `${alert.alert_type}|${alert.entity_type}|${alert.entity_id}`;
+    // Only loaded on the alert types that need tenant-local
+    // "today" for re-evaluation — skipped for the others to avoid
+    // an extra DB read on resolve().
+    const needsTz =
+      alert.alert_type === 'overdue_rental' ||
+      alert.alert_type === 'low_margin_chain';
+    const tz = needsTz ? await this.loadTenantTimezone(tenantId) : undefined;
     let candidates: DerivedAlert[] = [];
     switch (alert.alert_type) {
       case 'overdue_rental':
-        candidates = await this.detectOverdueRental(tenantId);
+        candidates = await this.detectOverdueRental(tenantId, tz);
         break;
       case 'missing_dump_slip':
         candidates = await this.detectMissingDumpSlip(tenantId);
@@ -120,7 +148,7 @@ export class AlertDetectorService {
         candidates = await this.detectAbnormalDisposal(tenantId);
         break;
       case 'low_margin_chain':
-        candidates = await this.detectLowMarginChain(tenantId);
+        candidates = await this.detectLowMarginChain(tenantId, tz);
         break;
       case 'lifecycle_integrity':
         candidates = await this.detectLifecycleIntegrity(tenantId);
@@ -221,8 +249,14 @@ export class AlertDetectorService {
    * which is about billable days beyond the rental window rather
    * than operational pickup lateness.
    */
-  private async detectOverdueRental(tenantId: string): Promise<DerivedAlert[]> {
-    const today = new Date().toISOString().split('T')[0];
+  private async detectOverdueRental(
+    tenantId: string,
+    timezone?: string,
+  ): Promise<DerivedAlert[]> {
+    // Phase B3 — tenant-local "today" instead of UTC. Prevents
+    // rental chains from flipping to "overdue" at 8pm Eastern
+    // because the UTC day already rolled forward.
+    const today = getTenantToday(timezone);
     const chains = await this.chainRepo
       .createQueryBuilder('c')
       .where('c.tenant_id = :tenantId', { tenantId })
@@ -398,13 +432,22 @@ export class AlertDetectorService {
    */
   private async detectLowMarginChain(
     tenantId: string,
+    timezone?: string,
   ): Promise<DerivedAlert[]> {
     const LOW_MARGIN_THRESHOLD_USD = 50;
 
-    const end = new Date().toISOString().split('T')[0];
-    const start = new Date(Date.now() - 90 * 86_400_000)
-      .toISOString()
-      .split('T')[0];
+    // Phase B3 — tenant-local "today" anchors the 90-day window.
+    // The start date is pure UTC arithmetic on the tenant-today
+    // YYYY-MM-DD string: no UTC-vs-local drift because we
+    // constructed the date from explicit Y/M/D ints with
+    // Date.UTC(), not from a "now" instant.
+    const end = getTenantToday(timezone);
+    const [endY, endM, endD] = end.split('-').map(Number);
+    const startDate = new Date(Date.UTC(endY, endM - 1, endD));
+    startDate.setUTCDate(startDate.getUTCDate() - 90);
+    const start = `${startDate.getUTCFullYear()}-${String(
+      startDate.getUTCMonth() + 1,
+    ).padStart(2, '0')}-${String(startDate.getUTCDate()).padStart(2, '0')}`;
 
     let report: Awaited<ReturnType<ReportingService['getLifecycleReport']>>;
     try {
