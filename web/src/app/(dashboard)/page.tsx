@@ -452,7 +452,7 @@ export default function DashboardPage() {
 
           {/* AR Outstanding */}
           <Link
-            href="/invoices?status=open"
+            href="/invoices?status=outstanding"
             className="no-underline rounded-[14px] px-5 py-5 transition-all flex items-center gap-4"
             style={{ background: "var(--t-bg-card)", border: "1px solid var(--t-border)", boxShadow: "var(--t-shadow-card)" }}
             onMouseEnter={(e) => { e.currentTarget.style.background = "var(--t-bg-card-hover)"; e.currentTarget.style.borderColor = "var(--t-border-strong)"; }}
