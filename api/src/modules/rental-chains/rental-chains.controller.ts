@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Put,
+  Patch,
   Body,
   Param,
   Query,
@@ -12,6 +13,8 @@ import { ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
 import { TenantId } from '../../common/decorators';
 import { RentalChainsService } from './rental-chains.service';
 import { CreateRentalChainDto } from './dto/create-rental-chain.dto';
+import { UpdateRentalChainDto } from './dto/update-rental-chain.dto';
+import { CreateExchangeDto } from './dto/create-exchange.dto';
 
 @ApiTags('Rental Chains')
 @ApiBearerAuth()
@@ -51,6 +54,32 @@ export class RentalChainsController {
   @Post()
   create(@TenantId() tenantId: string, @Body() dto: CreateRentalChainDto) {
     return this.service.createChain(tenantId, dto);
+  }
+
+  @Patch(':id')
+  @ApiOperation({
+    summary:
+      'Update lifecycle-level fields on a rental chain (authoritative date sync path)',
+  })
+  update(
+    @TenantId() tenantId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateRentalChainDto,
+  ) {
+    return this.service.updateChain(tenantId, id, dto);
+  }
+
+  @Post(':id/exchanges')
+  @ApiOperation({
+    summary:
+      'Schedule an exchange on a rental chain — inserts exchange link, resequences pickup, recalculates pickup date from tenant_settings.default_rental_period_days',
+  })
+  createExchange(
+    @TenantId() tenantId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CreateExchangeDto,
+  ) {
+    return this.service.createExchange(tenantId, id, dto);
   }
 
   @Put(':id/links/:linkId')

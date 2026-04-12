@@ -1,10 +1,17 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { RentalChain } from './entities/rental-chain.entity';
 import { TaskChainLink } from './entities/task-chain-link.entity';
 import { Job } from '../jobs/entities/job.entity';
+import { TenantSettings } from '../tenant-settings/entities/tenant-settings.entity';
 import { CreateRentalChainDto } from './dto/create-rental-chain.dto';
+import { UpdateRentalChainDto } from './dto/update-rental-chain.dto';
+import { CreateExchangeDto } from './dto/create-exchange.dto';
 
 const CORRECTION_CUTOFF = '2026-04-02T00:00:00Z';
 function classifyRecord(createdAt: string | Date): 'legacy' | 'post-correction' {
@@ -20,7 +27,28 @@ export class RentalChainsService {
     private linkRepo: Repository<TaskChainLink>,
     @InjectRepository(Job)
     private jobRepo: Repository<Job>,
+    @InjectRepository(TenantSettings)
+    private tenantSettingsRepo: Repository<TenantSettings>,
+    private dataSource: DataSource,
   ) {}
+
+  // ─────────────────────────────────────────────────────────
+  // TENANT RENTAL RULES
+  // ─────────────────────────────────────────────────────────
+
+  /**
+   * Resolve the tenant's default rental duration. This is the single
+   * source of truth for exchange pickup recalculation — never hardcode
+   * 14 days. Falls back to 14 only when the row is absent entirely so
+   * new tenants don't 500 before onboarding runs.
+   */
+  private async getTenantRentalDays(tenantId: string): Promise<number> {
+    const settings = await this.tenantSettingsRepo.findOne({
+      where: { tenant_id: tenantId },
+    });
+    const days = settings?.default_rental_period_days;
+    return typeof days === 'number' && days > 0 ? days : 14;
+  }
 
   // ─────────────────────────────────────────────────────────
   // CREATE CHAIN
@@ -319,6 +347,263 @@ export class RentalChainsService {
     const marginPercent = totalRevenue > 0 ? Math.round((profit / totalRevenue) * 10000) / 100 : 0;
 
     return { totalRevenue, totalCost, profit, marginPercent };
+  }
+
+  // ─────────────────────────────────────────────────────────
+  // UPDATE CHAIN (authoritative lifecycle update path)
+  // ─────────────────────────────────────────────────────────
+
+  /**
+   * Authoritative lifecycle update. When `expected_pickup_date`
+   * changes, the currently-scheduled pickup job's `scheduled_date` is
+   * updated in the same transaction so chain + job never drift.
+   */
+  async updateChain(
+    tenantId: string,
+    chainId: string,
+    dto: UpdateRentalChainDto,
+  ): Promise<RentalChain> {
+    const chain = await this.chainRepo.findOne({
+      where: { id: chainId, tenant_id: tenantId },
+    });
+    if (!chain) throw new NotFoundException(`Rental chain ${chainId} not found`);
+
+    if (dto.expected_pickup_date !== undefined) {
+      // pickup cannot precede delivery
+      if (
+        chain.drop_off_date &&
+        dto.expected_pickup_date <= chain.drop_off_date
+      ) {
+        throw new BadRequestException(
+          'expected_pickup_date must be after drop_off_date',
+        );
+      }
+    }
+
+    await this.dataSource.transaction(async (trx) => {
+      const chainRepo = trx.getRepository(RentalChain);
+      const linkRepo = trx.getRepository(TaskChainLink);
+      const jobRepo = trx.getRepository(Job);
+
+      if (dto.expected_pickup_date !== undefined) {
+        chain.expected_pickup_date = dto.expected_pickup_date;
+
+        // Find the currently-scheduled terminal pickup link for this chain
+        // and keep its job date in sync. A chain with an exchange in flight
+        // has multiple pickup links — we only sync the non-cancelled one.
+        const pickupLink = await linkRepo.findOne({
+          where: {
+            rental_chain_id: chain.id,
+            task_type: 'pick_up',
+            status: 'scheduled',
+          },
+          order: { sequence_number: 'DESC' },
+        });
+
+        if (pickupLink) {
+          pickupLink.scheduled_date = dto.expected_pickup_date;
+          await linkRepo.save(pickupLink);
+
+          // Update the linked job's scheduled_date — tenant-scoped update
+          await jobRepo.update(
+            { id: pickupLink.job_id, tenant_id: tenantId },
+            { scheduled_date: dto.expected_pickup_date },
+          );
+        }
+
+        // Keep the delivery job's rental_end_date in sync so the job
+        // detail view doesn't show a stale end date.
+        const deliveryLink = await linkRepo.findOne({
+          where: {
+            rental_chain_id: chain.id,
+            task_type: 'drop_off',
+          },
+          order: { sequence_number: 'ASC' },
+        });
+        if (deliveryLink) {
+          await jobRepo.update(
+            { id: deliveryLink.job_id, tenant_id: tenantId },
+            { rental_end_date: dto.expected_pickup_date },
+          );
+        }
+      }
+
+      if (dto.status !== undefined) {
+        chain.status = dto.status;
+      }
+
+      await chainRepo.save(chain);
+    });
+
+    return this.findOne(tenantId, chainId);
+  }
+
+  // ─────────────────────────────────────────────────────────
+  // CREATE EXCHANGE (chain-aware)
+  // ─────────────────────────────────────────────────────────
+
+  /**
+   * Insert an exchange into an existing rental chain. Creates the new
+   * exchange job + link, cancels the old scheduled pickup, and appends
+   * a fresh pickup link. The new pickup date is computed from
+   * `tenant_settings.default_rental_period_days` unless the caller
+   * passes an explicit `override_pickup_date`.
+   *
+   * Chain ordering after this call is guaranteed to be:
+   *   ...existing links → exchange(new) → pick_up(new)
+   */
+  async createExchange(
+    tenantId: string,
+    chainId: string,
+    dto: CreateExchangeDto,
+  ): Promise<RentalChain> {
+    const chain = await this.chainRepo.findOne({
+      where: { id: chainId, tenant_id: tenantId },
+    });
+    if (!chain) throw new NotFoundException(`Rental chain ${chainId} not found`);
+
+    // Resolve new pickup date: override wins, otherwise exchange_date + tenant rental days
+    let newPickupDateStr: string;
+    if (dto.override_pickup_date) {
+      newPickupDateStr = dto.override_pickup_date;
+    } else {
+      const rentalDays = await this.getTenantRentalDays(tenantId);
+      const d = new Date(dto.exchange_date);
+      d.setUTCDate(d.getUTCDate() + rentalDays);
+      newPickupDateStr = d.toISOString().split('T')[0];
+    }
+
+    // Validate sequencing
+    if (newPickupDateStr <= dto.exchange_date) {
+      throw new BadRequestException(
+        'new pickup date must be after exchange date',
+      );
+    }
+    if (chain.drop_off_date && dto.exchange_date < chain.drop_off_date) {
+      throw new BadRequestException(
+        'exchange date cannot be before delivery date',
+      );
+    }
+
+    const size = dto.dumpster_size || chain.dumpster_size;
+    const assetId = dto.asset_id ?? chain.asset_id ?? null;
+
+    return this.dataSource.transaction(async (trx) => {
+      const chainRepo = trx.getRepository(RentalChain);
+      const linkRepo = trx.getRepository(TaskChainLink);
+      const jobRepo = trx.getRepository(Job);
+
+      // 1. Cancel the currently-scheduled pickup (if any)
+      const currentPickupLink = await linkRepo.findOne({
+        where: {
+          rental_chain_id: chain.id,
+          task_type: 'pick_up',
+          status: 'scheduled',
+        },
+        order: { sequence_number: 'DESC' },
+      });
+
+      let previousLinkId: string | null = null;
+      let previousSeq = 0;
+
+      if (currentPickupLink) {
+        currentPickupLink.status = 'cancelled';
+        await linkRepo.save(currentPickupLink);
+        await jobRepo.update(
+          { id: currentPickupLink.job_id, tenant_id: tenantId },
+          { status: 'cancelled', cancelled_at: new Date() },
+        );
+        // The exchange must slot in AFTER whatever came before the old pickup
+        previousLinkId = currentPickupLink.previous_link_id ?? null;
+        previousSeq = currentPickupLink.sequence_number - 1;
+      } else {
+        // No scheduled pickup — append to the tail
+        const tail = await linkRepo
+          .createQueryBuilder('l')
+          .where('l.rental_chain_id = :id', { id: chain.id })
+          .orderBy('l.sequence_number', 'DESC')
+          .getOne();
+        previousLinkId = tail?.id ?? null;
+        previousSeq = tail?.sequence_number ?? 0;
+      }
+
+      // 2. Create the exchange job
+      const exchangeDateStr = dto.exchange_date.replace(/-/g, '');
+      const rand = Math.random().toString(36).slice(2, 5).toUpperCase();
+      const exchangeJob = jobRepo.create({
+        tenant_id: tenantId,
+        customer_id: chain.customer_id,
+        job_number: `JOB-${exchangeDateStr}-${rand}X`,
+        job_type: 'exchange',
+        service_type: 'dumpster_rental',
+        asset_subtype: size,
+        status: 'pending',
+        priority: 'normal',
+        scheduled_date: dto.exchange_date,
+        asset_id: assetId,
+      } as Partial<Job> as Job);
+      const savedExchangeJob = await jobRepo.save(exchangeJob);
+
+      // 3. Create the exchange link
+      const exchangeLink = linkRepo.create({
+        rental_chain_id: chain.id,
+        job_id: savedExchangeJob.id,
+        sequence_number: previousSeq + 1,
+        task_type: 'exchange',
+        status: 'scheduled',
+        scheduled_date: dto.exchange_date,
+        previous_link_id: previousLinkId || undefined,
+      });
+      const savedExchangeLink = await linkRepo.save(exchangeLink);
+
+      // 4. Create the fresh pickup job + link
+      const pickupDateStr = newPickupDateStr.replace(/-/g, '');
+      const pickupJob = jobRepo.create({
+        tenant_id: tenantId,
+        customer_id: chain.customer_id,
+        job_number: `JOB-${pickupDateStr}-${rand}P`,
+        job_type: 'pickup',
+        service_type: 'dumpster_rental',
+        asset_subtype: size,
+        status: 'pending',
+        priority: 'normal',
+        scheduled_date: newPickupDateStr,
+        asset_id: assetId,
+        parent_job_id: savedExchangeJob.id,
+      } as Partial<Job> as Job);
+      const savedPickupJob = await jobRepo.save(pickupJob);
+
+      const pickupLink = linkRepo.create({
+        rental_chain_id: chain.id,
+        job_id: savedPickupJob.id,
+        sequence_number: previousSeq + 2,
+        task_type: 'pick_up',
+        status: 'scheduled',
+        scheduled_date: newPickupDateStr,
+        previous_link_id: savedExchangeLink.id,
+      });
+      const savedPickupLink = await linkRepo.save(pickupLink);
+
+      // 5. Wire bidirectional next_link_id pointers
+      savedExchangeLink.next_link_id = savedPickupLink.id;
+      await linkRepo.save(savedExchangeLink);
+
+      if (previousLinkId) {
+        // Re-point whatever previously fed into the cancelled pickup
+        // to feed into the new exchange.
+        await linkRepo.update(
+          { id: previousLinkId },
+          { next_link_id: savedExchangeLink.id },
+        );
+      }
+
+      // 6. Update chain-level expected pickup (new pickup is now terminal)
+      chain.expected_pickup_date = newPickupDateStr;
+      if (dto.dumpster_size) chain.dumpster_size = dto.dumpster_size;
+      await chainRepo.save(chain);
+
+      return this.findOne(tenantId, chain.id);
+    });
   }
 
   async updateLinkStatus(
