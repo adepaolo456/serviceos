@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Put,
   Patch,
   Delete,
   Body,
@@ -20,6 +21,11 @@ import {
   CalendarQueryDto,
   UpdateJobAssetDto,
 } from './dto/job.dto';
+// `import type` because UpdatePickupDateDto is a plain interface
+// (no class-validator decorators). With NestJS + isolatedModules +
+// emitDecoratorMetadata, a runtime import of a type-only symbol
+// trips TS1272 on the @Body() decorator's metadata emission.
+import type { UpdatePickupDateDto } from './dto/update-pickup-date.dto';
 import { TenantId, CurrentUser, Roles } from '../../common/decorators';
 import { RolesGuard } from '../../common/guards';
 import {
@@ -131,6 +137,30 @@ export class JobsController {
     @Param('id', ParseUUIDPipe) id: string,
   ) {
     return this.jobsService.getLifecycleContext(tenantId, id);
+  }
+
+  /**
+   * Phase 16 — edit a pickup job's scheduled date from the
+   * Connected Job Lifecycle panel. Single-transaction write that
+   * updates the pickup job + its parent rental chain + the
+   * reschedule audit trio. No pricing, no invoicing, no
+   * rental_start/end_date. See JobsService.updatePickupDate for
+   * the full contract and validation rules.
+   *
+   * RBAC: dispatcher+ (route-level). Tenant-scoped via the
+   * global JwtAuthGuard + @TenantId().
+   */
+  @Put(':id/pickup-date')
+  @UseGuards(RolesGuard)
+  @Roles('dispatcher')
+  @ApiOperation({ summary: 'Update a pickup job\'s scheduled date and sync the chain (Phase 16)' })
+  updatePickupDate(
+    @TenantId() tenantId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser('id') userId: string,
+    @Body() body: UpdatePickupDateDto,
+  ) {
+    return this.jobsService.updatePickupDate(tenantId, id, body, userId);
   }
 
   @Patch(':id')

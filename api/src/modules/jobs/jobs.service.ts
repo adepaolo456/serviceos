@@ -4,7 +4,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In } from 'typeorm';
+import { Repository, In, DataSource } from 'typeorm';
 import { Job } from './entities/job.entity';
 import { Asset } from '../assets/entities/asset.entity';
 import { PricingRule } from '../pricing/entities/pricing-rule.entity';
@@ -20,7 +20,10 @@ import { TaskChainLink } from '../rental-chains/entities/task-chain-link.entity'
 import { DumpTicket } from '../dump-locations/entities/dump-ticket.entity';
 import { BillingService } from '../billing/billing.service';
 import { BillingIssueDetectorService } from '../billing/services/billing-issue-detector.service';
-import { RentalChainsService } from '../rental-chains/rental-chains.service';
+import {
+  RentalChainsService,
+  daysBetween as rentalDaysBetween,
+} from '../rental-chains/rental-chains.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PricingService } from '../pricing/pricing.service';
 import { AlertService } from '../alerts/services/alert.service';
@@ -42,6 +45,7 @@ import {
   ListJobsQueryDto,
   ChangeStatusDto,
 } from './dto/job.dto';
+import { UpdatePickupDateDto } from './dto/update-pickup-date.dto';
 
 const VALID_TRANSITIONS: Record<string, string[]> = {
   pending: ['confirmed', 'cancelled'],
@@ -94,6 +98,11 @@ export class JobsService {
     // /jobs/:id/lifecycle-context endpoint returns everything the
     // panel needs in one round trip.
     private alertService: AlertService,
+    // Phase 16 — updatePickupDate wraps its writes in a single
+    // transaction spanning `jobs` + `rental_chains`. Injecting
+    // DataSource here rather than adding one more @InjectRepository
+    // so every downstream mutation path uses the same helper.
+    private dataSource: DataSource,
   ) {}
 
   async create(tenantId: string, dto: CreateJobDto): Promise<Job> {
@@ -1525,6 +1534,155 @@ export class JobsService {
       nodes,
       chain_alerts: chainAlerts,
     };
+  }
+
+  // ─────────────────────────────────────────────────────────
+  // PHASE 16 — pickup date edit (mutation)
+  // ─────────────────────────────────────────────────────────
+
+  /**
+   * Update the pickup date on an active pickup job and keep the
+   * parent rental chain in sync. Wrapped in a single transaction
+   * that writes exactly these 8 fields (per Phase 16 Q4 — no
+   * other fields touched):
+   *
+   *   jobs.scheduled_date             ← new pickup date
+   *   jobs.rescheduled_from_date      ← previous scheduled_date
+   *   jobs.rescheduled_at             ← NOW()
+   *   jobs.rescheduled_reason         ← "operator_override_lifecycle_panel"
+   *   jobs.rescheduled_by_customer    ← false  (operator, not customer)
+   *   jobs.rental_days                ← recomputed duration
+   *   rental_chains.expected_pickup_date ← new pickup date
+   *   rental_chains.rental_days       ← recomputed duration
+   *
+   * Re-uses the canonical `daysBetween` helper from
+   * RentalChainsService (exported for Phase 16) so the job and
+   * chain never disagree on duration math. Does NOT run pricing,
+   * touch invoices, or modify `jobs.rental_start_date` /
+   * `rental_end_date` — those describe booking state and are
+   * explicitly out of scope for this mutation.
+   *
+   * "Manual Override" state is encoded by the reschedule audit
+   * trio (`rescheduled_at` non-null + `rescheduled_by_customer =
+   * false`). No new override field introduced.
+   *
+   * Validation:
+   *   - job exists & belongs to tenant    → 404
+   *   - job_type === 'pickup'              → 400 invalid_job_type
+   *   - cancelled_at IS NULL               → 400 cancelled
+   *   - new date is a valid ISO date       → 400 invalid_date_format
+   *   - new date >= today                  → 400 past_date
+   *   - new date > chain.drop_off_date     → 400 before_drop_off
+   *
+   * RBAC is enforced at the controller layer (`@Roles('dispatcher')`).
+   */
+  async updatePickupDate(
+    tenantId: string,
+    jobId: string,
+    dto: UpdatePickupDateDto,
+    _userId: string,
+  ): Promise<{ job: Job; chain: RentalChain }> {
+    // 1. Format + basic input validation. We expect YYYY-MM-DD.
+    const newDate = dto.pickup_date;
+    if (
+      !newDate ||
+      typeof newDate !== 'string' ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(newDate)
+    ) {
+      throw new BadRequestException('edit_pickup_date_error_invalid');
+    }
+
+    // 2. Tenant-scoped job load. 404 hides existence from the
+    // wrong tenant.
+    const job = await this.jobsRepository.findOne({
+      where: { id: jobId, tenant_id: tenantId },
+    });
+    if (!job) {
+      throw new NotFoundException('Job not found');
+    }
+
+    // 3. Job-level preconditions.
+    if (job.job_type !== 'pickup') {
+      throw new BadRequestException('edit_pickup_date_error_invalid_job_type');
+    }
+    if (job.cancelled_at) {
+      throw new BadRequestException('edit_pickup_date_error_cancelled');
+    }
+
+    // 4. Chain resolution via task_chain_links. Tenant ownership
+    // on the chain row is the second-layer guard.
+    const link = await this.taskChainLinkRepo.findOne({
+      where: { job_id: jobId },
+    });
+    if (!link) {
+      throw new NotFoundException('Rental chain not found for this job');
+    }
+    const chain = await this.rentalChainRepo.findOne({
+      where: { id: link.rental_chain_id, tenant_id: tenantId },
+    });
+    if (!chain) {
+      throw new NotFoundException('Rental chain not found');
+    }
+
+    // 5. Date-rule validation. Both bounds are inclusive/exclusive
+    // per Phase 16 spec:
+    //   new >= today         (pickup can be rescheduled to today)
+    //   new >  drop_off_date (zero-day rentals not allowed)
+    const today = new Date().toISOString().split('T')[0];
+    if (newDate < today) {
+      throw new BadRequestException('edit_pickup_date_error_past_date');
+    }
+    if (!chain.drop_off_date || newDate <= chain.drop_off_date) {
+      throw new BadRequestException('edit_pickup_date_error_before_drop_off');
+    }
+
+    // 6. Duration math via the canonical exported helper.
+    const newRentalDays = rentalDaysBetween(chain.drop_off_date, newDate);
+
+    // 7. Single-transaction write. TypeORM's
+    // DataSource.transaction handles commit/rollback/release for
+    // us — we only need to execute repository updates against the
+    // transactional manager.
+    const previousScheduledDate = job.scheduled_date;
+    await this.dataSource.transaction(async (manager) => {
+      await manager.update(
+        Job,
+        { id: jobId, tenant_id: tenantId },
+        {
+          scheduled_date: newDate,
+          rescheduled_from_date: previousScheduledDate,
+          rescheduled_at: new Date(),
+          rescheduled_reason: 'operator_override_lifecycle_panel',
+          rescheduled_by_customer: false,
+          rental_days: newRentalDays,
+        },
+      );
+      await manager.update(
+        RentalChain,
+        { id: chain.id, tenant_id: tenantId },
+        {
+          expected_pickup_date: newDate,
+          rental_days: newRentalDays,
+        },
+      );
+    });
+
+    // 8. Reload fresh state for the response. The panel will
+    // also re-fetch /jobs/:id/lifecycle-context after the
+    // client-side toast, but returning the updated pair lets the
+    // caller optimistically render without a second round trip.
+    const updatedJob = await this.jobsRepository.findOne({
+      where: { id: jobId, tenant_id: tenantId },
+    });
+    const updatedChain = await this.rentalChainRepo.findOne({
+      where: { id: chain.id, tenant_id: tenantId },
+    });
+    if (!updatedJob || !updatedChain) {
+      // Should be impossible — transaction committed. Guard for
+      // the typechecker rather than a runtime scenario.
+      throw new NotFoundException('Updated job or chain not found');
+    }
+    return { job: updatedJob, chain: updatedChain };
   }
 
   /**

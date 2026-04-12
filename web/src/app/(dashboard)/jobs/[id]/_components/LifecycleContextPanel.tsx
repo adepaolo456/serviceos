@@ -33,6 +33,7 @@ import {
   TrendingDown,
   GitBranch,
   CalendarX,
+  CalendarClock,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { getFeatureLabel, getFeature } from "@/lib/feature-registry";
@@ -48,6 +49,7 @@ import type {
   LifecycleAlert,
   AlertSeverity,
 } from "./lifecycle-context-types";
+import EditPickupDateModal from "./EditPickupDateModal";
 
 // ─────────────────────────────────────────────────────────────
 // Local helpers
@@ -109,6 +111,12 @@ export default function LifecycleContextPanel({
   const [data, setData] = useState<LifecycleContextResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Phase 16 — editing state for the pickup date modal. We stash
+  // the node being edited so the modal knows the current pickup
+  // date without having to look it up again. The `refetchKey`
+  // bump re-runs the fetch effect after a successful save.
+  const [editingPickup, setEditingPickup] = useState<LifecycleNode | null>(null);
+  const [refetchKey, setRefetchKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -130,7 +138,7 @@ export default function LifecycleContextPanel({
     return () => {
       cancelled = true;
     };
-  }, [jobId]);
+  }, [jobId, refetchKey]);
 
   const panelLabel = getFeatureLabel("connected_job_lifecycle");
 
@@ -196,12 +204,26 @@ export default function LifecycleContextPanel({
                     key={node.job_id}
                     node={node}
                     isLast={idx === data.nodes.length - 1}
+                    onEditPickup={setEditingPickup}
                   />
                 ))}
               </div>
             </>
           )}
         </>
+      )}
+
+      {/* Phase 16 — Edit Pickup Date modal. Rendered at the
+          panel level so the fetch + refetch cycle stays owned
+          by one component. */}
+      {editingPickup && data?.chain?.drop_off_date && editingPickup.scheduled_date && (
+        <EditPickupDateModal
+          jobId={editingPickup.job_id}
+          currentPickupDate={editingPickup.scheduled_date}
+          dropOffDate={data.chain.drop_off_date}
+          onClose={() => setEditingPickup(null)}
+          onSaved={() => setRefetchKey((k) => k + 1)}
+        />
       )}
     </div>
   );
@@ -286,9 +308,11 @@ function ChainAlertBanner({ alerts }: { alerts: LifecycleAlert[] }) {
 function NodeRow({
   node,
   isLast,
+  onEditPickup,
 }: {
   node: LifecycleNode;
   isLast: boolean;
+  onEditPickup: (node: LifecycleNode) => void;
 }) {
   const displayStatus = deriveDisplayStatus(node.status);
   const TaskIcon = TASK_TYPE_ICON[node.task_type] ?? ArrowRight;
@@ -296,6 +320,18 @@ function NodeRow({
     node.status === "cancelled" ||
     node.link_status === "cancelled" ||
     !!node.cancelled_at;
+
+  // Phase 16 — "Edit Pickup Date" action is gated on three
+  // conditions per spec Q1:
+  //   task_type === 'pick_up' AND link_status !== 'cancelled'
+  //   AND cancelled_at IS NULL
+  // We also require a scheduled_date to hand to the modal as
+  // the "current" value.
+  const canEditPickup =
+    node.task_type === "pick_up" &&
+    node.link_status !== "cancelled" &&
+    !node.cancelled_at &&
+    !!node.scheduled_date;
 
   // Current-step emphasis: accent border + soft fill. Cancelled:
   // muted. Otherwise: neutral card.
@@ -311,9 +347,8 @@ function NodeRow({
 
   return (
     <>
-      <Link
-        href={`/jobs/${node.job_id}`}
-        className="flex items-start gap-3 rounded-[14px] border px-3.5 py-3 transition-colors no-underline"
+      <div
+        className="flex items-start gap-3 rounded-[14px] border px-3.5 py-3 transition-colors"
         style={{
           borderColor,
           backgroundColor,
@@ -321,6 +356,17 @@ function NodeRow({
           borderWidth: node.is_current ? 2 : 1,
         }}
       >
+        {/* Inner Link wraps the icon + textual content so clicking
+            anywhere on the content area deep-links to the job,
+            while leaving the action area (Edit Pickup Date button +
+            completion checkmark) outside the Link so the button
+            isn't nested inside an anchor (invalid HTML + React
+            warning) and so clicks on the button don't also
+            navigate. */}
+        <Link
+          href={`/jobs/${node.job_id}`}
+          className="flex flex-1 items-start gap-3 no-underline min-w-0"
+        >
         {/* Task-type icon */}
         <div
           className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full"
@@ -441,15 +487,35 @@ function NodeRow({
             </div>
           )}
         </div>
+        </Link>
 
-        {/* Completion checkmark */}
-        {node.completed_at && !isCancelled && (
-          <CheckCircle2
-            className="h-4 w-4 shrink-0"
-            style={{ color: "var(--t-accent)" }}
-          />
-        )}
-      </Link>
+        {/* Action area — sits OUTSIDE the Link so clicks here
+            don't navigate and so the button isn't nested in an
+            anchor. */}
+        <div className="flex items-start gap-1.5 shrink-0">
+          {canEditPickup && (
+            <button
+              onClick={() => onEditPickup(node)}
+              className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium"
+              style={{
+                background: "var(--t-bg-elevated)",
+                border: "1px solid var(--t-border)",
+                color: "var(--t-text-primary)",
+              }}
+            >
+              <CalendarClock className="h-3 w-3" />
+              {getFeatureLabel("edit_pickup_date_button_label")}
+            </button>
+          )}
+          {/* Completion checkmark */}
+          {node.completed_at && !isCancelled && (
+            <CheckCircle2
+              className="h-4 w-4 shrink-0 mt-1"
+              style={{ color: "var(--t-accent)" }}
+            />
+          )}
+        </div>
+      </div>
 
       {/* Connector line between nodes (skip after the last one) */}
       {!isLast && (
