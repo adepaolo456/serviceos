@@ -24,6 +24,8 @@ import { api } from "@/lib/api";
 import SlideOver from "@/components/slide-over";
 import Dropdown from "@/components/dropdown";
 import { useToast } from "@/components/toast";
+import { useTenantTimezone } from "@/lib/use-modules";
+import { getTenantToday, getTenantNowParts } from "@/lib/utils/tenantDate";
 
 /* --- Types --- */
 
@@ -139,28 +141,40 @@ function fmtDate(d: string): string {
   return new Date(d + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
-function daysUntil(d: string): number {
+// Phase B3 — "days until due" relative to tenant-local today,
+// not the browser's midnight. Parses the stored YYYY-MM-DD as a
+// UTC date to avoid local-tz drift on the input, and anchors
+// today to the tenant's wall clock.
+function daysUntil(d: string, timezone: string | undefined): number {
   if (!d) return 0;
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const due = new Date(d + "T12:00:00");
-  return Math.round((due.getTime() - today.getTime()) / 86400000);
+  const todayStr = getTenantToday(timezone);
+  const [ty, tm, td] = todayStr.split("-").map(Number);
+  const [dy, dm, dd] = d.split("-").map(Number);
+  const todayUtc = Date.UTC(ty, (tm || 1) - 1, td || 1);
+  const dueUtc = Date.UTC(dy, (dm || 1) - 1, dd || 1);
+  return Math.round((dueUtc - todayUtc) / 86400000);
 }
 
-function getDateRange(range: string): { dateFrom?: string; dateTo?: string } {
-  const today = new Date();
-  const f = (d: Date) => d.toISOString().split("T")[0];
+// Phase B3 — tenant-aware date range. Week/month/quarter are all
+// derived from the tenant's wall-clock Y/M/D, then walked in
+// pure UTC so there is no local-vs-UTC drift in the emitted
+// YYYY-MM-DD strings.
+function getDateRange(range: string, timezone: string | undefined): { dateFrom?: string; dateTo?: string } {
+  const { year, month, day } = getTenantNowParts(timezone);
+  const utcToday = new Date(Date.UTC(year, month - 1, day));
+  const f = (d: Date) =>
+    `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
   if (range === "week") {
-    const start = new Date(today); start.setDate(today.getDate() - today.getDay());
-    const end = new Date(start); end.setDate(start.getDate() + 6);
+    const start = new Date(utcToday); start.setUTCDate(utcToday.getUTCDate() - utcToday.getUTCDay());
+    const end = new Date(start); end.setUTCDate(start.getUTCDate() + 6);
     return { dateFrom: f(start), dateTo: f(end) };
   }
   if (range === "month") {
-    return { dateFrom: f(new Date(today.getFullYear(), today.getMonth(), 1)), dateTo: f(new Date(today.getFullYear(), today.getMonth() + 1, 0)) };
+    return { dateFrom: f(new Date(Date.UTC(year, month - 1, 1))), dateTo: f(new Date(Date.UTC(year, month, 0))) };
   }
   if (range === "quarter") {
-    const qStart = Math.floor(today.getMonth() / 3) * 3;
-    return { dateFrom: f(new Date(today.getFullYear(), qStart, 1)), dateTo: f(new Date(today.getFullYear(), qStart + 3, 0)) };
+    const qStart = Math.floor((month - 1) / 3) * 3;
+    return { dateFrom: f(new Date(Date.UTC(year, qStart, 1))), dateTo: f(new Date(Date.UTC(year, qStart + 3, 0))) };
   }
   return {};
 }
@@ -191,6 +205,11 @@ export default function InvoicesPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { toast } = useToast();
+  // Phase B3 — tenant-wide timezone. Threaded into `getDateRange`
+  // and `daysUntil` so the AR filters and "X days until due"
+  // labels agree with the tenant's wall clock instead of drifting
+  // into UTC-tomorrow in the evening.
+  const timezone = useTenantTimezone();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [total, setTotal] = useState(0);
   // Phase B2 — initialize tab state from the ?status= URL param
@@ -218,7 +237,7 @@ export default function InvoicesPage() {
     try {
       if (tab === "outstanding") {
         // Outstanding = open + overdue
-        const range = getDateRange(dateRange);
+        const range = getDateRange(dateRange, timezone);
         const fetchStatus = (status: string) => {
           const params = new URLSearchParams({ page: "1", limit: "100", status });
           if (range.dateFrom) params.set("dateFrom", range.dateFrom);
@@ -232,7 +251,7 @@ export default function InvoicesPage() {
       } else {
         const params = new URLSearchParams({ page: String(page), limit: "30" });
         if (tab !== "all") params.set("status", tab);
-        const range = getDateRange(dateRange);
+        const range = getDateRange(dateRange, timezone);
         if (range.dateFrom) params.set("dateFrom", range.dateFrom);
         if (range.dateTo) params.set("dateTo", range.dateTo);
         const res = await api.get<InvoicesResponse>(`/invoices?${params.toString()}`);
@@ -240,7 +259,7 @@ export default function InvoicesPage() {
         setTotal(res.meta.total);
       }
     } catch { /* */ } finally { setLoading(false); }
-  }, [page, tab, dateRange]);
+  }, [page, tab, dateRange, timezone]);
 
   // Fetch all for aggregation (counts + totals)
   const fetchAllInvoices = useCallback(async () => {
@@ -515,7 +534,7 @@ export default function InvoicesPage() {
             const statusColor = STATUS_COLOR[inv.status] || STATUS_COLOR.draft;
             const customerName = inv.customer ? `${inv.customer.first_name} ${inv.customer.last_name}` : "No customer";
             const isOverdue = inv.status === "overdue";
-            const days = daysUntil(inv.due_date);
+            const days = daysUntil(inv.due_date, timezone);
             const lineDesc = inv.line_items?.length > 0 ? inv.line_items[0].name : "";
 
             return (
@@ -821,6 +840,11 @@ function FromJobForm({ onSuccess }: { onSuccess: () => void }) {
 /* --- Create Invoice Form --- */
 
 function CreateInvoiceForm({ onSuccess }: { onSuccess: () => void }) {
+  // Phase B3 — hook is called directly here (rather than prop-drilling)
+  // because the form is a leaf component and already re-renders
+  // independently. Shares the /auth/profile cache so this doesn't
+  // trigger an extra fetch.
+  const timezone = useTenantTimezone();
   const [customerId, setCustomerId] = useState("");
   const [customerSearch, setCustomerSearch] = useState("");
   const [customerResults, setCustomerResults] = useState<CustomerOption[]>([]);
@@ -828,8 +852,13 @@ function CreateInvoiceForm({ onSuccess }: { onSuccess: () => void }) {
   const [customerName, setCustomerName] = useState("");
   const [paymentTerms, setPaymentTerms] = useState("30");
   const [dueDate, setDueDate] = useState(() => {
-    const d = new Date(); d.setDate(d.getDate() + 30);
-    return d.toISOString().split("T")[0];
+    // Phase B3 — default due date = tenant-today + 30 days, walked
+    // purely in UTC to avoid browser-local or UTC-rollover drift.
+    const todayStr = getTenantToday(timezone);
+    const [ty, tm, td] = todayStr.split("-").map(Number);
+    const dt = new Date(Date.UTC(ty, (tm || 1) - 1, td || 1));
+    dt.setUTCDate(dt.getUTCDate() + 30);
+    return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, "0")}-${String(dt.getUTCDate()).padStart(2, "0")}`;
   });
   const [taxRate, setTaxRate] = useState("0.0825");
   const [notes, setNotes] = useState("");
@@ -855,10 +884,16 @@ function CreateInvoiceForm({ onSuccess }: { onSuccess: () => void }) {
 
   // Update due date when payment terms change
   useEffect(() => {
+    // Phase B3 — same tenant-today + N days pattern as the initial
+    // default, kept in sync so the "today" anchor is never the
+    // browser's midnight.
     const days = parseInt(paymentTerms) || 30;
-    const d = new Date(); d.setDate(d.getDate() + days);
-    setDueDate(d.toISOString().split("T")[0]);
-  }, [paymentTerms]);
+    const todayStr = getTenantToday(timezone);
+    const [ty, tm, td] = todayStr.split("-").map(Number);
+    const dt = new Date(Date.UTC(ty, (tm || 1) - 1, td || 1));
+    dt.setUTCDate(dt.getUTCDate() + days);
+    setDueDate(`${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, "0")}-${String(dt.getUTCDate()).padStart(2, "0")}`);
+  }, [paymentTerms, timezone]);
 
   const updateLineItem = (idx: number, field: keyof LineItem, value: string | number) => {
     setLineItems((prev) => {

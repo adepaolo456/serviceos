@@ -31,6 +31,8 @@ import { CreditCard, FileWarning, MapPinOff, Package } from "lucide-react";
 import { FEATURE_REGISTRY } from "@/lib/feature-registry";
 import { useLifecycleSync, useVisibilityRefresh } from "@/lib/lifecycle-sync";
 import { getBlockedReason, isJobBlocked } from "@/lib/blocked-job";
+import { useTenantTimezone } from "@/lib/use-modules";
+import { getTenantToday, getTenantNowParts } from "@/lib/utils/tenantDate";
 
 /* ─── Types ─── */
 
@@ -165,20 +167,27 @@ function daysBetween(a: string, b: string): number {
   return Math.round((new Date(b).getTime() - new Date(a).getTime()) / 86400000);
 }
 
-function getDateRange(range: string): { dateFrom?: string; dateTo?: string } {
-  const today = new Date();
-  const fmt = (d: Date) => d.toISOString().split("T")[0];
-  if (range === "today") return { dateFrom: fmt(today), dateTo: fmt(today) };
+// Phase B3 — tenant-aware date range. `getTenantNowParts(tz)`
+// returns the tenant's wall-clock Y/M/D; we then do all subsequent
+// date arithmetic in pure UTC on those integers so there is no
+// browser-local or UTC-rollover drift. The output is still plain
+// YYYY-MM-DD strings, matching the server's query-param filters.
+function getDateRange(range: string, timezone: string | undefined): { dateFrom?: string; dateTo?: string } {
+  const { year, month, day } = getTenantNowParts(timezone);
+  const utcToday = new Date(Date.UTC(year, month - 1, day));
+  const fmt = (d: Date) =>
+    `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+  if (range === "today") return { dateFrom: fmt(utcToday), dateTo: fmt(utcToday) };
   if (range === "week") {
-    const start = new Date(today);
-    start.setDate(today.getDate() - today.getDay());
+    const start = new Date(utcToday);
+    start.setUTCDate(utcToday.getUTCDate() - utcToday.getUTCDay());
     const end = new Date(start);
-    end.setDate(start.getDate() + 6);
+    end.setUTCDate(start.getUTCDate() + 6);
     return { dateFrom: fmt(start), dateTo: fmt(end) };
   }
   if (range === "month") {
-    const start = new Date(today.getFullYear(), today.getMonth(), 1);
-    const end = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+    const start = new Date(Date.UTC(year, month - 1, 1));
+    const end = new Date(Date.UTC(year, month, 0));
     return { dateFrom: fmt(start), dateTo: fmt(end) };
   }
   return {};
@@ -216,6 +225,11 @@ export default function JobsPage() {
   const searchParams = useSearchParams();
   const { openWizard } = useBooking();
   const { toast } = useToast();
+  // Phase B3 — tenant-wide timezone. Threaded into `getDateRange`
+  // for week/month/today filter derivations and into the
+  // "overdue" lifecycle stat comparison below. Shares the
+  // /auth/profile cache with `useModules` — no extra fetch.
+  const timezone = useTenantTimezone();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [total, setTotal] = useState(0);
   // Phase B2 — initialize statusFilter from the ?status= URL
@@ -288,7 +302,7 @@ export default function JobsPage() {
       } else if (MULTI_STATUS[statusFilter]) {
         // Multi-status KPI tiles: fetch each status in parallel and merge
         const statuses = MULTI_STATUS[statusFilter];
-        const range = getDateRange(dateRange);
+        const range = getDateRange(dateRange, timezone);
         const results = await Promise.all(
           statuses.map(s => {
             const params = new URLSearchParams({ page: "1", limit: "50", status: s, enrichment: "board" });
@@ -312,7 +326,7 @@ export default function JobsPage() {
         // isJobBlocked are still used client-side for per-row reason
         // chips and sub-filter segmentation.
         const params = new URLSearchParams();
-        const range = getDateRange(dateRange);
+        const range = getDateRange(dateRange, timezone);
         if (range.dateFrom) params.set("dateFrom", range.dateFrom);
         if (range.dateTo) params.set("dateTo", range.dateTo);
         const qs = params.toString();
@@ -327,7 +341,7 @@ export default function JobsPage() {
         const DISPLAY_TO_STORED: Record<string, string> = { assigned: "dispatched", pending_payment: "pending" };
         const apiStatus = DISPLAY_TO_STORED[statusFilter] || statusFilter;
         if (apiStatus !== "all") params.set("status", apiStatus);
-        const range = getDateRange(dateRange);
+        const range = getDateRange(dateRange, timezone);
         if (range.dateFrom) params.set("dateFrom", range.dateFrom);
         if (range.dateTo) params.set("dateTo", range.dateTo);
         const res = await api.get<JobsResponse>(`/jobs?${params.toString()}`);
@@ -337,7 +351,7 @@ export default function JobsPage() {
     } catch { /* silent */ } finally {
       setLoading(false);
     }
-  }, [page, statusFilter, dateRange]);
+  }, [page, statusFilter, dateRange, timezone]);
 
   useEffect(() => { fetchJobs(); }, [fetchJobs]);
 
@@ -497,7 +511,7 @@ export default function JobsPage() {
       });
     }
     if (dateRange !== "all") {
-      const range = getDateRange(dateRange);
+      const range = getDateRange(dateRange, timezone);
       result = result.filter(c => {
         if (range.dateFrom && c.drop_off_date < range.dateFrom) return false;
         if (range.dateTo && c.drop_off_date > range.dateTo) return false;
@@ -506,7 +520,7 @@ export default function JobsPage() {
     }
     result.sort((a, b) => (b.drop_off_date || "").localeCompare(a.drop_off_date || ""));
     return result;
-  }, [chains, searchQuery, dateRange]);
+  }, [chains, searchQuery, dateRange, timezone]);
 
   const standaloneJobs = useMemo(() => {
     return filteredJobs.filter(j => !chainedJobIds.has(j.id));
@@ -537,7 +551,11 @@ export default function JobsPage() {
           const p = c.links.find(l => l.task_type === "pick_up");
           return d?.job?.status === "completed" && p && p.job?.status !== "completed";
         }).length;
-        const overdue = chains.filter(c => c.status === "active" && c.expected_pickup_date && c.expected_pickup_date < new Date().toISOString().split("T")[0]).length;
+        // Phase B3 — "overdue" compares against tenant-local today,
+        // not UTC, so an Eastern evening view doesn't pre-flip
+        // chains to overdue at 7pm.
+        const todayStr = getTenantToday(timezone);
+        const overdue = chains.filter(c => c.status === "active" && c.expected_pickup_date && c.expected_pickup_date < todayStr).length;
         const completed = chains.filter(c => c.status === "completed").length;
         const stats = [
           { label: FEATURE_REGISTRY.lifecycle_stat_active?.label ?? "Active Rentals", value: active, color: active > 0 ? "var(--t-accent)" : "var(--t-text-primary)", icon: Package },

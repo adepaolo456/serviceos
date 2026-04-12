@@ -5,6 +5,7 @@ import { RentalChain } from '../rental-chains/entities/rental-chain.entity';
 import { Job } from '../jobs/entities/job.entity';
 import { BillingIssue } from '../billing/entities/billing-issue.entity';
 import { DumpTicket } from '../dump-locations/entities/dump-ticket.entity';
+import { TenantSettings } from '../tenant-settings/entities/tenant-settings.entity';
 import { AlertsController } from './controllers/alerts.controller';
 import { AlertService } from './services/alert.service';
 import { AlertDetectorService } from './services/alert-detector.service';
@@ -27,7 +28,17 @@ import { ReportingModule } from '../reporting/reporting.module';
  */
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Alert, RentalChain, Job, BillingIssue, DumpTicket]),
+    TypeOrmModule.forFeature([
+      Alert,
+      RentalChain,
+      Job,
+      BillingIssue,
+      DumpTicket,
+      // Phase B3 — AlertDetectorService loads tenant_settings.timezone
+      // once per detection run to make day-boundary detectors
+      // (overdue_rental, low_margin_chain) tenant-tz-aware.
+      TenantSettings,
+    ]),
     ReportingModule,
   ],
   controllers: [AlertsController],
