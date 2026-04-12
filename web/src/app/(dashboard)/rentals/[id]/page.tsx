@@ -99,6 +99,11 @@ export default function RentalLifecyclePage({ params }: { params: Promise<{ id: 
   const [exchangeOverridePickup, setExchangeOverridePickup] = useState("");
   const [exchangeSaving, setExchangeSaving] = useState(false);
   const [exchangeError, setExchangeError] = useState("");
+  // Active dumpster sizes from tenant pricing rules — driven by
+  // `pricing_rules.asset_subtype` where is_active=true. Fetched once
+  // when the modal first opens so typical page loads stay lean.
+  const [availableSizes, setAvailableSizes] = useState<string[] | null>(null);
+  const [sizesLoading, setSizesLoading] = useState(false);
 
   const reload = () => api.get<LifecycleData>(`/rental-chains/${id}/lifecycle`).then(setData).catch(() => {});
 
@@ -108,6 +113,27 @@ export default function RentalLifecyclePage({ params }: { params: Promise<{ id: 
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [id]);
+
+  // Lazy-load active pricing sizes the first time the exchange modal
+  // is opened. The pricing endpoint already filters `is_active = true`
+  // by default, so deactivated sizes (e.g. 30yd/40yd) never surface.
+  useEffect(() => {
+    if (!exchangeModalOpen || availableSizes !== null || sizesLoading) return;
+    setSizesLoading(true);
+    api.get<{ data: Array<{ asset_subtype: string }> }>("/pricing?limit=100")
+      .then((res) => {
+        const uniq = Array.from(
+          new Set(
+            (res.data || [])
+              .map((p) => p.asset_subtype)
+              .filter((s): s is string => typeof s === "string" && s.length > 0),
+          ),
+        );
+        setAvailableSizes(uniq);
+      })
+      .catch(() => setAvailableSizes([]))
+      .finally(() => setSizesLoading(false));
+  }, [exchangeModalOpen, availableSizes, sizesLoading]);
 
   const handlePickupDateUpdate = async () => {
     if (!data || !pickupDate) return;
@@ -431,12 +457,44 @@ export default function RentalLifecyclePage({ params }: { params: Promise<{ id: 
               className="w-full rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-3 py-2 text-sm text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)] mb-3" />
 
             <label className="text-xs text-[var(--t-text-muted)] mb-1 block">
-              {FEATURE_REGISTRY.exchange_new_size?.label ?? "New dumpster size (optional)"}
+              {FEATURE_REGISTRY.new_dumpster_size?.label ?? "New dumpster size"}
             </label>
-            <input type="text" value={exchangeSize}
-              onChange={e => setExchangeSize(e.target.value)}
-              placeholder={rentalChain.dumpsterSize || "e.g. 20yd"}
-              className="w-full rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-3 py-2 text-sm text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)] mb-3" />
+            {(() => {
+              // Resolve option list: current size is always included
+              // so the dropdown never shows "no active sizes" when the
+              // rental itself is on a size that was recently deactivated.
+              const currentSize = rentalChain.dumpsterSize || "";
+              const baseList = availableSizes ?? [];
+              const hasCurrent = currentSize && baseList.includes(currentSize);
+              const options = hasCurrent || !currentSize ? baseList : [currentSize, ...baseList];
+              const isEmpty = !sizesLoading && options.length === 0;
+              return (
+                <>
+                  <select
+                    value={exchangeSize}
+                    onChange={e => setExchangeSize(e.target.value)}
+                    disabled={sizesLoading || isEmpty}
+                    className="w-full rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-3 py-2 text-sm text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)] mb-1 disabled:opacity-50"
+                  >
+                    {sizesLoading && <option value="">{FEATURE_REGISTRY.select_dumpster_size_loading?.label ?? "Loading sizes…"}</option>}
+                    {!sizesLoading && isEmpty && <option value="">{FEATURE_REGISTRY.no_available_sizes?.label ?? "No active sizes available"}</option>}
+                    {!sizesLoading && !isEmpty && (
+                      <>
+                        {!exchangeSize && <option value="" disabled>{FEATURE_REGISTRY.select_dumpster_size?.label ?? "Select a size"}</option>}
+                        {options.map(size => (
+                          <option key={size} value={size}>{size}</option>
+                        ))}
+                      </>
+                    )}
+                  </select>
+                  <p className="text-[10px] text-[var(--t-text-muted)] mb-3">
+                    {isEmpty
+                      ? (FEATURE_REGISTRY.no_available_sizes_hint?.label ?? "Add an active pricing rule to enable exchanges.")
+                      : (FEATURE_REGISTRY.new_dumpster_size_hint?.label ?? "Pre-filled with the current rental size.")}
+                  </p>
+                </>
+              );
+            })()}
 
             <label className="text-xs text-[var(--t-text-muted)] mb-1 block">
               {FEATURE_REGISTRY.override_pickup_date?.label ?? "Override pickup date (optional)"}
@@ -456,7 +514,7 @@ export default function RentalLifecyclePage({ params }: { params: Promise<{ id: 
               <button onClick={() => setExchangeModalOpen(false)} className="rounded-full px-4 py-2 text-xs font-medium text-[var(--t-text-muted)]">
                 Cancel
               </button>
-              <button onClick={handleScheduleExchange} disabled={!exchangeDate || exchangeSaving}
+              <button onClick={handleScheduleExchange} disabled={!exchangeDate || !exchangeSize || exchangeSaving}
                 className="rounded-full bg-[var(--t-accent)] px-4 py-2 text-xs font-semibold text-[var(--t-accent-on-accent)] disabled:opacity-40 hover:opacity-90 transition-opacity">
                 {exchangeSaving ? (FEATURE_REGISTRY.lifecycle_action_saving?.label ?? "Saving...") : (FEATURE_REGISTRY.lifecycle_action_confirm?.label ?? "Confirm")}
               </button>
