@@ -15,6 +15,7 @@ import { RentalChainsService } from './rental-chains.service';
 import { CreateRentalChainDto } from './dto/create-rental-chain.dto';
 import { UpdateRentalChainDto } from './dto/update-rental-chain.dto';
 import { CreateExchangeDto } from './dto/create-exchange.dto';
+import { RescheduleExchangeDto } from './dto/reschedule-exchange.dto';
 
 @ApiTags('Rental Chains')
 @ApiBearerAuth()
@@ -80,6 +81,20 @@ export class RentalChainsController {
     @Body() dto: CreateExchangeDto,
   ) {
     return this.service.createExchange(tenantId, id, dto);
+  }
+
+  @Patch(':id/exchanges/:linkId')
+  @ApiOperation({
+    summary:
+      'Reschedule an existing exchange — updates exchange link + downstream pickup using tenant rental rules',
+  })
+  rescheduleExchange(
+    @TenantId() tenantId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('linkId', ParseUUIDPipe) linkId: string,
+    @Body() dto: RescheduleExchangeDto,
+  ) {
+    return this.service.rescheduleExchange(tenantId, id, linkId, dto);
   }
 
   @Put(':id/links/:linkId')
