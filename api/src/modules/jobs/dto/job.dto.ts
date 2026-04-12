@@ -283,6 +283,14 @@ export class ChangeStatusDto {
   @IsOptional()
   @IsString()
   assetChangeReason?: string;
+
+  // Fix — flag set by the UI when the user confirmed an asset whose
+  // subtype does not match the job's required size. Recorded in the
+  // audit trail for traceability.
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  assetSizeMismatch?: boolean;
 }
 
 // Phase 11A — dedicated DTO for `PATCH /jobs/:id/asset`
@@ -303,6 +311,12 @@ export class UpdateJobAssetDto {
   @IsOptional()
   @IsString()
   reason?: string;
+
+  // Fix — size-mismatch flag, same semantics as on ChangeStatusDto.
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  sizeMismatch?: boolean;
 }
 
 export class AssignDto {

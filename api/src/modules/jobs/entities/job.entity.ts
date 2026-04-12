@@ -278,6 +278,7 @@ export class Job {
     changed_at: string;
     reason: string | null;
     override_conflict?: boolean;
+    size_mismatch?: boolean;
   }>;
 
   @Column({ nullable: true })
