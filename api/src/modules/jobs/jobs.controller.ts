@@ -170,7 +170,15 @@ export class JobsController {
     @CurrentUser('id') userId: string,
     @Body() body: UpdateScheduledDateDto,
   ) {
-    return this.jobsService.updateScheduledDate(tenantId, id, body, userId);
+    // Phase B1 — actor is now structured so updateScheduledDate can
+    // distinguish operator edits from customer portal edits. This
+    // call preserves exact Phase 16.1 behavior (operator type +
+    // canonical reason string).
+    return this.jobsService.updateScheduledDate(tenantId, id, body, {
+      type: 'operator',
+      userId,
+      reason: 'operator_override_lifecycle_panel',
+    });
   }
 
   @Patch(':id')

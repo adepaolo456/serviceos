@@ -8,9 +8,16 @@ import { Job } from '../jobs/entities/job.entity';
 import { Invoice } from '../billing/entities/invoice.entity';
 import { Payment } from '../billing/entities/payment.entity';
 import { Tenant } from '../tenants/entities/tenant.entity';
+// Phase B1 — chain lookup for the portal extend / early-pickup /
+// reschedule flows. The actual mutation is delegated to
+// JobsService.updateScheduledDate so we never duplicate the
+// scheduling transaction logic here.
+import { RentalChain } from '../rental-chains/entities/rental-chain.entity';
+import { TaskChainLink } from '../rental-chains/entities/task-chain-link.entity';
 import { PricingService } from '../pricing/pricing.service';
 import { OrchestrationService } from '../billing/services/orchestration.service';
 import { StripeService } from '../stripe/stripe.service';
+import { JobsService } from '../jobs/jobs.service';
 
 /**
  * Customer-safe projection of a Job for portal responses.
@@ -66,11 +73,76 @@ export class PortalService {
     @InjectRepository(Invoice) private invoiceRepo: Repository<Invoice>,
     @InjectRepository(Payment) private paymentRepo: Repository<Payment>,
     @InjectRepository(Tenant) private tenantRepo: Repository<Tenant>,
+    // Phase B1 — chain lookup for extend / early-pickup /
+    // reschedule. Reads only; writes go through JobsService.
+    @InjectRepository(RentalChain)
+    private rentalChainRepo: Repository<RentalChain>,
+    @InjectRepository(TaskChainLink)
+    private taskChainLinkRepo: Repository<TaskChainLink>,
     private jwtService: JwtService,
     private pricingService: PricingService,
     private orchestrationService: OrchestrationService,
     private stripeService: StripeService,
+    // Phase B1 — canonical scheduling mutation. All three portal
+    // rental actions delegate here so the job + chain always stay
+    // in sync and the reschedule audit trio is always written.
+    private jobsService: JobsService,
   ) {}
+
+  // ─────────────────────────────────────────────────────────
+  // PHASE B1 — shared chain lookup for portal rental actions
+  // ─────────────────────────────────────────────────────────
+
+  /**
+   * Given a job the portal customer acted on (typically the
+   * delivery job shown in their rental card), return the parent
+   * rental chain and its ACTIVE pickup job — the one that
+   * extend / early-pickup / reschedule actually mutate.
+   *
+   * "Active" means: task_chain_links.status != 'cancelled' AND
+   * jobs.cancelled_at IS NULL, matching the gating logic the
+   * Phase 16.1 lifecycle panel uses.
+   *
+   * Tenant-scoped via the chain ownership check — 404s hide
+   * existence from the wrong tenant.
+   */
+  private async findActivePickupInChain(
+    tenantId: string,
+    startingJobId: string,
+  ): Promise<{ chain: RentalChain; pickupJob: Job }> {
+    const link = await this.taskChainLinkRepo.findOne({
+      where: { job_id: startingJobId },
+    });
+    if (!link) {
+      throw new NotFoundException('Rental chain not found for this job');
+    }
+    const chain = await this.rentalChainRepo.findOne({
+      where: { id: link.rental_chain_id, tenant_id: tenantId },
+    });
+    if (!chain) {
+      throw new NotFoundException('Rental chain not found');
+    }
+
+    const pickupJob = await this.jobRepo
+      .createQueryBuilder('j')
+      .innerJoin(
+        TaskChainLink,
+        'l',
+        'l.job_id = j.id AND l.rental_chain_id = :chainId',
+        { chainId: chain.id },
+      )
+      .where('j.tenant_id = :tenantId', { tenantId })
+      .andWhere('j.job_type = :t', { t: 'pickup' })
+      .andWhere('j.cancelled_at IS NULL')
+      .andWhere('l.status != :cancelled', { cancelled: 'cancelled' })
+      .getOne();
+    if (!pickupJob) {
+      throw new NotFoundException(
+        'Active pickup job not found for this rental',
+      );
+    }
+    return { chain, pickupJob };
+  }
 
   /**
    * Allow-list mapper: Job → PortalJob. Strips every internal field listed
@@ -328,48 +400,146 @@ export class PortalService {
     };
   }
 
-  async extendRental(customerId: string, tenantId: string, jobId: string, newEndDate: string) {
-    const job = await this.jobRepo.findOne({
+  /**
+   * Phase B1 — customer-initiated rental extension.
+   *
+   * Before Phase B1 this method contained its own date math
+   * (`Math.ceil((end - start) / 86400000)` with no null guard on
+   * `rental_start_date`) which produced the 20,557-day corrupted
+   * row I healed in the Phase 15 bug fix. It also only wrote to
+   * the `jobs` row and left `rental_chains.expected_pickup_date`
+   * and `rental_chains.rental_days` silently out of sync.
+   *
+   * The rewrite delegates the entire mutation to
+   * `JobsService.updateScheduledDate` — the same canonical
+   * transaction used by the Phase 16.1 lifecycle panel. All
+   * scheduling math, chain sync, and audit trail are handled
+   * there in one place.
+   *
+   * "Extend rental" semantically means "move the active pickup
+   * job later" so we target the chain's pickup job, not the
+   * delivery job the customer started from.
+   */
+  async extendRental(
+    customerId: string,
+    tenantId: string,
+    jobId: string,
+    newEndDate: string,
+  ) {
+    // 1. Tenant-scoped load of the starting job so we can also
+    // enforce customer ownership (the Phase 16.1 JobsService
+    // call is tenant-scoped but NOT customer-scoped).
+    const startingJob = await this.jobRepo.findOne({
       where: { id: jobId, customer_id: customerId, tenant_id: tenantId },
     });
-    if (!job) throw new NotFoundException('Rental not found');
-    if (['completed', 'cancelled'].includes(job.status)) {
-      throw new BadRequestException('Cannot extend a completed or cancelled rental');
+    if (!startingJob) throw new NotFoundException('Rental not found');
+    if (['completed', 'cancelled'].includes(startingJob.status)) {
+      throw new BadRequestException(
+        'Cannot extend a completed or cancelled rental',
+      );
     }
 
-    const start = new Date(job.rental_start_date);
-    const end = new Date(newEndDate);
-    const days = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+    // 2. Resolve the chain and find the active pickup job.
+    const { pickupJob } = await this.findActivePickupInChain(
+      tenantId,
+      jobId,
+    );
+    // Defence-in-depth: the pickup job must belong to the same
+    // customer (findActivePickupInChain already guarantees the
+    // chain is tenant-scoped, but chains bundle per-customer
+    // state).
+    if (pickupJob.customer_id !== customerId) {
+      throw new NotFoundException('Rental not found');
+    }
 
-    await this.jobRepo.update(jobId, { rental_end_date: newEndDate, rental_days: days });
-    return { message: 'Rental extended', newEndDate, rentalDays: days };
+    // 3. Delegate. JobsService.updateScheduledDate handles
+    // validation (new >= today, new > drop_off_date), the
+    // transaction, the reschedule audit trio, and the chain
+    // sync. The customer actor flag sets
+    // `rescheduled_by_customer = true` so portal-activity
+    // queries surface the edit.
+    const result = await this.jobsService.updateScheduledDate(
+      tenantId,
+      pickupJob.id,
+      { scheduled_date: newEndDate },
+      {
+        type: 'customer',
+        userId: customerId,
+        reason: 'customer_portal_extend',
+      },
+    );
+
+    return {
+      message: 'Rental extended',
+      newEndDate,
+      rentalDays: result.chain?.rental_days ?? null,
+    };
   }
 
-  async requestEarlyPickup(customerId: string, tenantId: string, jobId: string) {
-    const job = await this.jobRepo.findOne({
+  /**
+   * Phase B1 — customer-initiated early pickup.
+   *
+   * Before Phase B1 this method created a NEW pickup job with
+   * `source: 'portal'` but with NO `scheduled_date`, NO
+   * `rental_chain_id`, and NO `task_chain_link`. The resulting
+   * row was a ghost — it showed up in the portal-activity
+   * summary count (because of `source = 'portal'`) but was
+   * impossible to dispatch because it had no date, and
+   * invisible to every lifecycle surface because it had no
+   * chain linkage.
+   *
+   * The rewrite deletes the ghost-job creation entirely.
+   * "Request early pickup" now means "move the existing
+   * pickup job to today" — the chain's real pickup is
+   * rescheduled forward through the canonical
+   * `JobsService.updateScheduledDate` path, which writes the
+   * reschedule audit trio + updates the chain atomically.
+   */
+  async requestEarlyPickup(
+    customerId: string,
+    tenantId: string,
+    jobId: string,
+  ) {
+    // 1. Tenant + customer ownership check on the starting job.
+    const startingJob = await this.jobRepo.findOne({
       where: { id: jobId, customer_id: customerId, tenant_id: tenantId },
     });
-    if (!job) throw new NotFoundException('Rental not found');
+    if (!startingJob) throw new NotFoundException('Rental not found');
 
-    const date = new Date();
-    const dateStr = date.toISOString().slice(0, 10).replace(/-/g, '');
-    const seq = Math.floor(Math.random() * 9000) + 1000;
+    // 2. Find the chain's active pickup.
+    const { pickupJob } = await this.findActivePickupInChain(
+      tenantId,
+      jobId,
+    );
+    if (pickupJob.customer_id !== customerId) {
+      throw new NotFoundException('Rental not found');
+    }
 
-    const pickupJob = this.jobRepo.create({
-      tenant_id: tenantId,
-      job_number: `JOB-${dateStr}-${seq}`,
-      customer_id: customerId,
-      asset_id: job.asset_id,
-      job_type: 'pickup',
-      service_type: job.service_type,
-      priority: 'normal',
-      service_address: job.service_address,
-      status: 'pending',
-      source: 'portal',
-    });
+    // 3. "Today" — TODO: Phase B3 will replace this with
+    // todayInTenantTz(). For now we match the existing UTC-
+    // based convention used everywhere else in the codebase
+    // so the behavior is consistent with the rest of the API
+    // until the shared helper ships.
+    // TODO: Phase B3 — replace with todayInTenantTz()
+    const today = new Date().toISOString().split('T')[0];
 
-    const saved = await this.jobRepo.save(pickupJob);
-    return this.toPortalJob(saved);
+    // 4. Delegate to the canonical mutation. Pickup branch
+    // validates `new > chain.drop_off_date` — if today is on
+    // or before the drop-off date (i.e. the rental hasn't even
+    // started) the backend will return a clean
+    // `edit_job_date_error_before_drop_off`.
+    const result = await this.jobsService.updateScheduledDate(
+      tenantId,
+      pickupJob.id,
+      { scheduled_date: today },
+      {
+        type: 'customer',
+        userId: customerId,
+        reason: 'customer_portal_early_pickup',
+      },
+    );
+
+    return this.toPortalJob(result.job);
   }
 
   async getProfile(customerId: string, tenantId: string) {
@@ -428,63 +598,134 @@ export class PortalService {
     return { message: 'Agreement signed' };
   }
 
-  async rescheduleRental(customerId: string, tenantId: string, jobId: string, body: { scheduledDate: string; reason?: string }) {
+  /**
+   * Phase B1 — customer-initiated reschedule.
+   *
+   * Semantically: "move my rental start date but keep my rental
+   * duration the same". We shift both the delivery job and the
+   * linked pickup job by the same delta so the rental window
+   * length is preserved.
+   *
+   * Before Phase B1 this method wrote the reschedule audit trio
+   * and shifted the linked pickup's scheduled_date, but never
+   * updated `rental_chains.drop_off_date` /
+   * `expected_pickup_date` / `rental_days` — so the chain
+   * silently diverged from the jobs and the lifecycle strip +
+   * dashboards never saw the reschedule.
+   *
+   * The rewrite delegates to `JobsService.updateScheduledDate`
+   * TWICE: once for the delivery job (shifts drop_off_date +
+   * recomputes the chain duration against the OLD expected
+   * pickup), then once for the pickup job (shifts
+   * expected_pickup_date + recomputes against the NEW drop_off).
+   * After both calls the chain matches the jobs.
+   *
+   * Known edge case: forward-moving a delivery past the CURRENT
+   * expected_pickup_date will be rejected by call 1's
+   * `edit_job_date_error_after_pickup` validation. This is the
+   * spec's literal "delivery-first" ordering. If customers ever
+   * need to push their delivery beyond the existing pickup
+   * window, flip the order to pickup-first in a follow-up.
+   */
+  async rescheduleRental(
+    customerId: string,
+    tenantId: string,
+    jobId: string,
+    body: { scheduledDate: string; reason?: string },
+  ) {
+    // 1. Tenant + customer scoped job load.
     const job = await this.jobRepo.findOne({
       where: { id: jobId, customer_id: customerId, tenant_id: tenantId },
     });
     if (!job) throw new NotFoundException('Job not found');
 
+    // 2. Portal business rules — kept verbatim from the old
+    // implementation. These gates run BEFORE delegation so the
+    // customer sees the same friendly messaging they used to.
     if (!['pending', 'confirmed'].includes(job.status)) {
-      throw new BadRequestException('This job cannot be rescheduled. Please call us for changes.');
+      throw new BadRequestException(
+        'This job cannot be rescheduled. Please call us for changes.',
+      );
     }
-
-    const newDate = new Date(body.scheduledDate);
-    if (newDate <= new Date()) {
+    if (job.job_type !== 'delivery') {
+      // New gate: the reschedule action is specifically for
+      // the rental start date. Pickup moves go through the
+      // extend / early-pickup actions above.
+      throw new BadRequestException(
+        'Only the delivery date can be rescheduled from this action. Use Extend or Early Pickup for pickup changes.',
+      );
+    }
+    const newDeliveryDate = body.scheduledDate;
+    if (new Date(newDeliveryDate) <= new Date()) {
       throw new BadRequestException('Please select a future date.');
     }
-
     if (job.scheduled_date) {
       const scheduled = new Date(job.scheduled_date);
-      const hoursUntil = (scheduled.getTime() - Date.now()) / (1000 * 60 * 60);
+      const hoursUntil =
+        (scheduled.getTime() - Date.now()) / (1000 * 60 * 60);
       if (hoursUntil < 24) {
-        throw new BadRequestException('Jobs cannot be rescheduled within 24 hours of the scheduled date. Please call us for same-day changes.');
+        throw new BadRequestException(
+          'Jobs cannot be rescheduled within 24 hours of the scheduled date. Please call us for same-day changes.',
+        );
       }
     }
 
-    const oldDate = job.scheduled_date;
-    const updates: Record<string, unknown> = {
-      scheduled_date: body.scheduledDate,
-      rescheduled_by_customer: true,
-      rescheduled_at: new Date(),
-      rescheduled_from_date: oldDate,
-      rescheduled_reason: body.reason || null,
+    // 3. Find the chain + active pickup. This ALSO doubles as a
+    // defensive guard that the job actually belongs to a chain
+    // (reschedule on a standalone job is unsupported).
+    const { chain, pickupJob } = await this.findActivePickupInChain(
+      tenantId,
+      jobId,
+    );
+    if (pickupJob.customer_id !== customerId) {
+      throw new NotFoundException('Job not found');
+    }
+
+    // 4. Capture the current chain duration so we can preserve
+    // it across the reschedule. Fall back to 14 only if the
+    // chain row is missing the value (legacy data).
+    const originalRentalDays = chain.rental_days ?? 14;
+
+    // 5. Compute the new pickup date as newDeliveryDate +
+    // originalRentalDays. Inline UTC arithmetic — no new helper.
+    const pickupDateObj = new Date(`${newDeliveryDate}T00:00:00Z`);
+    pickupDateObj.setUTCDate(
+      pickupDateObj.getUTCDate() + originalRentalDays,
+    );
+    const newPickupDate = pickupDateObj.toISOString().split('T')[0];
+
+    // 6. Delegate to the canonical mutation. Two calls: delivery
+    // first, pickup second. Each call runs its own transaction
+    // via DataSource.transaction and writes the reschedule audit
+    // trio + chain sync.
+    const actor = {
+      type: 'customer' as const,
+      userId: customerId,
+      reason: 'customer_portal_reschedule',
     };
 
-    if (job.rental_days) {
-      const end = new Date(body.scheduledDate);
-      end.setDate(end.getDate() + job.rental_days);
-      updates.rental_end_date = end.toISOString().split('T')[0];
-      if (!job.rental_start_date) {
-        updates.rental_start_date = body.scheduledDate;
-      }
-    }
+    await this.jobsService.updateScheduledDate(
+      tenantId,
+      jobId,
+      { scheduled_date: newDeliveryDate },
+      actor,
+    );
+    await this.jobsService.updateScheduledDate(
+      tenantId,
+      pickupJob.id,
+      { scheduled_date: newPickupDate },
+      actor,
+    );
 
-    await this.jobRepo.update(jobId, updates);
-
-    const pickupJob = await this.jobRepo.findOne({
-      where: { tenant_id: tenantId, customer_id: customerId, job_type: 'pickup', status: In(['pending', 'confirmed']) },
-    });
-    if (pickupJob && updates.rental_end_date) {
-      await this.jobRepo.update(pickupJob.id, { scheduled_date: updates.rental_end_date as string });
-    }
-
-    // H1: re-read is scoped defensively (same pattern as initial lookup at line 284).
+    // 7. Reload the delivery job for the portal response —
+    // matches the old method's return shape so the frontend
+    // contract is unchanged.
     const updated = await this.jobRepo.findOne({
       where: { id: jobId, customer_id: customerId, tenant_id: tenantId },
     });
     return {
       ...(updated ? this.toPortalJob(updated) : {}),
-      message: `Your delivery has been moved to ${body.scheduledDate}.${updates.rental_end_date ? ` Your new pickup date is ${updates.rental_end_date}.` : ''} The company has been notified.`,
+      message: `Your delivery has been moved to ${newDeliveryDate}. Your new pickup date is ${newPickupDate}. The company has been notified.`,
     };
   }
 
