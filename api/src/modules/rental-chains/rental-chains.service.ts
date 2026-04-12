@@ -196,6 +196,7 @@ export class RentalChainsService {
             {
               status: 'cancelled',
               cancelled_at: new Date(),
+              cancellation_reason: 'exchange_replacement',
             },
           );
         }
@@ -240,6 +241,7 @@ export class RentalChainsService {
           {
             status: 'cancelled',
             cancelled_at: new Date(),
+            cancellation_reason: 'exchange_replacement',
           },
         );
       }
@@ -610,9 +612,16 @@ export class RentalChainsService {
       if (currentPickupLink) {
         currentPickupLink.status = 'cancelled';
         await linkRepo.save(currentPickupLink);
+        // Phase 10A: stamp the cancellation reason so the job detail
+        // page can show "Cancelled due to exchange replacement" and
+        // derive replacement tasks from the chain.
         await jobRepo.update(
           { id: currentPickupLink.job_id, tenant_id: tenantId },
-          { status: 'cancelled', cancelled_at: new Date() },
+          {
+            status: 'cancelled',
+            cancelled_at: new Date(),
+            cancellation_reason: 'exchange_replacement',
+          },
         );
         // The exchange must slot in AFTER whatever came before the old pickup
         previousLinkId = currentPickupLink.previous_link_id ?? null;

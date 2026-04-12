@@ -81,6 +81,16 @@ interface Job {
   extra_day_charges?: number;
   parent_job_id?: string | null;
   linked_job_ids?: string[];
+  // Phase 10A — chain-derived replacement tasks for cancelled jobs.
+  rental_chain_id?: string | null;
+  replacement_jobs?: Array<{
+    job_id: string;
+    job_number: string;
+    job_type: string;
+    task_type: string;
+    scheduled_date: string;
+    status: string;
+  }>;
 }
 
 /* --- Constants --- */
@@ -840,13 +850,78 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
             );
           })}
         </div>
-        {job.status === "cancelled" && (
-          <div className="mt-4 rounded-[20px] bg-[var(--t-error-soft)] border border-[var(--t-error)]/20 px-4 py-3 text-sm text-[var(--t-error)]">
-            <XCircle className="inline h-4 w-4 mr-1.5 -mt-0.5" />
-            Cancelled{job.cancelled_at && ` on ${new Date(job.cancelled_at).toLocaleString()}`}
-            {job.cancellation_reason && ` — ${job.cancellation_reason}`}
-          </div>
-        )}
+        {job.status === "cancelled" && (() => {
+          // Phase 10A — map cancellation_reason to registry label, fall
+          // back to the legacy "cancelled as part of lifecycle update"
+          // copy when reason is null (legacy jobs), and surface the
+          // chain-derived replacement tasks.
+          const reasonLabel =
+            job.cancellation_reason === "exchange_replacement"
+              ? FEATURE_REGISTRY.cancelled_due_to_exchange_replacement?.label ?? "Cancelled due to exchange replacement"
+              : job.cancellation_reason
+                ? job.cancellation_reason
+                : FEATURE_REGISTRY.cancelled_due_to_lifecycle_update?.label ?? "Cancelled as part of lifecycle update";
+          const replacements = job.replacement_jobs ?? [];
+          const hasReplacements = replacements.length > 0;
+          const replacementRouteLabel = (r: { task_type: string; job_type: string }) =>
+            r.task_type === "exchange"
+              ? FEATURE_REGISTRY.rental_lifecycle_task_exchange?.label ?? "Exchange"
+              : r.task_type === "pick_up"
+                ? FEATURE_REGISTRY.rental_lifecycle_task_pick_up?.label ?? "Pickup"
+                : r.task_type === "drop_off"
+                  ? FEATURE_REGISTRY.rental_lifecycle_task_drop_off?.label ?? "Delivery"
+                  : r.job_type;
+          return (
+            <div className="mt-4 rounded-[20px] bg-[var(--t-error-soft)] border border-[var(--t-error)]/20 px-4 py-3 text-sm">
+              <div className="text-[var(--t-error)]">
+                <XCircle className="inline h-4 w-4 mr-1.5 -mt-0.5" />
+                <span className="font-semibold">{reasonLabel}</span>
+                {job.cancelled_at && (
+                  <span className="text-[var(--t-text-muted)] ml-2">
+                    · {new Date(job.cancelled_at).toLocaleString()}
+                  </span>
+                )}
+              </div>
+              {hasReplacements && (
+                <div className="mt-3 pt-3 border-t border-[var(--t-error)]/15">
+                  <p className="text-[10px] font-medium uppercase tracking-wider text-[var(--t-text-muted)] mb-2">
+                    {FEATURE_REGISTRY.replaced_by?.label ?? "Replaced by"}
+                  </p>
+                  <div className="space-y-1.5">
+                    {replacements.map((r) => (
+                      <Link
+                        key={r.job_id}
+                        href={`/jobs/${r.job_id}`}
+                        className="flex items-center justify-between rounded-[12px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-3 py-2 hover:bg-[var(--t-bg-card-hover)] transition-colors"
+                        title={FEATURE_REGISTRY.view_replacement_job?.label ?? "View replacement job"}
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <span className="text-xs font-semibold text-[var(--t-accent)]">
+                            {replacementRouteLabel(r)}
+                          </span>
+                          <span className="text-xs font-medium text-[var(--t-text-primary)]">{r.job_number}</span>
+                          <span className="text-xs text-[var(--t-text-muted)]">
+                            {r.scheduled_date ? new Date(r.scheduled_date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "—"}
+                          </span>
+                        </div>
+                        <ArrowRight className="h-3 w-3 text-[var(--t-text-muted)]" />
+                      </Link>
+                    ))}
+                  </div>
+                  {job.rental_chain_id && (
+                    <Link
+                      href={`/rentals/${job.rental_chain_id}`}
+                      className="inline-flex items-center gap-1 mt-2 text-[11px] font-medium text-[var(--t-accent)] hover:underline"
+                    >
+                      {FEATURE_REGISTRY.view_lifecycle?.label ?? "View full lifecycle"}
+                      <ArrowRight className="h-3 w-3" />
+                    </Link>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })()}
       </div>
 
       {/* --- Lifecycle Strip --- */}

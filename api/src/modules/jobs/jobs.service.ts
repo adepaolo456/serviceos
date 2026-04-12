@@ -456,7 +456,87 @@ export class JobsService {
     if (!job) {
       throw new NotFoundException(`Job ${id} not found`);
     }
+
+    // Phase 10A: for cancelled jobs, derive replacement tasks from the
+    // rental chain so the UI can show "Cancelled due to exchange
+    // replacement — replaced by Exchange JOB-... + Pickup JOB-...".
+    // Non-cancelled jobs are untouched. All queries are tenant-scoped
+    // via the parent chain ownership check.
+    if (job.status === 'cancelled') {
+      const replacements = await this.deriveReplacementJobs(tenantId, job.id);
+      if (replacements) {
+        (job as Job & {
+          replacement_jobs?: unknown;
+          rental_chain_id?: string | null;
+        }).replacement_jobs = replacements.jobs;
+        (job as Job & {
+          replacement_jobs?: unknown;
+          rental_chain_id?: string | null;
+        }).rental_chain_id = replacements.rentalChainId;
+      }
+    }
+
     return job;
+  }
+
+  /**
+   * Look up the replacement tasks for a cancelled job via the rental
+   * chain. Returns null when the job is not part of a chain (legacy
+   * data) so the caller can fall back to "cancelled as part of
+   * lifecycle update" copy. Tenant-scoped: the parent chain ownership
+   * is validated before any task_chain_links are exposed.
+   */
+  private async deriveReplacementJobs(
+    tenantId: string,
+    jobId: string,
+  ): Promise<{
+    rentalChainId: string;
+    jobs: Array<{
+      job_id: string;
+      job_number: string;
+      job_type: string;
+      task_type: string;
+      scheduled_date: string;
+      status: string;
+    }>;
+  } | null> {
+    const originLink = await this.taskChainLinkRepo.findOne({
+      where: { job_id: jobId },
+    });
+    if (!originLink) return null;
+
+    // Validate chain tenancy before exposing any related tasks.
+    const chain = await this.rentalChainRepo.findOne({
+      where: { id: originLink.rental_chain_id, tenant_id: tenantId },
+    });
+    if (!chain) return null;
+
+    // Replacements = same chain, sequence >= origin sequence, not
+    // cancelled, not the origin link itself.
+    const replacementLinks = await this.taskChainLinkRepo
+      .createQueryBuilder('l')
+      .leftJoinAndSelect('l.job', 'job')
+      .where('l.rental_chain_id = :chainId', { chainId: chain.id })
+      .andWhere('l.sequence_number >= :seq', {
+        seq: originLink.sequence_number,
+      })
+      .andWhere('l.id != :originId', { originId: originLink.id })
+      .andWhere('l.status != :cancelled', { cancelled: 'cancelled' })
+      .orderBy('l.sequence_number', 'ASC')
+      .getMany();
+
+    const jobs = replacementLinks
+      .filter((l) => l.job && l.job.tenant_id === tenantId)
+      .map((l) => ({
+        job_id: l.job.id,
+        job_number: l.job.job_number,
+        job_type: l.job.job_type,
+        task_type: l.task_type,
+        scheduled_date: l.scheduled_date,
+        status: l.job.status,
+      }));
+
+    return { rentalChainId: chain.id, jobs };
   }
 
   async update(tenantId: string, id: string, dto: UpdateJobDto): Promise<Record<string, unknown>> {
