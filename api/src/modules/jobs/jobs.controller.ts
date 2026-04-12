@@ -21,11 +21,12 @@ import {
   CalendarQueryDto,
   UpdateJobAssetDto,
 } from './dto/job.dto';
-// `import type` because UpdatePickupDateDto is a plain interface
-// (no class-validator decorators). With NestJS + isolatedModules +
-// emitDecoratorMetadata, a runtime import of a type-only symbol
-// trips TS1272 on the @Body() decorator's metadata emission.
-import type { UpdatePickupDateDto } from './dto/update-pickup-date.dto';
+// `import type` because UpdateScheduledDateDto is a plain
+// interface (no class-validator decorators). With NestJS +
+// isolatedModules + emitDecoratorMetadata, a runtime import of
+// a type-only symbol trips TS1272 on the @Body() decorator's
+// metadata emission.
+import type { UpdateScheduledDateDto } from './dto/update-scheduled-date.dto';
 import { TenantId, CurrentUser, Roles } from '../../common/decorators';
 import { RolesGuard } from '../../common/guards';
 import {
@@ -140,27 +141,36 @@ export class JobsController {
   }
 
   /**
-   * Phase 16 — edit a pickup job's scheduled date from the
-   * Connected Job Lifecycle panel. Single-transaction write that
-   * updates the pickup job + its parent rental chain + the
-   * reschedule audit trio. No pricing, no invoicing, no
-   * rental_start/end_date. See JobsService.updatePickupDate for
-   * the full contract and validation rules.
+   * Phase 16.1 — edit a delivery, pickup, or exchange job's
+   * scheduled date from the Connected Job Lifecycle panel.
+   * Single consolidated endpoint that replaces Phase 16's
+   * pickup-only PUT /jobs/:id/pickup-date.
+   *
+   * The handler branches on `job.job_type` after loading the
+   * job:
+   *   - delivery → updates chain.drop_off_date + chain rental_days
+   *   - pickup   → updates chain.expected_pickup_date + chain rental_days
+   *   - exchange → job-only write (no chain mutation)
+   *
+   * All three branches write the reschedule audit trio on the
+   * job (rescheduled_at / from_date / reason / by_customer=false)
+   * to encode the "Manual Override" state on existing fields.
+   * See JobsService.updateScheduledDate for full rules.
    *
    * RBAC: dispatcher+ (route-level). Tenant-scoped via the
    * global JwtAuthGuard + @TenantId().
    */
-  @Put(':id/pickup-date')
+  @Put(':id/scheduled-date')
   @UseGuards(RolesGuard)
   @Roles('dispatcher')
-  @ApiOperation({ summary: 'Update a pickup job\'s scheduled date and sync the chain (Phase 16)' })
-  updatePickupDate(
+  @ApiOperation({ summary: 'Update a delivery/pickup/exchange job\'s scheduled date and sync the chain (Phase 16.1)' })
+  updateScheduledDate(
     @TenantId() tenantId: string,
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser('id') userId: string,
-    @Body() body: UpdatePickupDateDto,
+    @Body() body: UpdateScheduledDateDto,
   ) {
-    return this.jobsService.updatePickupDate(tenantId, id, body, userId);
+    return this.jobsService.updateScheduledDate(tenantId, id, body, userId);
   }
 
   @Patch(':id')

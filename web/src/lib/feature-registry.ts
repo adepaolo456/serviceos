@@ -1228,6 +1228,361 @@ export const FEATURE_REGISTRY: Record<string, FeatureDescription> = {
     isGuideEligible: false,
     keywords: ["error", "cancelled"],
   },
+
+  // ── Phase 16.1 — Consolidated Edit Job Date family ──
+  //
+  // Phase 16.1 replaced the pickup-only action with a single
+  // shared modal (`EditJobDateModal`) that also handles
+  // delivery + exchange. The Phase 16 `edit_pickup_date_*`
+  // entries above remain in place as legacy aliases so old
+  // /help?feature=edit_pickup_date links still resolve — they
+  // describe the pickup case accurately and the modal still
+  // reads them when jobType === 'pick_up'. New `edit_delivery_
+  // date_*` and `edit_exchange_date_*` families mirror the
+  // pattern for the other two task types.
+  //
+  // Parent guide for the whole family.
+  edit_job_date: {
+    id: "edit_job_date",
+    label: "Edit Job Date",
+    category: "operations",
+    shortDescription: "Change the scheduled date for a delivery, pickup, or exchange directly from the Connected Job Lifecycle panel.",
+    guideDescription: "The Edit Job Date action is the consolidated rescheduling path for all three editable job types — delivery, pickup, and exchange. Click the type-specific Edit button on any active (non-cancelled) node in the Connected Job Lifecycle panel and a shared modal opens with the current date, a click-anywhere date picker, a live preview, and a Manual Override indicator. The modal adapts its validation and preview behavior based on which node you clicked. Editing a delivery date recalculates the rental duration and writes the new date to both the delivery job and the parent rental chain's drop-off date in a single transaction. Editing a pickup date does the same but against the chain's expected pickup date. Editing an exchange date moves only the exchange job — the rental window (and therefore the duration) stays fixed, so the preview shows \"No rental duration change.\" All three branches share the same backend endpoint (PUT /jobs/:id/scheduled-date) and the same reschedule audit trail: `rescheduled_at`, `rescheduled_from_date`, `rescheduled_reason`, and `rescheduled_by_customer = false`. No new override fields are introduced. Extra-day billing implications are handled separately by the billing issue detector — this action does NOT re-run the pricing engine or modify invoices. Alerts re-evaluate on the next detection pass, so an OVERDUE_RENTAL alert will auto-resolve within the detection cooldown if the new pickup date is in the future. Requires dispatcher role or above.",
+    routeOrSurface: "job_detail",
+    tenantOverrideKey: "edit_job_date",
+    isUserFacing: true,
+    isGuideEligible: true,
+    keywords: ["edit", "date", "reschedule", "delivery", "pickup", "exchange", "override", "lifecycle"],
+  },
+  edit_job_date_preview: {
+    id: "edit_job_date_preview",
+    label: "Preview",
+    category: "operations",
+    shortDescription: "Live preview of the date change and duration impact (if any).",
+    guideDescription: "The preview section inside the Edit Job Date modal updates as you pick a new date. It shows the current date, the new date, and the resulting rental duration change — for delivery and pickup edits, the old duration and the new duration are displayed side by side; for exchange edits, the preview shows \"No rental duration change\" because moving an exchange does not shrink or extend the rental window. A Manual Override badge appears at the bottom of the preview to make it obvious that the save will be recorded as an operator override in the reschedule audit trail.",
+    routeOrSurface: "job_detail",
+    tenantOverrideKey: "edit_job_date_preview",
+    isUserFacing: true,
+    isGuideEligible: true,
+    keywords: ["preview", "duration", "days"],
+  },
+  // Shared label strings used by the modal regardless of type.
+  edit_job_date_duration_label: {
+    id: "edit_job_date_duration_label",
+    label: "Rental Duration",
+    category: "operations",
+    shortDescription: "Row label for the duration change row inside the preview.",
+    guideDescription: "",
+    routeOrSurface: "job_detail",
+    tenantOverrideKey: "edit_job_date_duration_label",
+    isUserFacing: true,
+    isGuideEligible: false,
+    keywords: ["duration"],
+  },
+  edit_job_date_days_suffix: {
+    id: "edit_job_date_days_suffix",
+    label: "days",
+    category: "operations",
+    shortDescription: "Suffix after the duration number.",
+    guideDescription: "",
+    routeOrSurface: "job_detail",
+    tenantOverrideKey: "edit_job_date_days_suffix",
+    isUserFacing: true,
+    isGuideEligible: false,
+    keywords: ["days"],
+  },
+  edit_job_date_manual_override_badge: {
+    id: "edit_job_date_manual_override_badge",
+    label: "Manual Override",
+    category: "operations",
+    shortDescription: "Badge shown when the edit will be recorded as an operator override.",
+    guideDescription: "",
+    routeOrSurface: "job_detail",
+    tenantOverrideKey: "edit_job_date_manual_override_badge",
+    isUserFacing: true,
+    isGuideEligible: false,
+    keywords: ["override"],
+  },
+  edit_job_date_save_label: {
+    id: "edit_job_date_save_label",
+    label: "Save",
+    category: "operations",
+    shortDescription: "Save button label on the Edit Job Date modal.",
+    guideDescription: "",
+    routeOrSurface: "job_detail",
+    tenantOverrideKey: "edit_job_date_save_label",
+    isUserFacing: true,
+    isGuideEligible: false,
+    keywords: ["save"],
+  },
+  edit_job_date_saving_label: {
+    id: "edit_job_date_saving_label",
+    label: "Saving…",
+    category: "operations",
+    shortDescription: "Save button label while the modal is mid-request.",
+    guideDescription: "",
+    routeOrSurface: "job_detail",
+    tenantOverrideKey: "edit_job_date_saving_label",
+    isUserFacing: true,
+    isGuideEligible: false,
+    keywords: ["saving"],
+  },
+  edit_job_date_cancel_label: {
+    id: "edit_job_date_cancel_label",
+    label: "Cancel",
+    category: "operations",
+    shortDescription: "Cancel button label on the Edit Job Date modal.",
+    guideDescription: "",
+    routeOrSurface: "job_detail",
+    tenantOverrideKey: "edit_job_date_cancel_label",
+    isUserFacing: true,
+    isGuideEligible: false,
+    keywords: ["cancel"],
+  },
+  // Shared validation error codes (backend throws these; modal
+  // resolves via getFeatureLabel — one translation table on
+  // both sides).
+  edit_job_date_error_invalid: {
+    id: "edit_job_date_error_invalid",
+    label: "Please enter a valid date.",
+    category: "operations",
+    shortDescription: "Error when the new date is missing or malformed.",
+    guideDescription: "",
+    routeOrSurface: "job_detail",
+    tenantOverrideKey: "edit_job_date_error_invalid",
+    isUserFacing: true,
+    isGuideEligible: false,
+    keywords: ["error", "invalid"],
+  },
+  edit_job_date_error_past_date: {
+    id: "edit_job_date_error_past_date",
+    label: "Date cannot be in the past.",
+    category: "operations",
+    shortDescription: "Error when the selected date is before today.",
+    guideDescription: "",
+    routeOrSurface: "job_detail",
+    tenantOverrideKey: "edit_job_date_error_past_date",
+    isUserFacing: true,
+    isGuideEligible: false,
+    keywords: ["error", "past"],
+  },
+  edit_job_date_error_before_drop_off: {
+    id: "edit_job_date_error_before_drop_off",
+    label: "Date must be after the drop-off date.",
+    category: "operations",
+    shortDescription: "Error when the new date is on or before the chain's drop-off date (pickup + exchange).",
+    guideDescription: "",
+    routeOrSurface: "job_detail",
+    tenantOverrideKey: "edit_job_date_error_before_drop_off",
+    isUserFacing: true,
+    isGuideEligible: false,
+    keywords: ["error", "drop off"],
+  },
+  edit_job_date_error_after_pickup: {
+    id: "edit_job_date_error_after_pickup",
+    label: "Date must be before the scheduled pickup.",
+    category: "operations",
+    shortDescription: "Error when the new date is on or after the chain's pickup date (delivery + exchange).",
+    guideDescription: "",
+    routeOrSurface: "job_detail",
+    tenantOverrideKey: "edit_job_date_error_after_pickup",
+    isUserFacing: true,
+    isGuideEligible: false,
+    keywords: ["error", "after", "pickup"],
+  },
+  edit_job_date_error_after_exchange: {
+    id: "edit_job_date_error_after_exchange",
+    label: "Delivery date cannot be on or after an existing exchange date.",
+    category: "operations",
+    shortDescription: "Error when shifting a delivery past an existing exchange in the same chain.",
+    guideDescription: "",
+    routeOrSurface: "job_detail",
+    tenantOverrideKey: "edit_job_date_error_after_exchange",
+    isUserFacing: true,
+    isGuideEligible: false,
+    keywords: ["error", "exchange", "delivery"],
+  },
+  edit_job_date_error_invalid_job_type: {
+    id: "edit_job_date_error_invalid_job_type",
+    label: "Only delivery, pickup, or exchange jobs can have their date edited from this panel.",
+    category: "operations",
+    shortDescription: "Error returned when attempting to edit an unsupported job type.",
+    guideDescription: "",
+    routeOrSurface: "job_detail",
+    tenantOverrideKey: "edit_job_date_error_invalid_job_type",
+    isUserFacing: true,
+    isGuideEligible: false,
+    keywords: ["error", "job type"],
+  },
+  edit_job_date_error_cancelled: {
+    id: "edit_job_date_error_cancelled",
+    label: "Cancelled jobs cannot be rescheduled from this panel.",
+    category: "operations",
+    shortDescription: "Error returned when attempting to edit a cancelled job.",
+    guideDescription: "",
+    routeOrSurface: "job_detail",
+    tenantOverrideKey: "edit_job_date_error_cancelled",
+    isUserFacing: true,
+    isGuideEligible: false,
+    keywords: ["error", "cancelled"],
+  },
+
+  // ── Delivery family (mirrors edit_pickup_date_*) ──
+  //
+  // Note: the top-level `edit_delivery_date` key is already used
+  // elsewhere in this file (line ~728) to describe the
+  // DIFFERENT reschedule flow on the /rentals page, which has
+  // "shift downstream dates" semantics. We do not overload it —
+  // the lifecycle-panel family uses `edit_delivery_date_modal`
+  // as its guide anchor, and `edit_job_date` (above) is the
+  // consolidated parent guide for the whole modal family.
+  edit_delivery_date_modal: {
+    id: "edit_delivery_date_modal",
+    label: "Edit Delivery Date",
+    category: "operations",
+    shortDescription: "Pick a new delivery date and preview the rental duration change.",
+    guideDescription: "The Edit Delivery Date modal is rendered by the shared EditJobDateModal component when you click the edit button on a delivery node. It shows the current delivery date, a click-anywhere date picker capped at the day before the chain's expected pickup, and a live preview with the duration change. Validation blocks past dates, dates on or after the chain's pickup, and dates that would land on or after an existing exchange.",
+    routeOrSurface: "job_detail",
+    tenantOverrideKey: "edit_delivery_date_modal",
+    isUserFacing: true,
+    isGuideEligible: true,
+    keywords: ["delivery", "modal"],
+  },
+  edit_delivery_date_button_label: {
+    id: "edit_delivery_date_button_label",
+    label: "Edit Delivery Date",
+    category: "operations",
+    shortDescription: "Button label on the active delivery node in Connected Job Lifecycle.",
+    guideDescription: "",
+    routeOrSurface: "job_detail",
+    tenantOverrideKey: "edit_delivery_date_button_label",
+    isUserFacing: true,
+    isGuideEligible: false,
+    keywords: ["delivery", "button"],
+  },
+  edit_delivery_date_current_label: {
+    id: "edit_delivery_date_current_label",
+    label: "Current Delivery",
+    category: "operations",
+    shortDescription: "Row label for the current delivery date inside the modal.",
+    guideDescription: "",
+    routeOrSurface: "job_detail",
+    tenantOverrideKey: "edit_delivery_date_current_label",
+    isUserFacing: true,
+    isGuideEligible: false,
+    keywords: ["current", "delivery"],
+  },
+  edit_delivery_date_new_label: {
+    id: "edit_delivery_date_new_label",
+    label: "New Delivery",
+    category: "operations",
+    shortDescription: "Row label for the new delivery date inside the modal.",
+    guideDescription: "",
+    routeOrSurface: "job_detail",
+    tenantOverrideKey: "edit_delivery_date_new_label",
+    isUserFacing: true,
+    isGuideEligible: false,
+    keywords: ["new", "delivery"],
+  },
+  edit_delivery_date_toast_saved: {
+    id: "edit_delivery_date_toast_saved",
+    label: "Delivery date updated",
+    category: "operations",
+    shortDescription: "Success toast after a delivery date save.",
+    guideDescription: "",
+    routeOrSurface: "job_detail",
+    tenantOverrideKey: "edit_delivery_date_toast_saved",
+    isUserFacing: true,
+    isGuideEligible: false,
+    keywords: ["toast", "saved", "delivery"],
+  },
+
+  // ── Exchange family ──
+  //
+  // Same note as the delivery family above — the top-level
+  // `edit_exchange_date` key already exists on the /rentals
+  // page for a different flow. Lifecycle-panel guide lives on
+  // `edit_exchange_date_modal`.
+  edit_exchange_date_modal: {
+    id: "edit_exchange_date_modal",
+    label: "Edit Exchange Date",
+    category: "operations",
+    shortDescription: "Pick a new exchange date within the rental window.",
+    guideDescription: "The Edit Exchange Date modal is rendered by the shared EditJobDateModal component when you click the edit button on an exchange node. It shows the current exchange date, a click-anywhere date picker bounded by the rental window (exclusive on both ends), and a preview with a 'No rental duration change' row so it's clear the window stays fixed.",
+    routeOrSurface: "job_detail",
+    tenantOverrideKey: "edit_exchange_date_modal",
+    isUserFacing: true,
+    isGuideEligible: true,
+    keywords: ["exchange", "modal"],
+  },
+  edit_exchange_date_button_label: {
+    id: "edit_exchange_date_button_label",
+    label: "Edit Exchange Date",
+    category: "operations",
+    shortDescription: "Button label on the active exchange node in Connected Job Lifecycle.",
+    guideDescription: "",
+    routeOrSurface: "job_detail",
+    tenantOverrideKey: "edit_exchange_date_button_label",
+    isUserFacing: true,
+    isGuideEligible: false,
+    keywords: ["exchange", "button"],
+  },
+  edit_exchange_date_current_label: {
+    id: "edit_exchange_date_current_label",
+    label: "Current Exchange",
+    category: "operations",
+    shortDescription: "Row label for the current exchange date inside the modal.",
+    guideDescription: "",
+    routeOrSurface: "job_detail",
+    tenantOverrideKey: "edit_exchange_date_current_label",
+    isUserFacing: true,
+    isGuideEligible: false,
+    keywords: ["current", "exchange"],
+  },
+  edit_exchange_date_new_label: {
+    id: "edit_exchange_date_new_label",
+    label: "New Exchange",
+    category: "operations",
+    shortDescription: "Row label for the new exchange date inside the modal.",
+    guideDescription: "",
+    routeOrSurface: "job_detail",
+    tenantOverrideKey: "edit_exchange_date_new_label",
+    isUserFacing: true,
+    isGuideEligible: false,
+    keywords: ["new", "exchange"],
+  },
+  edit_exchange_date_toast_saved: {
+    id: "edit_exchange_date_toast_saved",
+    label: "Exchange date updated",
+    category: "operations",
+    shortDescription: "Success toast after an exchange date save.",
+    guideDescription: "",
+    routeOrSurface: "job_detail",
+    tenantOverrideKey: "edit_exchange_date_toast_saved",
+    isUserFacing: true,
+    isGuideEligible: false,
+    keywords: ["toast", "saved", "exchange"],
+  },
+  edit_exchange_date_no_duration_change: {
+    id: "edit_exchange_date_no_duration_change",
+    label: "No rental duration change",
+    category: "operations",
+    shortDescription: "Shown inside the preview when editing an exchange — the rental window stays fixed.",
+    guideDescription: "",
+    routeOrSurface: "job_detail",
+    tenantOverrideKey: "edit_exchange_date_no_duration_change",
+    isUserFacing: true,
+    isGuideEligible: false,
+    keywords: ["no change", "exchange"],
+  },
+
+  // ── Pickup modal header alias for Phase 16.1 ──
+  // The new shared modal uses labelKey(jobType, "modal") to
+  // pick the header. For pickup we reuse the existing
+  // edit_pickup_date_modal entry. This alias-only entry keeps
+  // the pattern symmetric for the pick_up case — edit_pickup_
+  // date_modal already exists above, so we don't need a new
+  // row. Leaving the comment in place as documentation.
   job_detail_summary: { id: "job_detail_summary", label: "Job Summary", category: "operations", shortDescription: "Unified service details and scheduling card on the Job Detail page.", guideDescription: "The Job Summary card combines service details and scheduling into one operational view. It shows job type, asset, address, delivery date, pickup date, time window, and rental duration. For deliveries, the pickup date from a linked pickup job is shown when available. For pickups, the originating delivery date is shown. This makes it easy to see the full picture during dispatch or customer calls.", routeOrSurface: "job_detail", tenantOverrideKey: "job_detail_summary", isUserFacing: true, isGuideEligible: true, keywords: ["summary", "service", "scheduling", "unified"] },
 
   // ── Phase 5: predictive blocker intelligence ──

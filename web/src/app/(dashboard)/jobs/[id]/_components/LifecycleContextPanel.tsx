@@ -49,7 +49,13 @@ import type {
   LifecycleAlert,
   AlertSeverity,
 } from "./lifecycle-context-types";
-import EditPickupDateModal from "./EditPickupDateModal";
+import EditJobDateModal, { type EditableJobType } from "./EditJobDateModal";
+
+const EDITABLE_TASK_TYPES = new Set<EditableJobType>([
+  "drop_off",
+  "pick_up",
+  "exchange",
+]);
 
 // ─────────────────────────────────────────────────────────────
 // Local helpers
@@ -111,11 +117,12 @@ export default function LifecycleContextPanel({
   const [data, setData] = useState<LifecycleContextResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  // Phase 16 — editing state for the pickup date modal. We stash
-  // the node being edited so the modal knows the current pickup
-  // date without having to look it up again. The `refetchKey`
-  // bump re-runs the fetch effect after a successful save.
-  const [editingPickup, setEditingPickup] = useState<LifecycleNode | null>(null);
+  // Phase 16.1 — editing state for the shared Edit Job Date
+  // modal. We stash the node being edited so the modal knows
+  // the current date + job type without re-looking up state.
+  // The `refetchKey` bump re-runs the fetch effect after a
+  // successful save.
+  const [editingNode, setEditingNode] = useState<LifecycleNode | null>(null);
   const [refetchKey, setRefetchKey] = useState(0);
 
   useEffect(() => {
@@ -204,7 +211,7 @@ export default function LifecycleContextPanel({
                     key={node.job_id}
                     node={node}
                     isLast={idx === data.nodes.length - 1}
-                    onEditPickup={setEditingPickup}
+                    onEditDate={setEditingNode}
                   />
                 ))}
               </div>
@@ -213,18 +220,27 @@ export default function LifecycleContextPanel({
         </>
       )}
 
-      {/* Phase 16 — Edit Pickup Date modal. Rendered at the
-          panel level so the fetch + refetch cycle stays owned
-          by one component. */}
-      {editingPickup && data?.chain?.drop_off_date && editingPickup.scheduled_date && (
-        <EditPickupDateModal
-          jobId={editingPickup.job_id}
-          currentPickupDate={editingPickup.scheduled_date}
-          dropOffDate={data.chain.drop_off_date}
-          onClose={() => setEditingPickup(null)}
-          onSaved={() => setRefetchKey((k) => k + 1)}
-        />
-      )}
+      {/* Phase 16.1 — shared Edit Job Date modal. Rendered at
+          the panel level so the fetch + refetch cycle stays
+          owned by one component. Only mounts when we have a
+          node to edit AND the chain has both bounds populated —
+          the modal needs drop_off_date and expected_pickup_date
+          to compute its validation/preview. */}
+      {editingNode &&
+        EDITABLE_TASK_TYPES.has(editingNode.task_type as EditableJobType) &&
+        data?.chain?.drop_off_date &&
+        data?.chain?.expected_pickup_date &&
+        editingNode.scheduled_date && (
+          <EditJobDateModal
+            jobId={editingNode.job_id}
+            jobType={editingNode.task_type as EditableJobType}
+            currentDate={editingNode.scheduled_date}
+            dropOffDate={data.chain.drop_off_date}
+            expectedPickupDate={data.chain.expected_pickup_date}
+            onClose={() => setEditingNode(null)}
+            onSaved={() => setRefetchKey((k) => k + 1)}
+          />
+        )}
     </div>
   );
 }
@@ -308,11 +324,11 @@ function ChainAlertBanner({ alerts }: { alerts: LifecycleAlert[] }) {
 function NodeRow({
   node,
   isLast,
-  onEditPickup,
+  onEditDate,
 }: {
   node: LifecycleNode;
   isLast: boolean;
-  onEditPickup: (node: LifecycleNode) => void;
+  onEditDate: (node: LifecycleNode) => void;
 }) {
   const displayStatus = deriveDisplayStatus(node.status);
   const TaskIcon = TASK_TYPE_ICON[node.task_type] ?? ArrowRight;
@@ -321,17 +337,24 @@ function NodeRow({
     node.link_status === "cancelled" ||
     !!node.cancelled_at;
 
-  // Phase 16 — "Edit Pickup Date" action is gated on three
-  // conditions per spec Q1:
-  //   task_type === 'pick_up' AND link_status !== 'cancelled'
-  //   AND cancelled_at IS NULL
-  // We also require a scheduled_date to hand to the modal as
-  // the "current" value.
-  const canEditPickup =
-    node.task_type === "pick_up" &&
+  // Phase 16.1 — "Edit Date" action is now available on
+  // delivery, pickup, AND exchange nodes (previously pickup
+  // only). Same cancellation gate as Phase 16 — cancelled
+  // rows remain read-only — plus we still require a
+  // scheduled_date to hand to the modal as the current value.
+  const canEditDate =
+    EDITABLE_TASK_TYPES.has(node.task_type as EditableJobType) &&
     node.link_status !== "cancelled" &&
     !node.cancelled_at &&
     !!node.scheduled_date;
+
+  // Button label is type-specific — resolved from the
+  // registry family matching the task_type.
+  const editButtonLabelKey = (() => {
+    if (node.task_type === "drop_off") return "edit_delivery_date_button_label";
+    if (node.task_type === "exchange") return "edit_exchange_date_button_label";
+    return "edit_pickup_date_button_label";
+  })();
 
   // Current-step emphasis: accent border + soft fill. Cancelled:
   // muted. Otherwise: neutral card.
@@ -493,9 +516,9 @@ function NodeRow({
             don't navigate and so the button isn't nested in an
             anchor. */}
         <div className="flex items-start gap-1.5 shrink-0">
-          {canEditPickup && (
+          {canEditDate && (
             <button
-              onClick={() => onEditPickup(node)}
+              onClick={() => onEditDate(node)}
               className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium"
               style={{
                 background: "var(--t-bg-elevated)",
@@ -504,7 +527,7 @@ function NodeRow({
               }}
             >
               <CalendarClock className="h-3 w-3" />
-              {getFeatureLabel("edit_pickup_date_button_label")}
+              {getFeatureLabel(editButtonLabelKey)}
             </button>
           )}
           {/* Completion checkmark */}
