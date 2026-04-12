@@ -1,7 +1,8 @@
-import { Controller, Get, Query, Res } from '@nestjs/common';
+import { Controller, Get, Query, Res, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
 import { ReportingService } from './reporting.service';
-import { TenantId } from '../../common/decorators';
+import { TenantId, Roles } from '../../common/decorators';
+import { RolesGuard } from '../../common/guards';
 
 @ApiTags('Reporting')
 @ApiBearerAuth()
@@ -44,6 +45,35 @@ export class ReportingController {
   @ApiOperation({ summary: 'Revenue report' })
   revenue(@TenantId() tid: string, @Query('startDate') s?: string, @Query('endDate') e?: string, @Query('grouping') g?: string) {
     return this.service.getRevenue(tid, s, e, g);
+  }
+
+  @Get('lifecycle')
+  @UseGuards(RolesGuard)
+  @Roles('owner', 'admin', 'dispatcher')
+  @ApiOperation({
+    summary:
+      'Phase 13 — lifecycle-aware KPI report. Returns summary, per-chain rows, and zero-filled trend series in a single call. Reuses the same financial truth (invoices.rental_chain_id + job_costs via task_chain_links) as the lifecycle detail endpoint.',
+  })
+  lifecycleReport(
+    @TenantId() tid: string,
+    @Query('startDate') s?: string,
+    @Query('endDate') e?: string,
+    @Query('status') status?: string,
+    @Query('groupBy') groupBy?: string,
+  ) {
+    const normalizedStatus =
+      status === 'active' || status === 'completed' ? status : 'all';
+    const normalizedGroupBy =
+      groupBy === 'day' || groupBy === 'week' || groupBy === 'month'
+        ? groupBy
+        : 'month';
+    return this.service.getLifecycleReport(
+      tid,
+      s,
+      e,
+      normalizedStatus,
+      normalizedGroupBy,
+    );
   }
 
   @Get('dump-costs')
