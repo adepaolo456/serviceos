@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -7,8 +7,10 @@ import {
   StyleSheet,
   RefreshControl,
   ScrollView,
+  AppState,
+  AppStateStatus,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { format, addDays } from 'date-fns';
 import { useAuth } from '../../src/AuthContext';
@@ -62,9 +64,9 @@ export default function JobsScreen() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<Filter>('today');
 
-  const fetchJobs = useCallback(async () => {
+  const fetchJobs = useCallback(async (silent = false) => {
     if (!user) return;
-    setLoading(true);
+    if (!silent) setLoading(true);
     try {
       const today = format(new Date(), 'yyyy-MM-dd');
       let dateFrom: string | undefined;
@@ -91,12 +93,40 @@ export default function JobsScreen() {
     } catch {
       /* ignore */
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [user, filter]);
 
   useEffect(() => {
     fetchJobs();
+  }, [fetchJobs]);
+
+  // Phase 9 — quiet auto-sync so upcoming/today lists stay correct
+  // after dispatcher reschedules without a manual pull-to-refresh.
+  useEffect(() => {
+    if (!user) return;
+    const interval = setInterval(() => { fetchJobs(true); }, 30000);
+    return () => clearInterval(interval);
+  }, [user, fetchJobs]);
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchJobs(true);
+    }, [fetchJobs]),
+  );
+
+  const appStateRef = useRef<AppStateStatus>(AppState.currentState);
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (next) => {
+      if (
+        appStateRef.current.match(/inactive|background/) &&
+        next === 'active'
+      ) {
+        fetchJobs(true);
+      }
+      appStateRef.current = next;
+    });
+    return () => sub.remove();
   }, [fetchJobs]);
 
   const filters: { key: Filter; label: string }[] = [

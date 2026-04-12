@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -8,8 +8,10 @@ import {
   RefreshControl,
   Platform,
   Linking,
+  AppState,
+  AppStateStatus,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { format } from 'date-fns';
 import { useAuth } from '../../src/AuthContext';
@@ -70,9 +72,11 @@ export default function TodayScreen() {
   const [loading, setLoading] = useState(true);
   const today = format(new Date(), 'yyyy-MM-dd');
 
-  const fetchJobs = useCallback(async () => {
+  // Silent refetches (polling, focus, app-state) must not flash the
+  // pull-to-refresh spinner over an already-rendered route.
+  const fetchJobs = useCallback(async (silent = false) => {
     if (!user) return;
-    setLoading(true);
+    if (!silent) setLoading(true);
     try {
       const data = await getDriverJobs(user.id, today, today);
       const sorted = (Array.isArray(data) ? data : []).sort(
@@ -82,12 +86,45 @@ export default function TodayScreen() {
     } catch {
       /* ignore */
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [user, today]);
 
   useEffect(() => {
     fetchJobs();
+  }, [fetchJobs]);
+
+  // Phase 9 — dispatch/lifecycle sync for drivers:
+  //   1. Poll every 30s while on this screen
+  //   2. Silent refetch when the tab regains focus (tab switch)
+  //   3. Silent refetch when the app returns from background
+  // All three are best-effort; the pull-to-refresh remains the
+  // manual override. Serverless API means no websockets — polling +
+  // lifecycle signals is the simplest correct design.
+  useEffect(() => {
+    if (!user) return;
+    const interval = setInterval(() => { fetchJobs(true); }, 30000);
+    return () => clearInterval(interval);
+  }, [user, fetchJobs]);
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchJobs(true);
+    }, [fetchJobs]),
+  );
+
+  const appStateRef = useRef<AppStateStatus>(AppState.currentState);
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (next) => {
+      if (
+        appStateRef.current.match(/inactive|background/) &&
+        next === 'active'
+      ) {
+        fetchJobs(true);
+      }
+      appStateRef.current = next;
+    });
+    return () => sub.remove();
   }, [fetchJobs]);
 
   const completed = jobs.filter((j) => j.status === 'completed').length;
