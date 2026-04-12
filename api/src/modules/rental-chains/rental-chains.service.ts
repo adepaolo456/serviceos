@@ -901,12 +901,19 @@ export class RentalChainsService {
     // Financials
     const financials = await this.getFinancials(tenantId, chainId);
 
+    // Phase 10B — live tenant rental period (NOT chain.rental_days,
+    // which is a historical snapshot at creation). The frontend uses
+    // this to compute auto-vs-override previews that match what the
+    // backend will actually enforce on the next mutation.
+    const tenantRentalDays = await this.getTenantRentalDays(tenantId);
+
     return {
       rentalChain: {
         id: chain.id,
         status: chain.status,
         dumpsterSize: chain.dumpster_size,
         rentalDays: chain.rental_days,
+        tenantRentalDays,
         dropOffDate: chain.drop_off_date,
         expectedPickupDate: chain.expected_pickup_date,
         createdAt: chain.created_at,
