@@ -13,6 +13,8 @@ import { deriveDisplayStatus, DISPLAY_STATUS_LABELS, displayStatusColor } from "
 
 interface LifecycleJob {
   id: string;
+  linkId?: string;
+  linkStatus?: string;
   jobNumber: string;
   taskType: string;
   status: string;
@@ -104,6 +106,19 @@ export default function RentalLifecyclePage({ params }: { params: Promise<{ id: 
   // when the modal first opens so typical page loads stay lean.
   const [availableSizes, setAvailableSizes] = useState<string[] | null>(null);
   const [sizesLoading, setSizesLoading] = useState(false);
+  // Edit delivery date modal state
+  const [deliveryModalOpen, setDeliveryModalOpen] = useState(false);
+  const [deliveryDate, setDeliveryDate] = useState("");
+  const [deliveryShift, setDeliveryShift] = useState(true);
+  const [deliverySaving, setDeliverySaving] = useState(false);
+  const [deliveryError, setDeliveryError] = useState("");
+  // Edit existing exchange modal state (keyed by linkId so the
+  // timeline pencil icon opens the modal for the specific exchange row)
+  const [editExchangeLinkId, setEditExchangeLinkId] = useState<string | null>(null);
+  const [editExchangeDate, setEditExchangeDate] = useState("");
+  const [editExchangeOverride, setEditExchangeOverride] = useState("");
+  const [editExchangeSaving, setEditExchangeSaving] = useState(false);
+  const [editExchangeError, setEditExchangeError] = useState("");
 
   const reload = () => api.get<LifecycleData>(`/rental-chains/${id}/lifecycle`).then(setData).catch(() => {});
 
@@ -158,6 +173,58 @@ export default function RentalLifecyclePage({ params }: { params: Promise<{ id: 
       setPickupError(err instanceof Error ? err.message : (FEATURE_REGISTRY.lifecycle_action_error?.label ?? "Failed to update"));
     } finally {
       setPickupSaving(false);
+    }
+  };
+
+  const handleDeliveryUpdate = async () => {
+    if (!data || !deliveryDate) return;
+    if (deliveryDate === data.rentalChain.dropOffDate) {
+      setDeliveryError(FEATURE_REGISTRY.delivery_date_unchanged?.label ?? "New delivery date matches the current date");
+      return;
+    }
+    setDeliverySaving(true);
+    setDeliveryError("");
+    try {
+      await api.patch(`/rental-chains/${id}`, {
+        drop_off_date: deliveryDate,
+        shift_downstream: deliveryShift,
+      });
+      setDeliveryModalOpen(false);
+      setDeliveryDate("");
+      await reload();
+    } catch (err: unknown) {
+      setDeliveryError(err instanceof Error ? err.message : (FEATURE_REGISTRY.lifecycle_update_error?.label ?? "Failed to update lifecycle"));
+    } finally {
+      setDeliverySaving(false);
+    }
+  };
+
+  const handleExchangeReschedule = async () => {
+    if (!data || !editExchangeLinkId || !editExchangeDate) return;
+    const deliveryDateStr = data.rentalChain.dropOffDate;
+    if (deliveryDateStr && editExchangeDate < deliveryDateStr) {
+      setEditExchangeError(FEATURE_REGISTRY.lifecycle_action_exchange_before_delivery?.label ?? "Exchange date cannot be before delivery date");
+      return;
+    }
+    if (editExchangeOverride && editExchangeOverride <= editExchangeDate) {
+      setEditExchangeError(FEATURE_REGISTRY.lifecycle_action_pickup_before_exchange?.label ?? "Pickup date must be after exchange date");
+      return;
+    }
+    setEditExchangeSaving(true);
+    setEditExchangeError("");
+    try {
+      await api.patch(`/rental-chains/${id}/exchanges/${editExchangeLinkId}`, {
+        exchange_date: editExchangeDate,
+        ...(editExchangeOverride ? { override_pickup_date: editExchangeOverride } : {}),
+      });
+      setEditExchangeLinkId(null);
+      setEditExchangeDate("");
+      setEditExchangeOverride("");
+      await reload();
+    } catch (err: unknown) {
+      setEditExchangeError(err instanceof Error ? err.message : (FEATURE_REGISTRY.lifecycle_update_error?.label ?? "Failed to update lifecycle"));
+    } finally {
+      setEditExchangeSaving(false);
     }
   };
 
@@ -252,7 +319,21 @@ export default function RentalLifecyclePage({ params }: { params: Promise<{ id: 
             <p className="text-[10px] font-medium uppercase tracking-wider text-[var(--t-text-muted)]">
               {FEATURE_REGISTRY.job_detail_delivery_date?.label ?? "Delivery Date"}
             </p>
-            <p className="text-sm font-semibold text-[var(--t-text-primary)] mt-0.5">{fmtDate(rentalChain.dropOffDate)}</p>
+            <div className="flex items-center gap-2 mt-0.5">
+              <p className="text-sm font-semibold text-[var(--t-text-primary)]">{fmtDate(rentalChain.dropOffDate)}</p>
+              {isActive && (
+                <button onClick={() => {
+                    setDeliveryModalOpen(true);
+                    setDeliveryDate(rentalChain.dropOffDate || "");
+                    setDeliveryShift(true);
+                    setDeliveryError("");
+                  }}
+                  className="text-[var(--t-accent)] hover:opacity-70 transition-opacity"
+                  title={FEATURE_REGISTRY.edit_delivery_date?.label ?? "Edit Delivery Date"}>
+                  <Pencil className="h-3 w-3" />
+                </button>
+              )}
+            </div>
           </div>
           <div>
             <p className="text-[10px] font-medium uppercase tracking-wider text-[var(--t-text-muted)]">
@@ -351,6 +432,22 @@ export default function RentalLifecyclePage({ params }: { params: Promise<{ id: 
                     {job.driver && <span className="text-xs text-[var(--t-text-muted)]">· {job.driver.name}</span>}
                   </div>
                   <div className="flex items-center gap-2">
+                    {job.taskType === "exchange" && isActive && job.linkId && status !== "completed" && status !== "cancelled" && job.linkStatus === "scheduled" && (
+                      <button
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setEditExchangeLinkId(job.linkId!);
+                          setEditExchangeDate(job.scheduledDate || "");
+                          setEditExchangeOverride("");
+                          setEditExchangeError("");
+                        }}
+                        title={FEATURE_REGISTRY.edit_exchange_date?.label ?? "Edit Exchange Date"}
+                        className="text-[var(--t-accent)] hover:opacity-70 transition-opacity"
+                      >
+                        <Pencil className="h-3 w-3" />
+                      </button>
+                    )}
                     <span className="text-[10px] font-semibold" style={{ color: displayStatusColor(ds) }}>
                       {DISPLAY_STATUS_LABELS[ds] || status}
                     </span>
@@ -437,6 +534,96 @@ export default function RentalLifecyclePage({ params }: { params: Promise<{ id: 
           )}
         </div>
       )}
+      {/* Edit Delivery Date Modal */}
+      {deliveryModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4" onClick={() => setDeliveryModalOpen(false)}>
+          <div className="rounded-2xl border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6 w-full max-w-sm" onClick={e => e.stopPropagation()}>
+            <h3 className="text-sm font-semibold text-[var(--t-text-primary)] mb-1">
+              {FEATURE_REGISTRY.edit_delivery_date?.label ?? "Edit Delivery Date"}
+            </h3>
+            <p className="text-xs text-[var(--t-text-muted)] mb-4">
+              {FEATURE_REGISTRY.edit_delivery_date_description?.label ?? "Reschedule the delivery. Downstream tasks shift by the same number of days unless you opt out."}
+            </p>
+            <label className="text-xs text-[var(--t-text-muted)] mb-1 block">
+              {FEATURE_REGISTRY.lifecycle_action_new_date?.label ?? "New pickup date"}
+            </label>
+            <input type="date" value={deliveryDate}
+              onChange={e => { setDeliveryDate(e.target.value); setDeliveryError(""); }}
+              className="w-full rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-3 py-2 text-sm text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)] mb-3" />
+
+            <label className="flex items-start gap-2 text-xs text-[var(--t-text-primary)] mb-1 cursor-pointer">
+              <input type="checkbox" checked={deliveryShift}
+                onChange={e => setDeliveryShift(e.target.checked)}
+                className="mt-0.5" />
+              <span>{FEATURE_REGISTRY.downstream_dates_shifted?.label ?? "Shift downstream exchange and pickup dates by the same number of days"}</span>
+            </label>
+            <p className="text-[10px] text-[var(--t-text-muted)] mb-3 ml-5">
+              {deliveryShift
+                ? (FEATURE_REGISTRY.downstream_dates_shifted_on_hint?.label ?? "Keeps the rental duration intact.")
+                : (FEATURE_REGISTRY.downstream_dates_shifted_off_hint?.label ?? "Downstream dates stay put — the request fails if any would become invalid.")}
+            </p>
+
+            {deliveryError && (
+              <p className="text-xs text-[var(--t-error)] mb-3">{deliveryError}</p>
+            )}
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setDeliveryModalOpen(false)} className="rounded-full px-4 py-2 text-xs font-medium text-[var(--t-text-muted)]">
+                Cancel
+              </button>
+              <button onClick={handleDeliveryUpdate} disabled={!deliveryDate || deliverySaving}
+                className="rounded-full bg-[var(--t-accent)] px-4 py-2 text-xs font-semibold text-[var(--t-accent-on-accent)] disabled:opacity-40 hover:opacity-90 transition-opacity">
+                {deliverySaving ? (FEATURE_REGISTRY.lifecycle_action_saving?.label ?? "Saving...") : (FEATURE_REGISTRY.lifecycle_action_confirm?.label ?? "Confirm")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Exchange Date Modal */}
+      {editExchangeLinkId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4" onClick={() => setEditExchangeLinkId(null)}>
+          <div className="rounded-2xl border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6 w-full max-w-sm" onClick={e => e.stopPropagation()}>
+            <h3 className="text-sm font-semibold text-[var(--t-text-primary)] mb-1">
+              {FEATURE_REGISTRY.edit_exchange_date?.label ?? "Edit Exchange Date"}
+            </h3>
+            <p className="text-xs text-[var(--t-text-muted)] mb-4">
+              {FEATURE_REGISTRY.edit_exchange_date_description?.label ?? "Reschedule this exchange. The downstream pickup is recalculated from your tenant rental period unless you override it."}
+            </p>
+            <label className="text-xs text-[var(--t-text-muted)] mb-1 block">
+              {FEATURE_REGISTRY.exchange_date?.label ?? "Exchange date"}
+            </label>
+            <input type="date" value={editExchangeDate}
+              onChange={e => { setEditExchangeDate(e.target.value); setEditExchangeError(""); }}
+              min={rentalChain.dropOffDate || undefined}
+              className="w-full rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-3 py-2 text-sm text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)] mb-3" />
+
+            <label className="text-xs text-[var(--t-text-muted)] mb-1 block">
+              {FEATURE_REGISTRY.override_pickup_date?.label ?? "Override pickup date (optional)"}
+            </label>
+            <input type="date" value={editExchangeOverride}
+              onChange={e => { setEditExchangeOverride(e.target.value); setEditExchangeError(""); }}
+              min={editExchangeDate || undefined}
+              className="w-full rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-3 py-2 text-sm text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)] mb-1" />
+            <p className="text-[10px] text-[var(--t-text-muted)] mb-3">
+              {FEATURE_REGISTRY.override_pickup_date_hint?.label ?? "Leave blank to auto-calculate from your tenant rental period."}
+            </p>
+
+            {editExchangeError && (
+              <p className="text-xs text-[var(--t-error)] mb-3">{editExchangeError}</p>
+            )}
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setEditExchangeLinkId(null)} className="rounded-full px-4 py-2 text-xs font-medium text-[var(--t-text-muted)]">
+                Cancel
+              </button>
+              <button onClick={handleExchangeReschedule} disabled={!editExchangeDate || editExchangeSaving}
+                className="rounded-full bg-[var(--t-accent)] px-4 py-2 text-xs font-semibold text-[var(--t-accent-on-accent)] disabled:opacity-40 hover:opacity-90 transition-opacity">
+                {editExchangeSaving ? (FEATURE_REGISTRY.lifecycle_action_saving?.label ?? "Saving...") : (FEATURE_REGISTRY.lifecycle_action_confirm?.label ?? "Confirm")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Schedule Exchange Modal */}
       {exchangeModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4" onClick={() => setExchangeModalOpen(false)}>

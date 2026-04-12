@@ -12,6 +12,20 @@ import { TenantSettings } from '../tenant-settings/entities/tenant-settings.enti
 import { CreateRentalChainDto } from './dto/create-rental-chain.dto';
 import { UpdateRentalChainDto } from './dto/update-rental-chain.dto';
 import { CreateExchangeDto } from './dto/create-exchange.dto';
+import { RescheduleExchangeDto } from './dto/reschedule-exchange.dto';
+
+// ── Date helpers (UTC, date-only) ──
+function shiftDateStr(date: string, days: number): string {
+  const d = new Date(`${date}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().split('T')[0];
+}
+
+function daysBetween(from: string, to: string): number {
+  const a = new Date(`${from}T00:00:00Z`).getTime();
+  const b = new Date(`${to}T00:00:00Z`).getTime();
+  return Math.round((b - a) / 86400000);
+}
 
 const CORRECTION_CUTOFF = '2026-04-02T00:00:00Z';
 function classifyRecord(createdAt: string | Date): 'legacy' | 'post-correction' {
@@ -357,6 +371,13 @@ export class RentalChainsService {
    * Authoritative lifecycle update. When `expected_pickup_date`
    * changes, the currently-scheduled pickup job's `scheduled_date` is
    * updated in the same transaction so chain + job never drift.
+   *
+   * Phase 8: `drop_off_date` reschedules the delivery. By default
+   * (`shift_downstream !== false`) every downstream exchange/pickup
+   * link is shifted by the same day-offset so the rental duration is
+   * preserved. If the caller opts out of shifting, the handler
+   * validates that no scheduled downstream link sits on/before the
+   * new delivery date.
    */
   async updateChain(
     tenantId: string,
@@ -368,11 +389,15 @@ export class RentalChainsService {
     });
     if (!chain) throw new NotFoundException(`Rental chain ${chainId} not found`);
 
+    // ── Pre-transaction validation ──
+    // When both dates come in together, the pickup validation uses
+    // the NEW delivery date.
+    const effectiveDelivery = dto.drop_off_date ?? chain.drop_off_date;
+
     if (dto.expected_pickup_date !== undefined) {
-      // pickup cannot precede delivery
       if (
-        chain.drop_off_date &&
-        dto.expected_pickup_date <= chain.drop_off_date
+        effectiveDelivery &&
+        dto.expected_pickup_date <= effectiveDelivery
       ) {
         throw new BadRequestException(
           'expected_pickup_date must be after drop_off_date',
@@ -384,6 +409,82 @@ export class RentalChainsService {
       const chainRepo = trx.getRepository(RentalChain);
       const linkRepo = trx.getRepository(TaskChainLink);
       const jobRepo = trx.getRepository(Job);
+
+      // ── Delivery reschedule (runs first so a later
+      //     expected_pickup_date update in the same call wins) ──
+      if (dto.drop_off_date !== undefined) {
+        const oldDelivery = chain.drop_off_date;
+        const newDelivery = dto.drop_off_date;
+        const shiftDays =
+          oldDelivery && newDelivery
+            ? daysBetween(oldDelivery, newDelivery)
+            : 0;
+        const shiftDownstream = dto.shift_downstream !== false;
+
+        // Update delivery link + job
+        const deliveryLink = await linkRepo.findOne({
+          where: { rental_chain_id: chain.id, task_type: 'drop_off' },
+          order: { sequence_number: 'ASC' },
+        });
+        if (deliveryLink) {
+          deliveryLink.scheduled_date = newDelivery;
+          await linkRepo.save(deliveryLink);
+          await jobRepo.update(
+            { id: deliveryLink.job_id, tenant_id: tenantId },
+            {
+              scheduled_date: newDelivery,
+              rental_start_date: newDelivery,
+            },
+          );
+        }
+
+        // Walk every scheduled (non-cancelled) downstream link
+        const allLinks = await linkRepo.find({
+          where: { rental_chain_id: chain.id },
+          order: { sequence_number: 'ASC' },
+        });
+        const downstream = allLinks.filter(
+          (l) => l.task_type !== 'drop_off' && l.status !== 'cancelled',
+        );
+
+        if (shiftDownstream && shiftDays !== 0) {
+          for (const l of downstream) {
+            if (!l.scheduled_date) continue;
+            const shifted = shiftDateStr(l.scheduled_date, shiftDays);
+            l.scheduled_date = shifted;
+            await linkRepo.save(l);
+            await jobRepo.update(
+              { id: l.job_id, tenant_id: tenantId },
+              { scheduled_date: shifted },
+            );
+            // Keep delivery job's rental_end_date in sync with the
+            // terminal pickup
+            if (l.task_type === 'pick_up' && !l.next_link_id && deliveryLink) {
+              await jobRepo.update(
+                { id: deliveryLink.job_id, tenant_id: tenantId },
+                { rental_end_date: shifted },
+              );
+            }
+          }
+          if (chain.expected_pickup_date) {
+            chain.expected_pickup_date = shiftDateStr(
+              chain.expected_pickup_date,
+              shiftDays,
+            );
+          }
+        } else {
+          // No shift — validate sequencing
+          for (const l of downstream) {
+            if (l.scheduled_date && l.scheduled_date <= newDelivery) {
+              throw new BadRequestException(
+                `Cannot move delivery to ${newDelivery}: ${l.task_type} on ${l.scheduled_date} would become invalid`,
+              );
+            }
+          }
+        }
+
+        chain.drop_off_date = newDelivery;
+      }
 
       if (dto.expected_pickup_date !== undefined) {
         chain.expected_pickup_date = dto.expected_pickup_date;
@@ -606,6 +707,125 @@ export class RentalChainsService {
     });
   }
 
+  // ─────────────────────────────────────────────────────────
+  // RESCHEDULE EXCHANGE
+  // ─────────────────────────────────────────────────────────
+
+  /**
+   * Reschedule an existing exchange link. Updates the exchange link
+   * + its linked job, then updates the immediately-downstream pickup
+   * link (if any, and if still scheduled) to exchange_date + tenant
+   * rental days — or to `override_pickup_date` if supplied. When the
+   * downstream pickup is the terminal pickup of the chain,
+   * `rental_chains.expected_pickup_date` is updated too.
+   *
+   * Enforces: exchange >= delivery, exchange >= previous-link date,
+   * new_pickup > exchange. Tenant-scoped at every step.
+   */
+  async rescheduleExchange(
+    tenantId: string,
+    chainId: string,
+    linkId: string,
+    dto: RescheduleExchangeDto,
+  ): Promise<RentalChain> {
+    const chain = await this.chainRepo.findOne({
+      where: { id: chainId, tenant_id: tenantId },
+    });
+    if (!chain) throw new NotFoundException(`Rental chain ${chainId} not found`);
+
+    const link = await this.linkRepo.findOne({
+      where: { id: linkId, rental_chain_id: chain.id },
+    });
+    if (!link) {
+      throw new NotFoundException(
+        `Exchange link ${linkId} not found in chain ${chainId}`,
+      );
+    }
+    if (link.task_type !== 'exchange') {
+      throw new BadRequestException('link is not an exchange');
+    }
+    if (link.status === 'cancelled' || link.status === 'completed') {
+      throw new BadRequestException(
+        `cannot reschedule a ${link.status} exchange`,
+      );
+    }
+
+    // Sequencing vs delivery
+    if (chain.drop_off_date && dto.exchange_date < chain.drop_off_date) {
+      throw new BadRequestException(
+        'exchange date cannot be before delivery date',
+      );
+    }
+
+    // Sequencing vs previous link (if not the delivery)
+    if (link.previous_link_id) {
+      const prev = await this.linkRepo.findOne({
+        where: { id: link.previous_link_id, rental_chain_id: chain.id },
+      });
+      if (
+        prev &&
+        prev.scheduled_date &&
+        dto.exchange_date < prev.scheduled_date
+      ) {
+        throw new BadRequestException(
+          `exchange date cannot be before previous ${prev.task_type} (${prev.scheduled_date})`,
+        );
+      }
+    }
+
+    // Resolve new pickup date: override wins
+    let newPickupDateStr: string;
+    if (dto.override_pickup_date) {
+      newPickupDateStr = dto.override_pickup_date;
+    } else {
+      const rentalDays = await this.getTenantRentalDays(tenantId);
+      newPickupDateStr = shiftDateStr(dto.exchange_date, rentalDays);
+    }
+    if (newPickupDateStr <= dto.exchange_date) {
+      throw new BadRequestException(
+        'new pickup date must be after exchange date',
+      );
+    }
+
+    return this.dataSource.transaction(async (trx) => {
+      const chainRepo = trx.getRepository(RentalChain);
+      const linkRepo = trx.getRepository(TaskChainLink);
+      const jobRepo = trx.getRepository(Job);
+
+      // 1. Update the exchange link + job
+      link.scheduled_date = dto.exchange_date;
+      await linkRepo.save(link);
+      await jobRepo.update(
+        { id: link.job_id, tenant_id: tenantId },
+        { scheduled_date: dto.exchange_date },
+      );
+
+      // 2. Update the downstream pickup (if any, still scheduled)
+      if (link.next_link_id) {
+        const nextLink = await linkRepo.findOne({
+          where: { id: link.next_link_id, rental_chain_id: chain.id },
+        });
+        if (nextLink && nextLink.status === 'scheduled') {
+          nextLink.scheduled_date = newPickupDateStr;
+          await linkRepo.save(nextLink);
+          await jobRepo.update(
+            { id: nextLink.job_id, tenant_id: tenantId },
+            { scheduled_date: newPickupDateStr },
+          );
+
+          // If the downstream pickup is the terminal pickup of the
+          // chain, sync chain.expected_pickup_date too.
+          if (nextLink.task_type === 'pick_up' && !nextLink.next_link_id) {
+            chain.expected_pickup_date = newPickupDateStr;
+            await chainRepo.save(chain);
+          }
+        }
+      }
+
+      return this.findOne(tenantId, chain.id);
+    });
+  }
+
   async updateLinkStatus(
     tenantId: string,
     chainId: string,
@@ -690,6 +910,8 @@ export class RentalChainsService {
       } : null,
       jobs: links.map(l => ({
         id: l.job?.id,
+        linkId: l.id,
+        linkStatus: l.status,
         jobNumber: l.job?.job_number,
         taskType: l.task_type,
         status: l.job?.status,
