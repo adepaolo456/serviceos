@@ -37,6 +37,7 @@ import AddressAutocomplete, { type AddressValue } from "@/components/address-aut
 import { FEATURE_REGISTRY } from "@/lib/feature-registry";
 import { getBlockedReason } from "@/lib/blocked-job";
 import { JobBlockedResolutionDrawer } from "@/components/job-blocked-resolution-drawer";
+import LifecycleContextPanel from "./_components/LifecycleContextPanel";
 
 /* --- Types --- */
 
@@ -243,8 +244,11 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
   const [overrideOpen, setOverrideOpen] = useState(false);
   const [overrideTarget, setOverrideTarget] = useState("");
   const [overrideReason, setOverrideReason] = useState("");
-  // Related jobs (lifecycle context)
-  const [relatedJobs, setRelatedJobs] = useState<Array<{ id: string; job_number: string; job_type: string; scheduled_date: string; status: string; relation: string }>>([]);
+  // Phase 15 — the full Connected Job Lifecycle (all chain jobs
+  // + inline alerts) now lives inside <LifecycleContextPanel />,
+  // which owns its own fetch to /jobs/:id/lifecycle-context. The
+  // old parent_job_id / linked_job_ids-derived list was removed
+  // when the chain-graph-driven panel shipped in Phase 15.
   // Rental chain ID for lifecycle link
   const [chainId, setChainId] = useState<string | null>(null);
   // Lifecycle strip data (compact summary from chain endpoint)
@@ -282,7 +286,9 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
     try {
       const data = await api.get<Job>(`/jobs/${id}`);
       setJob(data);
-      fetchRelatedJobs(data);
+      // Phase 15 — LifecycleContextPanel owns the rental-chain
+      // fetch; we still call resolveChainId for the separate
+      // compact lifecycleStrip above the two-column grid.
       resolveChainId(data);
     } catch { /* */ } finally {
       setLoading(false);
@@ -462,65 +468,14 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
     } catch { /* silent — panel simply won't indicate billing issues */ }
   };
 
-  const fetchRelatedJobs = async (currentJob: Job) => {
-    const linkedIds = new Set<string>();
-    // Collect explicitly linked job IDs
-    if (currentJob.parent_job_id) linkedIds.add(currentJob.parent_job_id);
-    if (currentJob.linked_job_ids?.length) currentJob.linked_job_ids.forEach(lid => linkedIds.add(lid));
-
-    if (linkedIds.size === 0) {
-      // No explicit linkage — show nothing rather than guessing
-      setRelatedJobs([]);
-      return;
-    }
-
-    try {
-      // Fetch each linked job individually (small set — typically 1-3 jobs)
-      type LinkedJob = { id: string; job_number: string; job_type: string; scheduled_date: string; status: string; parent_job_id?: string | null; linked_job_ids?: string[] };
-      const fetches = Array.from(linkedIds).map(lid =>
-        api.get<LinkedJob>(`/jobs/${lid}`).catch(() => null)
-      );
-      const results = (await Promise.all(fetches)).filter((j): j is LinkedJob => j !== null);
-
-      // Also walk one level deeper: if a linked job has its own links we haven't seen
-      const deepIds = new Set<string>();
-      for (const rj of results) {
-        if (rj.parent_job_id && rj.parent_job_id !== currentJob.id && !linkedIds.has(rj.parent_job_id)) deepIds.add(rj.parent_job_id);
-        if (rj.linked_job_ids?.length) rj.linked_job_ids.forEach(lid => { if (lid !== currentJob.id && !linkedIds.has(lid)) deepIds.add(lid); });
-      }
-      if (deepIds.size > 0) {
-        const deepFetches = Array.from(deepIds).map(lid =>
-          api.get<LinkedJob>(`/jobs/${lid}`).catch(() => null)
-        );
-        const deepResults = (await Promise.all(deepFetches)).filter((j): j is LinkedJob => j !== null);
-        results.push(...deepResults);
-      }
-
-      // Deduplicate and assign relation labels
-      const seen = new Set<string>([currentJob.id]);
-      const related: Array<{ id: string; job_number: string; job_type: string; scheduled_date: string; status: string; relation: string }> = [];
-      for (const rj of results) {
-        if (seen.has(rj.id)) continue;
-        seen.add(rj.id);
-        let relation = rj.job_type === "delivery" ? "delivery" : rj.job_type === "pickup" ? "pickup" : "exchange";
-        // Refine: if this job is the parent of the current job
-        if (rj.id === currentJob.parent_job_id) {
-          relation = rj.job_type === "delivery" ? "previous_delivery" : "parent";
-        }
-        // If this job is a child (in linked_job_ids)
-        if (currentJob.linked_job_ids?.includes(rj.id)) {
-          relation = rj.job_type === "pickup" ? "next_pickup" : rj.job_type === "exchange" ? "exchange" : "linked";
-        }
-        related.push({ id: rj.id, job_number: rj.job_number, job_type: rj.job_type, scheduled_date: rj.scheduled_date, status: rj.status, relation });
-      }
-
-      // Add current job and sort chronologically
-      related.push({ id: currentJob.id, job_number: currentJob.job_number, job_type: currentJob.job_type, scheduled_date: currentJob.scheduled_date, status: currentJob.status, relation: "current" });
-      related.sort((a, b) => (a.scheduled_date || "").localeCompare(b.scheduled_date || ""));
-
-      setRelatedJobs(related);
-    } catch { /* silent */ }
-  };
+  // Phase 15 — fetchRelatedJobs was removed. The Connected Job
+  // Lifecycle panel now derives its data from the canonical
+  // rental_chains + task_chain_links graph via
+  // GET /jobs/:id/lifecycle-context, fetched inside
+  // <LifecycleContextPanel />. The old client-side walk of
+  // parent_job_id / linked_job_ids could miss exchanges that
+  // weren't explicitly linked and never showed chain-level
+  // alerts; the new panel fixes both.
 
   useEffect(() => { fetchJob(); fetchDumpTickets(); fetchInvoice(); fetchOpenBillingIssues(); }, [id]);
 
@@ -1151,28 +1106,34 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
               <Field label="Asset" value={job.asset ? `${job.asset.identifier} (${job.asset.subtype})` : "None assigned"} />
               <Field label="Priority" value={job.priority} capitalize />
             </div>
-            {/* Dates — context-aware by job type */}
+            {/* Dates — context-aware by job type.
+                Phase 15 — sibling dates come from lifecycleStrip
+                (fetched by resolveChainId from the rental-chains
+                lifecycle endpoint) instead of the deleted
+                relatedJobs state. This is the same chain-truth
+                source the Connected Job Lifecycle panel uses, so
+                the Summary card never disagrees with the panel. */}
             <div className="mt-4 pt-4 border-t border-[var(--t-border)] grid grid-cols-2 gap-4">
               {(() => {
-                const pickupFromRelated = relatedJobs.find(rj => rj.relation === "next_pickup");
-                const deliveryFromRelated = relatedJobs.find(rj => rj.relation === "previous_delivery");
+                const chainDropOffDate = lifecycleStrip?.dropOffDate ?? null;
+                const chainPickupDate = lifecycleStrip?.pickupDate ?? null;
                 if (job.job_type === "delivery") {
                   return (<>
                     <Field label={FEATURE_REGISTRY.job_detail_delivery_date?.label ?? "Delivery Date"} value={job.scheduled_date ? fmtDateFull(job.scheduled_date) : "—"} />
-                    <Field label={FEATURE_REGISTRY.job_detail_pickup_date?.label ?? "Pickup Date"} value={pickupFromRelated?.scheduled_date ? fmtDateFull(pickupFromRelated.scheduled_date) : "—"} />
+                    <Field label={FEATURE_REGISTRY.job_detail_pickup_date?.label ?? "Pickup Date"} value={chainPickupDate ? fmtDateFull(chainPickupDate) : "—"} />
                   </>);
                 }
                 if (job.job_type === "pickup") {
                   return (<>
-                    <Field label={FEATURE_REGISTRY.job_detail_delivery_date?.label ?? "Delivery Date"} value={deliveryFromRelated?.scheduled_date ? fmtDateFull(deliveryFromRelated.scheduled_date) : "—"} />
+                    <Field label={FEATURE_REGISTRY.job_detail_delivery_date?.label ?? "Delivery Date"} value={chainDropOffDate ? fmtDateFull(chainDropOffDate) : "—"} />
                     <Field label={FEATURE_REGISTRY.job_detail_pickup_date?.label ?? "Pickup Date"} value={job.scheduled_date ? fmtDateFull(job.scheduled_date) : "—"} />
                   </>);
                 }
                 // Exchange: show both contexts
                 return (<>
-                  <Field label={FEATURE_REGISTRY.job_detail_delivery_date?.label ?? "Delivery Date"} value={deliveryFromRelated?.scheduled_date ? fmtDateFull(deliveryFromRelated.scheduled_date) : "—"} />
+                  <Field label={FEATURE_REGISTRY.job_detail_delivery_date?.label ?? "Delivery Date"} value={chainDropOffDate ? fmtDateFull(chainDropOffDate) : "—"} />
                   <Field label="Exchange Date" value={job.scheduled_date ? fmtDateFull(job.scheduled_date) : "—"} />
-                  {pickupFromRelated && <Field label={FEATURE_REGISTRY.job_detail_pickup_date?.label ?? "Pickup Date"} value={fmtDateFull(pickupFromRelated.scheduled_date)} />}
+                  {chainPickupDate && <Field label={FEATURE_REGISTRY.job_detail_pickup_date?.label ?? "Pickup Date"} value={fmtDateFull(chainPickupDate)} />}
                 </>);
               })()}
               <Field label="Time Window" value={
@@ -1275,55 +1236,14 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
             </div>
           </Card>
 
-          {/* Job Lifecycle */}
-          {(job.parent_job_id || (job.linked_job_ids && job.linked_job_ids.length > 0)) && (
-            <Card title={FEATURE_REGISTRY.related_jobs?.label ?? "Job Lifecycle"} icon={ArrowRight}>
-              {relatedJobs.length > 0 ? (
-                <div className="space-y-2">
-                  {relatedJobs.map(rj => {
-                    const ds = deriveDisplayStatus(rj.status);
-                    const typeColor = JOB_TYPE_COLORS[rj.job_type] || "text-[var(--t-text-muted)]";
-                    const isCurrent = rj.relation === "current";
-                    const RELATION_LABELS: Record<string, string> = {
-                      current: FEATURE_REGISTRY.related_jobs_current?.label ?? "Current",
-                      previous_delivery: FEATURE_REGISTRY.related_jobs_previous_delivery?.label ?? "Original Delivery",
-                      next_pickup: FEATURE_REGISTRY.related_jobs_next_pickup?.label ?? "Scheduled Pickup",
-                      parent: "Parent",
-                      exchange: "Exchange",
-                      delivery: "Delivery",
-                      pickup: "Pickup",
-                      linked: "Linked",
-                    };
-                    return (
-                      <Link key={rj.id} href={`/jobs/${rj.id}`}
-                        className={`flex items-center justify-between rounded-[14px] border px-3.5 py-2.5 transition-colors ${isCurrent ? "border-[var(--t-accent)] bg-[var(--t-accent-soft)]" : "border-[var(--t-border)] hover:bg-[var(--t-bg-card-hover)]"}`}>
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <span className="text-[10px] font-semibold uppercase tracking-wider text-[var(--t-text-muted)] w-[90px] shrink-0">{RELATION_LABELS[rj.relation] || rj.relation}</span>
-                          <span className={`text-xs font-semibold capitalize ${typeColor}`}>{rj.job_type}</span>
-                          <span className="text-xs font-medium text-[var(--t-text-primary)]">{rj.job_number}</span>
-                          {rj.scheduled_date && <span className="text-xs text-[var(--t-text-muted)]">{fmtDateFull(rj.scheduled_date)}</span>}
-                        </div>
-                        <span className="text-[10px] font-semibold" style={{ color: displayStatusColor(ds) }}>
-                          {DISPLAY_STATUS_LABELS[ds] || rj.status}
-                        </span>
-                      </Link>
-                    );
-                  })}
-                </div>
-              ) : (
-                <p className="text-xs text-[var(--t-text-muted)]">{FEATURE_REGISTRY.related_jobs_no_linked?.label ?? "No linked jobs in this lifecycle"}</p>
-              )}
-              {/* Future action placeholders */}
-              <div className="flex gap-2 mt-3 pt-3 border-t border-[var(--t-border)]">
-                <button disabled className="rounded-full border border-[var(--t-border)] px-3 py-1.5 text-xs font-medium text-[var(--t-text-muted)] opacity-40 cursor-not-allowed">
-                  {FEATURE_REGISTRY.related_jobs_reschedule?.label ?? "Reschedule"}
-                </button>
-                <button disabled className="rounded-full border border-[var(--t-border)] px-3 py-1.5 text-xs font-medium text-[var(--t-text-muted)] opacity-40 cursor-not-allowed">
-                  {FEATURE_REGISTRY.related_jobs_edit_pickup?.label ?? "Edit Pickup Date"}
-                </button>
-              </div>
-            </Card>
-          )}
+          {/* Phase 15 — Connected Job Lifecycle panel.
+              Replaces the old parent_job_id / linked_job_ids
+              walker with a single endpoint
+              (/jobs/:id/lifecycle-context) that returns the full
+              rental-chain graph plus inline alerts. Rendered for
+              every job; the panel itself handles the standalone
+              empty state. */}
+          <LifecycleContextPanel jobId={id} />
 
           {/* Driver Notes */}
           {job.driver_notes && (

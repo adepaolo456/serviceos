@@ -23,6 +23,12 @@ import { BillingIssueDetectorService } from '../billing/services/billing-issue-d
 import { RentalChainsService } from '../rental-chains/rental-chains.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PricingService } from '../pricing/pricing.service';
+import { AlertService } from '../alerts/services/alert.service';
+import {
+  LifecycleContextResponse,
+  LifecycleNode,
+  LifecycleAlert,
+} from './dto/lifecycle-context.dto';
 import { JobPricingAudit } from './entities/job-pricing-audit.entity';
 import { hasPricingRelevantChanges } from './helpers/pricing-change-detector';
 import { extractCoordinates, buildAddressString } from '../../common/helpers/coordinate-validator';
@@ -83,6 +89,11 @@ export class JobsService {
     private rentalChainsService: RentalChainsService,
     private notificationsService: NotificationsService,
     private pricingService: PricingService,
+    // Phase 15 — Connected Job Lifecycle panel queries the `alerts`
+    // table inline via this service so the single
+    // /jobs/:id/lifecycle-context endpoint returns everything the
+    // panel needs in one round trip.
+    private alertService: AlertService,
   ) {}
 
   async create(tenantId: string, dto: CreateJobDto): Promise<Job> {
@@ -1331,6 +1342,190 @@ export class JobsService {
   // ─────────────────────────────────────────────────────────
   // PHASE 11A — asset enforcement helpers
   // ─────────────────────────────────────────────────────────
+
+  // ─────────────────────────────────────────────────────────
+  // PHASE 15 — Connected Job Lifecycle (read-only)
+  // ─────────────────────────────────────────────────────────
+
+  /**
+   * Returns the full rental-chain context for a job: the chain
+   * summary, all sibling jobs ordered by scheduled_date ASC, and
+   * active alerts (chain-level + per-job) inlined. Single
+   * round-trip contract consumed by the Job Detail page's
+   * Connected Job Lifecycle panel.
+   *
+   * Standalone jobs (not part of any rental chain) return
+   * `is_standalone: true` with empty `nodes` and empty
+   * `chain_alerts` so the frontend can render a registry-driven
+   * empty state without a second fetch.
+   *
+   * Spec rules enforced here:
+   *   - Ordering by `jobs.scheduled_date ASC` only (no custom
+   *     sequence invention — task_chain_links.sequence_number is
+   *     returned as metadata but NOT used for ordering).
+   *   - ALL exchanges included in sequence; no collapsing.
+   *   - Tenant-scoped via the chain ownership check.
+   *   - Alert data read from the existing `alerts` table via
+   *     AlertService.findActiveForEntities — no parallel detector
+   *     path, no duplicate logic.
+   */
+  async getLifecycleContext(
+    tenantId: string,
+    jobId: string,
+  ): Promise<LifecycleContextResponse> {
+    // 1. Validate the job belongs to this tenant (404 otherwise).
+    const currentJob = await this.jobsRepository.findOne({
+      where: { id: jobId, tenant_id: tenantId },
+      select: ['id'],
+    });
+    if (!currentJob) {
+      throw new NotFoundException('Job not found');
+    }
+
+    // 2. Find the task_chain_link for this job. If there isn't
+    // one, the job is standalone — return the empty-chain shape.
+    const currentLink = await this.taskChainLinkRepo.findOne({
+      where: { job_id: jobId },
+    });
+
+    if (!currentLink) {
+      return {
+        current_job_id: jobId,
+        is_standalone: true,
+        chain: null,
+        nodes: [],
+        chain_alerts: [],
+      };
+    }
+
+    // 3. Load the chain (validates tenant ownership — otherwise
+    // also treated as standalone to avoid cross-tenant leakage).
+    const chain = await this.rentalChainRepo.findOne({
+      where: {
+        id: currentLink.rental_chain_id,
+        tenant_id: tenantId,
+      },
+    });
+    if (!chain) {
+      return {
+        current_job_id: jobId,
+        is_standalone: true,
+        chain: null,
+        nodes: [],
+        chain_alerts: [],
+      };
+    }
+
+    // 4. Fetch every link for this chain plus the linked jobs in
+    // a single round trip via join. We SELECT only the columns
+    // the panel needs — the denormalized asset_subtype is picked
+    // up here so the panel doesn't have to join to assets again.
+    const rows = await this.jobsRepository
+      .createQueryBuilder('j')
+      .innerJoin(
+        TaskChainLink,
+        'l',
+        'l.job_id = j.id AND l.rental_chain_id = :chainId',
+        { chainId: chain.id },
+      )
+      .where('j.tenant_id = :tenantId', { tenantId })
+      .select([
+        'j.id',
+        'j.job_number',
+        'j.job_type',
+        'j.status',
+        'j.scheduled_date',
+        'j.completed_at',
+        'j.cancelled_at',
+        'j.cancellation_reason',
+        'j.asset_id',
+        'j.asset_subtype',
+      ])
+      .addSelect('l.task_type', 'l_task_type')
+      .addSelect('l.sequence_number', 'l_sequence_number')
+      .addSelect('l.status', 'l_status')
+      // Spec: order by jobs.scheduled_date ASC. Nulls sort last
+      // per Postgres default — acceptable since any chain job
+      // without a scheduled_date is a data-integrity issue
+      // already surfaced by LIFECYCLE_INTEGRITY.
+      .orderBy('j.scheduled_date', 'ASC')
+      .addOrderBy('l.sequence_number', 'ASC')
+      .getRawAndEntities();
+
+    const jobIds = rows.entities.map((j) => j.id);
+
+    // 5. Fetch alerts for the chain + every job in one query.
+    const alerts = await this.alertService.findActiveForEntities(
+      tenantId,
+      [
+        { entity_type: 'rental_chain', entity_ids: [chain.id] },
+        { entity_type: 'job', entity_ids: jobIds },
+      ],
+    );
+
+    // Split alerts into chain-scoped vs per-job buckets.
+    const chainAlerts: LifecycleAlert[] = [];
+    const jobAlertsById = new Map<string, LifecycleAlert[]>();
+    for (const a of alerts) {
+      const mapped: LifecycleAlert = {
+        id: a.id,
+        alert_type: a.alert_type,
+        severity: a.severity as 'high' | 'medium' | 'low',
+        message: a.message,
+        metadata: a.metadata ?? {},
+      };
+      if (a.entity_type === 'rental_chain') {
+        chainAlerts.push(mapped);
+      } else if (a.entity_type === 'job') {
+        const list = jobAlertsById.get(a.entity_id) ?? [];
+        list.push(mapped);
+        jobAlertsById.set(a.entity_id, list);
+      }
+    }
+
+    // 6. Assemble nodes. Zip the raw rows with the entities so we
+    // can read the task_chain_link columns (not part of Job).
+    const nodes: LifecycleNode[] = rows.entities.map((job, idx) => {
+      const raw = rows.raw[idx];
+      return {
+        job_id: job.id,
+        job_number: job.job_number,
+        job_type: job.job_type,
+        task_type: raw?.l_task_type ?? '',
+        sequence_number: Number(raw?.l_sequence_number ?? 0),
+        status: job.status,
+        scheduled_date: job.scheduled_date ?? null,
+        completed_at: job.completed_at
+          ? new Date(job.completed_at).toISOString()
+          : null,
+        cancelled_at: job.cancelled_at
+          ? new Date(job.cancelled_at).toISOString()
+          : null,
+        cancellation_reason: job.cancellation_reason ?? null,
+        link_status: raw?.l_status ?? 'scheduled',
+        asset_id: job.asset_id ?? null,
+        asset_subtype: job.asset_subtype ?? null,
+        is_current: job.id === jobId,
+        alerts: jobAlertsById.get(job.id) ?? [],
+      };
+    });
+
+    return {
+      current_job_id: jobId,
+      is_standalone: false,
+      chain: {
+        id: chain.id,
+        status: chain.status,
+        drop_off_date: chain.drop_off_date ?? null,
+        expected_pickup_date: chain.expected_pickup_date ?? null,
+        actual_pickup_date: chain.actual_pickup_date ?? null,
+        dumpster_size: chain.dumpster_size ?? null,
+        rental_days: chain.rental_days ?? null,
+      },
+      nodes,
+      chain_alerts: chainAlerts,
+    };
+  }
 
   /**
    * Resolve a job's rental chain context (id + booked dumpster size).
