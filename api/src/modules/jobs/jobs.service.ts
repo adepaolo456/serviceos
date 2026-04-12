@@ -1599,7 +1599,11 @@ export class JobsService {
     tenantId: string,
     jobId: string,
     dto: UpdateScheduledDateDto,
-    _userId: string,
+    actor: {
+      type: 'operator' | 'customer';
+      userId: string;
+      reason?: string;
+    },
   ): Promise<{ job: Job; chain: RentalChain | null }> {
     // 1. Format + basic input validation. We expect YYYY-MM-DD.
     const newDate = dto.scheduled_date;
@@ -1724,12 +1728,18 @@ export class JobsService {
     // row and mirror rental_days onto the job. Exchange is
     // job-only.
     await this.dataSource.transaction(async (manager) => {
+      // Phase B1 — actor-driven override flags. `type === 'customer'`
+      // lights up the rescheduled_by_customer flag that surfaces
+      // through portal-activity queries. The reason is a machine-
+      // readable string (e.g. 'customer_portal_extend') resolved
+      // by upstream surfaces via the feature registry.
       const jobUpdate: Partial<Job> = {
         scheduled_date: newDate,
         rescheduled_from_date: previousScheduledDate,
         rescheduled_at: new Date(),
-        rescheduled_reason: 'operator_override_lifecycle_panel',
-        rescheduled_by_customer: false,
+        rescheduled_reason:
+          actor.reason ?? 'operator_override_lifecycle_panel',
+        rescheduled_by_customer: actor.type === 'customer',
       };
 
       if (job.job_type === 'delivery' || job.job_type === 'pickup') {
