@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useEffect, use } from "react";
+import { useState, useEffect, use, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import HelpTooltip from "@/components/ui/HelpTooltip";
 import { ArrowLeft, Truck, MapPin, Calendar, Package, DollarSign, CheckCircle2, Clock, ArrowRight, FileText, Pencil, CalendarClock, Repeat } from "lucide-react";
 import { api } from "@/lib/api";
 import { formatCurrency } from "@/lib/utils";
@@ -47,6 +48,8 @@ interface LifecycleData {
     status: string;
     dumpsterSize: string;
     rentalDays: number;
+    /** Phase 10B: live tenant setting, not the chain's historical snapshot. */
+    tenantRentalDays?: number;
     dropOffDate: string;
     expectedPickupDate: string | null;
     createdAt: string;
@@ -82,6 +85,129 @@ const STATUS_LABELS: Record<string, string> = {
   completed: FEATURE_REGISTRY.rental_lifecycle_status_completed?.label ?? "Completed",
   cancelled: "Cancelled",
 };
+
+/* ── Date-rule helpers (Phase 10B) ── */
+
+/**
+ * Base date for auto pickup calculation — the LAST non-cancelled
+ * exchange in the chain if one exists, otherwise the delivery date.
+ * Matches the backend's rescheduleExchange/createExchange rule and
+ * produces the same value the Phase 8 delivery shift preserves.
+ */
+function getAutoBaseDate(data: LifecycleData): string | null {
+  const activeExchanges = (data.jobs ?? [])
+    .filter(j => j.taskType === "exchange" && j.linkStatus === "scheduled" && j.scheduledDate)
+    .sort((a, b) => (a.scheduledDate < b.scheduledDate ? 1 : -1)); // DESC
+  if (activeExchanges.length > 0) return activeExchanges[0].scheduledDate;
+  return data.rentalChain.dropOffDate || null;
+}
+
+function shiftDays(date: string, days: number): string {
+  const d = new Date(date + "T00:00:00Z");
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().split("T")[0];
+}
+
+function fmtShortDate(d: string | null | undefined): string {
+  if (!d) return "—";
+  return new Date(d + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
+/** Substitute `{days}`/`{date}` placeholders in registry label text. */
+function interp(tpl: string, vars: Record<string, string | number>): string {
+  return tpl.replace(/\{(\w+)\}/g, (_, k) => String(vars[k] ?? `{${k}}`));
+}
+
+/* ── Reusable components (Phase 10B) ── */
+
+/**
+ * Date input where a click anywhere in the field opens the native
+ * calendar picker, not just the calendar icon. Falls back gracefully
+ * on browsers without `showPicker()` support (pre-Safari 16.4).
+ */
+function LifecycleDateInput({
+  value,
+  onChange,
+  min,
+  className,
+}: {
+  value: string;
+  onChange: (next: string) => void;
+  min?: string;
+  className?: string;
+}) {
+  const ref = useRef<HTMLInputElement>(null);
+  return (
+    <input
+      ref={ref}
+      type="date"
+      value={value}
+      min={min}
+      onChange={(e) => onChange(e.target.value)}
+      onClick={() => {
+        try {
+          ref.current?.showPicker?.();
+        } catch {
+          /* Unsupported browser — native click already handled */
+        }
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          try {
+            ref.current?.showPicker?.();
+          } catch {
+            /* ignore */
+          }
+        }
+      }}
+      className={className}
+    />
+  );
+}
+
+/**
+ * Preview of the resulting pickup date for a lifecycle modal. Shows
+ * either "Auto (N-day rental)" when the user-entered pickup matches
+ * the auto-calculated value, or "(Override — auto would be <date>)"
+ * when the two diverge. Computed in real time from base date + tenant
+ * rental days — no API call.
+ */
+function PickupPreview({
+  label,
+  autoDate,
+  overrideDate,
+  rentalDays,
+}: {
+  label?: string;
+  autoDate: string | null;
+  /** If set, the user typed an explicit override. Otherwise the preview shows auto. */
+  overrideDate?: string;
+  rentalDays: number;
+}) {
+  const actual = overrideDate || autoDate;
+  if (!actual) return null;
+  const isAuto = !overrideDate || overrideDate === autoDate;
+  const autoSuffixTpl =
+    FEATURE_REGISTRY.auto_calculated_with_days?.label ?? "Auto ({days}-day rental)";
+  const overrideSuffixTpl =
+    FEATURE_REGISTRY.rental_rule_override?.label ?? "Override — auto would be {date}";
+  const headerLabel =
+    label ?? FEATURE_REGISTRY.date_change_preview?.label ?? "New pickup date will be:";
+  return (
+    <div className="mt-1 mb-3 flex items-start gap-1.5">
+      <div className="flex-1 text-[11px] text-[var(--t-text-muted)] leading-relaxed">
+        <span>{headerLabel}</span>{" "}
+        <span className="font-semibold text-[var(--t-text-primary)]">{fmtShortDate(actual)}</span>{" "}
+        <span>
+          ({isAuto
+            ? interp(autoSuffixTpl, { days: rentalDays })
+            : interp(overrideSuffixTpl, { date: fmtShortDate(autoDate || "") })})
+        </span>
+      </div>
+      <HelpTooltip featureId="help_rental_date_calculation" placement="left" />
+    </div>
+  );
+}
 
 /* ── Page ── */
 
@@ -153,10 +279,16 @@ export default function RentalLifecyclePage({ params }: { params: Promise<{ id: 
 
   const handlePickupDateUpdate = async () => {
     if (!data || !pickupDate) return;
-    // Validate: pickup must be after delivery
+    // Validate: pickup must be after delivery, and after any
+    // scheduled exchange (no negative rental duration).
     const deliveryDate = data.rentalChain.dropOffDate;
     if (deliveryDate && pickupDate <= deliveryDate) {
-      setPickupError(FEATURE_REGISTRY.lifecycle_action_pickup_before_delivery?.label ?? "Pickup date must be after delivery date");
+      setPickupError(FEATURE_REGISTRY.validation_pickup_before_delivery?.label ?? "Pickup date cannot be before delivery date");
+      return;
+    }
+    const lastExchange = getAutoBaseDate(data);
+    if (lastExchange && lastExchange !== deliveryDate && pickupDate <= lastExchange) {
+      setPickupError(FEATURE_REGISTRY.validation_pickup_before_exchange?.label ?? "Pickup date cannot be before exchange date");
       return;
     }
     setPickupSaving(true);
@@ -206,11 +338,11 @@ export default function RentalLifecyclePage({ params }: { params: Promise<{ id: 
     if (!data || !editExchangeLinkId || !editExchangeDate) return;
     const deliveryDateStr = data.rentalChain.dropOffDate;
     if (deliveryDateStr && editExchangeDate < deliveryDateStr) {
-      setEditExchangeError(FEATURE_REGISTRY.lifecycle_action_exchange_before_delivery?.label ?? "Exchange date cannot be before delivery date");
+      setEditExchangeError(FEATURE_REGISTRY.validation_exchange_before_delivery?.label ?? "Exchange date cannot be before delivery date");
       return;
     }
     if (editExchangeOverride && editExchangeOverride <= editExchangeDate) {
-      setEditExchangeError(FEATURE_REGISTRY.lifecycle_action_pickup_before_exchange?.label ?? "Pickup date must be after exchange date");
+      setEditExchangeError(FEATURE_REGISTRY.validation_pickup_before_exchange?.label ?? "Pickup date cannot be before exchange date");
       return;
     }
     setEditExchangeSaving(true);
@@ -237,11 +369,11 @@ export default function RentalLifecyclePage({ params }: { params: Promise<{ id: 
     // Validate: exchange must be on or after delivery
     const deliveryDate = data.rentalChain.dropOffDate;
     if (deliveryDate && exchangeDate < deliveryDate) {
-      setExchangeError(FEATURE_REGISTRY.lifecycle_action_exchange_before_delivery?.label ?? "Exchange date cannot be before delivery date");
+      setExchangeError(FEATURE_REGISTRY.validation_exchange_before_delivery?.label ?? "Exchange date cannot be before delivery date");
       return;
     }
     if (exchangeOverridePickup && exchangeOverridePickup <= exchangeDate) {
-      setExchangeError(FEATURE_REGISTRY.lifecycle_action_pickup_before_exchange?.label ?? "Pickup date must be after exchange date");
+      setExchangeError(FEATURE_REGISTRY.validation_pickup_before_exchange?.label ?? "Pickup date cannot be before exchange date");
       return;
     }
     setExchangeSaving(true);
@@ -293,6 +425,18 @@ export default function RentalLifecyclePage({ params }: { params: Promise<{ id: 
   const deliveryJob = jobs.find(j => j.taskType === "drop_off");
   const isActive = rentalChain.status === "active";
 
+  // Phase 10B — auto vs override derivation for the header pickup
+  // badge. tenantRentalDays is the live setting (falls back to the
+  // chain's historical snapshot, then to 14 only as a last resort).
+  const tenantRentalDays =
+    rentalChain.tenantRentalDays ?? rentalChain.rentalDays ?? 14;
+  const autoBaseDate = getAutoBaseDate(data);
+  const autoPickupDate = autoBaseDate ? shiftDays(autoBaseDate, tenantRentalDays) : null;
+  const isPickupAuto =
+    !!rentalChain.expectedPickupDate &&
+    !!autoPickupDate &&
+    rentalChain.expectedPickupDate === autoPickupDate;
+
   return (
     <div className="space-y-6">
       {/* Back */}
@@ -341,9 +485,12 @@ export default function RentalLifecyclePage({ params }: { params: Promise<{ id: 
             </div>
           </div>
           <div>
-            <p className="text-[10px] font-medium uppercase tracking-wider text-[var(--t-text-muted)]">
-              {FEATURE_REGISTRY.job_detail_pickup_date?.label ?? "Pickup Date"}
-            </p>
+            <div className="flex items-center gap-1">
+              <p className="text-[10px] font-medium uppercase tracking-wider text-[var(--t-text-muted)]">
+                {FEATURE_REGISTRY.job_detail_pickup_date?.label ?? "Pickup Date"}
+              </p>
+              <HelpTooltip featureId="help_auto_vs_manual_dates" placement="top" />
+            </div>
             <div className="flex items-center gap-2 mt-0.5">
               <p className="text-sm font-semibold text-[var(--t-text-primary)]">{fmtDate(rentalChain.expectedPickupDate)}</p>
               {isActive && (
@@ -353,6 +500,16 @@ export default function RentalLifecyclePage({ params }: { params: Promise<{ id: 
                 </button>
               )}
             </div>
+            {rentalChain.expectedPickupDate && (
+              <p className="text-[10px] text-[var(--t-text-muted)] mt-0.5">
+                {isPickupAuto
+                  ? interp(
+                      FEATURE_REGISTRY.auto_calculated_with_days?.label ?? "Auto ({days}-day rental)",
+                      { days: tenantRentalDays },
+                    )
+                  : FEATURE_REGISTRY.manually_overridden?.label ?? "Manually set"}
+              </p>
+            )}
           </div>
           <div>
             <p className="text-[10px] font-medium uppercase tracking-wider text-[var(--t-text-muted)]">Dumpster</p>
@@ -550,13 +707,42 @@ export default function RentalLifecyclePage({ params }: { params: Promise<{ id: 
               {FEATURE_REGISTRY.edit_delivery_date_description?.label ?? "Reschedule the delivery. Downstream tasks shift by the same number of days unless you opt out."}
             </p>
             <label className="text-xs text-[var(--t-text-muted)] mb-1 block">
-              {FEATURE_REGISTRY.lifecycle_action_new_date?.label ?? "New pickup date"}
+              {FEATURE_REGISTRY.edit_delivery_date?.label ?? "Edit Delivery Date"}
             </label>
-            <input type="date" value={deliveryDate}
-              onChange={e => { setDeliveryDate(e.target.value); setDeliveryError(""); }}
-              className="w-full rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-3 py-2 text-sm text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)] mb-3" />
+            <LifecycleDateInput
+              value={deliveryDate}
+              onChange={(v) => { setDeliveryDate(v); setDeliveryError(""); }}
+              className="w-full rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-3 py-2 text-sm text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)] mb-1"
+            />
+            {(() => {
+              // Preview: what the terminal pickup date becomes after
+              // the edit. Shift-downstream preserves the existing
+              // pickup offset; shift-off leaves the pickup alone.
+              if (!deliveryDate || deliveryDate === rentalChain.dropOffDate) return null;
+              const currentPickup = rentalChain.expectedPickupDate;
+              if (!currentPickup || !rentalChain.dropOffDate) return null;
+              const offset = deliveryShift
+                ? Math.round(
+                    (new Date(deliveryDate + "T00:00:00Z").getTime() -
+                      new Date(rentalChain.dropOffDate + "T00:00:00Z").getTime()) /
+                      86400000,
+                  )
+                : 0;
+              const shiftedPickup = shiftDays(currentPickup, offset);
+              // After the shift, the "auto" base advances too (same
+              // offset), so whether it's auto/override is preserved.
+              const shiftedBase = autoBaseDate ? shiftDays(autoBaseDate, offset) : null;
+              const autoAfter = shiftedBase ? shiftDays(shiftedBase, tenantRentalDays) : null;
+              return (
+                <PickupPreview
+                  autoDate={autoAfter}
+                  overrideDate={shiftedPickup === autoAfter ? undefined : shiftedPickup}
+                  rentalDays={tenantRentalDays}
+                />
+              );
+            })()}
 
-            <label className="flex items-start gap-2 text-xs text-[var(--t-text-primary)] mb-1 cursor-pointer">
+            <label className="flex items-start gap-2 text-xs text-[var(--t-text-primary)] mb-1 cursor-pointer mt-1">
               <input type="checkbox" checked={deliveryShift}
                 onChange={e => setDeliveryShift(e.target.checked)}
                 className="mt-0.5" />
@@ -597,21 +783,32 @@ export default function RentalLifecyclePage({ params }: { params: Promise<{ id: 
             <label className="text-xs text-[var(--t-text-muted)] mb-1 block">
               {FEATURE_REGISTRY.exchange_date?.label ?? "Exchange date"}
             </label>
-            <input type="date" value={editExchangeDate}
-              onChange={e => { setEditExchangeDate(e.target.value); setEditExchangeError(""); }}
+            <LifecycleDateInput
+              value={editExchangeDate}
+              onChange={(v) => { setEditExchangeDate(v); setEditExchangeError(""); }}
               min={rentalChain.dropOffDate || undefined}
-              className="w-full rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-3 py-2 text-sm text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)] mb-3" />
+              className="w-full rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-3 py-2 text-sm text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)] mb-3"
+            />
 
             <label className="text-xs text-[var(--t-text-muted)] mb-1 block">
               {FEATURE_REGISTRY.override_pickup_date?.label ?? "Override pickup date (optional)"}
             </label>
-            <input type="date" value={editExchangeOverride}
-              onChange={e => { setEditExchangeOverride(e.target.value); setEditExchangeError(""); }}
+            <LifecycleDateInput
+              value={editExchangeOverride}
+              onChange={(v) => { setEditExchangeOverride(v); setEditExchangeError(""); }}
               min={editExchangeDate || undefined}
-              className="w-full rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-3 py-2 text-sm text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)] mb-1" />
-            <p className="text-[10px] text-[var(--t-text-muted)] mb-3">
+              className="w-full rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-3 py-2 text-sm text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)] mb-1"
+            />
+            <p className="text-[10px] text-[var(--t-text-muted)] mb-1">
               {FEATURE_REGISTRY.override_pickup_date_hint?.label ?? "Leave blank to auto-calculate from your tenant rental period."}
             </p>
+            {editExchangeDate && (
+              <PickupPreview
+                autoDate={shiftDays(editExchangeDate, tenantRentalDays)}
+                overrideDate={editExchangeOverride || undefined}
+                rentalDays={tenantRentalDays}
+              />
+            )}
 
             {editExchangeError && (
               <p className="text-xs text-[var(--t-error)] mb-3">{editExchangeError}</p>
@@ -643,10 +840,12 @@ export default function RentalLifecyclePage({ params }: { params: Promise<{ id: 
             <label className="text-xs text-[var(--t-text-muted)] mb-1 block">
               {FEATURE_REGISTRY.exchange_date?.label ?? "Exchange date"}
             </label>
-            <input type="date" value={exchangeDate}
-              onChange={e => { setExchangeDate(e.target.value); setExchangeError(""); }}
+            <LifecycleDateInput
+              value={exchangeDate}
+              onChange={(v) => { setExchangeDate(v); setExchangeError(""); }}
               min={rentalChain.dropOffDate || undefined}
-              className="w-full rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-3 py-2 text-sm text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)] mb-3" />
+              className="w-full rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-3 py-2 text-sm text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)] mb-3"
+            />
 
             <label className="text-xs text-[var(--t-text-muted)] mb-1 block">
               {FEATURE_REGISTRY.new_dumpster_size?.label ?? "New dumpster size"}
@@ -691,13 +890,22 @@ export default function RentalLifecyclePage({ params }: { params: Promise<{ id: 
             <label className="text-xs text-[var(--t-text-muted)] mb-1 block">
               {FEATURE_REGISTRY.override_pickup_date?.label ?? "Override pickup date (optional)"}
             </label>
-            <input type="date" value={exchangeOverridePickup}
-              onChange={e => { setExchangeOverridePickup(e.target.value); setExchangeError(""); }}
+            <LifecycleDateInput
+              value={exchangeOverridePickup}
+              onChange={(v) => { setExchangeOverridePickup(v); setExchangeError(""); }}
               min={exchangeDate || undefined}
-              className="w-full rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-3 py-2 text-sm text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)] mb-1" />
-            <p className="text-[10px] text-[var(--t-text-muted)] mb-3">
+              className="w-full rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-3 py-2 text-sm text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)] mb-1"
+            />
+            <p className="text-[10px] text-[var(--t-text-muted)] mb-1">
               {FEATURE_REGISTRY.override_pickup_date_hint?.label ?? "Leave blank to auto-calculate from your tenant rental period."}
             </p>
+            {exchangeDate && (
+              <PickupPreview
+                autoDate={shiftDays(exchangeDate, tenantRentalDays)}
+                overrideDate={exchangeOverridePickup || undefined}
+                rentalDays={tenantRentalDays}
+              />
+            )}
 
             {exchangeError && (
               <p className="text-xs text-[var(--t-error)] mb-3">{exchangeError}</p>
@@ -728,9 +936,19 @@ export default function RentalLifecyclePage({ params }: { params: Promise<{ id: 
             <label className="text-xs text-[var(--t-text-muted)] mb-1 block">
               {FEATURE_REGISTRY.lifecycle_action_new_date?.label ?? "New pickup date"}
             </label>
-            <input type="date" value={pickupDate} onChange={e => { setPickupDate(e.target.value); setPickupError(""); }}
+            <LifecycleDateInput
+              value={pickupDate}
+              onChange={(v) => { setPickupDate(v); setPickupError(""); }}
               min={rentalChain.dropOffDate ? new Date(new Date(rentalChain.dropOffDate).getTime() + 86400000).toISOString().split("T")[0] : undefined}
-              className="w-full rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-3 py-2 text-sm text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)] mb-3" />
+              className="w-full rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-3 py-2 text-sm text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)] mb-1"
+            />
+            {pickupDate && autoPickupDate && (
+              <PickupPreview
+                autoDate={autoPickupDate}
+                overrideDate={pickupDate === autoPickupDate ? undefined : pickupDate}
+                rentalDays={tenantRentalDays}
+              />
+            )}
             {pickupError && (
               <p className="text-xs text-[var(--t-error)] mb-3">{pickupError}</p>
             )}

@@ -872,8 +872,8 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
                   ? FEATURE_REGISTRY.rental_lifecycle_task_drop_off?.label ?? "Delivery"
                   : r.job_type;
           return (
-            <div className="mt-4 rounded-[20px] bg-[var(--t-error-soft)] border border-[var(--t-error)]/20 px-4 py-3 text-sm">
-              <div className="text-[var(--t-error)]">
+            <div className="mt-5 mb-2 rounded-[20px] bg-[var(--t-error-soft)] border border-[var(--t-error)]/20 px-4 py-4 text-sm">
+              <div className="text-[var(--t-error)] leading-relaxed">
                 <XCircle className="inline h-4 w-4 mr-1.5 -mt-0.5" />
                 <span className="font-semibold">{reasonLabel}</span>
                 {job.cancelled_at && (
@@ -883,16 +883,16 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
                 )}
               </div>
               {hasReplacements && (
-                <div className="mt-3 pt-3 border-t border-[var(--t-error)]/15">
-                  <p className="text-[10px] font-medium uppercase tracking-wider text-[var(--t-text-muted)] mb-2">
+                <div className="mt-4 pt-4 border-t border-[var(--t-error)]/15">
+                  <p className="text-[10px] font-medium uppercase tracking-wider text-[var(--t-text-muted)] mb-2.5">
                     {FEATURE_REGISTRY.replaced_by?.label ?? "Replaced by"}
                   </p>
-                  <div className="space-y-1.5">
+                  <div className="space-y-2">
                     {replacements.map((r) => (
                       <Link
                         key={r.job_id}
                         href={`/jobs/${r.job_id}`}
-                        className="flex items-center justify-between rounded-[12px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-3 py-2 hover:bg-[var(--t-bg-card-hover)] transition-colors"
+                        className="flex items-center justify-between rounded-[12px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-3.5 py-2.5 hover:bg-[var(--t-bg-card-hover)] transition-colors"
                         title={FEATURE_REGISTRY.view_replacement_job?.label ?? "View replacement job"}
                       >
                         <div className="flex items-center gap-3 min-w-0">
@@ -911,7 +911,7 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
                   {job.rental_chain_id && (
                     <Link
                       href={`/rentals/${job.rental_chain_id}`}
-                      className="inline-flex items-center gap-1 mt-2 text-[11px] font-medium text-[var(--t-accent)] hover:underline"
+                      className="inline-flex items-center gap-1 mt-3 text-[11px] font-medium text-[var(--t-accent)] hover:underline"
                     >
                       {FEATURE_REGISTRY.view_lifecycle?.label ?? "View full lifecycle"}
                       <ArrowRight className="h-3 w-3" />
