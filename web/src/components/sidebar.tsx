@@ -23,6 +23,7 @@ import {
   CarFront,
   Trash2,
   AlertTriangle,
+  Zap,
   Bell,
   HelpCircle,
   Sun,
@@ -60,6 +61,9 @@ const navigation: ReadonlyArray<{
   { name: "Quotes", href: "/quotes", icon: FileCheck },
   { name: "Billing Issues", href: "/billing-issues", icon: AlertTriangle },
   { name: "Pricing Issues", href: "/pricing-qa", icon: Shield },
+  // Phase 14 — Alerts & Exceptions. Label comes from the feature registry
+  // per the phase spec ("New sidebar item label comes from registry").
+  { name: getFeatureLabel("alerts"), href: "/alerts", icon: Zap },
   { name: "Notifications", href: "/notifications", icon: Bell },
   { name: "Pricing", href: "/pricing", icon: DollarSign },
   { name: "Team", href: "/team", icon: Users },
@@ -100,6 +104,7 @@ export default function Sidebar() {
   const [hoveredItem, setHoveredItem] = useState<string | null>(null);
   const [billingIssueCount, setBillingIssueCount] = useState(0);
   const [pricingQaCount, setPricingQaCount] = useState(0);
+  const [alertsCount, setAlertsCount] = useState(0);
   const { theme, cycleTheme } = useTheme();
   const { collapsed, toggleCollapsed } = useSidebar();
   const { openQuickQuote } = useQuickQuote();
@@ -116,6 +121,10 @@ export default function Sidebar() {
     api
       .get<{ summary: { actionable_count: number } }>("/pricing-qa/overview")
       .then((d) => setPricingQaCount(d.summary.actionable_count || 0))
+      .catch(() => {});
+    api
+      .get<{ total: number }>("/alerts/summary")
+      .then((s) => setAlertsCount(s.total || 0))
       .catch(() => {});
   }, []);
 
@@ -187,6 +196,11 @@ export default function Sidebar() {
                   {item.name === "Pricing Issues" && pricingQaCount > 0 && (
                     <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-bold text-white" style={{ background: "var(--t-warning)" }}>
                       {pricingQaCount}
+                    </span>
+                  )}
+                  {item.href === "/alerts" && alertsCount > 0 && (
+                    <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-bold text-white" style={{ background: "var(--t-error)" }}>
+                      {alertsCount}
                     </span>
                   )}
                 </Link>

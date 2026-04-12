@@ -87,6 +87,8 @@ import { CreditAuditModule } from './modules/credit-audit/credit-audit.module';
 import { CreditAuditEvent } from './modules/credit-audit/credit-audit-event.entity';
 import { CreditCollectionEvent } from './modules/credit-audit/credit-collection-event.entity';
 import { PermissionModule } from './modules/permissions/permission.module';
+import { AlertsModule } from './modules/alerts/alerts.module';
+import { Alert } from './modules/alerts/entities/alert.entity';
 
 @Module({
   imports: [
@@ -156,6 +158,7 @@ import { PermissionModule } from './modules/permissions/permission.module';
             HelpAnalyticsEvent,
             CreditAuditEvent,
             CreditCollectionEvent,
+            Alert,
           ],
           synchronize: isTest,
           ssl: isTest ? false : { rejectUnauthorized: false },
@@ -197,6 +200,7 @@ import { PermissionModule } from './modules/permissions/permission.module';
     GeocodingModule,
     CreditAuditModule,
     PermissionModule,
+    AlertsModule,
   ],
   controllers: [AppController],
   providers: [

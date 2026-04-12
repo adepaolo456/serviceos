@@ -16,7 +16,8 @@ export type FeatureCategory =
   | "marketplace"
   | "notifications"
   | "settings"
-  | "admin";
+  | "admin"
+  | "exceptions";
 
 export interface FeatureDescription {
   id: string;
@@ -2118,6 +2119,105 @@ export const FEATURE_REGISTRY: Record<string, FeatureDescription> = {
   portal_placement_title: { id: "portal_placement_title", label: "Drop Location", category: "customers", shortDescription: "Section title for placement feature.", guideDescription: "", routeOrSurface: "portal", tenantOverrideKey: "portal_placement_title", isUserFacing: true, isGuideEligible: false, keywords: ["drop location"] },
   portal_placement_notes_label: { id: "portal_placement_notes_label", label: "Notes for the driver", category: "customers", shortDescription: "Label above notes field.", guideDescription: "", routeOrSurface: "portal", tenantOverrideKey: "portal_placement_notes_label", isUserFacing: true, isGuideEligible: false, keywords: ["notes", "label"] },
   portal_placement_saved_cta: { id: "portal_placement_saved_cta", label: "Drop Location Saved", category: "customers", shortDescription: "CTA text after successful save.", guideDescription: "", routeOrSurface: "portal", tenantOverrideKey: "portal_placement_saved_cta", isUserFacing: true, isGuideEligible: false, keywords: ["saved"] },
+
+  // ── Phase 14 — Alerts & Exceptions ──
+  // Parent feature for the /alerts page and the sidebar entry.
+  alerts: {
+    id: "alerts",
+    label: "Alerts",
+    category: "exceptions",
+    shortDescription: "Proactive issues that need attention — overdue rentals, missing data, margin leaks, integrity problems.",
+    guideDescription: "The Alerts page surfaces operational and financial issues across your platform in real-time. Alerts are derived automatically from lifecycle, financial, and disposal data — you never create them manually. Each alert ties to a specific entity (a job, rental chain, asset, invoice, or customer) with a severity and status. Use the page to triage issues by severity, click through to the source entity to fix them, or dismiss the alert if you're acknowledging without acting. Alerts auto-resolve as soon as the underlying condition clears — if you deliver the missing dump slip, complete the overdue pickup, or fix the data, the matching alert disappears on the next refresh without needing any manual cleanup.",
+    routeOrSurface: "/alerts",
+    tenantOverrideKey: "alerts",
+    isUserFacing: true,
+    isGuideEligible: true,
+    keywords: ["alert", "exception", "attention", "issue", "warning", "overdue", "missing", "integrity", "flag"],
+  },
+  alerts_overdue_rental: {
+    id: "alerts_overdue_rental",
+    label: "Overdue Rental",
+    category: "exceptions",
+    shortDescription: "Active rental whose expected pickup date has passed.",
+    guideDescription: "What it detects: an active rental chain whose expected pickup date is earlier than today. Why it matters: overdue rentals tie up assets you could be placing with other customers, and every day past expected pickup is a day of unbilled inventory sitting on a job site. They also signal dispatch or communication gaps — someone was supposed to schedule the pickup and it did not happen. How to fix: open the rental chain from the alert, either schedule the pickup for today (alert clears automatically once expected_pickup_date is adjusted or actual pickup is recorded) or contact the customer to extend the rental. The alert will auto-resolve on the next refresh once the rental is no longer past-due.",
+    routeOrSurface: "/alerts",
+    tenantOverrideKey: "alerts_overdue_rental",
+    isUserFacing: true,
+    isGuideEligible: true,
+    keywords: ["overdue", "rental", "pickup", "late", "past", "due"],
+  },
+  alerts_missing_dump_slip: {
+    id: "alerts_missing_dump_slip",
+    label: "Missing Dump Slip",
+    category: "exceptions",
+    shortDescription: "Completed disposal job with no dump ticket linked.",
+    guideDescription: "What it detects: a completed job whose job type involves disposal (pickup, dump-and-return, haul, swap, exchange) but which has no dump ticket attached. This alert is projected from the existing Billing Issues system so the two views stay in sync. Why it matters: without a dump ticket you cannot verify disposal cost, weight, or facility — which blocks accurate billing, breaks lifecycle profit reporting, and makes waste compliance auditing impossible. How to fix: open the job, add the dump ticket (either by entering the ticket number or uploading the ticket photo the driver captured in the driver app). The alert auto-resolves as soon as the corresponding billing issue is cleared on the next refresh.",
+    routeOrSurface: "/alerts",
+    tenantOverrideKey: "alerts_missing_dump_slip",
+    isUserFacing: true,
+    isGuideEligible: true,
+    keywords: ["dump", "slip", "ticket", "disposal", "missing", "waste", "facility"],
+  },
+  alerts_missing_asset: {
+    id: "alerts_missing_asset",
+    label: "Missing Asset",
+    category: "exceptions",
+    shortDescription: "Completed or in-progress job with no asset assigned.",
+    guideDescription: "What it detects: a job in completed or in-progress status with no asset_id on the primary, drop-off, or pick-up asset fields. Why it matters: a job without an assigned asset has broken fleet tracking — you cannot tell which dumpster is on site, inventory counts will be wrong, and the asset's history will be incomplete. Most commonly this means a driver forgot to scan the asset on drop-off, or a dispatcher skipped the assignment step during booking. How to fix: open the job, assign the correct asset from the picker. If the asset was returned to the yard already, you may need to correct the asset's current location first. The alert clears as soon as any of the three asset fields are populated.",
+    routeOrSurface: "/alerts",
+    tenantOverrideKey: "alerts_missing_asset",
+    isUserFacing: true,
+    isGuideEligible: true,
+    keywords: ["asset", "missing", "dumpster", "unassigned", "tracking"],
+  },
+  alerts_abnormal_disposal: {
+    id: "alerts_abnormal_disposal",
+    label: "Abnormal Disposal",
+    category: "exceptions",
+    shortDescription: "Dump ticket with weight or cost well above normal for the size.",
+    guideDescription: "What it detects: a non-voided dump ticket from the last 90 days whose weight (in tons) or total cost (in USD) exceeds a conservative threshold for the associated job's dumpster size. The fallback thresholds are intentionally generous so only obvious outliers are flagged — a 10yd ticket weighing 8 tons, or a 20yd ticket costing $1,200. Why it matters: abnormal disposal values point at three possible root causes — a data entry error on the ticket, a missed overage charge on the customer invoice, or a driver misreading the scale. Catching them early prevents revenue leakage and protects margin accuracy in lifecycle reporting. How to fix: open the job to review the dump ticket. If the values are correct, add an overage charge or surcharge to the invoice; if they're wrong, correct the ticket and the alert auto-resolves on the next refresh.",
+    routeOrSurface: "/alerts",
+    tenantOverrideKey: "alerts_abnormal_disposal",
+    isUserFacing: true,
+    isGuideEligible: true,
+    keywords: ["abnormal", "disposal", "weight", "cost", "outlier", "overage", "ticket"],
+  },
+  alerts_low_margin_chain: {
+    id: "alerts_low_margin_chain",
+    label: "Low Margin Chain",
+    category: "exceptions",
+    shortDescription: "Rental chain with profit at or below the low-margin threshold.",
+    guideDescription: "What it detects: a rental chain from the last 90 days whose computed profit is at or below the low-margin threshold (currently $50), or negative. Profit comes from the same Lifecycle Reporting engine used by the /reports/lifecycle page, so the numbers are consistent across views. Why it matters: unprofitable chains are the highest-leverage signal in your business. Each one is either a pricing mistake, a cost leak, a missed overage, or an underbilled extension — and every day one goes unnoticed compounds the loss. How to fix: open the chain via the alert, review the Lifecycle Reporting breakdown to find which line items contributed, and take action — add missed overage charges, apply a rental extension, or flag the pricing rule for review. The alert auto-resolves once the chain's profit rises above the threshold on the next refresh.",
+    routeOrSurface: "/alerts",
+    tenantOverrideKey: "alerts_low_margin_chain",
+    isUserFacing: true,
+    isGuideEligible: true,
+    keywords: ["margin", "profit", "chain", "low", "loss", "unprofitable", "lifecycle"],
+  },
+  alerts_lifecycle_integrity: {
+    id: "alerts_lifecycle_integrity",
+    label: "Lifecycle Integrity",
+    category: "exceptions",
+    shortDescription: "Structural problem in a rental chain — orphaned chain or duplicate active asset.",
+    guideDescription: "What it detects: two concrete structural problems in the rental chain graph. (1) An orphaned chain — a rental chain that has zero task_chain_links attached, meaning the chain record exists but no jobs were ever linked to it. (2) A duplicate active asset — two or more active rental chains pointing at the same asset_id, which is a double-booking state that will confuse every downstream view (dispatch, reporting, availability). Why it matters: these are data integrity red flags that can silently break lifecycle reporting, dispatch, and availability checks. Orphaned chains usually come from interrupted booking flows; duplicate active assets come from a booking created before an old chain was properly closed. How to fix: open the chain from the alert. For orphaned chains, either delete the empty chain or attach the missing jobs. For duplicate active assets, close the stale rental chain (mark the old pickup as complete). The alert auto-resolves once the structural condition no longer holds.",
+    routeOrSurface: "/alerts",
+    tenantOverrideKey: "alerts_lifecycle_integrity",
+    isUserFacing: true,
+    isGuideEligible: true,
+    keywords: ["integrity", "lifecycle", "orphan", "duplicate", "chain", "structural", "broken"],
+  },
+  alerts_date_rule_conflict: {
+    id: "alerts_date_rule_conflict",
+    label: "Date Rule Conflict",
+    category: "exceptions",
+    shortDescription: "Pickup date override outside rental rule expectations.",
+    guideDescription: "What it detects: a rental chain whose pickup date was manually overridden to a value that violates the associated rental rule expectations or breaks the automatic recalculation chain downstream of the chain. (Scaffolded in Phase 14 — the detector logic will be completed in Phase 14.1 once the override-tracking field is added to rental_chains.) Why it matters: manually-overridden dates that bypass rental rules will silently drift billing and scheduling out of sync — the billing system will charge rental days the dispatcher did not expect, or the pickup will be scheduled on a day the rule would have excluded. How to fix: open the rental chain, review the override, either revert to the rule-computed date or update the rental rule if the override represents a new policy. Full detection ships in Phase 14.1.",
+    routeOrSurface: "/alerts",
+    tenantOverrideKey: "alerts_date_rule_conflict",
+    isUserFacing: true,
+    isGuideEligible: true,
+    keywords: ["date", "rule", "conflict", "override", "pickup", "rental"],
+  },
 };
 
 // ── Category display labels ──
@@ -2135,10 +2235,11 @@ export const CATEGORY_LABELS: Record<FeatureCategory, string> = {
   notifications: "Notifications",
   settings: "Settings",
   admin: "Administration",
+  exceptions: "Alerts & Exceptions",
 };
 
 export const CATEGORY_ORDER: FeatureCategory[] = [
-  "getting_started", "dashboard", "operations", "customers", "assets",
+  "getting_started", "dashboard", "operations", "exceptions", "customers", "assets",
   "billing", "pricing", "team", "analytics", "marketplace",
   "notifications", "settings", "admin",
 ];
