@@ -42,6 +42,15 @@ interface LifecyclePayment {
   appliedAt: string;
 }
 
+interface LifecycleDumpTicket {
+  id: string;
+  ticketNumber: string | null;
+  weightTons: number;
+  totalCost: number;
+  customerCharges: number;
+  wasteType: string | null;
+}
+
 interface LifecycleData {
   rentalChain: {
     id: string;
@@ -58,6 +67,8 @@ interface LifecycleData {
   jobs: LifecycleJob[];
   invoices: LifecycleInvoice[];
   payments: LifecyclePayment[];
+  /** Phase 11B: disposal rollup surfaced from backend getLifecycle. */
+  dumpTickets?: LifecycleDumpTicket[];
   financials: { revenue: number; cost: number; profit: number; margin: number };
 }
 
@@ -422,6 +433,9 @@ export default function RentalLifecyclePage({ params }: { params: Promise<{ id: 
   const invoices = data.invoices ?? [];
   const payments = data.payments ?? [];
   const financials = data.financials ?? { revenue: 0, cost: 0, profit: 0, margin: 0 };
+  const dumpTickets = data.dumpTickets ?? [];
+  const totalDisposalCost = dumpTickets.reduce((sum, t) => sum + (Number(t.totalCost) || 0), 0);
+  const totalDisposalCustomerCharges = dumpTickets.reduce((sum, t) => sum + (Number(t.customerCharges) || 0), 0);
   const deliveryJob = jobs.find(j => j.taskType === "drop_off");
   const isActive = rentalChain.status === "active";
 
@@ -642,7 +656,7 @@ export default function RentalLifecyclePage({ params }: { params: Promise<{ id: 
       </div>
 
       {/* Financials */}
-      {(invoices.length > 0 || financials.revenue > 0) && (
+      {(invoices.length > 0 || financials.revenue > 0 || dumpTickets.length > 0) && (
         <div className="rounded-[20px] bg-[var(--t-bg-card)] border border-[var(--t-border)] p-5">
           <div className="flex items-center gap-2 mb-4">
             <DollarSign className="h-4 w-4 text-[var(--t-text-muted)]" />
@@ -710,6 +724,40 @@ export default function RentalLifecyclePage({ params }: { params: Promise<{ id: 
                     <span className={`font-medium tabular-nums ${p.status === "completed" ? "text-[var(--t-accent)]" : "text-[var(--t-text-muted)]"}`}>{formatCurrency(p.amount)}</span>
                   </div>
                 ))}
+              </div>
+            </div>
+          )}
+
+          {/* Phase 11B — Disposal rollup. Totals come directly from
+              the dump_tickets already returned by getLifecycle; no
+              parallel calculation. */}
+          {dumpTickets.length > 0 && (
+            <div className="border-t border-[var(--t-border)] pt-3 mt-3">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-[10px] font-medium uppercase tracking-wider text-[var(--t-text-muted)]">
+                  {FEATURE_REGISTRY.dump_slip_section?.label ?? "Disposal Details"}
+                </p>
+                <p className="text-[11px] font-semibold text-[var(--t-text-primary)] tabular-nums">
+                  {FEATURE_REGISTRY.disposal_cost_total?.label ?? "Total Disposal Cost"}: {formatCurrency(totalDisposalCost)}
+                </p>
+              </div>
+              <div className="space-y-1.5">
+                {dumpTickets.map((t) => (
+                  <div key={t.id} className="flex items-center justify-between text-xs">
+                    <span className="text-[var(--t-text-muted)]">
+                      Ticket #{t.ticketNumber || "—"}
+                      {t.wasteType ? ` · ${t.wasteType.replace(/_/g, " ")}` : ""}
+                      {Number.isFinite(Number(t.weightTons)) ? ` · ${Number(t.weightTons).toFixed(2)}t` : ""}
+                    </span>
+                    <span className="font-medium text-[var(--t-text-primary)] tabular-nums">{formatCurrency(Number(t.totalCost) || 0)}</span>
+                  </div>
+                ))}
+                {totalDisposalCustomerCharges > 0 && (
+                  <div className="flex items-center justify-between text-[11px] text-[var(--t-text-muted)] pt-1 mt-1 border-t border-dashed border-[var(--t-border)]">
+                    <span>Customer charges pass-through</span>
+                    <span className="tabular-nums">{formatCurrency(totalDisposalCustomerCharges)}</span>
+                  </div>
+                )}
               </div>
             </div>
           )}
