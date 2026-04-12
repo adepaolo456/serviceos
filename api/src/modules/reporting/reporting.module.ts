@@ -28,5 +28,9 @@ import { TaskChainLink } from '../rental-chains/entities/task-chain-link.entity'
   ],
   controllers: [ReportingController],
   providers: [ReportingService],
+  // Exported so AlertsModule's AlertDetectorService can reuse
+  // getLifecycleReport for the LOW_MARGIN_CHAIN detector instead
+  // of duplicating financial math (Phase 14 non-goal).
+  exports: [ReportingService],
 })
 export class ReportingModule {}
