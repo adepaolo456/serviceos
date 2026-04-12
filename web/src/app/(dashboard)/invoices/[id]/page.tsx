@@ -23,6 +23,7 @@ import { api } from "@/lib/api";
 import SlideOver from "@/components/slide-over";
 import RentalChainTimeline from "@/components/rental-chain-timeline";
 import { RecordPaymentForm } from "@/components/record-payment-form";
+import { getFeatureLabel } from "@/lib/feature-registry";
 
 interface ApiLineItem {
   id: string;
@@ -501,15 +502,40 @@ export default function InvoiceDetailPage({
   const canPay = ["open", "partial", "overdue"].includes(invoice.status);
   const canVoid = !["paid", "voided", "void"].includes(invoice.status);
 
+  // Phase B2 — read the ?returnTo= param set by the customer
+  // detail page's invoice links. Validated against an allowlist
+  // of prefixes to prevent open-redirect via arbitrary URLs.
+  // Only "/customers/" is allowed today; add more prefixes
+  // (e.g. "/reports/") here as needed.
+  const returnToRaw = searchParams.get("returnTo");
+  const returnToSafe =
+    returnToRaw && returnToRaw.startsWith("/customers/") ? returnToRaw : null;
+
   return (
     <div>
-      <Link
-        href="/invoices"
-        className="mb-6 inline-flex items-center gap-2 text-sm text-[var(--t-frame-text-muted)] transition-colors hover:text-[var(--t-frame-text)]"
-      >
-        <ArrowLeft className="h-4 w-4" />
-        Back to Invoices
-      </Link>
+      {returnToSafe ? (
+        // Came from a customer detail page — deep-link back to
+        // that customer instead of the global invoices list so
+        // the user's navigation context is preserved. Uses
+        // router.push to keep it inside the Next.js router
+        // (never window.location).
+        <button
+          type="button"
+          onClick={() => router.push(returnToSafe)}
+          className="mb-6 inline-flex items-center gap-2 text-sm text-[var(--t-frame-text-muted)] transition-colors hover:text-[var(--t-frame-text)]"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          {getFeatureLabel("invoice_detail_back_to_customer")}
+        </button>
+      ) : (
+        <Link
+          href="/invoices"
+          className="mb-6 inline-flex items-center gap-2 text-sm text-[var(--t-frame-text-muted)] transition-colors hover:text-[var(--t-frame-text)]"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back to Invoices
+        </Link>
+      )}
 
       {/* Rental Chain Timeline */}
       {invoice.rental_chain_id && (

@@ -348,7 +348,12 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
             {invoices.filter(i => ["open", "overdue", "draft", "partial"].includes(i.status)).length === 0 ? <p className="py-4 text-center text-xs text-[var(--t-text-muted)]">All paid up</p> : (
               <div className="divide-y divide-[var(--t-border)] -mx-4">
                 {invoices.filter(i => ["open", "overdue", "draft", "partial"].includes(i.status)).map(i => (
-                  <Link key={i.id} href={`/invoices/${i.id}`} className="flex items-center justify-between px-4 py-2 hover:bg-[var(--t-bg-card-hover)] transition-colors">
+                  // Phase B2 — preserve customer context via
+                  // returnTo so the invoice detail page can render
+                  // a "Back to Customer" link. The invoice detail
+                  // page validates the prefix against an allowlist
+                  // before navigating.
+                  <Link key={i.id} href={`/invoices/${i.id}?returnTo=${encodeURIComponent(`/customers/${id}`)}`} className="flex items-center justify-between px-4 py-2 hover:bg-[var(--t-bg-card-hover)] transition-colors">
                     <div><p className="text-xs font-medium text-[var(--t-text-primary)]">#{i.invoice_number}</p><p className="text-[10px] text-[var(--t-text-muted)]">Due: {i.due_date || "—"}</p></div>
                     <div className="flex items-center gap-2">
                       <span className={`text-[10px] font-medium ${STATUS_CLS[i.status] || ""}`}>{i.status}</span>
@@ -430,7 +435,10 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
               <tbody>
                 {invoices.length === 0 ? <tr><td colSpan={6} className="py-12 text-center text-xs text-[var(--t-text-muted)]">No invoices</td></tr> :
                   invoices.map(i => (
-                    <tr key={i.id} onClick={() => router.push(`/invoices/${i.id}`)} className="border-b border-[var(--t-border)] last:border-0 cursor-pointer hover:bg-[var(--t-bg-card-hover)] transition-colors">
+                    // Phase B2 — preserve customer context via
+                    // returnTo (see Unpaid Invoices sidebar above
+                    // for the full pattern).
+                    <tr key={i.id} onClick={() => router.push(`/invoices/${i.id}?returnTo=${encodeURIComponent(`/customers/${id}`)}`)} className="border-b border-[var(--t-border)] last:border-0 cursor-pointer hover:bg-[var(--t-bg-card-hover)] transition-colors">
                       <td className="px-4 py-3 font-medium text-[var(--t-text-primary)]">#{i.invoice_number}</td>
                       <td className="px-4 py-3 text-[var(--t-text-primary)]">{new Date(i.created_at).toLocaleDateString()}</td>
                       <td className="px-4 py-3 text-[var(--t-text-primary)]">{i.due_date || "—"}</td>
@@ -635,7 +643,14 @@ function OverviewTilePanel({
         ) : (
           <div className="divide-y divide-[var(--t-border)] -mx-4">
             {paidInvoices.slice(0, 10).map((i) => (
-              <Link key={i.id} href={`/invoices/${i.id}`} className="flex items-center justify-between px-4 py-2 hover:bg-[var(--t-bg-card-hover)] transition-colors">
+              // Phase B2 — preserve customer context via
+              // returnTo. Uses `customer.id` here (not the outer
+              // route `id`) because this branch is inside
+              // `OverviewTilePanel`, a nested helper that
+              // receives `customer` as a prop. `customer.id` is
+              // guaranteed present in this scope since the
+              // component only renders once customer is loaded.
+              <Link key={i.id} href={`/invoices/${i.id}?returnTo=${encodeURIComponent(`/customers/${customer.id}`)}`} className="flex items-center justify-between px-4 py-2 hover:bg-[var(--t-bg-card-hover)] transition-colors">
                 <div>
                   <p className="text-xs font-medium text-[var(--t-text-primary)]">#{i.invoice_number}</p>
                   <p className="text-[10px] text-[var(--t-text-muted)]">{new Date(i.created_at).toLocaleDateString()}</p>
