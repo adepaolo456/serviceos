@@ -21,7 +21,13 @@ function shiftDateStr(date: string, days: number): string {
   return d.toISOString().split('T')[0];
 }
 
-function daysBetween(from: string, to: string): number {
+/**
+ * Canonical rental duration helper. Promoted to an `export` in
+ * Phase 16 so JobsService.updatePickupDate can reuse the exact
+ * same calculation without duplicating the formula. Zero
+ * behavior change for existing in-file callers.
+ */
+export function daysBetween(from: string, to: string): number {
   const a = new Date(`${from}T00:00:00Z`).getTime();
   const b = new Date(`${to}T00:00:00Z`).getTime();
   return Math.round((b - a) / 86400000);
