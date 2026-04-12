@@ -141,12 +141,13 @@ export async function listAssetsForPicker(subtype?: string): Promise<any[]> {
 export async function updateJobAsset(
   jobId: string,
   assetId: string,
-  options: { override?: boolean; reason?: string } = {},
+  options: { override?: boolean; reason?: string; sizeMismatch?: boolean } = {},
 ): Promise<any> {
   const { data } = await client.patch(`/jobs/${jobId}/asset`, {
     assetId,
     ...(options.override ? { overrideAssetConflict: true } : {}),
     ...(options.reason ? { reason: options.reason } : {}),
+    ...(options.sizeMismatch ? { sizeMismatch: true } : {}),
   });
   return data;
 }

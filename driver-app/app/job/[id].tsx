@@ -68,6 +68,9 @@ interface Job {
     source_job_number: string;
     source_task_type: string;
   } | null;
+  // Fix — required dumpster size from the chain (source of truth)
+  // so the asset picker can group matching-size assets first.
+  rental_chain_dumpster_size?: string | null;
 }
 
 interface AssetOption {
@@ -131,6 +134,9 @@ export default function JobDetailScreen() {
   const [savingAsset, setSavingAsset] = useState(false);
   const [assetConflict, setAssetConflict] = useState<string | null>(null);
   const [assetOverrideAck, setAssetOverrideAck] = useState(false);
+  // Fix — grouping + mismatch state
+  const [assetShowAll, setAssetShowAll] = useState(false);
+  const [assetMismatchAck, setAssetMismatchAck] = useState(false);
   const [showWhereNext, setShowWhereNext] = useState(false);
   const [yards, setYards] = useState<Array<{ id: string; name: string; is_primary: boolean }>>([]);
   const [showYardPicker, setShowYardPicker] = useState(false);
@@ -233,6 +239,8 @@ export default function JobDetailScreen() {
     setLoadingAssets(true);
     setAssetConflict(null);
     setAssetOverrideAck(false);
+    setAssetMismatchAck(false);
+    setAssetShowAll(false);
     setAssetSearch('');
 
     // Default selection: current asset_id → expected asset → none
@@ -244,9 +252,9 @@ export default function JobDetailScreen() {
     setSelectedAssetId(defaultSelection);
 
     try {
-      const subtype = job.asset_subtype || job.asset?.subtype || undefined;
-      const list = await listAssetsForPicker(subtype);
-      // Available first, then in-use, excluding retired
+      // Fix — no subtype filter here so the picker can group
+      // matching vs. other. Client sorts available-first.
+      const list = await listAssetsForPicker();
       const usable = (Array.isArray(list) ? list : []).filter(
         (a: any) => a.status !== 'retired',
       );
@@ -274,11 +282,25 @@ export default function JobDetailScreen() {
       Alert.alert('Required', 'Pick a dumpster before continuing');
       return;
     }
+    // Fix — detect size mismatch locally so the audit entry records it.
+    const requiredSize =
+      job.rental_chain_dumpster_size || job.asset_subtype || null;
+    const picked = assetOptions.find((a) => a.id === selectedAssetId);
+    const pickedSize = picked?.subtype || null;
+    const mismatch = !!(requiredSize && pickedSize && pickedSize !== requiredSize);
+    if (mismatch && !assetMismatchAck) {
+      Alert.alert(
+        'Size mismatch',
+        `The selected asset is ${pickedSize} but this job requires ${requiredSize}. Tap the confirm box to override.`,
+      );
+      return;
+    }
     setSavingAsset(true);
     setAssetConflict(null);
     try {
       await updateJobAsset(job.id, selectedAssetId, {
         override: assetOverrideAck,
+        sizeMismatch: mismatch,
       });
       // Mirror the new asset locally so the header + complete-button
       // flip without waiting for a full job refetch.
@@ -916,8 +938,89 @@ export default function JobDetailScreen() {
         </View>
       )}
 
-      {/* Dumpster / Asset Picker Modal — Phase 11A */}
+      {/* Dumpster / Asset Picker Modal — Phase 11A (fix: size-aware) */}
       <Modal visible={showDumpsterModal} transparent animationType="slide">
+        {(() => {
+          // Fix — required size derivation + grouping for the picker.
+          // Required size comes from the chain (source of truth) or
+          // the job's own asset_subtype for standalone jobs.
+          const requiredSize =
+            job.rental_chain_dumpster_size || job.asset_subtype || null;
+          const pickedAsset = assetOptions.find((a) => a.id === selectedAssetId);
+          const pickedSize = pickedAsset?.subtype || null;
+          const selectionMismatch = !!(
+            requiredSize && pickedSize && pickedSize !== requiredSize
+          );
+          const matchesSearch = (a: AssetOption) =>
+            assetSearch
+              ? (a.identifier || '').toLowerCase().includes(assetSearch.toLowerCase())
+              : true;
+          const matchingAssets = requiredSize
+            ? assetOptions.filter((a) => a.subtype === requiredSize).filter(matchesSearch)
+            : [];
+          const otherAssets = requiredSize
+            ? assetOptions.filter((a) => a.subtype !== requiredSize).filter(matchesSearch)
+            : assetOptions.filter(matchesSearch);
+
+          const renderAsset = (a: AssetOption) => {
+            const isSelected = selectedAssetId === a.id;
+            const isInUse = a.status !== 'available';
+            return (
+              <TouchableOpacity
+                key={a.id}
+                onPress={() => {
+                  setSelectedAssetId(a.id);
+                  setAssetConflict(null);
+                  setAssetOverrideAck(false);
+                  setAssetMismatchAck(false);
+                }}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  backgroundColor: isSelected ? colors.accentSoft : colors.surfaceHover,
+                  borderRadius: 12,
+                  padding: 12,
+                  marginBottom: 8,
+                  borderWidth: 1,
+                  borderColor: isSelected ? colors.accent : colors.border,
+                }}
+              >
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 15, fontWeight: '700', color: colors.text }}>
+                    {a.identifier}
+                    {a.subtype ? (
+                      <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textSecondary }}>
+                        {'  '}
+                        {a.subtype}
+                      </Text>
+                    ) : null}
+                  </Text>
+                </View>
+                <View
+                  style={{
+                    paddingHorizontal: 8,
+                    paddingVertical: 3,
+                    borderRadius: 6,
+                    backgroundColor: isInUse ? '#F59E0B22' : '#22C55E22',
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontSize: 10,
+                      fontWeight: '700',
+                      color: isInUse ? '#F59E0B' : '#22C55E',
+                      textTransform: 'uppercase',
+                    }}
+                  >
+                    {isInUse ? 'In Use' : 'Available'}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            );
+          };
+
+          return (
         <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.5)' }}>
           <View style={{ backgroundColor: colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40, maxHeight: '85%' }}>
             <Text style={{ fontSize: 18, fontWeight: '800', color: colors.text, marginBottom: 4 }}>
@@ -927,16 +1030,23 @@ export default function JobDetailScreen() {
               Pick the dumpster on this job. Required to complete.
             </Text>
 
-            {/* Expected on-site hint for pickup/exchange */}
-            {job.expected_on_site_asset && (
-              <View style={{ backgroundColor: colors.accentSoft, borderRadius: 12, padding: 10, marginBottom: 12 }}>
-                <Text style={{ fontSize: 11, fontWeight: '700', color: colors.accent, marginBottom: 2 }}>
-                  EXPECTED ON-SITE
-                </Text>
-                <Text style={{ fontSize: 13, color: colors.text }}>
-                  {job.expected_on_site_asset.identifier}
-                  {job.expected_on_site_asset.subtype ? ` (${job.expected_on_site_asset.subtype})` : ''}
-                </Text>
+            {/* Context: required size + expected on-site */}
+            {(requiredSize || job.expected_on_site_asset) && (
+              <View style={{ backgroundColor: colors.surfaceHover, borderRadius: 12, padding: 10, marginBottom: 12, borderWidth: 1, borderColor: colors.border }}>
+                {requiredSize && (
+                  <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textSecondary, marginBottom: 2 }}>
+                    REQUIRED: <Text style={{ color: colors.text, fontSize: 13 }}>{requiredSize}</Text>
+                  </Text>
+                )}
+                {job.expected_on_site_asset && (
+                  <Text style={{ fontSize: 11, fontWeight: '700', color: colors.accent, marginTop: 4 }}>
+                    EXPECTED ON-SITE:{' '}
+                    <Text style={{ color: colors.text, fontSize: 13, fontWeight: '500' }}>
+                      {job.expected_on_site_asset.identifier}
+                      {job.expected_on_site_asset.subtype ? ` (${job.expected_on_site_asset.subtype})` : ''}
+                    </Text>
+                  </Text>
+                )}
               </View>
             )}
 
@@ -959,7 +1069,7 @@ export default function JobDetailScreen() {
               }}
             />
 
-            {/* Asset list */}
+            {/* Asset list — grouped by matching size / other */}
             <ScrollView style={{ maxHeight: 320 }}>
               {loadingAssets ? (
                 <View style={{ paddingVertical: 32, alignItems: 'center' }}>
@@ -967,77 +1077,76 @@ export default function JobDetailScreen() {
                 </View>
               ) : assetOptions.length === 0 ? (
                 <View style={{ paddingVertical: 32, alignItems: 'center' }}>
-                  <Text style={{ color: colors.textSecondary, fontSize: 13 }}>
-                    No assets available
-                  </Text>
+                  <Text style={{ color: colors.textSecondary, fontSize: 13 }}>No assets available</Text>
                 </View>
+              ) : requiredSize ? (
+                <>
+                  <Text style={{ fontSize: 11, fontWeight: '800', color: colors.accent, marginBottom: 6, textTransform: 'uppercase' }}>
+                    Matching Size ({requiredSize})
+                  </Text>
+                  {matchingAssets.length > 0 ? (
+                    matchingAssets.map(renderAsset)
+                  ) : (
+                    <Text style={{ fontSize: 12, color: colors.textSecondary, fontStyle: 'italic', marginBottom: 8 }}>
+                      No matching-size assets available
+                    </Text>
+                  )}
+                  {assetShowAll && otherAssets.length > 0 && (
+                    <>
+                      <Text style={{ fontSize: 11, fontWeight: '800', color: colors.textSecondary, marginTop: 8, marginBottom: 6, textTransform: 'uppercase' }}>
+                        Other Sizes
+                      </Text>
+                      {otherAssets.map(renderAsset)}
+                    </>
+                  )}
+                  {otherAssets.length > 0 && (
+                    <TouchableOpacity onPress={() => setAssetShowAll((v) => !v)} style={{ paddingVertical: 8, alignItems: 'center' }}>
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: colors.accent }}>
+                        {assetShowAll ? 'Hide other sizes' : `Show all sizes (${otherAssets.length})`}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                </>
               ) : (
-                assetOptions
-                  .filter((a) =>
-                    assetSearch
-                      ? (a.identifier || '')
-                          .toLowerCase()
-                          .includes(assetSearch.toLowerCase())
-                      : true,
-                  )
-                  .map((a) => {
-                    const isSelected = selectedAssetId === a.id;
-                    const isInUse = a.status !== 'available';
-                    return (
-                      <TouchableOpacity
-                        key={a.id}
-                        onPress={() => {
-                          setSelectedAssetId(a.id);
-                          setAssetConflict(null);
-                          setAssetOverrideAck(false);
-                        }}
-                        style={{
-                          flexDirection: 'row',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          backgroundColor: isSelected ? colors.accentSoft : colors.surfaceHover,
-                          borderRadius: 12,
-                          padding: 12,
-                          marginBottom: 8,
-                          borderWidth: 1,
-                          borderColor: isSelected ? colors.accent : colors.border,
-                        }}
-                      >
-                        <View style={{ flex: 1 }}>
-                          <Text style={{ fontSize: 15, fontWeight: '700', color: colors.text }}>
-                            {a.identifier}
-                            {a.subtype ? (
-                              <Text style={{ fontSize: 13, fontWeight: '500', color: colors.textSecondary }}>
-                                {'  '}
-                                {a.subtype}
-                              </Text>
-                            ) : null}
-                          </Text>
-                        </View>
-                        <View
-                          style={{
-                            paddingHorizontal: 8,
-                            paddingVertical: 3,
-                            borderRadius: 6,
-                            backgroundColor: isInUse ? '#F59E0B22' : '#22C55E22',
-                          }}
-                        >
-                          <Text
-                            style={{
-                              fontSize: 10,
-                              fontWeight: '700',
-                              color: isInUse ? '#F59E0B' : '#22C55E',
-                              textTransform: 'uppercase',
-                            }}
-                          >
-                            {isInUse ? 'In Use' : 'Available'}
-                          </Text>
-                        </View>
-                      </TouchableOpacity>
-                    );
-                  })
+                otherAssets.map(renderAsset)
               )}
             </ScrollView>
+
+            {/* Size mismatch warning */}
+            {selectionMismatch && (
+              <View
+                style={{
+                  backgroundColor: '#F59E0B22',
+                  borderRadius: 12,
+                  padding: 12,
+                  marginTop: 12,
+                  borderWidth: 1,
+                  borderColor: '#F59E0B',
+                }}
+              >
+                <Text style={{ fontSize: 12, fontWeight: '700', color: '#F59E0B', marginBottom: 4 }}>
+                  SIZE MISMATCH
+                </Text>
+                <Text style={{ fontSize: 13, color: colors.text, marginBottom: 8 }}>
+                  Required {requiredSize}, picked {pickedSize}.
+                </Text>
+                <TouchableOpacity
+                  onPress={() => setAssetMismatchAck((v) => !v)}
+                  style={{
+                    backgroundColor: assetMismatchAck ? '#F59E0B' : 'transparent',
+                    borderWidth: 1,
+                    borderColor: '#F59E0B',
+                    borderRadius: 10,
+                    paddingVertical: 8,
+                    alignItems: 'center',
+                  }}
+                >
+                  <Text style={{ fontSize: 12, fontWeight: '700', color: assetMismatchAck ? '#000' : '#F59E0B' }}>
+                    {assetMismatchAck ? 'Size confirmed — tap Confirm' : 'I confirm this size is correct'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
 
             {/* Conflict warning */}
             {assetConflict && (
@@ -1093,7 +1202,14 @@ export default function JobDetailScreen() {
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={handleAssetSave}
-                disabled={!selectedAssetId || savingAsset || (assetConflict && !assetOverrideAck) ? true : false}
+                disabled={
+                  !selectedAssetId ||
+                  savingAsset ||
+                  (assetConflict && !assetOverrideAck) ||
+                  (selectionMismatch && !assetMismatchAck)
+                    ? true
+                    : false
+                }
                 style={{
                   flex: 1,
                   paddingVertical: 16,
@@ -1101,7 +1217,10 @@ export default function JobDetailScreen() {
                   backgroundColor: colors.accent,
                   alignItems: 'center',
                   opacity:
-                    !selectedAssetId || savingAsset || (assetConflict && !assetOverrideAck)
+                    !selectedAssetId ||
+                    savingAsset ||
+                    (assetConflict && !assetOverrideAck) ||
+                    (selectionMismatch && !assetMismatchAck)
                       ? 0.5
                       : 1,
                 }}
@@ -1115,6 +1234,8 @@ export default function JobDetailScreen() {
             </View>
           </View>
         </View>
+          );
+        })()}
       </Modal>
 
       {/* Where to Next? */}

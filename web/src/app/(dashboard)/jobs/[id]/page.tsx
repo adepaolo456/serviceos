@@ -93,6 +93,7 @@ interface Job {
   }>;
   // Phase 11A — asset enforcement + audit trail
   asset_id?: string | null;
+  asset_subtype?: string | null;
   asset_change_history?: Array<{
     previous_asset_id: string | null;
     new_asset_id: string;
@@ -101,6 +102,7 @@ interface Job {
     changed_at: string;
     reason: string | null;
     override_conflict?: boolean;
+    size_mismatch?: boolean;
   }>;
   expected_on_site_asset?: {
     asset_id: string;
@@ -110,6 +112,9 @@ interface Job {
     source_job_number: string;
     source_task_type: string;
   } | null;
+  // Fix — rental chain context surfaced by findOne for required-size
+  // derivation on the asset picker.
+  rental_chain_dumpster_size?: string | null;
 }
 
 interface AssetOption {
@@ -256,6 +261,11 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
   const [assetEditConflict, setAssetEditConflict] = useState<string | null>(null);
   const [assetEditOverride, setAssetEditOverride] = useState(false);
   const [assetEditSaving, setAssetEditSaving] = useState(false);
+  // Fix — "Show all sizes" toggle in the edit asset modal picker.
+  // Default off so the common case (size-matching asset) shows a
+  // short, correct list.
+  const [assetEditShowAll, setAssetEditShowAll] = useState(false);
+  const [assetEditMismatchAck, setAssetEditMismatchAck] = useState(false);
 
   const fetchJob = async () => {
     try {
@@ -272,6 +282,11 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
   // assets the first time it's opened, pre-selects the current
   // assignment, and surfaces availability so the office can see
   // what's free vs in-use before swapping.
+  //
+  // Fix — the asset list is now loaded WITHOUT a subtype filter so
+  // the picker can group by matching / other. Required size is
+  // derived from the chain (authoritative) or falls back to the
+  // job's own asset_subtype for standalone jobs.
   const openAssetEdit = async () => {
     if (!job) return;
     setAssetEditOpen(true);
@@ -279,11 +294,11 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
     setAssetEditReason("");
     setAssetEditConflict(null);
     setAssetEditOverride(false);
+    setAssetEditShowAll(false);
+    setAssetEditMismatchAck(false);
     setAssetOptionsLoading(true);
     try {
-      const subtype = job.asset?.subtype;
-      const query = subtype ? `?subtype=${encodeURIComponent(subtype)}&limit=100` : `?limit=100`;
-      const res = await api.get<{ data: AssetOption[] }>(`/assets${query}`);
+      const res = await api.get<{ data: AssetOption[] }>(`/assets?limit=200`);
       const list = (res.data ?? []).filter((a) => a.status !== "retired");
       list.sort((a, b) => {
         const av = a.status === "available" ? 0 : 1;
@@ -303,11 +318,20 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
     if (!job || !assetEditSelection) return;
     setAssetEditSaving(true);
     setAssetEditConflict(null);
+    // Fix — detect size mismatch client-side and flag the request so
+    // the backend audit trail records it. Required size is derived
+    // from the chain (authoritative) or the job's asset_subtype for
+    // standalone jobs.
+    const required = job.rental_chain_dumpster_size || job.asset_subtype || null;
+    const picked = assetOptions.find((a) => a.id === assetEditSelection);
+    const pickedSize = picked?.subtype || null;
+    const isMismatch = !!(required && pickedSize && pickedSize !== required);
     try {
       await api.patch(`/jobs/${id}/asset`, {
         assetId: assetEditSelection,
         ...(assetEditOverride ? { overrideAssetConflict: true } : {}),
         ...(assetEditReason ? { reason: assetEditReason } : {}),
+        ...(isMismatch ? { sizeMismatch: true } : {}),
       });
       toast("success", FEATURE_REGISTRY.asset_updated_success?.label ?? "Asset updated successfully");
       setAssetEditOpen(false);
@@ -1063,6 +1087,10 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
             <div className="grid grid-cols-2 gap-4">
               <Field label="Job Type" value={job.job_type} capitalize />
               <Field label="Service" value={job.service_type?.replace(/_/g, " ") || "—"} capitalize />
+              <Field
+                label={FEATURE_REGISTRY.job_dumpster_size?.label ?? "Dumpster Size"}
+                value={(job.rental_chain_dumpster_size || job.asset_subtype || "—") as string}
+              />
               <Field label="Asset" value={job.asset ? `${job.asset.identifier} (${job.asset.subtype})` : "None assigned"} />
               <Field label="Priority" value={job.priority} capitalize />
             </div>
@@ -1514,6 +1542,16 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
           </div>
 
           {/* Asset */}
+          {(() => {
+            // Fix — required size derivation (chain is source of truth;
+            // fall back to the job's own asset_subtype for standalone
+            // jobs). Null only for jobs with neither signal.
+            const requiredSize =
+              job.rental_chain_dumpster_size || job.asset_subtype || null;
+            const assignedSize = job.asset?.subtype || null;
+            const sizeMismatch =
+              !!(requiredSize && assignedSize && assignedSize !== requiredSize);
+            return (
           <div className="rounded-[20px] bg-[var(--t-bg-card)] border border-[var(--t-border)] p-5">
             <div className="flex items-center gap-2 mb-3">
               <Box className="h-4 w-4 text-[var(--t-text-muted)]" />
@@ -1526,10 +1564,27 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
                 <Pencil className="h-3 w-3" />
               </button>
             </div>
+            {/* Required size context — visible whether or not an asset
+                is assigned, so the operator always knows what size the
+                job needs. */}
+            {requiredSize && (
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--t-text-muted)] mb-1">
+                {FEATURE_REGISTRY.required_size?.label ?? "Required"}:{" "}
+                <span className="text-[var(--t-text-primary)] font-bold">{requiredSize}</span>
+              </p>
+            )}
             {job.asset ? (
               <>
                 <p className="text-sm font-semibold text-[var(--t-text-primary)]">{job.asset.identifier}</p>
                 <p className="text-xs text-[var(--t-text-muted)] mt-0.5 capitalize">{job.asset.asset_type} &middot; {job.asset.subtype}</p>
+                {sizeMismatch && (
+                  <div className="mt-2 flex items-center gap-1.5 rounded-[10px] bg-amber-500/10 border border-amber-500/30 px-2.5 py-1.5">
+                    <AlertTriangle className="h-3 w-3 text-amber-500 shrink-0" />
+                    <p className="text-[11px] text-amber-500 leading-snug">
+                      {FEATURE_REGISTRY.size_mismatch_warning?.label ?? "Selected asset size does not match required dumpster size"}
+                    </p>
+                  </div>
+                )}
               </>
             ) : (
               <p className="text-sm text-[var(--t-error)]">{FEATURE_REGISTRY.no_asset_recorded?.label ?? "No asset recorded"}</p>
@@ -1568,6 +1623,9 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
                           {h.override_conflict && (
                             <span className="text-amber-500 font-medium">(override)</span>
                           )}{" "}
+                          {h.size_mismatch && (
+                            <span className="text-amber-500 font-medium">(size mismatch)</span>
+                          )}{" "}
                           by <span className="text-[var(--t-text-primary)]">{who}</span>
                           {when && <span> · {when}</span>}
                           {h.reason && <div className="italic opacity-80">"{h.reason}"</div>}
@@ -1578,6 +1636,8 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
               </div>
             )}
           </div>
+            );
+          })()}
 
           {/* Signature */}
           {job.signature_url && (
@@ -1590,71 +1650,154 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
         </div>
       </div>
 
-      {/* --- Phase 11A: Edit Asset Modal --- */}
-      {assetEditOpen && job && (
+      {/* --- Phase 11A: Edit Asset Modal (fix: size-aware grouping) --- */}
+      {assetEditOpen && job && (() => {
+        const requiredSize =
+          job.rental_chain_dumpster_size || job.asset_subtype || null;
+        const matching = requiredSize
+          ? assetOptions.filter((a) => a.subtype === requiredSize)
+          : [];
+        const other = requiredSize
+          ? assetOptions.filter((a) => a.subtype !== requiredSize)
+          : assetOptions;
+        const pickedAsset = assetOptions.find((a) => a.id === assetEditSelection);
+        const pickedSize = pickedAsset?.subtype || null;
+        const selectionMismatch =
+          !!(requiredSize && pickedSize && pickedSize !== requiredSize);
+
+        const renderAssetButton = (a: AssetOption) => {
+          const selected = assetEditSelection === a.id;
+          const inUse = a.status !== "available";
+          return (
+            <button
+              key={a.id}
+              onClick={() => {
+                setAssetEditSelection(a.id);
+                setAssetEditConflict(null);
+                setAssetEditOverride(false);
+                setAssetEditMismatchAck(false);
+              }}
+              className={`w-full flex items-center justify-between rounded-[12px] border px-3 py-2.5 text-left transition-colors ${
+                selected
+                  ? "border-[var(--t-accent)] bg-[var(--t-accent-soft)]"
+                  : "border-[var(--t-border)] bg-[var(--t-bg-card)] hover:bg-[var(--t-bg-card-hover)]"
+              }`}
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="text-xs font-semibold text-[var(--t-text-primary)]">{a.identifier}</span>
+                {a.subtype && (
+                  <span className="text-xs text-[var(--t-text-muted)]">{a.subtype}</span>
+                )}
+              </div>
+              <span
+                className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded ${
+                  inUse ? "text-amber-500 bg-amber-500/10" : "text-[var(--t-accent)] bg-[var(--t-accent-soft)]"
+                }`}
+              >
+                {inUse
+                  ? FEATURE_REGISTRY.asset_in_use?.label ?? "In Use"
+                  : FEATURE_REGISTRY.asset_available?.label ?? "Available"}
+              </span>
+            </button>
+          );
+        };
+
+        return (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setAssetEditOpen(false)} />
           <div className="relative rounded-[20px] p-6 w-full max-w-md shadow-2xl" style={{ backgroundColor: "var(--t-bg-secondary)", border: "1px solid var(--t-border)" }}>
             <h3 className="text-base font-semibold mb-1" style={{ color: "var(--t-text-primary)" }}>
               {FEATURE_REGISTRY.update_asset?.label ?? "Update Asset"}
             </h3>
-            <p className="text-xs mb-4" style={{ color: "var(--t-text-muted)" }}>
+            <p className="text-xs mb-3" style={{ color: "var(--t-text-muted)" }}>
               Pick the correct dumpster for this job. The change is audited and inventory state updates automatically.
             </p>
-            {job.expected_on_site_asset && (
-              <div className="mb-3 rounded-[12px] bg-[var(--t-accent-soft)] border border-[var(--t-accent)]/20 px-3 py-2">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--t-accent)]">
-                  {FEATURE_REGISTRY.expected_on_site_asset?.label ?? "Expected on-site"}
-                </p>
-                <p className="text-xs text-[var(--t-text-primary)] mt-0.5">
-                  {job.expected_on_site_asset.identifier}
-                  {job.expected_on_site_asset.subtype ? ` · ${job.expected_on_site_asset.subtype}` : ""}
-                </p>
-              </div>
-            )}
-            <div className="max-h-64 overflow-y-auto space-y-1.5 mb-3">
+
+            {/* Context header — always visible at the top of the modal */}
+            <div className="mb-3 rounded-[12px] bg-[var(--t-bg-elevated)] border border-[var(--t-border)] px-3 py-2.5 space-y-1">
+              {requiredSize && (
+                <div className="flex items-baseline gap-2">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--t-text-muted)]">
+                    {FEATURE_REGISTRY.required_size?.label ?? "Required"}:
+                  </span>
+                  <span className="text-sm font-bold text-[var(--t-text-primary)]">{requiredSize}</span>
+                </div>
+              )}
+              {job.asset && (
+                <div className="flex items-baseline gap-2">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--t-text-muted)]">
+                    Current:
+                  </span>
+                  <span className="text-xs text-[var(--t-text-primary)]">
+                    {job.asset.identifier}
+                    {job.asset.subtype ? ` (${job.asset.subtype})` : ""}
+                  </span>
+                </div>
+              )}
+              {job.expected_on_site_asset && (
+                <div className="flex items-baseline gap-2">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--t-accent)]">
+                    {FEATURE_REGISTRY.expected_on_site_asset?.label ?? "Expected on-site"}:
+                  </span>
+                  <span className="text-xs text-[var(--t-text-primary)]">
+                    {job.expected_on_site_asset.identifier}
+                    {job.expected_on_site_asset.subtype ? ` (${job.expected_on_site_asset.subtype})` : ""}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* Grouped asset list */}
+            <div className="max-h-64 overflow-y-auto space-y-3 mb-3">
               {assetOptionsLoading ? (
                 <p className="text-xs text-[var(--t-text-muted)] py-4 text-center">Loading…</p>
               ) : assetOptions.length === 0 ? (
-                <p className="text-xs text-[var(--t-text-muted)] py-4 text-center">No assets found for this subtype</p>
-              ) : (
-                assetOptions.map((a) => {
-                  const selected = assetEditSelection === a.id;
-                  const inUse = a.status !== "available";
-                  return (
-                    <button
-                      key={a.id}
-                      onClick={() => {
-                        setAssetEditSelection(a.id);
-                        setAssetEditConflict(null);
-                        setAssetEditOverride(false);
-                      }}
-                      className={`w-full flex items-center justify-between rounded-[12px] border px-3 py-2.5 text-left transition-colors ${
-                        selected
-                          ? "border-[var(--t-accent)] bg-[var(--t-accent-soft)]"
-                          : "border-[var(--t-border)] bg-[var(--t-bg-card)] hover:bg-[var(--t-bg-card-hover)]"
-                      }`}
-                    >
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span className="text-xs font-semibold text-[var(--t-text-primary)]">{a.identifier}</span>
-                        {a.subtype && (
-                          <span className="text-xs text-[var(--t-text-muted)]">{a.subtype}</span>
+                <p className="text-xs text-[var(--t-text-muted)] py-4 text-center">No assets found</p>
+              ) : requiredSize ? (
+                <>
+                  {/* Matching size section */}
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--t-accent)] mb-1.5">
+                      {FEATURE_REGISTRY.matching_assets?.label ?? "Matching Size"} ({requiredSize})
+                    </p>
+                    <div className="space-y-1.5">
+                      {matching.length > 0
+                        ? matching.map(renderAssetButton)
+                        : (
+                          <p className="text-[11px] text-[var(--t-text-muted)] italic">
+                            No matching-size assets available
+                          </p>
                         )}
-                      </div>
-                      <span
-                        className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded ${
-                          inUse ? "text-amber-500 bg-amber-500/10" : "text-[var(--t-accent)] bg-[var(--t-accent-soft)]"
-                        }`}
-                      >
-                        {inUse
-                          ? FEATURE_REGISTRY.asset_in_use?.label ?? "In Use"
-                          : FEATURE_REGISTRY.asset_available?.label ?? "Available"}
-                      </span>
-                    </button>
-                  );
-                })
+                    </div>
+                  </div>
+                  {/* Other sizes section — collapsed behind Show All by default */}
+                  {assetEditShowAll && other.length > 0 && (
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--t-text-muted)] mb-1.5">
+                        {FEATURE_REGISTRY.other_assets?.label ?? "Other Sizes"}
+                      </p>
+                      <div className="space-y-1.5">{other.map(renderAssetButton)}</div>
+                    </div>
+                  )}
+                </>
+              ) : (
+                // No required size known — show flat list
+                <div className="space-y-1.5">{assetOptions.map(renderAssetButton)}</div>
               )}
             </div>
+
+            {/* Show all toggle */}
+            {requiredSize && other.length > 0 && (
+              <button
+                onClick={() => setAssetEditShowAll((v) => !v)}
+                className="w-full mb-3 text-[11px] font-medium text-[var(--t-accent)] hover:underline text-center"
+              >
+                {assetEditShowAll
+                  ? "Hide other sizes"
+                  : `${FEATURE_REGISTRY.show_all_assets?.label ?? "Show all sizes"} (${other.length})`}
+              </button>
+            )}
+
             <input
               type="text"
               value={assetEditReason}
@@ -1662,6 +1805,24 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
               placeholder="Reason for change (optional)"
               className="w-full rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-3 py-2 text-sm text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)] mb-3"
             />
+
+            {/* Size mismatch warning — amber, requires explicit confirm */}
+            {selectionMismatch && (
+              <div className="mb-3 rounded-[12px] bg-amber-500/10 border border-amber-500/40 px-3 py-2.5">
+                <div className="flex items-start gap-2 mb-2">
+                  <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
+                  <p className="text-xs text-[var(--t-text-primary)] leading-snug">
+                    {FEATURE_REGISTRY.size_mismatch_warning?.label ?? "Selected asset size does not match required dumpster size"}
+                    {" "}— required {requiredSize}, picked {pickedSize}.
+                  </p>
+                </div>
+                <label className="flex items-center gap-2 text-xs text-[var(--t-text-primary)] cursor-pointer">
+                  <input type="checkbox" checked={assetEditMismatchAck} onChange={(e) => setAssetEditMismatchAck(e.target.checked)} />
+                  <span>I confirm this size is correct for this job</span>
+                </label>
+              </div>
+            )}
+
             {assetEditConflict && (
               <div className="mb-3 rounded-[12px] bg-amber-500/10 border border-amber-500/40 px-3 py-2.5">
                 <p className="text-[10px] font-bold uppercase tracking-wider text-amber-500 mb-1">
@@ -1680,7 +1841,12 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
               </button>
               <button
                 onClick={handleAssetEditSave}
-                disabled={!assetEditSelection || assetEditSaving || (!!assetEditConflict && !assetEditOverride)}
+                disabled={
+                  !assetEditSelection ||
+                  assetEditSaving ||
+                  (!!assetEditConflict && !assetEditOverride) ||
+                  (selectionMismatch && !assetEditMismatchAck)
+                }
                 className="rounded-full bg-[var(--t-accent)] px-4 py-2 text-xs font-semibold text-[var(--t-accent-on-accent)] disabled:opacity-40 hover:opacity-90 transition-opacity"
               >
                 {assetEditSaving ? "Saving…" : FEATURE_REGISTRY.update_asset?.label ?? "Update Asset"}
@@ -1688,7 +1854,8 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* --- Override Status Modal --- */}
       {overrideOpen && job && (

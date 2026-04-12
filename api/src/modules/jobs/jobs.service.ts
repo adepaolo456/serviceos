@@ -457,6 +457,23 @@ export class JobsService {
       throw new NotFoundException(`Job ${id} not found`);
     }
 
+    // Phase 11A-fix: attach the rental chain context (id + booked
+    // dumpster size) so the job detail view can derive the
+    // "required size" for asset picking without a second API call.
+    // Runs for every job type — the chain is the source of truth
+    // for lifecycle jobs, and standalone jobs harmlessly return null.
+    const chainCtx = await this.resolveJobChainContext(tenantId, job.id);
+    if (chainCtx) {
+      (job as Job & {
+        rental_chain_id?: string | null;
+        rental_chain_dumpster_size?: string | null;
+      }).rental_chain_id = chainCtx.rentalChainId;
+      (job as Job & {
+        rental_chain_id?: string | null;
+        rental_chain_dumpster_size?: string | null;
+      }).rental_chain_dumpster_size = chainCtx.dumpsterSize;
+    }
+
     // Phase 10A: for cancelled jobs, derive replacement tasks from the
     // rental chain so the UI can show "Cancelled due to exchange
     // replacement — replaced by Exchange JOB-... + Pickup JOB-...".
@@ -467,12 +484,7 @@ export class JobsService {
       if (replacements) {
         (job as Job & {
           replacement_jobs?: unknown;
-          rental_chain_id?: string | null;
         }).replacement_jobs = replacements.jobs;
-        (job as Job & {
-          replacement_jobs?: unknown;
-          rental_chain_id?: string | null;
-        }).rental_chain_id = replacements.rentalChainId;
       }
     }
 
@@ -728,6 +740,7 @@ export class JobsService {
           reason: dto.assetChangeReason ?? null,
           userId: userId ?? null,
           userName: userName ?? null,
+          sizeMismatch: !!dto.assetSizeMismatch,
         },
       );
     }
@@ -1291,6 +1304,31 @@ export class JobsService {
   // ─────────────────────────────────────────────────────────
 
   /**
+   * Resolve a job's rental chain context (id + booked dumpster size).
+   * Tenant-scoped via the chain ownership check; returns null for
+   * standalone jobs that aren't part of any chain. The dumpster size
+   * on the chain is the source of truth for "required size" on the
+   * job detail asset picker.
+   */
+  private async resolveJobChainContext(
+    tenantId: string,
+    jobId: string,
+  ): Promise<{ rentalChainId: string; dumpsterSize: string | null } | null> {
+    const link = await this.taskChainLinkRepo.findOne({
+      where: { job_id: jobId },
+    });
+    if (!link) return null;
+    const chain = await this.rentalChainRepo.findOne({
+      where: { id: link.rental_chain_id, tenant_id: tenantId },
+    });
+    if (!chain) return null;
+    return {
+      rentalChainId: chain.id,
+      dumpsterSize: chain.dumpster_size ?? null,
+    };
+  }
+
+  /**
    * Find any other active (non-completed, non-cancelled) job on the
    * same tenant that already has this asset assigned. Used by the
    * active-assignment guard (Step 7B).
@@ -1356,6 +1394,7 @@ export class JobsService {
       reason: string | null;
       userId: string | null;
       userName: string | null;
+      sizeMismatch?: boolean;
     },
   ): Promise<Job> {
     // Tenant-scoped asset load
@@ -1395,6 +1434,7 @@ export class JobsService {
       changed_at: new Date().toISOString(),
       reason: opts.reason,
       ...(conflict ? { override_conflict: true } : {}),
+      ...(opts.sizeMismatch ? { size_mismatch: true } : {}),
     });
     // Cap at 100 entries so the column can never explode
     if (history.length > 100) history.splice(0, history.length - 100);
@@ -1417,6 +1457,7 @@ export class JobsService {
       assetId: string;
       overrideAssetConflict?: boolean;
       reason?: string;
+      sizeMismatch?: boolean;
     },
     userId: string | null,
     userName: string | null,
@@ -1430,6 +1471,7 @@ export class JobsService {
       reason: dto.reason ?? null,
       userId,
       userName,
+      sizeMismatch: !!dto.sizeMismatch,
     });
 
     const saved = await this.jobsRepository.save(job);
