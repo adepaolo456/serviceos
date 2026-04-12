@@ -3,7 +3,7 @@
 import { useState, useEffect, use } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Truck, MapPin, Calendar, Package, DollarSign, CheckCircle2, Clock, ArrowRight, FileText, Pencil, CalendarClock } from "lucide-react";
+import { ArrowLeft, Truck, MapPin, Calendar, Package, DollarSign, CheckCircle2, Clock, ArrowRight, FileText, Pencil, CalendarClock, Repeat } from "lucide-react";
 import { api } from "@/lib/api";
 import { formatCurrency } from "@/lib/utils";
 import { FEATURE_REGISTRY } from "@/lib/feature-registry";
@@ -92,6 +92,13 @@ export default function RentalLifecyclePage({ params }: { params: Promise<{ id: 
   const [pickupDate, setPickupDate] = useState("");
   const [pickupSaving, setPickupSaving] = useState(false);
   const [pickupError, setPickupError] = useState("");
+  // Schedule exchange modal state
+  const [exchangeModalOpen, setExchangeModalOpen] = useState(false);
+  const [exchangeDate, setExchangeDate] = useState("");
+  const [exchangeSize, setExchangeSize] = useState("");
+  const [exchangeOverridePickup, setExchangeOverridePickup] = useState("");
+  const [exchangeSaving, setExchangeSaving] = useState(false);
+  const [exchangeError, setExchangeError] = useState("");
 
   const reload = () => api.get<LifecycleData>(`/rental-chains/${id}/lifecycle`).then(setData).catch(() => {});
 
@@ -104,8 +111,6 @@ export default function RentalLifecyclePage({ params }: { params: Promise<{ id: 
 
   const handlePickupDateUpdate = async () => {
     if (!data || !pickupDate) return;
-    const pickupJob = data.jobs.find(j => j.taskType === "pick_up");
-    if (!pickupJob?.id) { setPickupError("No pickup task found"); return; }
     // Validate: pickup must be after delivery
     const deliveryDate = data.rentalChain.dropOffDate;
     if (deliveryDate && pickupDate <= deliveryDate) {
@@ -115,11 +120,11 @@ export default function RentalLifecyclePage({ params }: { params: Promise<{ id: 
     setPickupSaving(true);
     setPickupError("");
     try {
-      await api.patch(`/jobs/${pickupJob.id}`, { scheduledDate: pickupDate });
-      // Note: rental_chain.expected_pickup_date is NOT synced here —
-      // no existing safe API path exposes a chain-level date update.
-      // The pickup JOB date is the source of truth for dispatch.
-      // Chain sync is a documented follow-up.
+      // Authoritative lifecycle update — the backend keeps the chain
+      // row and the linked pickup job's scheduled_date in sync inside
+      // a single transaction, so there is no more drift between
+      // `/jobs/:id` and `/rental-chains/:id`.
+      await api.patch(`/rental-chains/${id}`, { expected_pickup_date: pickupDate });
       setPickupModalOpen(false);
       setPickupDate("");
       await reload();
@@ -127,6 +132,38 @@ export default function RentalLifecyclePage({ params }: { params: Promise<{ id: 
       setPickupError(err instanceof Error ? err.message : (FEATURE_REGISTRY.lifecycle_action_error?.label ?? "Failed to update"));
     } finally {
       setPickupSaving(false);
+    }
+  };
+
+  const handleScheduleExchange = async () => {
+    if (!data || !exchangeDate) return;
+    // Validate: exchange must be on or after delivery
+    const deliveryDate = data.rentalChain.dropOffDate;
+    if (deliveryDate && exchangeDate < deliveryDate) {
+      setExchangeError(FEATURE_REGISTRY.lifecycle_action_exchange_before_delivery?.label ?? "Exchange date cannot be before delivery date");
+      return;
+    }
+    if (exchangeOverridePickup && exchangeOverridePickup <= exchangeDate) {
+      setExchangeError(FEATURE_REGISTRY.lifecycle_action_pickup_before_exchange?.label ?? "Pickup date must be after exchange date");
+      return;
+    }
+    setExchangeSaving(true);
+    setExchangeError("");
+    try {
+      await api.post(`/rental-chains/${id}/exchanges`, {
+        exchange_date: exchangeDate,
+        ...(exchangeSize ? { dumpster_size: exchangeSize } : {}),
+        ...(exchangeOverridePickup ? { override_pickup_date: exchangeOverridePickup } : {}),
+      });
+      setExchangeModalOpen(false);
+      setExchangeDate("");
+      setExchangeSize("");
+      setExchangeOverridePickup("");
+      await reload();
+    } catch (err: unknown) {
+      setExchangeError(err instanceof Error ? err.message : (FEATURE_REGISTRY.lifecycle_update_error?.label ?? "Failed to schedule exchange"));
+    } finally {
+      setExchangeSaving(false);
     }
   };
 
@@ -234,6 +271,17 @@ export default function RentalLifecyclePage({ params }: { params: Promise<{ id: 
           <button onClick={() => { setPickupModalOpen(true); setPickupDate(""); setPickupError(""); }}
             className="inline-flex items-center gap-1.5 rounded-full border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-2 text-xs font-medium text-[var(--t-text-primary)] hover:bg-[var(--t-bg-card-hover)] transition-colors">
             <CalendarClock className="h-3 w-3" /> {FEATURE_REGISTRY.lifecycle_action_extend?.label ?? "Extend Rental"}
+          </button>
+          <button onClick={() => {
+              const today = new Date().toISOString().split("T")[0];
+              setExchangeModalOpen(true);
+              setExchangeDate(today);
+              setExchangeSize(rentalChain.dumpsterSize || "");
+              setExchangeOverridePickup("");
+              setExchangeError("");
+            }}
+            className="inline-flex items-center gap-1.5 rounded-full border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-2 text-xs font-medium text-[var(--t-text-primary)] hover:bg-[var(--t-bg-card-hover)] transition-colors">
+            <Repeat className="h-3 w-3" /> {FEATURE_REGISTRY.schedule_exchange?.label ?? "Schedule Exchange"}
           </button>
         </div>
       )}
@@ -363,6 +411,60 @@ export default function RentalLifecyclePage({ params }: { params: Promise<{ id: 
           )}
         </div>
       )}
+      {/* Schedule Exchange Modal */}
+      {exchangeModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4" onClick={() => setExchangeModalOpen(false)}>
+          <div className="rounded-2xl border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6 w-full max-w-sm" onClick={e => e.stopPropagation()}>
+            <h3 className="text-sm font-semibold text-[var(--t-text-primary)] mb-1">
+              {FEATURE_REGISTRY.schedule_exchange?.label ?? "Schedule Exchange"}
+            </h3>
+            <p className="text-xs text-[var(--t-text-muted)] mb-4">
+              {FEATURE_REGISTRY.schedule_exchange_description?.label ?? "Swap the dumpster on this rental. A new pickup is automatically scheduled based on your tenant's default rental period."}
+            </p>
+
+            <label className="text-xs text-[var(--t-text-muted)] mb-1 block">
+              {FEATURE_REGISTRY.exchange_date?.label ?? "Exchange date"}
+            </label>
+            <input type="date" value={exchangeDate}
+              onChange={e => { setExchangeDate(e.target.value); setExchangeError(""); }}
+              min={rentalChain.dropOffDate || undefined}
+              className="w-full rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-3 py-2 text-sm text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)] mb-3" />
+
+            <label className="text-xs text-[var(--t-text-muted)] mb-1 block">
+              {FEATURE_REGISTRY.exchange_new_size?.label ?? "New dumpster size (optional)"}
+            </label>
+            <input type="text" value={exchangeSize}
+              onChange={e => setExchangeSize(e.target.value)}
+              placeholder={rentalChain.dumpsterSize || "e.g. 20yd"}
+              className="w-full rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-3 py-2 text-sm text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)] mb-3" />
+
+            <label className="text-xs text-[var(--t-text-muted)] mb-1 block">
+              {FEATURE_REGISTRY.override_pickup_date?.label ?? "Override pickup date (optional)"}
+            </label>
+            <input type="date" value={exchangeOverridePickup}
+              onChange={e => { setExchangeOverridePickup(e.target.value); setExchangeError(""); }}
+              min={exchangeDate || undefined}
+              className="w-full rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-3 py-2 text-sm text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)] mb-1" />
+            <p className="text-[10px] text-[var(--t-text-muted)] mb-3">
+              {FEATURE_REGISTRY.override_pickup_date_hint?.label ?? "Leave blank to auto-calculate from your tenant rental period."}
+            </p>
+
+            {exchangeError && (
+              <p className="text-xs text-[var(--t-error)] mb-3">{exchangeError}</p>
+            )}
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setExchangeModalOpen(false)} className="rounded-full px-4 py-2 text-xs font-medium text-[var(--t-text-muted)]">
+                Cancel
+              </button>
+              <button onClick={handleScheduleExchange} disabled={!exchangeDate || exchangeSaving}
+                className="rounded-full bg-[var(--t-accent)] px-4 py-2 text-xs font-semibold text-[var(--t-accent-on-accent)] disabled:opacity-40 hover:opacity-90 transition-opacity">
+                {exchangeSaving ? (FEATURE_REGISTRY.lifecycle_action_saving?.label ?? "Saving...") : (FEATURE_REGISTRY.lifecycle_action_confirm?.label ?? "Confirm")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Edit Pickup Date / Extend Rental Modal */}
       {pickupModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4" onClick={() => setPickupModalOpen(false)}>
