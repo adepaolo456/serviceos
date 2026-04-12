@@ -584,7 +584,32 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
   const statusIdx = TIMELINE_STEPS.findIndex((s) => s.status === job.status);
   const typeColor = JOB_TYPE_COLORS[job.job_type] || "text-blue-400";
   const sizeColor = job.asset?.subtype ? (SIZE_COLORS[job.asset.subtype] || "text-[var(--t-text-muted)]") : "";
-  const rentalDays = job.rental_start_date && job.rental_end_date ? daysBetween(job.rental_start_date, job.rental_end_date) : job.rental_days;
+  // Rental duration truth source (bug fix for the "20,557 days"
+  // display issue observed on JOB-20260413-M5F and similar).
+  //
+  // `rental_chains.rental_days` is AUTHORITATIVE — it's set once
+  // at chain creation from the rental rule and never recomputed.
+  // The lifecycle strip already reads it via /rental-chains/:id/
+  // lifecycle into lifecycleStrip.rentalDays.
+  //
+  // `job.rental_days` is a denormalized cache on the jobs row
+  // that can diverge — at least one upstream write path produces
+  // values like 20,557 (the day count from the Unix epoch to
+  // rental_end_date, which is the signature of a
+  // `(new Date(end) - new Date(start)) / 86400000` computation
+  // where `start` was null and got coerced to the epoch).
+  //
+  // We standardize all three display surfaces (lifecycle strip,
+  // Summary card "Rental Days", Pricing card "Rental Period") on
+  // the chain-truth value whenever the job is part of a rental
+  // chain, and fall back to the job-level cache only for truly
+  // standalone jobs. This matches the Phase 15 pattern where the
+  // Summary card's sibling dates already read from lifecycleStrip
+  // for the same chain-truth reason.
+  const rentalDays = lifecycleStrip?.rentalDays
+    ?? (job.rental_start_date && job.rental_end_date
+      ? daysBetween(job.rental_start_date, job.rental_end_date)
+      : job.rental_days);
 
   return (
     <div>
@@ -1472,7 +1497,13 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
             <div className="space-y-2.5 text-sm">
               <PriceRow label="Base Price" value={fmt(job.base_price)} />
               {job.deposit_amount > 0 && <PriceRow label="Deposit" value={fmt(job.deposit_amount)} />}
-              {job.rental_days && job.rental_days > 0 && <PriceRow label="Rental Period" value={`${job.rental_days} days`} />}
+              {/* Bug fix — use the `rentalDays` derived constant
+                  at the top of this component (which prefers the
+                  chain's authoritative rental_days over the
+                  potentially-stale job.rental_days cache).
+                  See the comment block on the `rentalDays`
+                  declaration for the full rationale. */}
+              {rentalDays && rentalDays > 0 && <PriceRow label="Rental Period" value={`${rentalDays} days`} />}
               <div className="flex justify-between border-t border-[var(--t-border)] pt-2.5 font-semibold">
                 <span className="text-[var(--t-text-primary)]">Total</span>
                 <span className="text-[var(--t-accent)] tabular-nums text-base">{fmt(job.total_price)}</span>
@@ -1506,7 +1537,7 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
               </div>
               {job.rental_start_date && job.rental_end_date && (
                 <p className="text-[11px] mt-3" style={{ color: "var(--t-text-muted)" }}>
-                  Rental: {fmtDateFull(job.rental_start_date)} — {fmtDateFull(job.rental_end_date)} ({job.rental_days || 0} days included)
+                  Rental: {fmtDateFull(job.rental_start_date)} — {fmtDateFull(job.rental_end_date)} ({rentalDays || 0} days included)
                 </p>
               )}
             </div>
