@@ -72,6 +72,7 @@ import { DumpLocation, DumpLocationRate, DumpLocationSurcharge } from './modules
 import { DumpTicket } from './modules/dump-locations/entities/dump-ticket.entity';
 import { SubscriptionPlan } from './modules/subscriptions/entities/subscription-plan.entity';
 import { RentalChainsModule } from './modules/rental-chains/rental-chains.module';
+import { LegacyBackfillModule } from './modules/legacy-backfill/legacy-backfill.module';
 import { MapboxModule } from './modules/mapbox/mapbox.module';
 import { OnboardingModule } from './modules/onboarding/onboarding.module';
 import { TenantSettingsModule } from './modules/tenant-settings/tenant-settings.module';
@@ -188,6 +189,7 @@ import { PermissionModule } from './modules/permissions/permission.module';
     SmsModule,
     SmsReleaseModule,
     RentalChainsModule,
+    LegacyBackfillModule,
     MapboxModule,
     OnboardingModule,
     TenantSettingsModule,
