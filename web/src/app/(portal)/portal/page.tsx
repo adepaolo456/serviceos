@@ -1,13 +1,14 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
-import { portalApi, resolvePortalErrorMessage } from "@/lib/portal-api";
+import { portalApi } from "@/lib/portal-api";
 import { formatCurrency } from "@/lib/utils";
 import { formatDateOnly, daysUntilDateOnly } from "@/lib/utils/format-date";
 import { formatRentalTitle, rentalSizeLabel } from "@/lib/job-status";
 import { Package, FileText, PlusCircle, Calendar, MapPin, Clock, ArrowUpRight, AlertCircle, CreditCard, ChevronRight, DollarSign } from "lucide-react";
 import { FEATURE_REGISTRY } from "@/lib/feature-registry";
+import PortalChangePickupDateModal from "@/components/portal-change-pickup-date-modal";
 
 interface Rental {
   id: string;
@@ -79,9 +80,6 @@ export default function PortalHomePage() {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
   const [changePickupJobId, setChangePickupJobId] = useState<string | null>(null);
-  const [changePickupMode, setChangePickupMode] = useState<"extend" | "early" | null>(null);
-  const [changePickupDate, setChangePickupDate] = useState("");
-  const [actionLoading, setActionLoading] = useState(false);
   const [issueOpen, setIssueOpen] = useState(false);
   const [issueReason, setIssueReason] = useState("");
   const [issueNotes, setIssueNotes] = useState("");
@@ -93,7 +91,6 @@ export default function PortalHomePage() {
     account_status: string; status_message: string | null; payment_eligible: boolean;
   } | null>(null);
   const customer = portalApi.getCustomer();
-  const changePickupDateRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     Promise.all([
@@ -129,27 +126,6 @@ export default function PortalHomePage() {
   };
 
   const refreshRentals = () => portalApi.get<Rental[]>("/portal/rentals").then(setRentals).catch(() => {});
-
-  const handleChangePickup = async () => {
-    if (!changePickupJobId || !changePickupMode) return;
-    setActionLoading(true);
-    try {
-      if (changePickupMode === "extend") {
-        if (!changePickupDate) return;
-        await portalApi.post(`/portal/rentals/${changePickupJobId}/extend`, { newEndDate: changePickupDate });
-      } else {
-        await portalApi.post(`/portal/rentals/${changePickupJobId}/early-pickup`);
-      }
-      await refreshRentals();
-      setChangePickupJobId(null);
-      setChangePickupMode(null);
-      setChangePickupDate("");
-    } catch (err: unknown) {
-      alert(resolvePortalErrorMessage(err));
-    } finally {
-      setActionLoading(false);
-    }
-  };
 
   const active = rentals.filter(r => !["completed", "cancelled"].includes(r.status) && r.job_type === "delivery");
   // Phase B7 — Upcoming must only show *future* rentals. Parse YYYY-MM-DD
@@ -333,7 +309,7 @@ export default function PortalHomePage() {
                       next line on very narrow screens without stretching. */}
                   <div className="mt-3 pt-2.5 border-t border-[var(--t-border)] flex flex-wrap items-center justify-end gap-2">
                     <button
-                      onClick={() => { setChangePickupJobId(r.id); setChangePickupMode(null); setChangePickupDate(r.rental_end_date || ""); }}
+                      onClick={() => setChangePickupJobId(r.id)}
                       className="inline-flex items-center gap-1 rounded-full border border-[var(--t-border)] px-3 py-1.5 text-[11px] sm:text-xs font-semibold text-[var(--t-text-primary)] hover:bg-[var(--t-bg-card-hover)] transition-colors"
                     >
                       {FEATURE_REGISTRY.portal_action_change_date_short?.label ?? "Change Date"}
@@ -401,73 +377,12 @@ export default function PortalHomePage() {
         </section>
       )}
 
-      {/* Change Pickup Date Modal */}
-      {changePickupJobId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4" onClick={() => { setChangePickupJobId(null); setChangePickupMode(null); }}>
-          <div className="rounded-2xl border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6 w-full max-w-sm" onClick={e => e.stopPropagation()}>
-            <h3 className="text-sm font-semibold text-[var(--t-text-primary)] mb-1">
-              {FEATURE_REGISTRY.portal_action_change_pickup_date?.label ?? "Change Pickup Date"}
-            </h3>
-            {changePickupRental && (
-              <p className="text-xs text-[var(--t-text-muted)] mb-4">{formatRentalTitle(changePickupRental)} · {changePickupRental.job_number}</p>
-            )}
-
-            {!changePickupMode ? (
-              <div className="space-y-2">
-                <p className="text-xs text-[var(--t-text-muted)] mb-3">What would you like to do?</p>
-                <button onClick={() => setChangePickupMode("extend")}
-                  className="w-full rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-primary)] p-3 text-left hover:border-[var(--t-accent)] transition-colors">
-                  <p className="text-sm font-medium text-[var(--t-text-primary)]">{FEATURE_REGISTRY.portal_action_extend?.label ?? "Extend Rental"}</p>
-                  <p className="text-xs text-[var(--t-text-muted)] mt-0.5">I need more time</p>
-                </button>
-                <button onClick={() => setChangePickupMode("early")}
-                  className="w-full rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-primary)] p-3 text-left hover:border-[var(--t-accent)] transition-colors">
-                  <p className="text-sm font-medium text-[var(--t-text-primary)]">{FEATURE_REGISTRY.portal_action_early_pickup?.label ?? "Request Early Pickup"}</p>
-                  <p className="text-xs text-[var(--t-text-muted)] mt-0.5">I&apos;m done early</p>
-                </button>
-                <div className="pt-2">
-                  <button onClick={() => { setChangePickupJobId(null); setChangePickupMode(null); }}
-                    className="rounded-full px-4 py-2 text-xs font-medium text-[var(--t-text-muted)]">Cancel</button>
-                </div>
-              </div>
-            ) : changePickupMode === "extend" ? (
-              <div>
-                <label className="text-xs text-[var(--t-text-muted)] mb-1 block">New end date</label>
-                <div
-                  className="relative cursor-pointer mb-4"
-                  onClick={() => changePickupDateRef.current?.showPicker?.()}
-                >
-                  <input
-                    ref={changePickupDateRef}
-                    type="date"
-                    value={changePickupDate}
-                    onChange={e => setChangePickupDate(e.target.value)}
-                    className="w-full rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-3 py-2 text-sm text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)] cursor-pointer"
-                  />
-                </div>
-                <div className="flex gap-2 justify-end">
-                  <button onClick={() => setChangePickupMode(null)} className="rounded-full px-4 py-2 text-xs font-medium text-[var(--t-text-muted)]">Back</button>
-                  <button onClick={handleChangePickup} disabled={!changePickupDate || actionLoading}
-                    className="rounded-full bg-[var(--t-accent)] px-4 py-2 text-xs font-semibold text-[var(--t-accent-on-accent)] disabled:opacity-40">
-                    {actionLoading ? "Extending..." : "Confirm Extension"}
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div>
-                <p className="text-sm text-[var(--t-text-secondary)] mb-4">Request an early pickup for this rental? We&apos;ll be in touch to schedule.</p>
-                <div className="flex gap-2 justify-end">
-                  <button onClick={() => setChangePickupMode(null)} className="rounded-full px-4 py-2 text-xs font-medium text-[var(--t-text-muted)]">Back</button>
-                  <button onClick={handleChangePickup} disabled={actionLoading}
-                    className="rounded-full bg-[var(--t-accent)] px-4 py-2 text-xs font-semibold text-[var(--t-accent-on-accent)] disabled:opacity-40">
-                    {actionLoading ? "Requesting..." : "Confirm Early Pickup"}
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+      {/* Change Pickup Date Modal — Phase B13: shared component */}
+      <PortalChangePickupDateModal
+        rental={changePickupRental ?? null}
+        onClose={() => setChangePickupJobId(null)}
+        onSuccess={async () => { await refreshRentals(); }}
+      />
 
       {/* Report Issue Modal */}
       {issueOpen && (
