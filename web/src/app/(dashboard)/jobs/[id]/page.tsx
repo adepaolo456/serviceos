@@ -182,7 +182,12 @@ const VALID_TRANSITIONS: Record<string, string[]> = {
 };
 
 const TRANSITION_STYLES: Record<string, { label: string; className: string; icon: typeof CheckCircle2 }> = {
-  confirmed: { label: "Mark Ready", className: "bg-[var(--t-accent)] text-[var(--t-accent-on-accent)] hover:opacity-90", icon: CheckCircle2 },
+  // Phase BA — "Mark Ready" (`confirmed`) removed from office-allowed
+  // primary actions. `pending → confirmed` is now handled silently by
+  // the assign-time auto-flip in `JobsService.assignJob`, which also
+  // fires the `booking_confirmation` SMS when a driver is assigned.
+  // The server-side transition path remains valid for direct API
+  // callers and legacy scripts.
   dispatched: { label: "Assign", className: "bg-[var(--t-accent)] text-[var(--t-accent-on-accent)] hover:opacity-90", icon: Truck },
   en_route: { label: "En Route", className: "bg-[var(--t-accent)] text-[var(--t-accent-on-accent)] hover:opacity-90", icon: Truck },
   arrived: { label: "Arrived", className: "bg-[var(--t-accent)] text-[var(--t-accent-on-accent)] hover:opacity-90", icon: MapPin },
@@ -192,7 +197,7 @@ const TRANSITION_STYLES: Record<string, { label: string; className: string; icon
 };
 
 // Office can only trigger these as primary actions
-const OFFICE_ALLOWED_TRANSITIONS = new Set(["confirmed", "dispatched", "cancelled"]);
+const OFFICE_ALLOWED_TRANSITIONS = new Set(["dispatched", "cancelled"]);
 
 // Override corrections: current stored status → allowed correction targets
 const OVERRIDE_TARGETS: Record<string, string[]> = {

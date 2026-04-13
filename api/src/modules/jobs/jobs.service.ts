@@ -2556,12 +2556,21 @@ export class JobsService {
       }
     }
 
+    // Phase BA — track whether this assign auto-flips pending →
+    // confirmed so we can fire the customer booking-confirmation SMS
+    // after the DB write. This replaces the old "Mark Ready" button
+    // SMS trigger. Mirrors the notification-send path used inside
+    // `changeStatus` (`jobs.service.ts:1138-1167`) so the customer-
+    // facing experience is unchanged.
+    let willFlipToConfirmed = false;
+
     if ('assignedDriverId' in body) {
       const newDriverId = (body.assignedDriverId as string) || null;
       updates.assigned_driver_id = newDriverId;
 
       if (newDriverId && job.status === 'pending') {
         updates.status = 'confirmed';
+        willFlipToConfirmed = true;
       }
       if (!newDriverId && job.status === 'confirmed') {
         updates.status = 'pending';
@@ -2574,6 +2583,29 @@ export class JobsService {
       { id, tenant_id: tenantId },
       updates,
     );
+
+    // Phase BA — fire booking_confirmation after the auto-flip write.
+    // Best-effort: a notification failure must NOT block the assign.
+    if (willFlipToConfirmed && job.customer_id && job.customer) {
+      const customerName = `${job.customer.first_name} ${job.customer.last_name}`;
+      const recipient = job.customer.phone || job.customer.email || '';
+      const channel = job.customer.phone ? 'sms' : 'email';
+      if (recipient) {
+        try {
+          await this.notificationsService.send(tenantId, {
+            channel,
+            type: 'booking_confirmation',
+            recipient,
+            subject: `Booking Confirmed - Job #${job.job_number}`,
+            body: `Hi ${customerName}, your ${job.service_type || job.job_type} is confirmed for ${job.scheduled_date}. Job #${job.job_number}.`,
+            jobId: job.id,
+            customerId: job.customer_id,
+          });
+        } catch {
+          /* best effort — don't block assignment on notification failure */
+        }
+      }
+    }
 
     return this.findOne(tenantId, id);
   }
