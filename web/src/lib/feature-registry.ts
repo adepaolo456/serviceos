@@ -2394,12 +2394,12 @@ export const FEATURE_REGISTRY: Record<string, FeatureDescription> = {
     keywords: ["view", "invoice", "dispatch"],
   },
   dispatch_prepayment_action_open_customer_billing: {
-    id: "dispatch_prepayment_action_open_customer_billing", label: "Open Customer Billing", category: "operations",
-    shortDescription: "Action button in the dispatch prepayment modal that opens the customer's billing/account view.",
+    id: "dispatch_prepayment_action_open_customer_billing", label: "Open Customer Account", category: "operations",
+    shortDescription: "Action button in the dispatch prepayment modal that opens the customer's account page (overview + billing tabs).",
     guideDescription: "",
     routeOrSurface: "dispatch", tenantOverrideKey: "dispatch_prepayment_action_open_customer_billing",
     isUserFacing: true, isGuideEligible: false,
-    keywords: ["customer", "billing", "dispatch"],
+    keywords: ["customer", "account", "dispatch"],
   },
   dispatch_prepayment_action_cancel: {
     id: "dispatch_prepayment_action_cancel", label: "Cancel", category: "operations",

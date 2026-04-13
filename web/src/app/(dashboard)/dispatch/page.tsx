@@ -1195,7 +1195,7 @@ export default function DispatchPage() {
                     }}
                   >
                     {FEATURE_REGISTRY.dispatch_prepayment_action_open_customer_billing?.label ??
-                      "Open Customer Billing"}
+                      "Open Customer Account"}
                   </Link>
                 )}
                 <div className="flex gap-2 justify-end mt-1">
