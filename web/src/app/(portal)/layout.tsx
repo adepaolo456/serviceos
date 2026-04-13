@@ -51,7 +51,10 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
   };
 
   return (
-    <div className="min-h-screen bg-[var(--t-bg-primary)]">
+    // Phase B12 — overflow-x-clip is a safety net at the root so any
+    // single bad descendant can't push the body into horizontal scroll.
+    // Underlying flex/truncate bugs are still fixed at their source.
+    <div className="min-h-screen bg-[var(--t-bg-primary)] overflow-x-clip">
       {/* Top navbar */}
       <header className="sticky top-0 z-40" style={{ backgroundColor: "var(--t-frame-bg)", borderBottom: "1px solid var(--t-frame-border)" }}>
         <div className="mx-auto flex h-14 max-w-5xl items-center justify-between px-4">
@@ -126,8 +129,10 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
         </div>
       )}
 
-      {/* Main content */}
-      <main className="mx-auto max-w-5xl px-4 py-6">{children}</main>
+      {/* Main content — Phase B12: explicit min-w-0 so children inside
+          nested flex/grid layouts can actually shrink below intrinsic
+          content width on mobile. */}
+      <main className="mx-auto max-w-5xl px-4 py-6 min-w-0 w-full">{children}</main>
     </div>
   );
 }
