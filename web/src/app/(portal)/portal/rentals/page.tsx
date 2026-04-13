@@ -1,17 +1,13 @@
 "use client";
 
-import { useState, useEffect, useMemo, useRef, useCallback, Suspense } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import { portalApi, resolvePortalErrorMessage } from "@/lib/portal-api";
+import { useState, useEffect, useMemo } from "react";
+import Link from "next/link";
+import { portalApi } from "@/lib/portal-api";
 import { formatCurrency } from "@/lib/utils";
 import { formatDateOnly } from "@/lib/utils/format-date";
 import { deriveCustomerTimeline, formatRentalTitle, rentalSizeLabel, type CustomerTimelineStep } from "@/lib/job-status";
 import { FEATURE_REGISTRY } from "@/lib/feature-registry";
 import { Package, Calendar, MapPin, ChevronRight, Search, X } from "lucide-react";
-import dynamic from "next/dynamic";
-import PortalChangePickupDateModal from "@/components/portal-change-pickup-date-modal";
-
-const PortalPlacementMap = dynamic(() => import("@/components/portal-placement-map"), { ssr: false });
 
 interface Rental {
   id: string;
@@ -83,22 +79,6 @@ function HorizontalTimeline({ steps }: { steps: CustomerTimelineStep[] }) {
   );
 }
 
-function isWithin24Hours(dateStr: string | null): boolean {
-  if (!dateStr) return false;
-  // Phase B6 — parse as local noon of the target calendar day
-  // rather than UTC midnight. The previous `new Date(dateStr)`
-  // form anchored the gate on UTC midnight (i.e. 8 PM ET the day
-  // before the delivery), so customers saw the reschedule action
-  // disable up to four hours earlier than it should have. Local
-  // noon keeps the gate semantically "24 hours from the start of
-  // the delivery day" in the customer's own timezone without
-  // introducing a hardcoded timezone assumption.
-  const target = new Date(`${dateStr}T12:00:00`).getTime();
-  if (Number.isNaN(target)) return false;
-  const now = Date.now();
-  return target - now < 24 * 60 * 60 * 1000;
-}
-
 const STATUS_COLORS: Record<string, string> = {
   pending: "text-yellow-500",
   confirmed: "text-blue-400",
@@ -119,70 +99,19 @@ const STATUS_LABELS: Record<string, string> = {
   cancelled: "Cancelled",
 };
 
-export default function PortalRentalsPageWrapper() {
-  return (
-    <Suspense fallback={<div className="py-10 text-center text-sm" style={{ color: "var(--t-text-muted)" }}>Loading rentals...</div>}>
-      <PortalRentalsPage />
-    </Suspense>
-  );
-}
-
-function PortalRentalsPage() {
-  const router = useRouter();
-  const searchParams = useSearchParams();
+// Phase B17 — this page is list-only. The rental detail view now lives
+// at the dynamic route /portal/rentals/[id] so list and detail are
+// distinct pathnames, eliminating the Next.js same-pathname search-param
+// reactivity bug that trapped users inside the detail view.
+export default function PortalRentalsPage() {
   const [rentals, setRentals] = useState<Rental[]>([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<TabKey>("Active");
   const [query, setQuery] = useState("");
-  const [rescheduleOpen, setRescheduleOpen] = useState(false);
-  const [newDate, setNewDate] = useState("");
-  const [rescheduleReason, setRescheduleReason] = useState("");
-  const [rescheduling, setRescheduling] = useState(false);
-  const rescheduleDateRef = useRef<HTMLInputElement | null>(null);
-  const [changePickupJobId, setChangePickupJobId] = useState<string | null>(null);
 
   useEffect(() => {
     portalApi.get<Rental[]>("/portal/rentals").then(setRentals).catch(() => {}).finally(() => setLoading(false));
   }, []);
-
-  // Phase B9/B14 — detail selection is fully URL-driven via ?id=. The
-  // global "My Rentals" header link and the in-page "Back to rentals"
-  // button both route to /portal/rentals (no query), and the memo
-  // collapses to null when ?id= is absent. The explicit reset effect
-  // below also clears any modal/drawer state so nothing lingers from
-  // a detail view that was just dismissed.
-  const deepLinkId = searchParams.get("id");
-  const detail = useMemo(
-    () => (deepLinkId ? rentals.find(r => r.id === deepLinkId) ?? null : null),
-    [deepLinkId, rentals],
-  );
-
-  const openDetail = useCallback((id: string) => {
-    router.push(`/portal/rentals?id=${id}`);
-  }, [router]);
-  const closeDetail = useCallback(() => {
-    // Phase B14 — use replace() instead of push() so Next.js App Router
-    // reliably updates useSearchParams when the target path is the same
-    // (/portal/rentals) and the only delta is the removed ?id= param.
-    // Push can be a no-op in that case on some versions; replace always
-    // re-runs the URL state subscription.
-    setRescheduleOpen(false);
-    setChangePickupJobId(null);
-    router.replace("/portal/rentals", { scroll: false });
-  }, [router]);
-  const updateRentalInPlace = useCallback((updated: Rental) => {
-    setRentals(prev => prev.map(r => r.id === updated.id ? updated : r));
-  }, []);
-
-  // Phase B14 — whenever the URL stops carrying ?id=, reset any
-  // modal / drawer local state so nothing visually persists from a
-  // detail view that's just been dismissed.
-  useEffect(() => {
-    if (!deepLinkId) {
-      setRescheduleOpen(false);
-      setChangePickupJobId(null);
-    }
-  }, [deepLinkId]);
 
   const tabFiltered = useMemo(() => rentals.filter(r => {
     if (tab === "All") return true;
@@ -211,199 +140,6 @@ function PortalRentalsPage() {
       return haystack.includes(trimmedQuery);
     });
   }, [tabFiltered, trimmedQuery]);
-
-  const inputCls = "w-full rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-3 py-2 text-sm text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)]";
-
-  if (detail) {
-    const timelineSteps = deriveCustomerTimeline(detail, rentals);
-    // Phase B16 — date-text is the primary edit trigger for both delivery
-    // and pickup. The old action-row buttons (Change Date / Change Pickup
-    // Date) are removed; these flags gate the clickable affordance on the
-    // date cells and the inline reschedule drawer.
-    const canChangeDate = ["pending", "confirmed"].includes(detail.status);
-    const tooSoon = isWithin24Hours(detail.scheduled_date);
-    const canChangePickup = detail.job_type === "delivery" && !["completed", "cancelled"].includes(detail.status);
-
-    return (
-      <div className="space-y-4">
-        <button onClick={closeDetail} className="text-sm text-[var(--t-accent)] font-medium hover:underline">&larr; Back to rentals</button>
-
-        {/* ─── Top identity card — Phase B10: mobile-first padding + responsive
-            summary grid; address spans full width on narrow screens ─── */}
-        <div className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-4 sm:p-6 min-w-0">
-          {/* Title row */}
-          <div className="flex flex-wrap items-start justify-between gap-2 sm:gap-3 mb-4 min-w-0">
-            <div className="min-w-0 flex-1">
-              <h1 className="text-lg sm:text-2xl font-bold text-[var(--t-text-primary)] leading-tight break-words [overflow-wrap:anywhere]">
-                {formatRentalTitle(detail)}
-              </h1>
-              <p className="text-[11px] sm:text-xs text-[var(--t-text-muted)] mt-0.5 font-mono break-all">
-                {detail.job_number}
-              </p>
-            </div>
-            <span className={`text-[10px] sm:text-xs font-semibold px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-full bg-[var(--t-bg-primary)] border border-[var(--t-border)] whitespace-nowrap shrink-0 ${STATUS_COLORS[detail.status] || ""}`}>
-              {STATUS_LABELS[detail.status] || detail.status}
-            </span>
-          </div>
-
-          {/* Compact summary grid — Phase B15: delivery + pickup date cells
-              are now tappable shortcuts that open the same modals as the
-              action buttons below. Non-editable rentals render plain text. */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-3 sm:gap-x-4 gap-y-3 text-sm">
-            <div className="min-w-0">
-              <span className="text-[10px] font-medium uppercase tracking-wider text-[var(--t-text-muted)]">{FEATURE_REGISTRY.portal_detail_dumpster_size?.label ?? "Dumpster Size"}</span>
-              <p className="font-semibold text-[var(--t-text-primary)] mt-0.5 truncate">{rentalSizeLabel(detail) || "—"}</p>
-            </div>
-            <div className="min-w-0">
-              <span className="text-[10px] font-medium uppercase tracking-wider text-[var(--t-text-muted)]">{FEATURE_REGISTRY.portal_detail_delivery_date?.label ?? "Delivery Date"}</span>
-              {canChangeDate && !tooSoon ? (
-                <button
-                  type="button"
-                  onClick={() => { setRescheduleOpen(true); setNewDate(detail.scheduled_date || ""); }}
-                  aria-label={FEATURE_REGISTRY.portal_action_change_date_short?.label ?? "Change Date"}
-                  className="group mt-0.5 -mx-1 px-1 py-0.5 w-[calc(100%+0.5rem)] text-left rounded-md cursor-pointer transition-colors hover:bg-[var(--t-bg-card-hover)]"
-                >
-                  <p className="font-semibold text-[var(--t-text-primary)] truncate group-hover:text-[var(--t-accent)] underline decoration-dotted underline-offset-4 decoration-[var(--t-border)] group-hover:decoration-[var(--t-accent)]">
-                    {detail.scheduled_date ? formatDateOnly(detail.scheduled_date) : "—"}
-                  </p>
-                </button>
-              ) : (
-                <>
-                  <p className="font-semibold text-[var(--t-text-primary)] mt-0.5 truncate">{detail.scheduled_date ? formatDateOnly(detail.scheduled_date) : "—"}</p>
-                  {canChangeDate && tooSoon && (
-                    <p className="text-[10px] text-amber-500 mt-0.5 leading-snug">
-                      {FEATURE_REGISTRY.portal_detail_delivery_locked_hint?.label ?? "Locked — within 24 hours of delivery"}
-                    </p>
-                  )}
-                </>
-              )}
-            </div>
-            <div className="min-w-0">
-              <span className="text-[10px] font-medium uppercase tracking-wider text-[var(--t-text-muted)]">{FEATURE_REGISTRY.portal_detail_pickup_date?.label ?? "Pickup Date"}</span>
-              {canChangePickup ? (
-                <button
-                  type="button"
-                  onClick={() => setChangePickupJobId(detail.id)}
-                  aria-label={FEATURE_REGISTRY.portal_action_change_pickup_date?.label ?? "Change Pickup Date"}
-                  className="group mt-0.5 -mx-1 px-1 py-0.5 w-[calc(100%+0.5rem)] text-left rounded-md cursor-pointer transition-colors hover:bg-[var(--t-bg-card-hover)]"
-                >
-                  <p className="font-semibold text-[var(--t-text-primary)] truncate group-hover:text-[var(--t-accent)] underline decoration-dotted underline-offset-4 decoration-[var(--t-border)] group-hover:decoration-[var(--t-accent)]">
-                    {detail.rental_end_date ? formatDateOnly(detail.rental_end_date) : "—"}
-                  </p>
-                </button>
-              ) : (
-                <p className="font-semibold text-[var(--t-text-primary)] mt-0.5 truncate">{detail.rental_end_date ? formatDateOnly(detail.rental_end_date) : "—"}</p>
-              )}
-            </div>
-            <div className="min-w-0">
-              <span className="text-[10px] font-medium uppercase tracking-wider text-[var(--t-text-muted)]">{FEATURE_REGISTRY.portal_detail_duration?.label ?? "Rental Duration"}</span>
-              <p className="font-semibold text-[var(--t-text-primary)] mt-0.5 truncate">{detail.rental_days ? `${detail.rental_days} days` : "—"}</p>
-            </div>
-            <div className="min-w-0 col-span-2 sm:col-span-1">
-              <span className="text-[10px] font-medium uppercase tracking-wider text-[var(--t-text-muted)]">{FEATURE_REGISTRY.portal_detail_total_cost?.label ?? "Total Cost"}</span>
-              <p className="font-semibold text-[var(--t-text-primary)] mt-0.5">{formatCurrency(detail.total_price)}</p>
-            </div>
-            <div className="col-span-2 sm:col-span-3 lg:col-span-3 min-w-0">
-              <span className="text-[10px] font-medium uppercase tracking-wider text-[var(--t-text-muted)]">{FEATURE_REGISTRY.portal_detail_service_address?.label ?? "Service Address"}</span>
-              <p className="font-semibold text-[var(--t-text-primary)] mt-0.5 flex items-start gap-1.5 min-w-0">
-                <MapPin className="h-4 w-4 mt-0.5 shrink-0 text-[var(--t-text-muted)]" />
-                <span className="min-w-0 flex-1 break-words [overflow-wrap:anywhere]">{detail.service_address?.formatted || detail.service_address?.street || "—"}</span>
-              </p>
-            </div>
-          </div>
-
-          {/* Reschedule drawer — Phase B16: opens inline under the summary
-              grid when the Delivery Date cell is clicked. No more action-row
-              buttons; the date text is the sole trigger. */}
-          {rescheduleOpen && (
-            <div className="mt-5 pt-4 border-t border-[var(--t-border)]">
-              <div className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-primary)] p-4 space-y-3">
-                <p className="text-sm font-semibold text-[var(--t-text-primary)]">Reschedule Delivery</p>
-                <div>
-                  <label className="block text-xs font-medium text-[var(--t-text-primary)] mb-1">New Date</label>
-                  <div
-                    className="relative cursor-pointer"
-                    onClick={() => rescheduleDateRef.current?.showPicker?.()}
-                  >
-                    <input
-                      ref={rescheduleDateRef}
-                      type="date"
-                      value={newDate}
-                      onChange={e => setNewDate(e.target.value)}
-                      min={new Date(Date.now() + 86400000).toISOString().split("T")[0]}
-                      className={`${inputCls} cursor-pointer`}
-                    />
-                  </div>
-                </div>
-                {detail.rental_days && newDate && (
-                  <p className="text-xs text-[var(--t-text-muted)]">
-                    {/* Phase B6 — compute the predicted pickup date via
-                        pure YYYY-MM-DD arithmetic so the preview label
-                        renders in the correct local calendar day. */}
-                    New pickup by: {(() => {
-                      const start = new Date(`${newDate}T12:00:00`);
-                      if (Number.isNaN(start.getTime())) return "—";
-                      const end = new Date(start.getTime() + detail.rental_days * 86400000);
-                      const y = end.getFullYear();
-                      const m = String(end.getMonth() + 1).padStart(2, "0");
-                      const d = String(end.getDate()).padStart(2, "0");
-                      return formatDateOnly(`${y}-${m}-${d}`);
-                    })()}
-                  </p>
-                )}
-                <div>
-                  <label className="block text-xs font-medium text-[var(--t-text-primary)] mb-1">Reason (optional)</label>
-                  <input value={rescheduleReason} onChange={e => setRescheduleReason(e.target.value)}
-                    placeholder="Why are you rescheduling?"
-                    className={`${inputCls} placeholder-[var(--t-text-muted)]`} />
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <button onClick={async () => {
-                    setRescheduling(true);
-                    try {
-                      const result = await portalApi.patch<Partial<Rental>>(`/portal/rentals/${detail.id}/reschedule`, { scheduledDate: newDate, reason: rescheduleReason, source: "customer_portal" });
-                      const updated = { ...detail, ...result, scheduled_date: newDate };
-                      updateRentalInPlace(updated);
-                      setRescheduleOpen(false);
-                      setRescheduleReason("");
-                    } catch (err: unknown) {
-                      alert(resolvePortalErrorMessage(err));
-                    } finally { setRescheduling(false); }
-                  }} disabled={!newDate || rescheduling}
-                    className="rounded-full bg-[var(--t-accent)] px-4 py-2 text-sm font-semibold text-[var(--t-accent-on-accent)] hover:opacity-90 disabled:opacity-50 transition-opacity">
-                    {rescheduling ? "Rescheduling..." : "Confirm Reschedule"}
-                  </button>
-                  <button onClick={() => setRescheduleOpen(false)} className="rounded-full border border-[var(--t-border)] px-4 py-2 text-sm text-[var(--t-text-muted)] hover:bg-[var(--t-bg-card-hover)] transition-colors">Cancel</button>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* ─── Progress timeline — Phase B10: tighter mobile padding ─── */}
-        <div className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-4 sm:p-6">
-          <h3 className="text-sm font-semibold text-[var(--t-text-primary)] mb-2">Progress</h3>
-          <HorizontalTimeline steps={timelineSteps} />
-        </div>
-
-        {/* ─── Drop location / Map — Phase B10: map card handles its own
-            inner padding, so the outer wrapper only contributes the card
-            shell + rounding. ─── */}
-        {!["completed", "cancelled"].includes(detail.status) && (
-          <PortalPlacementMap jobId={detail.id} serviceAddress={detail.service_address} />
-        )}
-
-        {/* Phase B13 — shared Change Pickup Date modal */}
-        <PortalChangePickupDateModal
-          rental={changePickupJobId === detail.id ? detail : null}
-          onClose={() => setChangePickupJobId(null)}
-          onSuccess={(updated) => {
-            updateRentalInPlace({ ...detail, ...updated });
-          }}
-        />
-      </div>
-    );
-  }
 
   return (
     <div className="space-y-5">
@@ -436,9 +172,7 @@ function PortalRentalsPage() {
         </div>
       </div>
 
-      {/* Segmented tab control — Phase B9: inline-flex pill group so All no
-          longer feels visually detached at the far right. Horizontally
-          scrollable on narrow screens; balanced and centered on desktop. */}
+      {/* Segmented tab control */}
       <div className="flex justify-center sm:justify-start">
         <div
           role="tablist"
@@ -491,13 +225,13 @@ function PortalRentalsPage() {
           {filtered.map(r => {
             const steps = r.job_type === "delivery" ? deriveCustomerTimeline(r, rentals) : [];
             return (
-              <button key={r.id} onClick={() => openDetail(r.id)}
-                className="w-full text-left rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-3.5 sm:p-4 hover:bg-[var(--t-bg-card-hover)] transition-colors min-w-0">
+              <Link
+                key={r.id}
+                href={`/portal/rentals/${r.id}`}
+                className="block w-full text-left rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-3.5 sm:p-4 hover:bg-[var(--t-bg-card-hover)] transition-colors min-w-0"
+              >
                 <div className="flex items-center justify-between gap-3 min-w-0">
                   <div className="flex-1 min-w-0">
-                    {/* Phase B12: title must truncate inside its own line
-                        rather than share a flex row with the status pill,
-                        which was competing for horizontal space. */}
                     <div className="mb-1 flex items-start gap-2 min-w-0">
                       <p className="text-sm font-semibold text-[var(--t-text-primary)] truncate min-w-0 flex-1">{formatRentalTitle(r)}</p>
                       <span className={`text-[10px] font-semibold uppercase tracking-wider shrink-0 whitespace-nowrap ${STATUS_COLORS[r.status] || ""}`}>{STATUS_LABELS[r.status] || r.status}</span>
@@ -517,11 +251,11 @@ function PortalRentalsPage() {
                   <ChevronRight className="h-4 w-4 text-[var(--t-text-muted)] shrink-0" />
                 </div>
                 {steps.length > 0 && (
-                  <div className="mt-2 border-t border-[var(--t-border)]/50 pt-1" onClick={e => e.stopPropagation()}>
+                  <div className="mt-2 border-t border-[var(--t-border)]/50 pt-1">
                     <HorizontalTimeline steps={steps} />
                   </div>
                 )}
-              </button>
+              </Link>
             );
           })}
         </div>

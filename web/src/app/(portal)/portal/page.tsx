@@ -315,7 +315,7 @@ export default function PortalHomePage() {
                       {FEATURE_REGISTRY.portal_action_change_date_short?.label ?? "Change Date"}
                     </button>
                     <Link
-                      href={`/portal/rentals?id=${r.id}`}
+                      href={`/portal/rentals/${r.id}`}
                       className="inline-flex items-center gap-1 rounded-full bg-[var(--t-accent)] px-3 py-1.5 text-[11px] sm:text-xs font-semibold text-[var(--t-accent-on-accent)] hover:opacity-90 transition-opacity"
                     >
                       {FEATURE_REGISTRY.portal_action_view_details?.label ?? "View Details"} <ChevronRight className="h-3 w-3" />
@@ -340,7 +340,7 @@ export default function PortalHomePage() {
           <h2 className="text-lg font-bold text-[var(--t-text-primary)] mb-3">{FEATURE_REGISTRY.portal_section_upcoming?.label ?? "Upcoming"}</h2>
           <div className="grid gap-3">
             {upcoming.map(r => (
-              <Link key={r.id} href={`/portal/rentals?id=${r.id}`}
+              <Link key={r.id} href={`/portal/rentals/${r.id}`}
                 className="rounded-[16px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-4 flex items-center justify-between gap-3 min-w-0 hover:bg-[var(--t-bg-card-hover)] transition-colors">
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-medium text-[var(--t-text-primary)] truncate">{rentalSizeLabel(r)} Delivery</p>
