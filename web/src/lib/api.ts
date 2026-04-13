@@ -50,10 +50,18 @@ class ApiClient {
 
     if (!res.ok) {
       const error = await res.json().catch(() => ({}));
-      throw new Error(
+      // Phase 2 (Dispatch Prepayment UX) — attach the parsed error
+      // body to the thrown Error so callers can introspect structured
+      // fields (e.g., `code`, `hold.override_allowed`) without
+      // substring-matching the message. Backwards compatible: existing
+      // `err.message` callers continue to work unchanged.
+      const err = new Error(
         (error as { message?: string }).message ||
-          `Request failed: ${res.status}`
+          `Request failed: ${res.status}`,
       );
+      (err as Error & { body?: unknown; status?: number }).body = error;
+      (err as Error & { body?: unknown; status?: number }).status = res.status;
+      throw err;
     }
 
     if (res.status === 204) return {} as T;

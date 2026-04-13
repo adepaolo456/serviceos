@@ -351,7 +351,7 @@ export class DispatchCreditEnforcementService {
       throw new ForbiddenException({
         code: 'DISPATCH_PREPAYMENT_OVERRIDE_NOT_PERMITTED',
         message:
-          'Override not permitted: user role does not allow dispatch prepayment override (credit).',
+          'Override not permitted: your role cannot override the payment requirement for this job.',
         hold: {
           manual_active: false,
           policy_active: false,
@@ -372,11 +372,14 @@ export class DispatchCreditEnforcementService {
     }
 
     // No override requested — block with the same response shape as
-    // DISPATCH_CREDIT_BLOCK so the web error toast continues to work.
+    // DISPATCH_CREDIT_BLOCK so the web error pipeline picks it up.
+    // Phase 2 (Dispatch Prepayment UX) — message uses plain operator
+    // language; the dispatch page now keys off `body.code` rather
+    // than substring-matching the message.
     throw new ForbiddenException({
       code: 'DISPATCH_PREPAYMENT_BLOCK',
       message:
-        'Dispatch action blocked: customer is on prepayment terms (credit) and this job has no paid invoice linked.',
+        'Payment required before dispatch. This customer requires payment before dispatch and this job has no paid invoice linked.',
       hold: {
         manual_active: false,
         policy_active: false,

@@ -4,8 +4,21 @@ import { Repository, In, IsNull } from 'typeorm';
 import { Route } from './entities/route.entity';
 import { Job } from '../jobs/entities/job.entity';
 import { User } from '../auth/entities/user.entity';
+import { Tenant } from '../tenants/entities/tenant.entity';
+import { Invoice } from '../billing/entities/invoice.entity';
 import { JobsService } from '../jobs/jobs.service';
 import { CreateRouteDto, ReorderDto } from './dto/dispatch.dto';
+import { getCreditPolicy } from '../tenants/credit-policy';
+
+/**
+ * Phase 2 (Dispatch Prepayment UX) — set of payment-terms values
+ * that count as "prepay" for the per-job dispatch gate. Mirrors the
+ * decision in `DispatchCreditEnforcementService.enforceJobPrepayment`
+ * so the board badge and the action-time gate stay in lockstep.
+ */
+const PREPAY_TERMS = new Set(['due_on_receipt', 'cod']);
+const PAID_INVOICE_STATUSES = ['paid', 'partial'];
+const APP_DEFAULT_TENANT_TERMS = 'due_on_receipt';
 
 @Injectable()
 export class DispatchService {
@@ -16,6 +29,13 @@ export class DispatchService {
     private jobsRepository: Repository<Job>,
     @InjectRepository(User)
     private usersRepository: Repository<User>,
+    // Phase 2 — Tenant + Invoice repos used by the additive
+    // `computePaymentRequiredMap` helper below to pre-compute the
+    // dispatch board's "Payment Required" badge per job.
+    @InjectRepository(Tenant)
+    private tenantsRepository: Repository<Tenant>,
+    @InjectRepository(Invoice)
+    private invoicesRepository: Repository<Invoice>,
     private jobsService: JobsService,
   ) {}
 
@@ -43,6 +63,18 @@ export class DispatchService {
       .addOrderBy('j.scheduled_window_start', 'ASC', 'NULLS LAST')
       .getMany();
 
+    // Phase 2 (Dispatch Prepayment UX) — pre-compute per-job badge
+    // status so the dispatch board can surface "Payment Required"
+    // BEFORE the operator drags. Additive: does NOT affect visibility.
+    const paymentMap = await this.computePaymentRequiredMap(tenantId, jobs);
+    const annotatedJobs = jobs.map((j) => {
+      const pm = paymentMap.get(j.id);
+      return Object.assign({}, j, {
+        payment_required: pm?.payment_required ?? false,
+        linked_invoice_id: pm?.linked_invoice_id ?? null,
+      });
+    });
+
     const route = await this.routesRepository.find({
       where: { tenant_id: tenantId, route_date: date },
     });
@@ -50,7 +82,9 @@ export class DispatchService {
     const routesByDriver = new Map(route.map((r) => [r.driver_id, r]));
 
     const board = drivers.map((driver) => {
-      const driverJobs = jobs.filter((j) => j.assigned_driver_id === driver.id);
+      const driverJobs = annotatedJobs.filter(
+        (j) => j.assigned_driver_id === driver.id,
+      );
       return {
         driver: {
           id: driver.id,
@@ -64,9 +98,141 @@ export class DispatchService {
       };
     });
 
-    const unassignedJobs = jobs.filter((j) => !j.assigned_driver_id);
+    const unassignedJobs = annotatedJobs.filter((j) => !j.assigned_driver_id);
 
     return { date, drivers: board, unassigned: unassignedJobs };
+  }
+
+  /**
+   * Phase 2 (Dispatch Prepayment UX) — additive board annotation.
+   *
+   * For each job in the board, decide whether the dispatch
+   * prepayment gate would block an assign attempt. Mirrors the
+   * decision in `DispatchCreditEnforcementService.enforceJobPrepayment`
+   * but read-only and batched across the whole board so we don't
+   * issue N queries per render.
+   *
+   * Conditions for `payment_required = true`:
+   *   1. Job has a customer AND a positive total_price
+   *   2. Effective payment terms (customer override → tenant default
+   *      → app default) is in `PREPAY_TERMS`
+   *   3. No linked invoice exists in `('paid', 'partial')` (direct
+   *      via `invoices.job_id` OR chain via
+   *      `invoices.rental_chain_id` matching the job's chain link)
+   *
+   * `linked_invoice_id` returns the most relevant unpaid invoice id
+   * for the "View Invoice" navigation in the blocking modal — null
+   * when no invoice exists at all (operator should open Customer
+   * Billing instead).
+   *
+   * Tenant-scoped: tenant lookup + invoice query both filter by
+   * `tenantId`. The `task_chain_links` join is bounded by the
+   * tenant-scoped invoice rows, not by a global table read.
+   */
+  private async computePaymentRequiredMap(
+    tenantId: string,
+    jobs: Job[],
+  ): Promise<
+    Map<string, { payment_required: boolean; linked_invoice_id: string | null }>
+  > {
+    const result = new Map<
+      string,
+      { payment_required: boolean; linked_invoice_id: string | null }
+    >();
+    if (jobs.length === 0) return result;
+
+    // Resolve effective tenant default terms once (precedence:
+    // tenant.settings.credit_policy.default_payment_terms → app default).
+    const tenant = await this.tenantsRepository.findOne({
+      where: { id: tenantId },
+    });
+    const policy = tenant ? getCreditPolicy(tenant) : {};
+    const tenantDefaultTerms =
+      policy.default_payment_terms ?? APP_DEFAULT_TENANT_TERMS;
+
+    // Filter to candidate jobs: positive price, has a customer, and
+    // effective payment terms in the prepay set. Non-candidates get
+    // `payment_required: false` by absence from the result map.
+    const candidateIds: string[] = [];
+    for (const j of jobs) {
+      const price = Number(j.total_price) || 0;
+      if (price <= 0) continue;
+      if (!j.customer_id) continue;
+      const customerTerms = (j.customer?.payment_terms as string | null) || null;
+      const effectiveTerms = customerTerms || tenantDefaultTerms;
+      if (PREPAY_TERMS.has(effectiveTerms)) candidateIds.push(j.id);
+    }
+    if (candidateIds.length === 0) return result;
+
+    // Single batched query: pull every linked invoice (paid or unpaid,
+    // direct or chain) for all candidate jobs in one round trip.
+    const rows = await this.invoicesRepository
+      .createQueryBuilder('inv')
+      .leftJoin(
+        'task_chain_links',
+        'tcl',
+        'tcl.rental_chain_id = inv.rental_chain_id',
+      )
+      .select('inv.id', 'invoice_id')
+      .addSelect('inv.status', 'invoice_status')
+      .addSelect('inv.job_id', 'direct_job_id')
+      .addSelect('tcl.job_id', 'chain_job_id')
+      .where('inv.tenant_id = :tenantId', { tenantId })
+      .andWhere(
+        '(inv.job_id IN (:...ids) OR tcl.job_id IN (:...ids))',
+        { ids: candidateIds },
+      )
+      .getRawMany<{
+        invoice_id: string;
+        invoice_status: string;
+        direct_job_id: string | null;
+        chain_job_id: string | null;
+      }>();
+
+    // Group invoices by candidate job id, considering both direct
+    // and chain links. A single invoice may map to multiple jobs in
+    // the chain case.
+    const candidateSet = new Set(candidateIds);
+    const invoicesByJob = new Map<
+      string,
+      Array<{ id: string; status: string }>
+    >();
+    for (const r of rows) {
+      const matched: string[] = [];
+      if (r.direct_job_id && candidateSet.has(r.direct_job_id)) {
+        matched.push(r.direct_job_id);
+      }
+      if (
+        r.chain_job_id &&
+        candidateSet.has(r.chain_job_id) &&
+        r.chain_job_id !== r.direct_job_id
+      ) {
+        matched.push(r.chain_job_id);
+      }
+      for (const jid of matched) {
+        if (!invoicesByJob.has(jid)) invoicesByJob.set(jid, []);
+        invoicesByJob.get(jid)!.push({ id: r.invoice_id, status: r.invoice_status });
+      }
+    }
+
+    for (const jobId of candidateIds) {
+      const invs = invoicesByJob.get(jobId) ?? [];
+      const hasPaid = invs.some((i) => PAID_INVOICE_STATUSES.includes(i.status));
+      if (hasPaid) {
+        // Customer is prepay but the gate is satisfied. No badge.
+        continue;
+      }
+      // No paid invoice → block. Surface the most relevant unpaid
+      // invoice id for the modal's "View Invoice" link. Skip voided.
+      const primary =
+        invs.find((i) => i.status !== 'voided' && i.status !== 'void') ?? null;
+      result.set(jobId, {
+        payment_required: true,
+        linked_invoice_id: primary?.id ?? null,
+      });
+    }
+
+    return result;
   }
 
   async createRoute(tenantId: string, dto: CreateRouteDto): Promise<Route> {
