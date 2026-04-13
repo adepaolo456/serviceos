@@ -4,7 +4,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In, DataSource } from 'typeorm';
+import { Repository, In, DataSource, EntityManager } from 'typeorm';
 import { Job } from './entities/job.entity';
 import { Asset } from '../assets/entities/asset.entity';
 import { PricingRule } from '../pricing/entities/pricing-rule.entity';
@@ -21,6 +21,8 @@ import { DumpTicket } from '../dump-locations/entities/dump-ticket.entity';
 import { BillingService } from '../billing/billing.service';
 import { BillingIssueDetectorService } from '../billing/services/billing-issue-detector.service';
 import { DUMP_ELIGIBLE_JOB_TYPES } from '../billing/helpers/billing-issue-cleanup-rules';
+import { TenantSettings } from '../tenant-settings/entities/tenant-settings.entity';
+import { getTenantToday } from '../../common/utils/tenant-date.util';
 import {
   RentalChainsService,
   daysBetween as rentalDaysBetween,
@@ -871,12 +873,23 @@ export class JobsService {
         break;
       case 'completed':
         job.completed_at = now;
+        // Phase B4 — clear the stale customer-reschedule flag on
+        // terminal transitions. The reschedule trio (from_date,
+        // at, reason) is preserved as historical audit so office
+        // operators can still drill into the job detail and see
+        // the reschedule; only the actionable "needs dispatcher
+        // acknowledgement" flag is cleared. Without this, the
+        // dashboard homepage "Customer Reschedule" card keeps
+        // surfacing long-finished jobs indefinitely.
+        job.rescheduled_by_customer = false;
         break;
       case 'cancelled':
         job.cancelled_at = now;
         if (dto.cancellationReason) {
           job.cancellation_reason = dto.cancellationReason;
         }
+        // Phase B4 — same rationale as the `completed` branch.
+        job.rescheduled_by_customer = false;
         break;
       case 'failed':
         // Failure is recorded but status transitions to needs_reschedule
@@ -1636,6 +1649,43 @@ export class JobsService {
    *
    * RBAC enforced at the controller layer via `@Roles('dispatcher')`.
    */
+  /**
+   * Phase B4 — helper for reading the tenant's configured IANA
+   * timezone, used by the day-boundary validation floor in
+   * `updateScheduledDate` and by any caller that needs tenant-
+   * local "today". Mirrors the identical helper in
+   * `AlertDetectorService` — resolved via the DataSource so no
+   * new `@InjectRepository(TenantSettings)` is required on this
+   * service.
+   *
+   * Falls back to `undefined` so `getTenantToday(tz)` uses its
+   * canonical default (`America/New_York`) for tenants whose
+   * `tenant_settings.timezone` is still NULL.
+   */
+  private async loadTenantTimezone(
+    tenantId: string,
+    manager?: EntityManager,
+  ): Promise<string | undefined> {
+    const repo = manager
+      ? manager.getRepository(TenantSettings)
+      : this.dataSource.getRepository(TenantSettings);
+    const s = await repo.findOne({ where: { tenant_id: tenantId } });
+    return s?.timezone ?? undefined;
+  }
+
+  /**
+   * Canonical date-change mutation. Used by BOTH:
+   *   - Office path: `PUT /jobs/:id/scheduled-date` (dispatcher+)
+   *   - Portal paths: `extendRental`, `requestEarlyPickup`,
+   *     `rescheduleRental` (via `actor = { type: 'customer', ... }`)
+   *
+   * Writes the reschedule audit trio on the job row and keeps the
+   * rental chain row in sync. All I/O happens through a single
+   * `EntityManager` so the method can either (a) create its own
+   * transaction (common case) or (b) join an outer transaction
+   * provided by the caller (used by `rescheduleRental` to make
+   * its delivery + pickup updates atomic as a pair).
+   */
   async updateScheduledDate(
     tenantId: string,
     jobId: string,
@@ -1645,8 +1695,10 @@ export class JobsService {
       userId: string;
       reason?: string;
     },
+    outerManager?: EntityManager,
   ): Promise<{ job: Job; chain: RentalChain | null }> {
     // 1. Format + basic input validation. We expect YYYY-MM-DD.
+    //    Pure — no I/O — so it runs outside the transaction.
     const newDate = dto.scheduled_date;
     if (
       !newDate ||
@@ -1656,119 +1708,148 @@ export class JobsService {
       throw new BadRequestException('edit_job_date_error_invalid');
     }
 
-    // 2. Tenant-scoped job load.
-    const job = await this.jobsRepository.findOne({
-      where: { id: jobId, tenant_id: tenantId },
-    });
-    if (!job) {
-      throw new NotFoundException('Job not found');
-    }
-
-    // 3. Job-type + status preconditions shared across branches.
-    const EDITABLE_TYPES = new Set(['delivery', 'pickup', 'exchange']);
-    if (!EDITABLE_TYPES.has(job.job_type)) {
-      throw new BadRequestException('edit_job_date_error_invalid_job_type');
-    }
-    if (job.cancelled_at) {
-      throw new BadRequestException('edit_job_date_error_cancelled');
-    }
-
-    // 4. Common date floor — every branch enforces `new >= today`.
-    const today = new Date().toISOString().split('T')[0];
-    if (newDate < today) {
-      throw new BadRequestException('edit_job_date_error_past_date');
-    }
-
-    // 5. Chain resolution via task_chain_links. Every editable
-    // job is expected to be part of a chain (the panel only
-    // renders the edit action on chain nodes). If we somehow
-    // reach here for a standalone job, 404.
-    const link = await this.taskChainLinkRepo.findOne({
-      where: { job_id: jobId },
-    });
-    if (!link) {
-      throw new NotFoundException('Rental chain not found for this job');
-    }
-    const chain = await this.rentalChainRepo.findOne({
-      where: { id: link.rental_chain_id, tenant_id: tenantId },
-    });
-    if (!chain) {
-      throw new NotFoundException('Rental chain not found');
-    }
-
-    // 6. Per-type validation + write plan.
-    const previousScheduledDate = job.scheduled_date;
-    let newChainRentalDays: number | null = null;
-
-    if (job.job_type === 'delivery') {
-      // Delivery: new date must land strictly BEFORE the chain's
-      // expected pickup date.
-      if (
-        !chain.expected_pickup_date ||
-        newDate >= chain.expected_pickup_date
-      ) {
-        throw new BadRequestException('edit_job_date_error_after_pickup');
+    // Phase B4 — all job + chain I/O routes through `manager` so
+    // the entire read/validate/write/reload cycle either runs in
+    // this method's own transaction OR joins a caller-supplied
+    // outer transaction. When joining an outer transaction the
+    // reads see the transaction's uncommitted state, which is
+    // what `rescheduleRental` needs for its delivery → pickup
+    // ordering (pickup validation reads the chain row that the
+    // delivery update already mutated but hasn't committed yet).
+    const run = async (
+      manager: EntityManager,
+    ): Promise<{ job: Job; chain: RentalChain | null }> => {
+      // 2. Tenant-scoped job load.
+      const job = await manager.findOne(Job, {
+        where: { id: jobId, tenant_id: tenantId },
+      });
+      if (!job) {
+        throw new NotFoundException('Job not found');
       }
 
-      // Delivery: reject any shift that would put an existing
-      // exchange on or before the new delivery date. The panel's
-      // lifecycle-context already shows exchanges grouped by
-      // date, but we re-query here to avoid trusting client state
-      // for a write.
-      const chainExchangeJobs = await this.jobsRepository
-        .createQueryBuilder('j')
-        .innerJoin(
-          TaskChainLink,
-          'l',
-          'l.job_id = j.id AND l.rental_chain_id = :chainId',
-          { chainId: chain.id },
-        )
-        .where('j.tenant_id = :tenantId', { tenantId })
-        .andWhere('j.job_type = :t', { t: 'exchange' })
-        .andWhere('j.cancelled_at IS NULL')
-        .andWhere('l.status != :cancelled', { cancelled: 'cancelled' })
-        .select(['j.id', 'j.scheduled_date'])
-        .getMany();
-      for (const ex of chainExchangeJobs) {
-        if (ex.scheduled_date && ex.scheduled_date <= newDate) {
+      // 3. Job-type + status preconditions shared across branches.
+      const EDITABLE_TYPES = new Set(['delivery', 'pickup', 'exchange']);
+      if (!EDITABLE_TYPES.has(job.job_type)) {
+        throw new BadRequestException('edit_job_date_error_invalid_job_type');
+      }
+      if (job.cancelled_at) {
+        throw new BadRequestException('edit_job_date_error_cancelled');
+      }
+
+      // 4. Common date floor — every branch enforces `new >= today`.
+      //
+      // Phase B4 — tenant-aware "today" (not UTC). The old UTC
+      // form (`new Date().toISOString().split('T')[0]`) rejected
+      // legitimate same-day requests after UTC midnight rollover,
+      // e.g. a customer in Eastern time requesting an early
+      // pickup at 8:30 PM would see "today" as tomorrow because
+      // the server's UTC clock had already advanced. Reuses the
+      // canonical `getTenantToday(tz)` from the shared helper —
+      // same function the dispatch date fix (commit 36852ab)
+      // uses, identical to the alert-detector usage. Tenant
+      // timezone is resolved from `tenant_settings.timezone`;
+      // NULL values fall back to the helper's canonical default
+      // so pre-migration tenants keep working.
+      const tenantTz = await this.loadTenantTimezone(tenantId, manager);
+      const today = getTenantToday(tenantTz);
+      if (newDate < today) {
+        throw new BadRequestException('edit_job_date_error_past_date');
+      }
+
+      // 5. Chain resolution via task_chain_links. Every editable
+      // job is expected to be part of a chain (the panel only
+      // renders the edit action on chain nodes). If we somehow
+      // reach here for a standalone job, 404.
+      const link = await manager.findOne(TaskChainLink, {
+        where: { job_id: jobId },
+      });
+      if (!link) {
+        throw new NotFoundException('Rental chain not found for this job');
+      }
+      const chain = await manager.findOne(RentalChain, {
+        where: { id: link.rental_chain_id, tenant_id: tenantId },
+      });
+      if (!chain) {
+        throw new NotFoundException('Rental chain not found');
+      }
+
+      // 6. Per-type validation + write plan.
+      const previousScheduledDate = job.scheduled_date;
+      let newChainRentalDays: number | null = null;
+
+      if (job.job_type === 'delivery') {
+        // Delivery: new date must land strictly BEFORE the chain's
+        // expected pickup date.
+        if (
+          !chain.expected_pickup_date ||
+          newDate >= chain.expected_pickup_date
+        ) {
+          throw new BadRequestException('edit_job_date_error_after_pickup');
+        }
+
+        // Delivery: reject any shift that would put an existing
+        // exchange on or before the new delivery date. The panel's
+        // lifecycle-context already shows exchanges grouped by
+        // date, but we re-query here to avoid trusting client state
+        // for a write.
+        const chainExchangeJobs = await manager
+          .createQueryBuilder(Job, 'j')
+          .innerJoin(
+            TaskChainLink,
+            'l',
+            'l.job_id = j.id AND l.rental_chain_id = :chainId',
+            { chainId: chain.id },
+          )
+          .where('j.tenant_id = :tenantId', { tenantId })
+          .andWhere('j.job_type = :t', { t: 'exchange' })
+          .andWhere('j.cancelled_at IS NULL')
+          .andWhere('l.status != :cancelled', { cancelled: 'cancelled' })
+          .select(['j.id', 'j.scheduled_date'])
+          .getMany();
+        for (const ex of chainExchangeJobs) {
+          if (ex.scheduled_date && ex.scheduled_date <= newDate) {
+            throw new BadRequestException(
+              'edit_job_date_error_after_exchange',
+            );
+          }
+        }
+
+        newChainRentalDays = rentalDaysBetween(
+          newDate,
+          chain.expected_pickup_date,
+        );
+      } else if (job.job_type === 'pickup') {
+        // Pickup: new date must land strictly AFTER the drop-off
+        // date — same rule as Phase 16. Zero-day rentals not allowed.
+        if (!chain.drop_off_date || newDate <= chain.drop_off_date) {
           throw new BadRequestException(
-            'edit_job_date_error_after_exchange',
+            'edit_job_date_error_before_drop_off',
           );
         }
+        newChainRentalDays = rentalDaysBetween(
+          chain.drop_off_date,
+          newDate,
+        );
+      } else {
+        // Exchange: must fall strictly inside the drop_off → pickup
+        // window. No rental_days recalc — the window stays fixed.
+        if (!chain.drop_off_date || newDate <= chain.drop_off_date) {
+          throw new BadRequestException(
+            'edit_job_date_error_before_drop_off',
+          );
+        }
+        if (
+          !chain.expected_pickup_date ||
+          newDate >= chain.expected_pickup_date
+        ) {
+          throw new BadRequestException('edit_job_date_error_after_pickup');
+        }
+        // Do NOT enforce ordering between multiple exchanges
+        // (spec: "low-value complexity").
       }
 
-      newChainRentalDays = rentalDaysBetween(
-        newDate,
-        chain.expected_pickup_date,
-      );
-    } else if (job.job_type === 'pickup') {
-      // Pickup: new date must land strictly AFTER the drop-off
-      // date — same rule as Phase 16. Zero-day rentals not allowed.
-      if (!chain.drop_off_date || newDate <= chain.drop_off_date) {
-        throw new BadRequestException('edit_job_date_error_before_drop_off');
-      }
-      newChainRentalDays = rentalDaysBetween(chain.drop_off_date, newDate);
-    } else {
-      // Exchange: must fall strictly inside the drop_off → pickup
-      // window. No rental_days recalc — the window stays fixed.
-      if (!chain.drop_off_date || newDate <= chain.drop_off_date) {
-        throw new BadRequestException('edit_job_date_error_before_drop_off');
-      }
-      if (
-        !chain.expected_pickup_date ||
-        newDate >= chain.expected_pickup_date
-      ) {
-        throw new BadRequestException('edit_job_date_error_after_pickup');
-      }
-      // Do NOT enforce ordering between multiple exchanges
-      // (spec: "low-value complexity").
-    }
-
-    // 7. Single transaction — always writes the reschedule trio
-    // on the job. Delivery + pickup additionally write the chain
-    // row and mirror rental_days onto the job. Exchange is
-    // job-only.
-    await this.dataSource.transaction(async (manager) => {
+      // 7. Writes — job row always, chain row for delivery + pickup.
+      //
       // Phase B1 — actor-driven override flags. `type === 'customer'`
       // lights up the rescheduled_by_customer flag that surfaces
       // through portal-activity queries. The reason is a machine-
@@ -1813,21 +1894,30 @@ export class JobsService {
         );
       }
       // Exchange: no chain write.
-    });
 
-    // 8. Reload fresh state for the response. Exchange edits
-    // still re-return the unchanged chain so the caller has a
-    // consistent shape.
-    const updatedJob = await this.jobsRepository.findOne({
-      where: { id: jobId, tenant_id: tenantId },
-    });
-    const updatedChain = await this.rentalChainRepo.findOne({
-      where: { id: chain.id, tenant_id: tenantId },
-    });
-    if (!updatedJob) {
-      throw new NotFoundException('Updated job not found');
+      // 8. Reload fresh state for the response. Reads go through
+      // `manager` so the reload sees the in-transaction writes.
+      // Exchange edits still re-return the unchanged chain so the
+      // caller has a consistent shape.
+      const updatedJob = await manager.findOne(Job, {
+        where: { id: jobId, tenant_id: tenantId },
+      });
+      const updatedChain = await manager.findOne(RentalChain, {
+        where: { id: chain.id, tenant_id: tenantId },
+      });
+      if (!updatedJob) {
+        throw new NotFoundException('Updated job not found');
+      }
+      return { job: updatedJob, chain: updatedChain };
+    };
+
+    // Outer manager was supplied (e.g. `rescheduleRental` wrapping
+    // its delivery + pickup calls in a single transaction) — join
+    // that transaction directly. Otherwise create our own.
+    if (outerManager) {
+      return run(outerManager);
     }
-    return { job: updatedJob, chain: updatedChain };
+    return this.dataSource.transaction(run);
   }
 
   /**

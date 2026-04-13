@@ -72,6 +72,8 @@ export class PortalActivityController {
           j.id, j.job_number, j.job_type, j.status, j.asset_subtype,
           j.scheduled_date, j.rental_days, j.total_price, j.created_at,
           j.service_address,
+          j.rescheduled_by_customer, j.rescheduled_at,
+          j.rescheduled_from_date, j.rescheduled_reason,
           c.id as customer_id, c.first_name, c.last_name, c.payment_terms,
           inv.id as invoice_id, inv.balance_due, inv.status as invoice_status
         FROM jobs j
@@ -119,6 +121,14 @@ export class PortalActivityController {
         payment_status: isPaid ? 'paid' : hasInvoice ? 'awaiting_payment' : 'no_invoice',
         is_net_terms: isNetTerms,
         balance_due: Number(r.balance_due ?? 0),
+        // Phase B4 — reschedule trio surfaced so the portal
+        // activity page (and any consumer of this endpoint) can
+        // see that a customer moved a date. Additive — existing
+        // consumers that don't read these fields are unaffected.
+        rescheduled_by_customer: !!r.rescheduled_by_customer,
+        rescheduled_at: r.rescheduled_at,
+        rescheduled_from_date: r.rescheduled_from_date,
+        rescheduled_reason: r.rescheduled_reason,
       };
     });
 
