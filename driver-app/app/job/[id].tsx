@@ -51,6 +51,13 @@ interface Job {
   } | null;
   asset_id?: string | null;
   asset: { id?: string; identifier?: string; subtype?: string; size?: string } | null;
+  // Phase 14 — exchange jobs reference a second physical dumpster,
+  // the one being delivered. Loaded server-side by `findOne` as a
+  // ManyToOne relation symmetric to `asset`. Null on non-exchange
+  // jobs and on exchanges that haven't captured the delivery asset
+  // yet. Drives the second step of the exchange picker flow.
+  drop_off_asset_id?: string | null;
+  drop_off_asset?: { id?: string; identifier?: string; subtype?: string } | null;
   notes?: string;
   placement_notes?: string;
   driver_notes?: string;
@@ -137,6 +144,16 @@ export default function JobDetailScreen() {
   // Fix — grouping + mismatch state
   const [assetShowAll, setAssetShowAll] = useState(false);
   const [assetMismatchAck, setAssetMismatchAck] = useState(false);
+  // Phase 14 — exchange two-step picker role. Defaults to 'pickup'
+  // so non-exchange jobs keep the Phase 11A one-step flow byte-
+  // identical. Exchange jobs walk 'pickup' → 'drop_off' with a
+  // per-step save so drivers get immediate backend validation
+  // feedback before moving on to the second selection. Saving
+  // step 1 leaves the job row with `asset_id` set and
+  // `drop_off_asset_id` null — the backend completion gate will
+  // block completion until step 2 fires, which is the whole point
+  // of the gate.
+  const [assetPickerRole, setAssetPickerRole] = useState<'pickup' | 'drop_off'>('pickup');
   const [showWhereNext, setShowWhereNext] = useState(false);
   const [yards, setYards] = useState<Array<{ id: string; name: string; is_primary: boolean }>>([]);
   const [showYardPicker, setShowYardPicker] = useState(false);
@@ -233,9 +250,14 @@ export default function JobDetailScreen() {
   // same subtype (falls back to all if the job has no subtype hint),
   // pre-selects the currently-assigned or expected-on-site asset so
   // the common case is a one-tap confirmation.
+  //
+  // Phase 14 — always starts at the 'pickup' role. For exchange
+  // jobs, saving step 1 advances to 'drop_off' inline (see
+  // handleAssetSave); non-exchange jobs never leave 'pickup'.
   const openAssetPicker = useCallback(async () => {
     if (!job) return;
     setShowDumpsterModal(true);
+    setAssetPickerRole('pickup');
     setLoadingAssets(true);
     setAssetConflict(null);
     setAssetOverrideAck(false);
@@ -277,17 +299,53 @@ export default function JobDetailScreen() {
   // and audit trail run even from the driver side. On conflict, the
   // UI re-opens with an override warning; a second tap submits with
   // `override=true` and the backend records it in the audit trail.
+  //
+  // Phase 14 — this is now the per-step save for the exchange two-
+  // step picker. The non-exchange path (pickup / removal / delivery)
+  // is byte-identical to Phase 11A: one save, set dumpsterConfirmed,
+  // close modal. The exchange path:
+  //
+  //   Step 1 (role === 'pickup'):  PATCH { assetId } → on success,
+  //     advance role to 'drop_off', reset selection + conflict state,
+  //     DO NOT close modal or mark dumpsterConfirmed yet. The driver
+  //     gets immediate backend validation feedback before moving on
+  //     to the second selection.
+  //
+  //   Step 2 (role === 'drop_off'): PATCH { dropOffAssetId } → on
+  //     success, set dumpsterConfirmed, close modal.
+  //
+  // Per-step saves (rather than one atomic save with both ids) were
+  // chosen deliberately: drivers often have spotty connections, and
+  // immediate feedback on the pickup side means a conflict or
+  // mismatch can be fixed before wasting time on the second pick.
+  // The backend's `assignAssetToJob` early-return on no-op main
+  // changes means passing the existing asset_id on step 2 is free
+  // — but we pass only `dropOffAssetId` on step 2 to keep the
+  // intent explicit in the network layer.
+  //
+  // Drivers never forward `override: true` for the drop-off side.
+  // Delivery-asset conflict is a hard block on the driver — the
+  // spec mandates no override power for drivers on either field,
+  // and the backend enforces it regardless.
   const handleAssetSave = async () => {
     if (!job || !selectedAssetId) {
       Alert.alert('Required', 'Pick a dumpster before continuing');
       return;
     }
-    // Fix — detect size mismatch locally so the audit entry records it.
+
+    const isExchange = job.job_type === 'exchange';
     const requiredSize =
       job.rental_chain_dumpster_size || job.asset_subtype || null;
     const picked = assetOptions.find((a) => a.id === selectedAssetId);
     const pickedSize = picked?.subtype || null;
-    const mismatch = !!(requiredSize && pickedSize && pickedSize !== requiredSize);
+
+    // Size mismatch is only meaningful on the pickup role. Exchange
+    // deliveries are legitimately allowed to be a different size
+    // than what's currently on site — that is the whole point of
+    // the exchange.
+    const mismatch =
+      assetPickerRole === 'pickup' &&
+      !!(requiredSize && pickedSize && pickedSize !== requiredSize);
     if (mismatch && !assetMismatchAck) {
       Alert.alert(
         'Size mismatch',
@@ -295,41 +353,103 @@ export default function JobDetailScreen() {
       );
       return;
     }
+
     setSavingAsset(true);
     setAssetConflict(null);
     try {
-      await updateJobAsset(job.id, selectedAssetId, {
-        override: assetOverrideAck,
-        sizeMismatch: mismatch,
-      });
-      // Mirror the new asset locally so the header + complete-button
-      // flip without waiting for a full job refetch.
-      const picked = assetOptions.find((a) => a.id === selectedAssetId);
-      setJob((prev) =>
-        prev
-          ? {
-              ...prev,
-              asset_id: selectedAssetId,
-              asset: picked
-                ? {
-                    id: picked.id,
-                    identifier: picked.identifier,
-                    subtype: picked.subtype || undefined,
-                  }
-                : prev.asset,
-            }
-          : prev,
-      );
-      setDumpsterConfirmed(true);
-      setShowDumpsterModal(false);
+      if (assetPickerRole === 'pickup') {
+        // Step 1 / single-step save — update asset_id.
+        await updateJobAsset(job.id, selectedAssetId, {
+          override: assetOverrideAck,
+          sizeMismatch: mismatch,
+        });
+
+        // Mirror the new asset locally so the header + complete-
+        // button flip without waiting for a full job refetch.
+        setJob((prev) =>
+          prev
+            ? {
+                ...prev,
+                asset_id: selectedAssetId,
+                asset: picked
+                  ? {
+                      id: picked.id,
+                      identifier: picked.identifier,
+                      subtype: picked.subtype || undefined,
+                    }
+                  : prev.asset,
+              }
+            : prev,
+        );
+
+        if (isExchange) {
+          // Phase 14 — advance to the drop-off step in the same
+          // modal. Reset picker + conflict + mismatch state; clear
+          // selection so the driver must make a fresh choice for
+          // the delivery-side asset.
+          setAssetPickerRole('drop_off');
+          setSelectedAssetId(null);
+          setAssetOverrideAck(false);
+          setAssetMismatchAck(false);
+          setAssetShowAll(false);
+          setAssetSearch('');
+          // Explicitly DO NOT set dumpsterConfirmed or close the
+          // modal — the driver is only halfway through.
+        } else {
+          // Non-exchange flow unchanged: confirm and close.
+          setDumpsterConfirmed(true);
+          setShowDumpsterModal(false);
+        }
+      } else {
+        // Step 2 — update drop_off_asset_id. Routes through the
+        // canonical assignAssetToJob path server-side, which runs
+        // tenant scope, chain-aware conflict guard, and audit.
+        // Drivers do NOT forward `override` on this path.
+        await updateJobAsset(job.id, null, {
+          dropOffAssetId: selectedAssetId,
+          sizeMismatch: false,
+        });
+
+        // Mirror the drop-off asset locally.
+        setJob((prev) =>
+          prev
+            ? {
+                ...prev,
+                drop_off_asset_id: selectedAssetId,
+                drop_off_asset: picked
+                  ? {
+                      id: picked.id,
+                      identifier: picked.identifier,
+                      subtype: picked.subtype || undefined,
+                    }
+                  : prev.drop_off_asset,
+              }
+            : prev,
+        );
+
+        setDumpsterConfirmed(true);
+        setShowDumpsterModal(false);
+      }
     } catch (err: any) {
       const msg =
         err?.response?.data?.message ||
         err?.message ||
         'Failed to save asset';
-      // Backend signals active-job conflict via the sentinel prefix
-      if (typeof msg === 'string' && msg.includes('asset_active_conflict')) {
-        setAssetConflict(msg.replace(/^asset_active_conflict:\s*/, ''));
+      // Phase 14 — backend signals active-job conflict via one of
+      // two sentinel prefixes depending on which column collided.
+      // Strip whichever fires and surface the message in the
+      // conflict banner. The override acknowledgment below the
+      // banner only applies to the pickup role — drop-off conflicts
+      // are a hard block for drivers.
+      if (
+        typeof msg === 'string' &&
+        (msg.includes('asset_active_conflict') ||
+          msg.includes('drop_off_asset_active_conflict'))
+      ) {
+        const stripped = msg
+          .replace(/^drop_off_asset_active_conflict:\s*/, '')
+          .replace(/^asset_active_conflict:\s*/, '');
+        setAssetConflict(stripped);
         setAssetOverrideAck(false);
       } else {
         Alert.alert('Error', msg);
@@ -948,9 +1068,15 @@ export default function JobDetailScreen() {
             job.rental_chain_dumpster_size || job.asset_subtype || null;
           const pickedAsset = assetOptions.find((a) => a.id === selectedAssetId);
           const pickedSize = pickedAsset?.subtype || null;
-          const selectionMismatch = !!(
-            requiredSize && pickedSize && pickedSize !== requiredSize
-          );
+          // Phase 14 — size mismatch is only enforced on the pickup
+          // role. An exchange's delivery asset is legitimately
+          // allowed to be a different size than what is currently
+          // on site (size-swapping is literally the point of an
+          // exchange), so the mismatch warning is suppressed on
+          // step 2.
+          const selectionMismatch =
+            assetPickerRole === 'pickup' &&
+            !!(requiredSize && pickedSize && pickedSize !== requiredSize);
           const matchesSearch = (a: AssetOption) =>
             assetSearch
               ? (a.identifier || '').toLowerCase().includes(assetSearch.toLowerCase())
@@ -1023,15 +1149,38 @@ export default function JobDetailScreen() {
           return (
         <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.5)' }}>
           <View style={{ backgroundColor: colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40, maxHeight: '85%' }}>
+            {/* Phase 14 — title + step indicator. Exchange jobs walk
+                a 2-step flow (Pickup → Delivery). Non-exchange jobs
+                render the single-step title exactly as Phase 11A. */}
             <Text style={{ fontSize: 18, fontWeight: '800', color: colors.text, marginBottom: 4 }}>
-              {job.job_type === 'delivery' ? 'Confirm Drop-Off' : job.job_type === 'exchange' ? 'Confirm Exchange' : 'Confirm Pickup'}
+              {job.job_type === 'exchange'
+                ? assetPickerRole === 'drop_off'
+                  ? 'Delivery Asset'
+                  : 'Pickup Asset'
+                : job.job_type === 'delivery'
+                  ? 'Confirm Drop-Off'
+                  : 'Confirm Pickup'}
             </Text>
+            {job.job_type === 'exchange' && (
+              <Text style={{ fontSize: 11, fontWeight: '700', color: colors.accent, marginBottom: 4, textTransform: 'uppercase' }}>
+                {assetPickerRole === 'drop_off' ? 'Step 2 of 2' : 'Step 1 of 2'}
+              </Text>
+            )}
             <Text style={{ fontSize: 13, color: colors.textSecondary, marginBottom: 12 }}>
-              Pick the dumpster on this job. Required to complete.
+              {job.job_type === 'exchange' && assetPickerRole === 'drop_off'
+                ? 'Pick the new dumpster you are leaving on site.'
+                : job.job_type === 'exchange'
+                  ? 'Pick the dumpster you are removing from site.'
+                  : 'Pick the dumpster on this job. Required to complete.'}
             </Text>
 
-            {/* Context: required size + expected on-site */}
-            {(requiredSize || job.expected_on_site_asset) && (
+            {/* Context: required size + expected on-site.
+                Phase 14 — expected-on-site hint is pickup-role only.
+                Required size context is suppressed on the drop-off
+                step because exchange deliveries can legitimately be
+                a different size than what is currently on site. */}
+            {assetPickerRole === 'pickup' &&
+              (requiredSize || job.expected_on_site_asset) && (
               <View style={{ backgroundColor: colors.surfaceHover, borderRadius: 12, padding: 10, marginBottom: 12, borderWidth: 1, borderColor: colors.border }}>
                 {requiredSize && (
                   <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textSecondary, marginBottom: 2 }}>
@@ -1047,6 +1196,20 @@ export default function JobDetailScreen() {
                     </Text>
                   </Text>
                 )}
+              </View>
+            )}
+            {/* Phase 14 — on step 2 of an exchange, show the pickup
+                asset already confirmed on step 1 as context so the
+                driver knows what they're swapping out for. */}
+            {job.job_type === 'exchange' && assetPickerRole === 'drop_off' && job.asset && (
+              <View style={{ backgroundColor: colors.surfaceHover, borderRadius: 12, padding: 10, marginBottom: 12, borderWidth: 1, borderColor: colors.border }}>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textSecondary }}>
+                  PICKING UP:{' '}
+                  <Text style={{ color: colors.text, fontSize: 13, fontWeight: '500' }}>
+                    {job.asset.identifier}
+                    {job.asset.subtype ? ` (${job.asset.subtype})` : ''}
+                  </Text>
+                </Text>
               </View>
             )}
 
@@ -1228,7 +1391,15 @@ export default function JobDetailScreen() {
                 {savingAsset ? (
                   <ActivityIndicator color="#000" />
                 ) : (
-                  <Text style={{ fontSize: 15, fontWeight: '700', color: '#000' }}>Confirm</Text>
+                  <Text style={{ fontSize: 15, fontWeight: '700', color: '#000' }}>
+                    {/* Phase 14 — exchange pickup step shows
+                        "Next: Delivery" to make the two-step flow
+                        obvious. Step 2 and non-exchange jobs keep
+                        the original "Confirm" wording. */}
+                    {job.job_type === 'exchange' && assetPickerRole === 'pickup'
+                      ? 'Next: Delivery'
+                      : 'Confirm'}
+                  </Text>
                 )}
               </TouchableOpacity>
             </View>
