@@ -38,6 +38,8 @@ import { FEATURE_REGISTRY } from "@/lib/feature-registry";
 import { getBlockedReason } from "@/lib/blocked-job";
 import { JobBlockedResolutionDrawer } from "@/components/job-blocked-resolution-drawer";
 import LifecycleContextPanel from "./_components/LifecycleContextPanel";
+import DumpTicketForm, { type DumpTicketFormTicket } from "./_components/DumpTicketForm";
+import VoidDumpTicketDialog from "./_components/VoidDumpTicketDialog";
 
 /* --- Types --- */
 
@@ -230,6 +232,7 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
   const [actionLoading, setActionLoading] = useState(false);
   const [dumpTickets, setDumpTickets] = useState<Array<{
     id: string; ticket_number: string; waste_type: string; weight_tons: number;
+    dump_location_id: string;
     total_cost: number; customer_charges: number; status: string; ticket_photo: string;
     dump_location_name: string; submitted_at: string; overage_items: Array<{ label: string; quantity: number; total: number }>;
     revisions?: Array<{ revision: number; changedBy: string; changedByRole: string; changedAt: string; changes: Record<string, { old: unknown; new: unknown }>; reason?: string }>;
@@ -280,16 +283,17 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
   // short, correct list.
   const [assetEditShowAll, setAssetEditShowAll] = useState(false);
   const [assetEditMismatchAck, setAssetEditMismatchAck] = useState(false);
-  // Phase 11B — Add Dump Slip modal state (office-side create, reuses
-  // existing POST /jobs/:id/dump-slip endpoint; no parallel logic).
+  // Phase 11B — dump slip modal state. DumpTicketForm owns form state
+  // internally; the page only tracks which mode it's in, which ticket
+  // is being edited, whether a pending completion is queued after save,
+  // and the cached dump locations list shared with edit opens. Voiding
+  // uses a separate dialog with its own internal state.
   const [addDumpSlipOpen, setAddDumpSlipOpen] = useState(false);
   const [dumpLocations, setDumpLocations] = useState<Array<{ id: string; name: string }>>([]);
-  const [dumpSlipLocationId, setDumpSlipLocationId] = useState("");
-  const [dumpSlipTicketNumber, setDumpSlipTicketNumber] = useState("");
-  const [dumpSlipWeight, setDumpSlipWeight] = useState("");
-  const [dumpSlipWasteType, setDumpSlipWasteType] = useState("cnd");
-  const [dumpSlipSaving, setDumpSlipSaving] = useState(false);
-  const [dumpSlipError, setDumpSlipError] = useState("");
+  const [dumpFormMode, setDumpFormMode] = useState<"create" | "edit">("create");
+  const [editingTicket, setEditingTicket] = useState<DumpTicketFormTicket | null>(null);
+  const [pendingCompleteAfterDumpSlip, setPendingCompleteAfterDumpSlip] = useState(false);
+  const [voidingTicket, setVoidingTicket] = useState<{ id: string; ticket_number: string | null } | null>(null);
 
   const fetchJob = async () => {
     try {
@@ -340,50 +344,72 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
     }
   };
 
-  // Phase 11B — office-side Add Dump Slip. Lazy-loads dump locations
-  // on first open, then POSTs to the existing /jobs/:id/dump-slip
-  // endpoint so the backend's idempotency guard + syncJobCost +
-  // draft-invoice logic all run unchanged.
-  const openAddDumpSlip = async () => {
-    setAddDumpSlipOpen(true);
-    setDumpSlipLocationId("");
-    setDumpSlipTicketNumber("");
-    setDumpSlipWeight("");
-    setDumpSlipWasteType("cnd");
-    setDumpSlipError("");
-    if (dumpLocations.length === 0) {
-      try {
-        const res = await api.get<Array<{ id: string; name: string }> | { data: Array<{ id: string; name: string }> }>(`/dump-locations`);
-        const list = Array.isArray(res) ? res : (res as { data: Array<{ id: string; name: string }> }).data ?? [];
-        setDumpLocations(list);
-      } catch {
-        /* handled by empty state in picker */
-      }
+  // Phase 11B — shared dump locations loader. Used by both create and
+  // edit opens so the dropdown is cached for the session.
+  const ensureDumpLocationsLoaded = async () => {
+    if (dumpLocations.length > 0) return;
+    try {
+      const res = await api.get<Array<{ id: string; name: string }> | { data: Array<{ id: string; name: string }> }>(`/dump-locations`);
+      const list = Array.isArray(res) ? res : (res as { data: Array<{ id: string; name: string }> }).data ?? [];
+      setDumpLocations(list);
+    } catch {
+      /* handled by empty state in picker */
     }
   };
 
-  const handleAddDumpSlipSave = async () => {
-    if (!dumpSlipLocationId) { setDumpSlipError("Disposal site is required"); return; }
-    if (!dumpSlipTicketNumber.trim()) { setDumpSlipError("Ticket number is required"); return; }
-    const weight = parseFloat(dumpSlipWeight);
-    if (!Number.isFinite(weight) || weight < 0) { setDumpSlipError("Weight must be a non-negative number"); return; }
-    setDumpSlipSaving(true);
-    setDumpSlipError("");
-    try {
-      await api.post(`/jobs/${id}/dump-slip`, {
-        dumpLocationId: dumpSlipLocationId,
-        ticketNumber: dumpSlipTicketNumber.trim(),
-        wasteType: dumpSlipWasteType,
-        weightTons: weight,
-      });
-      toast("success", FEATURE_REGISTRY.dump_slip_updated?.label ?? "Dump slip updated");
-      setAddDumpSlipOpen(false);
-      await Promise.all([fetchJob(), fetchDumpTickets()]);
-    } catch (err: unknown) {
-      setDumpSlipError(err instanceof Error ? err.message : "Failed to save dump slip");
-    } finally {
-      setDumpSlipSaving(false);
+  // Opens the shared DumpTicketForm in create mode. Reuses the
+  // canonical POST /jobs/:id/dump-slip path inside the form.
+  const openDumpSlipCreate = async () => {
+    setDumpFormMode("create");
+    setEditingTicket(null);
+    setAddDumpSlipOpen(true);
+    await ensureDumpLocationsLoaded();
+  };
+
+  // Opens the shared DumpTicketForm in edit mode, prefilled from the
+  // existing dump_tickets row. The form submits via PATCH
+  // /dump-tickets/:ticketId — canonical edit path with full recalc +
+  // audit trail server-side.
+  const openDumpSlipEdit = async (t: DumpTicketFormTicket) => {
+    setDumpFormMode("edit");
+    setEditingTicket(t);
+    setAddDumpSlipOpen(true);
+    await ensureDumpLocationsLoaded();
+  };
+
+  // Shared callback fired by DumpTicketForm on successful save.
+  // Refreshes job + tickets. If the save was triggered by the manual-
+  // completion shortcut, transitions the job to completed via the
+  // canonical changeStatus path — the server-side completion gate is
+  // preserved, so this is purely UX plumbing.
+  const handleDumpSlipSaved = async () => {
+    await Promise.all([fetchJob(), fetchDumpTickets()]);
+    if (pendingCompleteAfterDumpSlip) {
+      setPendingCompleteAfterDumpSlip(false);
+      await changeStatus("completed");
     }
+  };
+
+  // Manual-completion shortcut: when the office clicks Mark Complete
+  // on a dump-slip-required job type that has no active ticket, we
+  // intercept and open the shared form in create mode with a queued
+  // completion. After save, handleDumpSlipSaved fires changeStatus.
+  // If the job already has an active ticket, we fall straight through
+  // to the normal changeStatus path. The completion gating rule is
+  // NOT changed — the server still enforces it; this shortcut just
+  // makes the fix path obvious and immediate to the operator.
+  const tryMarkComplete = async () => {
+    if (!job) return;
+    const needsSlip = job.job_type === "pickup"
+      || job.job_type === "exchange"
+      || job.job_type === "removal";
+    const activeTickets = dumpTickets.filter((t) => t.status !== "voided");
+    if (needsSlip && activeTickets.length === 0) {
+      setPendingCompleteAfterDumpSlip(true);
+      await openDumpSlipCreate();
+      return;
+    }
+    await changeStatus("completed");
   };
 
   const handleAssetEditSave = async () => {
@@ -925,7 +951,7 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
           <Send className="h-3 w-3" /> Send Invoice
         </button>
         <button
-          onClick={() => changeStatus("completed")}
+          onClick={tryMarkComplete}
           disabled={actionLoading || !transitions.includes("completed")}
           className="flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-all disabled:opacity-50 hover:bg-[var(--t-bg-card-hover)]"
           style={{ borderColor: "var(--t-border)", color: "var(--t-text-primary)", background: "none", cursor: "pointer" }}
@@ -1312,7 +1338,7 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
                   {FEATURE_REGISTRY.no_dump_slip_recorded?.label ?? "No dump slip recorded"}
                 </p>
                 <button
-                  onClick={openAddDumpSlip}
+                  onClick={openDumpSlipCreate}
                   className="inline-flex items-center gap-1.5 rounded-full border border-[var(--t-border)] bg-[var(--t-bg-card)] px-3 py-1.5 text-[11px] font-semibold text-[var(--t-accent)] hover:bg-[var(--t-bg-card-hover)] transition-colors"
                 >
                   <Plus className="h-3 w-3" />
@@ -1371,36 +1397,23 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
                       {t.status !== "voided" && (
                         <div className="flex gap-2 pt-1">
                           <button
-                            onClick={async () => {
-                              const newWeight = prompt("Correct weight (tons):", String(t.weight_tons));
-                              if (!newWeight) return;
-                              const w = Number(newWeight);
-                              if (w === 0) { if (!confirm("Weight is 0 — are you sure?")) return; }
-                              else if (w > 10) { if (!confirm("Weight seems high (" + w + " tons) — are you sure?")) return; }
-                              try {
-                                await api.patch(`/dump-tickets/${t.id}`, { weightTons: w, reason: "Admin correction" });
-                                toast("success", "Dump ticket updated");
-                                fetchDumpTickets();
-                              } catch (e: any) { toast("error", e.message || "Failed to update"); }
-                            }}
+                            onClick={() => openDumpSlipEdit({
+                              id: t.id,
+                              ticket_number: t.ticket_number,
+                              waste_type: t.waste_type,
+                              weight_tons: Number(t.weight_tons),
+                              dump_location_id: t.dump_location_id,
+                              ticket_photo: t.ticket_photo,
+                            })}
                             className="text-[10px] font-medium text-[var(--t-accent)] hover:underline"
                           >
-                            Edit
+                            {FEATURE_REGISTRY.edit_dump_slip?.label ?? "Edit Dump Slip"}
                           </button>
                           <button
-                            onClick={async () => {
-                              if (!confirm(`Void ticket #${t.ticket_number || t.id}? This cannot be undone.`)) return;
-                              const reason = prompt("Void reason:");
-                              if (!reason) return;
-                              try {
-                                await api.post(`/dump-tickets/${t.id}/void`, { reason });
-                                toast("success", "Dump ticket voided");
-                                fetchDumpTickets();
-                              } catch (e: any) { toast("error", e.message || "Failed to void"); }
-                            }}
+                            onClick={() => setVoidingTicket({ id: t.id, ticket_number: t.ticket_number || null })}
                             className="text-[10px] font-medium text-[var(--t-error)] hover:underline"
                           >
-                            Void
+                            {FEATURE_REGISTRY.void_dump_slip?.label ?? "Void"}
                           </button>
                           {t.status === "submitted" && (
                             <button
@@ -1429,7 +1442,7 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
                       {/* Correction History */}
                       {showRevisions === t.id && t.revisions && t.revisions.length > 0 && (
                         <div className="mt-2 border-t border-[var(--t-border)] pt-2 space-y-2">
-                          <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--t-text-muted)]">Correction History</p>
+                          <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--t-text-muted)]">{FEATURE_REGISTRY.dump_slip_history?.label ?? "Correction History"}</p>
                           {t.revisions.map((rev, ri) => (
                             <div key={ri} className="text-xs space-y-0.5 pl-2 border-l-2 border-[var(--t-border)]">
                               <p className="text-[var(--t-text-muted)]">
@@ -1899,91 +1912,43 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
         );
       })()}
 
-      {/* --- Phase 11B: Add Dump Slip Modal --- */}
-      {addDumpSlipOpen && job && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setAddDumpSlipOpen(false)} />
-          <div className="relative rounded-[20px] p-6 w-full max-w-md shadow-2xl" style={{ backgroundColor: "var(--t-bg-secondary)", border: "1px solid var(--t-border)" }}>
-            <h3 className="text-base font-semibold mb-1" style={{ color: "var(--t-text-primary)" }}>
-              {FEATURE_REGISTRY.add_dump_slip?.label ?? "Add Dump Slip"}
-            </h3>
-            <p className="text-xs mb-4" style={{ color: "var(--t-text-muted)" }}>
-              Records disposal for this job. Cost sync, audit trail, and invoice creation run automatically.
-            </p>
-            <label className="text-[10px] font-semibold uppercase tracking-wider text-[var(--t-text-muted)] block mb-1">
-              Disposal Site
-            </label>
-            <select
-              value={dumpSlipLocationId}
-              onChange={(e) => { setDumpSlipLocationId(e.target.value); setDumpSlipError(""); }}
-              className="w-full rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-3 py-2 text-sm text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)] mb-3"
-            >
-              <option value="" disabled>Select a disposal site…</option>
-              {dumpLocations.map((loc) => (
-                <option key={loc.id} value={loc.id}>{loc.name}</option>
-              ))}
-            </select>
-
-            <label className="text-[10px] font-semibold uppercase tracking-wider text-[var(--t-text-muted)] block mb-1">
-              Ticket Number
-            </label>
-            <input
-              type="text"
-              value={dumpSlipTicketNumber}
-              onChange={(e) => { setDumpSlipTicketNumber(e.target.value); setDumpSlipError(""); }}
-              placeholder="e.g. T-12345"
-              className="w-full rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-3 py-2 text-sm text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)] mb-3"
-            />
-
-            <label className="text-[10px] font-semibold uppercase tracking-wider text-[var(--t-text-muted)] block mb-1">
-              Weight (tons)
-            </label>
-            <input
-              type="number"
-              step="0.01"
-              min="0"
-              value={dumpSlipWeight}
-              onChange={(e) => { setDumpSlipWeight(e.target.value); setDumpSlipError(""); }}
-              placeholder="0.00"
-              className="w-full rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-3 py-2 text-sm text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)] mb-3"
-            />
-
-            <label className="text-[10px] font-semibold uppercase tracking-wider text-[var(--t-text-muted)] block mb-1">
-              Waste Type
-            </label>
-            <select
-              value={dumpSlipWasteType}
-              onChange={(e) => setDumpSlipWasteType(e.target.value)}
-              className="w-full rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-3 py-2 text-sm text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)] mb-3"
-            >
-              <option value="cnd">Construction & Demolition</option>
-              <option value="msw">Municipal Solid Waste</option>
-              <option value="clean_fill">Clean Fill</option>
-              <option value="concrete">Concrete</option>
-              <option value="asphalt">Asphalt</option>
-              <option value="roofing">Roofing</option>
-              <option value="yard_waste">Yard Waste</option>
-            </select>
-
-            {dumpSlipError && (
-              <p className="text-xs text-[var(--t-error)] mb-3">{dumpSlipError}</p>
-            )}
-
-            <div className="flex justify-end gap-2">
-              <button onClick={() => setAddDumpSlipOpen(false)} className="rounded-full px-4 py-2 text-xs font-medium text-[var(--t-text-muted)]">
-                Cancel
-              </button>
-              <button
-                onClick={handleAddDumpSlipSave}
-                disabled={dumpSlipSaving || !dumpSlipLocationId || !dumpSlipTicketNumber.trim() || !dumpSlipWeight}
-                className="rounded-full bg-[var(--t-accent)] px-4 py-2 text-xs font-semibold text-[var(--t-accent-on-accent)] disabled:opacity-40 hover:opacity-90 transition-opacity"
-              >
-                {dumpSlipSaving ? "Saving…" : "Save Dump Slip"}
-              </button>
-            </div>
-          </div>
-        </div>
+      {/* --- Phase 11B: shared DumpTicketForm for create + edit + completion shortcut --- */}
+      {job && (
+        <DumpTicketForm
+          mode={dumpFormMode}
+          open={addDumpSlipOpen}
+          jobId={id}
+          existingTicket={editingTicket}
+          dumpLocations={dumpLocations}
+          saveLabelOverride={
+            dumpFormMode === "create" && pendingCompleteAfterDumpSlip
+              ? FEATURE_REGISTRY.dump_slip_complete_shortcut?.label ?? "Save & Mark Complete"
+              : undefined
+          }
+          hintText={
+            dumpFormMode === "create" && pendingCompleteAfterDumpSlip
+              ? FEATURE_REGISTRY.dump_slip_required_complete_hint?.label
+                ?? "This job requires a dump slip before it can be marked complete."
+              : undefined
+          }
+          onClose={() => {
+            setAddDumpSlipOpen(false);
+            // If the user dismissed the shortcut form, drop the queued
+            // completion so the next regular Add Dump Slip doesn't
+            // accidentally trigger changeStatus.
+            if (pendingCompleteAfterDumpSlip) setPendingCompleteAfterDumpSlip(false);
+          }}
+          onSaved={handleDumpSlipSaved}
+        />
       )}
+
+      {/* --- Phase 11B: void dump ticket dialog --- */}
+      <VoidDumpTicketDialog
+        ticket={voidingTicket}
+        open={voidingTicket !== null}
+        onClose={() => setVoidingTicket(null)}
+        onVoided={fetchDumpTickets}
+      />
 
       {/* --- Override Status Modal --- */}
       {overrideOpen && job && (
