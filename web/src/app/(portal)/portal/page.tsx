@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { portalApi } from "@/lib/portal-api";
 import { formatCurrency } from "@/lib/utils";
+import { formatDateOnly, daysUntilDateOnly } from "@/lib/utils/format-date";
 import { formatRentalTitle, rentalSizeLabel } from "@/lib/job-status";
 import { Package, FileText, PlusCircle, Calendar, MapPin, Clock, ArrowUpRight, AlertCircle, CreditCard, CalendarClock, ChevronRight, DollarSign } from "lucide-react";
 import { FEATURE_REGISTRY } from "@/lib/feature-registry";
@@ -65,12 +66,13 @@ function customerStatus(internalStatus: string): { label: string; color: string 
   }
 }
 
-function daysRemaining(endDate: string | null): number | null {
-  if (!endDate) return null;
-  const now = new Date();
-  const end = new Date(endDate);
-  return Math.ceil((end.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-}
+// Phase B6 — `daysRemaining` used to live here and parsed the
+// YYYY-MM-DD end date via `new Date(endDate)`, which in any US
+// timezone yielded UTC midnight (previous local day) and produced
+// off-by-one day counts. Replaced with `daysUntilDateOnly` from
+// `@/lib/utils/format-date`, which parses as local noon and uses
+// noon-to-noon arithmetic so daylight-saving transitions round
+// cleanly.
 
 export default function PortalHomePage() {
   const [rentals, setRentals] = useState<Rental[]>([]);
@@ -257,7 +259,7 @@ export default function PortalHomePage() {
         ) : (
           <div className="grid gap-3">
             {active.slice(0, MAX_DASHBOARD_RENTALS).map(r => {
-              const days = daysRemaining(r.rental_end_date);
+              const days = daysUntilDateOnly(r.rental_end_date);
               const overdue = days !== null && days < 0;
               return (
                 <div key={r.id} className={`rounded-[16px] border bg-[var(--t-bg-card)] p-4 ${overdue ? "border-[var(--t-error)]/30" : "border-[var(--t-border)]"}`}>
@@ -276,8 +278,17 @@ export default function PortalHomePage() {
                         {r.service_address && (
                           <span className="flex items-center gap-1"><MapPin className="h-3 w-3" />{r.service_address.formatted || r.service_address.street || "—"}</span>
                         )}
+                        {/* Phase B6 — delivery date added to close a UX gap
+                            where the dashboard showed only the pickup end
+                            of the rental window. Both labels registry-
+                            driven; both dates use the safe date-only
+                            formatter. Visual order is Delivery → Pickup
+                            so the window reads chronologically. */}
+                        {r.scheduled_date && (
+                          <span className="flex items-center gap-1"><Calendar className="h-3 w-3" />{FEATURE_REGISTRY.portal_dashboard_delivery_label?.label ?? "Delivery"}: {formatDateOnly(r.scheduled_date)}</span>
+                        )}
                         {r.rental_end_date && (
-                          <span className="flex items-center gap-1"><Clock className="h-3 w-3" />Pickup: {new Date(r.rental_end_date).toLocaleDateString()}</span>
+                          <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{FEATURE_REGISTRY.portal_dashboard_pickup_label?.label ?? "Pickup"}: {formatDateOnly(r.rental_end_date)}</span>
                         )}
                       </div>
                     </div>
@@ -316,7 +327,7 @@ export default function PortalHomePage() {
                   <p className="text-sm font-medium text-[var(--t-text-primary)]">{rentalSizeLabel(r)} Delivery</p>
                   <p className="text-xs text-[var(--t-text-muted)] mt-0.5">
                     <Calendar className="inline h-3 w-3 mr-1" />
-                    Scheduled: {r.scheduled_date ? new Date(r.scheduled_date).toLocaleDateString() : "TBD"}
+                    Scheduled: {r.scheduled_date ? formatDateOnly(r.scheduled_date) : "TBD"}
                   </p>
                 </div>
                 <span className="text-xs font-medium" style={{ color: customerStatus(r.status).color }}>{customerStatus(r.status).label}</span>
@@ -336,7 +347,7 @@ export default function PortalHomePage() {
                 <div>
                   <p className="text-sm font-medium text-[var(--t-text-primary)]">{formatRentalTitle(r)}</p>
                   <p className="text-xs text-[var(--t-text-muted)] mt-0.5">
-                    {r.scheduled_date && new Date(r.scheduled_date).toLocaleDateString()}
+                    {r.scheduled_date && formatDateOnly(r.scheduled_date)}
                     {r.service_address && ` · ${r.service_address.street || r.service_address.formatted || ""}`}
                   </p>
                 </div>
