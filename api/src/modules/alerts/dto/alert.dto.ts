@@ -11,8 +11,7 @@ export type AlertType =
   | 'missing_asset'
   | 'abnormal_disposal'
   | 'low_margin_chain'
-  | 'lifecycle_integrity'
-  | 'date_rule_conflict';
+  | 'lifecycle_integrity';
 
 export type AlertSeverity = 'high' | 'medium' | 'low';
 

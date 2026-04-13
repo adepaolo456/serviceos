@@ -19,7 +19,6 @@ import {
   Scale,
   TrendingDown,
   GitBranch,
-  CalendarX,
   CheckCircle2,
   XCircle,
   ExternalLink,
@@ -40,8 +39,7 @@ type AlertType =
   | "missing_asset"
   | "abnormal_disposal"
   | "low_margin_chain"
-  | "lifecycle_integrity"
-  | "date_rule_conflict";
+  | "lifecycle_integrity";
 type AlertEntityType =
   | "job"
   | "rental_chain"
@@ -87,7 +85,6 @@ const TYPE_CONFIG: Record<
   abnormal_disposal: { icon: Scale, featureId: "alerts_abnormal_disposal" },
   low_margin_chain: { icon: TrendingDown, featureId: "alerts_low_margin_chain" },
   lifecycle_integrity: { icon: GitBranch, featureId: "alerts_lifecycle_integrity" },
-  date_rule_conflict: { icon: CalendarX, featureId: "alerts_date_rule_conflict" },
 };
 
 const SEVERITY_ORDER: AlertSeverity[] = ["high", "medium", "low"];
@@ -608,9 +605,6 @@ function buildHint(alert: Alert): string | null {
     }
     case "missing_dump_slip": {
       return "Completed disposal job without a dump ticket";
-    }
-    case "date_rule_conflict": {
-      return "Pickup date override conflicts with rental rule";
     }
     default:
       return null;

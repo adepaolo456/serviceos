@@ -32,7 +32,6 @@ import {
   Scale,
   TrendingDown,
   GitBranch,
-  CalendarX,
   CalendarClock,
 } from "lucide-react";
 import { api } from "@/lib/api";
@@ -98,7 +97,6 @@ const ALERT_ICON: Record<string, React.ComponentType<{ className?: string }>> = 
   abnormal_disposal: Scale,
   low_margin_chain: TrendingDown,
   lifecycle_integrity: GitBranch,
-  date_rule_conflict: CalendarX,
 };
 
 function alertFeatureId(alertType: string): string {

@@ -79,17 +79,31 @@ export const CONDITIONALLY_AUTO_RESOLVABLE_TYPES: ReadonlyArray<string> = [
 ];
 
 /**
- * Job types that DO require dump slip tracking. Mirrors the
- * `dumpEligible` constant inside resolveStaleIssues Pass 3 — kept
- * separate here so the audit classifier can reuse the rule without
- * importing service-internal state.
+ * Job types that DO require dump slip tracking. Canonical source for
+ * the entire dump-slip-required gating system — imported by:
+ *   - `jobs.service.ts` completion gate (blocks transition to
+ *     `completed` without an active dump ticket)
+ *   - `billing-issue-detector.service.ts` `detectAllForInvoice`
+ *     Check 3 (creates `missing_dump_slip` billing issues post-hoc)
+ *   - `billing-issue-detector.service.ts` `resolveStaleIssues` Pass 3
+ *     (auto-resolves `missing_dump_slip` on non-dump jobs)
+ *   - `billing-audit.service.ts` stale-classifier rules (marks a
+ *     `missing_dump_slip` issue as stale when the underlying job is
+ *     not a dump-eligible type)
+ *
+ * Values MUST match the real `jobs.job_type` strings produced by
+ * job creation. Pre-launch cleanup fixed a historical drift where
+ * this constant listed `task_type` values (`pick_up`, `swap`,
+ * `haul`, `dump_and_return`) that never match real job rows,
+ * silently breaking post-hoc `missing_dump_slip` detection for
+ * every non-exchange job. The canonical list below mirrors the
+ * completion gate in `jobs.service.ts` — one source of truth for
+ * both enforcement and detection.
  */
 export const DUMP_ELIGIBLE_JOB_TYPES: ReadonlyArray<string> = [
-  'pick_up',
-  'dump_and_return',
-  'haul',
-  'swap',
+  'pickup',
   'exchange',
+  'removal',
 ];
 
 /* ─── Invoice status buckets ─── */

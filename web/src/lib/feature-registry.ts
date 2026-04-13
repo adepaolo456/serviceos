@@ -2985,18 +2985,6 @@ export const FEATURE_REGISTRY: Record<string, FeatureDescription> = {
     isGuideEligible: true,
     keywords: ["integrity", "lifecycle", "orphan", "duplicate", "chain", "structural", "broken"],
   },
-  alerts_date_rule_conflict: {
-    id: "alerts_date_rule_conflict",
-    label: "Date Rule Conflict",
-    category: "exceptions",
-    shortDescription: "Pickup date override outside rental rule expectations.",
-    guideDescription: "What it detects: a rental chain whose pickup date was manually overridden to a value that violates the associated rental rule expectations or breaks the automatic recalculation chain downstream of the chain. (Scaffolded in Phase 14 — the detector logic will be completed in Phase 14.1 once the override-tracking field is added to rental_chains.) Why it matters: manually-overridden dates that bypass rental rules will silently drift billing and scheduling out of sync — the billing system will charge rental days the dispatcher did not expect, or the pickup will be scheduled on a day the rule would have excluded. How to fix: open the rental chain, review the override, either revert to the rule-computed date or update the rental rule if the override represents a new policy. Full detection ships in Phase 14.1.",
-    routeOrSurface: "/alerts",
-    tenantOverrideKey: "alerts_date_rule_conflict",
-    isUserFacing: true,
-    isGuideEligible: true,
-    keywords: ["date", "rule", "conflict", "override", "pickup", "rental"],
-  },
 };
 
 // ── Category display labels ──

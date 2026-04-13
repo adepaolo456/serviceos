@@ -7,6 +7,7 @@ import { InvoiceLineItem } from '../entities/invoice-line-item.entity';
 import { JobCost } from '../entities/job-cost.entity';
 import { Job } from '../../jobs/entities/job.entity';
 import { PriceResolutionService, ResolvedPrice } from '../../pricing/services/price-resolution.service';
+import { DUMP_ELIGIBLE_JOB_TYPES } from '../helpers/billing-issue-cleanup-rules';
 
 @Injectable()
 export class BillingIssueDetectorService {
@@ -100,9 +101,13 @@ export class BillingIssueDetectorService {
     }
 
     // ── CHECK 3: Missing dump slip (FLAG) ──
-    // Only check on job types that involve dumping — not delivery/drop-off
-    const DUMP_ELIGIBLE_TYPES = ['pick_up', 'dump_and_return', 'haul', 'swap', 'exchange'];
-    if (job && job.status === 'completed' && DUMP_ELIGIBLE_TYPES.includes(job.job_type)) {
+    // Only check on job types that involve dumping — not delivery/drop-off.
+    // Imported from the shared helper so the completion gate in
+    // `jobs.service.ts` and every audit/cleanup consumer stay in
+    // lockstep. Pre-launch fix: this list used to be an inline
+    // duplicate with wrong values (`task_type`-style strings) that
+    // never matched real job rows.
+    if (job && job.status === 'completed' && DUMP_ELIGIBLE_JOB_TYPES.includes(job.job_type)) {
       const issue = await this.checkMissingDumpSlip(
         tenantId,
         invoiceId,
@@ -496,8 +501,10 @@ export class BillingIssueDetectorService {
       })
       .execute();
 
-    // Pass 3: False-positive missing_dump_slip — non-dump-eligible job types
-    const dumpEligible = ['pick_up', 'dump_and_return', 'haul', 'swap', 'exchange'];
+    // Pass 3: False-positive missing_dump_slip — non-dump-eligible job types.
+    // Uses the shared DUMP_ELIGIBLE_JOB_TYPES constant so this stale-
+    // cleanup path stays aligned with Check 3's create-side logic
+    // above and with the completion gate in `jobs.service.ts`.
     await this.issueRepo
       .createQueryBuilder()
       .update(BillingIssue)
@@ -524,7 +531,7 @@ export class BillingIssueDetectorService {
         tenantId,
         dumpSlipType: 'missing_dump_slip',
         openStatuses,
-        dumpTypes: dumpEligible,
+        dumpTypes: DUMP_ELIGIBLE_JOB_TYPES,
       })
       .execute();
 
