@@ -2602,78 +2602,134 @@ export class JobsService {
       .getMany();
   }
 
+  /**
+   * Phase B7 — dispatcher-driven reschedule. Thin wrapper over the
+   * canonical `updateScheduledDate` path.
+   *
+   * Historical context: this method used to be a parallel "write
+   * some fields on the job row and maybe patch a sibling pickup"
+   * path, written before `rental_chains` became the source of
+   * truth for rental-window dates. It was structurally unable to
+   * produce chain-consistent state because it never queried the
+   * chain, its connected-pickup lookup used a customer-wide
+   * heuristic that could cross-contaminate between rentals, and
+   * it had no per-type constraint validation, no atomic
+   * transaction, and no tenant-aware date floor. The Dispatch
+   * Reschedule Path Cleanup audit traced every caller and found
+   * the old feature surface (driver assignment, time-window
+   * edits, `source='portal'` flag, `needs_reschedule → pending`
+   * transition) had zero active UI callers — so the rewrite
+   * drops all of it and routes dispatch edits through the same
+   * chain-safe logic the lifecycle panel uses.
+   *
+   * Two active UI callers today, both on the dispatch board:
+   *   - right-click context menu → reschedule modal
+   *     (`web/src/app/(dashboard)/dispatch/page.tsx:405`)
+   *   - QuickView job card reschedule action
+   *     (`web/src/app/(dashboard)/dispatch/page.tsx:1731`)
+   *
+   * Both send `{ scheduledDate, reason }` with at most a dispatcher
+   * tag; neither uses any of the dropped feature surface.
+   *
+   * Behavior:
+   *   1. Preflight: tenant-scoped job load + terminal-state
+   *      rejection. `completed` is rejected here (lifecycle panel
+   *      allows it for historical corrections; dispatch board UX
+   *      should not move a finished job to a different day).
+   *   2. If the job is part of a rental chain (task_chain_links
+   *      row exists) → delegate to `updateScheduledDate`. This
+   *      gets chain sync, transaction, per-type constraint
+   *      validation, tenant-aware date floor, exchange-window
+   *      enforcement, and the full reschedule trio audit.
+   *   3. If the job is standalone (no chain link — legacy data or
+   *      ad-hoc one-off) → narrowed fallback: same tenant-aware
+   *      date floor, same reschedule trio audit, same
+   *      transaction pattern, but no chain operations (there's
+   *      no chain). Crucially NO linked-pickup heuristic, which
+   *      eliminated a latent cross-rental contamination bug in
+   *      the old path.
+   *
+   * Reason code defaults to `operator_override_dispatch_board`
+   * so the schedule history card on the job detail page can
+   * distinguish dispatch-driven edits from lifecycle-panel
+   * edits.
+   */
   async rescheduleJob(
     tenantId: string,
     jobId: string,
-    body: { scheduledDate: string; reason?: string; source?: string; timeWindow?: string; scheduledWindowStart?: string; scheduledWindowEnd?: string; assignedDriverId?: string },
+    body: { scheduledDate: string; reason?: string },
+    userId: string | null = null,
   ): Promise<Job> {
+    // 1. Preflight — tenant-scoped load + terminal-state rejection.
     const job = await this.findOne(tenantId, jobId);
-
     if (['completed', 'cancelled'].includes(job.status)) {
-      throw new BadRequestException('Cannot reschedule a completed or cancelled job');
+      throw new BadRequestException(
+        'Cannot reschedule a completed or cancelled job',
+      );
     }
 
-    const isFromFailure = job.status === 'needs_reschedule';
+    // 2. Chain lookup. Most dispatch board jobs are part of a
+    //    rental chain (every job created via the standard booking
+    //    flow is linked). A standalone job is rare — legacy data
+    //    or a manual one-off.
+    const link = await this.taskChainLinkRepo.findOne({
+      where: { job_id: jobId },
+    });
 
-    const oldDate = job.scheduled_date;
-    const updates: Record<string, unknown> = {
-      scheduled_date: body.scheduledDate,
-      rescheduled_from_date: oldDate,
-      rescheduled_reason: body.reason || null,
+    const actor = {
+      type: 'operator' as const,
+      userId: userId ?? '',
+      reason: body.reason ?? 'operator_override_dispatch_board',
     };
 
-    // Transition out of needs_reschedule
-    if (isFromFailure) {
-      updates.status = 'pending';
-      updates.failed_at = null;
-      updates.rescheduled_at = new Date();
+    // 3. Chain-linked — delegate to the canonical path. Chain sync
+    //    + transaction + constraint validation + tenant-aware
+    //    floor + full audit trail all handled there.
+    if (link) {
+      const result = await this.updateScheduledDate(
+        tenantId,
+        jobId,
+        { scheduled_date: body.scheduledDate },
+        actor,
+      );
+      return result.job;
     }
 
-    if (body.source === 'portal') {
-      updates.rescheduled_by_customer = true;
-      updates.rescheduled_at = new Date();
+    // 4. Standalone fallback. No chain → no chain writes, but we
+    //    still enforce the tenant-aware date floor, write the
+    //    reschedule trio, and wrap in a transaction for atomicity
+    //    parity with the canonical path. The old method's
+    //    customer-wide linked-pickup patch is intentionally
+    //    omitted — a standalone job has no sibling to sync with
+    //    and the old heuristic was a latent cross-rental bug.
+    const newDate = body.scheduledDate;
+    if (
+      !newDate ||
+      typeof newDate !== 'string' ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(newDate)
+    ) {
+      throw new BadRequestException('edit_job_date_error_invalid');
     }
 
-    // Recalculate rental_end_date if rental_days is set and rental hasn't started
-    if (job.rental_days && !job.rental_start_date) {
-      const end = new Date(body.scheduledDate);
-      end.setDate(end.getDate() + job.rental_days);
-      updates.rental_end_date = end.toISOString().split('T')[0];
-      updates.rental_start_date = body.scheduledDate;
+    const tenantTz = await this.loadTenantTimezone(tenantId);
+    const today = getTenantToday(tenantTz);
+    if (newDate < today) {
+      throw new BadRequestException('edit_job_date_error_past_date');
     }
 
-    // Update time window if provided
-    if (body.scheduledWindowStart) updates.scheduled_window_start = body.scheduledWindowStart;
-    if (body.scheduledWindowEnd) updates.scheduled_window_end = body.scheduledWindowEnd;
-    if (!body.scheduledWindowStart && body.timeWindow) {
-      if (body.timeWindow === 'morning') { updates.scheduled_window_start = '08:00'; updates.scheduled_window_end = '12:00'; }
-      else if (body.timeWindow === 'afternoon') { updates.scheduled_window_start = '12:00'; updates.scheduled_window_end = '17:00'; }
-      else { updates.scheduled_window_start = '08:00'; updates.scheduled_window_end = '17:00'; }
-    }
-
-    // If assignedDriverId provided (e.g. from needs_reschedule), dispatch immediately
-    if (body.assignedDriverId && isFromFailure) {
-      updates.assigned_driver_id = body.assignedDriverId;
-      updates.status = 'dispatched';
-      updates.dispatched_at = new Date();
-    }
-
-    await this.jobsRepository.update({ id: jobId, tenant_id: tenantId }, updates);
-
-    // Update linked pickup job if exists
-    if (updates.rental_end_date) {
-      const pickupJob = await this.jobsRepository.findOne({
-        where: {
-          tenant_id: tenantId,
-          customer_id: job.customer_id,
-          job_type: 'pickup',
-          status: In(['pending', 'confirmed', 'dispatched']),
+    await this.dataSource.transaction(async (manager) => {
+      await manager.update(
+        Job,
+        { id: jobId, tenant_id: tenantId },
+        {
+          scheduled_date: newDate,
+          rescheduled_from_date: job.scheduled_date ?? null,
+          rescheduled_at: new Date(),
+          rescheduled_reason: actor.reason,
+          rescheduled_by_customer: false,
         },
-      });
-      if (pickupJob) {
-        await this.jobsRepository.update({ id: pickupJob.id, tenant_id: tenantId }, { scheduled_date: updates.rental_end_date as string });
-      }
-    }
+      );
+    });
 
     return this.findOne(tenantId, jobId);
   }
