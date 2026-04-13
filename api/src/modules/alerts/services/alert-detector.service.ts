@@ -322,9 +322,29 @@ export class AlertDetectorService {
 
   /**
    * 3. MISSING_ASSET — a completed or in-progress job with no
-   * asset linked. Jobs can record the asset in three different
-   * columns depending on job_type (primary, drop-off-side,
-   * pick-up-side), so we only flag when all three are NULL.
+   * asset linked.
+   *
+   * Phase 14 — refined detection by job_type:
+   *
+   *   Exchange jobs reference TWO physical dumpsters (`asset_id`
+   *   for the one picked up + `drop_off_asset_id` for the one
+   *   delivered). Either column being NULL is a real gap in
+   *   inventory truth, so exchanges flag when EITHER is null.
+   *
+   *   Non-exchange jobs continue to use the original conservative
+   *   "all three columns null" check. This preserves the existing
+   *   alert behavior for delivery/pickup/removal — any job that
+   *   has ANY asset column set stays unflagged, matching the
+   *   Phase 14 baseline before this refinement. Tightening this
+   *   further is deferred to a later phase to avoid introducing
+   *   alert noise on existing rows.
+   *
+   * Both branches emit `alert_type: 'missing_asset'` so no schema
+   * migration is required — the refinement is entirely in the
+   * SELECT condition and the per-alert metadata, where a new
+   * `missing_fields` array lets the frontend render exchange-
+   * specific language in a follow-up UI phase without touching
+   * the alerts CHECK constraint.
    */
   private async detectMissingAsset(tenantId: string): Promise<DerivedAlert[]> {
     const jobs = await this.jobRepo
@@ -333,23 +353,40 @@ export class AlertDetectorService {
       .andWhere('j.status IN (:...statuses)', {
         statuses: ['completed', 'in_progress'],
       })
-      .andWhere('j.asset_id IS NULL')
-      .andWhere('j.drop_off_asset_id IS NULL')
-      .andWhere('j.pick_up_asset_id IS NULL')
+      .andWhere(
+        `(
+          (j.job_type = 'exchange' AND (j.asset_id IS NULL OR j.drop_off_asset_id IS NULL))
+          OR
+          (j.job_type != 'exchange' AND j.asset_id IS NULL AND j.drop_off_asset_id IS NULL AND j.pick_up_asset_id IS NULL)
+        )`,
+      )
       .getMany();
 
-    return jobs.map<DerivedAlert>((j) => ({
-      alert_type: 'missing_asset',
-      severity: 'high',
-      entity_type: 'job',
-      entity_id: j.id,
-      message: 'alerts_missing_asset',
-      metadata: {
-        job_status: j.status,
-        job_type: j.job_type,
-        job_number: j.job_number,
-      },
-    }));
+    return jobs.map<DerivedAlert>((j) => {
+      const missing_fields: string[] = [];
+      if (j.job_type === 'exchange') {
+        if (!j.asset_id) missing_fields.push('asset_id');
+        if (!j.drop_off_asset_id) missing_fields.push('drop_off_asset_id');
+      } else {
+        // Non-exchange branch only reaches here when all three
+        // columns are null; record the canonical `asset_id`
+        // missing signal for rendering.
+        missing_fields.push('asset_id');
+      }
+      return {
+        alert_type: 'missing_asset',
+        severity: 'high',
+        entity_type: 'job',
+        entity_id: j.id,
+        message: 'alerts_missing_asset',
+        metadata: {
+          job_status: j.status,
+          job_type: j.job_type,
+          job_number: j.job_number,
+          missing_fields,
+        },
+      };
+    });
   }
 
   /**

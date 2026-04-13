@@ -753,17 +753,30 @@ export class JobsService {
     // Runs the full correction path (tenant-scope, active-conflict
     // guard, audit, inventory sync) so a mid-flight assignment is
     // treated identically to a later office correction.
-    if (dto.assetId && dto.assetId !== job.asset_id) {
+    //
+    // Phase 14 — same path now also threads `dropOffAssetId` for
+    // exchange confirmations. Either or both can be present; the
+    // canonical assignAssetToJob handles symmetric validation and
+    // audit. When only drop-off is changing, the current asset_id
+    // is passed through so the canonical path can detect the
+    // no-op on the main field and skip it.
+    const hasAssetIdChange =
+      !!dto.assetId && dto.assetId !== job.asset_id;
+    const hasDropOffAssetIdChange =
+      !!dto.dropOffAssetId && dto.dropOffAssetId !== job.drop_off_asset_id;
+
+    if (hasAssetIdChange || hasDropOffAssetIdChange) {
       await this.assignAssetToJob(
         tenantId,
         job,
-        dto.assetId,
+        dto.assetId ?? job.asset_id,
         {
           overrideConflict: !!dto.overrideAssetConflict,
           reason: dto.assetChangeReason ?? null,
           userId: userId ?? null,
           userName: userName ?? null,
           sizeMismatch: !!dto.assetSizeMismatch,
+          dropOffAssetId: dto.dropOffAssetId,
         },
       );
     }
@@ -775,6 +788,24 @@ export class JobsService {
     if (dto.status === 'completed' && !job.asset_id) {
       throw new BadRequestException(
         'asset_required: An asset must be assigned before completing this job',
+      );
+    }
+
+    // Phase 14 — exchange jobs reference TWO physical dumpsters: the
+    // old one being picked up (canonical `asset_id`, gated above) and
+    // the new one being delivered (`drop_off_asset_id`). Without this
+    // second gate an exchange could complete with a physical dumpster
+    // left at the customer site and no inventory record — the yard
+    // books would show it as available while the customer actually
+    // has it. Runs AFTER the asset_id gate so error ordering matches
+    // the driver UX (pickup asset first, delivery asset second).
+    if (
+      dto.status === 'completed' &&
+      job.job_type === 'exchange' &&
+      !job.drop_off_asset_id
+    ) {
+      throw new BadRequestException(
+        'drop_off_asset_required: An exchange job must have a drop-off asset assigned before completion',
       );
     }
 
@@ -1816,8 +1847,26 @@ export class JobsService {
 
   /**
    * Find any other active (non-completed, non-cancelled) job on the
-   * same tenant that already has this asset assigned. Used by the
-   * active-assignment guard (Step 7B).
+   * same tenant that already has this asset committed — either as its
+   * main `asset_id` or as its exchange `drop_off_asset_id`. Used by
+   * the active-assignment guard (Phase 11A) and extended in Phase 14
+   * to cover exchange drop-off assignments so the same physical
+   * dumpster cannot be simultaneously promised to two different
+   * customers.
+   *
+   * Chain-sibling exclusion: jobs sharing the same `rental_chain_id`
+   * as the current job are intentionally excluded. A delivery and
+   * its linked exchange/pickup referencing the same asset is
+   * expected lifecycle behavior (the dumpster literally IS the same
+   * physical unit moving through the chain), not a duplicate
+   * placement. Cross-chain collisions and standalone-job collisions
+   * remain hard blocks.
+   *
+   * Tenant scoping is enforced on the outer query. The chain-exclude
+   * subquery stays tenant-implicit because task_chain_links rows
+   * inherit tenant scope from the parent chain and the outer query
+   * is already tenant-filtered, so a chain id from one tenant can
+   * only hide job ids from that same tenant.
    */
   async findActiveAssignmentConflict(
     tenantId: string,
@@ -1829,8 +1878,17 @@ export class JobsService {
     job_type: string;
     status: string;
     scheduled_date: string;
+    conflict_field: 'asset_id' | 'drop_off_asset_id';
   } | null> {
-    const conflict = await this.jobsRepository
+    // Resolve the current job's rental chain so we can exclude
+    // siblings. Standalone jobs have no chain link and skip the
+    // exclusion entirely — they still get full conflict coverage.
+    const currentLink = await this.taskChainLinkRepo.findOne({
+      where: { job_id: excludeJobId },
+    });
+    const currentChainId = currentLink?.rental_chain_id ?? null;
+
+    const qb = this.jobsRepository
       .createQueryBuilder('j')
       .select([
         'j.id',
@@ -1838,16 +1896,34 @@ export class JobsService {
         'j.job_type',
         'j.status',
         'j.scheduled_date',
+        'j.asset_id',
+        'j.drop_off_asset_id',
       ])
       .where('j.tenant_id = :tenantId', { tenantId })
-      .andWhere('j.asset_id = :assetId', { assetId })
+      .andWhere(
+        '(j.asset_id = :assetId OR j.drop_off_asset_id = :assetId)',
+        { assetId },
+      )
       .andWhere('j.id != :excludeId', { excludeId: excludeJobId })
       .andWhere('j.status NOT IN (:...terminal)', {
         terminal: ['completed', 'cancelled', 'failed'],
-      })
+      });
+
+    if (currentChainId) {
+      qb.andWhere(
+        `j.id NOT IN (
+          SELECT tcl.job_id FROM task_chain_links tcl
+          WHERE tcl.rental_chain_id = :currentChainId
+        )`,
+        { currentChainId },
+      );
+    }
+
+    const conflict = await qb
       .orderBy('j.scheduled_date', 'ASC')
       .limit(1)
       .getOne();
+
     if (!conflict) return null;
     return {
       id: conflict.id,
@@ -1855,6 +1931,11 @@ export class JobsService {
       job_type: conflict.job_type,
       status: conflict.status,
       scheduled_date: conflict.scheduled_date,
+      // Which column the collision hit on. Used by callers to
+      // render a precise error (asset already deployed elsewhere
+      // vs. already committed as a delivery asset elsewhere).
+      conflict_field:
+        conflict.asset_id === assetId ? 'asset_id' : 'drop_off_asset_id',
     };
   }
 
@@ -1874,54 +1955,121 @@ export class JobsService {
   private async assignAssetToJob(
     tenantId: string,
     job: Job,
-    newAssetId: string,
+    newAssetId: string | null | undefined,
     opts: {
       overrideConflict: boolean;
       reason: string | null;
       userId: string | null;
       userName: string | null;
       sizeMismatch?: boolean;
+      // Phase 14 — optional drop-off asset for exchange jobs. When
+      // present, runs the full tenant/conflict/audit path on the
+      // delivery-side asset in the SAME transition as the main
+      // asset, so exchange corrections hit both columns atomically.
+      // Exchange-specific: ignored for non-exchange job types is
+      // out of scope here — the canonical path trusts callers to
+      // only pass this on exchange jobs (which the DTO layer and
+      // the driver controller both respect).
+      dropOffAssetId?: string;
     },
   ): Promise<Job> {
-    // Tenant-scoped asset load
-    const asset = await this.assetRepo.findOne({
-      where: { id: newAssetId, tenant_id: tenantId },
-    });
-    if (!asset) {
-      throw new BadRequestException(
-        'asset_not_found: Asset does not exist in this tenant',
-      );
+    const mainAssetChanged =
+      !!newAssetId && newAssetId !== job.asset_id;
+    const dropOffAssetChanged =
+      !!opts.dropOffAssetId &&
+      opts.dropOffAssetId !== job.drop_off_asset_id;
+
+    // No-op: called with neither field actually changing. Skipping
+    // keeps the audit log clean and avoids redundant DB lookups.
+    if (!mainAssetChanged && !dropOffAssetChanged) {
+      return job;
     }
 
-    // Active-assignment conflict guard (Step 7B)
-    const conflict = await this.findActiveAssignmentConflict(
-      tenantId,
-      newAssetId,
-      job.id,
-    );
-    if (conflict && !opts.overrideConflict) {
-      throw new BadRequestException(
-        `asset_active_conflict: Asset is already assigned to active job ${conflict.job_number} (${conflict.job_type}, ${conflict.scheduled_date}). Pass overrideAssetConflict=true to override.`,
-      );
-    }
-
-    const previousAssetId = job.asset_id ?? null;
-
-    // Mutate + audit (jsonb array append)
-    job.asset_id = newAssetId;
     const history = Array.isArray(job.asset_change_history)
       ? [...job.asset_change_history]
       : [];
-    history.push({
-      previous_asset_id: previousAssetId,
-      new_asset_id: newAssetId,
-      changed_by: opts.userId,
-      changed_by_name: opts.userName,
-      changed_at: new Date().toISOString(),
-      reason: opts.reason,
-      ...(conflict ? { override_conflict: true } : {}),
-      ...(opts.sizeMismatch ? { size_mismatch: true } : {}),
-    });
+
+    // ── Main asset (asset_id) — Phase 11A canonical path ──
+    if (mainAssetChanged && newAssetId) {
+      // Tenant-scoped asset load
+      const asset = await this.assetRepo.findOne({
+        where: { id: newAssetId, tenant_id: tenantId },
+      });
+      if (!asset) {
+        throw new BadRequestException(
+          'asset_not_found: Asset does not exist in this tenant',
+        );
+      }
+
+      // Active-assignment conflict guard
+      const conflict = await this.findActiveAssignmentConflict(
+        tenantId,
+        newAssetId,
+        job.id,
+      );
+      if (conflict && !opts.overrideConflict) {
+        throw new BadRequestException(
+          `asset_active_conflict: Asset is already assigned to active job ${conflict.job_number} (${conflict.job_type}, ${conflict.scheduled_date}) on field ${conflict.conflict_field}. Pass overrideAssetConflict=true to override.`,
+        );
+      }
+
+      const previousAssetId = job.asset_id ?? null;
+      job.asset_id = newAssetId;
+      history.push({
+        previous_asset_id: previousAssetId,
+        new_asset_id: newAssetId,
+        changed_by: opts.userId,
+        changed_by_name: opts.userName,
+        changed_at: new Date().toISOString(),
+        reason: opts.reason,
+        ...(conflict ? { override_conflict: true } : {}),
+        ...(opts.sizeMismatch ? { size_mismatch: true } : {}),
+      });
+    }
+
+    // ── Drop-off asset (drop_off_asset_id) — Phase 14 path ──
+    // Symmetric validation + conflict guard + audit entry. Runs the
+    // same canonical guards as the main asset so exchange-specific
+    // drop-off corrections can never bypass audit or conflict
+    // detection. The audit entry carries a `field` marker so the
+    // future history-rendering UI can distinguish drop-off edits
+    // from main-asset edits; existing entries without the marker
+    // implicitly refer to `asset_id`.
+    if (dropOffAssetChanged && opts.dropOffAssetId) {
+      const dropOffAsset = await this.assetRepo.findOne({
+        where: { id: opts.dropOffAssetId, tenant_id: tenantId },
+      });
+      if (!dropOffAsset) {
+        throw new BadRequestException(
+          'drop_off_asset_not_found: Drop-off asset does not exist in this tenant',
+        );
+      }
+
+      const dropOffConflict = await this.findActiveAssignmentConflict(
+        tenantId,
+        opts.dropOffAssetId,
+        job.id,
+      );
+      if (dropOffConflict && !opts.overrideConflict) {
+        throw new BadRequestException(
+          `drop_off_asset_active_conflict: Drop-off asset is already assigned to active job ${dropOffConflict.job_number} (${dropOffConflict.job_type}, ${dropOffConflict.scheduled_date}) on field ${dropOffConflict.conflict_field}. Pass overrideAssetConflict=true to override.`,
+        );
+      }
+
+      const previousDropOffAssetId = job.drop_off_asset_id ?? null;
+      job.drop_off_asset_id = opts.dropOffAssetId;
+      history.push({
+        field: 'drop_off_asset_id',
+        previous_asset_id: previousDropOffAssetId,
+        new_asset_id: opts.dropOffAssetId,
+        changed_by: opts.userId,
+        changed_by_name: opts.userName,
+        changed_at: new Date().toISOString(),
+        reason: opts.reason,
+        ...(dropOffConflict ? { override_conflict: true } : {}),
+      });
+    }
+
     // Cap at 100 entries so the column can never explode
     if (history.length > 100) history.splice(0, history.length - 100);
     job.asset_change_history = history;
@@ -1940,16 +2088,32 @@ export class JobsService {
     tenantId: string,
     jobId: string,
     dto: {
-      assetId: string;
+      assetId?: string;
       overrideAssetConflict?: boolean;
       reason?: string;
       sizeMismatch?: boolean;
+      // Phase 14 — drop-off asset corrections for exchange jobs.
+      // Either `assetId` or `dropOffAssetId` (or both) must be
+      // provided; the runtime check below enforces this.
+      dropOffAssetId?: string;
     },
     userId: string | null,
     userName: string | null,
   ): Promise<Job> {
+    // Phase 14 — at least one of the two asset fields must be
+    // provided. Previously this was implicit because `assetId` was
+    // required in the DTO, but making `assetId` optional lets the
+    // office correct ONLY the drop-off asset on an exchange without
+    // having to redundantly pass the current pickup asset.
+    if (!dto.assetId && !dto.dropOffAssetId) {
+      throw new BadRequestException(
+        'asset_required: Either assetId or dropOffAssetId must be provided',
+      );
+    }
+
     const job = await this.findOne(tenantId, jobId);
     const previousAssetId = job.asset_id ?? null;
+    const previousDropOffAssetId = job.drop_off_asset_id ?? null;
     const wasCompleted = job.status === 'completed';
 
     await this.assignAssetToJob(tenantId, job, dto.assetId, {
@@ -1958,17 +2122,35 @@ export class JobsService {
       userId,
       userName,
       sizeMismatch: !!dto.sizeMismatch,
+      dropOffAssetId: dto.dropOffAssetId,
     });
 
     const saved = await this.jobsRepository.save(job);
 
     // If the job was completed, revert the previous asset's state and
     // reapply the new asset's state so the yard/customer location
-    // books match the correction.
+    // books match the correction. Phase 14 extends this to also
+    // revert the previous drop-off asset when a completed exchange's
+    // delivery side is corrected — otherwise the old delivered
+    // dumpster stays logically on_site forever even though the
+    // correction replaced it.
     if (wasCompleted) {
-      if (previousAssetId) {
+      if (previousAssetId && previousAssetId !== saved.asset_id) {
         await this.assetRepo.update(
           { id: previousAssetId, tenant_id: tenantId } as any,
+          {
+            status: 'available',
+            current_job_id: null,
+            current_location_type: 'yard',
+          } as any,
+        );
+      }
+      if (
+        previousDropOffAssetId &&
+        previousDropOffAssetId !== saved.drop_off_asset_id
+      ) {
+        await this.assetRepo.update(
+          { id: previousDropOffAssetId, tenant_id: tenantId } as any,
           {
             status: 'available',
             current_job_id: null,
