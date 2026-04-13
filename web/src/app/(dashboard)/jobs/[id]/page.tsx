@@ -40,6 +40,7 @@ import { JobBlockedResolutionDrawer } from "@/components/job-blocked-resolution-
 import LifecycleContextPanel from "./_components/LifecycleContextPanel";
 import DumpTicketForm, { type DumpTicketFormTicket } from "./_components/DumpTicketForm";
 import VoidDumpTicketDialog from "./_components/VoidDumpTicketDialog";
+import ScheduleChangeHistoryCard from "./_components/ScheduleChangeHistoryCard";
 
 /* --- Types --- */
 
@@ -135,6 +136,15 @@ interface Job {
   // Fix — rental chain context surfaced by findOne for required-size
   // derivation on the asset picker.
   rental_chain_dumpster_size?: string | null;
+  // Phase B4 — reschedule audit trio surfaced on the job detail
+  // page via the ScheduleChangeHistoryCard. Written by
+  // `JobsService.updateScheduledDate` on every reschedule (both
+  // portal customer actions and office dispatcher edits). The
+  // card renders only when there is a meaningful prior date.
+  rescheduled_by_customer?: boolean | null;
+  rescheduled_at?: string | null;
+  rescheduled_from_date?: string | null;
+  rescheduled_reason?: string | null;
 }
 
 interface AssetOption {
@@ -1372,6 +1382,25 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
               )}
             </div>
           </Card>
+
+          {/* Phase B4 — Schedule Change History card.
+              Renders the latest reschedule audit trio that
+              `JobsService.updateScheduledDate` writes on every
+              date change (portal customer + office dispatcher
+              edits both flow through the same path). Self-
+              gating: the component returns null when there is
+              no meaningful prior date, so a fresh job is
+              unaffected. Placed directly above the lifecycle
+              panel so an operator drilling in to investigate
+              "why did the date move" sees the history
+              alongside the chain context. */}
+          <ScheduleChangeHistoryCard
+            scheduledDate={job.scheduled_date}
+            rescheduledFromDate={job.rescheduled_from_date}
+            rescheduledAt={job.rescheduled_at}
+            rescheduledReason={job.rescheduled_reason}
+            rescheduledByCustomer={job.rescheduled_by_customer}
+          />
 
           {/* Phase 15 — Connected Job Lifecycle panel.
               Replaces the old parent_job_id / linked_job_ids

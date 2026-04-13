@@ -1,6 +1,6 @@
 import { Injectable, UnauthorizedException, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In } from 'typeorm';
+import { Repository, In, DataSource } from 'typeorm';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { Customer } from '../customers/entities/customer.entity';
@@ -18,6 +18,8 @@ import { PricingService } from '../pricing/pricing.service';
 import { OrchestrationService } from '../billing/services/orchestration.service';
 import { StripeService } from '../stripe/stripe.service';
 import { JobsService } from '../jobs/jobs.service';
+import { TenantSettings } from '../tenant-settings/entities/tenant-settings.entity';
+import { getTenantToday } from '../../common/utils/tenant-date.util';
 
 /**
  * Customer-safe projection of a Job for portal responses.
@@ -87,6 +89,18 @@ export class PortalService {
     // rental actions delegate here so the job + chain always stay
     // in sync and the reschedule audit trio is always written.
     private jobsService: JobsService,
+    // Phase B4 — DataSource injected for two distinct uses:
+    //   1. Tenant-aware "today" in `requestEarlyPickup` — loads
+    //      `tenant_settings.timezone` directly via the shared
+    //      DataSource rather than introducing a new
+    //      `@InjectRepository(TenantSettings)` or a new service
+    //      dependency. Same pattern as the alert detector.
+    //   2. Atomic `rescheduleRental` — wraps the two sequential
+    //      `updateScheduledDate` calls (delivery + pickup) in a
+    //      single transaction so a mid-sequence failure cannot
+    //      leave the chain with a shifted delivery date but a
+    //      stale pickup date.
+    private dataSource: DataSource,
   ) {}
 
   // ─────────────────────────────────────────────────────────
@@ -515,13 +529,20 @@ export class PortalService {
       throw new NotFoundException('Rental not found');
     }
 
-    // 3. "Today" — TODO: Phase B3 will replace this with
-    // todayInTenantTz(). For now we match the existing UTC-
-    // based convention used everywhere else in the codebase
-    // so the behavior is consistent with the rest of the API
-    // until the shared helper ships.
-    // TODO: Phase B3 — replace with todayInTenantTz()
-    const today = new Date().toISOString().split('T')[0];
+    // 3. "Today" — Phase B4 fixes the former UTC-based rollover
+    // bug. Early-pickup requests at 8:30 PM Eastern used to be
+    // rejected because `new Date().toISOString().split('T')[0]`
+    // was already tomorrow in UTC; the customer saw a confusing
+    // "date in the past" error. We now resolve the tenant's
+    // configured IANA timezone from `tenant_settings.timezone`
+    // and use the canonical `getTenantToday(tz)` helper. Tenants
+    // whose timezone is NULL fall through to the helper's
+    // default (`America/New_York`), matching the rest of the
+    // codebase.
+    const settings = await this.dataSource
+      .getRepository(TenantSettings)
+      .findOne({ where: { tenant_id: tenantId } });
+    const today = getTenantToday(settings?.timezone ?? undefined);
 
     // 4. Delegate to the canonical mutation. Pickup branch
     // validates `new > chain.drop_off_date` — if today is on
@@ -694,28 +715,52 @@ export class PortalService {
     );
     const newPickupDate = pickupDateObj.toISOString().split('T')[0];
 
-    // 6. Delegate to the canonical mutation. Two calls: delivery
-    // first, pickup second. Each call runs its own transaction
-    // via DataSource.transaction and writes the reschedule audit
-    // trio + chain sync.
+    // 6. Delegate to the canonical mutation. Two calls wrapped in
+    // a SINGLE transaction so delivery + pickup commit atomically
+    // as a pair. Phase B1 left these as two independent calls
+    // with two independent transactions — a mid-sequence failure
+    // (e.g. second call's validation rejects) would leave the
+    // delivery job + chain shifted but the pickup job stale, and
+    // the chain's rental_days would be silently mismatched
+    // against the jobs until the next manual fix. Phase B4
+    // threads an outer `EntityManager` through
+    // `updateScheduledDate` so both calls see each other's
+    // uncommitted writes (required for the pickup-branch
+    // validation to read the NEW `chain.drop_off_date` that the
+    // delivery branch just wrote) and so a rollback covers both.
+    //
+    // Customer-supplied freeform reason (`body.reason`) is
+    // intentionally NOT persisted in this phase. The
+    // `rescheduled_reason` column holds a canonical machine code
+    // resolved to a human label via the feature registry
+    // (`customer_portal_reschedule` → "Reschedule"); corrupting
+    // that semantics with freeform text would break the label
+    // translation path and introduce an unescaped-render XSS
+    // surface in every office UI that renders it. Persisting
+    // freeform customer notes will be revisited in a later phase
+    // with a dedicated column + escaped-render contract.
     const actor = {
       type: 'customer' as const,
       userId: customerId,
       reason: 'customer_portal_reschedule',
     };
 
-    await this.jobsService.updateScheduledDate(
-      tenantId,
-      jobId,
-      { scheduled_date: newDeliveryDate },
-      actor,
-    );
-    await this.jobsService.updateScheduledDate(
-      tenantId,
-      pickupJob.id,
-      { scheduled_date: newPickupDate },
-      actor,
-    );
+    await this.dataSource.transaction(async (manager) => {
+      await this.jobsService.updateScheduledDate(
+        tenantId,
+        jobId,
+        { scheduled_date: newDeliveryDate },
+        actor,
+        manager,
+      );
+      await this.jobsService.updateScheduledDate(
+        tenantId,
+        pickupJob.id,
+        { scheduled_date: newPickupDate },
+        actor,
+        manager,
+      );
+    });
 
     // 7. Reload the delivery job for the portal response —
     // matches the old method's return shape so the frontend
