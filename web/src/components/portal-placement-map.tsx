@@ -115,30 +115,30 @@ export default function PortalPlacementMap({ jobId, serviceAddress }: Props) {
         transition: "border-color 0.3s",
       }}
     >
-      {/* Header */}
-      <div className="px-6 pt-5 pb-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
+      {/* Header — Phase B10: tighter mobile padding, saved pill wraps beneath title block */}
+      <div className="px-4 sm:px-6 pt-4 sm:pt-5 pb-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0 flex-1">
             <div
-              className="flex h-10 w-10 items-center justify-center rounded-2xl"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl"
               style={{ background: saved ? "var(--t-accent)" : "var(--t-accent-soft)" }}
             >
               {saved
                 ? <Check className="h-5 w-5" style={{ color: "var(--t-accent-on-accent, #fff)" }} />
                 : <MapPin className="h-5 w-5" style={{ color: "var(--t-accent)" }} />}
             </div>
-            <div>
-              <h3 className="text-base font-bold" style={{ color: "var(--t-text-primary)" }}>
+            <div className="min-w-0">
+              <h3 className="text-base font-bold truncate" style={{ color: "var(--t-text-primary)" }}>
                 {label("portal_placement_title", "Drop Location")}
               </h3>
-              <p className="text-xs mt-0.5" style={{ color: "var(--t-text-muted)" }}>
+              <p className="text-xs mt-0.5 leading-snug" style={{ color: "var(--t-text-muted)" }}>
                 {label("portal_placement_subtitle", "Choose exactly where you want the dumpster placed")}
               </p>
             </div>
           </div>
           {saved && (
             <span
-              className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-full"
+              className="flex shrink-0 items-center gap-1.5 text-[10px] sm:text-xs font-bold px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-full"
               style={{ background: "var(--t-accent)", color: "var(--t-accent-on-accent, #fff)" }}
             >
               <Check className="h-3.5 w-3.5" /> {label("portal_placement_saved", "Saved")}
@@ -147,19 +147,19 @@ export default function PortalPlacementMap({ jobId, serviceAddress }: Props) {
         </div>
       </div>
 
-      {/* Map — dominant */}
+      {/* Map — dominant, shorter on mobile for better scroll balance */}
       {!loaded ? (
-        <div className="h-80 sm:h-96 flex items-center justify-center" style={{ background: "#1a1a2e", color: "var(--t-text-muted)" }}>
+        <div className="h-64 sm:h-96 flex items-center justify-center" style={{ background: "#1a1a2e", color: "var(--t-text-muted)" }}>
           <Loader2 className="h-6 w-6 animate-spin" />
         </div>
       ) : (
-        <div ref={mapContainer} className="h-80 sm:h-96 w-full" />
+        <div ref={mapContainer} className="h-64 sm:h-96 w-full" />
       )}
 
       {/* Controls */}
       {loaded && (
-        <div className="px-6 py-5 space-y-4">
-          <p className="text-sm" style={{ color: "var(--t-text-muted)" }}>
+        <div className="px-4 sm:px-6 py-4 sm:py-5 space-y-4">
+          <p className="text-xs sm:text-sm leading-relaxed" style={{ color: "var(--t-text-muted)" }}>
             {label("portal_placement_helper", "Drag the pin or tap the map to set where the dumpster should be placed.")}
           </p>
 
@@ -172,23 +172,24 @@ export default function PortalPlacementMap({ jobId, serviceAddress }: Props) {
               onChange={(e) => { setNotes(e.target.value); setSaved(false); }}
               placeholder={label("portal_placement_notes_placeholder", "e.g., left side of driveway, behind garage, near the fence")}
               rows={2}
-              className="w-full rounded-[16px] border px-4 py-3 text-sm outline-none resize-none focus:border-[var(--t-accent)] transition-colors"
+              className="w-full rounded-[16px] border px-3 sm:px-4 py-2.5 sm:py-3 text-sm outline-none resize-none focus:border-[var(--t-accent)] transition-colors"
               style={{ borderColor: "var(--t-border)", color: "var(--t-text-primary)", background: "var(--t-bg-input, var(--t-bg-card))" }}
             />
           </div>
 
-          <div className="flex items-center justify-between gap-4">
+          {/* Save action — Phase B10: stacks on mobile, inline on desktop */}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <button
               onClick={handleSave}
               disabled={saving || (lat == null)}
-              className="flex items-center gap-2 rounded-full px-6 py-3 text-sm font-bold disabled:opacity-40 hover:opacity-90 transition-all active:scale-[0.98]"
+              className="w-full sm:w-auto flex items-center justify-center gap-2 rounded-full px-5 sm:px-6 py-3 text-sm font-bold disabled:opacity-40 hover:opacity-90 transition-all active:scale-[0.98]"
               style={{ background: "var(--t-accent)", color: "var(--t-accent-on-accent, #fff)" }}
             >
               {saving ? <><Loader2 className="h-4 w-4 animate-spin" /> {label("portal_placement_saving", "Saving...")}</>
                 : saved ? <><Check className="h-4 w-4" /> {label("portal_placement_saved_cta", "Drop Location Saved")}</>
                 : <><Navigation className="h-4 w-4" /> {label("portal_placement_save", "Save Drop Location")}</>}
             </button>
-            <p className="text-[11px] text-right" style={{ color: "var(--t-text-muted)" }}>
+            <p className="text-[11px] text-center sm:text-right leading-snug" style={{ color: "var(--t-text-muted)" }}>
               {label("portal_placement_editable_hint", "You can update this anytime before delivery")}
             </p>
           </div>

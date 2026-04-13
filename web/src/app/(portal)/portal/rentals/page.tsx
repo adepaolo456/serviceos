@@ -203,71 +203,72 @@ function PortalRentalsPage() {
       <div className="space-y-4">
         <button onClick={closeDetail} className="text-sm text-[var(--t-accent)] font-medium hover:underline">&larr; Back to rentals</button>
 
-        {/* ─── Top identity card — Phase B8: wider, denser, action-forward ─── */}
-        <div className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5 sm:p-6">
+        {/* ─── Top identity card — Phase B10: mobile-first padding + responsive
+            summary grid; address spans full width on narrow screens ─── */}
+        <div className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-4 sm:p-6">
           {/* Title row */}
-          <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
-            <div className="min-w-0">
-              <h1 className="text-xl sm:text-2xl font-bold text-[var(--t-text-primary)] leading-tight">
+          <div className="flex flex-wrap items-start justify-between gap-2 sm:gap-3 mb-4">
+            <div className="min-w-0 flex-1">
+              <h1 className="text-lg sm:text-2xl font-bold text-[var(--t-text-primary)] leading-tight break-words">
                 {formatRentalTitle(detail)}
               </h1>
-              <p className="text-xs text-[var(--t-text-muted)] mt-0.5">
+              <p className="text-[11px] sm:text-xs text-[var(--t-text-muted)] mt-0.5 font-mono">
                 {detail.job_number}
               </p>
             </div>
-            <span className={`text-xs font-semibold px-2.5 py-1 rounded-full bg-[var(--t-bg-primary)] border border-[var(--t-border)] ${STATUS_COLORS[detail.status] || ""}`}>
+            <span className={`text-[10px] sm:text-xs font-semibold px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-full bg-[var(--t-bg-primary)] border border-[var(--t-border)] whitespace-nowrap ${STATUS_COLORS[detail.status] || ""}`}>
               {STATUS_LABELS[detail.status] || detail.status}
             </span>
           </div>
 
-          {/* Compact summary grid — horizontal-first, 2 → 3 → 4 cols on wider screens */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-4 gap-y-3 text-sm">
-            <div>
+          {/* Compact summary grid — 2 cols mobile, 3 tablet, 4 desktop */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-3 sm:gap-x-4 gap-y-3 text-sm">
+            <div className="min-w-0">
               <span className="text-[10px] font-medium uppercase tracking-wider text-[var(--t-text-muted)]">{FEATURE_REGISTRY.portal_detail_dumpster_size?.label ?? "Dumpster Size"}</span>
-              <p className="font-semibold text-[var(--t-text-primary)] mt-0.5">{rentalSizeLabel(detail) || "—"}</p>
+              <p className="font-semibold text-[var(--t-text-primary)] mt-0.5 truncate">{rentalSizeLabel(detail) || "—"}</p>
             </div>
-            <div>
+            <div className="min-w-0">
               <span className="text-[10px] font-medium uppercase tracking-wider text-[var(--t-text-muted)]">{FEATURE_REGISTRY.portal_detail_delivery_date?.label ?? "Delivery Date"}</span>
-              <p className="font-semibold text-[var(--t-text-primary)] mt-0.5">{detail.scheduled_date ? formatDateOnly(detail.scheduled_date) : "—"}</p>
+              <p className="font-semibold text-[var(--t-text-primary)] mt-0.5 truncate">{detail.scheduled_date ? formatDateOnly(detail.scheduled_date) : "—"}</p>
             </div>
-            <div>
+            <div className="min-w-0">
               <span className="text-[10px] font-medium uppercase tracking-wider text-[var(--t-text-muted)]">{FEATURE_REGISTRY.portal_detail_pickup_date?.label ?? "Pickup Date"}</span>
-              <p className="font-semibold text-[var(--t-text-primary)] mt-0.5">{detail.rental_end_date ? formatDateOnly(detail.rental_end_date) : "—"}</p>
+              <p className="font-semibold text-[var(--t-text-primary)] mt-0.5 truncate">{detail.rental_end_date ? formatDateOnly(detail.rental_end_date) : "—"}</p>
             </div>
-            <div>
+            <div className="min-w-0">
               <span className="text-[10px] font-medium uppercase tracking-wider text-[var(--t-text-muted)]">{FEATURE_REGISTRY.portal_detail_duration?.label ?? "Rental Duration"}</span>
-              <p className="font-semibold text-[var(--t-text-primary)] mt-0.5">{detail.rental_days ? `${detail.rental_days} days` : "—"}</p>
+              <p className="font-semibold text-[var(--t-text-primary)] mt-0.5 truncate">{detail.rental_days ? `${detail.rental_days} days` : "—"}</p>
             </div>
-            <div>
+            <div className="min-w-0 col-span-2 sm:col-span-1">
               <span className="text-[10px] font-medium uppercase tracking-wider text-[var(--t-text-muted)]">{FEATURE_REGISTRY.portal_detail_total_cost?.label ?? "Total Cost"}</span>
               <p className="font-semibold text-[var(--t-text-primary)] mt-0.5">{formatCurrency(detail.total_price)}</p>
             </div>
-            <div className="col-span-2 sm:col-span-3 lg:col-span-3">
+            <div className="col-span-2 sm:col-span-3 lg:col-span-3 min-w-0">
               <span className="text-[10px] font-medium uppercase tracking-wider text-[var(--t-text-muted)]">{FEATURE_REGISTRY.portal_detail_service_address?.label ?? "Service Address"}</span>
-              <p className="font-semibold text-[var(--t-text-primary)] mt-0.5 flex items-start gap-1.5">
+              <p className="font-semibold text-[var(--t-text-primary)] mt-0.5 flex items-start gap-1.5 min-w-0">
                 <MapPin className="h-4 w-4 mt-0.5 shrink-0 text-[var(--t-text-muted)]" />
-                <span className="truncate">{detail.service_address?.formatted || detail.service_address?.street || "—"}</span>
+                <span className="break-words min-w-0">{detail.service_address?.formatted || detail.service_address?.street || "—"}</span>
               </p>
             </div>
           </div>
 
-          {/* Change Date / Reschedule — Phase B8: surfaced immediately under the
-              summary so the primary rental action is above the fold. */}
+          {/* Change Date / Reschedule — Phase B10: full-width CTA on mobile,
+              inline on desktop; too-soon notice wraps below on mobile. */}
           {canChangeDate && (
             <div className="mt-5 pt-4 border-t border-[var(--t-border)]">
               {!rescheduleOpen ? (
-                <div className="flex flex-wrap items-center gap-2">
+                <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2">
                   {tooSoon ? (
-                    <div className="flex items-center gap-2">
+                    <>
                       <button disabled
-                        className="rounded-full border border-[var(--t-border)] px-4 py-2 text-sm font-medium text-[var(--t-text-muted)] opacity-50 cursor-not-allowed flex items-center gap-1.5">
+                        className="w-full sm:w-auto rounded-full border border-[var(--t-border)] px-4 py-2.5 sm:py-2 text-sm font-medium text-[var(--t-text-muted)] opacity-50 cursor-not-allowed flex items-center justify-center gap-1.5">
                         <CalendarClock className="h-4 w-4" /> Change Date
                       </button>
-                      <span className="text-xs text-amber-500">Cannot change within 24 hours of scheduled date</span>
-                    </div>
+                      <span className="text-xs text-amber-500 text-center sm:text-left leading-snug">Cannot change within 24 hours of scheduled date</span>
+                    </>
                   ) : (
                     <button onClick={() => { setRescheduleOpen(true); setNewDate(detail.scheduled_date || ""); }}
-                      className="rounded-full bg-[var(--t-accent)] px-4 py-2 text-sm font-semibold text-[var(--t-accent-on-accent)] hover:opacity-90 transition-opacity flex items-center gap-1.5">
+                      className="w-full sm:w-auto rounded-full bg-[var(--t-accent)] px-4 py-2.5 sm:py-2 text-sm font-semibold text-[var(--t-accent-on-accent)] hover:opacity-90 transition-opacity flex items-center justify-center gap-1.5">
                       <CalendarClock className="h-4 w-4" /> Change Date
                     </button>
                   )}
@@ -313,7 +314,7 @@ function PortalRentalsPage() {
                       placeholder="Why are you rescheduling?"
                       className={`${inputCls} placeholder-[var(--t-text-muted)]`} />
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex flex-col sm:flex-row gap-2">
                     <button onClick={async () => {
                       setRescheduling(true);
                       try {
@@ -326,10 +327,10 @@ function PortalRentalsPage() {
                         alert(resolvePortalErrorMessage(err));
                       } finally { setRescheduling(false); }
                     }} disabled={!newDate || rescheduling}
-                      className="rounded-full bg-[var(--t-accent)] px-4 py-2 text-sm font-semibold text-[var(--t-accent-on-accent)] hover:opacity-90 disabled:opacity-50 transition-opacity">
+                      className="w-full sm:w-auto rounded-full bg-[var(--t-accent)] px-4 py-2.5 sm:py-2 text-sm font-semibold text-[var(--t-accent-on-accent)] hover:opacity-90 disabled:opacity-50 transition-opacity">
                       {rescheduling ? "Rescheduling..." : "Confirm Reschedule"}
                     </button>
-                    <button onClick={() => setRescheduleOpen(false)} className="rounded-full border border-[var(--t-border)] px-4 py-2 text-sm text-[var(--t-text-muted)] hover:bg-[var(--t-bg-card-hover)] transition-colors">Cancel</button>
+                    <button onClick={() => setRescheduleOpen(false)} className="w-full sm:w-auto rounded-full border border-[var(--t-border)] px-4 py-2.5 sm:py-2 text-sm text-[var(--t-text-muted)] hover:bg-[var(--t-bg-card-hover)] transition-colors">Cancel</button>
                   </div>
                 </div>
               )}
@@ -337,17 +338,17 @@ function PortalRentalsPage() {
           )}
         </div>
 
-        {/* ─── Progress timeline — below the top card ─── */}
-        <div className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5 sm:p-6">
+        {/* ─── Progress timeline — Phase B10: tighter mobile padding ─── */}
+        <div className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-4 sm:p-6">
           <h3 className="text-sm font-semibold text-[var(--t-text-primary)] mb-2">Progress</h3>
           <HorizontalTimeline steps={timelineSteps} />
         </div>
 
-        {/* ─── Drop location / Map — Phase B8: moved to the bottom of the page ─── */}
+        {/* ─── Drop location / Map — Phase B10: map card handles its own
+            inner padding, so the outer wrapper only contributes the card
+            shell + rounding. ─── */}
         {!["completed", "cancelled"].includes(detail.status) && (
-          <div className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5 sm:p-6">
-            <PortalPlacementMap jobId={detail.id} serviceAddress={detail.service_address} />
-          </div>
+          <PortalPlacementMap jobId={detail.id} serviceAddress={detail.service_address} />
         )}
       </div>
     );
@@ -357,8 +358,8 @@ function PortalRentalsPage() {
     <div className="space-y-5">
       {/* Title row + search — Phase B9: tighter header block and an inline
           client-side search so customers can find a rental instantly. */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <h1 className="text-[28px] font-bold tracking-[-1px] text-[var(--t-frame-text)]">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <h1 className="text-2xl sm:text-[28px] font-bold tracking-[-1px] leading-tight text-[var(--t-frame-text)]">
           {FEATURE_REGISTRY.portal_rentals_title?.label ?? "My Rentals"}
         </h1>
         <div className="relative w-full sm:max-w-xs">
