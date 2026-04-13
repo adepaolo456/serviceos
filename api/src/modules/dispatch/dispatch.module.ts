@@ -4,6 +4,7 @@ import { Route } from './entities/route.entity';
 import { Job } from '../jobs/entities/job.entity';
 import { User } from '../auth/entities/user.entity';
 import { Tenant } from '../tenants/entities/tenant.entity';
+import { Invoice } from '../billing/entities/invoice.entity';
 import { JobsModule } from '../jobs/jobs.module';
 import { CustomersModule } from '../customers/customers.module';
 import { CreditAuditModule } from '../credit-audit/credit-audit.module';
@@ -14,7 +15,12 @@ import { DispatchController } from './dispatch.controller';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Route, Job, User, Tenant]),
+    // Phase B9 — Invoice is required so DispatchCreditEnforcementService
+    // can look up the job's linked invoice in `enforceJobPrepayment`.
+    // JobsModule already registers Invoice in its own forFeature list,
+    // so both module-scoped instances of the enforcement service can
+    // inject InvoiceRepository.
+    TypeOrmModule.forFeature([Route, Job, User, Tenant, Invoice]),
     JobsModule,
     CustomersModule,
     CreditAuditModule,

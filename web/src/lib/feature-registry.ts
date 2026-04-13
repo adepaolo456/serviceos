@@ -2353,6 +2353,14 @@ export const FEATURE_REGISTRY: Record<string, FeatureDescription> = {
     isUserFacing: true, isGuideEligible: false,
     keywords: ["blocked", "credit hold", "dispatch"],
   },
+  dispatch_prepayment_block_message: {
+    id: "dispatch_prepayment_block_message", label: "Action blocked — job must be paid before dispatch", category: "operations",
+    shortDescription: "Message shown when a dispatch action is blocked because the customer is on prepayment terms and the job has no paid invoice.",
+    guideDescription: "",
+    routeOrSurface: "dispatch", tenantOverrideKey: "dispatch_prepayment_block_message",
+    isUserFacing: true, isGuideEligible: false,
+    keywords: ["blocked", "prepayment", "unpaid", "dispatch"],
+  },
   dispatch_credit_override_cta: {
     id: "dispatch_credit_override_cta", label: "Override & Continue", category: "operations",
     shortDescription: "Button label for overriding a dispatch credit block.",

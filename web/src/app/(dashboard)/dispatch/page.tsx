@@ -111,6 +111,12 @@ function isCreditBlockError(err: unknown): string | null {
   if (!err || typeof err !== "object") return null;
   const msg = (err as Error).message || "";
   // The API client throws Error with the message from the JSON body.
+  // Phase B9 — also recognize prepayment blocks (per-job gate), which
+  // throw with a different message phrasing than the customer-level
+  // credit hold but share the same structured response shape.
+  if (msg.includes("prepayment terms")) {
+    return FEATURE_REGISTRY.dispatch_prepayment_block_message?.label ?? msg;
+  }
   // Credit block messages contain "credit hold" or the structured code.
   if (msg.includes("credit hold") || msg.includes("DISPATCH_CREDIT")) {
     return FEATURE_REGISTRY.dispatch_credit_block_message?.label ?? msg;

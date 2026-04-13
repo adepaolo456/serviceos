@@ -202,10 +202,19 @@ export class JobsController {
     @CurrentUser('email') userEmail: string,
   ) {
     // Phase 5 — dispatch credit enforcement for status transitions.
+    // Phase B9 — 'dispatched' added as a belt-and-suspenders entry so a
+    // direct single-job transition to 'dispatched' via this controller
+    // path also runs through the hold gate. Mapped to 'assignment' so
+    // the existing tenant `block_actions.assignment` policy covers it
+    // without introducing a new DispatchAction type. NOTE: this does
+    // NOT close the `DispatchService.sendRoutes` path, which transitions
+    // jobs directly through the service and is intentionally out of
+    // scope for Phase B9.
     const ENFORCED_STATUSES: Record<string, DispatchAction> = {
       en_route: 'en_route',
       arrived: 'arrived',
       completed: 'completed',
+      dispatched: 'assignment',
     };
     const action = ENFORCED_STATUSES[dto.status];
     if (action) {
@@ -262,19 +271,49 @@ export class JobsController {
     // Only enforce when assigning (not unassigning).
     if (body.assignedDriverId) {
       const job = await this.jobsService.findOne(tenantId, id);
+      const creditOverride =
+        (body.creditOverride as { reason?: string } | null) ?? null;
+
+      // Phase 5 — customer-level credit-hold gate (aggregate AR /
+      // credit limit / manual hold). OFF by default; only fires when
+      // the tenant has explicitly enabled `dispatch_enforcement`.
       const enforcement = await this.dispatchCreditEnforcement.enforceForDispatch({
         tenantId,
         customerId: job.customer_id ?? null,
         userId,
         userRole,
         action: 'assignment',
-        creditOverride: body.creditOverride as { reason?: string } | null ?? null,
+        creditOverride,
       });
       if (enforcement.overrideNote) {
         const currentNotes = job.placement_notes || '';
         const separator = currentNotes ? '\n' : '';
         await this.jobsService.updateNotes(tenantId, id, {
           placement_notes: currentNotes + separator + enforcement.overrideNote,
+        });
+      }
+
+      // Phase B9 — per-job prepayment gate. Evaluates the customer's
+      // effective payment_terms and the job's linked invoice status.
+      // Blocks prepay-terms customers (due_on_receipt/cod) with no
+      // paid invoice unless the caller supplies a valid credit
+      // override. Independent of the tenant's dispatch_enforcement
+      // config — this rule is always on.
+      const prepayment = await this.dispatchCreditEnforcement.enforceJobPrepayment({
+        tenantId,
+        job,
+        userId,
+        userRole,
+        creditOverride,
+      });
+      if (prepayment.overrideNote) {
+        // Re-read so we pick up any note the hold gate just wrote
+        // (rare in practice — hold enforcement is off by default).
+        const fresh = await this.jobsService.findOne(tenantId, id);
+        const currentNotes = fresh.placement_notes || '';
+        const separator = currentNotes ? '\n' : '';
+        await this.jobsService.updateNotes(tenantId, id, {
+          placement_notes: currentNotes + separator + prepayment.overrideNote,
         });
       }
     }
