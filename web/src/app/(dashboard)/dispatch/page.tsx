@@ -8,7 +8,7 @@ import {
   ChevronLeft, ChevronRight, Calendar, Clock, MapPin, UserPlus, Truck,
   Phone, Plus, Box, Search, CheckCircle2, RefreshCw, Zap, X, ExternalLink,
   ChevronDown, ChevronUp, Navigation, Mail, MoreHorizontal, Eye, EyeOff,
-  FileText, Send, Map as MapIcon, LayoutDashboard, AlertTriangle,
+  FileText, Send, Map as MapIcon, LayoutDashboard, AlertTriangle, DollarSign,
 } from "lucide-react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
@@ -212,6 +212,20 @@ const TYPE_CONFIG: Record<string, { letter: string; stripe: string }> = {
   dump_run: { letter: "DR", stripe: "var(--t-error)" },
 };
 
+// Phase 2 polish — registry IDs for the dispatch prepayment override
+// reason presets shown in the blocked-assignment modal. The labels
+// themselves come from FEATURE_REGISTRY at render time so tenant
+// overrides flow through the existing tenantOverrideKey path. Order
+// here is the display order in the modal. Keep in sync with the
+// matching entries in `web/src/lib/feature-registry.ts`.
+const PREPAY_OVERRIDE_REASON_PRESET_IDS = [
+  "dispatch_prepayment_override_reason_paying_on_site",
+  "dispatch_prepayment_override_reason_trusted_account",
+  "dispatch_prepayment_override_reason_paid_offline",
+  "dispatch_prepayment_override_reason_office_approved",
+] as const;
+const PREPAY_OVERRIDE_REASON_OTHER_ID = "dispatch_prepayment_override_reason_other";
+
 /** Registry-driven type label with passthrough fallback for unknown types. */
 const getTypeLabel = (t: string): string => JOB_TYPE_LABELS[t as JobType] ?? t;
 
@@ -323,6 +337,14 @@ export default function DispatchPage() {
     overrideAllowed: boolean;
   } | null>(null);
   const [blockedOverrideMode, setBlockedOverrideMode] = useState(false);
+  // Phase 2 polish — preset reasons. `blockedOverrideOtherMode` flips
+  // to true when the operator picks the "Other" preset, revealing
+  // the free-text textarea. Otherwise the modal renders the preset
+  // chips and the reason text is auto-filled from the selected
+  // preset's registry label. Final submitted reason is always the
+  // string in `blockedOverrideReason` (preset label OR custom text)
+  // so the backend audit trail format is unchanged.
+  const [blockedOverrideOtherMode, setBlockedOverrideOtherMode] = useState(false);
   const [blockedOverrideReason, setBlockedOverrideReason] = useState("");
   const [blockedOverriding, setBlockedOverriding] = useState(false);
   const lastClickedRef = useRef<string | null>(null);
@@ -518,6 +540,7 @@ export default function DispatchPage() {
             overrideAllowed: prepay.overrideAllowed,
           });
           setBlockedOverrideMode(false);
+          setBlockedOverrideOtherMode(false);
           setBlockedOverrideReason("");
           return;
         }
@@ -697,6 +720,7 @@ export default function DispatchPage() {
             overrideAllowed: prepay.overrideAllowed,
           });
           setBlockedOverrideMode(false);
+          setBlockedOverrideOtherMode(false);
           setBlockedOverrideReason("");
           return;
         }
@@ -1038,6 +1062,7 @@ export default function DispatchPage() {
             if (blockedOverriding) return;
             setBlockedAssign(null);
             setBlockedOverrideMode(false);
+            setBlockedOverrideOtherMode(false);
             setBlockedOverrideReason("");
           }}
           role="dialog"
@@ -1084,27 +1109,90 @@ export default function DispatchPage() {
 
             {blockedOverrideMode ? (
               <div className="space-y-3 mb-4">
-                <textarea
-                  value={blockedOverrideReason}
-                  onChange={(e) => setBlockedOverrideReason(e.target.value)}
-                  placeholder={
-                    FEATURE_REGISTRY.dispatch_prepayment_override_reason_placeholder?.label ??
-                    "Reason for override (required)"
-                  }
-                  rows={3}
-                  className="w-full rounded-[12px] border px-3 py-2 text-sm outline-none resize-none focus:border-[var(--t-accent)]"
-                  style={{
-                    borderColor: "var(--t-border)",
-                    color: "var(--t-text-primary)",
-                    background: "var(--t-bg-input, var(--t-bg-card))",
-                  }}
-                  disabled={blockedOverriding}
-                  autoFocus
-                />
+                {/* Phase 2 polish — preset reason quick-select. The
+                    presets fill `blockedOverrideReason` directly with
+                    their registry label so the submit path is
+                    unchanged: backend still receives a single
+                    `creditOverride.reason` string and the audit row
+                    stores it verbatim. "Other" reveals the textarea
+                    for the free-text path. */}
+                <div className="flex flex-wrap gap-1.5">
+                  {PREPAY_OVERRIDE_REASON_PRESET_IDS.map((presetId) => {
+                    const presetLabel = FEATURE_REGISTRY[presetId]?.label ?? presetId;
+                    const isSelected =
+                      !blockedOverrideOtherMode &&
+                      blockedOverrideReason === presetLabel;
+                    return (
+                      <button
+                        key={presetId}
+                        type="button"
+                        onClick={() => {
+                          setBlockedOverrideOtherMode(false);
+                          setBlockedOverrideReason(presetLabel);
+                        }}
+                        disabled={blockedOverriding}
+                        className="rounded-full px-3 py-1.5 text-[11px] font-semibold transition-all disabled:opacity-50"
+                        style={{
+                          background: isSelected
+                            ? "var(--t-accent)"
+                            : "var(--t-bg-card-hover, var(--t-bg-card))",
+                          color: isSelected
+                            ? "var(--t-accent-on-accent)"
+                            : "var(--t-text-primary)",
+                          border: `1px solid ${isSelected ? "var(--t-accent)" : "var(--t-border)"}`,
+                        }}
+                      >
+                        {presetLabel}
+                      </button>
+                    );
+                  })}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setBlockedOverrideOtherMode(true);
+                      setBlockedOverrideReason("");
+                    }}
+                    disabled={blockedOverriding}
+                    className="rounded-full px-3 py-1.5 text-[11px] font-semibold transition-all disabled:opacity-50"
+                    style={{
+                      background: blockedOverrideOtherMode
+                        ? "var(--t-accent)"
+                        : "var(--t-bg-card-hover, var(--t-bg-card))",
+                      color: blockedOverrideOtherMode
+                        ? "var(--t-accent-on-accent)"
+                        : "var(--t-text-primary)",
+                      border: `1px solid ${blockedOverrideOtherMode ? "var(--t-accent)" : "var(--t-border)"}`,
+                    }}
+                  >
+                    {FEATURE_REGISTRY[PREPAY_OVERRIDE_REASON_OTHER_ID]?.label ?? "Other"}
+                  </button>
+                </div>
+
+                {blockedOverrideOtherMode && (
+                  <textarea
+                    value={blockedOverrideReason}
+                    onChange={(e) => setBlockedOverrideReason(e.target.value)}
+                    placeholder={
+                      FEATURE_REGISTRY.dispatch_prepayment_override_reason_placeholder?.label ??
+                      "Reason for override (required)"
+                    }
+                    rows={3}
+                    className="w-full rounded-[12px] border px-3 py-2 text-sm outline-none resize-none focus:border-[var(--t-accent)]"
+                    style={{
+                      borderColor: "var(--t-border)",
+                      color: "var(--t-text-primary)",
+                      background: "var(--t-bg-input, var(--t-bg-card))",
+                    }}
+                    disabled={blockedOverriding}
+                    autoFocus
+                  />
+                )}
+
                 <div className="flex gap-2 justify-end">
                   <button
                     onClick={() => {
                       setBlockedOverrideMode(false);
+                      setBlockedOverrideOtherMode(false);
                       setBlockedOverrideReason("");
                     }}
                     disabled={blockedOverriding}
@@ -1134,6 +1222,7 @@ export default function DispatchPage() {
                         );
                         setBlockedAssign(null);
                         setBlockedOverrideMode(false);
+                        setBlockedOverrideOtherMode(false);
                         setBlockedOverrideReason("");
                         await fetchBoard(true);
                       } catch (err) {
@@ -1173,6 +1262,7 @@ export default function DispatchPage() {
                     onClick={() => {
                       setBlockedAssign(null);
                       setBlockedOverrideMode(false);
+                      setBlockedOverrideOtherMode(false);
                       setBlockedOverrideReason("");
                     }}
                   >
@@ -1191,6 +1281,7 @@ export default function DispatchPage() {
                     onClick={() => {
                       setBlockedAssign(null);
                       setBlockedOverrideMode(false);
+                      setBlockedOverrideOtherMode(false);
                       setBlockedOverrideReason("");
                     }}
                   >
@@ -1203,6 +1294,7 @@ export default function DispatchPage() {
                     onClick={() => {
                       setBlockedAssign(null);
                       setBlockedOverrideMode(false);
+                      setBlockedOverrideOtherMode(false);
                       setBlockedOverrideReason("");
                     }}
                     className="rounded-full px-4 py-2 text-xs font-medium"
@@ -1212,7 +1304,11 @@ export default function DispatchPage() {
                   </button>
                   {blockedAssign.overrideAllowed && (
                     <button
-                      onClick={() => setBlockedOverrideMode(true)}
+                      onClick={() => {
+                        setBlockedOverrideMode(true);
+                        setBlockedOverrideOtherMode(false);
+                        setBlockedOverrideReason("");
+                      }}
                       className="rounded-full px-4 py-2 text-xs font-semibold"
                       style={{
                         background: "var(--t-accent)",
@@ -1884,21 +1980,24 @@ const JobTile = memo(function JobTile({ job, isUnassigned, drivers, onAssign, on
             {/* Phase 2 (Dispatch Prepayment UX) — Payment Required
                 badge. Shown only when the backend `payment_required`
                 flag is true (resolved per-job in DispatchService.
-                computePaymentRequiredMap). Subtle inline chip — does
-                not redesign the card. */}
+                computePaymentRequiredMap). Polish pass: error palette
+                + DollarSign icon for stronger visual scannability —
+                hard block, not a soft warning. Still compact and
+                inline; does not redesign the card. */}
             {job.payment_required && !isCompleted && (
               <span
-                className="rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide leading-none"
+                className="rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide leading-none inline-flex items-center gap-1"
                 style={{
-                  background: "var(--t-warning-soft, rgba(217,119,6,0.15))",
-                  color: "var(--t-warning, #D97706)",
-                  border: "1px solid var(--t-warning, #D97706)",
+                  background: "var(--t-error-soft, rgba(220,38,38,0.12))",
+                  color: "var(--t-error, #DC2626)",
+                  border: "1px solid var(--t-error, #DC2626)",
                 }}
                 title={
                   FEATURE_REGISTRY.dispatch_prepayment_modal_body?.label ??
                   "Customer requires payment before dispatch."
                 }
               >
+                <DollarSign className="h-2.5 w-2.5 shrink-0" strokeWidth={3} aria-hidden="true" />
                 {FEATURE_REGISTRY.dispatch_card_badge_payment_required?.label ??
                   "Payment Required"}
               </span>
