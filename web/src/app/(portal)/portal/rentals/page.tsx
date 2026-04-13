@@ -245,7 +245,9 @@ function PortalRentalsPage() {
             </span>
           </div>
 
-          {/* Compact summary grid — 2 cols mobile, 3 tablet, 4 desktop */}
+          {/* Compact summary grid — Phase B15: delivery + pickup date cells
+              are now tappable shortcuts that open the same modals as the
+              action buttons below. Non-editable rentals render plain text. */}
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-3 sm:gap-x-4 gap-y-3 text-sm">
             <div className="min-w-0">
               <span className="text-[10px] font-medium uppercase tracking-wider text-[var(--t-text-muted)]">{FEATURE_REGISTRY.portal_detail_dumpster_size?.label ?? "Dumpster Size"}</span>
@@ -253,11 +255,37 @@ function PortalRentalsPage() {
             </div>
             <div className="min-w-0">
               <span className="text-[10px] font-medium uppercase tracking-wider text-[var(--t-text-muted)]">{FEATURE_REGISTRY.portal_detail_delivery_date?.label ?? "Delivery Date"}</span>
-              <p className="font-semibold text-[var(--t-text-primary)] mt-0.5 truncate">{detail.scheduled_date ? formatDateOnly(detail.scheduled_date) : "—"}</p>
+              {canChangeDate && !tooSoon ? (
+                <button
+                  type="button"
+                  onClick={() => { setRescheduleOpen(true); setNewDate(detail.scheduled_date || ""); }}
+                  aria-label={FEATURE_REGISTRY.portal_action_change_date_short?.label ?? "Change Date"}
+                  className="group mt-0.5 -mx-1 px-1 py-0.5 w-[calc(100%+0.5rem)] text-left rounded-md cursor-pointer transition-colors hover:bg-[var(--t-bg-card-hover)]"
+                >
+                  <p className="font-semibold text-[var(--t-text-primary)] truncate group-hover:text-[var(--t-accent)] underline decoration-dotted underline-offset-4 decoration-[var(--t-border)] group-hover:decoration-[var(--t-accent)]">
+                    {detail.scheduled_date ? formatDateOnly(detail.scheduled_date) : "—"}
+                  </p>
+                </button>
+              ) : (
+                <p className="font-semibold text-[var(--t-text-primary)] mt-0.5 truncate">{detail.scheduled_date ? formatDateOnly(detail.scheduled_date) : "—"}</p>
+              )}
             </div>
             <div className="min-w-0">
               <span className="text-[10px] font-medium uppercase tracking-wider text-[var(--t-text-muted)]">{FEATURE_REGISTRY.portal_detail_pickup_date?.label ?? "Pickup Date"}</span>
-              <p className="font-semibold text-[var(--t-text-primary)] mt-0.5 truncate">{detail.rental_end_date ? formatDateOnly(detail.rental_end_date) : "—"}</p>
+              {canChangePickup ? (
+                <button
+                  type="button"
+                  onClick={() => setChangePickupJobId(detail.id)}
+                  aria-label={FEATURE_REGISTRY.portal_action_change_pickup_date?.label ?? "Change Pickup Date"}
+                  className="group mt-0.5 -mx-1 px-1 py-0.5 w-[calc(100%+0.5rem)] text-left rounded-md cursor-pointer transition-colors hover:bg-[var(--t-bg-card-hover)]"
+                >
+                  <p className="font-semibold text-[var(--t-text-primary)] truncate group-hover:text-[var(--t-accent)] underline decoration-dotted underline-offset-4 decoration-[var(--t-border)] group-hover:decoration-[var(--t-accent)]">
+                    {detail.rental_end_date ? formatDateOnly(detail.rental_end_date) : "—"}
+                  </p>
+                </button>
+              ) : (
+                <p className="font-semibold text-[var(--t-text-primary)] mt-0.5 truncate">{detail.rental_end_date ? formatDateOnly(detail.rental_end_date) : "—"}</p>
+              )}
             </div>
             <div className="min-w-0">
               <span className="text-[10px] font-medium uppercase tracking-wider text-[var(--t-text-muted)]">{FEATURE_REGISTRY.portal_detail_duration?.label ?? "Rental Duration"}</span>
