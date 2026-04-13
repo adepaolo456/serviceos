@@ -99,6 +99,10 @@ interface Job {
   asset_id?: string | null;
   asset_subtype?: string | null;
   asset_change_history?: Array<{
+    // Phase 14 — which column this entry describes. Absent on
+    // entries written before Phase 14, in which case the history
+    // renderer implicitly treats them as `asset_id` (pickup side).
+    field?: "asset_id" | "drop_off_asset_id";
     previous_asset_id: string | null;
     new_asset_id: string;
     changed_by: string | null;
@@ -115,6 +119,18 @@ interface Job {
     source_job_id: string;
     source_job_number: string;
     source_task_type: string;
+  } | null;
+  // Phase 14 — drop-off (delivery) asset for exchange jobs. The
+  // backend now eager-loads the relation in `findOne` so the
+  // office job detail view can render both asset roles from a
+  // single fetch. Null on non-exchange jobs and on exchanges that
+  // have not yet captured the delivery asset.
+  drop_off_asset_id?: string | null;
+  drop_off_asset?: {
+    id: string;
+    identifier: string;
+    asset_type: string;
+    subtype: string | null;
   } | null;
   // Fix — rental chain context surfaced by findOne for required-size
   // derivation on the asset picker.
@@ -283,6 +299,14 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
   // short, correct list.
   const [assetEditShowAll, setAssetEditShowAll] = useState(false);
   const [assetEditMismatchAck, setAssetEditMismatchAck] = useState(false);
+  // Phase 14 — which exchange asset role the modal is currently
+  // editing. 'pickup' edits job.asset_id (same behavior as
+  // Phase 11A — backward compatible for non-exchange jobs).
+  // 'drop_off' edits job.drop_off_asset_id and submits only the
+  // dropOffAssetId field to PATCH /jobs/:id/asset, leveraging the
+  // Phase 14 backend that made both fields optional with a
+  // runtime "at least one required" check.
+  const [assetEditRole, setAssetEditRole] = useState<"pickup" | "drop_off">("pickup");
   // Phase 11B — dump slip modal state. DumpTicketForm owns form state
   // internally; the page only tracks which mode it's in, which ticket
   // is being edited, whether a pending completion is queued after save,
@@ -317,10 +341,23 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
   // the picker can group by matching / other. Required size is
   // derived from the chain (authoritative) or falls back to the
   // job's own asset_subtype for standalone jobs.
-  const openAssetEdit = async () => {
+  //
+  // Phase 14 — accepts an optional `role` parameter so the same
+  // modal can edit either the pickup asset (`asset_id`, default)
+  // or the delivery asset (`drop_off_asset_id`) on exchange jobs.
+  // Prefill selection matches the role being edited.
+  const openAssetEdit = async (role: "pickup" | "drop_off" = "pickup") => {
     if (!job) return;
+    setAssetEditRole(role);
     setAssetEditOpen(true);
-    setAssetEditSelection(job.asset_id || job.asset?.id || null);
+    // Preselect the current asset for the role being edited. On
+    // 'drop_off' for an exchange with no delivery asset yet, this
+    // leaves the selection empty so the office must pick one.
+    const preselect =
+      role === "drop_off"
+        ? job.drop_off_asset_id || job.drop_off_asset?.id || null
+        : job.asset_id || job.asset?.id || null;
+    setAssetEditSelection(preselect);
     setAssetEditReason("");
     setAssetEditConflict(null);
     setAssetEditOverride(false);
@@ -419,28 +456,68 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
     // Fix — detect size mismatch client-side and flag the request so
     // the backend audit trail records it. Required size is derived
     // from the chain (authoritative) or the job's asset_subtype for
-    // standalone jobs.
+    // standalone jobs. Size mismatch is ONLY enforced on the pickup
+    // role because the delivery (drop-off) asset of an exchange can
+    // legitimately be a different size than what is currently on
+    // site — the whole point of an exchange is size-swapping.
     const required = job.rental_chain_dumpster_size || job.asset_subtype || null;
     const picked = assetOptions.find((a) => a.id === assetEditSelection);
     const pickedSize = picked?.subtype || null;
-    const isMismatch = !!(required && pickedSize && pickedSize !== required);
+    const isMismatch =
+      assetEditRole === "pickup" &&
+      !!(required && pickedSize && pickedSize !== required);
     try {
-      await api.patch(`/jobs/${id}/asset`, {
-        assetId: assetEditSelection,
+      // Phase 14 — PATCH payload now sends either `assetId` (pickup
+      // role) or `dropOffAssetId` (delivery role), never both in one
+      // save. The backend's canonical assignAssetToJob path runs
+      // identical validation / conflict / audit for both columns,
+      // so the frontend picks exactly one per modal submission.
+      const payload: Record<string, unknown> = {
         ...(assetEditOverride ? { overrideAssetConflict: true } : {}),
         ...(assetEditReason ? { reason: assetEditReason } : {}),
         ...(isMismatch ? { sizeMismatch: true } : {}),
-      });
-      toast("success", FEATURE_REGISTRY.asset_updated_success?.label ?? "Asset updated successfully");
+      };
+      if (assetEditRole === "pickup") {
+        payload.assetId = assetEditSelection;
+      } else {
+        payload.dropOffAssetId = assetEditSelection;
+      }
+      await api.patch(`/jobs/${id}/asset`, payload);
+      toast(
+        "success",
+        assetEditRole === "drop_off"
+          ? FEATURE_REGISTRY.delivery_asset_updated_success?.label ??
+              "Delivery asset updated successfully"
+          : FEATURE_REGISTRY.asset_updated_success?.label ??
+              "Asset updated successfully",
+      );
       setAssetEditOpen(false);
       await fetchJob();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "";
-      if (typeof msg === "string" && msg.includes("asset_active_conflict")) {
-        setAssetEditConflict(msg.replace(/^asset_active_conflict:\s*/, ""));
+      // Phase 14 — conflict error codes are distinct per field so
+      // the UI can render role-specific wording. Both codes are
+      // caught here; the single conflict-override checkbox in the
+      // modal applies to whichever role is active.
+      if (
+        typeof msg === "string" &&
+        (msg.includes("asset_active_conflict") ||
+          msg.includes("drop_off_asset_active_conflict"))
+      ) {
+        const stripped = msg
+          .replace(/^drop_off_asset_active_conflict:\s*/, "")
+          .replace(/^asset_active_conflict:\s*/, "");
+        setAssetEditConflict(stripped);
         setAssetEditOverride(false);
       } else {
-        toast("error", FEATURE_REGISTRY.asset_updated_error?.label ?? "Failed to update asset");
+        toast(
+          "error",
+          assetEditRole === "drop_off"
+            ? FEATURE_REGISTRY.delivery_asset_updated_error?.label ??
+                "Failed to update delivery asset"
+            : FEATURE_REGISTRY.asset_updated_error?.label ??
+                "Failed to update asset",
+        );
       }
     } finally {
       setAssetEditSaving(false);
@@ -1596,101 +1673,210 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
             )}
           </div>
 
-          {/* Asset */}
+          {/* Asset — Phase 14: split into Pickup + Delivery roles
+              for exchange jobs, otherwise a single card. The
+              renderAssetRoleCard helper below is scoped inline
+              (closes over `job`, `openAssetEdit`, etc.) so the
+              pickup and delivery cards stay perfectly parallel
+              without a top-level extraction. */}
           {(() => {
-            // Fix — required size derivation (chain is source of truth;
-            // fall back to the job's own asset_subtype for standalone
-            // jobs). Null only for jobs with neither signal.
+            const isExchange = job.job_type === "exchange";
             const requiredSize =
               job.rental_chain_dumpster_size || job.asset_subtype || null;
-            const assignedSize = job.asset?.subtype || null;
-            const sizeMismatch =
-              !!(requiredSize && assignedSize && assignedSize !== requiredSize);
-            return (
-          <div className="rounded-[20px] bg-[var(--t-bg-card)] border border-[var(--t-border)] p-5">
-            <div className="flex items-center gap-2 mb-3">
-              <Box className="h-4 w-4 text-[var(--t-text-muted)]" />
-              <span className="text-xs font-medium uppercase tracking-wider text-[var(--t-text-muted)] flex-1">Asset</span>
-              <button
-                onClick={openAssetEdit}
-                className="text-[var(--t-accent)] hover:opacity-70 transition-opacity"
-                title={FEATURE_REGISTRY.edit_asset?.label ?? "Edit Asset"}
-              >
-                <Pencil className="h-3 w-3" />
-              </button>
-            </div>
-            {/* Required size context — visible whether or not an asset
-                is assigned, so the operator always knows what size the
-                job needs. */}
-            {requiredSize && (
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--t-text-muted)] mb-1">
-                {FEATURE_REGISTRY.required_size?.label ?? "Required"}:{" "}
-                <span className="text-[var(--t-text-primary)] font-bold">{requiredSize}</span>
-              </p>
-            )}
-            {job.asset ? (
-              <>
-                <p className="text-sm font-semibold text-[var(--t-text-primary)]">{job.asset.identifier}</p>
-                <p className="text-xs text-[var(--t-text-muted)] mt-0.5 capitalize">{job.asset.asset_type} &middot; {job.asset.subtype}</p>
-                {sizeMismatch && (
-                  <div className="mt-2 flex items-center gap-1.5 rounded-[10px] bg-amber-500/10 border border-amber-500/30 px-2.5 py-1.5">
-                    <AlertTriangle className="h-3 w-3 text-amber-500 shrink-0" />
-                    <p className="text-[11px] text-amber-500 leading-snug">
-                      {FEATURE_REGISTRY.size_mismatch_warning?.label ?? "Selected asset size does not match required dumpster size"}
+
+            const renderAssetRoleCard = (role: "pickup" | "drop_off") => {
+              const roleAsset =
+                role === "drop_off" ? job.drop_off_asset : job.asset;
+              // Size mismatch is only meaningful for the pickup role
+              // on non-exchange jobs. For exchanges, the delivery
+              // asset is allowed to be a different size than what is
+              // currently on site — that's the whole point of the
+              // exchange. For the exchange pickup role, the mismatch
+              // check compares against the *current* on-site asset
+              // via the chain, which handleAssetEditSave enforces
+              // only on save.
+              const assignedSize = roleAsset?.subtype || null;
+              const showSizeMismatch =
+                !isExchange &&
+                role === "pickup" &&
+                !!(requiredSize && assignedSize && assignedSize !== requiredSize);
+
+              // Labels per role — registry-driven.
+              const sectionLabel = isExchange
+                ? role === "drop_off"
+                  ? FEATURE_REGISTRY.asset_role_delivery?.label ?? "Delivery Asset"
+                  : FEATURE_REGISTRY.asset_role_pickup?.label ?? "Pickup Asset"
+                : "Asset";
+              const editTitle = isExchange
+                ? role === "drop_off"
+                  ? FEATURE_REGISTRY.edit_delivery_asset?.label ?? "Edit Delivery Asset"
+                  : FEATURE_REGISTRY.edit_pickup_asset?.label ?? "Edit Pickup Asset"
+                : FEATURE_REGISTRY.edit_asset?.label ?? "Edit Asset";
+              const emptyLabel =
+                role === "drop_off"
+                  ? FEATURE_REGISTRY.no_delivery_asset_recorded?.label ??
+                    "No delivery asset recorded"
+                  : FEATURE_REGISTRY.no_asset_recorded?.label ?? "No asset recorded";
+
+              // Expected-on-site hint only applies to the pickup role
+              // (either exchange pickup-side or a plain pickup/removal
+              // job). The delivery role has no "expected" concept —
+              // there's no chain history for a new dumpster.
+              const showExpected =
+                role === "pickup" &&
+                !roleAsset &&
+                !!job.expected_on_site_asset;
+
+              return (
+                <div
+                  key={role}
+                  className="rounded-[20px] bg-[var(--t-bg-card)] border border-[var(--t-border)] p-5"
+                >
+                  <div className="flex items-center gap-2 mb-3">
+                    <Box className="h-4 w-4 text-[var(--t-text-muted)]" />
+                    <span className="text-xs font-medium uppercase tracking-wider text-[var(--t-text-muted)] flex-1">
+                      {sectionLabel}
+                    </span>
+                    <button
+                      onClick={() => openAssetEdit(role)}
+                      className="text-[var(--t-accent)] hover:opacity-70 transition-opacity"
+                      title={editTitle}
+                    >
+                      <Pencil className="h-3 w-3" />
+                    </button>
+                  </div>
+                  {/* Required size context — shown on pickup side only
+                      (exchanges legitimately deliver a different size). */}
+                  {role === "pickup" && requiredSize && (
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--t-text-muted)] mb-1">
+                      {FEATURE_REGISTRY.required_size?.label ?? "Required"}:{" "}
+                      <span className="text-[var(--t-text-primary)] font-bold">
+                        {requiredSize}
+                      </span>
                     </p>
+                  )}
+                  {roleAsset ? (
+                    <>
+                      <p className="text-sm font-semibold text-[var(--t-text-primary)]">
+                        {roleAsset.identifier}
+                      </p>
+                      <p className="text-xs text-[var(--t-text-muted)] mt-0.5 capitalize">
+                        {roleAsset.asset_type} &middot; {roleAsset.subtype}
+                      </p>
+                      {showSizeMismatch && (
+                        <div className="mt-2 flex items-center gap-1.5 rounded-[10px] bg-amber-500/10 border border-amber-500/30 px-2.5 py-1.5">
+                          <AlertTriangle className="h-3 w-3 text-amber-500 shrink-0" />
+                          <p className="text-[11px] text-amber-500 leading-snug">
+                            {FEATURE_REGISTRY.size_mismatch_warning?.label ??
+                              "Selected asset size does not match required dumpster size"}
+                          </p>
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <p className="text-sm text-[var(--t-error)]">{emptyLabel}</p>
+                  )}
+                  {/* Phase 11A — expected on-site hint for pickup side */}
+                  {showExpected && job.expected_on_site_asset && (
+                    <div className="mt-3 rounded-[12px] bg-[var(--t-accent-soft)] border border-[var(--t-accent)]/20 px-3 py-2">
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--t-accent)]">
+                        {FEATURE_REGISTRY.expected_on_site_asset?.label ??
+                          "Expected on-site"}
+                      </p>
+                      <p className="text-xs text-[var(--t-text-primary)] mt-0.5">
+                        {job.expected_on_site_asset.identifier}
+                        {job.expected_on_site_asset.subtype
+                          ? ` · ${job.expected_on_site_asset.subtype}`
+                          : ""}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              );
+            };
+
+            return (
+              <>
+                {renderAssetRoleCard("pickup")}
+                {isExchange && renderAssetRoleCard("drop_off")}
+                {/* Phase 11A + 14 — asset change audit trail. Rendered
+                    ONCE below the role cards, tagging each entry with
+                    its field marker so pickup-side and delivery-side
+                    corrections are visually distinct. Entries written
+                    before Phase 14 have no `field` and implicitly
+                    refer to the pickup (asset_id) column. */}
+                {job.asset_change_history && job.asset_change_history.length > 0 && (
+                  <div className="rounded-[20px] bg-[var(--t-bg-card)] border border-[var(--t-border)] p-5">
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--t-text-muted)] mb-3">
+                      {FEATURE_REGISTRY.asset_change_history_title?.label ??
+                        "Asset Change History"}
+                    </p>
+                    <div className="space-y-1.5">
+                      {job.asset_change_history
+                        .slice()
+                        .reverse()
+                        .slice(0, 10)
+                        .map((h, i) => {
+                          const when = h.changed_at
+                            ? new Date(h.changed_at).toLocaleString()
+                            : "";
+                          const who = h.changed_by_name || h.changed_by || "system";
+                          const fieldLabel =
+                            h.field === "drop_off_asset_id"
+                              ? FEATURE_REGISTRY.asset_change_history_delivery?.label ??
+                                "Delivery"
+                              : FEATURE_REGISTRY.asset_change_history_pickup?.label ??
+                                "Pickup";
+                          // Only show the field badge on exchange jobs
+                          // where the distinction matters. On non-
+                          // exchange jobs every entry implicitly refers
+                          // to the single asset_id column, so the
+                          // badge would be noise.
+                          const showFieldBadge = isExchange;
+                          return (
+                            <div
+                              key={i}
+                              className="text-[11px] text-[var(--t-text-muted)] leading-relaxed"
+                            >
+                              {showFieldBadge && (
+                                <span
+                                  className={`mr-1 inline-block rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider ${
+                                    h.field === "drop_off_asset_id"
+                                      ? "bg-[var(--t-accent-soft)] text-[var(--t-accent)]"
+                                      : "bg-[var(--t-bg-elevated)] text-[var(--t-text-muted)]"
+                                  }`}
+                                >
+                                  {fieldLabel}
+                                </span>
+                              )}
+                              <span className="text-[var(--t-text-primary)]">
+                                {h.previous_asset_id ? "Changed" : "Assigned"}
+                              </span>
+                              {h.override_conflict && (
+                                <span className="ml-1 text-amber-500 font-medium">
+                                  (override)
+                                </span>
+                              )}
+                              {h.size_mismatch && (
+                                <span className="ml-1 text-amber-500 font-medium">
+                                  (size mismatch)
+                                </span>
+                              )}{" "}
+                              by{" "}
+                              <span className="text-[var(--t-text-primary)]">
+                                {who}
+                              </span>
+                              {when && <span> · {when}</span>}
+                              {h.reason && (
+                                <div className="italic opacity-80">"{h.reason}"</div>
+                              )}
+                            </div>
+                          );
+                        })}
+                    </div>
                   </div>
                 )}
               </>
-            ) : (
-              <p className="text-sm text-[var(--t-error)]">{FEATURE_REGISTRY.no_asset_recorded?.label ?? "No asset recorded"}</p>
-            )}
-            {/* Phase 11A — expected on-site hint for incomplete pickup/exchange */}
-            {!job.asset && job.expected_on_site_asset && (
-              <div className="mt-3 rounded-[12px] bg-[var(--t-accent-soft)] border border-[var(--t-accent)]/20 px-3 py-2">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--t-accent)]">
-                  {FEATURE_REGISTRY.expected_on_site_asset?.label ?? "Expected on-site"}
-                </p>
-                <p className="text-xs text-[var(--t-text-primary)] mt-0.5">
-                  {job.expected_on_site_asset.identifier}
-                  {job.expected_on_site_asset.subtype ? ` · ${job.expected_on_site_asset.subtype}` : ""}
-                </p>
-              </div>
-            )}
-            {/* Phase 11A — asset change audit trail */}
-            {job.asset_change_history && job.asset_change_history.length > 0 && (
-              <div className="mt-3 pt-3 border-t border-[var(--t-border)]">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--t-text-muted)] mb-2">
-                  {FEATURE_REGISTRY.asset_change_logged?.label ?? "Asset change recorded"}
-                </p>
-                <div className="space-y-1.5">
-                  {job.asset_change_history
-                    .slice()
-                    .reverse()
-                    .slice(0, 5)
-                    .map((h, i) => {
-                      const when = h.changed_at ? new Date(h.changed_at).toLocaleString() : "";
-                      const who = h.changed_by_name || h.changed_by || "system";
-                      return (
-                        <div key={i} className="text-[11px] text-[var(--t-text-muted)] leading-relaxed">
-                          <span className="text-[var(--t-text-primary)]">
-                            {h.previous_asset_id ? "Changed" : "Assigned"}
-                          </span>{" "}
-                          {h.override_conflict && (
-                            <span className="text-amber-500 font-medium">(override)</span>
-                          )}{" "}
-                          {h.size_mismatch && (
-                            <span className="text-amber-500 font-medium">(size mismatch)</span>
-                          )}{" "}
-                          by <span className="text-[var(--t-text-primary)]">{who}</span>
-                          {when && <span> · {when}</span>}
-                          {h.reason && <div className="italic opacity-80">"{h.reason}"</div>}
-                        </div>
-                      );
-                    })}
-                </div>
-              </div>
-            )}
-          </div>
             );
           })()}
 
@@ -1706,6 +1892,8 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
       </div>
 
       {/* --- Phase 11A: Edit Asset Modal (fix: size-aware grouping) --- */}
+      {/* Phase 14 — now drives off `assetEditRole` so the same modal
+          handles pickup and delivery edits on exchange jobs. */}
       {assetEditOpen && job && (() => {
         const requiredSize =
           job.rental_chain_dumpster_size || job.asset_subtype || null;
@@ -1717,7 +1905,13 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
           : assetOptions;
         const pickedAsset = assetOptions.find((a) => a.id === assetEditSelection);
         const pickedSize = pickedAsset?.subtype || null;
+        // Size mismatch is ONLY relevant when editing the pickup
+        // role. An exchange's delivery asset is legitimately allowed
+        // to be a different size than what's currently on site —
+        // size-swapping is literally why exchanges exist — so the
+        // modal skips the mismatch warning in that case.
         const selectionMismatch =
+          assetEditRole === "pickup" &&
           !!(requiredSize && pickedSize && pickedSize !== requiredSize);
 
         const renderAssetButton = (a: AssetOption) => {
@@ -1762,15 +1956,23 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
           <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setAssetEditOpen(false)} />
           <div className="relative rounded-[20px] p-6 w-full max-w-md shadow-2xl" style={{ backgroundColor: "var(--t-bg-secondary)", border: "1px solid var(--t-border)" }}>
             <h3 className="text-base font-semibold mb-1" style={{ color: "var(--t-text-primary)" }}>
-              {FEATURE_REGISTRY.update_asset?.label ?? "Update Asset"}
+              {assetEditRole === "drop_off"
+                ? FEATURE_REGISTRY.update_delivery_asset?.label ?? "Update Delivery Asset"
+                : job.job_type === "exchange"
+                  ? FEATURE_REGISTRY.update_pickup_asset?.label ?? "Update Pickup Asset"
+                  : FEATURE_REGISTRY.update_asset?.label ?? "Update Asset"}
             </h3>
             <p className="text-xs mb-3" style={{ color: "var(--t-text-muted)" }}>
               Pick the correct dumpster for this job. The change is audited and inventory state updates automatically.
             </p>
 
-            {/* Context header — always visible at the top of the modal */}
+            {/* Context header — always visible at the top of the modal.
+                Phase 14: `Current:` reflects whichever role is being
+                edited (pickup vs delivery), and the required-size /
+                expected-on-site hints are only shown for the pickup
+                role because neither applies to a delivery asset. */}
             <div className="mb-3 rounded-[12px] bg-[var(--t-bg-elevated)] border border-[var(--t-border)] px-3 py-2.5 space-y-1">
-              {requiredSize && (
+              {assetEditRole === "pickup" && requiredSize && (
                 <div className="flex items-baseline gap-2">
                   <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--t-text-muted)]">
                     {FEATURE_REGISTRY.required_size?.label ?? "Required"}:
@@ -1778,7 +1980,7 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
                   <span className="text-sm font-bold text-[var(--t-text-primary)]">{requiredSize}</span>
                 </div>
               )}
-              {job.asset && (
+              {assetEditRole === "pickup" && job.asset && (
                 <div className="flex items-baseline gap-2">
                   <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--t-text-muted)]">
                     Current:
@@ -1789,7 +1991,18 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
                   </span>
                 </div>
               )}
-              {job.expected_on_site_asset && (
+              {assetEditRole === "drop_off" && job.drop_off_asset && (
+                <div className="flex items-baseline gap-2">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--t-text-muted)]">
+                    Current:
+                  </span>
+                  <span className="text-xs text-[var(--t-text-primary)]">
+                    {job.drop_off_asset.identifier}
+                    {job.drop_off_asset.subtype ? ` (${job.drop_off_asset.subtype})` : ""}
+                  </span>
+                </div>
+              )}
+              {assetEditRole === "pickup" && job.expected_on_site_asset && (
                 <div className="flex items-baseline gap-2">
                   <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--t-accent)]">
                     {FEATURE_REGISTRY.expected_on_site_asset?.label ?? "Expected on-site"}:
@@ -1881,7 +2094,11 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
             {assetEditConflict && (
               <div className="mb-3 rounded-[12px] bg-amber-500/10 border border-amber-500/40 px-3 py-2.5">
                 <p className="text-[10px] font-bold uppercase tracking-wider text-amber-500 mb-1">
-                  {FEATURE_REGISTRY.asset_active_conflict?.label ?? "This asset is already assigned to another active job"}
+                  {assetEditRole === "drop_off"
+                    ? FEATURE_REGISTRY.delivery_asset_active_conflict?.label ??
+                      "This delivery asset is already committed to another active job"
+                    : FEATURE_REGISTRY.asset_active_conflict?.label ??
+                      "This asset is already assigned to another active job"}
                 </p>
                 <p className="text-xs text-[var(--t-text-primary)] mb-2">{assetEditConflict}</p>
                 <label className="flex items-center gap-2 text-xs text-[var(--t-text-primary)] cursor-pointer">
@@ -1904,7 +2121,13 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
                 }
                 className="rounded-full bg-[var(--t-accent)] px-4 py-2 text-xs font-semibold text-[var(--t-accent-on-accent)] disabled:opacity-40 hover:opacity-90 transition-opacity"
               >
-                {assetEditSaving ? "Saving…" : FEATURE_REGISTRY.update_asset?.label ?? "Update Asset"}
+                {assetEditSaving
+                  ? "Saving…"
+                  : assetEditRole === "drop_off"
+                    ? FEATURE_REGISTRY.update_delivery_asset?.label ?? "Update Delivery Asset"
+                    : job.job_type === "exchange"
+                      ? FEATURE_REGISTRY.update_pickup_asset?.label ?? "Update Pickup Asset"
+                      : FEATURE_REGISTRY.update_asset?.label ?? "Update Asset"}
               </button>
             </div>
           </div>
