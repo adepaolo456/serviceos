@@ -145,9 +145,12 @@ function PortalRentalsPage() {
     portalApi.get<Rental[]>("/portal/rentals").then(setRentals).catch(() => {}).finally(() => setLoading(false));
   }, []);
 
-  // Phase B9 — detail selection is driven by the `?id=` query string so
-  // the global header "My Rentals" link reliably clears it (same
-  // pathname, empty search params) without depending on local state.
+  // Phase B9/B14 — detail selection is fully URL-driven via ?id=. The
+  // global "My Rentals" header link and the in-page "Back to rentals"
+  // button both route to /portal/rentals (no query), and the memo
+  // collapses to null when ?id= is absent. The explicit reset effect
+  // below also clears any modal/drawer state so nothing lingers from
+  // a detail view that was just dismissed.
   const deepLinkId = searchParams.get("id");
   const detail = useMemo(
     () => (deepLinkId ? rentals.find(r => r.id === deepLinkId) ?? null : null),
@@ -158,13 +161,28 @@ function PortalRentalsPage() {
     router.push(`/portal/rentals?id=${id}`);
   }, [router]);
   const closeDetail = useCallback(() => {
-    // Close any in-flight reschedule UI and navigate back to the index.
+    // Phase B14 — use replace() instead of push() so Next.js App Router
+    // reliably updates useSearchParams when the target path is the same
+    // (/portal/rentals) and the only delta is the removed ?id= param.
+    // Push can be a no-op in that case on some versions; replace always
+    // re-runs the URL state subscription.
     setRescheduleOpen(false);
-    router.push("/portal/rentals");
+    setChangePickupJobId(null);
+    router.replace("/portal/rentals", { scroll: false });
   }, [router]);
   const updateRentalInPlace = useCallback((updated: Rental) => {
     setRentals(prev => prev.map(r => r.id === updated.id ? updated : r));
   }, []);
+
+  // Phase B14 — whenever the URL stops carrying ?id=, reset any
+  // modal / drawer local state so nothing visually persists from a
+  // detail view that's just been dismissed.
+  useEffect(() => {
+    if (!deepLinkId) {
+      setRescheduleOpen(false);
+      setChangePickupJobId(null);
+    }
+  }, [deepLinkId]);
 
   const tabFiltered = useMemo(() => rentals.filter(r => {
     if (tab === "All") return true;
