@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, use } from "react";
+import { Suspense, useState, useEffect, use } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -210,13 +210,16 @@ function daysBetween(a: string, b: string): number {
 
 /* --- Page --- */
 
-// Forces dynamic rendering — required because this client page calls
-// useSearchParams() at the top level (no Suspense boundary), and Next.js
-// build will fail on static generation otherwise. Authenticated dashboard
-// pages cannot be statically rendered anyway.
-export const dynamic = 'force-dynamic';
-
-export default function JobDetailPage({ params }: { params: Promise<{ id: string }> }) {
+/**
+ * Page content lives in a child component because this page calls
+ * `useSearchParams` at the top level. Next.js App Router requires any
+ * `useSearchParams` consumer to be wrapped in a `<Suspense>` boundary
+ * so the static prerender can skip the param-dependent subtree — the
+ * default export below provides that boundary. Without the split the
+ * production build fails with "useSearchParams() should be wrapped in
+ * a suspense boundary at page '/jobs/[id]'".
+ */
+function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -2069,5 +2072,23 @@ function PriceRow({ label, value }: { label: string; value: string }) {
       <span className="text-[var(--t-text-muted)]">{label}</span>
       <span className={`text-[var(--t-text-primary)] ${value.startsWith("$") ? "tabular-nums" : ""}`}>{value}</span>
     </div>
+  );
+}
+
+/**
+ * Default export — Suspense boundary required by Next.js App Router
+ * because `JobDetailPageContent` calls `useSearchParams`.
+ */
+export default function JobDetailPage(props: { params: Promise<{ id: string }> }) {
+  return (
+    <Suspense
+      fallback={
+        <div className="p-6 text-sm" style={{ color: "var(--t-text-muted)" }}>
+          Loading…
+        </div>
+      }
+    >
+      <JobDetailPageContent {...props} />
+    </Suspense>
   );
 }

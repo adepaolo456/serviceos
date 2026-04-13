@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo, useRef, type FormEvent } from "react";
+import { Suspense, useState, useEffect, useCallback, useMemo, useRef, type FormEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   Plus,
@@ -201,13 +201,16 @@ const STATUS_TAB_ALLOWLIST = new Set([
   "outstanding",
 ]);
 
-// Forces dynamic rendering — required because this client page calls
-// useSearchParams() at the top level (no Suspense boundary), and Next.js
-// build will fail on static generation otherwise. Authenticated dashboard
-// pages cannot be statically rendered anyway.
-export const dynamic = 'force-dynamic';
-
-export default function InvoicesPage() {
+/**
+ * Page content lives in a child component because this page calls
+ * `useSearchParams` at the top level. Next.js App Router requires any
+ * `useSearchParams` consumer to be wrapped in a `<Suspense>` boundary
+ * so the static prerender can skip the param-dependent subtree — the
+ * default export below provides that boundary. Without the split the
+ * production build fails with "useSearchParams() should be wrapped in
+ * a suspense boundary at page '/invoices'".
+ */
+function InvoicesPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { toast } = useToast();
@@ -1085,5 +1088,23 @@ function CreateInvoiceForm({ onSuccess }: { onSuccess: () => void }) {
         </button>
       </div>
     </form>
+  );
+}
+
+/**
+ * Default export — Suspense boundary required by Next.js App Router
+ * because `InvoicesPageContent` calls `useSearchParams`.
+ */
+export default function InvoicesPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="p-6 text-sm" style={{ color: "var(--t-text-muted)" }}>
+          Loading…
+        </div>
+      }
+    >
+      <InvoicesPageContent />
+    </Suspense>
   );
 }
