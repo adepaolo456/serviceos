@@ -3,6 +3,7 @@
 import { useState, useEffect, type FormEvent } from "react";
 import { portalApi } from "@/lib/portal-api";
 import AddressAutocomplete, { type AddressValue } from "@/components/address-autocomplete";
+import { FEATURE_REGISTRY } from "@/lib/feature-registry";
 import { MapPin, CheckCircle2 } from "lucide-react";
 
 interface Profile {
@@ -170,11 +171,14 @@ export default function PortalProfilePage() {
         </form>
       )}
 
-      {/* TODO: Add notification preferences when backend endpoint is ready */}
       {tab === "notifications" && (
         <div className="rounded-[20px] border border-dashed border-[var(--t-border)] bg-[var(--t-bg-card)] p-8 text-center">
-          <p className="text-sm font-medium text-[var(--t-text-muted)]">Notification preferences coming soon</p>
-          <p className="text-xs text-[var(--t-text-muted)] mt-1">You&apos;ll receive all notifications by default via email and SMS.</p>
+          <p className="text-sm font-semibold text-[var(--t-text-primary)]">
+            {FEATURE_REGISTRY.portal_notifications_title?.label ?? "Notifications"}
+          </p>
+          <p className="text-xs text-[var(--t-text-muted)] mt-1">
+            {FEATURE_REGISTRY.portal_notifications_subtext?.label ?? "Notification preferences coming soon. You will receive important updates via email and SMS."}
+          </p>
         </div>
       )}
     </div>

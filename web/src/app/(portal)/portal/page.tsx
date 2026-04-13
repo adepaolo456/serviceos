@@ -1,12 +1,12 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { portalApi } from "@/lib/portal-api";
 import { formatCurrency } from "@/lib/utils";
 import { formatDateOnly, daysUntilDateOnly } from "@/lib/utils/format-date";
 import { formatRentalTitle, rentalSizeLabel } from "@/lib/job-status";
-import { Package, FileText, PlusCircle, Calendar, MapPin, Clock, ArrowUpRight, AlertCircle, CreditCard, CalendarClock, ChevronRight, DollarSign } from "lucide-react";
+import { Package, FileText, PlusCircle, Calendar, MapPin, Clock, ArrowUpRight, AlertCircle, CreditCard, ChevronRight, DollarSign } from "lucide-react";
 import { FEATURE_REGISTRY } from "@/lib/feature-registry";
 
 interface Rental {
@@ -93,6 +93,7 @@ export default function PortalHomePage() {
     account_status: string; status_message: string | null; payment_eligible: boolean;
   } | null>(null);
   const customer = portalApi.getCustomer();
+  const changePickupDateRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     Promise.all([
@@ -152,7 +153,21 @@ export default function PortalHomePage() {
   };
 
   const active = rentals.filter(r => !["completed", "cancelled"].includes(r.status) && r.job_type === "delivery");
-  const upcoming = rentals.filter(r => r.status === "pending" && r.job_type === "delivery");
+  // Phase B7 — Upcoming must only show *future* rentals. Parse YYYY-MM-DD
+  // as local noon to avoid the UTC-midnight off-by-one (same pattern used
+  // by daysUntilDateOnly). A rental is "upcoming" if either its delivery
+  // or pickup date is still in the future relative to today's local date.
+  const todayNoon = (() => { const d = new Date(); d.setHours(12, 0, 0, 0); return d.getTime(); })();
+  const isFutureDay = (iso?: string | null) => {
+    if (!iso) return false;
+    const t = new Date(`${iso}T12:00:00`).getTime();
+    return !Number.isNaN(t) && t > todayNoon;
+  };
+  const upcoming = rentals.filter(r =>
+    r.status === "pending" &&
+    r.job_type === "delivery" &&
+    (isFutureDay(r.scheduled_date) || isFutureDay(r.rental_end_date))
+  );
   const history = rentals.filter(r => r.status === "completed" && r.job_type === "delivery").slice(0, 5);
 
   // The rental being modified in the Change Pickup Date modal
@@ -173,11 +188,6 @@ export default function PortalHomePage() {
             className="inline-flex items-center gap-2 rounded-full border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-2 text-sm font-medium text-[var(--t-text-primary)] hover:bg-[var(--t-bg-card-hover)] transition-colors">
             <PlusCircle className="h-4 w-4 text-[var(--t-accent)]" />
             Request Dumpster
-          </Link>
-          <Link href="/portal/rentals"
-            className="inline-flex items-center gap-2 rounded-full border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-2 text-sm font-medium text-[var(--t-text-primary)] hover:bg-[var(--t-bg-card-hover)] transition-colors">
-            <CalendarClock className="h-4 w-4 text-purple-400" />
-            {FEATURE_REGISTRY.portal_action_change_pickup_date?.label ?? "Change Pickup Date"}
           </Link>
           <button onClick={() => { setIssueOpen(true); setIssueSuccess(false); }}
             className="inline-flex items-center gap-2 rounded-full border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-2 text-sm font-medium text-[var(--t-text-primary)] hover:bg-[var(--t-bg-card-hover)] transition-colors">
@@ -317,21 +327,22 @@ export default function PortalHomePage() {
       </section>
 
       {/* Upcoming */}
-      {upcoming.length > 0 && (
+      {!loading && upcoming.length > 0 && (
         <section>
           <h2 className="text-lg font-bold text-[var(--t-text-primary)] mb-3">{FEATURE_REGISTRY.portal_section_upcoming?.label ?? "Upcoming"}</h2>
           <div className="grid gap-3">
             {upcoming.map(r => (
-              <div key={r.id} className="rounded-[16px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-4 flex items-center justify-between">
+              <Link key={r.id} href={`/portal/rentals?id=${r.id}`}
+                className="rounded-[16px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-4 flex items-center justify-between hover:bg-[var(--t-bg-card-hover)] transition-colors">
                 <div>
                   <p className="text-sm font-medium text-[var(--t-text-primary)]">{rentalSizeLabel(r)} Delivery</p>
                   <p className="text-xs text-[var(--t-text-muted)] mt-0.5">
                     <Calendar className="inline h-3 w-3 mr-1" />
-                    Scheduled: {r.scheduled_date ? formatDateOnly(r.scheduled_date) : "TBD"}
+                    {FEATURE_REGISTRY.portal_dashboard_delivery_label?.label ?? "Delivery"}: {r.scheduled_date ? formatDateOnly(r.scheduled_date) : "TBD"}
                   </p>
                 </div>
                 <span className="text-xs font-medium" style={{ color: customerStatus(r.status).color }}>{customerStatus(r.status).label}</span>
-              </div>
+              </Link>
             ))}
           </div>
         </section>
@@ -390,8 +401,18 @@ export default function PortalHomePage() {
             ) : changePickupMode === "extend" ? (
               <div>
                 <label className="text-xs text-[var(--t-text-muted)] mb-1 block">New end date</label>
-                <input type="date" value={changePickupDate} onChange={e => setChangePickupDate(e.target.value)}
-                  className="w-full rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-3 py-2 text-sm text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)] mb-4" />
+                <div
+                  className="relative cursor-pointer mb-4"
+                  onClick={() => changePickupDateRef.current?.showPicker?.()}
+                >
+                  <input
+                    ref={changePickupDateRef}
+                    type="date"
+                    value={changePickupDate}
+                    onChange={e => setChangePickupDate(e.target.value)}
+                    className="w-full rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-3 py-2 text-sm text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)] cursor-pointer"
+                  />
+                </div>
                 <div className="flex gap-2 justify-end">
                   <button onClick={() => setChangePickupMode(null)} className="rounded-full px-4 py-2 text-xs font-medium text-[var(--t-text-muted)]">Back</button>
                   <button onClick={handleChangePickup} disabled={!changePickupDate || actionLoading}

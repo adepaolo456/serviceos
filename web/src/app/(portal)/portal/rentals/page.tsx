@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useEffect, Suspense } from "react";
+import { useState, useEffect, useRef, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { portalApi } from "@/lib/portal-api";
 import { formatCurrency } from "@/lib/utils";
 import { formatDateOnly } from "@/lib/utils/format-date";
-import { deriveCustomerTimeline, formatRentalTitle, type CustomerTimelineStep } from "@/lib/job-status";
+import { deriveCustomerTimeline, formatRentalTitle, rentalSizeLabel, type CustomerTimelineStep } from "@/lib/job-status";
+import { FEATURE_REGISTRY } from "@/lib/feature-registry";
 import { Package, Calendar, MapPin, ChevronRight, CalendarClock } from "lucide-react";
 import dynamic from "next/dynamic";
 
@@ -128,6 +129,7 @@ function PortalRentalsPage() {
   const [newDate, setNewDate] = useState("");
   const [rescheduleReason, setRescheduleReason] = useState("");
   const [rescheduling, setRescheduling] = useState(false);
+  const rescheduleDateRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     portalApi.get<Rental[]>("/portal/rentals").then(setRentals).catch(() => {}).finally(() => setLoading(false));
@@ -174,15 +176,49 @@ function PortalRentalsPage() {
             <HorizontalTimeline steps={timelineSteps} />
           </div>
 
-          {/* Details grid */}
-          <div className="grid grid-cols-2 gap-4 text-sm">
-            <div><span className="text-[var(--t-text-muted)]">Address</span><p className="font-medium text-[var(--t-text-primary)] mt-0.5">{detail.service_address?.formatted || detail.service_address?.street || "—"}</p></div>
-            <div><span className="text-[var(--t-text-muted)]">Duration</span><p className="font-medium text-[var(--t-text-primary)] mt-0.5">{detail.rental_days || "—"} days</p></div>
-            <div><span className="text-[var(--t-text-muted)]">Total Cost</span><p className="font-medium text-[var(--t-text-primary)] mt-0.5">{formatCurrency(detail.total_price)}</p></div>
-            <div><span className="text-[var(--t-text-muted)]">Asset</span><p className="font-medium text-[var(--t-text-primary)] mt-0.5">{detail.asset?.identifier || "—"}</p></div>
+          {/* Details grid — Phase B7: full rental facts surfaced above the map */}
+          <div className="mb-4">
+            <h3 className="text-sm font-semibold text-[var(--t-text-primary)] mb-3">
+              {FEATURE_REGISTRY.portal_detail_section_title?.label ?? "Rental Details"}
+            </h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+              <div>
+                <span className="text-[var(--t-text-muted)]">{FEATURE_REGISTRY.portal_detail_dumpster_size?.label ?? "Dumpster Size"}</span>
+                <p className="font-medium text-[var(--t-text-primary)] mt-0.5">{rentalSizeLabel(detail) || "—"}</p>
+              </div>
+              <div>
+                <span className="text-[var(--t-text-muted)]">{FEATURE_REGISTRY.portal_detail_status?.label ?? "Status"}</span>
+                <p className={`font-medium mt-0.5 ${STATUS_COLORS[detail.status] || "text-[var(--t-text-primary)]"}`}>
+                  {STATUS_LABELS[detail.status] || detail.status}
+                </p>
+              </div>
+              <div>
+                <span className="text-[var(--t-text-muted)]">{FEATURE_REGISTRY.portal_detail_delivery_date?.label ?? "Delivery Date"}</span>
+                <p className="font-medium text-[var(--t-text-primary)] mt-0.5">{detail.scheduled_date ? formatDateOnly(detail.scheduled_date) : "—"}</p>
+              </div>
+              <div>
+                <span className="text-[var(--t-text-muted)]">{FEATURE_REGISTRY.portal_detail_pickup_date?.label ?? "Pickup Date"}</span>
+                <p className="font-medium text-[var(--t-text-primary)] mt-0.5">{detail.rental_end_date ? formatDateOnly(detail.rental_end_date) : "—"}</p>
+              </div>
+              <div>
+                <span className="text-[var(--t-text-muted)]">{FEATURE_REGISTRY.portal_detail_duration?.label ?? "Rental Duration"}</span>
+                <p className="font-medium text-[var(--t-text-primary)] mt-0.5">{detail.rental_days ? `${detail.rental_days} days` : "—"}</p>
+              </div>
+              <div>
+                <span className="text-[var(--t-text-muted)]">{FEATURE_REGISTRY.portal_detail_total_cost?.label ?? "Total Cost"}</span>
+                <p className="font-medium text-[var(--t-text-primary)] mt-0.5">{formatCurrency(detail.total_price)}</p>
+              </div>
+              <div className="sm:col-span-2">
+                <span className="text-[var(--t-text-muted)]">{FEATURE_REGISTRY.portal_detail_service_address?.label ?? "Service Address"}</span>
+                <p className="font-medium text-[var(--t-text-primary)] mt-0.5 flex items-start gap-1.5">
+                  <MapPin className="h-4 w-4 mt-0.5 shrink-0 text-[var(--t-text-muted)]" />
+                  <span>{detail.service_address?.formatted || detail.service_address?.street || "—"}</span>
+                </p>
+              </div>
+            </div>
           </div>
 
-          {/* Placement Map */}
+          {/* Placement Map — Phase B7: rendered below the details block */}
           {!["completed", "cancelled"].includes(detail.status) && (
             <div className="mt-6">
               <PortalPlacementMap jobId={detail.id} serviceAddress={detail.service_address} />
@@ -214,9 +250,19 @@ function PortalRentalsPage() {
                   <p className="text-sm font-semibold text-[var(--t-text-primary)]">Reschedule Delivery</p>
                   <div>
                     <label className="block text-xs font-medium text-[var(--t-text-primary)] mb-1">New Date</label>
-                    <input type="date" value={newDate} onChange={e => setNewDate(e.target.value)}
-                      min={new Date(Date.now() + 86400000).toISOString().split("T")[0]}
-                      className={inputCls} />
+                    <div
+                      className="relative cursor-pointer"
+                      onClick={() => rescheduleDateRef.current?.showPicker?.()}
+                    >
+                      <input
+                        ref={rescheduleDateRef}
+                        type="date"
+                        value={newDate}
+                        onChange={e => setNewDate(e.target.value)}
+                        min={new Date(Date.now() + 86400000).toISOString().split("T")[0]}
+                        className={`${inputCls} cursor-pointer`}
+                      />
+                    </div>
                   </div>
                   {detail.rental_days && newDate && (
                     <p className="text-xs text-[var(--t-text-muted)]">
