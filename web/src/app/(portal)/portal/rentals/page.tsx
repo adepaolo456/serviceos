@@ -9,6 +9,7 @@ import { deriveCustomerTimeline, formatRentalTitle, rentalSizeLabel, type Custom
 import { FEATURE_REGISTRY } from "@/lib/feature-registry";
 import { Package, Calendar, MapPin, ChevronRight, CalendarClock, Search, X } from "lucide-react";
 import dynamic from "next/dynamic";
+import PortalChangePickupDateModal from "@/components/portal-change-pickup-date-modal";
 
 const PortalPlacementMap = dynamic(() => import("@/components/portal-placement-map"), { ssr: false });
 
@@ -138,6 +139,7 @@ function PortalRentalsPage() {
   const [rescheduleReason, setRescheduleReason] = useState("");
   const [rescheduling, setRescheduling] = useState(false);
   const rescheduleDateRef = useRef<HTMLInputElement | null>(null);
+  const [changePickupJobId, setChangePickupJobId] = useState<string | null>(null);
 
   useEffect(() => {
     portalApi.get<Rental[]>("/portal/rentals").then(setRentals).catch(() => {}).finally(() => setLoading(false));
@@ -198,6 +200,10 @@ function PortalRentalsPage() {
     const timelineSteps = deriveCustomerTimeline(detail, rentals);
     const canChangeDate = ["pending", "confirmed"].includes(detail.status);
     const tooSoon = isWithin24Hours(detail.scheduled_date);
+    // Phase B13 — Change Pickup Date is available for any delivery rental
+    // that isn't completed or cancelled. Mirrors the dashboard rule.
+    const canChangePickup = detail.job_type === "delivery" && !["completed", "cancelled"].includes(detail.status);
+    const showActionRow = canChangeDate || canChangePickup;
 
     return (
       <div className="space-y-4">
@@ -252,13 +258,15 @@ function PortalRentalsPage() {
             </div>
           </div>
 
-          {/* Change Date / Reschedule — Phase B11: auto-width CTA inline;
-              too-soon notice wraps underneath when needed. */}
-          {canChangeDate && (
+          {/* Action row — Phase B13: delivery and pickup date actions are
+              now co-located so customers can manage both from one place.
+              "Change Date" reschedules the delivery; "Change Pickup Date"
+              opens the shared pickup-date modal that the dashboard uses. */}
+          {showActionRow && (
             <div className="mt-5 pt-4 border-t border-[var(--t-border)]">
               {!rescheduleOpen ? (
                 <div className="flex flex-wrap items-center gap-2">
-                  {tooSoon ? (
+                  {canChangeDate && (tooSoon ? (
                     <>
                       <button disabled
                         className="inline-flex items-center gap-1.5 rounded-full border border-[var(--t-border)] px-4 py-2 text-sm font-medium text-[var(--t-text-muted)] opacity-50 cursor-not-allowed">
@@ -270,6 +278,12 @@ function PortalRentalsPage() {
                     <button onClick={() => { setRescheduleOpen(true); setNewDate(detail.scheduled_date || ""); }}
                       className="inline-flex items-center gap-1.5 rounded-full bg-[var(--t-accent)] px-4 py-2 text-sm font-semibold text-[var(--t-accent-on-accent)] hover:opacity-90 transition-opacity">
                       <CalendarClock className="h-4 w-4" /> {FEATURE_REGISTRY.portal_action_change_date_short?.label ?? "Change Date"}
+                    </button>
+                  ))}
+                  {canChangePickup && (
+                    <button onClick={() => setChangePickupJobId(detail.id)}
+                      className="inline-flex items-center gap-1.5 rounded-full border border-[var(--t-border)] px-4 py-2 text-sm font-semibold text-[var(--t-text-primary)] hover:bg-[var(--t-bg-card-hover)] transition-colors">
+                      <CalendarClock className="h-4 w-4" /> {FEATURE_REGISTRY.portal_action_change_pickup_date?.label ?? "Change Pickup Date"}
                     </button>
                   )}
                 </div>
@@ -350,6 +364,15 @@ function PortalRentalsPage() {
         {!["completed", "cancelled"].includes(detail.status) && (
           <PortalPlacementMap jobId={detail.id} serviceAddress={detail.service_address} />
         )}
+
+        {/* Phase B13 — shared Change Pickup Date modal */}
+        <PortalChangePickupDateModal
+          rental={changePickupJobId === detail.id ? detail : null}
+          onClose={() => setChangePickupJobId(null)}
+          onSuccess={(updated) => {
+            updateRentalInPlace({ ...detail, ...updated });
+          }}
+        />
       </div>
     );
   }
