@@ -74,23 +74,53 @@ export class DriverController {
     });
     if (!job) throw new NotFoundException('Job not found or not assigned to you');
 
-    // Save driver-specific fields before the status transition
+    // Driver-captured METADATA (pins and signature) are not asset
+    // identity and carry no validation semantics — they continue as
+    // direct writes. Asset IDENTITY (`drop_off_asset_id`) is Phase
+    // 14 routed through the canonical JobsService path below so the
+    // active-assignment conflict guard, `asset_change_history`
+    // audit trail, tenant-scoped asset validation, and inventory
+    // sync all run — closing the audit bypass flagged in the
+    // asset coverage audit.
     const extras: Record<string, unknown> = {};
     if (body.dropOffAssetPin) extras.drop_off_asset_pin = body.dropOffAssetPin;
     if (body.pickUpAssetPin) extras.pick_up_asset_pin = body.pickUpAssetPin;
-    if (body.dropOffAssetId) extras.drop_off_asset_id = body.dropOffAssetId;
-    if (body.pickUpAssetId) extras.pick_up_asset_id = body.pickUpAssetId;
     if (body.signatureUrl) extras.signature_url = body.signatureUrl;
+    // `pick_up_asset_id` is currently dead schema — written by
+    // legacy driver-app builds but never read by business logic
+    // (confirmed by the asset coverage audit). Preserved as a
+    // direct write for backward compatibility so older driver
+    // builds do not silently stop populating it, but NOT routed
+    // through the audited path because there is no downstream
+    // truth to protect today. Revisit when Phase 2 wires a reader.
+    if (body.pickUpAssetId) extras.pick_up_asset_id = body.pickUpAssetId;
 
     if (Object.keys(extras).length > 0) {
       await this.jobRepo.update({ id, tenant_id: tenantId }, extras);
     }
 
-    // Delegate all status transition logic to JobsService
-    const updated = await this.jobsService.changeStatus(tenantId, id, {
-      status: body.status,
-      cancellationReason: body.reason,
-    } as any, 'driver');
+    // Delegate status + drop-off asset identity to JobsService.
+    // Drivers have no authority to override active-assignment
+    // conflicts (`overrideAssetConflict` is deliberately NOT
+    // forwarded); a conflicting drop-off assignment fails loudly
+    // with a 400 the driver app can surface to the operator.
+    const updated = await this.jobsService.changeStatus(
+      tenantId,
+      id,
+      {
+        status: body.status,
+        cancellationReason: body.reason,
+        ...(body.dropOffAssetId
+          ? {
+              dropOffAssetId: body.dropOffAssetId,
+              assetChangeReason: 'driver_drop_off_confirmation',
+            }
+          : {}),
+      } as any,
+      'driver',
+      userId,
+      null,
+    );
 
     // Log on-my-way notification when status changes to en_route
     if (body.status === 'en_route' && updated.customer) {

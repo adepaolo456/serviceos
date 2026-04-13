@@ -291,16 +291,38 @@ export class ChangeStatusDto {
   @IsOptional()
   @IsBoolean()
   assetSizeMismatch?: boolean;
+
+  // Phase 14 — drop-off asset confirmation. Used by the driver app
+  // on exchange jobs to capture the NEW dumpster being delivered,
+  // and by office corrections that need to update both the pickup
+  // and delivery asset in one transition. Routed through the
+  // canonical assignAssetToJob path (conflict guard + audit trail
+  // + tenant scope) alongside any assetId change.
+  @ApiPropertyOptional({
+    example: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+    description:
+      'Drop-off asset id for exchange job confirmations. Runs through the canonical asset assignment path with full conflict + audit guards.',
+  })
+  @IsOptional()
+  @IsUUID()
+  dropOffAssetId?: string;
 }
 
 // Phase 11A — dedicated DTO for `PATCH /jobs/:id/asset`
 // (office-side asset correction after completion). Separate from the
 // general UpdateJobDto so the correction surface is explicit and the
 // audit trail always runs.
+//
+// Phase 14 — `assetId` is now optional because office corrections on
+// exchange jobs may need to touch only the drop-off asset without
+// changing the pickup asset. The service-side runtime check in
+// `changeAsset` enforces that at least one of `assetId` or
+// `dropOffAssetId` is provided.
 export class UpdateJobAssetDto {
-  @ApiProperty({ example: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890' })
+  @ApiPropertyOptional({ example: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890' })
+  @IsOptional()
   @IsUUID()
-  assetId: string;
+  assetId?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -317,6 +339,20 @@ export class UpdateJobAssetDto {
   @IsOptional()
   @IsBoolean()
   sizeMismatch?: boolean;
+
+  // Phase 14 — drop-off asset for exchange job corrections.
+  // Symmetric to `assetId`; runs through the same canonical
+  // `assignAssetToJob` path with conflict guard + audit trail.
+  // Either this or `assetId` must be provided (runtime check
+  // in changeAsset).
+  @ApiPropertyOptional({
+    example: 'b2c3d4e5-f6a7-8901-bcde-f12345678901',
+    description:
+      'Drop-off asset id for exchange corrections. Either this or assetId must be provided.',
+  })
+  @IsOptional()
+  @IsUUID()
+  dropOffAssetId?: string;
 }
 
 export class AssignDto {

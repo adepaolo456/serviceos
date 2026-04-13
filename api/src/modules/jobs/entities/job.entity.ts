@@ -271,6 +271,12 @@ export class Job {
     default: () => `'[]'::jsonb`,
   })
   asset_change_history!: Array<{
+    // Phase 14 — which field changed. Entries written before
+    // Phase 14 omit this marker and implicitly refer to `asset_id`;
+    // entries for exchange drop-off asset changes are marked as
+    // `drop_off_asset_id`. Kept optional so the column does not
+    // need a backfill for historical rows.
+    field?: 'asset_id' | 'drop_off_asset_id';
     previous_asset_id: string | null;
     new_asset_id: string;
     changed_by: string | null;
