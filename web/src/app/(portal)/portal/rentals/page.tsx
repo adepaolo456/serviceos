@@ -7,7 +7,7 @@ import { formatCurrency } from "@/lib/utils";
 import { formatDateOnly } from "@/lib/utils/format-date";
 import { deriveCustomerTimeline, formatRentalTitle, rentalSizeLabel, type CustomerTimelineStep } from "@/lib/job-status";
 import { FEATURE_REGISTRY } from "@/lib/feature-registry";
-import { Package, Calendar, MapPin, ChevronRight, CalendarClock, Search, X } from "lucide-react";
+import { Package, Calendar, MapPin, ChevronRight, Search, X } from "lucide-react";
 import dynamic from "next/dynamic";
 import PortalChangePickupDateModal from "@/components/portal-change-pickup-date-modal";
 
@@ -216,12 +216,13 @@ function PortalRentalsPage() {
 
   if (detail) {
     const timelineSteps = deriveCustomerTimeline(detail, rentals);
+    // Phase B16 — date-text is the primary edit trigger for both delivery
+    // and pickup. The old action-row buttons (Change Date / Change Pickup
+    // Date) are removed; these flags gate the clickable affordance on the
+    // date cells and the inline reschedule drawer.
     const canChangeDate = ["pending", "confirmed"].includes(detail.status);
     const tooSoon = isWithin24Hours(detail.scheduled_date);
-    // Phase B13 — Change Pickup Date is available for any delivery rental
-    // that isn't completed or cancelled. Mirrors the dashboard rule.
     const canChangePickup = detail.job_type === "delivery" && !["completed", "cancelled"].includes(detail.status);
-    const showActionRow = canChangeDate || canChangePickup;
 
     return (
       <div className="space-y-4">
@@ -267,7 +268,14 @@ function PortalRentalsPage() {
                   </p>
                 </button>
               ) : (
-                <p className="font-semibold text-[var(--t-text-primary)] mt-0.5 truncate">{detail.scheduled_date ? formatDateOnly(detail.scheduled_date) : "—"}</p>
+                <>
+                  <p className="font-semibold text-[var(--t-text-primary)] mt-0.5 truncate">{detail.scheduled_date ? formatDateOnly(detail.scheduled_date) : "—"}</p>
+                  {canChangeDate && tooSoon && (
+                    <p className="text-[10px] text-amber-500 mt-0.5 leading-snug">
+                      {FEATURE_REGISTRY.portal_detail_delivery_locked_hint?.label ?? "Locked — within 24 hours of delivery"}
+                    </p>
+                  )}
+                </>
               )}
             </div>
             <div className="min-w-0">
@@ -304,96 +312,70 @@ function PortalRentalsPage() {
             </div>
           </div>
 
-          {/* Action row — Phase B13: delivery and pickup date actions are
-              now co-located so customers can manage both from one place.
-              "Change Date" reschedules the delivery; "Change Pickup Date"
-              opens the shared pickup-date modal that the dashboard uses. */}
-          {showActionRow && (
+          {/* Reschedule drawer — Phase B16: opens inline under the summary
+              grid when the Delivery Date cell is clicked. No more action-row
+              buttons; the date text is the sole trigger. */}
+          {rescheduleOpen && (
             <div className="mt-5 pt-4 border-t border-[var(--t-border)]">
-              {!rescheduleOpen ? (
-                <div className="flex flex-wrap items-center gap-2">
-                  {canChangeDate && (tooSoon ? (
-                    <>
-                      <button disabled
-                        className="inline-flex items-center gap-1.5 rounded-full border border-[var(--t-border)] px-4 py-2 text-sm font-medium text-[var(--t-text-muted)] opacity-50 cursor-not-allowed">
-                        <CalendarClock className="h-4 w-4" /> {FEATURE_REGISTRY.portal_action_change_date_short?.label ?? "Change Date"}
-                      </button>
-                      <span className="text-xs text-amber-500 leading-snug basis-full sm:basis-auto">Cannot change within 24 hours of scheduled date</span>
-                    </>
-                  ) : (
-                    <button onClick={() => { setRescheduleOpen(true); setNewDate(detail.scheduled_date || ""); }}
-                      className="inline-flex items-center gap-1.5 rounded-full bg-[var(--t-accent)] px-4 py-2 text-sm font-semibold text-[var(--t-accent-on-accent)] hover:opacity-90 transition-opacity">
-                      <CalendarClock className="h-4 w-4" /> {FEATURE_REGISTRY.portal_action_change_date_short?.label ?? "Change Date"}
-                    </button>
-                  ))}
-                  {canChangePickup && (
-                    <button onClick={() => setChangePickupJobId(detail.id)}
-                      className="inline-flex items-center gap-1.5 rounded-full border border-[var(--t-border)] px-4 py-2 text-sm font-semibold text-[var(--t-text-primary)] hover:bg-[var(--t-bg-card-hover)] transition-colors">
-                      <CalendarClock className="h-4 w-4" /> {FEATURE_REGISTRY.portal_action_change_pickup_date?.label ?? "Change Pickup Date"}
-                    </button>
-                  )}
-                </div>
-              ) : (
-                <div className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-primary)] p-4 space-y-3">
-                  <p className="text-sm font-semibold text-[var(--t-text-primary)]">Reschedule Delivery</p>
-                  <div>
-                    <label className="block text-xs font-medium text-[var(--t-text-primary)] mb-1">New Date</label>
-                    <div
-                      className="relative cursor-pointer"
-                      onClick={() => rescheduleDateRef.current?.showPicker?.()}
-                    >
-                      <input
-                        ref={rescheduleDateRef}
-                        type="date"
-                        value={newDate}
-                        onChange={e => setNewDate(e.target.value)}
-                        min={new Date(Date.now() + 86400000).toISOString().split("T")[0]}
-                        className={`${inputCls} cursor-pointer`}
-                      />
-                    </div>
-                  </div>
-                  {detail.rental_days && newDate && (
-                    <p className="text-xs text-[var(--t-text-muted)]">
-                      {/* Phase B6 — compute the predicted pickup date via
-                          pure YYYY-MM-DD arithmetic so the preview label
-                          renders in the correct local calendar day. */}
-                      New pickup by: {(() => {
-                        const start = new Date(`${newDate}T12:00:00`);
-                        if (Number.isNaN(start.getTime())) return "—";
-                        const end = new Date(start.getTime() + detail.rental_days * 86400000);
-                        const y = end.getFullYear();
-                        const m = String(end.getMonth() + 1).padStart(2, "0");
-                        const d = String(end.getDate()).padStart(2, "0");
-                        return formatDateOnly(`${y}-${m}-${d}`);
-                      })()}
-                    </p>
-                  )}
-                  <div>
-                    <label className="block text-xs font-medium text-[var(--t-text-primary)] mb-1">Reason (optional)</label>
-                    <input value={rescheduleReason} onChange={e => setRescheduleReason(e.target.value)}
-                      placeholder="Why are you rescheduling?"
-                      className={`${inputCls} placeholder-[var(--t-text-muted)]`} />
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <button onClick={async () => {
-                      setRescheduling(true);
-                      try {
-                        const result = await portalApi.patch<Partial<Rental>>(`/portal/rentals/${detail.id}/reschedule`, { scheduledDate: newDate, reason: rescheduleReason, source: "customer_portal" });
-                        const updated = { ...detail, ...result, scheduled_date: newDate };
-                        updateRentalInPlace(updated);
-                        setRescheduleOpen(false);
-                        setRescheduleReason("");
-                      } catch (err: unknown) {
-                        alert(resolvePortalErrorMessage(err));
-                      } finally { setRescheduling(false); }
-                    }} disabled={!newDate || rescheduling}
-                      className="rounded-full bg-[var(--t-accent)] px-4 py-2 text-sm font-semibold text-[var(--t-accent-on-accent)] hover:opacity-90 disabled:opacity-50 transition-opacity">
-                      {rescheduling ? "Rescheduling..." : "Confirm Reschedule"}
-                    </button>
-                    <button onClick={() => setRescheduleOpen(false)} className="rounded-full border border-[var(--t-border)] px-4 py-2 text-sm text-[var(--t-text-muted)] hover:bg-[var(--t-bg-card-hover)] transition-colors">Cancel</button>
+              <div className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-primary)] p-4 space-y-3">
+                <p className="text-sm font-semibold text-[var(--t-text-primary)]">Reschedule Delivery</p>
+                <div>
+                  <label className="block text-xs font-medium text-[var(--t-text-primary)] mb-1">New Date</label>
+                  <div
+                    className="relative cursor-pointer"
+                    onClick={() => rescheduleDateRef.current?.showPicker?.()}
+                  >
+                    <input
+                      ref={rescheduleDateRef}
+                      type="date"
+                      value={newDate}
+                      onChange={e => setNewDate(e.target.value)}
+                      min={new Date(Date.now() + 86400000).toISOString().split("T")[0]}
+                      className={`${inputCls} cursor-pointer`}
+                    />
                   </div>
                 </div>
-              )}
+                {detail.rental_days && newDate && (
+                  <p className="text-xs text-[var(--t-text-muted)]">
+                    {/* Phase B6 — compute the predicted pickup date via
+                        pure YYYY-MM-DD arithmetic so the preview label
+                        renders in the correct local calendar day. */}
+                    New pickup by: {(() => {
+                      const start = new Date(`${newDate}T12:00:00`);
+                      if (Number.isNaN(start.getTime())) return "—";
+                      const end = new Date(start.getTime() + detail.rental_days * 86400000);
+                      const y = end.getFullYear();
+                      const m = String(end.getMonth() + 1).padStart(2, "0");
+                      const d = String(end.getDate()).padStart(2, "0");
+                      return formatDateOnly(`${y}-${m}-${d}`);
+                    })()}
+                  </p>
+                )}
+                <div>
+                  <label className="block text-xs font-medium text-[var(--t-text-primary)] mb-1">Reason (optional)</label>
+                  <input value={rescheduleReason} onChange={e => setRescheduleReason(e.target.value)}
+                    placeholder="Why are you rescheduling?"
+                    className={`${inputCls} placeholder-[var(--t-text-muted)]`} />
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button onClick={async () => {
+                    setRescheduling(true);
+                    try {
+                      const result = await portalApi.patch<Partial<Rental>>(`/portal/rentals/${detail.id}/reschedule`, { scheduledDate: newDate, reason: rescheduleReason, source: "customer_portal" });
+                      const updated = { ...detail, ...result, scheduled_date: newDate };
+                      updateRentalInPlace(updated);
+                      setRescheduleOpen(false);
+                      setRescheduleReason("");
+                    } catch (err: unknown) {
+                      alert(resolvePortalErrorMessage(err));
+                    } finally { setRescheduling(false); }
+                  }} disabled={!newDate || rescheduling}
+                    className="rounded-full bg-[var(--t-accent)] px-4 py-2 text-sm font-semibold text-[var(--t-accent-on-accent)] hover:opacity-90 disabled:opacity-50 transition-opacity">
+                    {rescheduling ? "Rescheduling..." : "Confirm Reschedule"}
+                  </button>
+                  <button onClick={() => setRescheduleOpen(false)} className="rounded-full border border-[var(--t-border)] px-4 py-2 text-sm text-[var(--t-text-muted)] hover:bg-[var(--t-bg-card-hover)] transition-colors">Cancel</button>
+                </div>
+              </div>
             </div>
           )}
         </div>
