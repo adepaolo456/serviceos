@@ -113,17 +113,16 @@ export class CustomerDashboardService {
       quotes.map((q) => ({ status: q.status, expires_at: q.expires_at })),
     );
 
-    // Dispatch blocker = jobs with an unpaid linked invoice (status not in
-    // paid/partial). Mirrors the real dispatch-board gating rule at
-    // `dispatch.service.ts:39` without duplicating the query there.
-    const dispatchBlockerCount = this.countDispatchBlockers(jobs, invoices);
-
+    // Phase B8 — dispatch blocker derivation removed. The former rule
+    // mirrored the dispatch board's payment gate, which has been deleted.
+    // Credit enforcement now happens at assign/dispatch time in
+    // `dispatch-credit-enforcement.service.ts`, not as a customer-level
+    // status-strip reason.
     const statusStrip = deriveStatusStrip({
       netBalance: financial.outstandingBalance,
       overdueInvoiceCount: financial.overdueCount,
       overdueThirtyPlusCount: financial.overdueThirtyPlusCount,
       openBillingIssueCount: billingIssues.length,
-      dispatchBlockerCount,
       smsOptedOut,
       geocodeFailureCount: serviceSites.geocodeFailureCount,
       expiringQuoteCount,
@@ -383,25 +382,4 @@ export class CustomerDashboardService {
     return this.smsOptOutService.isOptedOut(tenantId, normalized);
   }
 
-  /**
-   * Count jobs that would be hidden from the dispatch board due to an
-   * unpaid linked invoice. Mirrors `dispatch.service.ts:39` gating rule
-   * without duplicating the query. Paid/partial invoices do NOT block.
-   */
-  private countDispatchBlockers(jobs: Job[], invoices: Invoice[]): number {
-    const invoicesByJobId = new Map(
-      invoices.filter((i) => i.job_id).map((i) => [i.job_id, i]),
-    );
-    let count = 0;
-    for (const job of jobs) {
-      // Only count blockers for jobs that are still operationally active.
-      if (['completed', 'cancelled', 'voided'].includes(job.status)) continue;
-      const inv = invoicesByJobId.get(job.id);
-      if (!inv) continue; // No linked invoice → visible on board (manual/legacy)
-      if (inv.status === 'paid' || inv.status === 'partial') continue;
-      if (inv.status === 'voided' || inv.status === 'draft') continue;
-      count += 1;
-    }
-    return count;
-  }
 }

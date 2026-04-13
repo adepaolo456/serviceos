@@ -33,7 +33,6 @@ export const CUSTOMER_DASHBOARD_LABELS = {
   reasons: {
     overdue_30_plus: "30+ days overdue",
     open_billing_issue: "Open billing issue",
-    dispatch_blocker: "Dispatch blocked",
     balance_outstanding: "Balance outstanding",
     sms_opted_out: "SMS opted out",
     geocode_failure: "Address needs verification",
@@ -186,7 +185,6 @@ export const CUSTOMER_DASHBOARD_LABELS = {
 export type StatusReasonKey =
   | "overdue_30_plus"
   | "open_billing_issue"
-  | "dispatch_blocker"
   | "balance_outstanding"
   | "sms_opted_out"
   | "geocode_failure"

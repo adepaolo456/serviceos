@@ -28,15 +28,17 @@ export class DispatchService {
       },
     });
 
+    // Phase B8 — payment gating removed from the dispatch board. Jobs are
+    // no longer hidden based on linked-invoice status. Dispatch decisions
+    // live in `dispatch-credit-enforcement.service.ts` (action-time gate
+    // at assign / en_route / arrived / completed). Visibility is purely
+    // tenant + scheduled_date + ordering.
     const jobs = await this.jobsRepository
       .createQueryBuilder('j')
       .leftJoinAndSelect('j.customer', 'customer')
       .leftJoinAndSelect('j.asset', 'asset')
-      .leftJoin('task_chain_links', 'tcl', 'tcl.job_id = j.id')
-      .leftJoin('invoices', 'inv', 'inv.job_id = j.id OR inv.rental_chain_id = tcl.rental_chain_id')
       .where('j.tenant_id = :tenantId', { tenantId })
       .andWhere('j.scheduled_date = :date', { date })
-      .andWhere('(inv.id IS NULL OR inv.status IN (:...paidStatuses))', { paidStatuses: ['paid', 'partial'] })
       .orderBy('j.route_order', 'ASC', 'NULLS LAST')
       .addOrderBy('j.scheduled_window_start', 'ASC', 'NULLS LAST')
       .getMany();
@@ -137,16 +139,16 @@ export class DispatchService {
   }
 
   async getUnassigned(tenantId: string) {
+    // Phase B8 — payment gating removed (see `getDispatchBoard` note above).
+    // Unassigned list mirrors that policy: every pending/confirmed job the
+    // dispatcher can see on the board is a candidate for assignment.
     return this.jobsRepository
       .createQueryBuilder('j')
       .leftJoinAndSelect('j.customer', 'customer')
       .leftJoinAndSelect('j.asset', 'asset')
-      .leftJoin('task_chain_links', 'tcl', 'tcl.job_id = j.id')
-      .leftJoin('invoices', 'inv', 'inv.job_id = j.id OR inv.rental_chain_id = tcl.rental_chain_id')
       .where('j.tenant_id = :tenantId', { tenantId })
       .andWhere('j.assigned_driver_id IS NULL')
       .andWhere('j.status IN (:...statuses)', { statuses: ['pending', 'confirmed'] })
-      .andWhere('(inv.id IS NULL OR inv.status IN (:...paidStatuses))', { paidStatuses: ['paid', 'partial'] })
       .orderBy('j.scheduled_date', 'ASC')
       .addOrderBy('j.created_at', 'DESC')
       .getMany();

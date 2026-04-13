@@ -1,20 +1,17 @@
 /**
- * Tier 1 #5 (new) — dispatch board payment-gated visibility.
+ * Dispatch board visibility (Phase B8 — payment gate removed).
  *
- * The rule (per api/src/modules/dispatch/dispatch.service.ts:39):
+ * Prior to Phase B8 the dispatch board hid jobs whose linked invoice was
+ * not in `('paid', 'partial')`. That gate has been deleted in
+ * `api/src/modules/dispatch/dispatch.service.ts` (see Phase B8 comment on
+ * `getDispatchBoard` / `getUnassigned`). Credit enforcement now happens
+ * at assign/en_route/arrived/completed time via
+ * `dispatch-credit-enforcement.service.ts`, not as a visibility filter.
  *
- *     .andWhere(
- *       '(inv.id IS NULL OR inv.status IN (:...paidStatuses))',
- *       { paidStatuses: ['paid', 'partial'] },
- *     )
- *
- * A job is visible on the dispatch board when EITHER:
- *   - it has no linked invoice (manual/legacy jobs), OR
- *   - it has a linked invoice whose status is 'paid' or 'partial'.
- *
- * Jobs with invoices in other statuses (e.g. 'open', 'draft') are hidden
- * until the invoice transitions. This test exercises the real query
- * against a real Postgres — it does NOT reimplement the rule in JS.
+ * Contract under test: the dispatch board returns every scheduled job
+ * for the tenant on the requested date, regardless of linked-invoice
+ * status. This suite locks in that contract so the gate cannot come
+ * back without an explicit test change.
  */
 import { INestApplication } from '@nestjs/common';
 import { DataSource } from 'typeorm';
@@ -41,7 +38,7 @@ function flattenBoard(body: any): Array<{ id: string }> {
   return [...unassigned, ...driverJobs];
 }
 
-describe('Dispatch board payment gating (Tier 1 #5 — new)', () => {
+describe('Dispatch board visibility (Phase B8 — payment gate removed)', () => {
   let app: INestApplication;
   let ds: DataSource;
 
@@ -76,7 +73,7 @@ describe('Dispatch board payment gating (Tier 1 #5 — new)', () => {
     expect(jobs.find((j) => j.id === job.id)).toBeTruthy();
   });
 
-  it('a job with an unpaid invoice is hidden, and appears once the invoice is paid', async () => {
+  it('a job with an unpaid (open) invoice is visible on the board', async () => {
     const owner = await registerTenant(app);
     const customer = await createCustomer(app, owner.accessToken);
     const job = await createPickupJob(
@@ -86,8 +83,7 @@ describe('Dispatch board payment gating (Tier 1 #5 — new)', () => {
       today(),
     );
 
-    // Link an unpaid ('open') invoice to this job.
-    const invoice = await insertInvoiceForJob(ds, {
+    await insertInvoiceForJob(ds, {
       tenantId: owner.tenantId,
       customerId: customer.id,
       jobId: job.id,
@@ -98,30 +94,12 @@ describe('Dispatch board payment gating (Tier 1 #5 — new)', () => {
       balanceDue: 500,
     });
 
-    // Hidden
-    let res = await request(app.getHttpServer())
+    const res = await request(app.getHttpServer())
       .get(`/dispatch/board?date=${today()}`)
       .set('Authorization', `Bearer ${owner.accessToken}`);
-    expect(res.status).toBe(200);
-    let jobs = flattenBoard(res.body);
-    expect(jobs.find((j) => j.id === job.id)).toBeFalsy();
 
-    // Transition invoice → paid (the real reconcileBalance path would
-    // flip status; this test uses a direct UPDATE to isolate the
-    // dispatch query under test from the payment machinery).
-    await ds.query(
-      `UPDATE invoices
-         SET status = 'paid', amount_paid = total, balance_due = 0
-         WHERE id = $1`,
-      [invoice.id],
-    );
-
-    // Visible
-    res = await request(app.getHttpServer())
-      .get(`/dispatch/board?date=${today()}`)
-      .set('Authorization', `Bearer ${owner.accessToken}`);
     expect(res.status).toBe(200);
-    jobs = flattenBoard(res.body);
+    const jobs = flattenBoard(res.body);
     expect(jobs.find((j) => j.id === job.id)).toBeTruthy();
   });
 
@@ -154,7 +132,7 @@ describe('Dispatch board payment gating (Tier 1 #5 — new)', () => {
     expect(jobs.find((j) => j.id === job.id)).toBeTruthy();
   });
 
-  it('a draft invoice also hides the job', async () => {
+  it('a draft invoice does not hide the job', async () => {
     const owner = await registerTenant(app);
     const customer = await createCustomer(app, owner.accessToken);
     const job = await createPickupJob(
@@ -176,6 +154,35 @@ describe('Dispatch board payment gating (Tier 1 #5 — new)', () => {
       .set('Authorization', `Bearer ${owner.accessToken}`);
     expect(res.status).toBe(200);
     const jobs = flattenBoard(res.body);
-    expect(jobs.find((j) => j.id === job.id)).toBeFalsy();
+    expect(jobs.find((j) => j.id === job.id)).toBeTruthy();
+  });
+
+  it('a voided invoice does not hide the job', async () => {
+    const owner = await registerTenant(app);
+    const customer = await createCustomer(app, owner.accessToken);
+    const job = await createPickupJob(
+      app,
+      owner.accessToken,
+      customer.id,
+      today(),
+    );
+
+    await insertInvoiceForJob(ds, {
+      tenantId: owner.tenantId,
+      customerId: customer.id,
+      jobId: job.id,
+      status: 'void',
+      subtotal: 500,
+      total: 500,
+      amountPaid: 0,
+      balanceDue: 0,
+    });
+
+    const res = await request(app.getHttpServer())
+      .get(`/dispatch/board?date=${today()}`)
+      .set('Authorization', `Bearer ${owner.accessToken}`);
+    expect(res.status).toBe(200);
+    const jobs = flattenBoard(res.body);
+    expect(jobs.find((j) => j.id === job.id)).toBeTruthy();
   });
 });

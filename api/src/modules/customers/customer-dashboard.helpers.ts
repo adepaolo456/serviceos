@@ -8,10 +8,15 @@
  * `customer-dashboard.service.ts`.
  *
  * Severity rules (approved):
- *   RED    = 30+ day overdue invoice OR open billing issue OR dispatch blocker
+ *   RED    = 30+ day overdue invoice OR open billing issue
  *   YELLOW = (no red) AND (balance > 0 not overdue OR sms opted out
  *            OR geocode failure OR expiring quote)
  *   GREEN  = none of the above
+ *
+ * Note (Phase B8): the former `dispatch_blocker` red reason was removed
+ * alongside the dispatch-board payment gate. Credit enforcement now lives
+ * in `dispatch-credit-enforcement.service.ts` (action-time gate), not as
+ * a customer-level status-strip reason.
  */
 import { hasValidServiceCoordinates } from '../../common/helpers/coordinate-validator';
 
@@ -21,7 +26,6 @@ export type StatusSeverity = 'green' | 'yellow' | 'red';
 export type StatusReasonKey =
   | 'overdue_30_plus'
   | 'open_billing_issue'
-  | 'dispatch_blocker'
   | 'balance_outstanding'
   | 'sms_opted_out'
   | 'geocode_failure'
@@ -41,8 +45,6 @@ export interface StatusStripInput {
   overdueThirtyPlusCount: number;
   /** Number of open (actionable) billing issues linked to this customer. */
   openBillingIssueCount: number;
-  /** Number of jobs currently blocked by an unpaid linked invoice. */
-  dispatchBlockerCount: number;
   /** Whether the customer's phone is currently SMS-suppressed. */
   smsOptedOut: boolean;
   /** Number of service sites missing valid coordinates. */
@@ -60,7 +62,6 @@ export function deriveStatusStrip(input: StatusStripInput): StatusStrip {
   const redReasons: StatusReasonKey[] = [];
   if (input.overdueThirtyPlusCount > 0) redReasons.push('overdue_30_plus');
   if (input.openBillingIssueCount > 0) redReasons.push('open_billing_issue');
-  if (input.dispatchBlockerCount > 0) redReasons.push('dispatch_blocker');
 
   if (redReasons.length > 0) {
     return { severity: 'red', reasons: redReasons };
