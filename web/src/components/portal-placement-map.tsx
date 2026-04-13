@@ -177,19 +177,20 @@ export default function PortalPlacementMap({ jobId, serviceAddress }: Props) {
             />
           </div>
 
-          {/* Save action — Phase B10: stacks on mobile, inline on desktop */}
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          {/* Save action — Phase B11: auto-width inline CTA; the hint wraps
+              below on narrow screens without stretching the button. */}
+          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
             <button
               onClick={handleSave}
               disabled={saving || (lat == null)}
-              className="w-full sm:w-auto flex items-center justify-center gap-2 rounded-full px-5 sm:px-6 py-3 text-sm font-bold disabled:opacity-40 hover:opacity-90 transition-all active:scale-[0.98]"
+              className="inline-flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-bold disabled:opacity-40 hover:opacity-90 transition-all active:scale-[0.98]"
               style={{ background: "var(--t-accent)", color: "var(--t-accent-on-accent, #fff)" }}
             >
               {saving ? <><Loader2 className="h-4 w-4 animate-spin" /> {label("portal_placement_saving", "Saving...")}</>
                 : saved ? <><Check className="h-4 w-4" /> {label("portal_placement_saved_cta", "Drop Location Saved")}</>
                 : <><Navigation className="h-4 w-4" /> {label("portal_placement_save", "Save Drop Location")}</>}
             </button>
-            <p className="text-[11px] text-center sm:text-right leading-snug" style={{ color: "var(--t-text-muted)" }}>
+            <p className="text-[11px] leading-snug flex-1 min-w-[10rem] text-right" style={{ color: "var(--t-text-muted)" }}>
               {label("portal_placement_editable_hint", "You can update this anytime before delivery")}
             </p>
           </div>

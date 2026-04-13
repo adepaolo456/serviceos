@@ -252,24 +252,24 @@ function PortalRentalsPage() {
             </div>
           </div>
 
-          {/* Change Date / Reschedule — Phase B10: full-width CTA on mobile,
-              inline on desktop; too-soon notice wraps below on mobile. */}
+          {/* Change Date / Reschedule — Phase B11: auto-width CTA inline;
+              too-soon notice wraps underneath when needed. */}
           {canChangeDate && (
             <div className="mt-5 pt-4 border-t border-[var(--t-border)]">
               {!rescheduleOpen ? (
-                <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   {tooSoon ? (
                     <>
                       <button disabled
-                        className="w-full sm:w-auto rounded-full border border-[var(--t-border)] px-4 py-2.5 sm:py-2 text-sm font-medium text-[var(--t-text-muted)] opacity-50 cursor-not-allowed flex items-center justify-center gap-1.5">
-                        <CalendarClock className="h-4 w-4" /> Change Date
+                        className="inline-flex items-center gap-1.5 rounded-full border border-[var(--t-border)] px-4 py-2 text-sm font-medium text-[var(--t-text-muted)] opacity-50 cursor-not-allowed">
+                        <CalendarClock className="h-4 w-4" /> {FEATURE_REGISTRY.portal_action_change_date_short?.label ?? "Change Date"}
                       </button>
-                      <span className="text-xs text-amber-500 text-center sm:text-left leading-snug">Cannot change within 24 hours of scheduled date</span>
+                      <span className="text-xs text-amber-500 leading-snug basis-full sm:basis-auto">Cannot change within 24 hours of scheduled date</span>
                     </>
                   ) : (
                     <button onClick={() => { setRescheduleOpen(true); setNewDate(detail.scheduled_date || ""); }}
-                      className="w-full sm:w-auto rounded-full bg-[var(--t-accent)] px-4 py-2.5 sm:py-2 text-sm font-semibold text-[var(--t-accent-on-accent)] hover:opacity-90 transition-opacity flex items-center justify-center gap-1.5">
-                      <CalendarClock className="h-4 w-4" /> Change Date
+                      className="inline-flex items-center gap-1.5 rounded-full bg-[var(--t-accent)] px-4 py-2 text-sm font-semibold text-[var(--t-accent-on-accent)] hover:opacity-90 transition-opacity">
+                      <CalendarClock className="h-4 w-4" /> {FEATURE_REGISTRY.portal_action_change_date_short?.label ?? "Change Date"}
                     </button>
                   )}
                 </div>
@@ -314,7 +314,7 @@ function PortalRentalsPage() {
                       placeholder="Why are you rescheduling?"
                       className={`${inputCls} placeholder-[var(--t-text-muted)]`} />
                   </div>
-                  <div className="flex flex-col sm:flex-row gap-2">
+                  <div className="flex flex-wrap gap-2">
                     <button onClick={async () => {
                       setRescheduling(true);
                       try {
@@ -327,10 +327,10 @@ function PortalRentalsPage() {
                         alert(resolvePortalErrorMessage(err));
                       } finally { setRescheduling(false); }
                     }} disabled={!newDate || rescheduling}
-                      className="w-full sm:w-auto rounded-full bg-[var(--t-accent)] px-4 py-2.5 sm:py-2 text-sm font-semibold text-[var(--t-accent-on-accent)] hover:opacity-90 disabled:opacity-50 transition-opacity">
+                      className="rounded-full bg-[var(--t-accent)] px-4 py-2 text-sm font-semibold text-[var(--t-accent-on-accent)] hover:opacity-90 disabled:opacity-50 transition-opacity">
                       {rescheduling ? "Rescheduling..." : "Confirm Reschedule"}
                     </button>
-                    <button onClick={() => setRescheduleOpen(false)} className="w-full sm:w-auto rounded-full border border-[var(--t-border)] px-4 py-2.5 sm:py-2 text-sm text-[var(--t-text-muted)] hover:bg-[var(--t-bg-card-hover)] transition-colors">Cancel</button>
+                    <button onClick={() => setRescheduleOpen(false)} className="rounded-full border border-[var(--t-border)] px-4 py-2 text-sm text-[var(--t-text-muted)] hover:bg-[var(--t-bg-card-hover)] transition-colors">Cancel</button>
                   </div>
                 </div>
               )}
@@ -441,7 +441,7 @@ function PortalRentalsPage() {
             const steps = r.job_type === "delivery" ? deriveCustomerTimeline(r, rentals) : [];
             return (
               <button key={r.id} onClick={() => openDetail(r.id)}
-                className="w-full text-left rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-4 hover:bg-[var(--t-bg-card-hover)] transition-colors">
+                className="w-full text-left rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-3.5 sm:p-4 hover:bg-[var(--t-bg-card-hover)] transition-colors">
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex-1 min-w-0">
                     <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mb-1">
