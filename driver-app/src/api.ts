@@ -138,17 +138,33 @@ export async function listAssetsForPicker(subtype?: string): Promise<any[]> {
 // is true, the backend accepts assignment even if the asset is
 // already on another active job, and the audit entry is marked
 // `override_conflict: true`.
+//
+// Phase 14 — `assetId` is now nullable and a new `dropOffAssetId`
+// option threads the exchange delivery-side asset through the same
+// canonical path. At least one of `assetId` / `dropOffAssetId` must
+// be provided; the backend enforces that via a runtime check. Both
+// fields route through DumpLocationsService-style canonical
+// validation (tenant scope, chain-aware conflict guard, audit
+// trail, inventory sync). Drivers never forward `override: true`
+// for drop-off conflicts — that is an admin-only power.
 export async function updateJobAsset(
   jobId: string,
-  assetId: string,
-  options: { override?: boolean; reason?: string; sizeMismatch?: boolean } = {},
+  assetId: string | null,
+  options: {
+    override?: boolean;
+    reason?: string;
+    sizeMismatch?: boolean;
+    dropOffAssetId?: string;
+  } = {},
 ): Promise<any> {
-  const { data } = await client.patch(`/jobs/${jobId}/asset`, {
-    assetId,
+  const body: Record<string, unknown> = {
+    ...(assetId ? { assetId } : {}),
+    ...(options.dropOffAssetId ? { dropOffAssetId: options.dropOffAssetId } : {}),
     ...(options.override ? { overrideAssetConflict: true } : {}),
     ...(options.reason ? { reason: options.reason } : {}),
     ...(options.sizeMismatch ? { sizeMismatch: true } : {}),
-  });
+  };
+  const { data } = await client.patch(`/jobs/${jobId}/asset`, body);
   return data;
 }
 
