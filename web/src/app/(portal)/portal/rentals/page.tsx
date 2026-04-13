@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import { portalApi } from "@/lib/portal-api";
+import { portalApi, resolvePortalErrorMessage } from "@/lib/portal-api";
 import { formatCurrency } from "@/lib/utils";
 import { formatDateOnly } from "@/lib/utils/format-date";
 import { deriveCustomerTimeline, formatRentalTitle, rentalSizeLabel, type CustomerTimelineStep } from "@/lib/job-status";
@@ -159,75 +159,61 @@ function PortalRentalsPage() {
     const tooSoon = isWithin24Hours(detail.scheduled_date);
 
     return (
-      <div className="space-y-6">
+      <div className="space-y-4">
         <button onClick={() => setDetail(null)} className="text-sm text-[var(--t-accent)] font-medium hover:underline">&larr; Back to rentals</button>
-        <div className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6">
-          <div className="flex flex-wrap items-start justify-between gap-3 mb-6">
+
+        {/* ─── Top identity card — Phase B8: wider, denser, action-forward ─── */}
+        <div className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5 sm:p-6">
+          {/* Title row */}
+          <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
+            <div className="min-w-0">
+              <h1 className="text-xl sm:text-2xl font-bold text-[var(--t-text-primary)] leading-tight">
+                {formatRentalTitle(detail)}
+              </h1>
+              <p className="text-xs text-[var(--t-text-muted)] mt-0.5">
+                {detail.job_number}
+              </p>
+            </div>
+            <span className={`text-xs font-semibold px-2.5 py-1 rounded-full bg-[var(--t-bg-primary)] border border-[var(--t-border)] ${STATUS_COLORS[detail.status] || ""}`}>
+              {STATUS_LABELS[detail.status] || detail.status}
+            </span>
+          </div>
+
+          {/* Compact summary grid — horizontal-first, 2 → 3 → 4 cols on wider screens */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-4 gap-y-3 text-sm">
             <div>
-              <h2 className="text-lg font-bold text-[var(--t-text-primary)]">{formatRentalTitle(detail)}</h2>
-              <p className="text-sm text-[var(--t-text-muted)]">{detail.job_number}</p>
+              <span className="text-[10px] font-medium uppercase tracking-wider text-[var(--t-text-muted)]">{FEATURE_REGISTRY.portal_detail_dumpster_size?.label ?? "Dumpster Size"}</span>
+              <p className="font-semibold text-[var(--t-text-primary)] mt-0.5">{rentalSizeLabel(detail) || "—"}</p>
             </div>
-            <span className={`text-xs font-medium ${STATUS_COLORS[detail.status] || ""}`}>{STATUS_LABELS[detail.status] || detail.status}</span>
-          </div>
-
-          {/* Horizontal Timeline */}
-          <div className="mb-6">
-            <h3 className="text-sm font-semibold text-[var(--t-text-primary)] mb-2">Progress</h3>
-            <HorizontalTimeline steps={timelineSteps} />
-          </div>
-
-          {/* Details grid — Phase B7: full rental facts surfaced above the map */}
-          <div className="mb-4">
-            <h3 className="text-sm font-semibold text-[var(--t-text-primary)] mb-3">
-              {FEATURE_REGISTRY.portal_detail_section_title?.label ?? "Rental Details"}
-            </h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
-              <div>
-                <span className="text-[var(--t-text-muted)]">{FEATURE_REGISTRY.portal_detail_dumpster_size?.label ?? "Dumpster Size"}</span>
-                <p className="font-medium text-[var(--t-text-primary)] mt-0.5">{rentalSizeLabel(detail) || "—"}</p>
-              </div>
-              <div>
-                <span className="text-[var(--t-text-muted)]">{FEATURE_REGISTRY.portal_detail_status?.label ?? "Status"}</span>
-                <p className={`font-medium mt-0.5 ${STATUS_COLORS[detail.status] || "text-[var(--t-text-primary)]"}`}>
-                  {STATUS_LABELS[detail.status] || detail.status}
-                </p>
-              </div>
-              <div>
-                <span className="text-[var(--t-text-muted)]">{FEATURE_REGISTRY.portal_detail_delivery_date?.label ?? "Delivery Date"}</span>
-                <p className="font-medium text-[var(--t-text-primary)] mt-0.5">{detail.scheduled_date ? formatDateOnly(detail.scheduled_date) : "—"}</p>
-              </div>
-              <div>
-                <span className="text-[var(--t-text-muted)]">{FEATURE_REGISTRY.portal_detail_pickup_date?.label ?? "Pickup Date"}</span>
-                <p className="font-medium text-[var(--t-text-primary)] mt-0.5">{detail.rental_end_date ? formatDateOnly(detail.rental_end_date) : "—"}</p>
-              </div>
-              <div>
-                <span className="text-[var(--t-text-muted)]">{FEATURE_REGISTRY.portal_detail_duration?.label ?? "Rental Duration"}</span>
-                <p className="font-medium text-[var(--t-text-primary)] mt-0.5">{detail.rental_days ? `${detail.rental_days} days` : "—"}</p>
-              </div>
-              <div>
-                <span className="text-[var(--t-text-muted)]">{FEATURE_REGISTRY.portal_detail_total_cost?.label ?? "Total Cost"}</span>
-                <p className="font-medium text-[var(--t-text-primary)] mt-0.5">{formatCurrency(detail.total_price)}</p>
-              </div>
-              <div className="sm:col-span-2">
-                <span className="text-[var(--t-text-muted)]">{FEATURE_REGISTRY.portal_detail_service_address?.label ?? "Service Address"}</span>
-                <p className="font-medium text-[var(--t-text-primary)] mt-0.5 flex items-start gap-1.5">
-                  <MapPin className="h-4 w-4 mt-0.5 shrink-0 text-[var(--t-text-muted)]" />
-                  <span>{detail.service_address?.formatted || detail.service_address?.street || "—"}</span>
-                </p>
-              </div>
+            <div>
+              <span className="text-[10px] font-medium uppercase tracking-wider text-[var(--t-text-muted)]">{FEATURE_REGISTRY.portal_detail_delivery_date?.label ?? "Delivery Date"}</span>
+              <p className="font-semibold text-[var(--t-text-primary)] mt-0.5">{detail.scheduled_date ? formatDateOnly(detail.scheduled_date) : "—"}</p>
+            </div>
+            <div>
+              <span className="text-[10px] font-medium uppercase tracking-wider text-[var(--t-text-muted)]">{FEATURE_REGISTRY.portal_detail_pickup_date?.label ?? "Pickup Date"}</span>
+              <p className="font-semibold text-[var(--t-text-primary)] mt-0.5">{detail.rental_end_date ? formatDateOnly(detail.rental_end_date) : "—"}</p>
+            </div>
+            <div>
+              <span className="text-[10px] font-medium uppercase tracking-wider text-[var(--t-text-muted)]">{FEATURE_REGISTRY.portal_detail_duration?.label ?? "Rental Duration"}</span>
+              <p className="font-semibold text-[var(--t-text-primary)] mt-0.5">{detail.rental_days ? `${detail.rental_days} days` : "—"}</p>
+            </div>
+            <div>
+              <span className="text-[10px] font-medium uppercase tracking-wider text-[var(--t-text-muted)]">{FEATURE_REGISTRY.portal_detail_total_cost?.label ?? "Total Cost"}</span>
+              <p className="font-semibold text-[var(--t-text-primary)] mt-0.5">{formatCurrency(detail.total_price)}</p>
+            </div>
+            <div className="col-span-2 sm:col-span-3 lg:col-span-3">
+              <span className="text-[10px] font-medium uppercase tracking-wider text-[var(--t-text-muted)]">{FEATURE_REGISTRY.portal_detail_service_address?.label ?? "Service Address"}</span>
+              <p className="font-semibold text-[var(--t-text-primary)] mt-0.5 flex items-start gap-1.5">
+                <MapPin className="h-4 w-4 mt-0.5 shrink-0 text-[var(--t-text-muted)]" />
+                <span className="truncate">{detail.service_address?.formatted || detail.service_address?.street || "—"}</span>
+              </p>
             </div>
           </div>
 
-          {/* Placement Map — Phase B7: rendered below the details block */}
-          {!["completed", "cancelled"].includes(detail.status) && (
-            <div className="mt-6">
-              <PortalPlacementMap jobId={detail.id} serviceAddress={detail.service_address} />
-            </div>
-          )}
-
-          {/* Change Date / Reschedule */}
+          {/* Change Date / Reschedule — Phase B8: surfaced immediately under the
+              summary so the primary rental action is above the fold. */}
           {canChangeDate && (
-            <div className="mt-6">
+            <div className="mt-5 pt-4 border-t border-[var(--t-border)]">
               {!rescheduleOpen ? (
                 <div className="flex flex-wrap items-center gap-2">
                   {tooSoon ? (
@@ -240,7 +226,7 @@ function PortalRentalsPage() {
                     </div>
                   ) : (
                     <button onClick={() => { setRescheduleOpen(true); setNewDate(detail.scheduled_date || ""); }}
-                      className="rounded-full border border-[var(--t-border)] px-4 py-2 text-sm font-medium text-[var(--t-text-primary)] hover:bg-[var(--t-bg-card-hover)] transition-colors flex items-center gap-1.5">
+                      className="rounded-full bg-[var(--t-accent)] px-4 py-2 text-sm font-semibold text-[var(--t-accent-on-accent)] hover:opacity-90 transition-opacity flex items-center gap-1.5">
                       <CalendarClock className="h-4 w-4" /> Change Date
                     </button>
                   )}
@@ -268,10 +254,7 @@ function PortalRentalsPage() {
                     <p className="text-xs text-[var(--t-text-muted)]">
                       {/* Phase B6 — compute the predicted pickup date via
                           pure YYYY-MM-DD arithmetic so the preview label
-                          renders in the correct local calendar day. Parse
-                          the user-selected `newDate` as local noon, add
-                          the chain duration, format with the safe
-                          helper. */}
+                          renders in the correct local calendar day. */}
                       New pickup by: {(() => {
                         const start = new Date(`${newDate}T12:00:00`);
                         if (Number.isNaN(start.getTime())) return "—";
@@ -293,14 +276,14 @@ function PortalRentalsPage() {
                     <button onClick={async () => {
                       setRescheduling(true);
                       try {
-                        const result = await portalApi.patch<any>(`/portal/rentals/${detail.id}/reschedule`, { scheduledDate: newDate, reason: rescheduleReason, source: "customer_portal" });
+                        const result = await portalApi.patch<Partial<Rental>>(`/portal/rentals/${detail.id}/reschedule`, { scheduledDate: newDate, reason: rescheduleReason, source: "customer_portal" });
                         const updated = { ...detail, ...result, scheduled_date: newDate };
                         setDetail(updated);
                         setRentals(prev => prev.map(r => r.id === updated.id ? updated : r));
                         setRescheduleOpen(false);
                         setRescheduleReason("");
-                      } catch (err: any) {
-                        alert(err.message || "Failed to reschedule");
+                      } catch (err: unknown) {
+                        alert(resolvePortalErrorMessage(err));
                       } finally { setRescheduling(false); }
                     }} disabled={!newDate || rescheduling}
                       className="rounded-full bg-[var(--t-accent)] px-4 py-2 text-sm font-semibold text-[var(--t-accent-on-accent)] hover:opacity-90 disabled:opacity-50 transition-opacity">
@@ -313,6 +296,19 @@ function PortalRentalsPage() {
             </div>
           )}
         </div>
+
+        {/* ─── Progress timeline — below the top card ─── */}
+        <div className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5 sm:p-6">
+          <h3 className="text-sm font-semibold text-[var(--t-text-primary)] mb-2">Progress</h3>
+          <HorizontalTimeline steps={timelineSteps} />
+        </div>
+
+        {/* ─── Drop location / Map — Phase B8: moved to the bottom of the page ─── */}
+        {!["completed", "cancelled"].includes(detail.status) && (
+          <div className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5 sm:p-6">
+            <PortalPlacementMap jobId={detail.id} serviceAddress={detail.service_address} />
+          </div>
+        )}
       </div>
     );
   }

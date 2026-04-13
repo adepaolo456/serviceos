@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
-import { portalApi } from "@/lib/portal-api";
+import { portalApi, resolvePortalErrorMessage } from "@/lib/portal-api";
 import { formatCurrency } from "@/lib/utils";
 import { formatDateOnly, daysUntilDateOnly } from "@/lib/utils/format-date";
 import { formatRentalTitle, rentalSizeLabel } from "@/lib/job-status";
@@ -145,8 +145,7 @@ export default function PortalHomePage() {
       setChangePickupMode(null);
       setChangePickupDate("");
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "Failed to update pickup date";
-      alert(message);
+      alert(resolvePortalErrorMessage(err));
     } finally {
       setActionLoading(false);
     }

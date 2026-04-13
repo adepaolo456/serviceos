@@ -1,4 +1,29 @@
+import { FEATURE_REGISTRY } from "@/lib/feature-registry";
+
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://serviceos-api.vercel.app";
+
+/**
+ * Translates raw backend error keys into portal-friendly, registry-driven
+ * messages. The API throws internal keys like `edit_job_date_error_before_drop_off`
+ * that are fine for the operator dashboard but leak internal vocabulary to
+ * customers. Unknown keys fall through to a generic registry label, so no
+ * raw internal strings ever reach a portal user.
+ */
+export function resolvePortalErrorMessage(raw: unknown): string {
+  const msg = raw instanceof Error ? raw.message : typeof raw === "string" ? raw : "";
+  const portalKeyByBackendKey: Record<string, string> = {
+    edit_job_date_error_before_drop_off: "portal_error_early_pickup_before_delivery",
+    edit_job_date_error_after_pickup: "portal_error_reschedule_after_pickup",
+    edit_job_date_error_after_exchange: "portal_error_reschedule_after_pickup",
+    edit_job_date_error_invalid: "portal_error_invalid_date",
+    edit_job_date_error_past_date: "portal_error_past_date",
+  };
+  const portalKey = portalKeyByBackendKey[msg];
+  if (portalKey) return FEATURE_REGISTRY[portalKey]?.label ?? FEATURE_REGISTRY.portal_error_generic?.label ?? "Something went wrong.";
+  // Any other Error or non-mapped message — fall back to the generic
+  // registry label so internal keys never render in the portal UI.
+  return FEATURE_REGISTRY.portal_error_generic?.label ?? "Something went wrong.";
+}
 
 class PortalApiClient {
   private baseUrl: string;
