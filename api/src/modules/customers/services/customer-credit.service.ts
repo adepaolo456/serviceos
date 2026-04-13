@@ -65,8 +65,19 @@ import { CreditAuditService } from '../../credit-audit/credit-audit.service';
  */
 @Injectable()
 export class CustomerCreditService {
-  /** Application-default fallback when no override is set anywhere. */
-  private static readonly APP_DEFAULT_PAYMENT_TERMS: PaymentTerms = 'net_30';
+  /**
+   * Application-default fallback when no override is set anywhere.
+   *
+   * Phase 1 (payment-terms SOT) — changed from 'net_30' → 'due_on_receipt'
+   * so that new tenants and customers without an explicit override
+   * resolve to prepayment by default. This makes the dispatch
+   * prepayment gate enforce correctly for operators who haven't
+   * configured a tenant-level default. Tenants can still explicitly
+   * configure `tenant.settings.credit_policy.default_payment_terms` to
+   * any other supported terms value (net_7/15/30/60 or custom) — that
+   * tenant-level setting takes precedence over this fallback.
+   */
+  private static readonly APP_DEFAULT_PAYMENT_TERMS: PaymentTerms = 'due_on_receipt';
 
   constructor(
     @InjectRepository(Customer)
@@ -376,7 +387,7 @@ export class CustomerCreditService {
    * Payment terms precedence chain:
    *   1. customers.payment_terms (if not null)
    *   2. tenants.settings.credit_policy.default_payment_terms (if set)
-   *   3. CustomerCreditService.APP_DEFAULT_PAYMENT_TERMS ('net_30')
+   *   3. CustomerCreditService.APP_DEFAULT_PAYMENT_TERMS ('due_on_receipt')
    */
   private resolvePaymentTerms(
     customer: Customer,

@@ -46,6 +46,15 @@ interface DispatchJob {
   failed_at?: string; attempt_count?: number;
   dump_status?: string;
   dump_disposition?: string;
+  // Phase 2 (Dispatch Prepayment UX) — additive board annotations.
+  // `payment_required` is true when the dispatch prepayment gate
+  // would block an assign attempt for this job; the card badge keys
+  // off this flag. `linked_invoice_id` is the most relevant unpaid
+  // invoice id for the "View Invoice" navigation in the blocking
+  // modal (null = no invoice yet → operator should open Customer
+  // Billing instead).
+  payment_required?: boolean;
+  linked_invoice_id?: string | null;
 }
 
 interface Driver { id: string; firstName: string; lastName: string; phone: string; vehicleInfo?: { year?: string; make?: string; model?: string } | null; }
@@ -107,19 +116,88 @@ function getJobCoords(job: DispatchJob): [number, number] | null {
 
 /* ---- Credit enforcement error helper ---- */
 
+/**
+ * Phase 2 (Dispatch Prepayment UX) — error introspection helpers.
+ *
+ * The api client now attaches the parsed JSON body to thrown
+ * Errors as `err.body`, so these helpers can key off the structured
+ * `code` and `hold` fields instead of substring-matching the
+ * (registry-driven, tenant-overridable, translatable) message.
+ */
+type ApiErrorBody = {
+  code?: string;
+  message?: string;
+  hold?: { override_allowed?: boolean; reasons?: unknown[] };
+};
+
+function getErrorBody(err: unknown): ApiErrorBody | null {
+  if (!err || typeof err !== "object") return null;
+  const body = (err as { body?: ApiErrorBody }).body;
+  return body && typeof body === "object" ? body : null;
+}
+
 function isCreditBlockError(err: unknown): string | null {
   if (!err || typeof err !== "object") return null;
+  const body = getErrorBody(err);
+  const code = body?.code;
+  if (
+    code === "DISPATCH_PREPAYMENT_BLOCK" ||
+    code === "DISPATCH_PREPAYMENT_OVERRIDE_NOT_PERMITTED" ||
+    code === "DISPATCH_PREPAYMENT_OVERRIDE_REASON_REQUIRED"
+  ) {
+    return (
+      FEATURE_REGISTRY.dispatch_prepayment_block_message?.label ??
+      body?.message ??
+      null
+    );
+  }
+  if (
+    code === "DISPATCH_CREDIT_BLOCK" ||
+    code === "DISPATCH_CREDIT_OVERRIDE_NOT_PERMITTED" ||
+    code === "DISPATCH_CREDIT_OVERRIDE_REASON_REQUIRED"
+  ) {
+    return (
+      FEATURE_REGISTRY.dispatch_credit_block_message?.label ??
+      body?.message ??
+      null
+    );
+  }
+  // Legacy substring fallbacks for callers that haven't been
+  // re-deployed yet or for proxied errors stripped of the body.
   const msg = (err as Error).message || "";
-  // The API client throws Error with the message from the JSON body.
-  // Phase B9 — also recognize prepayment blocks (per-job gate), which
-  // throw with a different message phrasing than the customer-level
-  // credit hold but share the same structured response shape.
-  if (msg.includes("prepayment terms")) {
+  if (
+    msg.includes("Payment required before dispatch") ||
+    msg.includes("prepayment terms")
+  ) {
     return FEATURE_REGISTRY.dispatch_prepayment_block_message?.label ?? msg;
   }
-  // Credit block messages contain "credit hold" or the structured code.
   if (msg.includes("credit hold") || msg.includes("DISPATCH_CREDIT")) {
     return FEATURE_REGISTRY.dispatch_credit_block_message?.label ?? msg;
+  }
+  return null;
+}
+
+/**
+ * Returns a structured prepayment-block descriptor when the error
+ * is a per-job DISPATCH_PREPAYMENT_BLOCK. Used by the dispatch board
+ * to pop the actionable blocking modal instead of a vague toast.
+ * Returns null for any other error type so the caller falls through
+ * to its existing toast path.
+ */
+function getPrepaymentBlock(
+  err: unknown,
+): { code: string; message?: string; overrideAllowed: boolean } | null {
+  const body = getErrorBody(err);
+  if (!body) return null;
+  if (
+    body.code === "DISPATCH_PREPAYMENT_BLOCK" ||
+    body.code === "DISPATCH_PREPAYMENT_OVERRIDE_NOT_PERMITTED"
+  ) {
+    return {
+      code: body.code,
+      message: body.message,
+      overrideAllowed: !!body.hold?.override_allowed,
+    };
   }
   return null;
 }
@@ -234,6 +312,19 @@ export default function DispatchPage() {
   const [rescheduleQueue, setRescheduleQueue] = useState<DispatchJob[]>([]);
   const [unassignedRail, setUnassignedRail] = useState(false);
   const [selectedJobs, setSelectedJobs] = useState<Set<string>>(new Set());
+  // Phase 2 (Dispatch Prepayment UX) — blocking-modal state for the
+  // "Payment Required Before Dispatch" dialog. Set when an assign
+  // attempt fails with a DISPATCH_PREPAYMENT_BLOCK; cleared by user
+  // action (cancel / view / override). Single-job only — bulk-drag
+  // failures fall back to the existing toast pipeline.
+  const [blockedAssign, setBlockedAssign] = useState<{
+    job: DispatchJob;
+    targetDriverId: string | null;
+    overrideAllowed: boolean;
+  } | null>(null);
+  const [blockedOverrideMode, setBlockedOverrideMode] = useState(false);
+  const [blockedOverrideReason, setBlockedOverrideReason] = useState("");
+  const [blockedOverriding, setBlockedOverriding] = useState(false);
   const lastClickedRef = useRef<string | null>(null);
   const saveOrderTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { toast } = useToast();
@@ -399,6 +490,48 @@ export default function DispatchPage() {
     finally { setSendingRoutes(false); }
   };
 
+  /**
+   * Phase 2 (Dispatch Prepayment UX) — single-job assign with
+   * prepayment-block handling. Used by all non-drag entry points
+   * (unassigned-column quick assign, driver-column reassign, etc.)
+   * so every assign path on the dispatch board funnels through the
+   * same UX: success → toast + refresh; prepayment block → modal;
+   * other failures → toast.
+   *
+   * The drag handler still calls the assign endpoint directly so it
+   * can batch many jobs in one Promise.all; it inlines the same
+   * prepayment detection because bulk and single-job cases differ
+   * (bulk falls through to a toast, single pops the modal).
+   */
+  const assignWithBlockHandling = useCallback(
+    async (job: DispatchJob, targetDriverId: string | null) => {
+      try {
+        await api.patch(`/jobs/${job.id}/assign`, { assignedDriverId: targetDriverId });
+        toast("success", targetDriverId ? "Assigned" : "Unassigned");
+        await fetchBoard(true);
+      } catch (err) {
+        const prepay = getPrepaymentBlock(err);
+        if (prepay) {
+          setBlockedAssign({
+            job,
+            targetDriverId,
+            overrideAllowed: prepay.overrideAllowed,
+          });
+          setBlockedOverrideMode(false);
+          setBlockedOverrideReason("");
+          return;
+        }
+        toast(
+          "error",
+          isCreditBlockError(err) ??
+            (err instanceof Error ? err.message : "Failed"),
+        );
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+
   const handleContextMenu = (e: React.MouseEvent, job: DispatchJob) => {
     e.preventDefault();
     e.stopPropagation();
@@ -548,8 +681,30 @@ export default function DispatchPage() {
         await api.patch("/jobs/bulk-reorder", { jobIds: dstJobs.map((j: DispatchJob) => j.id) });
         clearSelection();
       } catch (err) {
-        toast("error", err instanceof Error ? err.message : "Failed to move job(s)");
+        // Always restore the visual snapshot on failure — the modal
+        // (if shown) re-runs the assign through fetchBoard after the
+        // override succeeds.
         setBoard(snapshot);
+        // Phase 2 — single-job prepayment blocks pop the actionable
+        // modal instead of the vague toast. Bulk drags still toast
+        // (we don't want N stacked modals; operator can retry the
+        // failed job individually).
+        const prepay = getPrepaymentBlock(err);
+        if (prepay && movingJobs.length === 1) {
+          setBlockedAssign({
+            job: movingJobs[0],
+            targetDriverId,
+            overrideAllowed: prepay.overrideAllowed,
+          });
+          setBlockedOverrideMode(false);
+          setBlockedOverrideReason("");
+          return;
+        }
+        toast(
+          "error",
+          isCreditBlockError(err) ??
+            (err instanceof Error ? err.message : "Failed to move job(s)"),
+        );
       }
     }
   };
@@ -800,7 +955,11 @@ export default function DispatchPage() {
                   <div className="shrink-0" style={{ transition: "width 0.2s ease" }}>
                     <ColumnCard columnId="unassigned" title="Unassigned" isUnassigned count={board.unassigned.length}
                       jobs={filterJobs(board.unassigned, filter, search)} drivers={board.drivers.map(d => d.driver)}
-                      onAssign={async (jid, did) => { try { await api.patch(`/jobs/${jid}/assign`, { assignedDriverId: did }); toast("success", "Assigned"); await fetchBoard(true); } catch (err) { toast("error", isCreditBlockError(err) ?? "Failed"); } }}
+                      onAssign={async (jid, did) => {
+                        const j = board.unassigned.find((x) => x.id === jid);
+                        if (!j) return;
+                        await assignWithBlockHandling(j, did);
+                      }}
                       onQuickView={openQuickView} onCtxMenu={handleContextMenu} activeId={activeId}
                       onStatusChange={async (jid, s) => { try { await api.patch(`/jobs/${jid}/status`, { status: s, cancellationReason: s === "failed" ? "Dispatcher override" : undefined }); toast("success", `Status → ${s.replace(/_/g, " ")}`); await fetchBoard(true); } catch (err) { toast("error", isCreditBlockError(err) ?? "Failed"); } }}
                       collapsed={collapsedCols.has("unassigned")} onToggleCollapse={() => toggleCollapse("unassigned")}
@@ -867,6 +1026,207 @@ export default function DispatchPage() {
             onClick={() => setCtxMenu(null)}>
             <ExternalLink className="h-3.5 w-3.5" /> View Details
           </Link>
+        </div>,
+        document.body,
+      )}
+
+      {/* ── Phase 2 — Payment Required Before Dispatch modal ── */}
+      {blockedAssign && createPortal(
+        <div
+          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50"
+          onClick={() => {
+            if (blockedOverriding) return;
+            setBlockedAssign(null);
+            setBlockedOverrideMode(false);
+            setBlockedOverrideReason("");
+          }}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="dispatch-prepay-modal-title"
+        >
+          <div
+            className="rounded-2xl border p-6 w-[420px] max-w-[92vw]"
+            style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start gap-3 mb-3">
+              <div
+                className="rounded-full p-2 shrink-0"
+                style={{ background: "var(--t-error-soft)" }}
+              >
+                <AlertTriangle className="h-5 w-5" style={{ color: "var(--t-error)" }} />
+              </div>
+              <div className="min-w-0">
+                <h3
+                  id="dispatch-prepay-modal-title"
+                  className="text-sm font-bold leading-tight"
+                  style={{ color: "var(--t-text-primary)" }}
+                >
+                  {FEATURE_REGISTRY.dispatch_prepayment_modal_title?.label ??
+                    "Payment Required Before Dispatch"}
+                </h3>
+                <p className="mt-1 text-xs" style={{ color: "var(--t-text-muted)" }}>
+                  {blockedAssign.job.job_number}
+                  {blockedAssign.job.customer
+                    ? ` · ${blockedAssign.job.customer.first_name} ${blockedAssign.job.customer.last_name}`
+                    : ""}
+                </p>
+              </div>
+            </div>
+
+            <p
+              className="text-sm mb-4 leading-relaxed"
+              style={{ color: "var(--t-text-secondary)" }}
+            >
+              {FEATURE_REGISTRY.dispatch_prepayment_modal_body?.label ??
+                "This customer requires payment before dispatch and this job has no paid invoice."}
+            </p>
+
+            {blockedOverrideMode ? (
+              <div className="space-y-3 mb-4">
+                <textarea
+                  value={blockedOverrideReason}
+                  onChange={(e) => setBlockedOverrideReason(e.target.value)}
+                  placeholder={
+                    FEATURE_REGISTRY.dispatch_prepayment_override_reason_placeholder?.label ??
+                    "Reason for override (required)"
+                  }
+                  rows={3}
+                  className="w-full rounded-[12px] border px-3 py-2 text-sm outline-none resize-none focus:border-[var(--t-accent)]"
+                  style={{
+                    borderColor: "var(--t-border)",
+                    color: "var(--t-text-primary)",
+                    background: "var(--t-bg-input, var(--t-bg-card))",
+                  }}
+                  disabled={blockedOverriding}
+                  autoFocus
+                />
+                <div className="flex gap-2 justify-end">
+                  <button
+                    onClick={() => {
+                      setBlockedOverrideMode(false);
+                      setBlockedOverrideReason("");
+                    }}
+                    disabled={blockedOverriding}
+                    className="rounded-full px-4 py-2 text-xs font-medium disabled:opacity-50"
+                    style={{ color: "var(--t-text-muted)" }}
+                  >
+                    {FEATURE_REGISTRY.dispatch_prepayment_action_cancel?.label ?? "Cancel"}
+                  </button>
+                  <button
+                    onClick={async () => {
+                      if (!blockedOverrideReason.trim()) {
+                        toast("error", "Reason required");
+                        return;
+                      }
+                      setBlockedOverriding(true);
+                      try {
+                        await api.patch(
+                          `/jobs/${blockedAssign.job.id}/assign`,
+                          {
+                            assignedDriverId: blockedAssign.targetDriverId,
+                            creditOverride: { reason: blockedOverrideReason },
+                          },
+                        );
+                        toast(
+                          "success",
+                          `${blockedAssign.job.job_number} assigned with override`,
+                        );
+                        setBlockedAssign(null);
+                        setBlockedOverrideMode(false);
+                        setBlockedOverrideReason("");
+                        await fetchBoard(true);
+                      } catch (err) {
+                        toast(
+                          "error",
+                          isCreditBlockError(err) ??
+                            (err instanceof Error ? err.message : "Override failed"),
+                        );
+                      } finally {
+                        setBlockedOverriding(false);
+                      }
+                    }}
+                    disabled={blockedOverriding || !blockedOverrideReason.trim()}
+                    className="rounded-full px-4 py-2 text-xs font-semibold disabled:opacity-50"
+                    style={{
+                      background: "var(--t-accent)",
+                      color: "var(--t-accent-on-accent)",
+                    }}
+                  >
+                    {blockedOverriding
+                      ? "Overriding…"
+                      : FEATURE_REGISTRY.dispatch_prepayment_action_override?.label ??
+                        "Override & Dispatch"}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {blockedAssign.job.linked_invoice_id && (
+                  <Link
+                    href={`/invoices/${blockedAssign.job.linked_invoice_id}`}
+                    className="rounded-[12px] border px-4 py-2 text-sm font-medium text-center transition-colors hover:bg-[var(--t-bg-card-hover)]"
+                    style={{
+                      borderColor: "var(--t-border)",
+                      color: "var(--t-text-primary)",
+                    }}
+                    onClick={() => {
+                      setBlockedAssign(null);
+                      setBlockedOverrideMode(false);
+                      setBlockedOverrideReason("");
+                    }}
+                  >
+                    {FEATURE_REGISTRY.dispatch_prepayment_action_view_invoice?.label ??
+                      "View Invoice"}
+                  </Link>
+                )}
+                {blockedAssign.job.customer?.id && (
+                  <Link
+                    href={`/customers/${blockedAssign.job.customer.id}`}
+                    className="rounded-[12px] border px-4 py-2 text-sm font-medium text-center transition-colors hover:bg-[var(--t-bg-card-hover)]"
+                    style={{
+                      borderColor: "var(--t-border)",
+                      color: "var(--t-text-primary)",
+                    }}
+                    onClick={() => {
+                      setBlockedAssign(null);
+                      setBlockedOverrideMode(false);
+                      setBlockedOverrideReason("");
+                    }}
+                  >
+                    {FEATURE_REGISTRY.dispatch_prepayment_action_open_customer_billing?.label ??
+                      "Open Customer Billing"}
+                  </Link>
+                )}
+                <div className="flex gap-2 justify-end mt-1">
+                  <button
+                    onClick={() => {
+                      setBlockedAssign(null);
+                      setBlockedOverrideMode(false);
+                      setBlockedOverrideReason("");
+                    }}
+                    className="rounded-full px-4 py-2 text-xs font-medium"
+                    style={{ color: "var(--t-text-muted)" }}
+                  >
+                    {FEATURE_REGISTRY.dispatch_prepayment_action_cancel?.label ?? "Cancel"}
+                  </button>
+                  {blockedAssign.overrideAllowed && (
+                    <button
+                      onClick={() => setBlockedOverrideMode(true)}
+                      className="rounded-full px-4 py-2 text-xs font-semibold"
+                      style={{
+                        background: "var(--t-accent)",
+                        color: "var(--t-accent-on-accent)",
+                      }}
+                    >
+                      {FEATURE_REGISTRY.dispatch_prepayment_action_override?.label ??
+                        "Override & Dispatch"}
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
         </div>,
         document.body,
       )}
@@ -1517,10 +1877,32 @@ const JobTile = memo(function JobTile({ job, isUnassigned, drivers, onAssign, on
         {/* Content */}
         <div className="flex-1 min-w-0">
           {/* Line 1: Size (primary) + Type (secondary) */}
-          <div className="flex items-baseline gap-1.5">
+          <div className="flex items-baseline gap-1.5 flex-wrap">
             {size && <span className="text-[14px] font-extrabold leading-none" style={{ color: "var(--t-text-primary)" }}>{size.replace(/yd$/i, "Y").toUpperCase()}</span>}
             <span className="text-[11px] font-semibold uppercase tracking-wide leading-none" style={{ color: "var(--t-text-muted)" }}>{typeLabel}</span>
             {isCompleted && <CheckCircle2 className="h-3 w-3 ml-0.5" style={{ color: "var(--t-accent-text)" }} />}
+            {/* Phase 2 (Dispatch Prepayment UX) — Payment Required
+                badge. Shown only when the backend `payment_required`
+                flag is true (resolved per-job in DispatchService.
+                computePaymentRequiredMap). Subtle inline chip — does
+                not redesign the card. */}
+            {job.payment_required && !isCompleted && (
+              <span
+                className="rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide leading-none"
+                style={{
+                  background: "var(--t-warning-soft, rgba(217,119,6,0.15))",
+                  color: "var(--t-warning, #D97706)",
+                  border: "1px solid var(--t-warning, #D97706)",
+                }}
+                title={
+                  FEATURE_REGISTRY.dispatch_prepayment_modal_body?.label ??
+                  "Customer requires payment before dispatch."
+                }
+              >
+                {FEATURE_REGISTRY.dispatch_card_badge_payment_required?.label ??
+                  "Payment Required"}
+              </span>
+            )}
           </div>
           {/* Line 2: Address (promoted — highly readable) */}
           {addrStr && <p className="text-[13px] font-medium mt-1 truncate" style={{ color: "var(--t-text-primary)" }}>{addrStr}</p>}
