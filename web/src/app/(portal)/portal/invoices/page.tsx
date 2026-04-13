@@ -6,6 +6,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { portalApi } from "@/lib/portal-api";
 import { formatCurrency } from "@/lib/utils";
 import { FEATURE_REGISTRY } from "@/lib/feature-registry";
+import { formatDateOnly } from "@/lib/utils/format-date";
 import { FileText, CreditCard, CheckCircle2, AlertTriangle, Clock } from "lucide-react";
 
 function label(id: string, fallback: string): string {
@@ -41,8 +42,23 @@ interface InvoiceDetail {
   payments: Payment[];
 }
 
+// Phase B6 — local-calendar-day string for timezone-safe comparison
+// against stored YYYY-MM-DD `due_date` fields. Avoids the
+// `new Date(dueDate) < new Date()` class of bug where UTC midnight
+// parse of the due-date string marks an invoice overdue ~4 hours
+// early in Eastern time. Returns the browser's current local
+// calendar day in YYYY-MM-DD form; lexicographic comparison on
+// zero-padded dates is well-defined.
+function localTodayString(): string {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 function invoiceStatusText(status: string, dueDate: string) {
-  const overdue = status === "open" && new Date(dueDate) < new Date();
+  const overdue = status === "open" && !!dueDate && dueDate < localTodayString();
   if (overdue) return <span className="inline-flex items-center gap-1 text-xs font-medium text-[var(--t-error)]"><AlertTriangle className="h-3 w-3" />Overdue</span>;
   const map: Record<string, { cls: string; icon: React.ReactNode; label: string }> = {
     draft: { cls: "text-[var(--t-text-muted)]", icon: <Clock className="h-3 w-3" />, label: "Draft" },
@@ -269,7 +285,8 @@ function PortalInvoicesPage() {
       ) : (
         <div className="space-y-3">
           {sortedInvoices.map(inv => {
-            const isOverdue = inv.status === "open" && inv.due_date && new Date(inv.due_date) < new Date();
+            // Phase B6 — timezone-safe comparison; see invoiceStatusText.
+            const isOverdue = inv.status === "open" && !!inv.due_date && inv.due_date < localTodayString();
             const isUnpaid = inv.status === "open" && Number(inv.balance_due) > 0;
             return (
               <button key={inv.id} onClick={() => openDetail(inv)}
@@ -285,7 +302,7 @@ function PortalInvoicesPage() {
                       {invoiceStatusText(inv.status, inv.due_date)}
                     </div>
                     <div className="flex flex-wrap gap-x-4 text-xs text-[var(--t-text-muted)]">
-                      <span>Due: {inv.due_date ? new Date(inv.due_date).toLocaleDateString() : "—"}</span>
+                      <span>Due: {inv.due_date ? formatDateOnly(inv.due_date) : "—"}</span>
                       <span className="font-medium text-[var(--t-text-primary)]">{formatCurrency(inv.total)}</span>
                       {isUnpaid && <span className="font-semibold" style={{ color: isOverdue ? "var(--t-error)" : "var(--t-warning, #F59E0B)" }}>Balance: {formatCurrency(inv.balance_due)}</span>}
                     </div>

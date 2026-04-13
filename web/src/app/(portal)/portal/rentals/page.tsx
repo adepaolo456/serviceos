@@ -4,6 +4,7 @@ import { useState, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { portalApi } from "@/lib/portal-api";
 import { formatCurrency } from "@/lib/utils";
+import { formatDateOnly } from "@/lib/utils/format-date";
 import { deriveCustomerTimeline, formatRentalTitle, type CustomerTimelineStep } from "@/lib/job-status";
 import { Package, Calendar, MapPin, ChevronRight, CalendarClock } from "lucide-react";
 import dynamic from "next/dynamic";
@@ -75,7 +76,16 @@ function HorizontalTimeline({ steps }: { steps: CustomerTimelineStep[] }) {
 
 function isWithin24Hours(dateStr: string | null): boolean {
   if (!dateStr) return false;
-  const target = new Date(dateStr).getTime();
+  // Phase B6 — parse as local noon of the target calendar day
+  // rather than UTC midnight. The previous `new Date(dateStr)`
+  // form anchored the gate on UTC midnight (i.e. 8 PM ET the day
+  // before the delivery), so customers saw the reschedule action
+  // disable up to four hours earlier than it should have. Local
+  // noon keeps the gate semantically "24 hours from the start of
+  // the delivery day" in the customer's own timezone without
+  // introducing a hardcoded timezone assumption.
+  const target = new Date(`${dateStr}T12:00:00`).getTime();
+  if (Number.isNaN(target)) return false;
   const now = Date.now();
   return target - now < 24 * 60 * 60 * 1000;
 }
@@ -210,7 +220,21 @@ function PortalRentalsPage() {
                   </div>
                   {detail.rental_days && newDate && (
                     <p className="text-xs text-[var(--t-text-muted)]">
-                      New pickup by: {new Date(new Date(newDate).getTime() + detail.rental_days * 86400000).toLocaleDateString()}
+                      {/* Phase B6 — compute the predicted pickup date via
+                          pure YYYY-MM-DD arithmetic so the preview label
+                          renders in the correct local calendar day. Parse
+                          the user-selected `newDate` as local noon, add
+                          the chain duration, format with the safe
+                          helper. */}
+                      New pickup by: {(() => {
+                        const start = new Date(`${newDate}T12:00:00`);
+                        if (Number.isNaN(start.getTime())) return "—";
+                        const end = new Date(start.getTime() + detail.rental_days * 86400000);
+                        const y = end.getFullYear();
+                        const m = String(end.getMonth() + 1).padStart(2, "0");
+                        const d = String(end.getDate()).padStart(2, "0");
+                        return formatDateOnly(`${y}-${m}-${d}`);
+                      })()}
                     </p>
                   )}
                   <div>
@@ -285,7 +309,7 @@ function PortalRentalsPage() {
                     <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-[var(--t-text-muted)]">
                       <span>{r.job_number}</span>
                       {r.service_address && <span className="flex items-center gap-1"><MapPin className="h-3 w-3" />{r.service_address.formatted || r.service_address.street}</span>}
-                      {r.rental_start_date && <span className="flex items-center gap-1"><Calendar className="h-3 w-3" />{new Date(r.rental_start_date).toLocaleDateString()}</span>}
+                      {r.rental_start_date && <span className="flex items-center gap-1"><Calendar className="h-3 w-3" />{formatDateOnly(r.rental_start_date)}</span>}
                       {r.total_price && <span className="font-medium text-[var(--t-text-primary)]">{formatCurrency(r.total_price)}</span>}
                     </div>
                   </div>
