@@ -59,6 +59,7 @@ export class BookingsController {
     @Body()
     body: {
       customerId?: string;
+      billingAddress?: Record<string, unknown>;
       customer?: {
         firstName: string;
         lastName: string;
@@ -146,6 +147,40 @@ export class BookingsController {
           prefs.additionalContacts = body.customer.additionalContacts;
           existingCustomer.customer_preferences = prefs;
           updated = true;
+        }
+
+        // Persist billing address edits back to the customer record. Only
+        // when the incoming payload has the required fields (non-empty)
+        // and differs from what's on file. Never overwrite with blanks.
+        const incomingBilling = body.billingAddress as
+          | { street?: string; city?: string; state?: string; zip?: string; street2?: string; county?: string }
+          | undefined;
+        if (
+          incomingBilling &&
+          incomingBilling.street &&
+          incomingBilling.city &&
+          incomingBilling.state &&
+          incomingBilling.zip
+        ) {
+          const current = (existingCustomer.billing_address || {}) as Record<string, string>;
+          const changed =
+            current.street !== incomingBilling.street ||
+            current.city !== incomingBilling.city ||
+            current.state !== incomingBilling.state ||
+            current.zip !== incomingBilling.zip ||
+            (current.street2 || '') !== (incomingBilling.street2 || '') ||
+            (current.county || '') !== (incomingBilling.county || '');
+          if (changed) {
+            existingCustomer.billing_address = {
+              street: incomingBilling.street,
+              street2: incomingBilling.street2 || '',
+              city: incomingBilling.city,
+              state: incomingBilling.state,
+              zip: incomingBilling.zip,
+              county: incomingBilling.county || '',
+            };
+            updated = true;
+          }
         }
 
         // Add service address if not already on file

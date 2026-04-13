@@ -522,9 +522,15 @@ export default function BookingWizard({
     setEmail(c.email || "");
     setPhone(c.phone || "");
     setAdditionalContacts(c.customer_preferences?.additionalContacts || []);
-    if (c.billing_address) {
-      setBillingAddress({ ...c.billing_address, street2: c.billing_address.street2 || "", county: c.billing_address.county || "" });
-    }
+    const b = c.billing_address;
+    setBillingAddress({
+      street: b?.street ?? "",
+      street2: b?.street2 ?? "",
+      city: b?.city ?? "",
+      state: b?.state ?? "",
+      zip: b?.zip ?? "",
+      county: b?.county ?? "",
+    });
     // Customer change = new decision context — reset manual override
     setJobTypeManuallySet(false);
     setExchangeAutoDetected(false);
@@ -540,6 +546,12 @@ export default function BookingWizard({
 
   /* ---- Validation ---- */
   const step1Valid = firstName.trim() && lastName.trim() && clientType && email.trim() && phone.trim();
+  const step2Valid = !!(
+    billingAddress.street.trim() &&
+    billingAddress.city.trim() &&
+    billingAddress.state.trim() &&
+    billingAddress.zip.trim()
+  );
 
   /* ---- Resolve service address for step 3 display ---- */
   const resolvedServiceAddress = (): AddressFields => {
@@ -616,8 +628,17 @@ export default function BookingWizard({
         : undefined;
 
       // Standard delivery path — existing BookingCompletionService flow
+      const billingAddressPayload = {
+        street: billingAddress.street,
+        street2: billingAddress.street2 || undefined,
+        city: billingAddress.city,
+        state: billingAddress.state,
+        zip: billingAddress.zip,
+        county: billingAddress.county || undefined,
+      };
       const bookingResult = await api.post<{ deliveryJob: { id: string }; pickupJob: { id: string }; invoice: { id: string } }>("/bookings/complete", {
         customerId: selectedCustomer?.id || undefined,
+        billingAddress: billingAddressPayload,
         customer: selectedCustomer ? undefined : {
           firstName,
           lastName,
@@ -625,7 +646,7 @@ export default function BookingWizard({
           type: clientType || "residential",
           email,
           phone,
-          billingAddress: { street: billingAddress.street, city: billingAddress.city, state: billingAddress.state, zip: billingAddress.zip },
+          billingAddress: billingAddressPayload,
           additionalContacts: additionalContacts.length > 0 ? additionalContacts : undefined,
           county: billingAddress.county || undefined,
         },
@@ -1046,6 +1067,12 @@ export default function BookingWizard({
                 Billing Address
               </h3>
 
+              {selectedCustomer && !selectedCustomer.billing_address && (
+                <p className="text-xs" style={{ color: "var(--t-text-muted)" }}>
+                  No billing address on file for this customer — please enter one. It will be saved to the customer for next time.
+                </p>
+              )}
+
               {/* Street */}
               <AddressAutocomplete
                 label="Street"
@@ -1137,7 +1164,8 @@ export default function BookingWizard({
                 <button
                   type="button"
                   onClick={() => setStep(3)}
-                  className="flex-1 rounded-full py-3 text-sm font-semibold"
+                  disabled={!step2Valid}
+                  className="flex-1 rounded-full py-3 text-sm font-semibold transition-opacity disabled:opacity-40"
                   style={{ backgroundColor: "var(--t-accent)", color: "#fff" }}
                 >
                   Continue
