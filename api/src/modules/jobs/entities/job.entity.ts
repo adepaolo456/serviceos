@@ -180,6 +180,16 @@ export class Job {
   @Column({ name: 'drop_off_asset_id', type: 'uuid', nullable: true })
   drop_off_asset_id!: string;
 
+  // Phase 14 web UI — expose the drop-off asset as a ManyToOne
+  // relation symmetric to `asset` so the office job detail view
+  // can render identifier/subtype without a second fetch. Loaded
+  // explicitly by `findOne` via leftJoinAndSelect; the default
+  // JobsService list queries intentionally do NOT eager-load it
+  // so board / search queries stay lean.
+  @ManyToOne(() => Asset, { nullable: true })
+  @JoinColumn({ name: 'drop_off_asset_id' })
+  drop_off_asset!: Asset | null;
+
   @Column({ name: 'drop_off_asset_pin', nullable: true })
   drop_off_asset_pin!: string;
 

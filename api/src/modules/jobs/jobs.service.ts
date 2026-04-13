@@ -471,6 +471,12 @@ export class JobsService {
       .createQueryBuilder('j')
       .leftJoinAndSelect('j.customer', 'customer')
       .leftJoinAndSelect('j.asset', 'asset')
+      // Phase 14 web UI — load the drop-off asset alongside the
+      // primary asset so the office exchange job detail view can
+      // render both roles (pickup + delivery) from a single fetch.
+      // Only the single-job `findOne` loads this relation; list /
+      // board queries intentionally don't to keep them lean.
+      .leftJoinAndSelect('j.drop_off_asset', 'drop_off_asset')
       .leftJoinAndSelect('j.assigned_driver', 'assigned_driver')
       .where('j.id = :id', { id })
       .andWhere('j.tenant_id = :tenantId', { tenantId })
