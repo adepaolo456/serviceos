@@ -7,7 +7,7 @@ import { Package, FileText, PlusCircle, UserCircle, Menu, X, LogOut } from "luci
 import { portalApi } from "@/lib/portal-api";
 
 const nav = [
-  { name: "My Rentals", href: "/portal", icon: Package },
+  { name: "My Rentals", href: "/portal/rentals", icon: Package },
   { name: "Invoices", href: "/portal/invoices", icon: FileText },
   { name: "Request Service", href: "/portal/request", icon: PlusCircle },
   { name: "Profile", href: "/portal/profile", icon: UserCircle },
