@@ -220,6 +220,12 @@ const JOBS_STATUS_ALLOWLIST = new Set([
   "cancelled",
 ]);
 
+// Forces dynamic rendering — required because this client page calls
+// useSearchParams() at the top level (no Suspense boundary), and Next.js
+// build will fail on static generation otherwise. Authenticated dashboard
+// pages cannot be statically rendered anyway.
+export const dynamic = 'force-dynamic';
+
 export default function JobsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();

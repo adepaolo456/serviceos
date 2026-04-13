@@ -210,6 +210,12 @@ function daysBetween(a: string, b: string): number {
 
 /* --- Page --- */
 
+// Forces dynamic rendering — required because this client page calls
+// useSearchParams() at the top level (no Suspense boundary), and Next.js
+// build will fail on static generation otherwise. Authenticated dashboard
+// pages cannot be statically rendered anyway.
+export const dynamic = 'force-dynamic';
+
 export default function JobDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
