@@ -292,13 +292,19 @@ export class JobsController {
   }
 
   @Patch(':id/reschedule')
-  @ApiOperation({ summary: 'Reschedule a job (also handles needs_reschedule status)' })
+  @UseGuards(RolesGuard)
+  @Roles('dispatcher')
+  @ApiOperation({
+    summary:
+      'Phase B7 — dispatcher-driven reschedule. Thin wrapper over the canonical updateScheduledDate path for chain-linked jobs; narrowed fallback for standalone jobs. Same role gate as /jobs/:id/scheduled-date.',
+  })
   reschedule(
     @TenantId() tenantId: string,
     @Param('id', ParseUUIDPipe) id: string,
-    @Body() body: { scheduledDate: string; reason?: string; source?: string; timeWindow?: string; scheduledWindowStart?: string; scheduledWindowEnd?: string; assignedDriverId?: string },
+    @Body() body: { scheduledDate: string; reason?: string },
+    @CurrentUser('id') userId: string,
   ) {
-    return this.jobsService.rescheduleJob(tenantId, id, body);
+    return this.jobsService.rescheduleJob(tenantId, id, body, userId);
   }
 
   @Patch(':id/stage-at-yard')
