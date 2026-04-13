@@ -26,6 +26,8 @@ import QuickView, { QuickViewSkeleton } from "@/components/quick-view";
 import Dropdown from "@/components/dropdown";
 import { FEATURE_REGISTRY } from "@/lib/feature-registry";
 import { useLifecycleSync, useVisibilityRefresh } from "@/lib/lifecycle-sync";
+import { useTenantTimezone } from "@/lib/use-modules";
+import { getTenantToday } from "@/lib/utils/tenantDate";
 
 /* ---- Types ---- */
 
@@ -137,8 +139,37 @@ const FILTER_TABS = [
 
 /* ---- Helpers ---- */
 
-function today() { return new Date().toISOString().split("T")[0]; }
-function shiftDate(d: string, n: number) { const dt = new Date(d + "T00:00:00"); dt.setDate(dt.getDate() + n); return dt.toISOString().split("T")[0]; }
+// Phase B3 — delegates to the tenant-aware helper. Keeping the
+// local `today()` name avoids rewriting every call site. The tz
+// argument is optional so older unmigrated call sites still work
+// (they fall back to 'America/New_York').
+//
+// Bug history: the previous module-level `today()` used
+// `new Date().toISOString().split("T")[0]`, which rolled the
+// dispatch board to "tomorrow" at local evening for any user
+// west of UTC (≈8 PM Eastern triggered the next UTC day). The
+// tenant-aware helper reads the tenant's IANA timezone from the
+// cached /auth/profile slice and formats via Intl, so dispatch
+// stays on the correct local date until local midnight.
+function today(tz?: string): string {
+  return getTenantToday(tz);
+}
+
+function shiftDate(d: string, n: number): string {
+  // Pure YYYY-MM-DD arithmetic — tz-independent. We explicitly
+  // construct in UTC and format via UTC getters so there is no
+  // browser-local rollover. Do not replace with local-parse
+  // helpers (the previous `new Date(d + "T00:00:00").setDate()`
+  // version drifted by a day for any browser in a positive UTC
+  // offset).
+  const [y, m, dd] = d.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, (m || 1) - 1, dd || 1));
+  dt.setUTCDate(dt.getUTCDate() + n);
+  const yy = dt.getUTCFullYear();
+  const mm = String(dt.getUTCMonth() + 1).padStart(2, "0");
+  const ddd = String(dt.getUTCDate()).padStart(2, "0");
+  return `${yy}-${mm}-${ddd}`;
+}
 function fmtDate(d: string) { return new Date(d + "T00:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" }); }
 function fmtTime(t: string | null) { if (!t) return ""; const [h, m] = t.split(":"); const hr = parseInt(h); return `${hr === 0 ? 12 : hr > 12 ? hr - 12 : hr}:${m} ${hr >= 12 ? "PM" : "AM"}`; }
 
@@ -159,7 +190,14 @@ function filterJobs(jobs: DispatchJob[], filter: string, search: string) {
 /* ======== Page ======== */
 
 export default function DispatchPage() {
-  const [date, setDate] = useState(today);
+  // Phase B3 — tenant-wide timezone. Shares the /auth/profile cache
+  // with useModules so this adds no extra fetch. Threaded through
+  // every `today(tz)` call in this component so the board's "today"
+  // label, Today button, keyboard shortcut, and initial state all
+  // stay anchored to the tenant's local date — not the browser's
+  // UTC-derived date, which was the source of the 8 PM rollover bug.
+  const timezone = useTenantTimezone();
+  const [date, setDate] = useState(() => today(timezone));
   const [board, setBoard] = useState<DispatchBoard | null>(null);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("all");
@@ -386,7 +424,7 @@ export default function DispatchPage() {
       if (e.key === "Escape") { setQuickViewJob(null); setCtxMenu(null); setRescheduleJob(null); setShowYardPanel(false); clearSelection(); }
       else if (e.key === "ArrowLeft") setDate(d => shiftDate(d, -1));
       else if (e.key === "ArrowRight") setDate(d => shiftDate(d, 1));
-      else if (e.key === "t" || e.key === "T") setDate(today());
+      else if (e.key === "t" || e.key === "T") setDate(today(timezone));
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
@@ -605,8 +643,8 @@ export default function DispatchPage() {
               <button onClick={() => setDate(d => shiftDate(d, 1))} className="p-2 rounded-[20px] border transition-all" style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)", color: "var(--t-frame-text-muted)" }}>
                 <ChevronRight className="h-4 w-4" />
               </button>
-              <button onClick={() => setDate(today())} className="ml-1 rounded-full px-3 py-2 text-xs font-medium border"
-                style={{ background: date === today() ? "var(--t-accent-soft)" : "var(--t-bg-card)", borderColor: date === today() ? "var(--t-accent)" : "var(--t-border)", color: date === today() ? "var(--t-accent)" : "var(--t-frame-text-muted)" }}>
+              <button onClick={() => setDate(today(timezone))} className="ml-1 rounded-full px-3 py-2 text-xs font-medium border"
+                style={{ background: date === today(timezone) ? "var(--t-accent-soft)" : "var(--t-bg-card)", borderColor: date === today(timezone) ? "var(--t-accent)" : "var(--t-border)", color: date === today(timezone) ? "var(--t-accent)" : "var(--t-frame-text-muted)" }}>
                 Today
               </button>
             </div>
