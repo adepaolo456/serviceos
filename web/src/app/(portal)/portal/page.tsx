@@ -176,7 +176,7 @@ export default function PortalHomePage() {
     <div className="space-y-6">
       {/* Welcome + Quick Actions */}
       <div>
-        <h1 className="text-2xl sm:text-[28px] font-bold tracking-[-1px] leading-tight" style={{ color: "var(--t-frame-text)" }}>
+        <h1 className="text-2xl sm:text-[28px] font-bold tracking-[-1px] leading-tight break-words [overflow-wrap:anywhere]" style={{ color: "var(--t-frame-text)" }}>
           Welcome back, {customer?.firstName || "there"}
         </h1>
         <p className="mt-1 text-sm" style={{ color: "var(--t-frame-text-muted)" }}>Here&apos;s an overview of your rentals and account.</p>
@@ -204,7 +204,7 @@ export default function PortalHomePage() {
 
       {/* Account Summary — Phase B10: balance + pill stack cleanly on mobile */}
       {accountSummary && (
-        <Link href="/portal/invoices" className="block rounded-[16px] border p-4 transition-colors hover:border-[var(--t-accent)]" style={{
+        <Link href="/portal/invoices" className="block rounded-[16px] border p-4 min-w-0 transition-colors hover:border-[var(--t-accent)]" style={{
           borderColor: "var(--t-border)",
           background: "var(--t-bg-card)",
         }}>
@@ -273,7 +273,7 @@ export default function PortalHomePage() {
               const days = daysUntilDateOnly(r.rental_end_date);
               const overdue = days !== null && days < 0;
               return (
-                <div key={r.id} className={`rounded-[16px] border bg-[var(--t-bg-card)] p-3.5 sm:p-4 ${overdue ? "border-[var(--t-error)]/30" : "border-[var(--t-border)]"}`}>
+                <div key={r.id} className={`rounded-[16px] border bg-[var(--t-bg-card)] p-3.5 sm:p-4 min-w-0 ${overdue ? "border-[var(--t-error)]/30" : "border-[var(--t-border)]"}`}>
                   {/* Phase B11 — tighter padding + auto-width actions so the
                       card reads as contained instead of edge-to-edge. */}
 
@@ -303,11 +303,13 @@ export default function PortalHomePage() {
                     )}
                   </div>
 
-                  {/* Address — full width, truncates gracefully */}
+                  {/* Address — Phase B12: span needs its own min-w-0 so the
+                      intrinsic nowrap width of `truncate` can't push the
+                      parent flex container past the card edge. */}
                   {r.service_address && (
-                    <div className="flex items-start gap-1.5 text-xs text-[var(--t-text-muted)] mb-1 min-w-0">
+                    <div className="flex items-start gap-1.5 text-xs text-[var(--t-text-muted)] mb-1 min-w-0 w-full">
                       <MapPin className="h-3.5 w-3.5 mt-0.5 shrink-0" />
-                      <span className="truncate">{r.service_address.formatted || r.service_address.street || "—"}</span>
+                      <span className="truncate min-w-0 flex-1">{r.service_address.formatted || r.service_address.street || "—"}</span>
                     </div>
                   )}
 
@@ -356,43 +358,43 @@ export default function PortalHomePage() {
         )}
       </section>
 
-      {/* Upcoming */}
+      {/* Upcoming — Phase B12: min-w-0 guards and truncate on the left block */}
       {!loading && upcoming.length > 0 && (
         <section>
           <h2 className="text-lg font-bold text-[var(--t-text-primary)] mb-3">{FEATURE_REGISTRY.portal_section_upcoming?.label ?? "Upcoming"}</h2>
           <div className="grid gap-3">
             {upcoming.map(r => (
               <Link key={r.id} href={`/portal/rentals?id=${r.id}`}
-                className="rounded-[16px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-4 flex items-center justify-between hover:bg-[var(--t-bg-card-hover)] transition-colors">
-                <div>
-                  <p className="text-sm font-medium text-[var(--t-text-primary)]">{rentalSizeLabel(r)} Delivery</p>
-                  <p className="text-xs text-[var(--t-text-muted)] mt-0.5">
+                className="rounded-[16px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-4 flex items-center justify-between gap-3 min-w-0 hover:bg-[var(--t-bg-card-hover)] transition-colors">
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium text-[var(--t-text-primary)] truncate">{rentalSizeLabel(r)} Delivery</p>
+                  <p className="text-xs text-[var(--t-text-muted)] mt-0.5 truncate">
                     <Calendar className="inline h-3 w-3 mr-1" />
                     {FEATURE_REGISTRY.portal_dashboard_delivery_label?.label ?? "Delivery"}: {r.scheduled_date ? formatDateOnly(r.scheduled_date) : "TBD"}
                   </p>
                 </div>
-                <span className="text-xs font-medium" style={{ color: customerStatus(r.status).color }}>{customerStatus(r.status).label}</span>
+                <span className="text-xs font-medium shrink-0 whitespace-nowrap" style={{ color: customerStatus(r.status).color }}>{customerStatus(r.status).label}</span>
               </Link>
             ))}
           </div>
         </section>
       )}
 
-      {/* Service History */}
+      {/* Service History — Phase B12: long addresses must not push the card */}
       {!loading && history.length > 0 && (
         <section>
           <h2 className="text-lg font-bold text-[var(--t-text-primary)] mb-3">{FEATURE_REGISTRY.portal_section_history?.label ?? "Service History"}</h2>
           <div className="space-y-2">
             {history.map(r => (
-              <div key={r.id} className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-3 flex items-center justify-between" style={{ opacity: 0.7 }}>
-                <div>
-                  <p className="text-sm font-medium text-[var(--t-text-primary)]">{formatRentalTitle(r)}</p>
-                  <p className="text-xs text-[var(--t-text-muted)] mt-0.5">
+              <div key={r.id} className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-3 flex items-center justify-between gap-3 min-w-0" style={{ opacity: 0.7 }}>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium text-[var(--t-text-primary)] truncate">{formatRentalTitle(r)}</p>
+                  <p className="text-xs text-[var(--t-text-muted)] mt-0.5 truncate">
                     {r.scheduled_date && formatDateOnly(r.scheduled_date)}
                     {r.service_address && ` · ${r.service_address.street || r.service_address.formatted || ""}`}
                   </p>
                 </div>
-                <span className="text-xs font-medium" style={{ color: customerStatus(r.status).color }}>{customerStatus(r.status).label}</span>
+                <span className="text-xs font-medium shrink-0 whitespace-nowrap" style={{ color: customerStatus(r.status).color }}>{customerStatus(r.status).label}</span>
               </div>
             ))}
           </div>

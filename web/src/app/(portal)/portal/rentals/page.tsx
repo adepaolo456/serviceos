@@ -205,18 +205,18 @@ function PortalRentalsPage() {
 
         {/* ─── Top identity card — Phase B10: mobile-first padding + responsive
             summary grid; address spans full width on narrow screens ─── */}
-        <div className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-4 sm:p-6">
+        <div className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-4 sm:p-6 min-w-0">
           {/* Title row */}
-          <div className="flex flex-wrap items-start justify-between gap-2 sm:gap-3 mb-4">
+          <div className="flex flex-wrap items-start justify-between gap-2 sm:gap-3 mb-4 min-w-0">
             <div className="min-w-0 flex-1">
-              <h1 className="text-lg sm:text-2xl font-bold text-[var(--t-text-primary)] leading-tight break-words">
+              <h1 className="text-lg sm:text-2xl font-bold text-[var(--t-text-primary)] leading-tight break-words [overflow-wrap:anywhere]">
                 {formatRentalTitle(detail)}
               </h1>
-              <p className="text-[11px] sm:text-xs text-[var(--t-text-muted)] mt-0.5 font-mono">
+              <p className="text-[11px] sm:text-xs text-[var(--t-text-muted)] mt-0.5 font-mono break-all">
                 {detail.job_number}
               </p>
             </div>
-            <span className={`text-[10px] sm:text-xs font-semibold px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-full bg-[var(--t-bg-primary)] border border-[var(--t-border)] whitespace-nowrap ${STATUS_COLORS[detail.status] || ""}`}>
+            <span className={`text-[10px] sm:text-xs font-semibold px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-full bg-[var(--t-bg-primary)] border border-[var(--t-border)] whitespace-nowrap shrink-0 ${STATUS_COLORS[detail.status] || ""}`}>
               {STATUS_LABELS[detail.status] || detail.status}
             </span>
           </div>
@@ -247,7 +247,7 @@ function PortalRentalsPage() {
               <span className="text-[10px] font-medium uppercase tracking-wider text-[var(--t-text-muted)]">{FEATURE_REGISTRY.portal_detail_service_address?.label ?? "Service Address"}</span>
               <p className="font-semibold text-[var(--t-text-primary)] mt-0.5 flex items-start gap-1.5 min-w-0">
                 <MapPin className="h-4 w-4 mt-0.5 shrink-0 text-[var(--t-text-muted)]" />
-                <span className="break-words min-w-0">{detail.service_address?.formatted || detail.service_address?.street || "—"}</span>
+                <span className="min-w-0 flex-1 break-words [overflow-wrap:anywhere]">{detail.service_address?.formatted || detail.service_address?.street || "—"}</span>
               </p>
             </div>
           </div>
@@ -441,19 +441,22 @@ function PortalRentalsPage() {
             const steps = r.job_type === "delivery" ? deriveCustomerTimeline(r, rentals) : [];
             return (
               <button key={r.id} onClick={() => openDetail(r.id)}
-                className="w-full text-left rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-3.5 sm:p-4 hover:bg-[var(--t-bg-card-hover)] transition-colors">
-                <div className="flex items-center justify-between gap-3">
+                className="w-full text-left rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-3.5 sm:p-4 hover:bg-[var(--t-bg-card-hover)] transition-colors min-w-0">
+                <div className="flex items-center justify-between gap-3 min-w-0">
                   <div className="flex-1 min-w-0">
-                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mb-1">
-                      <p className="text-sm font-semibold text-[var(--t-text-primary)] truncate max-w-full">{formatRentalTitle(r)}</p>
-                      <span className={`text-[10px] font-semibold uppercase tracking-wider ${STATUS_COLORS[r.status] || ""}`}>{STATUS_LABELS[r.status] || r.status}</span>
+                    {/* Phase B12: title must truncate inside its own line
+                        rather than share a flex row with the status pill,
+                        which was competing for horizontal space. */}
+                    <div className="mb-1 flex items-start gap-2 min-w-0">
+                      <p className="text-sm font-semibold text-[var(--t-text-primary)] truncate min-w-0 flex-1">{formatRentalTitle(r)}</p>
+                      <span className={`text-[10px] font-semibold uppercase tracking-wider shrink-0 whitespace-nowrap ${STATUS_COLORS[r.status] || ""}`}>{STATUS_LABELS[r.status] || r.status}</span>
                     </div>
-                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-[var(--t-text-muted)]">
-                      <span className="font-mono">{r.job_number}</span>
+                    <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-[var(--t-text-muted)] min-w-0">
+                      <span className="font-mono shrink-0">{r.job_number}</span>
                       {r.service_address && (
-                        <span className="flex items-center gap-1 min-w-0 max-w-full">
+                        <span className="flex items-center gap-1 min-w-0 basis-full sm:basis-auto sm:flex-1">
                           <MapPin className="h-3 w-3 shrink-0" />
-                          <span className="truncate">{r.service_address.formatted || r.service_address.street}</span>
+                          <span className="truncate min-w-0 flex-1">{r.service_address.formatted || r.service_address.street}</span>
                         </span>
                       )}
                       {r.rental_start_date && <span className="flex items-center gap-1 shrink-0"><Calendar className="h-3 w-3" />{formatDateOnly(r.rental_start_date)}</span>}
