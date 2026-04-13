@@ -187,8 +187,19 @@ export class JobsController {
     @TenantId() tenantId: string,
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateJobDto,
+    @CurrentUser('id') userId: string,
+    @CurrentUser('role') userRole: string,
   ) {
-    return this.jobsService.update(tenantId, id, dto);
+    // Phase B9 — dispatch enforcement is applied inside
+    // `JobsService.update` whenever this PATCH includes a non-null
+    // `assignedDriverId`. The generic update endpoint does NOT
+    // support `creditOverride` (dispatch board uses `/assign` for
+    // overrides); pass null so prepay blocks bubble up as 403.
+    return this.jobsService.update(tenantId, id, dto, {
+      userId,
+      userRole,
+      creditOverride: null,
+    });
   }
 
   @Patch(':id/status')
@@ -267,57 +278,17 @@ export class JobsController {
     @CurrentUser('role') userRole: string,
     @CurrentUser('id') userId: string,
   ) {
-    // Phase 5 — dispatch credit enforcement for assignment.
-    // Only enforce when assigning (not unassigning).
-    if (body.assignedDriverId) {
-      const job = await this.jobsService.findOne(tenantId, id);
-      const creditOverride =
-        (body.creditOverride as { reason?: string } | null) ?? null;
-
-      // Phase 5 — customer-level credit-hold gate (aggregate AR /
-      // credit limit / manual hold). OFF by default; only fires when
-      // the tenant has explicitly enabled `dispatch_enforcement`.
-      const enforcement = await this.dispatchCreditEnforcement.enforceForDispatch({
-        tenantId,
-        customerId: job.customer_id ?? null,
-        userId,
-        userRole,
-        action: 'assignment',
-        creditOverride,
-      });
-      if (enforcement.overrideNote) {
-        const currentNotes = job.placement_notes || '';
-        const separator = currentNotes ? '\n' : '';
-        await this.jobsService.updateNotes(tenantId, id, {
-          placement_notes: currentNotes + separator + enforcement.overrideNote,
-        });
-      }
-
-      // Phase B9 — per-job prepayment gate. Evaluates the customer's
-      // effective payment_terms and the job's linked invoice status.
-      // Blocks prepay-terms customers (due_on_receipt/cod) with no
-      // paid invoice unless the caller supplies a valid credit
-      // override. Independent of the tenant's dispatch_enforcement
-      // config — this rule is always on.
-      const prepayment = await this.dispatchCreditEnforcement.enforceJobPrepayment({
-        tenantId,
-        job,
-        userId,
-        userRole,
-        creditOverride,
-      });
-      if (prepayment.overrideNote) {
-        // Re-read so we pick up any note the hold gate just wrote
-        // (rare in practice — hold enforcement is off by default).
-        const fresh = await this.jobsService.findOne(tenantId, id);
-        const currentNotes = fresh.placement_notes || '';
-        const separator = currentNotes ? '\n' : '';
-        await this.jobsService.updateNotes(tenantId, id, {
-          placement_notes: currentNotes + separator + prepayment.overrideNote,
-        });
-      }
-    }
-    return this.jobsService.assignJob(tenantId, id, body);
+    // Phase B9 — dispatch enforcement lives inside
+    // `JobsService.assignJob` so both this endpoint and the generic
+    // `PATCH /jobs/:id` update path funnel through the same gate.
+    // Pass the actor context (user + optional credit override) so
+    // the service can record overrides on the audit trail.
+    return this.jobsService.assignJob(tenantId, id, body, {
+      userId,
+      userRole,
+      creditOverride:
+        (body.creditOverride as { reason?: string } | null) ?? null,
+    });
   }
 
   @Post(':id/schedule-next')

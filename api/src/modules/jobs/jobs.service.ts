@@ -49,6 +49,28 @@ import {
   ChangeStatusDto,
 } from './dto/job.dto';
 import { UpdateScheduledDateDto } from './dto/update-scheduled-date.dto';
+import { DispatchCreditEnforcementService } from '../dispatch/dispatch-credit-enforcement.service';
+
+/**
+ * Phase B9 — actor context for service-layer dispatch enforcement.
+ *
+ * Threaded into every service method that can change a job's
+ * `assigned_driver_id` so the central gate (`enforceDriverAssignment`)
+ * can decide whether to allow, override, or block the write.
+ * `creditOverride` is the optional operator override from the request
+ * body; `null` means no override was requested.
+ */
+export interface JobsDispatchActor {
+  userId: string | undefined;
+  userRole: string | undefined;
+  creditOverride: { reason?: string } | null;
+}
+
+const EMPTY_DISPATCH_ACTOR: JobsDispatchActor = {
+  userId: undefined,
+  userRole: undefined,
+  creditOverride: null,
+};
 
 const VALID_TRANSITIONS: Record<string, string[]> = {
   pending: ['confirmed', 'cancelled'],
@@ -106,7 +128,59 @@ export class JobsService {
     // DataSource here rather than adding one more @InjectRepository
     // so every downstream mutation path uses the same helper.
     private dataSource: DataSource,
+    // Phase B9 — dispatch enforcement moved into the service layer
+    // so every code path that changes `assigned_driver_id` funnels
+    // through `enforceDriverAssignment`. Prevents controller-level
+    // duplication and closes the `PATCH /jobs/:id` bypass.
+    private dispatchCreditEnforcement: DispatchCreditEnforcementService,
   ) {}
+
+  /**
+   * Phase B9 — central dispatch assignment gate.
+   *
+   * Runs BOTH the customer-level credit-hold check (off by default
+   * unless the tenant explicitly enabled `dispatch_enforcement`) and
+   * the per-job prepayment check (always on). Called from every
+   * service-layer path that changes `assigned_driver_id` to a
+   * non-null value so the gate cannot be bypassed by swapping
+   * endpoints (e.g., the `/jobs/:id` generic update vs the
+   * `/jobs/:id/assign` dedicated endpoint).
+   *
+   * Returns any override notes to append to the job's
+   * placement_notes. Throws ForbiddenException / HttpException via
+   * the underlying enforcement service when the action is blocked
+   * and no valid override was supplied.
+   */
+  private async enforceDriverAssignment(
+    tenantId: string,
+    job: Job,
+    actor: JobsDispatchActor,
+  ): Promise<string[]> {
+    const notes: string[] = [];
+
+    // Customer credit-hold gate (existing Phase 5 semantics).
+    const hold = await this.dispatchCreditEnforcement.enforceForDispatch({
+      tenantId,
+      customerId: job.customer_id ?? null,
+      userId: actor.userId ?? '',
+      userRole: actor.userRole,
+      action: 'assignment',
+      creditOverride: actor.creditOverride,
+    });
+    if (hold.overrideNote) notes.push(hold.overrideNote);
+
+    // Per-job prepayment gate (Phase B9).
+    const prepay = await this.dispatchCreditEnforcement.enforceJobPrepayment({
+      tenantId,
+      job,
+      userId: actor.userId ?? '',
+      userRole: actor.userRole,
+      creditOverride: actor.creditOverride,
+    });
+    if (prepay.overrideNote) notes.push(prepay.overrideNote);
+
+    return notes;
+  }
 
   async create(tenantId: string, dto: CreateJobDto): Promise<Job> {
     // Validate that the asset (if provided) belongs to this tenant before creating the job.
@@ -599,8 +673,39 @@ export class JobsService {
     return { rentalChainId: chain.id, jobs };
   }
 
-  async update(tenantId: string, id: string, dto: UpdateJobDto): Promise<Record<string, unknown>> {
+  async update(
+    tenantId: string,
+    id: string,
+    dto: UpdateJobDto,
+    actor: JobsDispatchActor = EMPTY_DISPATCH_ACTOR,
+  ): Promise<Record<string, unknown>> {
     const job = await this.findOne(tenantId, id);
+
+    // Phase B9 — if this update is assigning a driver (non-null
+    // change), run the central dispatch gate BEFORE any other update
+    // work. This closes the `PATCH /jobs/:id { assignedDriverId }`
+    // bypass that was not gated when enforcement lived in the
+    // `/jobs/:id/assign` controller handler.
+    const isAssigningDriver =
+      dto.assignedDriverId !== undefined &&
+      dto.assignedDriverId !== null &&
+      dto.assignedDriverId !== job.assigned_driver_id;
+
+    if (isAssigningDriver) {
+      const overrideNotes = await this.enforceDriverAssignment(
+        tenantId,
+        job,
+        actor,
+      );
+      if (overrideNotes.length > 0) {
+        const current = job.placement_notes || '';
+        const separator = current ? '\n' : '';
+        // Write the override note into the in-memory job so the
+        // existing save() path below persists it alongside the
+        // other field updates in a single write.
+        job.placement_notes = current + separator + overrideNotes.join('\n');
+      }
+    }
 
     // ── Apply non-pricing field updates ──
     if (dto.customerId !== undefined) job.customer_id = dto.customerId;
@@ -2393,9 +2498,40 @@ export class JobsService {
     tenantId: string,
     id: string,
     body: Record<string, unknown>,
+    actor: JobsDispatchActor = EMPTY_DISPATCH_ACTOR,
   ): Promise<Job> {
     // First verify the job exists and belongs to this tenant
     const job = await this.findOne(tenantId, id);
+
+    // Phase B9 — dispatch enforcement runs BEFORE any write when
+    // this call is assigning (not unassigning) a driver. Throws
+    // on block; appends override audit notes on allowed overrides.
+    const newDriverId = (body.assignedDriverId as string | null | undefined) ?? undefined;
+    const isAssigning =
+      'assignedDriverId' in body &&
+      !!newDriverId &&
+      newDriverId !== job.assigned_driver_id;
+
+    if (isAssigning) {
+      const overrideNotes = await this.enforceDriverAssignment(
+        tenantId,
+        job,
+        actor,
+      );
+      if (overrideNotes.length > 0) {
+        const currentNotes = job.placement_notes || '';
+        const separator = currentNotes ? '\n' : '';
+        const merged = currentNotes + separator + overrideNotes.join('\n');
+        await this.jobsRepository.update(
+          { id, tenant_id: tenantId },
+          { placement_notes: merged },
+        );
+        // Keep the in-memory job in sync so the rest of the method
+        // reads the freshest notes (defensive — nothing downstream
+        // currently touches placement_notes, but future edits might).
+        job.placement_notes = merged;
+      }
+    }
 
     const updates: Record<string, unknown> = {};
 
