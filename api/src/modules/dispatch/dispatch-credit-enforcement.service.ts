@@ -9,6 +9,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { CustomerCreditService } from '../customers/services/customer-credit.service';
 import { Tenant } from '../tenants/entities/tenant.entity';
+import { Invoice } from '../billing/entities/invoice.entity';
 import {
   getCreditPolicy,
   getDispatchEnforcement,
@@ -66,6 +67,11 @@ export class DispatchCreditEnforcementService {
     private readonly creditService: CustomerCreditService,
     @InjectRepository(Tenant)
     private readonly tenantRepo: Repository<Tenant>,
+    // Phase B9 — Invoice repo is used by `enforceJobPrepayment` to
+    // look up the linked invoice for a specific job (direct link via
+    // `invoices.job_id` or chain link via `invoices.rental_chain_id`).
+    @InjectRepository(Invoice)
+    private readonly invoiceRepo: Repository<Invoice>,
     private readonly auditService: CreditAuditService,
     private readonly permissionService: PermissionService,
   ) {}
@@ -224,4 +230,211 @@ export class DispatchCreditEnforcementService {
       },
     });
   }
+
+  /* ──────────────────────────────────────────────────────────────
+   * Phase B9 — Per-job prepayment enforcement.
+   *
+   * Separate from the customer-level credit-hold gate above. The
+   * hold gate checks aggregate AR / credit limit / manual hold flag.
+   * This gate checks whether THIS specific job is prepaid according
+   * to the customer's effective payment terms.
+   *
+   * Rule (launch scope — payment_terms alone is sufficient):
+   *   - No customer          → allow (no policy to apply)
+   *   - total_price <= 0     → allow (free / placeholder job)
+   *   - payment_terms is any `net_*` or `custom`
+   *                          → allow (credit customer, pay later is OK)
+   *   - payment_terms is due_on_receipt or cod:
+   *       • linked invoice (direct or chain-linked) is paid/partial
+   *                          → allow (prepayment satisfied)
+   *       • else             → block, unless the caller passes a
+   *                            valid `creditOverride.reason` AND has
+   *                            the `dispatch_override` permission
+   *
+   * Tenant-scoped: invoice lookup always filters by `tenant_id`. No
+   * new tenant settings required.
+   * ────────────────────────────────────────────────────────────── */
+  async enforceJobPrepayment(
+    params: DispatchPrepaymentParams,
+  ): Promise<DispatchEnforcementResult> {
+    // 1. No customer → allow.
+    if (!params.job.customer_id) {
+      return { allowed: true, overrideNote: null, warnReasons: [] };
+    }
+
+    // 2. Free / placeholder job → allow.
+    const price = Number(params.job.total_price) || 0;
+    if (price <= 0) {
+      return { allowed: true, overrideNote: null, warnReasons: [] };
+    }
+
+    // 3. Resolve effective payment terms via the credit service
+    //    (reuses the existing customer-override → tenant-default →
+    //    app-default precedence chain). Fail-closed on error.
+    let creditState;
+    try {
+      creditState = await this.creditService.getCustomerCreditState(
+        params.tenantId,
+        params.job.customer_id,
+      );
+    } catch (err) {
+      if (err instanceof NotFoundException) throw err;
+      throw new ServiceUnavailableException({
+        code: 'DISPATCH_PREPAYMENT_UNAVAILABLE',
+        message:
+          'Dispatch blocked: prepayment enforcement could not be evaluated.',
+      });
+    }
+
+    const terms = creditState.payment_terms.effective;
+
+    // 4. Credit customer → allow. Only due_on_receipt and cod count
+    //    as prepay. Everything else (net_7/15/30/60/custom) passes.
+    if (terms !== 'due_on_receipt' && terms !== 'cod') {
+      return { allowed: true, overrideNote: null, warnReasons: [] };
+    }
+
+    // 5. Prepay customer — look up a linked paid invoice.
+    let paid: boolean;
+    try {
+      paid = await this.hasPaidLinkedInvoice(
+        params.tenantId,
+        params.job.id,
+      );
+    } catch (err) {
+      throw new ServiceUnavailableException({
+        code: 'DISPATCH_PREPAYMENT_UNAVAILABLE',
+        message:
+          'Dispatch blocked: prepayment invoice lookup failed.',
+      });
+    }
+    if (paid) {
+      return { allowed: true, overrideNote: null, warnReasons: [] };
+    }
+
+    // 6. Prepay customer + no paid invoice → validate override.
+    const hasOverridePerm = await this.permissionService.hasPermission(
+      params.tenantId,
+      params.userRole ?? '',
+      'dispatch_override',
+    );
+    const overrideRequested = !!params.creditOverride;
+    const trimmedReason = params.creditOverride?.reason?.trim() ?? '';
+
+    if (overrideRequested && hasOverridePerm && trimmedReason.length > 0) {
+      const note = `[Dispatch Prepayment Override] ${trimmedReason} (by ${params.userId} at ${new Date().toISOString()}) [terms: ${terms}]`;
+      // Reuse the existing `dispatch_override` audit event type so the
+      // analytics/workflow queries that filter on it automatically
+      // pick up prepayment overrides too. The `sub_type` metadata
+      // field distinguishes prepayment from credit-hold overrides
+      // for forensic review.
+      this.auditService.record({
+        tenantId: params.tenantId,
+        eventType: 'dispatch_override',
+        userId: params.userId,
+        customerId: params.job.customer_id,
+        jobId: params.job.id,
+        reason: trimmedReason,
+        metadata: {
+          sub_type: 'prepayment',
+          payment_terms: terms,
+        },
+      });
+      return {
+        allowed: true,
+        overrideNote: note,
+        warnReasons: [{ type: 'unpaid_prepayment', payment_terms: terms }],
+      };
+    }
+
+    if (overrideRequested && !hasOverridePerm) {
+      throw new ForbiddenException({
+        code: 'DISPATCH_PREPAYMENT_OVERRIDE_NOT_PERMITTED',
+        message:
+          'Override not permitted: user role does not allow dispatch prepayment override (credit).',
+        hold: {
+          manual_active: false,
+          policy_active: false,
+          reasons: [{ type: 'unpaid_prepayment', payment_terms: terms }],
+          override_allowed: false,
+        },
+      });
+    }
+
+    if (overrideRequested && trimmedReason.length === 0) {
+      throw new HttpException(
+        {
+          code: 'DISPATCH_PREPAYMENT_OVERRIDE_REASON_REQUIRED',
+          message: 'Override reason is required and cannot be empty.',
+        },
+        400,
+      );
+    }
+
+    // No override requested — block with the same response shape as
+    // DISPATCH_CREDIT_BLOCK so the web error toast continues to work.
+    throw new ForbiddenException({
+      code: 'DISPATCH_PREPAYMENT_BLOCK',
+      message:
+        'Dispatch action blocked: customer is on prepayment terms (credit) and this job has no paid invoice linked.',
+      hold: {
+        manual_active: false,
+        policy_active: false,
+        reasons: [{ type: 'unpaid_prepayment', payment_terms: terms }],
+        override_allowed: hasOverridePerm,
+      },
+    });
+  }
+
+  /**
+   * Tenant-scoped lookup: returns true iff there is at least one
+   * invoice in {paid, partial} linked to the given job — either
+   * directly (`invoices.job_id = :jobId`) or via the job's rental
+   * chain (`invoices.rental_chain_id IN (SELECT rental_chain_id FROM
+   * task_chain_links WHERE job_id = :jobId)`).
+   *
+   * Mirrors the OR/JOIN shape of the pre-B8 visibility gate but
+   * scoped to a single job at action time instead of filtering the
+   * whole board.
+   */
+  private async hasPaidLinkedInvoice(
+    tenantId: string,
+    jobId: string,
+  ): Promise<boolean> {
+    const match = await this.invoiceRepo
+      .createQueryBuilder('inv')
+      .select('inv.id')
+      .where('inv.tenant_id = :tenantId', { tenantId })
+      .andWhere(
+        `(inv.job_id = :jobId OR inv.rental_chain_id IN (
+           SELECT tcl.rental_chain_id
+             FROM task_chain_links tcl
+            WHERE tcl.job_id = :jobId
+        ))`,
+        { jobId },
+      )
+      .andWhere('inv.status IN (:...paidStatuses)', {
+        paidStatuses: ['paid', 'partial'],
+      })
+      .limit(1)
+      .getOne();
+    return !!match;
+  }
+}
+
+/**
+ * Phase B9 — Parameters for the per-job prepayment gate.
+ * Structurally typed so callers can pass a full `Job` entity without
+ * this file needing to import the Job entity class.
+ */
+export interface DispatchPrepaymentParams {
+  tenantId: string;
+  job: {
+    id: string;
+    customer_id: string | null;
+    total_price: number | string | null;
+  };
+  userId: string;
+  userRole: string | undefined;
+  creditOverride?: { reason?: string } | null;
 }
