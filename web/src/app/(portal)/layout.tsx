@@ -65,7 +65,11 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
             <span className="font-semibold text-sm hidden sm:block" style={{ color: "var(--t-frame-text)" }}>ServiceOS</span>
           </Link>
 
-          {/* Desktop nav */}
+          {/* Desktop nav — Phase B17: list and detail are now distinct
+              pathnames (/portal/rentals and /portal/rentals/[id]), so plain
+              <Link> navigations are always cross-pathname and Next.js
+              handles them deterministically. The B14 same-pathname onClick
+              guard is no longer needed. */}
           <nav className="hidden md:flex items-center gap-1">
             {nav.map((item) => {
               const active = pathname === item.href || (item.href !== "/portal" && pathname.startsWith(item.href));
@@ -73,18 +77,6 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
                 <Link
                   key={item.name}
                   href={item.href}
-                  // Phase B14 — if the link target is the same pathname as
-                  // the current one (e.g. clicking "My Rentals" while on
-                  // /portal/rentals?id=xxx), Next.js <Link> can short-circuit
-                  // and leave the stale query string intact. Force a
-                  // router.replace() to reliably clear any query params.
-                  prefetch={false}
-                  onClick={(e) => {
-                    if (pathname === item.href && typeof window !== "undefined" && window.location.search !== "") {
-                      e.preventDefault();
-                      router.replace(item.href, { scroll: false });
-                    }
-                  }}
                   className={`flex items-center gap-1.5 rounded-full px-3 py-2 text-sm font-medium transition-colors ${
                     active ? "text-[var(--t-accent)]" : ""
                   }`}
@@ -127,13 +119,6 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
                   <Link
                     key={item.name}
                     href={item.href}
-                    prefetch={false}
-                    onClick={(e) => {
-                      if (pathname === item.href && typeof window !== "undefined" && window.location.search !== "") {
-                        e.preventDefault();
-                        router.replace(item.href, { scroll: false });
-                      }
-                    }}
                     className={`flex items-center gap-2.5 rounded-[20px] px-3 py-2.5 text-sm font-medium ${
                       active ? "text-[var(--t-accent)]" : "text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)]"
                     }`}>
