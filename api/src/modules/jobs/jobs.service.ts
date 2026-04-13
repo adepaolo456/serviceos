@@ -20,6 +20,7 @@ import { TaskChainLink } from '../rental-chains/entities/task-chain-link.entity'
 import { DumpTicket } from '../dump-locations/entities/dump-ticket.entity';
 import { BillingService } from '../billing/billing.service';
 import { BillingIssueDetectorService } from '../billing/services/billing-issue-detector.service';
+import { DUMP_ELIGIBLE_JOB_TYPES } from '../billing/helpers/billing-issue-cleanup-rules';
 import {
   RentalChainsService,
   daysBetween as rentalDaysBetween,
@@ -822,11 +823,14 @@ export class JobsService {
     // (no parallel model, no duplicated audit). Voided tickets do
     // NOT satisfy the gate — only an active (non-voided, non-draft)
     // submitted ticket counts.
+    //
+    // Pre-launch fix: job-type list imported from the shared
+    // DUMP_ELIGIBLE_JOB_TYPES constant so this completion gate and
+    // the billing detector's `missing_dump_slip` check can never
+    // drift again.
     if (
       dto.status === 'completed' &&
-      (job.job_type === 'pickup' ||
-        job.job_type === 'exchange' ||
-        job.job_type === 'removal')
+      DUMP_ELIGIBLE_JOB_TYPES.includes(job.job_type)
     ) {
       const ticket = await this.dumpTicketRepo
         .createQueryBuilder('t')

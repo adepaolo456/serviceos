@@ -102,7 +102,6 @@ export class AlertDetectorService {
       derived.push(...(await this.detectAbnormalDisposal(tenantId)));
       derived.push(...(await this.detectLowMarginChain(tenantId, tz)));
       derived.push(...(await this.detectLifecycleIntegrity(tenantId)));
-      derived.push(...(await this.detectDateRuleConflict(tenantId)));
     } catch (err) {
       this.logger.error(
         `Alert detection failed for tenant ${tenantId}: ${(err as Error).message}`,
@@ -152,9 +151,6 @@ export class AlertDetectorService {
         break;
       case 'lifecycle_integrity':
         candidates = await this.detectLifecycleIntegrity(tenantId);
-        break;
-      case 'date_rule_conflict':
-        candidates = await this.detectDateRuleConflict(tenantId);
         break;
     }
     return candidates.some(
@@ -601,26 +597,4 @@ export class AlertDetectorService {
     return out;
   }
 
-  /**
-   * 7. DATE_RULE_CONFLICT — SCAFFOLDED but not yet implemented.
-   *
-   * The spec condition ("pickup date overridden outside rental
-   * rule expectations, inconsistent recalculation chain") does
-   * not currently map to a concrete field on rental_chains or
-   * task_chain_links. Rather than ship a guessed rule that
-   * produces false positives, this detector returns an empty
-   * array. The alert_type, CHECK constraint, feature registry
-   * entry, and help guide are all wired up so Phase 14.1 can drop
-   * in the real implementation without touching the schema or UI.
-   *
-   * TODO(phase-14.1): implement once the override-tracking field
-   * (likely a `pickup_date_overridden_by_user_id` or similar) is
-   * identified and added to rental_chains.
-   */
-  private async detectDateRuleConflict(
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    _tenantId: string,
-  ): Promise<DerivedAlert[]> {
-    return [];
-  }
 }
