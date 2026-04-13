@@ -162,8 +162,39 @@ export class PortalService {
    * Allow-list mapper: Job → PortalJob. Strips every internal field listed
    * in the PortalJob type comment above. Used at every portal read site
    * that would otherwise serialize a raw Job entity.
+   *
+   * Phase B5 — chain-preferred rental window dates.
+   *
+   * `jobs.rental_start_date` / `jobs.rental_end_date` / `jobs.rental_days`
+   * are booking-snapshot fields written at job creation and left alone by
+   * the canonical lifecycle write path (`JobsService.updateScheduledDate`
+   * — see its JSDoc, which explicitly opts out of touching them). The
+   * portal used to read those booking fields directly, which meant the
+   * portal showed the original booked window forever — even after the
+   * office moved a delivery or pickup date via the lifecycle panel.
+   *
+   * Fix: prefer the rental chain as the source of truth for the rental
+   * window. Every office surface (dispatch, lifecycle panel, job detail)
+   * already treats the chain as canonical, and the lifecycle write path
+   * keeps the chain row in lockstep with every date change. Falling
+   * through to the job-row snapshot for jobs with no chain link keeps
+   * standalone / legacy rows rendering exactly as they do today.
+   *
+   * The chain parameter is optional so every existing caller still
+   * compiles. Callers that have the chain available (portal mutation
+   * flows after `updateScheduledDate` returns `{ job, chain }`) should
+   * pass it. Callers that load jobs in bulk should batch-load chains via
+   * `loadChainsForJobs` below.
    */
-  private toPortalJob(job: Job): PortalJob {
+  private toPortalJob(job: Job, chain?: RentalChain | null): PortalJob {
+    // Chain preferred for rental window dates; fall back to the booking
+    // snapshot on the job row when the job is not part of a chain.
+    const rentalStart =
+      chain?.drop_off_date ?? job.rental_start_date ?? null;
+    const rentalEnd =
+      chain?.expected_pickup_date ?? job.rental_end_date ?? null;
+    const rentalDays = chain?.rental_days ?? job.rental_days ?? null;
+
     return {
       id: job.id,
       job_number: job.job_number,
@@ -176,9 +207,9 @@ export class PortalService {
       scheduled_window_end: job.scheduled_window_end ?? null,
       service_address: job.service_address ?? null,
       placement_notes: job.placement_notes ?? null,
-      rental_start_date: job.rental_start_date ?? null,
-      rental_end_date: job.rental_end_date ?? null,
-      rental_days: job.rental_days ?? null,
+      rental_start_date: rentalStart,
+      rental_end_date: rentalEnd,
+      rental_days: rentalDays,
       total_price: job.total_price != null ? Number(job.total_price) : null,
       deposit_amount: job.deposit_amount != null ? Number(job.deposit_amount) : null,
       is_overdue: job.is_overdue ?? false,
@@ -198,6 +229,52 @@ export class PortalService {
           }
         : null,
     };
+  }
+
+  /**
+   * Phase B5 — batch-load rental chains for a set of jobs.
+   *
+   * Used by the bulk portal read paths (`getRentals`, `getDashboard`) so
+   * they can populate each `PortalJob`'s rental window from the canonical
+   * chain without an N+1 pattern. Two queries total regardless of N:
+   *
+   *   1. SELECT task_chain_links WHERE job_id IN (...)
+   *   2. SELECT rental_chains WHERE id IN (...) AND tenant_id = ?
+   *
+   * Tenant scoping: the chain query is explicitly tenant-filtered. The
+   * task_chain_links query is scoped transitively via the job ids
+   * (which came from a tenant-scoped SELECT upstream) — a link with a
+   * matching job id can only belong to that job's tenant because job
+   * ids are globally unique UUIDs. The chain-level tenant filter then
+   * blocks any cross-tenant chain row from being returned.
+   *
+   * Empty-input safety: returns an empty map when `jobIds` is empty,
+   * avoiding a no-op `IN ()` query.
+   */
+  private async loadChainsForJobs(
+    tenantId: string,
+    jobIds: string[],
+  ): Promise<Map<string, RentalChain>> {
+    const out = new Map<string, RentalChain>();
+    if (jobIds.length === 0) return out;
+
+    const links = await this.taskChainLinkRepo.find({
+      where: { job_id: In(jobIds) },
+    });
+    if (links.length === 0) return out;
+
+    const chainIds = [...new Set(links.map((l) => l.rental_chain_id))];
+    const chains = await this.rentalChainRepo.find({
+      where: { id: In(chainIds), tenant_id: tenantId },
+    });
+    if (chains.length === 0) return out;
+
+    const chainById = new Map(chains.map((c) => [c.id, c]));
+    for (const link of links) {
+      const chain = chainById.get(link.rental_chain_id);
+      if (chain) out.set(link.job_id, chain);
+    }
+    return out;
   }
 
   async login(email: string, password: string, tenantId: string) {
@@ -305,7 +382,16 @@ export class PortalService {
       relations: ['asset'],
       order: { created_at: 'DESC' },
     });
-    return jobs.map((j) => this.toPortalJob(j));
+    // Phase B5 — batch-load chains so `toPortalJob` can populate the
+    // rental window from the canonical `rental_chains` row instead of
+    // the stale `jobs.rental_*` booking snapshot. Two queries total
+    // regardless of N, see `loadChainsForJobs`. Jobs without a chain
+    // fall through to the job-row snapshot inside `toPortalJob`.
+    const chainMap = await this.loadChainsForJobs(
+      tenantId,
+      jobs.map((j) => j.id),
+    );
+    return jobs.map((j) => this.toPortalJob(j, chainMap.get(j.id) ?? null));
   }
 
   async getInvoices(customerId: string, tenantId: string) {
@@ -560,7 +646,13 @@ export class PortalService {
       },
     );
 
-    return this.toPortalJob(result.job);
+    // Phase B5 — pass the chain returned by the canonical mutation so
+    // the `PortalJob` projection renders the freshly-updated rental
+    // window from the chain instead of the stale job-row booking
+    // snapshot. `updateScheduledDate` always returns a chain for
+    // editable job types (delivery / pickup / exchange), so this is
+    // effectively non-null here.
+    return this.toPortalJob(result.job, result.chain);
   }
 
   async getProfile(customerId: string, tenantId: string) {
@@ -768,8 +860,20 @@ export class PortalService {
     const updated = await this.jobRepo.findOne({
       where: { id: jobId, customer_id: customerId, tenant_id: tenantId },
     });
+    // Phase B5 — reload the chain post-transaction and pass it to
+    // `toPortalJob` so the returned `PortalJob` reflects the new
+    // rental window (drop_off_date + expected_pickup_date) directly
+    // from the canonical source, not the stale job-row snapshot.
+    // The transaction committed above, so this read sees the fresh
+    // chain state. Locally named `freshChain` to avoid shadowing the
+    // pre-mutation `chain` destructured from `findActivePickupInChain`
+    // at the top of this method.
+    const chainMap = updated
+      ? await this.loadChainsForJobs(tenantId, [updated.id])
+      : new Map<string, RentalChain>();
+    const freshChain = updated ? chainMap.get(updated.id) ?? null : null;
     return {
-      ...(updated ? this.toPortalJob(updated) : {}),
+      ...(updated ? this.toPortalJob(updated, freshChain) : {}),
       message: `Your delivery has been moved to ${newDeliveryDate}. Your new pickup date is ${newPickupDate}. The company has been notified.`,
     };
   }
@@ -781,6 +885,17 @@ export class PortalService {
       relations: ['asset'],
       order: { scheduled_date: 'ASC' },
     });
+
+    // Phase B5 — batch-load chains so the "pickup date" column on the
+    // dashboard card reflects the canonical `rental_chains.expected_
+    // pickup_date` instead of the stale `jobs.rental_end_date` booking
+    // snapshot. Two queries total via `loadChainsForJobs`. Jobs
+    // without a chain fall through to `j.rental_end_date` below so
+    // standalone / legacy rows keep rendering the same as today.
+    const activeChainMap = await this.loadChainsForJobs(
+      tenantId,
+      activeRentals.map((j) => j.id),
+    );
 
     // Outstanding balance
     const invoices = await this.invoiceRepo.find({
@@ -795,24 +910,36 @@ export class PortalService {
       take: 10,
     });
 
-    // Upcoming pickups
+    // Upcoming pickups — reads `j.scheduled_date` on pickup jobs,
+    // which `updateScheduledDate` updates canonically. No chain
+    // lookup needed for this projection.
     const upcomingPickups = await this.jobRepo.find({
       where: { customer_id: customerId, tenant_id: tenantId, job_type: 'pickup', status: In(['pending', 'confirmed', 'dispatched']) },
       order: { scheduled_date: 'ASC' },
     });
 
     return {
-      activeRentals: activeRentals.map(j => ({
-        id: j.id,
-        size: (j.asset_subtype || j.asset?.subtype || '').replace('yd', ' Yard'),
-        address: j.service_address ? [j.service_address.street, j.service_address.city].filter(Boolean).join(', ') : '',
-        deliveryDate: j.scheduled_date,
-        rentalEndDate: j.rental_end_date,
-        daysRemaining: j.rental_end_date ? Math.max(0, Math.ceil((new Date(j.rental_end_date).getTime() - Date.now()) / 86400000)) : null,
-        isOverdue: j.is_overdue,
-        extraDays: j.extra_days,
-        status: j.status,
-      })),
+      activeRentals: activeRentals.map(j => {
+        // Phase B5 — prefer chain.expected_pickup_date; fall back to
+        // the job-row snapshot for standalone / legacy rows with no
+        // chain link.
+        const chain = activeChainMap.get(j.id) ?? null;
+        const pickupDate: string | null =
+          chain?.expected_pickup_date ?? j.rental_end_date ?? null;
+        return {
+          id: j.id,
+          size: (j.asset_subtype || j.asset?.subtype || '').replace('yd', ' Yard'),
+          address: j.service_address ? [j.service_address.street, j.service_address.city].filter(Boolean).join(', ') : '',
+          deliveryDate: j.scheduled_date,
+          rentalEndDate: pickupDate,
+          daysRemaining: pickupDate
+            ? Math.max(0, Math.ceil((new Date(pickupDate).getTime() - Date.now()) / 86400000))
+            : null,
+          isOverdue: j.is_overdue,
+          extraDays: j.extra_days,
+          status: j.status,
+        };
+      }),
       balance: {
         total: Math.round(totalBalance * 100) / 100,
         invoiceCount: invoices.length,
