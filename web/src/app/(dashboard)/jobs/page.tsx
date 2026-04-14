@@ -129,13 +129,14 @@ const DATE_RANGE_OPTIONS = [
   { value: "all", label: "All Time" },
 ] as const;
 
-const SORT_OPTIONS = [
-  { value: "date_desc", label: "Newest First" },
-  { value: "date_asc", label: "Oldest First" },
-  { value: "job_number", label: "Job Number" },
-  { value: "customer", label: "Customer Name" },
-  { value: "status", label: "Status" },
-] as const;
+// Canonical job-type filter chips for the standalone jobs section.
+// Chains by definition mix multiple types so the filter only affects the
+// standalone slice — that's the semantic the controls bar advertises.
+const JOB_TYPE_CHIPS: ReadonlyArray<{ value: string; label: string }> = [
+  { value: "delivery", label: "Deliveries" },
+  { value: "pickup", label: "Pickups" },
+  { value: "exchange", label: "Exchanges" },
+];
 
 /* ─── Helpers ─── */
 
@@ -258,7 +259,6 @@ function JobsPageContent() {
   const [jobTypeFilter, setJobTypeFilter] = useState<Set<string>>(new Set());
   const [dateRange, setDateRange] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
-  const [sortBy, setSortBy] = useState("date_desc");
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [panelOpen, setPanelOpen] = useState(false);
@@ -416,12 +416,6 @@ function JobsPageContent() {
     return Number(statusCounts.find((c) => c.status === s)?.count ?? 0);
   };
 
-  const totalCount = getCount("all");
-  const unassignedCount = statusCounts.filter((c) => ["pending", "confirmed"].includes(c.status)).reduce((s, c) => s + Number(c.count), 0);
-
-  const PRIMARY_STATUSES = ["all", "overdue", "unassigned", "assigned"] as const;
-  const SECONDARY_STATUSES = ["en_route", "arrived", "completed", "cancelled"] as const;
-
   // Per-reason counts inside the current blocked slice, used by the
   // sub-filter pills. Recomputed whenever the fetched slice changes.
   const blockedReasonCounts = useMemo(() => {
@@ -471,20 +465,13 @@ function JobsPageContent() {
         );
       });
     }
-    result.sort((a, b) => {
-      if (sortBy === "date_desc") return (b.scheduled_date || b.created_at).localeCompare(a.scheduled_date || a.created_at);
-      if (sortBy === "date_asc") return (a.scheduled_date || a.created_at).localeCompare(b.scheduled_date || b.created_at);
-      if (sortBy === "job_number") return a.job_number.localeCompare(b.job_number);
-      if (sortBy === "customer") {
-        const an = a.customer ? `${a.customer.first_name} ${a.customer.last_name}` : "";
-        const bn = b.customer ? `${b.customer.first_name} ${b.customer.last_name}` : "";
-        return an.localeCompare(bn);
-      }
-      if (sortBy === "status") return a.status.localeCompare(b.status);
-      return 0;
-    });
+    // Newest scheduled date first, falling back to creation date for
+    // jobs without a scheduled date yet. The previous configurable
+    // sortBy state was never wired to a UI control, so this hard-codes
+    // the only path that ever ran in production.
+    result.sort((a, b) => (b.scheduled_date || b.created_at).localeCompare(a.scheduled_date || a.created_at));
     return result;
-  }, [jobs, searchQuery, sortBy, statusFilter, blockedSubview, jobTypeFilter]);
+  }, [jobs, searchQuery, statusFilter, blockedSubview, jobTypeFilter]);
 
   // ── Lifecycle rows derived from rental chains ──
   const chainedJobIds = useMemo(() => {
@@ -508,6 +495,15 @@ function JobsPageContent() {
   }
 
   const filteredChains = useMemo(() => {
+    // Job-type chips are intentionally a "show me ONLY this kind of
+    // job" filter. Chains by definition contain mixed task types, so
+    // when any type chip is active we suppress the chains section
+    // entirely and let the standalone-jobs section satisfy the
+    // operator's intent. Without this, clicking "Pickups" would still
+    // surface chains containing pickups alongside their sibling
+    // delivery + exchange tasks — which is the opposite of what the
+    // chip implies.
+    if (jobTypeFilter.size > 0) return [];
     let result = [...chains];
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
@@ -529,11 +525,23 @@ function JobsPageContent() {
     }
     result.sort((a, b) => (b.drop_off_date || "").localeCompare(a.drop_off_date || ""));
     return result;
-  }, [chains, searchQuery, dateRange, timezone]);
+  }, [chains, searchQuery, dateRange, timezone, jobTypeFilter]);
 
   const standaloneJobs = useMemo(() => {
+    // Default behavior: show ONLY jobs that aren't part of any chain
+    // (chains are surfaced by the chains table above so we don't want
+    // to double-count their member tasks).
+    //
+    // Type-chip override: when the operator has narrowed by job type
+    // (Deliveries / Pickups / Exchanges), the goal is "show me every
+    // job of this type" — most of which live inside a chain. We
+    // broaden the slice to include chain members in that case so the
+    // chip is actually useful, not just a filter on orphan jobs. The
+    // chains section is hidden in this branch (see filteredChains
+    // above) so there is no double-render.
+    if (jobTypeFilter.size > 0) return filteredJobs;
     return filteredJobs.filter(j => !chainedJobIds.has(j.id));
-  }, [filteredJobs, chainedJobIds]);
+  }, [filteredJobs, chainedJobIds, jobTypeFilter]);
 
   const thStyle: React.CSSProperties = { padding: "10px 16px", textAlign: "left", fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--t-text-muted)", whiteSpace: "nowrap" };
 
@@ -591,8 +599,8 @@ function JobsPageContent() {
       })()}
 
       {/* ─── Controls bar ─── */}
-      <div className="surface-card mb-5" style={{ padding: "10px 14px", display: "flex", alignItems: "center", gap: 10 }}>
-        <div className="relative flex-1">
+      <div className="surface-card mb-5" style={{ padding: "10px 14px", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <div className="relative flex-1 min-w-[200px]">
           <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2" style={{ color: "var(--t-text-muted)" }} />
           <input
             value={searchQuery}
@@ -601,6 +609,38 @@ function JobsPageContent() {
             className="w-full rounded-[20px] py-2 pl-9 pr-4 text-sm outline-none"
             style={{ background: "var(--t-bg-card)", border: "1px solid var(--t-border)", color: "var(--t-text-primary)" }}
           />
+        </div>
+        {/*
+         * Job-type chips. Multi-select: clicking a chip toggles its
+         * value in `jobTypeFilter` and the standalone-jobs section
+         * narrows accordingly. Chains are mixed-type by definition so
+         * the filter intentionally only affects the standalone slice.
+         */}
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }} aria-label={FEATURE_REGISTRY.jobs_type_filter?.label ?? "Job type filter"}>
+          {JOB_TYPE_CHIPS.map((chip) => {
+            const active = jobTypeFilter.has(chip.value);
+            return (
+              <button
+                key={chip.value}
+                type="button"
+                onClick={() => toggleJobType(chip.value)}
+                aria-pressed={active}
+                style={{
+                  padding: "5px 12px",
+                  fontSize: 11,
+                  fontWeight: 600,
+                  border: `1px solid ${active ? "var(--t-accent)" : "var(--t-border)"}`,
+                  borderRadius: 999,
+                  cursor: "pointer",
+                  background: active ? "var(--t-accent-soft)" : "transparent",
+                  color: active ? "var(--t-accent-text)" : "var(--t-text-muted)",
+                  transition: "all 0.12s ease",
+                }}
+              >
+                {chip.label}
+              </button>
+            );
+          })}
         </div>
         <div style={{ display: "flex", borderRadius: 8, border: "1px solid var(--t-border)", overflow: "hidden" }}>
           {DATE_RANGE_OPTIONS.map((opt) => (
@@ -734,7 +774,9 @@ function JobsPageContent() {
           {standaloneJobs.length > 0 && (
             <div className="mt-6">
               <h2 className="text-sm font-semibold text-[var(--t-text-muted)] mb-3">
-                {FEATURE_REGISTRY.lifecycle_standalone_jobs?.label ?? "Standalone Jobs"} ({standaloneJobs.length})
+                {jobTypeFilter.size > 0
+                  ? `${JOB_TYPE_CHIPS.filter(c => jobTypeFilter.has(c.value)).map(c => c.label).join(" · ")} (${standaloneJobs.length})`
+                  : `${FEATURE_REGISTRY.lifecycle_standalone_jobs?.label ?? "Standalone Jobs"} (${standaloneJobs.length})`}
               </h2>
               <div className="surface-card" style={{ overflow: "hidden", padding: 0 }}>
                 <div className="table-scroll">

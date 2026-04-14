@@ -741,7 +741,7 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
   return (
     <div>
       <Link href="/jobs" className="mb-6 inline-flex items-center gap-2 text-sm text-[var(--t-frame-text-muted)] transition-colors hover:text-[var(--t-frame-text)]">
-        <ArrowLeft className="h-4 w-4" /> Back to Jobs
+        <ArrowLeft className="h-4 w-4" /> {FEATURE_REGISTRY.job_detail_back_link?.label ?? "Back to Lifecycles"}
       </Link>
 
       {/* --- Header --- */}
