@@ -1667,6 +1667,9 @@ export class JobsService {
         'j.cancellation_reason',
         'j.asset_id',
         'j.asset_subtype',
+        // Live driver assignment — used by the LifecyclePanel to
+        // render a driver-aware display status on each node.
+        'j.assigned_driver_id',
       ])
       .addSelect('l.task_type', 'l_task_type')
       .addSelect('l.sequence_number', 'l_sequence_number')
@@ -1732,6 +1735,10 @@ export class JobsService {
         link_status: raw?.l_status ?? 'scheduled',
         asset_id: job.asset_id ?? null,
         asset_subtype: job.asset_subtype ?? null,
+        // Live driver assignment so the LifecyclePanel can use the
+        // driver-aware `deriveDisplayStatus` object form and avoid
+        // showing a stale "Assigned" child row after unassignment.
+        assigned_driver_id: job.assigned_driver_id ?? null,
         is_current: job.id === jobId,
         alerts: jobAlertsById.get(job.id) ?? [],
       };

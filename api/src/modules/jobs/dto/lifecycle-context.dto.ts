@@ -55,6 +55,15 @@ export interface LifecycleNode {
    * `jobs.asset_subtype` rather than joining to assets.
    */
   asset_subtype: string | null;
+  /**
+   * Live driver assignment. `null` when no driver is currently
+   * assigned. Carried through so the UI can use the driver-aware
+   * `deriveDisplayStatus` object form — otherwise the LifecyclePanel
+   * would keep child nodes stuck on "Assigned" after the office
+   * unassigned the driver from dispatch (the raw `status` column
+   * can still be `dispatched`). Additive, nullable, no DB change.
+   */
+  assigned_driver_id: string | null;
   is_current: boolean;
   alerts: LifecycleAlert[]; // entity_type='job' alerts for THIS job only
 }

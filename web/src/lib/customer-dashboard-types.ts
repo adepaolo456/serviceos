@@ -54,6 +54,10 @@ export interface DashboardJobLink {
   jobStatus: string;
   jobType: string;
   assetSubtype: string | null;
+  // Live driver assignment for the driver-aware
+  // `deriveDisplayStatus` object form. Mirrors the backend
+  // CustomerDashboardJobLink.assignedDriverId field.
+  assignedDriverId: string | null;
   linkedInvoiceStatus: string | null;
   previousLinkId: string | null;
   nextLinkId: string | null;
@@ -76,6 +80,8 @@ export interface DashboardStandaloneJob {
   scheduledDate: string | null;
   assetSubtype: string | null;
   totalPrice: number;
+  /** Live driver assignment — see DashboardJobLink.assignedDriverId. */
+  assignedDriverId: string | null;
   linkedInvoiceStatus: string | null;
 }
 

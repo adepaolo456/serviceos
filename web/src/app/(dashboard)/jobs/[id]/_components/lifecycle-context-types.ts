@@ -45,6 +45,11 @@ export interface LifecycleNode {
   link_status: string;
   asset_id: string | null;
   asset_subtype: string | null;
+  // Live driver assignment — present on server responses so the
+  // LifecyclePanel node chip can use the driver-aware
+  // `deriveDisplayStatus` object form. `null` when no driver is
+  // currently assigned.
+  assigned_driver_id: string | null;
   is_current: boolean;
   alerts: LifecycleAlert[];
 }

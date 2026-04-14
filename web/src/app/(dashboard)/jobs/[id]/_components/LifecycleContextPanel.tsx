@@ -329,7 +329,11 @@ function NodeRow({
   isLast: boolean;
   onEditDate: (node: LifecycleNode) => void;
 }) {
-  const displayStatus = deriveDisplayStatus(node.status);
+  // Live-derived: pass the node so the Assigned chip reflects the
+  // current driver assignment. The backend now carries
+  // `assigned_driver_id` on every LifecycleNode (see the
+  // lifecycle-context DTO + service projection).
+  const displayStatus = deriveDisplayStatus(node);
   const TaskIcon = TASK_TYPE_ICON[node.task_type] ?? ArrowRight;
   const isCancelled =
     node.status === "cancelled" ||

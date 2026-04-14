@@ -300,7 +300,12 @@ function JobsPageContent() {
     customer: { id: string; first_name: string; last_name: string } | null;
     asset: { id: string; identifier: string; subtype: string } | null;
     links: Array<{ job_id: string; task_type: string; sequence_number: number; status: string; scheduled_date: string;
-      job: { id: string; job_number: string; status: string; service_address: Record<string, string> | null; asset_subtype?: string } | null;
+      // `assigned_driver_id` is carried through so the child row
+      // status chip can use the driver-aware `deriveDisplayStatus`
+      // object form. Backend already returns it on the chain link
+      // job shape; documenting it here so future changes don't
+      // silently drop it.
+      job: { id: string; job_number: string; status: string; service_address: Record<string, string> | null; asset_subtype?: string; assigned_driver_id?: string | null } | null;
     }>;
   }>>([]);
   const [chainsLoading, setChainsLoading] = useState(true);
@@ -847,7 +852,9 @@ function JobsPageContent() {
                           {isExpanded && orderedLinks.map((link, idx) => {
                             const childJob = link.job;
                             if (!childJob) return null;
-                            const childDisplay = deriveDisplayStatus(childJob.status);
+                            // Live-derived: pass the full child job
+                            // so Assigned reflects current driver.
+                            const childDisplay = deriveDisplayStatus(childJob);
                             const isLastChild = idx === orderedLinks.length - 1;
                             return (
                               <tr
@@ -926,7 +933,7 @@ function JobsPageContent() {
                       {standaloneJobs.map(job => {
                         const customerName = job.customer ? `${job.customer.first_name} ${job.customer.last_name}` : "";
                         const address = fmtAddress(job.service_address);
-                        const displayStatus = deriveDisplayStatus(job.status);
+                        const displayStatus = deriveDisplayStatus(job);
                         return (
                           <tr key={job.id} onClick={() => { snapshotListState(); router.push(`/jobs/${job.id}`); }} className="table-row cursor-pointer"
                             style={{ borderBottom: "1px solid var(--t-border-subtle)", borderLeft: "3px solid var(--t-border)" }}>
