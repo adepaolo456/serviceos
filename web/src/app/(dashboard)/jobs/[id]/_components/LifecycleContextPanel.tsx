@@ -110,8 +110,19 @@ function alertFeatureId(alertType: string): string {
 
 export default function LifecycleContextPanel({
   jobId,
+  refreshSignal = 0,
 }: {
   jobId: string;
+  /**
+   * Parent-controlled refetch signal. Any change to this numeric
+   * value (e.g. the parent bumping a counter after a status
+   * override / status transition mutation on the job detail page)
+   * re-runs the lifecycle-context fetch so the panel's node
+   * statuses reflect the post-mutation backend truth instead of
+   * stale cached data. Internal `refetchKey` bumps (from the
+   * Edit Job Date modal) continue to work independently.
+   */
+  refreshSignal?: number;
 }) {
   const [data, setData] = useState<LifecycleContextResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -144,7 +155,7 @@ export default function LifecycleContextPanel({
     return () => {
       cancelled = true;
     };
-  }, [jobId, refetchKey]);
+  }, [jobId, refetchKey, refreshSignal]);
 
   const panelLabel = getFeatureLabel("connected_job_lifecycle");
 

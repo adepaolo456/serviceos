@@ -22,6 +22,17 @@ export type DisplayStatus =
  * check to kick in — otherwise the call falls through to the legacy
  * status-only branch (same behavior as passing a bare string). See
  * `deriveDisplayStatus` below for the precedence rules.
+ *
+ * NOTE: historical execution-state timestamps (`en_route_at`,
+ * `arrived_at`, `completed_at`, `dispatched_at`) are intentionally
+ * NOT part of this input contract. They look like they could act as
+ * a "don't regress" guard, but they cannot distinguish a still-live
+ * state from one that an operator has deliberately overridden back
+ * to an earlier state. Reverts must be visually reversible, so
+ * derivation is sourced from the raw `status` column and the live
+ * driver_id only — never from audit-history timestamps. Passing a
+ * full job object is still safe: TypeScript's structural typing
+ * allows the extra fields, they're just ignored for derivation.
  */
 export interface DeriveDisplayStatusInput {
   status: string;
@@ -39,16 +50,6 @@ export interface DeriveDisplayStatusInput {
    * `assigned_driver_id`.
    */
   assigned_driver?: unknown;
-  /**
-   * Optional execution-state timestamps. When present they win over
-   * the stored `status` column — useful for backends that advance
-   * timestamps before updating status, or for preventing stale
-   * status values from pulling a job backward into `assigned` after
-   * it has already been `en_route`.
-   */
-  en_route_at?: string | Date | null;
-  arrived_at?: string | Date | null;
-  completed_at?: string | Date | null;
 }
 
 /**
@@ -68,25 +69,31 @@ export interface DeriveDisplayStatusInput {
  *      chip / lifecycle timeline SHOULD use. Applies strict
  *      top-to-bottom precedence:
  *
- *        cancelled        → cancelled
- *        needs_reschedule → needs_reschedule
- *        completed_at OR status=completed            → completed
- *        arrived_at  OR status=arrived / in_progress → arrived
- *        en_route_at OR status=en_route              → en_route
- *        assigned_driver_id (or assigned_driver obj) → assigned
- *        pending + unpaid invoice                    → pending_payment
- *        otherwise                                   → unassigned
+ *        cancelled         → cancelled
+ *        needs_reschedule  → needs_reschedule
+ *        status=completed                    → completed
+ *        status=arrived / in_progress        → arrived
+ *        status=en_route                     → en_route
+ *        assigned_driver_id (or obj)         → assigned
+ *        pending + unpaid invoice            → pending_payment
+ *        otherwise                           → unassigned
  *
- *      KEY FIX: "assigned" is a LIVE derived state, not a sticky
- *      historical milestone. A job whose raw status is `dispatched`
- *      but whose driver has been unassigned (assigned_driver_id is
- *      null) falls through to `unassigned` — even though a
- *      historical `assigned_at` / `dispatched_at` timestamp may
- *      still exist on the row. The execution-state branches above
- *      keep firing correctly even when the driver is still
- *      populated, so a job that has already been en_route never
- *      regresses to `assigned` just because the driver was
- *      unassigned post-start.
+ *      KEY RULES:
+ *        • "assigned" is a LIVE derived state, not a sticky
+ *          historical milestone. A job whose raw status is
+ *          `dispatched` but whose driver has been unassigned
+ *          (assigned_driver_id is null) falls through to
+ *          `unassigned` even though a historical dispatch
+ *          timestamp may still exist on the row.
+ *        • Execution-state precedence is sourced from the raw
+ *          `status` column ONLY. Historical timestamps
+ *          (`en_route_at`, `arrived_at`, `completed_at`) are NOT
+ *          used as a fallback because they cannot distinguish
+ *          between a live state and an operator-overridden-back
+ *          state. Reverts (e.g., an accidental En Route being
+ *          corrected back to Assigned) must be visually
+ *          reversible, and the only way to honor that is to let
+ *          raw `status` be authoritative.
  */
 export function deriveDisplayStatus(
   jobOrStatus: string | DeriveDisplayStatusInput,
@@ -107,12 +114,14 @@ export function deriveDisplayStatus(
   if (status === "cancelled") return "cancelled";
   if (status === "needs_reschedule") return "needs_reschedule";
 
-  // Execution states win over assignment — a job that is already
-  // en_route / arrived / completed must NEVER regress to "assigned"
-  // just because we also have a driver_id populated.
-  if (job.completed_at || status === "completed") return "completed";
-  if (job.arrived_at || status === "arrived" || status === "in_progress") return "arrived";
-  if (job.en_route_at || status === "en_route") return "en_route";
+  // Execution states — sourced from raw `status` only. See the
+  // DeriveDisplayStatusInput docblock for why historical timestamps
+  // are deliberately NOT consulted here (tl;dr: overrides must be
+  // visually reversible, and stale `en_route_at` on a job that was
+  // reverted to `dispatched` would keep the En Route step stuck).
+  if (status === "completed") return "completed";
+  if (status === "arrived" || status === "in_progress") return "arrived";
+  if (status === "en_route") return "en_route";
 
   // KEY FIX: assignment is derived from the CURRENT driver_id, not
   // from the raw `dispatched` status or any historical assignment
