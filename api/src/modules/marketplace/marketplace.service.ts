@@ -17,6 +17,7 @@ import {
   ListMarketplaceBookingsQueryDto,
   RejectBookingDto,
 } from './dto/marketplace.dto';
+import { issueNextJobNumber } from '../../common/utils/job-number.util';
 
 @Injectable()
 export class MarketplaceService {
@@ -132,14 +133,13 @@ export class MarketplaceService {
       );
     }
 
-    // Generate job number
-    const today = new Date().toISOString().split('T')[0].replace(/-/g, '');
-    const jobCount = await this.jobsRepository
-      .createQueryBuilder('j')
-      .where('j.tenant_id = :tenantId', { tenantId })
-      .andWhere('j.job_number LIKE :prefix', { prefix: `JOB-${today}-%` })
-      .getCount();
-    const jobNumber = `JOB-${today}-${String(jobCount + 1).padStart(3, '0')}`;
+    // Generate job number. Prior to the tenants.next_job_sequence
+    // migration this path issued its own sequence via a LIKE-prefix
+    // count on `JOB-YYYYMMDD-%`, which was both fragile (a
+    // concurrent booking could miss the count and collide) and
+    // tightly coupled to the legacy format. Now every module draws
+    // from the canonical tenant-scoped counter.
+    const jobNumber = await issueNextJobNumber(this.jobsRepository.manager, tenantId, 'delivery');
 
     // Create job
     const job = await this.jobsRepository.save(

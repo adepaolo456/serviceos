@@ -13,6 +13,7 @@ import { CreateRentalChainDto } from './dto/create-rental-chain.dto';
 import { UpdateRentalChainDto } from './dto/update-rental-chain.dto';
 import { CreateExchangeDto } from './dto/create-exchange.dto';
 import { RescheduleExchangeDto } from './dto/reschedule-exchange.dto';
+import { issueNextJobNumber } from '../../common/utils/job-number.util';
 
 // ── Date helpers (UTC, date-only) ──
 function shiftDateStr(date: string, days: number): string {
@@ -98,13 +99,12 @@ export class RentalChainsService {
     const savedChain = await this.chainRepo.save(chain);
 
     // Create drop-off job
-    const rand = Math.random().toString(36).slice(2, 5).toUpperCase();
-    const dropOffDateStr = dto.drop_off_date.replace(/-/g, '');
+    const dropOffJobNumber = await issueNextJobNumber(this.dataSource.manager, tenantId, 'delivery');
 
     const dropOffJob = this.jobRepo.create({
       tenant_id: tenantId,
       customer_id: dto.customer_id,
-      job_number: `JOB-${dropOffDateStr}-${rand}D`,
+      job_number: dropOffJobNumber,
       job_type: 'delivery',
       service_type: 'dumpster_rental',
       asset_subtype: dto.dumpster_size,
@@ -119,11 +119,11 @@ export class RentalChainsService {
     const savedDropOff = await this.jobRepo.save(dropOffJob);
 
     // Create pickup job
-    const pickupDateStr = expectedPickupDate.replace(/-/g, '');
+    const pickupJobNumber = await issueNextJobNumber(this.dataSource.manager, tenantId, 'pickup');
     const pickupJob = this.jobRepo.create({
       tenant_id: tenantId,
       customer_id: dto.customer_id,
-      job_number: `JOB-${pickupDateStr}-${rand}P`,
+      job_number: pickupJobNumber,
       job_type: 'pickup',
       service_type: 'dumpster_rental',
       asset_subtype: dto.dumpster_size,
@@ -279,12 +279,10 @@ export class RentalChainsService {
       const newPickupDateStr = newPickupDate.toISOString().split('T')[0];
 
       // Create new pickup job
-      const dateStr = newPickupDateStr.replace(/-/g, '');
-      const rand = Math.random().toString(36).slice(2, 5).toUpperCase();
       const newPickupJob = this.jobRepo.create({
         tenant_id: tenantId,
         customer_id: chain.customer_id,
-        job_number: `JOB-${dateStr}-${rand}P`,
+        job_number: await issueNextJobNumber(this.dataSource.manager, tenantId, 'pickup'),
         job_type: 'pickup',
         service_type: 'dumpster_rental',
         asset_subtype: chain.dumpster_size,
@@ -643,13 +641,13 @@ export class RentalChainsService {
         previousSeq = tail?.sequence_number ?? 0;
       }
 
-      // 2. Create the exchange job
-      const exchangeDateStr = dto.exchange_date.replace(/-/g, '');
-      const rand = Math.random().toString(36).slice(2, 5).toUpperCase();
+      // 2. Create the exchange job. Inside a transaction — pass `trx`
+      // so the sequence increment joins the outer transaction and
+      // rolls back as a unit if the commit fails later.
       const exchangeJob = jobRepo.create({
         tenant_id: tenantId,
         customer_id: chain.customer_id,
-        job_number: `JOB-${exchangeDateStr}-${rand}X`,
+        job_number: await issueNextJobNumber(trx, tenantId, 'exchange'),
         job_type: 'exchange',
         service_type: 'dumpster_rental',
         asset_subtype: size,
@@ -673,11 +671,10 @@ export class RentalChainsService {
       const savedExchangeLink = await linkRepo.save(exchangeLink);
 
       // 4. Create the fresh pickup job + link
-      const pickupDateStr = newPickupDateStr.replace(/-/g, '');
       const pickupJob = jobRepo.create({
         tenant_id: tenantId,
         customer_id: chain.customer_id,
-        job_number: `JOB-${pickupDateStr}-${rand}P`,
+        job_number: await issueNextJobNumber(trx, tenantId, 'pickup'),
         job_type: 'pickup',
         service_type: 'dumpster_rental',
         asset_subtype: size,

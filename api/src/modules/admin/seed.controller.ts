@@ -291,6 +291,12 @@ export class SeedController {
     const mike = await findDriver('mike@rentthisdumpster.com');
     const jake = await findDriver('jake@rentthisdumpster.com');
 
+    // NOTE: seed jobs keep the legacy random `JOB-xxxx-NNNN` format on
+    // purpose. The synchronous factory is invoked 17 times below and
+    // converting it to async would require rewriting every call site.
+    // Seed data is dev/test only — the canonical tenant-scoped counter
+    // is not required here, and the display helper `formatJobNumber()`
+    // still renders these values consistently.
     const makeJob = (p: any) => this.jobRepo.create({ tenant_id: tid, job_number: `JOB-${Date.now().toString(36).slice(-4)}-${Math.floor(Math.random()*9000)+1000}`, priority: 'normal', source: 'manual', ...p } as any);
     let invSeq = 0;
     const saveInv = async (p: any) => {

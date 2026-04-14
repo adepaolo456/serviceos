@@ -15,6 +15,7 @@ import { SmsMessage } from '../sms/sms-message.entity';
 import { SmsService } from '../sms/sms.service';
 import { SmsOptOutService } from '../sms/sms-opt-out.service';
 import { normalizePhone } from '../../common/utils/phone';
+import { issueNextJobNumber } from '../../common/utils/job-number.util';
 
 // SMS opt-out keywords. Matched case-insensitively against a trimmed,
 // upper-cased message body. Exact match only — "STOP please" is not a STOP.
@@ -189,11 +190,9 @@ export class AutomationService {
       }
       case 'schedule_pickup': {
         // Create a pickup job
-        const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-        const seq = Math.floor(Math.random() * 9000) + 1000;
         const pickupJob = this.jobRepo.create({
           tenant_id: tenantId,
-          job_number: `JOB-${dateStr}-${seq}`,
+          job_number: await issueNextJobNumber(this.dataSource.manager, tenantId, 'pickup'),
           customer_id: job.customer_id,
           asset_id: job.asset_id,
           job_type: 'pickup',
