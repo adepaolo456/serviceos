@@ -50,7 +50,7 @@ export async function issueNextJobNumber(
   const rows = await manager.query(
     `UPDATE tenants
        SET next_job_sequence = next_job_sequence + 1
-     WHERE id = $1
+     WHERE id = $1::uuid
      RETURNING next_job_sequence - 1 AS issued_sequence`,
     [tenantId],
   );
