@@ -2,6 +2,7 @@
 
 import { useState, useEffect, use, type FormEvent } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   ArrowLeft, Phone, Mail, Clock, Briefcase, DollarSign, Truck,
   User, Calendar, Settings, Pencil, Shield, MapPin, Plus, X,
@@ -11,6 +12,7 @@ import { api } from "@/lib/api";
 import { useToast } from "@/components/toast";
 import SlideOver from "@/components/slide-over";
 import AddressAutocomplete, { type AddressValue } from "@/components/address-autocomplete";
+import { navigateBack } from "@/lib/navigation";
 
 /* ---- Types ---- */
 
@@ -67,6 +69,7 @@ const SIZES = ["10yd", "15yd", "20yd", "30yd", "40yd"];
 
 export default function EmployeeDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
+  const router = useRouter();
   const { toast } = useToast();
   const [emp, setEmp] = useState<Employee | null>(null);
   const [timesheet, setTimesheet] = useState<Timesheet | null>(null);
@@ -97,7 +100,14 @@ export default function EmployeeDetailPage({ params }: { params: Promise<{ id: s
 
   return (
     <div>
-      <Link href="/team" className="inline-flex items-center gap-1.5 text-[13px] text-[var(--t-frame-text-muted)] hover:text-[var(--t-frame-text)] transition-colors mb-4"><ArrowLeft className="h-3.5 w-3.5" /> Team</Link>
+      {/* History-first back nav — see lib/navigation. */}
+      <button
+        type="button"
+        onClick={() => navigateBack(router, "/team")}
+        className="inline-flex items-center gap-1.5 text-[13px] text-[var(--t-frame-text-muted)] hover:text-[var(--t-frame-text)] transition-colors mb-4"
+      >
+        <ArrowLeft className="h-3.5 w-3.5" /> Team
+      </button>
 
       {/* Header */}
       <div className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5 mb-5">

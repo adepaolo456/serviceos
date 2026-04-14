@@ -157,6 +157,7 @@ interface AssetOption {
 /* --- Constants --- */
 
 import { deriveDisplayStatus, DISPLAY_STATUS_LABELS, displayStatusColor, formatJobNumber } from "@/lib/job-status";
+import { navigateBack } from "@/lib/navigation";
 
 const JOB_TYPE_COLORS: Record<string, string> = {
   delivery: "text-blue-400",
@@ -771,9 +772,18 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
 
   return (
     <div>
-      <Link href="/jobs" className="mb-6 inline-flex items-center gap-2 text-sm text-[var(--t-frame-text-muted)] transition-colors hover:text-[var(--t-frame-text)]">
+      {/* History-first back nav. Falls back to /jobs only when
+          the page was opened via direct URL / fresh tab / hard
+          reload — otherwise we pop the real history entry so
+          Dispatch → Job → Back returns to Dispatch, Customer → Job
+          → Back returns to the customer, etc. See lib/navigation. */}
+      <button
+        type="button"
+        onClick={() => navigateBack(router, "/jobs")}
+        className="mb-6 inline-flex items-center gap-2 text-sm text-[var(--t-frame-text-muted)] transition-colors hover:text-[var(--t-frame-text)]"
+      >
         <ArrowLeft className="h-4 w-4" /> {FEATURE_REGISTRY.job_detail_back_link?.label ?? "Back to Lifecycles"}
-      </Link>
+      </button>
 
       {/* --- Header --- */}
       <div className="mb-8 flex items-start justify-between">

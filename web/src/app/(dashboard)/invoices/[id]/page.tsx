@@ -24,6 +24,7 @@ import SlideOver from "@/components/slide-over";
 import RentalChainTimeline from "@/components/rental-chain-timeline";
 import { RecordPaymentForm } from "@/components/record-payment-form";
 import { formatJobNumber } from "@/lib/job-status";
+import { navigateBack } from "@/lib/navigation";
 import { getFeatureLabel } from "@/lib/feature-registry";
 
 interface ApiLineItem {
@@ -538,13 +539,19 @@ function InvoiceDetailPageContent({
           {getFeatureLabel("invoice_detail_back_to_customer")}
         </button>
       ) : (
-        <Link
-          href="/invoices"
+        /* History-first back nav — when there is no `returnTo`
+           context (see the branch above) we still prefer to pop
+           real browser history so the user returns to wherever
+           they actually came from, falling back to `/invoices`
+           only on direct URL access. */
+        <button
+          type="button"
+          onClick={() => navigateBack(router, "/invoices")}
           className="mb-6 inline-flex items-center gap-2 text-sm text-[var(--t-frame-text-muted)] transition-colors hover:text-[var(--t-frame-text)]"
         >
           <ArrowLeft className="h-4 w-4" />
           Back to Invoices
-        </Link>
+        </button>
       )}
 
       {/* Rental Chain Timeline */}

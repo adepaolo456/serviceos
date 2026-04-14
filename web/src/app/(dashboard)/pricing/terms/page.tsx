@@ -1,11 +1,12 @@
 "use client";
 
 import { useState, useEffect, useCallback, type FormEvent } from "react";
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { ArrowLeft, Plus, Pencil, Trash2, FileText, Star, Eye } from "lucide-react";
 import { api } from "@/lib/api";
 import SlideOver from "@/components/slide-over";
 import { useToast } from "@/components/toast";
+import { navigateBack } from "@/lib/navigation";
 
 interface TermsTemplate {
   id: string;
@@ -17,6 +18,7 @@ interface TermsTemplate {
 }
 
 export default function TermsTemplatesPage() {
+  const router = useRouter();
   const [templates, setTemplates] = useState<TermsTemplate[]>([]);
   const [loading, setLoading] = useState(true);
   const [panelOpen, setPanelOpen] = useState(false);
@@ -65,9 +67,17 @@ export default function TermsTemplatesPage() {
 
   return (
     <div>
-      <Link href="/pricing" className="mb-6 inline-flex items-center gap-2 text-sm transition-colors" style={{ color: "var(--t-frame-text-muted)" }}>
+      {/* History-first back nav. Falls back to /pricing on direct
+          URL access; otherwise pops the real history entry so the
+          user returns to wherever they navigated in from. */}
+      <button
+        type="button"
+        onClick={() => navigateBack(router, "/pricing")}
+        className="mb-6 inline-flex items-center gap-2 text-sm transition-colors"
+        style={{ color: "var(--t-frame-text-muted)" }}
+      >
         <ArrowLeft className="h-4 w-4" /> Back to Pricing
-      </Link>
+      </button>
 
       <div className="flex items-center justify-between mb-6">
         <div>

@@ -20,12 +20,13 @@
  */
 
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import { Plus, Pencil, Trash2, Search, ArrowLeft } from "lucide-react";
-import Link from "next/link";
 import { api } from "@/lib/api";
 import SlideOver from "@/components/slide-over";
 import { useToast } from "@/components/toast";
 import { FEATURE_REGISTRY } from "@/lib/feature-registry";
+import { navigateBack } from "@/lib/navigation";
 
 interface PricingRule {
   id: string;
@@ -87,6 +88,7 @@ const L = {
 };
 
 export default function PricingRulesPage() {
+  const router = useRouter();
   const [rules, setRules] = useState<PricingRule[]>([]);
   const [loading, setLoading] = useState(true);
   const [editOpen, setEditOpen] = useState(false);
@@ -143,13 +145,14 @@ export default function PricingRulesPage() {
 
   return (
     <div>
-      {/* Back link */}
-      <Link
-        href="/pricing"
+      {/* History-first back nav — see lib/navigation. */}
+      <button
+        type="button"
+        onClick={() => navigateBack(router, "/pricing")}
         className="mb-6 inline-flex items-center gap-2 text-sm text-[var(--t-frame-text-muted)] transition-colors hover:text-[var(--t-frame-text)]"
       >
         <ArrowLeft className="h-4 w-4" /> {L.backToPricing()}
-      </Link>
+      </button>
 
       {/* Header */}
       <div className="flex items-start justify-between gap-4 mb-6">

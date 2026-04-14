@@ -16,6 +16,7 @@ import SlideOver from "@/components/slide-over";
 import AddressAutocomplete, { type AddressValue } from "@/components/address-autocomplete";
 import MapboxMap from "@/components/mapbox-map";
 import { CUSTOMER_DASHBOARD_LABELS } from "@/lib/customer-dashboard-labels";
+import { navigateBack } from "@/lib/navigation";
 import { CustomerCreditPanel } from "@/components/customer-credit-panel";
 import { FEATURE_REGISTRY } from "@/lib/feature-registry";
 
@@ -245,10 +246,16 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
 
   return (
     <div>
-      {/* Back */}
-      <Link href="/customers" className="inline-flex items-center gap-1.5 text-xs text-[var(--t-frame-text-muted)] hover:text-[var(--t-frame-text)] transition-colors mb-4">
+      {/* History-first back nav — preserves real browser history
+          so Jobs → Customer → Back lands on Jobs, not the Customers
+          list. Falls back to /customers only for direct URL access. */}
+      <button
+        type="button"
+        onClick={() => navigateBack(router, "/customers")}
+        className="inline-flex items-center gap-1.5 text-xs text-[var(--t-frame-text-muted)] hover:text-[var(--t-frame-text)] transition-colors mb-4"
+      >
         <ArrowLeft className="h-3.5 w-3.5" /> Customers
-      </Link>
+      </button>
 
       {/* ===== HEADER (compressed — inline status strip at bottom) ===== */}
       <div className="rounded-[20px] bg-[var(--t-bg-card)] border border-[var(--t-border)] p-4 mb-3">
