@@ -130,6 +130,33 @@ export const CUSTOMER_DASHBOARD_LABELS = {
   },
 
   // ────────────────────────────────────────────────────────────────
+  // Overview tab — top-of-page command-center cards
+  //
+  // These labels back the always-visible Active Rentals / Location /
+  // Finance Snapshot cards that sit above the interactive tiles. The
+  // tiles still exist for historical metric drill-down, but operators
+  // no longer have to click them to see the customer's current
+  // operational state.
+  // ────────────────────────────────────────────────────────────────
+  overview: {
+    activeRentalsTitle: "Active Rentals",
+    activeRentalsEmpty: "No active rentals",
+    activeRentalsAllLabel: "All jobs",
+    locationTitle: "Service Location",
+    locationEmpty: "No service address on file",
+    locationNoCoordinates: "Address on file is not geocoded — map unavailable",
+    locationAddCta: "Add service address",
+    financeTitle: "Finance Snapshot",
+    financeBalanceLabel: "Current balance",
+    financeNoBalance: "No outstanding balance",
+    financeCreditAvailable: "credit available",
+    financeLastPayment: "Last payment",
+    financeNeverPaid: "No payments on file",
+    financePastDue: "Past due",
+    financeViewBilling: "View billing",
+  },
+
+  // ────────────────────────────────────────────────────────────────
   // Customer > Pricing tab — editable overrides (Pass 1: base_price only)
   // ────────────────────────────────────────────────────────────────
   pricing: {
