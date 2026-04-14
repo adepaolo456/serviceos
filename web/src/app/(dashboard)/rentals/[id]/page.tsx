@@ -227,7 +227,7 @@ export default function RentalLifecyclePage({ params }: { params: Promise<{ id: 
   const router = useRouter();
   const [data, setData] = useState<LifecycleData | null>(null);
   const [loading, setLoading] = useState(true);
-  // Edit pickup / extend modal state
+  // Change pickup date modal state
   const [pickupModalOpen, setPickupModalOpen] = useState(false);
   const [pickupDate, setPickupDate] = useState("");
   const [pickupSaving, setPickupSaving] = useState(false);
@@ -572,7 +572,7 @@ export default function RentalLifecyclePage({ params }: { params: Promise<{ id: 
           </button>
           <button onClick={() => { setPickupModalOpen(true); setPickupDate(""); setPickupError(""); }}
             className="inline-flex items-center gap-1.5 rounded-full border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-2 text-xs font-medium text-[var(--t-text-primary)] hover:bg-[var(--t-bg-card-hover)] transition-colors">
-            <CalendarClock className="h-3 w-3" /> {FEATURE_REGISTRY.lifecycle_action_extend?.label ?? "Extend Rental"}
+            <CalendarClock className="h-3 w-3" /> {FEATURE_REGISTRY.lifecycle_action_extend?.label ?? "Change Pickup Date"}
           </button>
           <button onClick={() => {
               const today = new Date().toISOString().split("T")[0];
@@ -990,7 +990,7 @@ export default function RentalLifecyclePage({ params }: { params: Promise<{ id: 
         </div>
       )}
 
-      {/* Edit Pickup Date / Extend Rental Modal */}
+      {/* Change Pickup Date Modal */}
       {pickupModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4" onClick={() => setPickupModalOpen(false)}>
           <div className="rounded-2xl border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6 w-full max-w-sm" onClick={e => e.stopPropagation()}>

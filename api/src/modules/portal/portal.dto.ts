@@ -59,7 +59,7 @@ export class ServiceRequestDto {
   instructions?: string;
 }
 
-export class ExtendRentalDto {
+export class ChangePickupDateDto {
   @IsDateString()
   newEndDate!: string;
 }

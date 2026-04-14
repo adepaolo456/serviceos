@@ -101,7 +101,7 @@ export default function ScheduleChangeHistoryCard({
       "Changed by office";
 
   // Backend reason codes are resolved through the feature registry
-  // so the office UI shows "Extend Rental" instead of
+  // so the office UI shows "Change Pickup Date" instead of
   // "customer_portal_extend". Falls back to the raw code if no
   // registry entry exists, which surfaces missing translations
   // loudly without crashing the render.

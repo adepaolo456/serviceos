@@ -8,10 +8,10 @@ import { Job } from '../jobs/entities/job.entity';
 import { Invoice } from '../billing/entities/invoice.entity';
 import { Payment } from '../billing/entities/payment.entity';
 import { Tenant } from '../tenants/entities/tenant.entity';
-// Phase B1 — chain lookup for the portal extend / early-pickup /
-// reschedule flows. The actual mutation is delegated to
-// JobsService.updateScheduledDate so we never duplicate the
-// scheduling transaction logic here.
+// Phase B1 — chain lookup for the portal change-pickup-date /
+// early-pickup / reschedule flows. The actual mutation is
+// delegated to JobsService.updateScheduledDate so we never
+// duplicate the scheduling transaction logic here.
 import { RentalChain } from '../rental-chains/entities/rental-chain.entity';
 import { TaskChainLink } from '../rental-chains/entities/task-chain-link.entity';
 import { PricingService } from '../pricing/pricing.service';
@@ -75,8 +75,9 @@ export class PortalService {
     @InjectRepository(Invoice) private invoiceRepo: Repository<Invoice>,
     @InjectRepository(Payment) private paymentRepo: Repository<Payment>,
     @InjectRepository(Tenant) private tenantRepo: Repository<Tenant>,
-    // Phase B1 — chain lookup for extend / early-pickup /
-    // reschedule. Reads only; writes go through JobsService.
+    // Phase B1 — chain lookup for change-pickup-date /
+    // early-pickup / reschedule. Reads only; writes go through
+    // JobsService.
     @InjectRepository(RentalChain)
     private rentalChainRepo: Repository<RentalChain>,
     @InjectRepository(TaskChainLink)
@@ -111,7 +112,7 @@ export class PortalService {
    * Given a job the portal customer acted on (typically the
    * delivery job shown in their rental card), return the parent
    * rental chain and its ACTIVE pickup job — the one that
-   * extend / early-pickup / reschedule actually mutate.
+   * change-pickup-date / early-pickup / reschedule actually mutate.
    *
    * "Active" means: task_chain_links.status != 'cancelled' AND
    * jobs.cancelled_at IS NULL, matching the gating logic the
@@ -501,7 +502,12 @@ export class PortalService {
   }
 
   /**
-   * Phase B1 — customer-initiated rental extension.
+   * Phase B1 — customer-initiated change of the rental pickup date.
+   *
+   * Historically called "extendRental" — see the legacy alias on
+   * the controller. The user-facing framing is now "Change Pickup
+   * Date" because the same action covers both moving pickup later
+   * (the old "extend") and earlier (the old "request early pickup").
    *
    * Before Phase B1 this method contained its own date math
    * (`Math.ceil((end - start) / 86400000)` with no null guard on
@@ -516,11 +522,11 @@ export class PortalService {
    * scheduling math, chain sync, and audit trail are handled
    * there in one place.
    *
-   * "Extend rental" semantically means "move the active pickup
-   * job later" so we target the chain's pickup job, not the
+   * Semantically this means "move the active pickup job to the
+   * given date" so we target the chain's pickup job, not the
    * delivery job the customer started from.
    */
-  async extendRental(
+  async changePickupDate(
     customerId: string,
     tenantId: string,
     jobId: string,
@@ -535,7 +541,7 @@ export class PortalService {
     if (!startingJob) throw new NotFoundException('Rental not found');
     if (['completed', 'cancelled'].includes(startingJob.status)) {
       throw new BadRequestException(
-        'Cannot extend a completed or cancelled rental',
+        'Cannot change the pickup date of a completed or cancelled rental',
       );
     }
 
@@ -763,9 +769,9 @@ export class PortalService {
     if (job.job_type !== 'delivery') {
       // New gate: the reschedule action is specifically for
       // the rental start date. Pickup moves go through the
-      // extend / early-pickup actions above.
+      // change-pickup-date / early-pickup actions above.
       throw new BadRequestException(
-        'Only the delivery date can be rescheduled from this action. Use Extend or Early Pickup for pickup changes.',
+        'Only the delivery date can be rescheduled from this action. Use Change Pickup Date for pickup changes.',
       );
     }
     const newDeliveryDate = body.scheduledDate;

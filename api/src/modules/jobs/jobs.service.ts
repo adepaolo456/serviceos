@@ -1781,7 +1781,7 @@ export class JobsService {
   /**
    * Canonical date-change mutation. Used by BOTH:
    *   - Office path: `PUT /jobs/:id/scheduled-date` (dispatcher+)
-   *   - Portal paths: `extendRental`, `requestEarlyPickup`,
+   *   - Portal paths: `changePickupDate`, `requestEarlyPickup`,
    *     `rescheduleRental` (via `actor = { type: 'customer', ... }`)
    *
    * Writes the reschedule audit trio on the job row and keeps the
