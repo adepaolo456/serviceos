@@ -47,16 +47,32 @@ export async function issueNextJobNumber(
   // 1001 returns 1001 (producing e.g. "D-1001"), and the next call
   // returns 1002. Postgres evaluates the RETURNING expression over
   // the NEW row, hence the explicit subtraction.
-  const rows = await manager.query(
+  //
+  // Result-shape wart: TypeORM's Postgres driver unwraps UPDATE and
+  // DELETE results into a `[rowsArray, rowCount]` tuple (see
+  // `node_modules/typeorm/driver/postgres/PostgresQueryRunner.js`
+  // line ~202), while SELECT and INSERT ... RETURNING return the
+  // rows array directly. The earlier implementation assumed the flat
+  // shape and read `rows[0]?.issued_sequence`, which for an UPDATE
+  // resolved to reading `issued_sequence` off the inner *array* —
+  // always `undefined` — and threw a misleading "Tenant not found"
+  // even when the UPDATE succeeded. Unwrap the tuple explicitly so
+  // both shapes work, which also insulates the fix from any future
+  // TypeORM behavior change.
+  const raw = await manager.query(
     `UPDATE tenants
        SET next_job_sequence = next_job_sequence + 1
      WHERE id = $1::uuid
      RETURNING next_job_sequence - 1 AS issued_sequence`,
     [tenantId],
   );
+  const rows: Array<{ issued_sequence: number | string | null }> =
+    Array.isArray(raw) && Array.isArray(raw[0]) ? raw[0] : raw;
   const issued = rows?.[0]?.issued_sequence;
   if (issued == null) {
-    throw new NotFoundException(`Tenant ${tenantId} not found`);
+    throw new NotFoundException(
+      `Tenant ${tenantId} has no next_job_sequence row (update returned 0 rows)`,
+    );
   }
   return `${prefix}-${issued}`;
 }
