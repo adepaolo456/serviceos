@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState, useEffect, useCallback, useMemo, useRef, type FormEvent } from "react";
+import { Suspense, Fragment, useState, useEffect, useCallback, useMemo, useRef, type FormEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useBooking } from "@/components/booking-provider";
 import {
@@ -22,6 +22,8 @@ import {
   Send,
   CheckCircle2,
   FileText,
+  ChevronRight,
+  ChevronDown,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import SlideOver from "@/components/slide-over";
@@ -259,6 +261,17 @@ function JobsPageContent() {
   const [jobTypeFilter, setJobTypeFilter] = useState<Set<string>>(new Set());
   const [dateRange, setDateRange] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
+  // Expanded rental-chain IDs. Collapsed by default; expanding a chain
+  // reveals its delivery / exchange / pickup child rows inline.
+  const [expandedChains, setExpandedChains] = useState<Set<string>>(new Set());
+  const toggleChain = useCallback((chainId: string) => {
+    setExpandedChains((prev) => {
+      const next = new Set(prev);
+      if (next.has(chainId)) next.delete(chainId);
+      else next.add(chainId);
+      return next;
+    });
+  }, []);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [panelOpen, setPanelOpen] = useState(false);
@@ -690,20 +703,21 @@ function JobsPageContent() {
         </div>
       ) : (
         <>
-          {/* Lifecycle rows */}
+          {/* Lifecycle rows (grouped — expandable) */}
           {filteredChains.length > 0 && (
             <div className="surface-card" style={{ overflow: "hidden", padding: 0 }}>
               <div className="table-scroll">
                 <table className="w-full" style={{ fontSize: 13, borderCollapse: "collapse" }}>
                   <thead>
                     <tr className="table-header" style={{ borderBottom: "1px solid var(--t-border)" }}>
+                      <th style={{ ...thStyle, width: 32 }} aria-label="Expand" />
                       <th style={{ ...thStyle, width: 72 }}>Size</th>
                       <th style={thStyle}>Customer</th>
                       <th style={thStyle}>Address</th>
                       <th style={{ ...thStyle, width: 110 }}>Delivered</th>
                       <th style={{ ...thStyle, width: 110 }}>Pickup</th>
                       <th style={{ ...thStyle, width: 120 }}>Tasks</th>
-                      <th style={{ ...thStyle, width: 130 }}>Status</th>
+                      <th style={{ ...thStyle, width: 140 }}>Status</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -715,53 +729,135 @@ function JobsPageContent() {
                       const totalTasks = chain.links.length;
                       const lcStatus = deriveLifecycleStatus(chain);
                       const isCompleted = chain.status === "completed";
+                      const isExpanded = expandedChains.has(chain.id);
+                      // Child links sorted by sequence_number so delivery → exchange → pickup
+                      // render in lifecycle order rather than fetch order.
+                      const orderedLinks = [...chain.links].sort(
+                        (a, b) => (a.sequence_number ?? 0) - (b.sequence_number ?? 0),
+                      );
                       return (
-                        <tr key={chain.id} onClick={() => router.push(`/rentals/${chain.id}`)} className="table-row cursor-pointer"
-                          style={{
-                            borderBottom: "1px solid var(--t-border-subtle)",
-                            borderLeft: isCompleted ? "3px solid var(--t-success, #22c55e)" : "3px solid var(--t-accent)",
-                          }}>
-                          <td style={{ padding: "12px 16px 12px 12px" }}>
-                            {size ? (
-                              <span style={{ fontSize: 13, fontWeight: 800, color: "var(--t-text-primary)", background: "var(--t-accent-soft)", padding: "2px 7px", borderRadius: 5, whiteSpace: "nowrap" }}>
-                                {size.replace(/yd$/i, "Y").toUpperCase()}
-                              </span>
-                            ) : <span style={{ color: "var(--t-text-tertiary)" }}>&mdash;</span>}
-                          </td>
-                          <td style={{ padding: "12px 16px" }}>
-                            <p style={{ fontWeight: 600, fontSize: 13, color: "var(--t-text-primary)", lineHeight: 1.3 }}>{cName || <span style={{ color: "var(--t-text-tertiary)" }}>No customer</span>}</p>
-                            <p style={{ fontSize: 11, color: "var(--t-text-muted)", marginTop: 1 }}>{chain.links.map(l => formatJobNumber(l.job?.job_number)).filter(Boolean).join(" · ")}</p>
-                          </td>
-                          <td style={{ padding: "12px 16px", maxWidth: 220 }}>
-                            <span style={{ fontSize: 12, color: "var(--t-text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>{addr || "—"}</span>
-                          </td>
-                          <td style={{ padding: "12px 16px" }}>
-                            <span style={{ fontSize: 12, fontWeight: 500, color: "var(--t-text-primary)" }}>{chain.drop_off_date ? fmtDate(chain.drop_off_date) : "—"}</span>
-                          </td>
-                          <td style={{ padding: "12px 16px" }}>
-                            <span style={{ fontSize: 12, fontWeight: 500, color: "var(--t-text-primary)" }}>{chain.expected_pickup_date ? fmtDate(chain.expected_pickup_date) : "—"}</span>
-                          </td>
-                          <td style={{ padding: "12px 16px" }}>
-                            {(() => {
-                              const parts: string[] = [];
-                              const dropOff = chain.links.find(l => l.task_type === "drop_off");
-                              const pickUp = chain.links.find(l => l.task_type === "pick_up");
-                              if (dropOff?.job?.status === "completed") parts.push("Delivered");
-                              else if (dropOff) parts.push("Delivery pending");
-                              if (chain.links.some(l => l.task_type === "exchange")) parts.push("Exchange");
-                              if (pickUp?.job?.status === "completed") parts.push("Picked up");
-                              else if (pickUp) parts.push("Pickup pending");
-                              return <span style={{ fontSize: 11, color: "var(--t-text-muted)", lineHeight: 1.4 }}>{parts.join(" · ")}</span>;
-                            })()}
-                          </td>
-                          <td style={{ padding: "12px 16px" }}>
-                            <span style={{
-                              fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: 10,
-                              background: isCompleted ? "var(--t-bg-elevated)" : "var(--t-accent-soft)",
-                              color: isCompleted ? "var(--t-text-muted)" : "var(--t-accent)",
-                            }}>{lcStatus}</span>
-                          </td>
-                        </tr>
+                        <Fragment key={chain.id}>
+                          <tr
+                            onClick={() => toggleChain(chain.id)}
+                            className="table-row cursor-pointer"
+                            aria-expanded={isExpanded}
+                            style={{
+                              borderBottom: isExpanded ? "none" : "1px solid var(--t-border-subtle)",
+                              borderLeft: isCompleted ? "3px solid var(--t-success, #22c55e)" : "3px solid var(--t-accent)",
+                              background: isExpanded ? "var(--t-bg-card-hover)" : undefined,
+                            }}
+                          >
+                            <td style={{ padding: "12px 0 12px 8px", width: 32 }}>
+                              {isExpanded
+                                ? <ChevronDown className="h-3.5 w-3.5" style={{ color: "var(--t-text-muted)" }} />
+                                : <ChevronRight className="h-3.5 w-3.5" style={{ color: "var(--t-text-muted)" }} />}
+                            </td>
+                            <td style={{ padding: "12px 16px 12px 8px" }}>
+                              {size ? (
+                                <span style={{ fontSize: 13, fontWeight: 800, color: "var(--t-text-primary)", background: "var(--t-accent-soft)", padding: "2px 7px", borderRadius: 5, whiteSpace: "nowrap" }}>
+                                  {size.replace(/yd$/i, "Y").toUpperCase()}
+                                </span>
+                              ) : <span style={{ color: "var(--t-text-tertiary)" }}>&mdash;</span>}
+                            </td>
+                            <td style={{ padding: "12px 16px" }}>
+                              <p style={{ fontWeight: 600, fontSize: 13, color: "var(--t-text-primary)", lineHeight: 1.3 }}>{cName || <span style={{ color: "var(--t-text-tertiary)" }}>No customer</span>}</p>
+                              <p style={{ fontSize: 11, color: "var(--t-text-muted)", marginTop: 1 }}>
+                                {completedTasks}/{totalTasks} {totalTasks === 1 ? "task" : "tasks"}
+                              </p>
+                            </td>
+                            <td style={{ padding: "12px 16px", maxWidth: 220 }}>
+                              <span style={{ fontSize: 12, color: "var(--t-text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>{addr || "—"}</span>
+                            </td>
+                            <td style={{ padding: "12px 16px" }}>
+                              <span style={{ fontSize: 12, fontWeight: 500, color: "var(--t-text-primary)" }}>{chain.drop_off_date ? fmtDate(chain.drop_off_date) : "—"}</span>
+                            </td>
+                            <td style={{ padding: "12px 16px" }}>
+                              <span style={{ fontSize: 12, fontWeight: 500, color: "var(--t-text-primary)" }}>{chain.expected_pickup_date ? fmtDate(chain.expected_pickup_date) : "—"}</span>
+                            </td>
+                            <td style={{ padding: "12px 16px" }}>
+                              {(() => {
+                                const parts: string[] = [];
+                                const dropOff = chain.links.find(l => l.task_type === "drop_off");
+                                const pickUp = chain.links.find(l => l.task_type === "pick_up");
+                                if (dropOff?.job?.status === "completed") parts.push("Delivered");
+                                else if (dropOff) parts.push("Delivery pending");
+                                if (chain.links.some(l => l.task_type === "exchange")) parts.push("Exchange");
+                                if (pickUp?.job?.status === "completed") parts.push("Picked up");
+                                else if (pickUp) parts.push("Pickup pending");
+                                return <span style={{ fontSize: 11, color: "var(--t-text-muted)", lineHeight: 1.4 }}>{parts.join(" · ")}</span>;
+                              })()}
+                            </td>
+                            <td style={{ padding: "12px 16px" }}>
+                              <div className="flex items-center gap-2 justify-between">
+                                <span style={{
+                                  fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: 10,
+                                  background: isCompleted ? "var(--t-bg-elevated)" : "var(--t-accent-soft)",
+                                  color: isCompleted ? "var(--t-text-muted)" : "var(--t-accent)",
+                                }}>{lcStatus}</span>
+                                <button
+                                  type="button"
+                                  onClick={(e) => { e.stopPropagation(); router.push(`/rentals/${chain.id}`); }}
+                                  className="p-1 rounded transition-colors"
+                                  style={{ color: "var(--t-text-muted)" }}
+                                  aria-label={FEATURE_REGISTRY.view_lifecycle?.label ?? "View full lifecycle"}
+                                  title={FEATURE_REGISTRY.view_lifecycle?.label ?? "View full lifecycle"}
+                                  onMouseEnter={(e) => { e.currentTarget.style.color = "var(--t-accent)"; }}
+                                  onMouseLeave={(e) => { e.currentTarget.style.color = "var(--t-text-muted)"; }}
+                                >
+                                  <ArrowRight className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                          {isExpanded && orderedLinks.map((link, idx) => {
+                            const childJob = link.job;
+                            if (!childJob) return null;
+                            const childDisplay = deriveDisplayStatus(childJob.status);
+                            const isLastChild = idx === orderedLinks.length - 1;
+                            return (
+                              <tr
+                                key={`${chain.id}-child-${link.job_id}`}
+                                onClick={() => router.push(`/jobs/${childJob.id}`)}
+                                className="table-row cursor-pointer"
+                                style={{
+                                  borderBottom: isLastChild ? "1px solid var(--t-border-subtle)" : "1px solid var(--t-border-subtle)",
+                                  borderLeft: isCompleted ? "3px solid var(--t-success, #22c55e)" : "3px solid var(--t-accent)",
+                                  background: "var(--t-bg-secondary, var(--t-bg-card))",
+                                }}
+                              >
+                                <td />
+                                <td colSpan={2} style={{ padding: "8px 16px 8px 32px" }}>
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--t-text-muted)" }}>
+                                      {link.task_type === "drop_off" ? "Delivery"
+                                        : link.task_type === "pick_up" ? "Pickup"
+                                          : link.task_type === "exchange" ? "Exchange"
+                                            : link.task_type}
+                                    </span>
+                                    <span className="text-xs font-medium" style={{ color: "var(--t-text-primary)" }}>
+                                      {formatJobNumber(childJob.job_number)}
+                                    </span>
+                                  </div>
+                                </td>
+                                <td style={{ padding: "8px 16px", fontSize: 11, color: "var(--t-text-muted)" }}>
+                                  {childJob.asset_subtype || "—"}
+                                </td>
+                                <td style={{ padding: "8px 16px", fontSize: 11, color: "var(--t-text-primary)" }}>
+                                  {link.scheduled_date ? fmtDate(link.scheduled_date) : "—"}
+                                </td>
+                                <td />
+                                <td style={{ padding: "8px 16px", fontSize: 10, color: "var(--t-text-muted)" }}>
+                                  {/* intentionally empty — task-type summary already in the label */}
+                                </td>
+                                <td style={{ padding: "8px 16px" }}>
+                                  <span className="text-[10px] font-medium" style={{ color: displayStatusColor(childDisplay) }}>
+                                    {DISPLAY_STATUS_LABELS[childDisplay]}
+                                  </span>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </Fragment>
                       );
                     })}
                   </tbody>
