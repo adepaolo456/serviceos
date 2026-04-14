@@ -1,7 +1,7 @@
 import { Controller, Get, Post, Patch, Param, Body, Query, UseGuards, Req } from '@nestjs/common';
 import { PortalAuthGuard } from './portal.guard';
 import { PortalService } from './portal.service';
-import { ServiceRequestDto, ExtendRentalDto, UpdatePortalProfileDto, SignAgreementDto, ChangePasswordDto } from './portal.dto';
+import { ServiceRequestDto, ChangePickupDateDto, UpdatePortalProfileDto, SignAgreementDto, ChangePasswordDto } from './portal.dto';
 import type { Request } from 'express';
 
 interface PortalUser {
@@ -38,10 +38,22 @@ export class PortalController {
     return this.portalService.submitServiceRequest(user.customerId, user.tenantId, dto);
   }
 
-  @Post('rentals/:id/extend')
-  extendRental(@Req() req: Request, @Param('id') id: string, @Body() dto: ExtendRentalDto) {
+  // Canonical route — "Change Pickup Date" is the user-facing
+  // framing; the underlying behavior is identical to the legacy
+  // /extend route, which is preserved below as a backward-compat
+  // alias for older portal clients still in the wild.
+  @Post('rentals/:id/change-pickup-date')
+  changePickupDate(@Req() req: Request, @Param('id') id: string, @Body() dto: ChangePickupDateDto) {
     const user = req.user as PortalUser;
-    return this.portalService.extendRental(user.customerId, user.tenantId, id, dto.newEndDate);
+    return this.portalService.changePickupDate(user.customerId, user.tenantId, id, dto.newEndDate);
+  }
+
+  // Backward-compatible alias. Do not remove without a portal
+  // client audit — older bundles still POST to /extend.
+  @Post('rentals/:id/extend')
+  extendRentalLegacyAlias(@Req() req: Request, @Param('id') id: string, @Body() dto: ChangePickupDateDto) {
+    const user = req.user as PortalUser;
+    return this.portalService.changePickupDate(user.customerId, user.tenantId, id, dto.newEndDate);
   }
 
   @Post('rentals/:id/early-pickup')

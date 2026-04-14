@@ -7,9 +7,11 @@
  * same behavior, validation, and labels are guaranteed across surfaces.
  *
  * This replaces the previous two-option intro (Extend / Request Early
- * Pickup) with a single date picker. The `POST /portal/rentals/:id/extend`
- * endpoint is reused as-is; no backend changes. The dedicated
- * `/portal/rentals/:id/early-pickup` endpoint still exists on the API
+ * Pickup) with a single date picker. Calls
+ * `POST /portal/rentals/:id/change-pickup-date` — the canonical route.
+ * The legacy `/portal/rentals/:id/extend` route still exists on the API
+ * as a backward-compat alias for older portal bundles. The dedicated
+ * `/portal/rentals/:id/early-pickup` endpoint also still exists
  * (preserved — no removal), it is simply no longer reachable from the
  * portal UI because the "Request Early Pickup" framing was confusing
  * next to the parent modal title.
@@ -72,7 +74,7 @@ export default function PortalChangePickupDateModal<T extends RentalLike>({
     if (!newDate) return;
     setSubmitting(true);
     try {
-      await portalApi.post(`/portal/rentals/${rental.id}/extend`, { newEndDate: newDate });
+      await portalApi.post(`/portal/rentals/${rental.id}/change-pickup-date`, { newEndDate: newDate });
       onSuccess({ ...(rental as Partial<T>), rental_end_date: newDate } as Partial<T> & { rental_end_date: string });
       onClose();
     } catch (err: unknown) {

@@ -7,7 +7,7 @@ import { useEffect, useRef } from "react";
  *
  * The rentals lifecycle page calls `broadcastLifecycleChange()` after
  * any mutation (delivery edit, pickup edit, exchange create/edit,
- * extend, status change). Views that render lifecycle-derived data —
+ * change pickup date, status change). Views that render lifecycle-derived data —
  * the dispatch board, driver route, job list — subscribe via
  * `useLifecycleSync` and refetch immediately.
  *

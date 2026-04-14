@@ -14,8 +14,9 @@ import { Invoice } from '../billing/entities/invoice.entity';
 import { Payment } from '../billing/entities/payment.entity';
 import { Tenant } from '../tenants/entities/tenant.entity';
 // Phase B1 — PortalService reads from these two tables to locate the
-// active pickup job for a customer-initiated extend / early-pickup /
-// reschedule. The actual mutation is delegated to JobsService.
+// active pickup job for a customer-initiated change-pickup-date /
+// early-pickup / reschedule. The actual mutation is delegated to
+// JobsService.
 import { RentalChain } from '../rental-chains/entities/rental-chain.entity';
 import { TaskChainLink } from '../rental-chains/entities/task-chain-link.entity';
 import { PricingModule } from '../pricing/pricing.module';
