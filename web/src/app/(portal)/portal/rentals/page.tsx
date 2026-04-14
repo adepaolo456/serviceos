@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import Link from "next/link";
 import { portalApi } from "@/lib/portal-api";
 import { formatCurrency } from "@/lib/utils";
@@ -8,6 +8,7 @@ import { formatDateOnly } from "@/lib/utils/format-date";
 import { deriveCustomerTimeline, formatRentalTitle, rentalSizeLabel, formatJobNumber, type CustomerTimelineStep } from "@/lib/job-status";
 import { FEATURE_REGISTRY } from "@/lib/feature-registry";
 import { Package, Calendar, MapPin, ChevronRight, Search, X } from "lucide-react";
+import { saveListViewState, useListViewScrollRestore } from "@/lib/list-view-state";
 
 interface Rental {
   id: string;
@@ -103,15 +104,58 @@ const STATUS_LABELS: Record<string, string> = {
 // at the dynamic route /portal/rentals/[id] so list and detail are
 // distinct pathnames, eliminating the Next.js same-pathname search-param
 // reactivity bug that trapped users inside the detail view.
+// List-view-state key — namespaced to the portal so it can never
+// collide with the tenant-side `/customers`, `/invoices`, `/jobs`
+// keys that use the same shared util. sessionStorage is per-tab
+// per-origin so tenant and portal already live in separate scopes
+// in most setups, but the distinct page key is belt + suspenders.
+const PORTAL_RENTALS_LIST_KEY = "/portal/rentals";
+
+interface PortalRentalsListExtra {
+  tab: TabKey;
+  query: string;
+}
+
 export default function PortalRentalsPage() {
   const [rentals, setRentals] = useState<Rental[]>([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<TabKey>("Active");
   const [query, setQuery] = useState("");
 
+  // Ref-backed current tab + query so the Link onClick handlers
+  // always snapshot the LATEST values without being re-created on
+  // every keystroke. Saves the filter context alongside scroll so
+  // returning from a rental detail lands the user at the same
+  // Active/Upcoming/Completed/All tab and the same search query.
+  const tabRef = useRef<TabKey>(tab);
+  useEffect(() => { tabRef.current = tab; }, [tab]);
+  const queryRef = useRef<string>(query);
+  useEffect(() => { queryRef.current = query; }, [query]);
+
+  const snapshotListState = useCallback(() => {
+    saveListViewState<PortalRentalsListExtra>(PORTAL_RENTALS_LIST_KEY, {
+      tab: tabRef.current,
+      query: queryRef.current,
+    });
+  }, []);
+
   useEffect(() => {
     portalApi.get<Rental[]>("/portal/rentals").then(setRentals).catch(() => {}).finally(() => setLoading(false));
   }, []);
+
+  // Restore tab + search + scroll position when returning from a
+  // rental detail. Gated on `!loading` so the fetched rentals are
+  // in place before we try to scroll into them. `onExtra` fires
+  // synchronously inside the effect so tab/query state is applied
+  // before the deferred `requestAnimationFrame` scroll lands.
+  useListViewScrollRestore<PortalRentalsListExtra>(
+    PORTAL_RENTALS_LIST_KEY,
+    !loading,
+    useCallback((extra: PortalRentalsListExtra) => {
+      if (extra?.tab) setTab(extra.tab);
+      if (typeof extra?.query === "string") setQuery(extra.query);
+    }, []),
+  );
 
   const tabFiltered = useMemo(() => rentals.filter(r => {
     if (tab === "All") return true;
@@ -228,6 +272,7 @@ export default function PortalRentalsPage() {
               <Link
                 key={r.id}
                 href={`/portal/rentals/${r.id}`}
+                onClick={snapshotListState}
                 className="block w-full text-left rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-3.5 sm:p-4 hover:bg-[var(--t-bg-card-hover)] transition-colors min-w-0"
               >
                 <div className="flex items-center justify-between gap-3 min-w-0">
