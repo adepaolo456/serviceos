@@ -361,4 +361,26 @@ export class JobsController {
   ) {
     return this.jobsService.createDumpRun(tenantId, body);
   }
+
+  // Driver Task V1 — internal one-off operational task for a driver
+  // (bring truck to repair shop, yard errand, etc). Reuses the jobs
+  // table with `job_type = 'driver_task'` so the dispatch board and
+  // driver route work without new scaffolding. See
+  // `JobsService.createDriverTask` for scope notes.
+  @Post('driver-task')
+  @ApiOperation({ summary: 'Create an internal driver task (V1)' })
+  createDriverTask(
+    @TenantId() tenantId: string,
+    @Body()
+    body: {
+      title: string;
+      assignedDriverId?: string | null;
+      scheduledDate: string;
+      timeWindow?: string;
+      serviceAddress?: Record<string, unknown> | null;
+      notes?: string | null;
+    },
+  ) {
+    return this.jobsService.createDriverTask(tenantId, body);
+  }
 }
