@@ -739,7 +739,13 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
   if (!job) return <div className="flex items-center justify-center py-32 text-[var(--t-text-muted)]">Job not found</div>;
 
   const addr = job.service_address;
-  const transitions = (VALID_TRANSITIONS[job.status] || []).filter((t) => t !== "dispatched" || !!job.assigned_driver);
+  // Hide the "Assign" CTA (which is the `dispatched` transition,
+  // per TRANSITION_STYLES above) when a driver is already live on
+  // the job. Previous logic was inverted — `|| !!job.assigned_driver`
+  // kept the button visible *only when* already assigned, exactly
+  // backwards. Gated on the same truth the lifecycle chip uses:
+  // the live `assigned_driver` relation on the job payload.
+  const transitions = (VALID_TRANSITIONS[job.status] || []).filter((t) => t !== "dispatched" || !job.assigned_driver);
   // Lifecycle timeline step index is derived from the LIVE display
   // status, not from the raw `status` column. Previously this used
   // `findIndex(s => s.status === job.status)` which meant a job
