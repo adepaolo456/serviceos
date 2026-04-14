@@ -27,6 +27,7 @@ import { useToast } from "@/components/toast";
 import { useTenantTimezone } from "@/lib/use-modules";
 import { getTenantToday, getTenantNowParts } from "@/lib/utils/tenantDate";
 import { formatJobNumber } from "@/lib/job-status";
+import { saveListViewState, useListViewScrollRestore } from "@/lib/list-view-state";
 
 /* --- Types --- */
 
@@ -282,6 +283,10 @@ function InvoicesPageContent() {
   useEffect(() => { fetchInvoices(); }, [fetchInvoices]);
   useEffect(() => { fetchAllInvoices(); }, [fetchAllInvoices]);
   useEffect(() => { setPage(1); }, [tab, dateRange]);
+
+  // Restore scroll position when returning from an invoice detail
+  // page. Runs exactly once after the list first finishes loading.
+  useListViewScrollRestore("/invoices", !loading);
 
   // Tab counts + dollar amounts
   const tabStats = useMemo(() => {
@@ -550,7 +555,7 @@ function InvoicesPageContent() {
             return (
               <button
                 key={inv.id}
-                onClick={() => router.push(`/invoices/${inv.id}`)}
+                onClick={() => { saveListViewState("/invoices", {}); router.push(`/invoices/${inv.id}`); }}
                 className="w-full flex items-center gap-4 rounded-[20px] border px-5 py-3.5 text-left transition-all duration-150"
                 style={{
                   background: "var(--t-bg-card)",

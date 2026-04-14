@@ -104,6 +104,7 @@ interface PriceQuote { breakdown: { basePrice: number; total: number; tax: numbe
 /* ─── Constants ─── */
 
 import { deriveDisplayStatus, DISPLAY_STATUS_LABELS, displayStatusColor, formatJobNumber } from "@/lib/job-status";
+import { saveListViewState, useListViewScrollRestore } from "@/lib/list-view-state";
 
 const STATUS_LABELS: Record<string, string> = {
   all: "All", overdue: "Overdue",
@@ -272,6 +273,19 @@ function JobsPageContent() {
       return next;
     });
   }, []);
+  // List view state persistence — called right before every
+  // navigation to a detail page so returning via Back lands the
+  // user at the same scroll position with the same chain expanded.
+  // See `web/src/lib/list-view-state.ts`. Ref-backed so the closure
+  // captured by row handlers always sees the latest expansion set
+  // without having to be recreated on every toggle.
+  const expandedChainsRef = useRef<Set<string>>(expandedChains);
+  useEffect(() => { expandedChainsRef.current = expandedChains; }, [expandedChains]);
+  const snapshotListState = useCallback(() => {
+    saveListViewState<{ expandedChainIds: string[] }>("/jobs", {
+      expandedChainIds: Array.from(expandedChainsRef.current),
+    });
+  }, []);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [panelOpen, setPanelOpen] = useState(false);
@@ -376,6 +390,21 @@ function JobsPageContent() {
   }, [page, statusFilter, dateRange, timezone]);
 
   useEffect(() => { fetchJobs(); }, [fetchJobs]);
+
+  // Restore scroll + expanded-row state when returning from a
+  // detail page. Runs exactly once per mount after both fetches
+  // complete — the chains must be in place before we can re-expand
+  // them, and the DOM must have reflowed with the expanded children
+  // before the scroll restore lands on the right position.
+  useListViewScrollRestore<{ expandedChainIds: string[] }>(
+    "/jobs",
+    !loading && !chainsLoading,
+    useCallback((extra: { expandedChainIds: string[] }) => {
+      if (extra?.expandedChainIds?.length) {
+        setExpandedChains(new Set(extra.expandedChainIds));
+      }
+    }, []),
+  );
 
   // Phase 9: lifecycle mutations elsewhere (rentals lifecycle page,
   // other tabs) should invalidate this list so a job that moved off
@@ -802,7 +831,7 @@ function JobsPageContent() {
                                 }}>{lcStatus}</span>
                                 <button
                                   type="button"
-                                  onClick={(e) => { e.stopPropagation(); router.push(`/rentals/${chain.id}`); }}
+                                  onClick={(e) => { e.stopPropagation(); snapshotListState(); router.push(`/rentals/${chain.id}`); }}
                                   className="p-1 rounded transition-colors"
                                   style={{ color: "var(--t-text-muted)" }}
                                   aria-label={FEATURE_REGISTRY.view_lifecycle?.label ?? "View full lifecycle"}
@@ -823,7 +852,7 @@ function JobsPageContent() {
                             return (
                               <tr
                                 key={`${chain.id}-child-${link.job_id}`}
-                                onClick={() => router.push(`/jobs/${childJob.id}`)}
+                                onClick={() => { snapshotListState(); router.push(`/jobs/${childJob.id}`); }}
                                 className="table-row cursor-pointer"
                                 style={{
                                   borderBottom: isLastChild ? "1px solid var(--t-border-subtle)" : "1px solid var(--t-border-subtle)",
@@ -899,7 +928,7 @@ function JobsPageContent() {
                         const address = fmtAddress(job.service_address);
                         const displayStatus = deriveDisplayStatus(job.status);
                         return (
-                          <tr key={job.id} onClick={() => router.push(`/jobs/${job.id}`)} className="table-row cursor-pointer"
+                          <tr key={job.id} onClick={() => { snapshotListState(); router.push(`/jobs/${job.id}`); }} className="table-row cursor-pointer"
                             style={{ borderBottom: "1px solid var(--t-border-subtle)", borderLeft: "3px solid var(--t-border)" }}>
                             <td style={{ padding: "10px 16px 10px 12px" }}>
                               {(job.asset_subtype || job.asset?.subtype) ? (
