@@ -13,6 +13,7 @@ import SlideOver from "@/components/slide-over";
 import Dropdown from "@/components/dropdown";
 import AddressAutocomplete, { type AddressValue } from "@/components/address-autocomplete";
 import NewCustomerForm, { NEW_CUSTOMER_LABELS, type OrchestrationResult } from "@/components/new-customer-form";
+import { saveListViewState, useListViewScrollRestore } from "@/lib/list-view-state";
 
 /* ---- Types ---- */
 
@@ -95,6 +96,11 @@ export default function CustomersPage() {
 
   useEffect(() => { fetchCustomers(); }, [fetchCustomers]);
   useEffect(() => { setPage(1); }, [search, typeFilter]);
+
+  // Restore scroll position when returning from a customer detail
+  // page. Customers list has no expandable rows so the extra
+  // payload is empty. Runs exactly once after the list first loads.
+  useListViewScrollRestore("/customers", !loading);
 
   const handleDelete = async (id: string, name: string) => {
     if (!confirm(`Delete "${name}"?`)) return;
@@ -275,7 +281,7 @@ export default function CustomersPage() {
                 sorted.map((c) => (
                   <tr
                     key={c.id}
-                    onClick={() => router.push(`/customers/${c.id}`)}
+                    onClick={() => { saveListViewState("/customers", {}); router.push(`/customers/${c.id}`); }}
                     style={{
                       borderBottom: "1px solid var(--t-border)",
                       cursor: "pointer",
