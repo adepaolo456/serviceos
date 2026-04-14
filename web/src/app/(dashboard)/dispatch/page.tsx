@@ -210,6 +210,12 @@ const TYPE_CONFIG: Record<string, { letter: string; stripe: string }> = {
   pickup: { letter: "P", stripe: "var(--t-warning)" },
   exchange: { letter: "E", stripe: "#a78bfa" },
   dump_run: { letter: "DR", stripe: "var(--t-error)" },
+  // Driver Task V1 — distinct teal stripe + "T" letter so dispatchers
+  // instantly recognize these as internal operational items, not
+  // customer lifecycle jobs. The letter and stripe are the ONLY
+  // visual distinction; the rest of the tile renders normally
+  // through the existing JobTile components.
+  driver_task: { letter: "T", stripe: "#14b8a6" },
 };
 
 // Phase 2 polish — registry IDs for the dispatch prepayment override
@@ -347,6 +353,13 @@ export default function DispatchPage() {
   const [blockedOverrideOtherMode, setBlockedOverrideOtherMode] = useState(false);
   const [blockedOverrideReason, setBlockedOverrideReason] = useState("");
   const [blockedOverriding, setBlockedOverriding] = useState(false);
+  // Driver Task V1 — slide-over create state. Opened via the "New Task"
+  // button next to Optimize Routes on the dispatch top bar. See
+  // `NewTaskDrawer` component below the main page component.
+  const [newTaskOpen, setNewTaskOpen] = useState<null | {
+    defaultDriverId?: string;
+    defaultDate: string;
+  }>(null);
   const lastClickedRef = useRef<string | null>(null);
   const saveOrderTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { toast } = useToast();
@@ -848,6 +861,18 @@ export default function DispatchPage() {
               style={{ borderColor: "var(--t-border)", color: "var(--t-frame-text-muted)" }}>
               {showColumns ? <MapIcon className="h-3.5 w-3.5" /> : <LayoutDashboard className="h-3.5 w-3.5" />}
               {showColumns ? "Map View" : "Show Columns"}
+            </button>
+            {/* Driver Task V1 — New Task opens a slide-over form that
+                posts to `/jobs/driver-task`. Placed next to Optimize
+                Routes because both are dispatch-first actions that
+                operate on the currently-visible day. */}
+            <button
+              onClick={() => setNewTaskOpen({ defaultDate: date })}
+              className="flex items-center gap-1.5 rounded-full px-3 py-2 text-xs font-medium border"
+              style={{ borderColor: "var(--t-border)", color: "var(--t-frame-text-muted)" }}
+              title={FEATURE_REGISTRY.dispatch_new_task_cta?.shortDescription ?? "Create an internal driver task"}
+            >
+              <Plus className="h-3.5 w-3.5" /> {FEATURE_REGISTRY.dispatch_new_task_cta?.label ?? "New Task"}
             </button>
             <button onClick={handleOptimize} disabled={optimizing} className="flex items-center gap-1.5 rounded-full px-3.5 py-2 text-xs font-semibold active:scale-95 disabled:opacity-50" style={{ background: "var(--t-accent)", color: "var(--t-accent-on-accent)" }}>
               <Zap className={`h-3.5 w-3.5 ${optimizing ? "animate-spin" : ""}`} /> {optimizing ? "Optimizing…" : "Optimize Routes"}
@@ -1454,7 +1479,224 @@ export default function DispatchPage() {
           )}
         </div>
       </QuickView>
+
+      {/* Driver Task V1 — create drawer */}
+      {newTaskOpen && (
+        <NewTaskDrawer
+          drivers={board?.drivers || []}
+          defaultDriverId={newTaskOpen.defaultDriverId}
+          defaultDate={newTaskOpen.defaultDate}
+          onClose={() => setNewTaskOpen(null)}
+          onCreated={async () => {
+            setNewTaskOpen(null);
+            toast("success", FEATURE_REGISTRY.dispatch_new_task_created?.label ?? "Task created");
+            await fetchBoard(true);
+          }}
+          onError={(msg) => toast("error", msg)}
+        />
+      )}
     </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════
+   Driver Task V1 — create drawer
+   ═══════════════════════════════════════════════════
+
+   Lightweight slide-over launched from the dispatch top bar. Posts to
+   `/jobs/driver-task` which creates a job with `job_type =
+   'driver_task'` — the same precedent as `createDumpRun`. The drawer
+   intentionally keeps V1 lean: title, driver, date, optional address,
+   optional notes. No billing, no customer, no lifecycle integration.
+*/
+function NewTaskDrawer({
+  drivers,
+  defaultDriverId,
+  defaultDate,
+  onClose,
+  onCreated,
+  onError,
+}: {
+  drivers: Array<{ driver: { id: string; firstName: string; lastName: string } }>;
+  defaultDriverId?: string;
+  defaultDate: string;
+  onClose: () => void;
+  onCreated: () => void;
+  onError: (msg: string) => void;
+}) {
+  const [title, setTitle] = useState("");
+  const [driverId, setDriverId] = useState<string>(defaultDriverId || "");
+  const [scheduledDate, setScheduledDate] = useState(defaultDate);
+  const [address, setAddress] = useState("");
+  const [notes, setNotes] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const inputCls =
+    "w-full rounded-[14px] border bg-[var(--t-bg-card)] border-[var(--t-border)] px-4 py-2.5 text-sm text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)]";
+  const labelCls =
+    "block text-[11px] font-semibold uppercase tracking-wide mb-1.5 text-[var(--t-text-muted)]";
+
+  const handleSubmit = async () => {
+    const trimmed = title.trim();
+    if (!trimmed) {
+      onError(FEATURE_REGISTRY.dispatch_new_task_title_required?.label ?? "Task title is required");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await api.post("/jobs/driver-task", {
+        title: trimmed,
+        assignedDriverId: driverId || null,
+        scheduledDate,
+        serviceAddress: address.trim()
+          ? { street: address.trim() }
+          : null,
+        notes: notes.trim() || null,
+      });
+      onCreated();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to create task";
+      onError(msg);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[9999] flex items-stretch justify-end bg-black/50"
+      onClick={onClose}
+    >
+      <div
+        className="h-full w-full max-w-md overflow-y-auto border-l"
+        style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="sticky top-0 z-10 flex items-center justify-between border-b px-5 py-4"
+          style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)" }}>
+          <div>
+            <h2 className="text-base font-bold text-[var(--t-text-primary)]">
+              {FEATURE_REGISTRY.dispatch_new_task_drawer_title?.label ?? "New Driver Task"}
+            </h2>
+            <p className="text-[11px] mt-0.5 text-[var(--t-text-muted)]">
+              {FEATURE_REGISTRY.dispatch_new_task_drawer_subtitle?.shortDescription
+                ?? "Internal one-off task — not a customer rental job."}
+            </p>
+          </div>
+          <button onClick={onClose} className="p-1 rounded hover:bg-[var(--t-bg-card-hover)]">
+            <X className="h-4 w-4 text-[var(--t-text-muted)]" />
+          </button>
+        </div>
+
+        <div className="p-5 space-y-4">
+          <div>
+            <label className={labelCls}>
+              {FEATURE_REGISTRY.dispatch_new_task_field_title?.label ?? "Task Title"}
+              <span className="text-[var(--t-error, #ef4444)] ml-0.5">*</span>
+            </label>
+            <input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder={
+                FEATURE_REGISTRY.dispatch_new_task_field_title_placeholder?.label
+                  ?? "e.g. Bring truck to Smith Auto Repair"
+              }
+              className={inputCls}
+              autoFocus
+            />
+          </div>
+
+          <div>
+            <label className={labelCls}>
+              {FEATURE_REGISTRY.dispatch_new_task_field_driver?.label ?? "Assigned Driver"}
+            </label>
+            <select
+              value={driverId}
+              onChange={(e) => setDriverId(e.target.value)}
+              className={inputCls}
+            >
+              <option value="">Unassigned</option>
+              {drivers.map((d) => (
+                <option key={d.driver.id} value={d.driver.id}>
+                  {d.driver.firstName} {d.driver.lastName}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className={labelCls}>
+              {FEATURE_REGISTRY.dispatch_new_task_field_date?.label ?? "Scheduled Date"}
+            </label>
+            <input
+              type="date"
+              value={scheduledDate}
+              onChange={(e) => setScheduledDate(e.target.value)}
+              className={inputCls}
+            />
+          </div>
+
+          <div>
+            <label className={labelCls}>
+              {FEATURE_REGISTRY.dispatch_new_task_field_address?.label ?? "Address / Location"}
+              <span className="text-[10px] font-normal text-[var(--t-text-muted)] ml-1 normal-case">
+                (optional)
+              </span>
+            </label>
+            <input
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
+              placeholder={
+                FEATURE_REGISTRY.dispatch_new_task_field_address_placeholder?.label
+                  ?? "e.g. 123 Shop Ln, Portland, ME"
+              }
+              className={inputCls}
+            />
+          </div>
+
+          <div>
+            <label className={labelCls}>
+              {FEATURE_REGISTRY.dispatch_new_task_field_notes?.label ?? "Notes / Instructions"}
+              <span className="text-[10px] font-normal text-[var(--t-text-muted)] ml-1 normal-case">
+                (optional)
+              </span>
+            </label>
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              rows={4}
+              placeholder={
+                FEATURE_REGISTRY.dispatch_new_task_field_notes_placeholder?.label
+                  ?? "Any additional context for the driver…"
+              }
+              className={inputCls}
+              style={{ resize: "vertical" }}
+            />
+          </div>
+
+          <div className="flex gap-3 pt-2">
+            <button
+              onClick={handleSubmit}
+              disabled={submitting || !title.trim()}
+              className="flex-1 rounded-full py-3 text-sm font-bold disabled:opacity-40"
+              style={{ background: "var(--t-accent)", color: "var(--t-accent-on-accent)" }}
+            >
+              {submitting
+                ? (FEATURE_REGISTRY.dispatch_new_task_submit_busy?.label ?? "Creating…")
+                : (FEATURE_REGISTRY.dispatch_new_task_submit?.label ?? "Create Task")}
+            </button>
+            <button
+              onClick={onClose}
+              className="rounded-full px-6 py-3 text-sm font-medium border text-[var(--t-text-muted)]"
+              style={{ borderColor: "var(--t-border)" }}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body,
   );
 }
 

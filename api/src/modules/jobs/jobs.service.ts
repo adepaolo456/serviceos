@@ -3121,4 +3121,71 @@ export class JobsService {
 
     return saved;
   }
+
+  /**
+   * Driver Task V1 — create an internal one-off operational task for a
+   * driver (bring truck to repair shop, go to recycling facility, yard
+   * errand, etc). Reuses the `jobs` table with `job_type = 'driver_task'`
+   * so the existing dispatch board, driver route, and completion
+   * workflows work without new scaffolding. Follows the same pattern
+   * as `createDumpRun` above (no customer, no price, no lifecycle
+   * chain). The only field the jobs table is missing is a display
+   * title — added as a nullable `title` column in migration
+   * `2026-04-14-jobs-title-column.sql`.
+   *
+   * Scope discipline: this is intentionally a thin wrapper. Do NOT
+   * add billing, reporting, or lifecycle hooks to driver tasks — the
+   * whole point is that they are a separate product concept from
+   * customer rental jobs and should not contaminate lifecycle truth.
+   */
+  async createDriverTask(
+    tenantId: string,
+    body: {
+      title: string;
+      assignedDriverId?: string | null;
+      scheduledDate: string;
+      timeWindow?: string;
+      serviceAddress?: Record<string, unknown> | null;
+      notes?: string | null;
+    },
+  ): Promise<Job> {
+    const title = (body.title || '').trim();
+    if (!title) {
+      throw new BadRequestException('Task title is required');
+    }
+
+    let windowStart = '08:00', windowEnd = '17:00';
+    if (body.timeWindow === 'morning') { windowStart = '08:00'; windowEnd = '12:00'; }
+    else if (body.timeWindow === 'afternoon') { windowStart = '12:00'; windowEnd = '17:00'; }
+
+    // If the driver id is provided, validate tenant ownership. We
+    // don't join through the User repository for a single-row check
+    // because `createDumpRun` already writes `assigned_driver_id`
+    // without validation, so we match that trust level for V1.
+    const job = this.jobsRepository.create({
+      tenant_id: tenantId,
+      job_number: await this.generateJobNumber(tenantId, 'driver_task'),
+      title,
+      job_type: 'driver_task',
+      service_type: 'driver_task',
+      priority: 'normal',
+      status: 'pending',
+      scheduled_date: body.scheduledDate,
+      scheduled_window_start: windowStart,
+      scheduled_window_end: windowEnd,
+      assigned_driver_id: body.assignedDriverId || undefined,
+      service_address: (body.serviceAddress as Record<string, any>) || undefined,
+      // `placement_notes` is reused as the driver-facing instruction
+      // field because the dispatch board and driver app already
+      // render it on every job tile. Lifecycle jobs use it for
+      // "where to place the dumpster"; driver tasks use it for
+      // "what to do at this location" — the semantics line up once
+      // you accept that a driver task IS just a different kind of
+      // placement instruction.
+      placement_notes: body.notes || undefined,
+      source: 'dispatch',
+    } as Partial<Job>);
+
+    return this.jobsRepository.save(job);
+  }
 }

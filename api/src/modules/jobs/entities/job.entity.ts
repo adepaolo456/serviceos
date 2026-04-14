@@ -27,6 +27,15 @@ export class Job {
   @Column({ name: 'job_number' })
   job_number!: string;
 
+  // Driver Task V1 — optional human-readable title. Populated only
+  // for `job_type = 'driver_task'` records where there is no customer
+  // or service_type to derive a display name from. Lifecycle jobs
+  // leave this NULL and continue to derive their title from customer
+  // + asset_subtype + service_type. See migration
+  // `2026-04-14-jobs-title-column.sql`.
+  @Column({ type: 'text', nullable: true })
+  title!: string | null;
+
   @Column({ name: 'customer_id' })
   customer_id!: string;
 

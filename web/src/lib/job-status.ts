@@ -65,7 +65,7 @@ export const DISPLAY_STATUS_LABELS: Record<DisplayStatus, string> = {
 };
 
 /** Canonical job type identifiers (matches stored job.type values) */
-export type JobType = "delivery" | "pickup" | "exchange" | "dump_run";
+export type JobType = "delivery" | "pickup" | "exchange" | "dump_run" | "driver_task";
 
 /** Human-readable labels for job types — single source of truth for dispatch UI */
 export const JOB_TYPE_LABELS: Record<JobType, string> = {
@@ -73,6 +73,9 @@ export const JOB_TYPE_LABELS: Record<JobType, string> = {
   pickup: "Pick Up",
   exchange: "Exchange",
   dump_run: "Dump Run",
+  // Driver Task V1 — internal one-off operational items. See
+  // `JobsService.createDriverTask` in the api package.
+  driver_task: "Driver Task",
 };
 
 // ─────────────────────────────────────────────────────────────────

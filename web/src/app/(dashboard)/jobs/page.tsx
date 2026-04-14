@@ -552,8 +552,14 @@ function JobsPageContent() {
     // chip is actually useful, not just a filter on orphan jobs. The
     // chains section is hidden in this branch (see filteredChains
     // above) so there is no double-render.
-    if (jobTypeFilter.size > 0) return filteredJobs;
-    return filteredJobs.filter(j => !chainedJobIds.has(j.id));
+    //
+    // Driver Task V1 exclusion: driver_task jobs are internal
+    // operational items (yard errands, repair-shop runs, etc.) and
+    // should never appear on the Rental Lifecycles page. They live
+    // on the dispatch board instead. Filter them out unconditionally
+    // so the Rental Lifecycles view stays strictly lifecycle-focused.
+    const base = (jobTypeFilter.size > 0 ? filteredJobs : filteredJobs.filter(j => !chainedJobIds.has(j.id)));
+    return base.filter(j => j.job_type !== "driver_task");
   }, [filteredJobs, chainedJobIds, jobTypeFilter]);
 
   const thStyle: React.CSSProperties = { padding: "10px 16px", textAlign: "left", fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--t-text-muted)", whiteSpace: "nowrap" };
