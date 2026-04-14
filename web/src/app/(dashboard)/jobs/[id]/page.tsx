@@ -288,6 +288,14 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
   const [overrideOpen, setOverrideOpen] = useState(false);
   const [overrideTarget, setOverrideTarget] = useState("");
   const [overrideReason, setOverrideReason] = useState("");
+  // Refresh signal for <LifecycleContextPanel/>. Bumped after any
+  // mutation that can change a job's live status (override,
+  // forward transition, cancel) so the panel refetches the
+  // lifecycle-context response and node chips / timestamps
+  // reflect the post-mutation backend truth instead of stale
+  // cached data. Without this, the panel would keep rendering
+  // the pre-override node status until the user hard-reloaded.
+  const [lifecyclePanelRefresh, setLifecyclePanelRefresh] = useState(0);
   // Phase 15 — the full Connected Job Lifecycle (all chain jobs
   // + inline alerts) now lives inside <LifecycleContextPanel />,
   // which owns its own fetch to /jobs/:id/lifecycle-context. The
@@ -626,6 +634,7 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
         await api.patch(`/jobs/${id}/status`, { status: newStatus, cancellationReason: reason });
         toast("success", "Job cancelled");
         await fetchJob();
+        setLifecyclePanelRefresh((n) => n + 1);
       } catch { toast("error", "Failed to update"); } finally { setActionLoading(false); }
       return;
     }
@@ -634,6 +643,7 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
       await api.patch(`/jobs/${id}/status`, { status: newStatus });
       toast("success", `Job marked as ${DISPLAY_STATUS_LABELS[deriveDisplayStatus(newStatus)]}`);
       await fetchJob();
+      setLifecyclePanelRefresh((n) => n + 1);
     } catch { toast("error", "Failed to update"); } finally { setActionLoading(false); }
   };
 
@@ -649,6 +659,13 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
       toast("success", `Status overridden to ${DISPLAY_STATUS_LABELS[deriveDisplayStatus(overrideTarget)]}`);
       setOverrideOpen(false);
       await fetchJob();
+      // Override can move status BACKWARDS (e.g. en_route → dispatched).
+      // The lifecycle-context panel caches node rows internally, so it
+      // must be told to refetch — otherwise node chips stay stuck on
+      // the pre-override state even though the job detail header /
+      // timeline (which read from the freshly-fetched `job`) have
+      // already moved. See LifecycleContextPanel.refreshSignal.
+      setLifecyclePanelRefresh((n) => n + 1);
     } catch { toast("error", "Failed to override status"); } finally { setActionLoading(false); }
   };
 
@@ -1528,7 +1545,7 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
               rental-chain graph plus inline alerts. Rendered for
               every job; the panel itself handles the standalone
               empty state. */}
-          <LifecycleContextPanel jobId={id} />
+          <LifecycleContextPanel jobId={id} refreshSignal={lifecyclePanelRefresh} />
 
           {/* Driver Notes */}
           {job.driver_notes && (
