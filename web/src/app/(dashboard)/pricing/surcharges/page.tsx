@@ -1,12 +1,13 @@
 "use client";
 
 import { useState, useEffect, useCallback, type FormEvent } from "react";
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { ArrowLeft, Plus, Pencil, Trash2, DollarSign, Tag } from "lucide-react";
 import { api } from "@/lib/api";
 import SlideOver from "@/components/slide-over";
 import { useToast } from "@/components/toast";
 import { formatCurrency } from "@/lib/utils";
+import { navigateBack } from "@/lib/navigation";
 
 const fmt = (n: number) => formatCurrency(n);
 
@@ -20,6 +21,7 @@ interface SurchargeTemplate {
 }
 
 export default function SurchargeTemplatesPage() {
+  const router = useRouter();
   const [templates, setTemplates] = useState<SurchargeTemplate[]>([]);
   const [loading, setLoading] = useState(true);
   const [panelOpen, setPanelOpen] = useState(false);
@@ -51,9 +53,15 @@ export default function SurchargeTemplatesPage() {
 
   return (
     <div>
-      <Link href="/pricing" className="mb-6 inline-flex items-center gap-2 text-sm transition-colors" style={{ color: "var(--t-frame-text-muted)" }}>
+      {/* History-first back nav — see lib/navigation. */}
+      <button
+        type="button"
+        onClick={() => navigateBack(router, "/pricing")}
+        className="mb-6 inline-flex items-center gap-2 text-sm transition-colors"
+        style={{ color: "var(--t-frame-text-muted)" }}
+      >
         <ArrowLeft className="h-4 w-4" /> Back to Pricing
-      </Link>
+      </button>
 
       <div className="flex items-center justify-between mb-6">
         <div>

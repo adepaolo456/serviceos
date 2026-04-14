@@ -2,11 +2,13 @@
 
 import { useState, useEffect, use, type FormEvent } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { ArrowLeft, CarFront, User, Pencil, Wrench, Fuel, Shield, ChevronDown, ChevronUp, Plus, DollarSign, Calendar, Truck } from "lucide-react";
 import { api } from "@/lib/api";
 import { useToast } from "@/components/toast";
 import SlideOver from "@/components/slide-over";
 import { formatCurrency } from "@/lib/utils";
+import { navigateBack } from "@/lib/navigation";
 
 interface Employee {
   id: string; firstName: string; lastName: string; role: string;
@@ -49,6 +51,7 @@ const sampleFuel = [
 
 export default function VehicleDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
+  const router = useRouter();
   const { toast } = useToast();
   const [emp, setEmp] = useState<Employee | null>(null);
   const [loading, setLoading] = useState(true);
@@ -74,7 +77,14 @@ export default function VehicleDetailPage({ params }: { params: Promise<{ id: st
 
   return (
     <div className="space-y-5">
-      <Link href="/vehicles" className="inline-flex items-center gap-1.5 text-[13px] text-[var(--t-frame-text-muted)] hover:text-[var(--t-frame-text)] transition-colors"><ArrowLeft className="h-3.5 w-3.5" /> Vehicles</Link>
+      {/* History-first back nav — see lib/navigation. */}
+      <button
+        type="button"
+        onClick={() => navigateBack(router, "/vehicles")}
+        className="inline-flex items-center gap-1.5 text-[13px] text-[var(--t-frame-text-muted)] hover:text-[var(--t-frame-text)] transition-colors"
+      >
+        <ArrowLeft className="h-3.5 w-3.5" /> Vehicles
+      </button>
 
       {/* Header */}
       <div className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5">

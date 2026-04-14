@@ -10,6 +10,7 @@ import { formatCurrency } from "@/lib/utils";
 import { FEATURE_REGISTRY } from "@/lib/feature-registry";
 import { deriveDisplayStatus, DISPLAY_STATUS_LABELS, displayStatusColor } from "@/lib/job-status";
 import { broadcastLifecycleChange } from "@/lib/lifecycle-sync";
+import { navigateBack } from "@/lib/navigation";
 
 /* ── Types (from /rental-chains/:id/lifecycle response) ── */
 
@@ -453,8 +454,16 @@ export default function RentalLifecyclePage({ params }: { params: Promise<{ id: 
 
   return (
     <div className="space-y-6">
-      {/* Back */}
-      <button onClick={() => router.back()} className="flex items-center gap-1.5 text-sm text-[var(--t-accent)] font-medium hover:underline">
+      {/* History-first back nav. The previous implementation
+          called `router.back()` unconditionally, which did nothing
+          on direct URL access (fresh tab, deep link, hard reload).
+          Falls back to `/jobs` (the Rental Lifecycles hub) when
+          there is no real history to pop. */}
+      <button
+        type="button"
+        onClick={() => navigateBack(router, "/jobs")}
+        className="flex items-center gap-1.5 text-sm text-[var(--t-accent)] font-medium hover:underline"
+      >
         <ArrowLeft className="h-4 w-4" /> Back
       </button>
 

@@ -2,10 +2,12 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { ArrowLeft, CheckCircle2, XCircle, RefreshCw, ArrowRight } from "lucide-react";
 import { api } from "@/lib/api";
 import { FEATURE_REGISTRY } from "@/lib/feature-registry";
 import { useToast } from "@/components/toast";
+import { navigateBack } from "@/lib/navigation";
 
 /* ── Types (must mirror backend service exports) ── */
 
@@ -92,6 +94,7 @@ const TASK_COLORS: Record<string, string> = {
 /* ── Page ── */
 
 export default function LegacyBackfillPage() {
+  const router = useRouter();
   const { toast } = useToast();
   const [userRole, setUserRole] = useState<string | null>(null);
   const [audit, setAudit] = useState<AuditSummary | null>(null);
@@ -178,12 +181,17 @@ export default function LegacyBackfillPage() {
         <p className="text-sm text-[var(--t-text-muted)]">
           This page is restricted to the account owner.
         </p>
-        <Link
-          href="/"
+        {/* History-first back nav. Falls back to the dashboard root
+            when opened directly. The previous hardcoded `<Link>` was
+            one of the sites explicitly flagged by the back-nav audit
+            because it ignored real browser history. */}
+        <button
+          type="button"
+          onClick={() => navigateBack(router, "/")}
           className="inline-flex items-center gap-1 mt-3 text-[var(--t-accent)] hover:underline text-sm"
         >
-          <ArrowLeft className="h-3 w-3" /> Back to dashboard
-        </Link>
+          <ArrowLeft className="h-3 w-3" /> Back
+        </button>
       </div>
     );
   }
