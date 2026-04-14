@@ -86,8 +86,13 @@ const TABS = [
 
 type Tab = typeof TABS[number]["key"];
 
-/** Overview-tab interactive tile keys — drives the shared detail panel. */
-type OverviewTile = "jobs" | "revenue" | "avgValue" | "active" | "lastJob";
+/**
+ * Overview-tab interactive tile keys — drives the shared historical
+ * metrics drill-down panel. "active" used to be a tile here but it was
+ * promoted to an always-visible top-of-page card so operators no
+ * longer have to click a tile to see the customer's current state.
+ */
+type OverviewTile = "jobs" | "revenue" | "avgValue" | "lastJob";
 
 /* ---- Page ---- */
 
@@ -130,16 +135,16 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
     load();
   }, [id]);
 
-  // Default selected tile once jobs are loaded: Active if there are any
-  // active rentals, otherwise Jobs. Runs exactly once per customer load —
-  // after the user clicks a tile we keep their selection.
+  // Default the historical-metrics drill-down to "jobs" on first load.
+  // Pre-refactor this defaulted to "active" so the user would land
+  // looking at active rentals — but active rentals are now their own
+  // always-visible card at the top of the Overview tab, so the tiles
+  // no longer need to surface them. Users still manually click any
+  // tile to change the drill-down focus.
   useEffect(() => {
     if (loading || selectedTile !== null) return;
-    const hasActive = jobs.some(
-      (j) => !["completed", "cancelled"].includes(j.status),
-    );
-    setSelectedTile(hasActive ? "active" : "jobs");
-  }, [loading, jobs, selectedTile]);
+    setSelectedTile("jobs");
+  }, [loading, selectedTile]);
 
   const handleDelete = async () => {
     if (!confirm("Delete this customer?")) return;
@@ -171,6 +176,29 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
   const avgValue = customer.total_jobs > 0 ? Math.round(Number(customer.lifetime_revenue) / customer.total_jobs) : 0;
   const lastJob = jobs[0];
   const daysSinceLastJob = lastJob ? Math.floor((Date.now() - new Date(lastJob.scheduled_date || lastJob.created_at).getTime()) / 86400000) : null;
+
+  // Finance Snapshot derived fields — fed by the same `invoices` /
+  // `creditMemos` state the page already fetches. No extra network.
+  const pastDueCount = invoices.filter(
+    (i) => i.status === "overdue" || (i.due_date && i.due_date < new Date().toISOString().split("T")[0] && Number(i.balance_due) > 0),
+  ).length;
+  const lastPaidInvoice = invoices
+    .filter((i) => i.status === "paid")
+    .sort((a, b) => (b.created_at || "").localeCompare(a.created_at || ""))[0];
+  const lastPaymentAt = lastPaidInvoice ? lastPaidInvoice.created_at : null;
+
+  // Pick a representative service address for the Location card. Prefers
+  // the first geocoded entry (so the map can render); falls back to the
+  // first address on file; falls back to billing address; otherwise null.
+  const serviceAddresses = customer.service_addresses || [];
+  const primaryServiceAddr: Record<string, string> | null =
+    serviceAddresses.find((a) => (a as any).lat && (a as any).lng) ??
+    serviceAddresses[0] ??
+    (customer.billing_address?.street ? customer.billing_address : null);
+  const primaryServiceAddrHasCoords = Boolean(
+    primaryServiceAddr && (primaryServiceAddr as any).lat && (primaryServiceAddr as any).lng,
+  );
+  const L = CUSTOMER_DASHBOARD_LABELS;
 
   return (
     <div>
@@ -259,27 +287,197 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
           </div>
 
           <div className="lg:col-span-2 space-y-4">
-            {/* Location Map */}
-            {(() => {
-              const mapPins = (customer.service_addresses || [])
-                .filter((a: any) => a.lat && a.lng)
-                .map((a: any, i: number) => ({
-                  id: `svc-${i}`, lat: Number(a.lat), lng: Number(a.lng),
-                  type: "customer" as const, label: String(i + 1),
-                  popupContent: { title: a.street || "Service Address", subtitle: [a.city, a.state, a.zip].filter(Boolean).join(", ") },
-                }));
-              return mapPins.length > 0 ? (
-                <MapboxMap markers={mapPins} style={{ height: 200, width: "100%" }} interactive={false} showControls={false} />
-              ) : null;
-            })()}
-            {/* Interactive tiles — selecting a tile drives the shared detail panel below */}
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+            {/* ── Active Rentals card (always visible command-center) ── */}
+            <Card
+              title={L.overview.activeRentalsTitle}
+              action={
+                <Link
+                  href={`/jobs?customerId=${id}`}
+                  className="text-[10px] font-medium text-[var(--t-accent)] hover:underline"
+                >
+                  {L.overview.activeRentalsAllLabel} →
+                </Link>
+              }
+            >
+              {activeJobs.length === 0 ? (
+                <EmptyRow>{L.overview.activeRentalsEmpty}</EmptyRow>
+              ) : (
+                <div className="divide-y divide-[var(--t-border)] -mx-4">
+                  {activeJobs.slice(0, 5).map((j) => (
+                    <Link
+                      key={j.id}
+                      href={`/jobs/${j.id}`}
+                      className="flex items-center justify-between px-4 py-2 hover:bg-[var(--t-bg-card-hover)] transition-colors"
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="text-xs font-semibold text-[var(--t-text-primary)]">
+                          {formatJobNumber(j.job_number)}
+                        </span>
+                        <span className="text-[10px] text-[var(--t-text-muted)] capitalize">
+                          {j.job_type}
+                        </span>
+                        {j.asset && (
+                          <span className="text-[10px] text-[var(--t-text-muted)]">
+                            {j.asset.identifier}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        {j.scheduled_date && (
+                          <span className="text-[10px] text-[var(--t-text-muted)]">
+                            {j.scheduled_date}
+                          </span>
+                        )}
+                        <span
+                          className="text-[10px] font-medium"
+                          style={{ color: displayStatusColor(deriveDisplayStatus(j.status)) }}
+                        >
+                          {DISPLAY_STATUS_LABELS[deriveDisplayStatus(j.status)]}
+                        </span>
+                      </div>
+                    </Link>
+                  ))}
+                  {activeJobs.length > 5 && (
+                    <p className="px-4 pt-2 pb-0 text-[10px] text-[var(--t-text-muted)]">
+                      +{activeJobs.length - 5} more active
+                    </p>
+                  )}
+                </div>
+              )}
+            </Card>
+
+            {/* ── Location card (always visible, prominent map or fallback) ── */}
+            <Card title={L.overview.locationTitle}>
+              {primaryServiceAddr ? (
+                <div>
+                  <p className="text-sm font-semibold text-[var(--t-text-primary)]">
+                    {primaryServiceAddr.street || "—"}
+                  </p>
+                  <p className="text-xs text-[var(--t-text-muted)] mb-3">
+                    {[primaryServiceAddr.city, primaryServiceAddr.state, primaryServiceAddr.zip]
+                      .filter(Boolean)
+                      .join(", ") || "—"}
+                  </p>
+                  {primaryServiceAddrHasCoords ? (
+                    <div className="rounded-[14px] overflow-hidden border border-[var(--t-border)]">
+                      <MapboxMap
+                        markers={serviceAddresses
+                          .filter((a: any) => a.lat && a.lng)
+                          .map((a: any, i: number) => ({
+                            id: `svc-${i}`,
+                            lat: Number(a.lat),
+                            lng: Number(a.lng),
+                            type: "customer" as const,
+                            label: String(i + 1),
+                            popupContent: {
+                              title: a.street || "Service Address",
+                              subtitle: [a.city, a.state, a.zip].filter(Boolean).join(", "),
+                            },
+                          }))}
+                        style={{ height: 260, width: "100%" }}
+                        interactive={false}
+                        showControls={false}
+                      />
+                    </div>
+                  ) : (
+                    <p className="text-[11px] italic text-[var(--t-text-muted)]">
+                      {L.overview.locationNoCoordinates}
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <div>
+                  <p className="text-xs italic text-[var(--t-text-muted)]">
+                    {L.overview.locationEmpty}
+                  </p>
+                  <button
+                    onClick={() => setEditOpen(true)}
+                    className="mt-2 text-[11px] font-medium text-[var(--t-accent)] hover:underline"
+                  >
+                    {L.overview.locationAddCta} →
+                  </button>
+                </div>
+              )}
+            </Card>
+
+            {/* ── Finance Snapshot card ── */}
+            <Card
+              title={L.overview.financeTitle}
+              action={
+                <button
+                  onClick={() => setTab("billing")}
+                  className="text-[10px] font-medium text-[var(--t-accent)] hover:underline"
+                >
+                  {L.overview.financeViewBilling} →
+                </button>
+              }
+            >
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <p className="text-[10px] uppercase tracking-wider text-[var(--t-text-muted)] mb-0.5">
+                    {L.overview.financeBalanceLabel}
+                  </p>
+                  <p
+                    className="text-xl font-bold tabular-nums"
+                    style={{
+                      color:
+                        netBalance > 0
+                          ? "var(--t-error)"
+                          : netBalance < 0
+                            ? "var(--t-accent)"
+                            : "var(--t-text-primary)",
+                    }}
+                  >
+                    {netBalance < 0
+                      ? `-${fmtMoney(Math.abs(netBalance))}`
+                      : fmtMoney(netBalance)}
+                  </p>
+                  {netBalance < 0 && (
+                    <p className="text-[10px] text-[var(--t-accent)]">
+                      {L.overview.financeCreditAvailable}
+                    </p>
+                  )}
+                  {pastDueCount > 0 && (
+                    <p className="text-[10px] text-[var(--t-error)] mt-0.5">
+                      {pastDueCount} {L.overview.financePastDue}
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <p className="text-[10px] uppercase tracking-wider text-[var(--t-text-muted)] mb-0.5">
+                    {L.overview.financeLastPayment}
+                  </p>
+                  {lastPaymentAt ? (
+                    <>
+                      <p className="text-sm font-semibold text-[var(--t-text-primary)]">
+                        {timeAgo(lastPaymentAt)}
+                      </p>
+                      <p className="text-[10px] text-[var(--t-text-muted)]">
+                        {new Date(lastPaymentAt).toLocaleDateString()}
+                      </p>
+                    </>
+                  ) : (
+                    <p className="text-xs italic text-[var(--t-text-muted)]">
+                      {L.overview.financeNeverPaid}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </Card>
+
+            {/* ── Historical metrics drill-down — 4 tiles + shared panel ── */}
+            {/*
+             * These tiles drive a shared detail panel below. The
+             * "Active" tile that used to live here was promoted to
+             * the always-visible card above, so operators no longer
+             * need to click a tile to see current state.
+             */}
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
               {(
                 [
                   { key: "jobs" as const, label: CUSTOMER_DASHBOARD_LABELS.tile.jobs, value: customer.total_jobs },
                   { key: "revenue" as const, label: CUSTOMER_DASHBOARD_LABELS.tile.revenue, value: fmtMoneyShort(customer.lifetime_revenue) },
                   { key: "avgValue" as const, label: CUSTOMER_DASHBOARD_LABELS.tile.avgValue, value: `$${avgValue}` },
-                  { key: "active" as const, label: CUSTOMER_DASHBOARD_LABELS.tile.active, value: activeJobs.length },
                   { key: "lastJob" as const, label: CUSTOMER_DASHBOARD_LABELS.tile.lastJob, value: daysSinceLastJob !== null ? `${daysSinceLastJob}d` : "—" },
                 ]
               ).map(s => {
@@ -693,33 +891,6 @@ function OverviewTilePanel({
                   <span className="text-[10px] text-[var(--t-text-muted)] capitalize">{j.job_type}</span>
                 </div>
                 <span className="text-xs font-medium tabular-nums text-[var(--t-text-primary)]">{fmtMoneyShort(Number(j.total_price))}</span>
-              </Link>
-            ))}
-          </div>
-        )}
-      </Card>
-    );
-  }
-
-  // — Active: active (non-completed, non-cancelled) jobs only —
-  if (tile === "active") {
-    const active = jobs.filter((j) => !["completed", "cancelled"].includes(j.status));
-    return (
-      <Card title={L.tilePanel.active}>
-        {active.length === 0 ? (
-          <EmptyRow>{L.tileEmpty.active}</EmptyRow>
-        ) : (
-          <div className="divide-y divide-[var(--t-border)] -mx-4">
-            {active.map((j) => (
-              <Link key={j.id} href={`/jobs/${j.id}`} className="flex items-center justify-between px-4 py-2 hover:bg-[var(--t-bg-card-hover)] transition-colors">
-                <div className="flex items-center gap-2 min-w-0">
-                  <span className="text-xs font-medium text-[var(--t-text-primary)]">{formatJobNumber(j.job_number)}</span>
-                  {j.asset && <span className="text-[10px] text-[var(--t-text-muted)]">{j.asset.identifier}</span>}
-                  <span className="text-[10px] text-[var(--t-text-muted)] capitalize">{j.job_type}</span>
-                </div>
-                <span className={`text-[10px] font-medium capitalize shrink-0 ${STATUS_CLS[j.status] || ""}`}>
-                  {j.status.replace(/_/g, " ")}
-                </span>
               </Link>
             ))}
           </div>
