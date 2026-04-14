@@ -23,6 +23,7 @@ import { BillingIssueDetectorService } from '../billing/services/billing-issue-d
 import { DUMP_ELIGIBLE_JOB_TYPES } from '../billing/helpers/billing-issue-cleanup-rules';
 import { TenantSettings } from '../tenant-settings/entities/tenant-settings.entity';
 import { getTenantToday } from '../../common/utils/tenant-date.util';
+import { issueNextJobNumber } from '../../common/utils/job-number.util';
 import {
   RentalChainsService,
   daysBetween as rentalDaysBetween,
@@ -182,6 +183,25 @@ export class JobsService {
     return notes;
   }
 
+  /**
+   * Issue the next tenant-scoped sequential job number.
+   *
+   * Thin wrapper around `issueNextJobNumber` in common/utils so that
+   * callers holding a `JobsService` reference can produce numbers
+   * without reaching into the util directly, while `RentalChainsService`
+   * and other modules that can't import `JobsService` (circular dep)
+   * still have a callable API via the shared util.
+   *
+   * See `common/utils/job-number.util.ts` for the atomicity notes.
+   */
+  async generateJobNumber(
+    tenantId: string,
+    jobType: string,
+    manager?: EntityManager,
+  ): Promise<string> {
+    return issueNextJobNumber(manager ?? this.dataSource.manager, tenantId, jobType);
+  }
+
   async create(tenantId: string, dto: CreateJobDto): Promise<Job> {
     // Validate that the asset (if provided) belongs to this tenant before creating the job.
     if (dto.assetId) {
@@ -191,17 +211,7 @@ export class JobsService {
       if (!asset) throw new NotFoundException('Asset not found');
     }
 
-    const today = new Date();
-    const dateStr = today.toISOString().slice(0, 10).replace(/-/g, '');
-
-    const countToday = await this.jobsRepository
-      .createQueryBuilder('j')
-      .where('j.tenant_id = :tenantId', { tenantId })
-      .andWhere('j.created_at::date = CURRENT_DATE')
-      .getCount();
-
-    const seq = String(countToday + 1).padStart(3, '0');
-    const jobNumber = `JOB-${dateStr}-${seq}`;
+    const jobNumber = await this.generateJobNumber(tenantId, dto.jobType);
 
     // Auto-calculate pricing if assetSubtype provided but no explicit price
     let basePrice = dto.basePrice;
@@ -2904,8 +2914,6 @@ export class JobsService {
 
   async scheduleNextTask(tenantId: string, parentJobId: string, body: { type: string; scheduledDate: string; timeWindow?: string; newAssetSubtype?: string }) {
     const parent = await this.findOne(tenantId, parentJobId);
-    const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-    const seq = Math.floor(Math.random() * 9000) + 1000;
 
     let windowStart = '08:00', windowEnd = '17:00';
     if (body.timeWindow === 'morning') { windowStart = '08:00'; windowEnd = '12:00'; }
@@ -2921,10 +2929,10 @@ export class JobsService {
     const jobs: Job[] = [];
 
     if (body.type === 'pickup') {
-      const job = this.jobsRepository.create({ ...baseJob, job_number: `JOB-${dateStr}-${seq}`, job_type: 'pickup', asset_id: parent.asset_id });
+      const job = this.jobsRepository.create({ ...baseJob, job_number: await this.generateJobNumber(tenantId, 'pickup'), job_type: 'pickup', asset_id: parent.asset_id });
       jobs.push(await this.jobsRepository.save(job));
     } else if (body.type === 'exchange') {
-      const job = this.jobsRepository.create({ ...baseJob, job_number: `JOB-${dateStr}-${seq}`, job_type: 'exchange', asset_id: parent.asset_id });
+      const job = this.jobsRepository.create({ ...baseJob, job_number: await this.generateJobNumber(tenantId, 'exchange'), job_type: 'exchange', asset_id: parent.asset_id });
       jobs.push(await this.jobsRepository.save(job));
 
       // Auto-create exchange invoice
@@ -2941,10 +2949,10 @@ export class JobsService {
         });
       }
     } else if (body.type === 'dump_and_return') {
-      const pickupJob = this.jobsRepository.create({ ...baseJob, job_number: `JOB-${dateStr}-${seq}`, job_type: 'pickup', asset_id: parent.asset_id });
+      const pickupJob = this.jobsRepository.create({ ...baseJob, job_number: await this.generateJobNumber(tenantId, 'pickup'), job_type: 'pickup', asset_id: parent.asset_id });
       const saved1 = await this.jobsRepository.save(pickupJob);
       jobs.push(saved1);
-      const deliveryJob = this.jobsRepository.create({ ...baseJob, job_number: `JOB-${dateStr}-${seq + 1}`, job_type: 'delivery', asset_id: parent.asset_id });
+      const deliveryJob = this.jobsRepository.create({ ...baseJob, job_number: await this.generateJobNumber(tenantId, 'delivery'), job_type: 'delivery', asset_id: parent.asset_id });
       const saved2 = await this.jobsRepository.save(deliveryJob);
       jobs.push(saved2);
     }
@@ -2980,9 +2988,6 @@ export class JobsService {
       order: { sequence_number: 'DESC' },
     });
 
-    const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-    const seq = Math.floor(Math.random() * 9000) + 1000;
-
     let windowStart = '08:00', windowEnd = '17:00';
     if (body.timeWindow === 'morning') { windowStart = '08:00'; windowEnd = '12:00'; }
     else if (body.timeWindow === 'afternoon') { windowStart = '12:00'; windowEnd = '17:00'; }
@@ -2990,7 +2995,7 @@ export class JobsService {
     const exchangeJob = this.jobsRepository.create({
       tenant_id: tenantId,
       customer_id: chain.customer_id,
-      job_number: `JOB-${dateStr}-${seq}`,
+      job_number: await this.generateJobNumber(tenantId, 'exchange'),
       job_type: 'exchange',
       service_type: 'dumpster_rental',
       asset_subtype: body.newAssetSubtype || chain.dumpster_size,
@@ -3085,16 +3090,15 @@ export class JobsService {
   }
 
   async createDumpRun(tenantId: string, body: { assetIds: string[]; dumpLocationId?: string; scheduledDate: string; timeWindow?: string; assignedDriverId?: string; notes?: string }) {
-    const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-    const seq = Math.floor(Math.random() * 9000) + 1000;
-
     let windowStart = '08:00', windowEnd = '17:00';
     if (body.timeWindow === 'morning') { windowStart = '08:00'; windowEnd = '12:00'; }
     else if (body.timeWindow === 'afternoon') { windowStart = '12:00'; windowEnd = '17:00'; }
 
+    // dump_run falls into the `J-` fallback prefix since it isn't one
+    // of delivery/pickup/exchange.
     const job = this.jobsRepository.create({
       tenant_id: tenantId,
-      job_number: `JOB-${dateStr}-${seq}`,
+      job_number: await this.generateJobNumber(tenantId, 'dump_run'),
       job_type: 'dump_run',
       service_type: 'dump_run',
       priority: 'normal',

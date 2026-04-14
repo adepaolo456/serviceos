@@ -7,6 +7,7 @@ import { Invoice } from '../entities/invoice.entity';
 import { InvoiceLineItem } from '../entities/invoice-line-item.entity';
 import { RentalChain } from '../../rental-chains/entities/rental-chain.entity';
 import { TaskChainLink } from '../../rental-chains/entities/task-chain-link.entity';
+import { issueNextJobNumber } from '../../../common/utils/job-number.util';
 
 /* ------------------------------------------------------------------ */
 /*  Input / output contracts                                           */
@@ -81,11 +82,13 @@ export class BookingCompletionService {
       totalPrice, taxAmount, placementNotes, pricingSnapshot, pricingTierUsed,
     } = params;
 
-    // 1. Generate job numbers
-    const dateStr = deliveryDate.replace(/-/g, '');
-    const rand = Math.random().toString(36).slice(2, 5).toUpperCase();
-    const deliveryNumber = `JOB-${dateStr}-${rand}`;
-    const pickupNumber = `JOB-${pickupDate.replace(/-/g, '')}-${rand}P`;
+    // 1. Generate job numbers. If the caller passed an outer
+    // `manager` (transactional booking-completion path), the sequence
+    // increment joins that transaction so rollback-on-failure discards
+    // the skipped numbers as a single unit.
+    const seqManager = manager ?? this.dataSource.manager;
+    const deliveryNumber = await issueNextJobNumber(seqManager, tenantId, 'delivery');
+    const pickupNumber = await issueNextJobNumber(seqManager, tenantId, 'pickup');
 
     // 2. Asset availability check + auto-approve
     let autoApproved = false;

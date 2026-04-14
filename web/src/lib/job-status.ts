@@ -139,21 +139,27 @@ export function formatRentalTitle(rental: {
  * string from the database.
  *
  * Transforms supported:
- *   • `JOB-YYYYMMDD-NNN`       → `J-YYMMDD-NNN`         (most common)
- *   • `JOB-YYYYMMDD-XXXX`      → `J-YYMMDD-XXXX`        (random suffix)
- *   • `JOB-YYYYMMDD-XXXXD|P|X` → `J-YYMMDD-XXXXD|P|X`   (rental-chain tagged)
- *   • `J-YYMMDD-...`           → passthrough (already short)
+ *   • `D-1001`, `P-1002`, `X-1003`, `J-1004` → passthrough (canonical
+ *       tenant-scoped sequential format issued by the backend's
+ *       `issueNextJobNumber()` utility; no reformatting needed).
+ *   • `JOB-YYYYMMDD-NNN`       → `J-YYMMDD-NNN`         (legacy, most common)
+ *   • `JOB-YYYYMMDD-XXXX`      → `J-YYMMDD-XXXX`        (legacy random suffix)
+ *   • `JOB-YYYYMMDD-XXXXD|P|X` → `J-YYMMDD-XXXXD|P|X`   (legacy rental-chain tagged)
  *   • Anything else            → returned unchanged (defensive — no throw)
  *
  * Goals: shorter to scan, easier to read aloud over the phone, less
- * "JOB-" prefix noise, drops the redundant century digits since active
- * rentals never span centuries.
+ * "JOB-" prefix noise. New-format values already meet all three goals
+ * (e.g. "D-1001" is five characters and reads cleanly), so the helper
+ * is a no-op on them.
  */
 export function formatJobNumber(raw: string | null | undefined): string {
   if (!raw) return "";
-  // Fast path: already in the short form.
+  // Fast path #1: new canonical tenant-scoped format (D-1001, P-1002,
+  // X-1003, J-1004). Nothing to shorten — return as-is.
+  if (/^[DPXJ]-\d+$/.test(raw)) return raw;
+  // Fast path #2: already in the legacy short form (J-YYMMDD-...).
   if (raw.startsWith("J-")) return raw;
-  // Standard legacy format: JOB-YYYYMMDD-suffix (suffix can be digits, hex, or hex+letter tag)
+  // Legacy format: JOB-YYYYMMDD-suffix (suffix can be digits, hex, or hex+letter tag)
   const m = raw.match(/^JOB-(\d{2})(\d{6})-(.+)$/);
   if (m) {
     // m[1] = century digits ("20"), m[2] = YYMMDD, m[3] = suffix

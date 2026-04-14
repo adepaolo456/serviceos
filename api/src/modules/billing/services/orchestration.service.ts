@@ -13,6 +13,7 @@ import { BillingService } from '../billing.service';
 import { BookingCompletionService } from './booking-completion.service';
 import { BookingCreditEnforcementService } from './booking-credit-enforcement.service';
 import { CreateWithBookingDto } from '../dto/create-with-booking.dto';
+import { issueNextJobNumber } from '../../../common/utils/job-number.util';
 
 /**
  * Phase 4B — auth context plumbed into the orchestration entry point
@@ -231,9 +232,6 @@ export class OrchestrationService {
         const chain = await chainRepo.findOne({ where: { id: dto.exchangeRentalChainId, tenant_id: tenantId } });
         if (!chain) throw new BadRequestException('Rental chain not found');
 
-        const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-        const seq = Math.floor(Math.random() * 9000) + 1000;
-
         // Phase 4B — attach the credit override audit note to the
         // exchange job's placement_notes when an override was applied.
         // The standard delivery path threads the note via
@@ -241,7 +239,7 @@ export class OrchestrationService {
         // service so we set it directly here.
         const exchangeJob = jobRepo.create({
           tenant_id: tenantId, customer_id: customerId,
-          job_number: `JOB-${dateStr}-${seq}`, job_type: 'exchange',
+          job_number: await issueNextJobNumber(queryRunner.manager, tenantId, 'exchange'), job_type: 'exchange',
           service_type: 'dumpster_rental', asset_subtype: dto.dumpsterSize,
           asset_id: chain.asset_id || null, service_address: siteAddr as Record<string, string>,
           status: 'pending', priority: 'normal', source: 'quick_quote_exchange',

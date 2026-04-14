@@ -10,6 +10,7 @@ import { Quote } from '../quotes/quote.entity';
 import { BillingService } from '../billing/billing.service';
 import { CreatePublicBookingDto } from './dto/public-booking.dto';
 import { haversineDistance } from '../pricing/pricing.utils';
+import { issueNextJobNumber } from '../../common/utils/job-number.util';
 
 @Injectable()
 export class PublicService {
@@ -242,10 +243,9 @@ export class PublicService {
         customer = await customerRepo.save(customer);
       }
 
-      // Generate job number
-      const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-      const seq = Math.floor(Math.random() * 9000) + 1000;
-      const jobNumber = `JOB-${dateStr}-${seq}`;
+      // Generate job number inside the outer queryRunner transaction
+      // so the sequence increment is part of the booking commit.
+      const jobNumber = await issueNextJobNumber(queryRunner.manager, t.id, 'delivery');
 
       const job = jobRepoTx.create({
         tenant_id: t.id,
