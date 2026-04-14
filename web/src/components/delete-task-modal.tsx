@@ -5,6 +5,7 @@ import { X, Loader2, AlertTriangle } from "lucide-react";
 import { api } from "@/lib/api";
 import { useToast } from "@/components/toast";
 import { formatCurrency } from "@/lib/utils";
+import { formatJobNumber } from "@/lib/job-status";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -163,7 +164,7 @@ export default function DeleteTaskModal({ open, onClose, taskId, onDeleted }: De
                 Delete task
               </h2>
               <p className="text-sm mt-1" style={{ color: "var(--t-text-primary)" }}>
-                {preview.task.asset_subtype} {preview.task.job_type} #{preview.task.job_number}
+                {preview.task.asset_subtype} {preview.task.job_type} {formatJobNumber(preview.task.job_number)}
               </p>
               {preview.customerInfo && (
                 <p className="text-xs mt-0.5" style={{ color: "var(--t-text-muted)" }}>
@@ -183,7 +184,7 @@ export default function DeleteTaskModal({ open, onClose, taskId, onDeleted }: De
               {preview.linkedPickup && (
                 <div className="flex items-center justify-between rounded-[20px] border px-4 py-3" style={{ borderColor: "var(--t-border)", backgroundColor: "var(--t-bg-card)" }}>
                   <span className="text-sm" style={{ color: "var(--t-text-primary)" }}>
-                    Also delete the scheduled pickup (#{preview.linkedPickup.job_number})
+                    Also delete the scheduled pickup ({formatJobNumber(preview.linkedPickup.job_number)})
                   </span>
                   <Toggle checked={deletePickup} onChange={setDeletePickup} />
                 </div>

@@ -26,6 +26,7 @@ import Dropdown from "@/components/dropdown";
 import { useToast } from "@/components/toast";
 import { useTenantTimezone } from "@/lib/use-modules";
 import { getTenantToday, getTenantNowParts } from "@/lib/utils/tenantDate";
+import { formatJobNumber } from "@/lib/job-status";
 
 /* --- Types --- */
 
@@ -827,7 +828,7 @@ function FromJobForm({ onSuccess }: { onSuccess: () => void }) {
             >
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium" style={{ color: "var(--t-text-primary)" }}>{j.job_number}</p>
+                  <p className="text-sm font-medium" style={{ color: "var(--t-text-primary)" }}>{formatJobNumber(j.job_number)}</p>
                   {j.customer && <p className="text-xs" style={{ color: "var(--t-text-muted)" }}>{j.customer.first_name} {j.customer.last_name}</p>}
                 </div>
                 {j.total_price > 0 && <span className="text-sm font-semibold tabular-nums" style={{ color: "var(--t-accent)" }}>{fmt(j.total_price)}</span>}

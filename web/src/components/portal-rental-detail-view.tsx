@@ -16,7 +16,7 @@ import dynamic from "next/dynamic";
 import { portalApi, resolvePortalErrorMessage } from "@/lib/portal-api";
 import { formatCurrency } from "@/lib/utils";
 import { formatDateOnly } from "@/lib/utils/format-date";
-import { deriveCustomerTimeline, formatRentalTitle, rentalSizeLabel, type CustomerTimelineStep } from "@/lib/job-status";
+import { deriveCustomerTimeline, formatRentalTitle, rentalSizeLabel, formatJobNumber, type CustomerTimelineStep } from "@/lib/job-status";
 import { FEATURE_REGISTRY } from "@/lib/feature-registry";
 import { MapPin, Pencil } from "lucide-react";
 import PortalChangePickupDateModal from "@/components/portal-change-pickup-date-modal";
@@ -156,7 +156,7 @@ export default function PortalRentalDetailView({ rental, rentals, onBack, onUpda
               {formatRentalTitle(rental)}
             </h1>
             <p className="text-[11px] sm:text-xs text-[var(--t-text-muted)] mt-0.5 font-mono break-all">
-              {rental.job_number}
+              {formatJobNumber(rental.job_number)}
             </p>
           </div>
           <span className={`text-[10px] sm:text-xs font-semibold px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-full bg-[var(--t-bg-primary)] border border-[var(--t-border)] whitespace-nowrap shrink-0 ${STATUS_COLORS[rental.status] || ""}`}>

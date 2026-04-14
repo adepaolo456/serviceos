@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useToast } from "@/components/toast";
-import { deriveDisplayStatus, DISPLAY_STATUS_LABELS, displayStatusColor } from "@/lib/job-status";
+import { deriveDisplayStatus, DISPLAY_STATUS_LABELS, displayStatusColor, formatJobNumber } from "@/lib/job-status";
 import SlideOver from "@/components/slide-over";
 import AddressAutocomplete, { type AddressValue } from "@/components/address-autocomplete";
 import MapboxMap from "@/components/mapbox-map";
@@ -381,7 +381,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
                 {jobs.length === 0 ? <tr><td colSpan={6} className="py-12 text-center text-xs text-[var(--t-text-muted)]">No jobs</td></tr> :
                   jobs.map(j => (
                     <tr key={j.id} onClick={() => router.push(`/jobs/${j.id}`)} className="border-b border-[var(--t-border)] last:border-0 cursor-pointer hover:bg-[var(--t-bg-card-hover)] transition-colors">
-                      <td className="px-4 py-3 font-medium text-[var(--t-text-primary)]">{j.job_number}</td>
+                      <td className="px-4 py-3 font-medium text-[var(--t-text-primary)]">{formatJobNumber(j.job_number)}</td>
                       <td className="px-4 py-3 text-[var(--t-text-primary)] capitalize">{j.job_type}</td>
                       <td className="px-4 py-3 text-[var(--t-text-primary)]">{j.scheduled_date || "—"}</td>
                       <td className="px-4 py-3 text-[var(--t-text-muted)]">{j.asset?.identifier || "—"}</td>
@@ -609,7 +609,7 @@ function OverviewTilePanel({
             {recent.map((j) => (
               <Link key={j.id} href={`/jobs/${j.id}`} className="flex items-center justify-between px-4 py-2 hover:bg-[var(--t-bg-card-hover)] transition-colors">
                 <div className="flex items-center gap-2 min-w-0">
-                  <span className="text-xs font-medium text-[var(--t-text-primary)]">{j.job_number}</span>
+                  <span className="text-xs font-medium text-[var(--t-text-primary)]">{formatJobNumber(j.job_number)}</span>
                   <span className="text-[10px] text-[var(--t-text-muted)] capitalize">{j.job_type}</span>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
@@ -689,7 +689,7 @@ function OverviewTilePanel({
             {priced.slice(0, 10).map((j) => (
               <Link key={j.id} href={`/jobs/${j.id}`} className="flex items-center justify-between px-4 py-2 hover:bg-[var(--t-bg-card-hover)] transition-colors">
                 <div className="flex items-center gap-2">
-                  <span className="text-xs font-medium text-[var(--t-text-primary)]">{j.job_number}</span>
+                  <span className="text-xs font-medium text-[var(--t-text-primary)]">{formatJobNumber(j.job_number)}</span>
                   <span className="text-[10px] text-[var(--t-text-muted)] capitalize">{j.job_type}</span>
                 </div>
                 <span className="text-xs font-medium tabular-nums text-[var(--t-text-primary)]">{fmtMoneyShort(Number(j.total_price))}</span>
@@ -713,7 +713,7 @@ function OverviewTilePanel({
             {active.map((j) => (
               <Link key={j.id} href={`/jobs/${j.id}`} className="flex items-center justify-between px-4 py-2 hover:bg-[var(--t-bg-card-hover)] transition-colors">
                 <div className="flex items-center gap-2 min-w-0">
-                  <span className="text-xs font-medium text-[var(--t-text-primary)]">{j.job_number}</span>
+                  <span className="text-xs font-medium text-[var(--t-text-primary)]">{formatJobNumber(j.job_number)}</span>
                   {j.asset && <span className="text-[10px] text-[var(--t-text-muted)]">{j.asset.identifier}</span>}
                   <span className="text-[10px] text-[var(--t-text-muted)] capitalize">{j.job_type}</span>
                 </div>
@@ -738,7 +738,7 @@ function OverviewTilePanel({
         ) : (
           <Link href={`/jobs/${last.id}`} className="block rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card-hover)] p-3 hover:opacity-90 transition-opacity">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-semibold text-[var(--t-text-primary)]">{last.job_number}</span>
+              <span className="text-sm font-semibold text-[var(--t-text-primary)]">{formatJobNumber(last.job_number)}</span>
               <span className={`text-[10px] font-medium capitalize ${STATUS_CLS[last.status] || ""}`}>
                 {last.status.replace(/_/g, " ")}
               </span>

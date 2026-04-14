@@ -4,7 +4,7 @@ import { useState, useEffect, use, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import HelpTooltip from "@/components/ui/HelpTooltip";
-import { ArrowLeft, Truck, MapPin, Calendar, Package, DollarSign, CheckCircle2, Clock, ArrowRight, FileText, Pencil, CalendarClock, Repeat } from "lucide-react";
+import { ArrowLeft, Truck, MapPin, Calendar, Package, DollarSign, CheckCircle2, Clock, ArrowRight, FileText, Pencil, Repeat } from "lucide-react";
 import { api } from "@/lib/api";
 import { formatCurrency } from "@/lib/utils";
 import { FEATURE_REGISTRY } from "@/lib/feature-registry";
@@ -568,11 +568,7 @@ export default function RentalLifecyclePage({ params }: { params: Promise<{ id: 
         <div className="flex gap-2">
           <button onClick={() => { setPickupModalOpen(true); setPickupDate(rentalChain.expectedPickupDate || ""); setPickupError(""); }}
             className="inline-flex items-center gap-1.5 rounded-full border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-2 text-xs font-medium text-[var(--t-text-primary)] hover:bg-[var(--t-bg-card-hover)] transition-colors">
-            <Pencil className="h-3 w-3" /> {FEATURE_REGISTRY.lifecycle_action_edit_pickup?.label ?? "Edit Pickup Date"}
-          </button>
-          <button onClick={() => { setPickupModalOpen(true); setPickupDate(""); setPickupError(""); }}
-            className="inline-flex items-center gap-1.5 rounded-full border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-2 text-xs font-medium text-[var(--t-text-primary)] hover:bg-[var(--t-bg-card-hover)] transition-colors">
-            <CalendarClock className="h-3 w-3" /> {FEATURE_REGISTRY.lifecycle_action_extend?.label ?? "Change Pickup Date"}
+            <Pencil className="h-3 w-3" /> {FEATURE_REGISTRY.lifecycle_action_edit_pickup?.label ?? "Change Pickup Date"}
           </button>
           <button onClick={() => {
               const today = new Date().toISOString().split("T")[0];
@@ -995,7 +991,7 @@ export default function RentalLifecyclePage({ params }: { params: Promise<{ id: 
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4" onClick={() => setPickupModalOpen(false)}>
           <div className="rounded-2xl border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6 w-full max-w-sm" onClick={e => e.stopPropagation()}>
             <h3 className="text-sm font-semibold text-[var(--t-text-primary)] mb-1">
-              {FEATURE_REGISTRY.lifecycle_action_edit_pickup?.label ?? "Edit Pickup Date"}
+              {FEATURE_REGISTRY.lifecycle_action_edit_pickup?.label ?? "Change Pickup Date"}
             </h3>
             <p className="text-xs text-[var(--t-text-muted)] mb-4">
               {FEATURE_REGISTRY.lifecycle_action_pickup_description?.label ?? "Select a new pickup date for this rental."}

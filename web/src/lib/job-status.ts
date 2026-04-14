@@ -130,6 +130,39 @@ export function formatRentalTitle(rental: {
   return `${rentalSizeLabel(rental)} ${RENTAL_TITLE_SUFFIX}`;
 }
 
+/**
+ * Display-format a stored job_number for human reading.
+ *
+ * Stored values are NEVER mutated by this helper — it is presentation
+ * only. Lookups, FK references (none today), invoice references, audit
+ * trails, and uniqueness all continue to use the raw `job.job_number`
+ * string from the database.
+ *
+ * Transforms supported:
+ *   • `JOB-YYYYMMDD-NNN`       → `J-YYMMDD-NNN`         (most common)
+ *   • `JOB-YYYYMMDD-XXXX`      → `J-YYMMDD-XXXX`        (random suffix)
+ *   • `JOB-YYYYMMDD-XXXXD|P|X` → `J-YYMMDD-XXXXD|P|X`   (rental-chain tagged)
+ *   • `J-YYMMDD-...`           → passthrough (already short)
+ *   • Anything else            → returned unchanged (defensive — no throw)
+ *
+ * Goals: shorter to scan, easier to read aloud over the phone, less
+ * "JOB-" prefix noise, drops the redundant century digits since active
+ * rentals never span centuries.
+ */
+export function formatJobNumber(raw: string | null | undefined): string {
+  if (!raw) return "";
+  // Fast path: already in the short form.
+  if (raw.startsWith("J-")) return raw;
+  // Standard legacy format: JOB-YYYYMMDD-suffix (suffix can be digits, hex, or hex+letter tag)
+  const m = raw.match(/^JOB-(\d{2})(\d{6})-(.+)$/);
+  if (m) {
+    // m[1] = century digits ("20"), m[2] = YYMMDD, m[3] = suffix
+    return `J-${m[2]}-${m[3]}`;
+  }
+  // Unknown shape — return as-is so we never hide data from the operator.
+  return raw;
+}
+
 /** Canonical step keys for the customer rental lifecycle timeline */
 export type CustomerTimelineStepKey =
   | "ordered"

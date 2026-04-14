@@ -20,7 +20,7 @@
 import { useEffect, useRef, useState } from "react";
 import { portalApi, resolvePortalErrorMessage } from "@/lib/portal-api";
 import { FEATURE_REGISTRY } from "@/lib/feature-registry";
-import { formatRentalTitle } from "@/lib/job-status";
+import { formatRentalTitle, formatJobNumber } from "@/lib/job-status";
 
 interface RentalLike {
   id: string;
@@ -97,7 +97,7 @@ export default function PortalChangePickupDateModal<T extends RentalLike>({
           {label("portal_action_change_pickup_date", "Change Pickup Date")}
         </h3>
         <p className="text-xs text-[var(--t-text-muted)] mb-4 truncate">
-          {formatRentalTitle(rental as unknown as { asset_subtype?: string | null; service_type?: string; job_type: string })} · <span className="font-mono">{rental.job_number}</span>
+          {formatRentalTitle(rental as unknown as { asset_subtype?: string | null; service_type?: string; job_type: string })} · <span className="font-mono">{formatJobNumber(rental.job_number)}</span>
         </p>
 
         <div>

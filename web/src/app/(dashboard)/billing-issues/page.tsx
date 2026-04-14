@@ -12,6 +12,7 @@ import { useToast } from "@/components/toast";
 import { formatCurrency } from "@/lib/utils";
 import SlideOver from "@/components/slide-over";
 import { FEATURE_REGISTRY } from "@/lib/feature-registry";
+import { formatJobNumber } from "@/lib/job-status";
 
 const fmt = (n: number | null | undefined) => formatCurrency(n as number);
 
@@ -677,7 +678,7 @@ function BillingIssuesPageContent() {
                 {FEATURE_REGISTRY.billing_issues_job_scope?.label ?? "Showing issues for this job"}
                 {scopedJob?.job_number && (
                   <span className="ml-1 font-mono" style={{ color: "var(--t-text-secondary)" }}>
-                    #{scopedJob.job_number}
+                    {formatJobNumber(scopedJob.job_number)}
                   </span>
                 )}
               </p>
@@ -1051,7 +1052,7 @@ function BillingIssuesPageContent() {
                         </Link>
                       </div>
                       <div className="space-y-1.5 text-xs">
-                        {linkedJob.job_number && <div className="flex justify-between"><span style={{ color: "var(--t-text-muted)" }}>{UI_LABELS.linkedJob}</span><span className="font-medium" style={{ color: "var(--t-text-primary)" }}>#{linkedJob.job_number}</span></div>}
+                        {linkedJob.job_number && <div className="flex justify-between"><span style={{ color: "var(--t-text-muted)" }}>{UI_LABELS.linkedJob}</span><span className="font-medium" style={{ color: "var(--t-text-primary)" }}>{formatJobNumber(linkedJob.job_number)}</span></div>}
                         {linkedJob.job_type && <div className="flex justify-between"><span style={{ color: "var(--t-text-muted)" }}>{UI_LABELS.linkedJobType}</span><span className="font-medium capitalize" style={{ color: "var(--t-text-primary)" }}>{linkedJob.job_type.replace(/_/g, " ")}</span></div>}
                         {addr && (addr.street || addr.city) && (
                           <div className="flex justify-between"><span style={{ color: "var(--t-text-muted)" }}>{UI_LABELS.linkedJobAddress}</span><span className="font-medium truncate ml-4 text-right" style={{ color: "var(--t-text-primary)" }}>{[addr.street, addr.city, addr.state].filter(Boolean).join(", ")}</span></div>

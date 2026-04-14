@@ -23,7 +23,7 @@ import {
 import { api } from "@/lib/api";
 import SlideOver from "@/components/slide-over";
 import AddressAutocomplete, { type AddressValue } from "@/components/address-autocomplete";
-import { deriveDisplayStatus, DISPLAY_STATUS_LABELS, displayStatusColor } from "@/lib/job-status";
+import { deriveDisplayStatus, DISPLAY_STATUS_LABELS, displayStatusColor, formatJobNumber } from "@/lib/job-status";
 import { getFeatureLabel } from "@/lib/feature-registry";
 import HelpTooltip from "@/components/ui/HelpTooltip";
 import { useTenantTimezone } from "@/lib/use-modules";
@@ -265,8 +265,13 @@ export default function DashboardPage() {
           results.push({ type: "customer", id: c.id, title: `${c.first_name} ${c.last_name}`, subtitle: c.phone || c.company_name || "Customer", href: `/customers/${c.id}` });
         }
         for (const j of jobs.data) {
-          if (j.job_number.toLowerCase().includes(searchQuery.toLowerCase()) || j.customer?.first_name.toLowerCase().includes(searchQuery.toLowerCase())) {
-            results.push({ type: "job", id: j.id, title: j.job_number, subtitle: j.customer ? `${j.customer.first_name} ${j.customer.last_name}` : j.status, href: `/jobs/${j.id}` });
+          // Match against BOTH the raw stored value and the display-formatted
+          // value so operators can search by either "JOB-20260413-001" or
+          // the friendlier "J-260413-001".
+          const q = searchQuery.toLowerCase();
+          const matchesNumber = j.job_number.toLowerCase().includes(q) || formatJobNumber(j.job_number).toLowerCase().includes(q);
+          if (matchesNumber || j.customer?.first_name.toLowerCase().includes(q)) {
+            results.push({ type: "job", id: j.id, title: formatJobNumber(j.job_number), subtitle: j.customer ? `${j.customer.first_name} ${j.customer.last_name}` : j.status, href: `/jobs/${j.id}` });
           }
         }
         setSearchResults(results.slice(0, 8));
@@ -576,7 +581,7 @@ export default function DashboardPage() {
                   <span style={{ fontSize: 11, fontWeight: 600, color: "var(--t-error)" }}>{j.extra_days}d</span>
                   <div style={{ minWidth: 0 }}>
                     <p style={{ fontSize: 13, fontWeight: 500, color: "var(--t-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {j.customer ? `${j.customer.first_name} ${j.customer.last_name}` : j.job_number}
+                      {j.customer ? `${j.customer.first_name} ${j.customer.last_name}` : formatJobNumber(j.job_number)}
                     </p>
                     <p style={{ fontSize: 11, color: "var(--t-text-muted)" }}>{j.asset?.identifier || j.service_type} &middot; ${Number(j.extra_day_charges || 0).toFixed(2)} charges</p>
                   </div>
@@ -623,7 +628,7 @@ export default function DashboardPage() {
               }}>
                 <div style={{ minWidth: 0 }}>
                   <p style={{ fontSize: 13, fontWeight: 500, color: "var(--t-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {j.customer ? `${j.customer.first_name} ${j.customer.last_name}` : j.job_number}
+                    {j.customer ? `${j.customer.first_name} ${j.customer.last_name}` : formatJobNumber(j.job_number)}
                   </p>
                   <p style={{ fontSize: 11, color: "var(--t-text-muted)" }}>Moved from {j.rescheduled_from_date} &rarr; {j.scheduled_date}</p>
                 </div>
@@ -1210,7 +1215,7 @@ function ScheduleModule({ scheduleDate, setScheduleDate, todayJobs, unassignedJo
                       </div>
                       <div style={{ minWidth: 0, flex: 1 }}>
                         <p style={{ fontSize: 14, fontWeight: 600, color: "var(--t-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                          {job.customer ? `${job.customer.first_name} ${job.customer.last_name}` : job.job_number}
+                          {job.customer ? `${job.customer.first_name} ${job.customer.last_name}` : formatJobNumber(job.job_number)}
                         </p>
                         {addrStr && <p style={{ fontSize: 12, color: "var(--t-text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 4 }}><MapPin style={{ width: 12, height: 12, flexShrink: 0 }} />{addrStr}</p>}
                       </div>
