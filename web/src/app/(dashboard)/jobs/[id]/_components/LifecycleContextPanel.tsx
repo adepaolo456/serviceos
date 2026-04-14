@@ -41,6 +41,7 @@ import {
   deriveDisplayStatus,
   DISPLAY_STATUS_LABELS,
   displayStatusColor,
+  formatJobNumber,
 } from "@/lib/job-status";
 import type {
   LifecycleContextResponse,
@@ -429,7 +430,7 @@ function NodeRow({
               className="text-xs font-medium"
               style={{ color: "var(--t-text-primary)" }}
             >
-              {node.job_number}
+              {formatJobNumber(node.job_number)}
             </span>
             <span
               className="text-[10px] font-semibold"

@@ -101,7 +101,7 @@ interface PriceQuote { breakdown: { basePrice: number; total: number; tax: numbe
 
 /* ─── Constants ─── */
 
-import { deriveDisplayStatus, DISPLAY_STATUS_LABELS, displayStatusColor } from "@/lib/job-status";
+import { deriveDisplayStatus, DISPLAY_STATUS_LABELS, displayStatusColor, formatJobNumber } from "@/lib/job-status";
 
 const STATUS_LABELS: Record<string, string> = {
   all: "All", overdue: "Overdue",
@@ -690,7 +690,7 @@ function JobsPageContent() {
                           </td>
                           <td style={{ padding: "12px 16px" }}>
                             <p style={{ fontWeight: 600, fontSize: 13, color: "var(--t-text-primary)", lineHeight: 1.3 }}>{cName || <span style={{ color: "var(--t-text-tertiary)" }}>No customer</span>}</p>
-                            <p style={{ fontSize: 11, color: "var(--t-text-muted)", marginTop: 1 }}>{chain.links.map(l => l.job?.job_number).filter(Boolean).join(" · ")}</p>
+                            <p style={{ fontSize: 11, color: "var(--t-text-muted)", marginTop: 1 }}>{chain.links.map(l => formatJobNumber(l.job?.job_number)).filter(Boolean).join(" · ")}</p>
                           </td>
                           <td style={{ padding: "12px 16px", maxWidth: 220 }}>
                             <span style={{ fontSize: 12, color: "var(--t-text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>{addr || "—"}</span>
@@ -769,7 +769,7 @@ function JobsPageContent() {
                             </td>
                             <td style={{ padding: "10px 16px" }}>
                               <p style={{ fontWeight: 600, fontSize: 12, color: "var(--t-text-primary)" }}>{customerName || <span style={{ color: "var(--t-text-tertiary)" }}>—</span>}</p>
-                              <p style={{ fontSize: 10, color: "var(--t-text-muted)", marginTop: 1 }}>{job.job_number}</p>
+                              <p style={{ fontSize: 10, color: "var(--t-text-muted)", marginTop: 1 }}>{formatJobNumber(job.job_number)}</p>
                             </td>
                             <td style={{ padding: "10px 16px", maxWidth: 200 }}>
                               <span style={{ fontSize: 12, color: "var(--t-text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>{address || "—"}</span>

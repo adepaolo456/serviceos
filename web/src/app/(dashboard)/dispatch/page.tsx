@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, memo, useRef } from "react";
-import { deriveDisplayStatus, DISPLAY_STATUS_LABELS, displayStatusColor, JOB_TYPE_LABELS, type JobType } from "@/lib/job-status";
+import { deriveDisplayStatus, DISPLAY_STATUS_LABELS, displayStatusColor, JOB_TYPE_LABELS, formatJobNumber, type JobType } from "@/lib/job-status";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import {
@@ -565,7 +565,7 @@ export default function DispatchPage() {
     if (!rescheduleJob || !rescheduleDate) return;
     try {
       await api.patch(`/jobs/${rescheduleJob.id}/reschedule`, { scheduledDate: rescheduleDate, reason: "Rescheduled from dispatch board" });
-      toast("success", `${rescheduleJob.job_number} moved to ${rescheduleDate}`);
+      toast("success", `${formatJobNumber(rescheduleJob.job_number)} moved to ${rescheduleDate}`);
       setRescheduleJob(null);
       setRescheduleDate("");
       await fetchBoard(true);
@@ -575,7 +575,7 @@ export default function DispatchPage() {
   const handleUnassign = async (job: DispatchJob) => {
     try {
       await api.patch(`/jobs/${job.id}/assign`, { assignedDriverId: null });
-      toast("success", `${job.job_number} unassigned`);
+      toast("success", `${formatJobNumber(job.job_number)} unassigned`);
       await fetchBoard(true);
     } catch { toast("error", "Failed to unassign"); }
   };
@@ -692,7 +692,7 @@ export default function DispatchPage() {
       setBoard(newBoard);
 
       const driverName = targetDriverId ? board.drivers.find(d => d.driver.id === targetDriverId)?.driver : null;
-      const countLabel = movingJobs.length > 1 ? `${movingJobs.length} jobs` : movingJobs[0]?.job_number || "Job";
+      const countLabel = movingJobs.length > 1 ? `${movingJobs.length} jobs` : formatJobNumber(movingJobs[0]?.job_number) || "Job";
       toast("success", targetDriverId ? `${countLabel} → ${driverName?.firstName}'s route` : `${countLabel} → Unassigned`);
 
       try {
@@ -1091,7 +1091,7 @@ export default function DispatchPage() {
                     "Payment Required Before Dispatch"}
                 </h3>
                 <p className="mt-1 text-xs" style={{ color: "var(--t-text-muted)" }}>
-                  {blockedAssign.job.job_number}
+                  {formatJobNumber(blockedAssign.job.job_number)}
                   {blockedAssign.job.customer
                     ? ` · ${blockedAssign.job.customer.first_name} ${blockedAssign.job.customer.last_name}`
                     : ""}
@@ -1218,7 +1218,7 @@ export default function DispatchPage() {
                         );
                         toast(
                           "success",
-                          `${blockedAssign.job.job_number} assigned with override`,
+                          `${formatJobNumber(blockedAssign.job.job_number)} assigned with override`,
                         );
                         setBlockedAssign(null);
                         setBlockedOverrideMode(false);
@@ -1332,7 +1332,7 @@ export default function DispatchPage() {
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50" onClick={() => setRescheduleJob(null)}>
           <div className="rounded-2xl border p-6 w-80" style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)" }}
             onClick={e => e.stopPropagation()}>
-            <h3 className="text-sm font-semibold mb-1" style={{ color: "var(--t-text-primary)" }}>Reschedule {rescheduleJob.job_number}</h3>
+            <h3 className="text-sm font-semibold mb-1" style={{ color: "var(--t-text-primary)" }}>Reschedule {formatJobNumber(rescheduleJob.job_number)}</h3>
             <p className="text-xs mb-4" style={{ color: "#8A8A8A" }}>
               {rescheduleJob.customer ? `${rescheduleJob.customer.first_name} ${rescheduleJob.customer.last_name}` : ""}
             </p>
@@ -1353,7 +1353,7 @@ export default function DispatchPage() {
       {/* ── QuickView ── */}
       <QuickView isOpen={!!quickViewJob} onClose={() => { setQuickViewJob(null); setQvDetail(null); setQvCreditState(null); }}
         title={quickViewJob ? `${quickViewJob.asset_subtype || quickViewJob.asset?.subtype || ""} ${getTypeLabel(quickViewJob.job_type)}`.trim() : ""}
-        subtitle={quickViewJob?.job_number}
+        subtitle={formatJobNumber(quickViewJob?.job_number)}
         actions={quickViewJob ? <Link href={`/jobs/${quickViewJob.id}`} className="rounded-full px-3 py-1.5 text-xs font-medium" style={{ background: "var(--t-bg-card-hover)", color: "var(--t-text-primary)" }}><ExternalLink className="h-3 w-3 inline mr-1" />Full Detail</Link> : undefined}
         footer={quickViewJob ? (
           <div className="flex gap-2">
@@ -1524,7 +1524,7 @@ function DispatchMap({ board, activeJobId }: { board: DispatchBoard | null; acti
       el.style.cssText = `width:${isActive ? 40 : 32}px;height:${isActive ? 40 : 32}px;border-radius:50%;background:${tc.stripe};border:2px solid #fff;display:flex;align-items:center;justify-content:center;font-size:${isActive ? 14 : 11}px;font-weight:bold;color:#fff;cursor:pointer;transition:all 0.2s;box-shadow:0 2px 8px rgba(0,0,0,0.3);`;
       el.textContent = tc.letter;
 
-      const custName = job.customer ? `${job.customer.first_name} ${job.customer.last_name}` : job.job_number;
+      const custName = job.customer ? `${job.customer.first_name} ${job.customer.last_name}` : formatJobNumber(job.job_number);
       const addrStr = [job.service_address?.street, job.service_address?.city].filter(Boolean).join(", ") || "No address";
       const typeStr = `${job.asset_subtype || job.asset?.subtype || ""} ${getTypeLabel(job.job_type)}`.trim();
       const driverName = driverMap.get(job.id) || "Unassigned";
@@ -1539,7 +1539,7 @@ function DispatchMap({ board, activeJobId }: { board: DispatchBoard | null; acti
         <div style="display:flex;justify-content:space-between;font-size:11px;padding:2px 0"><span style="color:${mutedColor}">Type</span><span style="color:${tc.stripe};font-weight:600">${typeStr}</span></div>
         <div style="display:flex;justify-content:space-between;font-size:11px;padding:2px 0"><span style="color:${mutedColor}">Status</span><span style="color:${textColor};text-transform:capitalize">${statusStr}</span></div>
         <div style="display:flex;justify-content:space-between;font-size:11px;padding:2px 0"><span style="color:${mutedColor}">Driver</span><span style="color:${textColor}">${driverName}</span></div>
-        <div style="display:flex;justify-content:space-between;font-size:11px;padding:2px 0"><span style="color:${mutedColor}">Job</span><span style="color:${textColor}">${job.job_number}</span></div>
+        <div style="display:flex;justify-content:space-between;font-size:11px;padding:2px 0"><span style="color:${mutedColor}">Job</span><span style="color:${textColor}">${formatJobNumber(job.job_number)}</span></div>
         <a href="/jobs/${job.id}" style="display:inline-block;margin-top:8px;font-size:12px;color:var(--t-accent-text);text-decoration:none;font-weight:600">View Job →</a>
       </div>`;
 
@@ -2008,7 +2008,7 @@ const JobTile = memo(function JobTile({ job, isUnassigned, drivers, onAssign, on
           {proximitySuggestion && <p className="text-[10px] mt-0.5 italic" style={{ color: "var(--t-text-muted)" }}>{proximitySuggestion}</p>}
           {/* Line 3: Customer + secondary metadata (de-emphasized) */}
           <p className="text-[11px] mt-0.5 truncate" style={{ color: "var(--t-text-muted)" }}>
-            <span>{job.customer ? `${job.customer.first_name} ${job.customer.last_name}` : job.job_number}</span>
+            <span>{job.customer ? `${job.customer.first_name} ${job.customer.last_name}` : formatJobNumber(job.job_number)}</span>
             {(job.scheduled_window_start || job.scheduled_window_end) && (
               <>
                 <span aria-hidden="true"> · </span>
@@ -2162,7 +2162,7 @@ function JobTileGhost({ job, bulkCount = 1 }: { job: DispatchJob; bulkCount?: nu
         <div className="flex items-center gap-2 pl-2">
           {size && <span className="rounded-md px-2 py-0.5 text-[13px] font-extrabold" style={{ background: "#F0F0F0", border: "1px solid #E0E0E0", color: "#0A0A0A" }}>{size.replace(/yd$/i, "Y").toUpperCase()}</span>}
           <span className="text-[13px] font-extrabold uppercase" style={{ color: tc.stripe }}>{typeLabel.toUpperCase()}</span>
-          <span className="text-[12px] font-medium" style={{ color: "#666" }}>{job.customer ? `${job.customer.first_name} ${job.customer.last_name}` : job.job_number}</span>
+          <span className="text-[12px] font-medium" style={{ color: "#666" }}>{job.customer ? `${job.customer.first_name} ${job.customer.last_name}` : formatJobNumber(job.job_number)}</span>
         </div>
       </div>
       {/* Count badge */}

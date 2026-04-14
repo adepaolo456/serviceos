@@ -5,7 +5,7 @@ import Link from "next/link";
 import { portalApi } from "@/lib/portal-api";
 import { formatCurrency } from "@/lib/utils";
 import { formatDateOnly, daysUntilDateOnly } from "@/lib/utils/format-date";
-import { formatRentalTitle, rentalSizeLabel } from "@/lib/job-status";
+import { formatRentalTitle, rentalSizeLabel, formatJobNumber } from "@/lib/job-status";
 import { Package, FileText, PlusCircle, Calendar, MapPin, Clock, ArrowUpRight, AlertCircle, CreditCard, ChevronRight, DollarSign } from "lucide-react";
 import { FEATURE_REGISTRY } from "@/lib/feature-registry";
 import PortalChangePickupDateModal from "@/components/portal-change-pickup-date-modal";
@@ -419,7 +419,7 @@ export default function PortalHomePage() {
                       <option value="">All rentals</option>
                       {active.map(r => (
                         <option key={r.id} value={r.id}>
-                          {rentalSizeLabel(r)} - {r.service_address?.formatted || r.service_address?.street || r.job_number}
+                          {rentalSizeLabel(r)} - {r.service_address?.formatted || r.service_address?.street || formatJobNumber(r.job_number)}
                         </option>
                       ))}
                     </select>

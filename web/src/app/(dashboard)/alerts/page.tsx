@@ -28,6 +28,7 @@ import { api } from "@/lib/api";
 import { useToast } from "@/components/toast";
 import { getFeatureLabel, getFeature } from "@/lib/feature-registry";
 import HelpTooltip from "@/components/ui/HelpTooltip";
+import { formatJobNumber } from "@/lib/job-status";
 
 // ── Domain types (mirror api/src/modules/alerts/dto/alert.dto.ts) ──
 
@@ -601,7 +602,7 @@ function buildHint(alert: Alert): string | null {
       return null;
     }
     case "missing_asset": {
-      return m.job_number ? `Job ${m.job_number} has no asset assigned` : null;
+      return m.job_number ? `Job ${formatJobNumber(String(m.job_number))} has no asset assigned` : null;
     }
     case "missing_dump_slip": {
       return "Completed disposal job without a dump ticket";

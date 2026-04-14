@@ -23,6 +23,7 @@ import { api } from "@/lib/api";
 import SlideOver from "@/components/slide-over";
 import RentalChainTimeline from "@/components/rental-chain-timeline";
 import { RecordPaymentForm } from "@/components/record-payment-form";
+import { formatJobNumber } from "@/lib/job-status";
 import { getFeatureLabel } from "@/lib/feature-registry";
 
 interface ApiLineItem {
@@ -682,7 +683,7 @@ function InvoiceDetailPageContent({
                     className="flex items-center gap-1 text-xs font-medium text-[var(--t-accent)] hover:underline"
                   >
                     <FileText className="h-3 w-3" />
-                    Job #{invoice.job.job_number}
+                    Job {formatJobNumber(invoice.job.job_number)}
                     {invoice.job.job_type && <span className="capitalize text-[var(--t-text-muted)]">· {invoice.job.job_type.replace(/_/g, " ")}</span>}
                   </Link>
                   {invoice.job.service_address && (invoice.job.service_address.street || invoice.job.service_address.city) && (

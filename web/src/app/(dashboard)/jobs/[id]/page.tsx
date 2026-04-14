@@ -156,7 +156,7 @@ interface AssetOption {
 
 /* --- Constants --- */
 
-import { deriveDisplayStatus, DISPLAY_STATUS_LABELS, displayStatusColor } from "@/lib/job-status";
+import { deriveDisplayStatus, DISPLAY_STATUS_LABELS, displayStatusColor, formatJobNumber } from "@/lib/job-status";
 
 const JOB_TYPE_COLORS: Record<string, string> = {
   delivery: "text-blue-400",
@@ -748,7 +748,7 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
       <div className="mb-8 flex items-start justify-between">
         <div>
           <div className="flex items-center gap-3 mb-1 flex-wrap">
-            <h1 className="text-[28px] font-bold tracking-[-1px] text-[var(--t-frame-text)]">{job.job_number}</h1>
+            <h1 className="text-[28px] font-bold tracking-[-1px] text-[var(--t-frame-text)]">{formatJobNumber(job.job_number)}</h1>
             <span className="text-xs font-medium" style={{ color: displayStatusColor(deriveDisplayStatus(job.status)) }}>
               {DISPLAY_STATUS_LABELS[deriveDisplayStatus(job.status)]}
             </span>
@@ -1179,7 +1179,7 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
                           <span className="text-xs font-semibold text-[var(--t-accent)]">
                             {replacementRouteLabel(r)}
                           </span>
-                          <span className="text-xs font-medium text-[var(--t-text-primary)]">{r.job_number}</span>
+                          <span className="text-xs font-medium text-[var(--t-text-primary)]">{formatJobNumber(r.job_number)}</span>
                           <span className="text-xs text-[var(--t-text-muted)]">
                             {r.scheduled_date ? new Date(r.scheduled_date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "—"}
                           </span>

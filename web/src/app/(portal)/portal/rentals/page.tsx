@@ -5,7 +5,7 @@ import Link from "next/link";
 import { portalApi } from "@/lib/portal-api";
 import { formatCurrency } from "@/lib/utils";
 import { formatDateOnly } from "@/lib/utils/format-date";
-import { deriveCustomerTimeline, formatRentalTitle, rentalSizeLabel, type CustomerTimelineStep } from "@/lib/job-status";
+import { deriveCustomerTimeline, formatRentalTitle, rentalSizeLabel, formatJobNumber, type CustomerTimelineStep } from "@/lib/job-status";
 import { FEATURE_REGISTRY } from "@/lib/feature-registry";
 import { Package, Calendar, MapPin, ChevronRight, Search, X } from "lucide-react";
 
@@ -237,7 +237,7 @@ export default function PortalRentalsPage() {
                       <span className={`text-[10px] font-semibold uppercase tracking-wider shrink-0 whitespace-nowrap ${STATUS_COLORS[r.status] || ""}`}>{STATUS_LABELS[r.status] || r.status}</span>
                     </div>
                     <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-[var(--t-text-muted)] min-w-0">
-                      <span className="font-mono shrink-0">{r.job_number}</span>
+                      <span className="font-mono shrink-0">{formatJobNumber(r.job_number)}</span>
                       {r.service_address && (
                         <span className="flex items-center gap-1 min-w-0 basis-full sm:basis-auto sm:flex-1">
                           <MapPin className="h-3 w-3 shrink-0" />
