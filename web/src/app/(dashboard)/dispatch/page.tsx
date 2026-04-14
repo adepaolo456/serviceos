@@ -6,7 +6,7 @@ import { createPortal } from "react-dom";
 import Link from "next/link";
 import {
   ChevronLeft, ChevronRight, Calendar, Clock, MapPin, UserPlus, Truck,
-  Phone, Plus, Box, Search, CheckCircle2, RefreshCw, Zap, X, ExternalLink,
+  Phone, Plus, Box, Search, CheckCircle2, RefreshCw, Zap, X, ExternalLink, Trash2,
   ChevronDown, ChevronUp, Navigation, Mail, MoreHorizontal, Eye, EyeOff,
   FileText, Send, Map as MapIcon, LayoutDashboard, AlertTriangle, DollarSign,
 } from "lucide-react";
@@ -2886,8 +2886,47 @@ function QVContent({ job, detail, board, creditState, onAssign, onRefresh, toast
               </div>
             </div>
           )}
-          <button onClick={async () => { if (!confirm("Cancel this job?")) return; try { await api.patch(`/jobs/${job.id}/status`, { status: "cancelled" }); toast("success", "Cancelled"); await onRefresh(); } catch { toast("error", "Failed"); } }}
-            className="w-full rounded-full border py-2 text-xs font-medium" style={{ borderColor: "var(--t-error)", color: "var(--t-error)" }}>Cancel Job</button>
+          {/* Driver Task V1 — task-specific Delete Task action
+              replaces the generic "Cancel Job" button when viewing
+              an internal task. Calls the DELETE endpoint (which
+              branches to hard-delete in `cascadeDelete` for
+              driver_task) and refreshes the board so the task
+              disappears from every lane immediately. */}
+          {job.job_type === "driver_task" ? (
+            <button
+              onClick={async () => {
+                if (
+                  !confirm(
+                    FEATURE_REGISTRY.driver_task_delete_confirm?.guideDescription
+                      ?? "Delete Task?\n\nThis will permanently remove the internal driver task from dispatch and driver views. This cannot be undone.",
+                  )
+                ) {
+                  return;
+                }
+                try {
+                  await api.delete(`/jobs/${job.id}`);
+                  toast(
+                    "success",
+                    FEATURE_REGISTRY.driver_task_delete_success?.label ?? "Task deleted",
+                  );
+                  await onRefresh();
+                } catch {
+                  toast(
+                    "error",
+                    FEATURE_REGISTRY.driver_task_delete_failed?.label ?? "Failed to delete task",
+                  );
+                }
+              }}
+              className="w-full rounded-full border py-2 text-xs font-medium"
+              style={{ borderColor: "var(--t-error)", color: "var(--t-error)" }}
+            >
+              <Trash2 className="h-3.5 w-3.5 inline mr-1.5" />
+              {FEATURE_REGISTRY.driver_task_delete_action?.label ?? "Delete Task"}
+            </button>
+          ) : (
+            <button onClick={async () => { if (!confirm("Cancel this job?")) return; try { await api.patch(`/jobs/${job.id}/status`, { status: "cancelled" }); toast("success", "Cancelled"); await onRefresh(); } catch { toast("error", "Failed"); } }}
+              className="w-full rounded-full border py-2 text-xs font-medium" style={{ borderColor: "var(--t-error)", color: "var(--t-error)" }}>Cancel Job</button>
+          )}
         </>
       )}
     </div>

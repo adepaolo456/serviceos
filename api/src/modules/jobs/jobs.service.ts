@@ -1318,6 +1318,55 @@ export class JobsService {
       throw new BadRequestException('Cannot delete a task that is currently in progress');
     }
 
+    // ── Driver Task V1 — hard delete branch ──
+    //
+    // Driver tasks are internal dispatch-only operational items
+    // (yard errands, repair-shop runs, etc.). They have no customer,
+    // no invoice, no rental chain, no pricing snapshot, and no
+    // auditable historical reporting value. The office's expectation
+    // is that "Delete Task" is a TRUE delete — the row should
+    // disappear from dispatch, driver routes, and every operational
+    // surface immediately.
+    //
+    // The legacy cascadeDelete path below soft-cancels (status =
+    // 'cancelled', clears assigned_driver_id) which is the right
+    // behavior for delivery / pickup / exchange / dump_run jobs
+    // because those have billing + audit dependencies. But for
+    // driver tasks, soft-cancel causes them to re-appear in the
+    // Unassigned column (because the dispatch board query doesn't
+    // filter on status and a cancelled driver_task has
+    // assigned_driver_id = null) — exactly the bug the user
+    // reported.
+    //
+    // For driver_task jobs we take the short path: physically
+    // DELETE the row. Tenant-scoped via the WHERE clause; the
+    // `job_type = 'driver_task'` predicate guarantees no lifecycle
+    // job can be hard-deleted via this code path even if a caller
+    // mistakenly hands us a delivery/pickup/exchange id.
+    if (job.job_type === 'driver_task') {
+      // There should be no rental chain link, no invoice, no
+      // pricing snapshot, and no asset association on a driver
+      // task (the create path at `createDriverTask` does not set
+      // any of these). Defensive cleanup in case a future code
+      // path accidentally attaches one — delete any stray
+      // `task_chain_links` rows first so the foreign key can't
+      // block the delete, then delete the job row itself.
+      await this.taskChainLinkRepo.delete({ job_id: job.id });
+      const result = await this.jobsRepository.delete({
+        id: job.id,
+        tenant_id: tenantId,
+        job_type: 'driver_task',
+      });
+      return {
+        deletedTasks: [{ id: job.id, job_number: job.job_number }],
+        voidedInvoices: [],
+        creditMemos: [],
+        assetsReleased: [],
+        rentalChainsCancelled: [],
+        hardDeleted: (result.affected ?? 0) > 0,
+      };
+    }
+
     const now = new Date();
     const deletedTasks: { id: string; job_number: string }[] = [];
     const voidedInvoices: { id: string; invoice_number: number }[] = [];
