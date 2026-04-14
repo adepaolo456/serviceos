@@ -1,13 +1,13 @@
 "use client";
 
-import { useState, useEffect, use, type FormEvent } from "react";
+import { useState, useEffect, use, useCallback, type FormEvent, Fragment } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useBooking } from "@/components/booking-provider";
 import {
   ArrowLeft, Mail, Phone, MapPin, Building, Calendar, Pencil, Trash2,
   Briefcase, FileText, FileCheck, DollarSign, Clock, Plus, MessageSquare,
-  CreditCard, Send, Tag, Settings, User,
+  CreditCard, Send, Tag, Settings, User, ChevronRight, ChevronDown, ArrowRight,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useToast } from "@/components/toast";
@@ -17,6 +17,7 @@ import AddressAutocomplete, { type AddressValue } from "@/components/address-aut
 import MapboxMap from "@/components/mapbox-map";
 import { CUSTOMER_DASHBOARD_LABELS } from "@/lib/customer-dashboard-labels";
 import { CustomerCreditPanel } from "@/components/customer-credit-panel";
+import { FEATURE_REGISTRY } from "@/lib/feature-registry";
 
 /* ---- Types ---- */
 
@@ -44,6 +45,27 @@ interface Invoice {
 
 interface Note {
   id: string; content: string; type: string; author_name: string; created_at: string;
+}
+
+// Minimal rental-chain shape for the Jobs tab grouping. This mirrors
+// the same `/rental-chains?customerId=...` response the main Jobs
+// (Rental Lifecycles) page consumes so the two surfaces can share a
+// mental model and future shared component extraction is trivial.
+interface CustomerChainLink {
+  job_id: string;
+  sequence_number: number;
+  task_type: string;
+  status: string;
+  scheduled_date: string;
+  job: { id: string; job_number: string; status: string; asset_subtype?: string } | null;
+}
+interface CustomerChain {
+  id: string;
+  status: string;
+  dumpster_size: string;
+  drop_off_date: string;
+  expected_pickup_date: string | null;
+  links: CustomerChainLink[];
 }
 
 /* ---- Helpers ---- */
@@ -103,6 +125,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
   const { toast } = useToast();
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [chains, setChains] = useState<CustomerChain[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [notes, setNotes] = useState<Note[]>([]);
   const [customerQuotes, setCustomerQuotes] = useState<Array<{ id: string; quote_number: string; asset_subtype: string; total_quoted: number; derived_status: string; created_at: string; customer_name: string | null }>>([]);
@@ -110,6 +133,19 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<Tab>("overview");
   const [selectedTile, setSelectedTile] = useState<OverviewTile | null>(null);
+  // Expanded rental chains inside the Jobs tab. Collapsed by default;
+  // expanding a chain reveals its delivery / exchange / pickup child
+  // rows inline. Matches the pattern on the main Rental Lifecycles
+  // page so operators get the same interaction on both surfaces.
+  const [expandedChains, setExpandedChains] = useState<Set<string>>(new Set());
+  const toggleChain = useCallback((chainId: string) => {
+    setExpandedChains((prev) => {
+      const next = new Set(prev);
+      if (next.has(chainId)) next.delete(chainId);
+      else next.add(chainId);
+      return next;
+    });
+  }, []);
   const [editOpen, setEditOpen] = useState(false);
   const [newNote, setNewNote] = useState("");
   const [addingNote, setAddingNote] = useState(false);
@@ -129,6 +165,13 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
           .catch(() => setCustomerQuotes([]));
         api.get<{ id: string; amount: number; reason: string; status: string }[]>(`/invoices/credit-memos/by-customer/${id}`)
           .then(setCreditMemos).catch(() => setCreditMemos([]));
+        // Rental chains for the Jobs tab grouping. Uses the
+        // customerId filter that `rental-chains.controller.ts`
+        // already supports, so the response only contains this
+        // customer's chains (not all tenant chains).
+        api.get<CustomerChain[]>(`/rental-chains?customerId=${id}`)
+          .then((r) => setChains(Array.isArray(r) ? r : []))
+          .catch(() => setChains([]));
       } catch { /* */ }
       finally { setLoading(false); }
     }
@@ -566,32 +609,237 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
       )}
 
       {/* ===== JOBS TAB ===== */}
-      {tab === "jobs" && (
-        <div className="rounded-[20px] bg-[var(--t-bg-card)] border border-[var(--t-border)] overflow-hidden">
-          <div className="table-scroll">
-            <table className="w-full text-sm">
-              <thead><tr className="border-b border-[var(--t-border)]">
-                {["Job #", "Type", "Date", "Asset", "Status", "Price"].map(h => (
-                  <th key={h} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-[var(--t-text-muted)]">{h}</th>
-                ))}
-              </tr></thead>
-              <tbody>
-                {jobs.length === 0 ? <tr><td colSpan={6} className="py-12 text-center text-xs text-[var(--t-text-muted)]">No jobs</td></tr> :
-                  jobs.map(j => (
-                    <tr key={j.id} onClick={() => router.push(`/jobs/${j.id}`)} className="border-b border-[var(--t-border)] last:border-0 cursor-pointer hover:bg-[var(--t-bg-card-hover)] transition-colors">
-                      <td className="px-4 py-3 font-medium text-[var(--t-text-primary)]">{formatJobNumber(j.job_number)}</td>
-                      <td className="px-4 py-3 text-[var(--t-text-primary)] capitalize">{j.job_type}</td>
-                      <td className="px-4 py-3 text-[var(--t-text-primary)]">{j.scheduled_date || "—"}</td>
-                      <td className="px-4 py-3 text-[var(--t-text-muted)]">{j.asset?.identifier || "—"}</td>
-                      <td className="px-4 py-3"><span className="text-[10px] font-medium" style={{ color: displayStatusColor(deriveDisplayStatus(j.status)) }}>{DISPLAY_STATUS_LABELS[deriveDisplayStatus(j.status)]}</span></td>
-                      <td className="px-4 py-3 text-[var(--t-text-primary)] tabular-nums">{j.total_price ? fmtMoneyShort(j.total_price) : "—"}</td>
-                    </tr>
-                  ))}
-              </tbody>
-            </table>
+      {/*
+       * Jobs tab — grouped by rental lifecycle. Delivery / exchange /
+       * pickup tasks that belong to the same chain are collapsed under
+       * an expandable parent row so office staff can immediately see
+       * which jobs are part of the same rental. Standalone jobs (not
+       * part of any chain) render as flat rows below. Parent row
+       * click toggles expansion; child row click jumps to the job
+       * detail. The right-arrow on a parent row navigates to the
+       * full `/rentals/:id` lifecycle page.
+       */}
+      {tab === "jobs" && (() => {
+        const chainedJobIdSet = new Set<string>();
+        for (const c of chains) {
+          for (const l of c.links) {
+            if (l.job_id) chainedJobIdSet.add(l.job_id);
+          }
+        }
+        const standaloneJobs = jobs.filter((j) => !chainedJobIdSet.has(j.id));
+        const hasNothing = chains.length === 0 && standaloneJobs.length === 0;
+        const deriveChainLabel = (chain: CustomerChain) => {
+          // Reuse existing derived truth — chain.status is the
+          // authoritative lifecycle state from the backend.
+          const dropOff = chain.links.find((l) => l.task_type === "drop_off");
+          const pickUp = chain.links.find((l) => l.task_type === "pick_up");
+          const hasExchange = chain.links.some((l) => l.task_type === "exchange");
+          if (chain.status === "completed") return FEATURE_REGISTRY.lifecycle_status_completed?.label ?? "Completed";
+          if (chain.status === "cancelled") return "Cancelled";
+          if (hasExchange) return FEATURE_REGISTRY.lifecycle_status_exchange?.label ?? "Exchange Scheduled";
+          if (dropOff?.job?.status === "completed" && pickUp?.job?.status !== "completed") {
+            return FEATURE_REGISTRY.lifecycle_status_awaiting_pickup?.label ?? "Awaiting Pickup";
+          }
+          return FEATURE_REGISTRY.lifecycle_status_awaiting_delivery?.label ?? "Awaiting Delivery";
+        };
+        return (
+          <div className="space-y-4">
+            {hasNothing ? (
+              <div className="rounded-[20px] bg-[var(--t-bg-card)] border border-[var(--t-border)] py-12 text-center text-xs text-[var(--t-text-muted)]">
+                No jobs
+              </div>
+            ) : (
+              <>
+                {/* Rental lifecycles — expandable grouped rows */}
+                {chains.length > 0 && (
+                  <div className="rounded-[20px] bg-[var(--t-bg-card)] border border-[var(--t-border)] overflow-hidden">
+                    <div className="px-4 py-3 border-b border-[var(--t-border)] flex items-center justify-between">
+                      <p className="text-xs font-semibold uppercase tracking-wider text-[var(--t-text-muted)]">
+                        {FEATURE_REGISTRY.customer_jobs_rental_chains_heading?.label ?? "Rental Lifecycles"}
+                      </p>
+                      <span className="text-[10px] text-[var(--t-text-muted)]">{chains.length}</span>
+                    </div>
+                    <div className="table-scroll">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b border-[var(--t-border)]">
+                            <th className="w-8" aria-label="Expand" />
+                            <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-[var(--t-text-muted)]">Size</th>
+                            <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-[var(--t-text-muted)]">Delivered</th>
+                            <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-[var(--t-text-muted)]">Pickup</th>
+                            <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-[var(--t-text-muted)]">Tasks</th>
+                            <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-[var(--t-text-muted)]">Status</th>
+                            <th className="w-10" />
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {chains.map((chain) => {
+                            const isExpanded = expandedChains.has(chain.id);
+                            const isCompleted = chain.status === "completed";
+                            const orderedLinks = [...chain.links].sort(
+                              (a, b) => (a.sequence_number ?? 0) - (b.sequence_number ?? 0),
+                            );
+                            const completedTasks = chain.links.filter((l) => l.job?.status === "completed").length;
+                            const totalTasks = chain.links.length;
+                            const chainLabel = deriveChainLabel(chain);
+                            return (
+                              <Fragment key={chain.id}>
+                                <tr
+                                  onClick={() => toggleChain(chain.id)}
+                                  aria-expanded={isExpanded}
+                                  className="border-b border-[var(--t-border)] cursor-pointer hover:bg-[var(--t-bg-card-hover)] transition-colors"
+                                  style={{
+                                    borderLeft: isCompleted ? "3px solid var(--t-success, #22c55e)" : "3px solid var(--t-accent)",
+                                    background: isExpanded ? "var(--t-bg-card-hover)" : undefined,
+                                  }}
+                                >
+                                  <td className="pl-2">
+                                    {isExpanded
+                                      ? <ChevronDown className="h-3.5 w-3.5" style={{ color: "var(--t-text-muted)" }} />
+                                      : <ChevronRight className="h-3.5 w-3.5" style={{ color: "var(--t-text-muted)" }} />}
+                                  </td>
+                                  <td className="px-4 py-3">
+                                    {chain.dumpster_size ? (
+                                      <span className="text-[11px] font-extrabold uppercase" style={{ color: "var(--t-text-primary)", background: "var(--t-accent-soft)", padding: "2px 7px", borderRadius: 5 }}>
+                                        {chain.dumpster_size.replace(/yd$/i, "Y").toUpperCase()}
+                                      </span>
+                                    ) : <span className="text-[var(--t-text-tertiary)]">—</span>}
+                                  </td>
+                                  <td className="px-4 py-3 text-xs text-[var(--t-text-primary)]">
+                                    {chain.drop_off_date || "—"}
+                                  </td>
+                                  <td className="px-4 py-3 text-xs text-[var(--t-text-primary)]">
+                                    {chain.expected_pickup_date || "—"}
+                                  </td>
+                                  <td className="px-4 py-3 text-[11px] text-[var(--t-text-muted)]">
+                                    {completedTasks}/{totalTasks}
+                                  </td>
+                                  <td className="px-4 py-3">
+                                    <span className="text-[10px] font-semibold" style={{
+                                      color: isCompleted ? "var(--t-text-muted)" : "var(--t-accent)",
+                                      background: isCompleted ? "var(--t-bg-elevated)" : "var(--t-accent-soft)",
+                                      padding: "2px 8px",
+                                      borderRadius: 10,
+                                    }}>
+                                      {chainLabel}
+                                    </span>
+                                  </td>
+                                  <td className="pr-3">
+                                    <button
+                                      type="button"
+                                      onClick={(e) => { e.stopPropagation(); router.push(`/rentals/${chain.id}`); }}
+                                      className="p-1 rounded transition-colors"
+                                      style={{ color: "var(--t-text-muted)" }}
+                                      aria-label={FEATURE_REGISTRY.view_lifecycle?.label ?? "View full lifecycle"}
+                                      title={FEATURE_REGISTRY.view_lifecycle?.label ?? "View full lifecycle"}
+                                      onMouseEnter={(e) => { e.currentTarget.style.color = "var(--t-accent)"; }}
+                                      onMouseLeave={(e) => { e.currentTarget.style.color = "var(--t-text-muted)"; }}
+                                    >
+                                      <ArrowRight className="h-3.5 w-3.5" />
+                                    </button>
+                                  </td>
+                                </tr>
+                                {isExpanded && orderedLinks.map((link) => {
+                                  const childJob = link.job;
+                                  if (!childJob) return null;
+                                  // Pull the fuller Job record from
+                                  // the flat `jobs[]` fetch (which
+                                  // has asset + price) when available;
+                                  // fall back to the link.job shape.
+                                  const fullJob = jobs.find((j) => j.id === childJob.id);
+                                  const display = deriveDisplayStatus(childJob.status);
+                                  return (
+                                    <tr
+                                      key={`${chain.id}-child-${link.job_id}`}
+                                      onClick={() => router.push(`/jobs/${childJob.id}`)}
+                                      className="border-b border-[var(--t-border)] cursor-pointer hover:bg-[var(--t-bg-card-hover)] transition-colors"
+                                      style={{
+                                        borderLeft: isCompleted ? "3px solid var(--t-success, #22c55e)" : "3px solid var(--t-accent)",
+                                        background: "var(--t-bg-secondary, var(--t-bg-card))",
+                                      }}
+                                    >
+                                      <td />
+                                      <td className="pl-8 pr-4 py-2">
+                                        <div className="flex items-center gap-2 min-w-0">
+                                          <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--t-text-muted)" }}>
+                                            {link.task_type === "drop_off" ? "Delivery"
+                                              : link.task_type === "pick_up" ? "Pickup"
+                                                : link.task_type === "exchange" ? "Exchange"
+                                                  : link.task_type}
+                                          </span>
+                                          <span className="text-xs font-medium text-[var(--t-text-primary)]">
+                                            {formatJobNumber(childJob.job_number)}
+                                          </span>
+                                        </div>
+                                      </td>
+                                      <td className="px-4 py-2 text-[11px] text-[var(--t-text-primary)]">
+                                        {link.scheduled_date || "—"}
+                                      </td>
+                                      <td className="px-4 py-2 text-[11px] text-[var(--t-text-muted)]">
+                                        {fullJob?.asset?.identifier || childJob.asset_subtype || "—"}
+                                      </td>
+                                      <td />
+                                      <td className="px-4 py-2">
+                                        <span className="text-[10px] font-medium" style={{ color: displayStatusColor(display) }}>
+                                          {DISPLAY_STATUS_LABELS[display]}
+                                        </span>
+                                      </td>
+                                      <td className="pr-3 text-right">
+                                        {fullJob?.total_price ? (
+                                          <span className="text-[11px] tabular-nums text-[var(--t-text-muted)]">
+                                            {fmtMoneyShort(fullJob.total_price)}
+                                          </span>
+                                        ) : null}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </Fragment>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* Standalone jobs (not part of any rental chain) */}
+                {standaloneJobs.length > 0 && (
+                  <div className="rounded-[20px] bg-[var(--t-bg-card)] border border-[var(--t-border)] overflow-hidden">
+                    <div className="px-4 py-3 border-b border-[var(--t-border)] flex items-center justify-between">
+                      <p className="text-xs font-semibold uppercase tracking-wider text-[var(--t-text-muted)]">
+                        {FEATURE_REGISTRY.customer_jobs_standalone_heading?.label ?? "Standalone Jobs"}
+                      </p>
+                      <span className="text-[10px] text-[var(--t-text-muted)]">{standaloneJobs.length}</span>
+                    </div>
+                    <div className="table-scroll">
+                      <table className="w-full text-sm">
+                        <thead><tr className="border-b border-[var(--t-border)]">
+                          {["Job #", "Type", "Date", "Asset", "Status", "Price"].map(h => (
+                            <th key={h} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-[var(--t-text-muted)]">{h}</th>
+                          ))}
+                        </tr></thead>
+                        <tbody>
+                          {standaloneJobs.map(j => (
+                            <tr key={j.id} onClick={() => router.push(`/jobs/${j.id}`)} className="border-b border-[var(--t-border)] last:border-0 cursor-pointer hover:bg-[var(--t-bg-card-hover)] transition-colors">
+                              <td className="px-4 py-3 font-medium text-[var(--t-text-primary)]">{formatJobNumber(j.job_number)}</td>
+                              <td className="px-4 py-3 text-[var(--t-text-primary)] capitalize">{j.job_type}</td>
+                              <td className="px-4 py-3 text-[var(--t-text-primary)]">{j.scheduled_date || "—"}</td>
+                              <td className="px-4 py-3 text-[var(--t-text-muted)]">{j.asset?.identifier || "—"}</td>
+                              <td className="px-4 py-3"><span className="text-[10px] font-medium" style={{ color: displayStatusColor(deriveDisplayStatus(j.status)) }}>{DISPLAY_STATUS_LABELS[deriveDisplayStatus(j.status)]}</span></td>
+                              <td className="px-4 py-3 text-[var(--t-text-primary)] tabular-nums">{j.total_price ? fmtMoneyShort(j.total_price) : "—"}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* ===== QUOTES TAB ===== */}
       {tab === "quotes" && (
