@@ -606,7 +606,13 @@ export default function RentalLifecyclePage({ params }: { params: Promise<{ id: 
         <div className="space-y-2">
           {jobs.map((job, i) => {
             const status = job.status || "pending";
-            const ds = deriveDisplayStatus(status);
+            // Live-derived: pass the full job so the connected-
+            // task chip reflects the current driver assignment, not
+            // just the raw stored status. The chain-connected job
+            // shape carries `assigned_driver_id` (see interface
+            // below); if it's missing on a legacy payload the
+            // function falls through to the status-only branch.
+            const ds = deriveDisplayStatus({ status, assigned_driver_id: (job as { assigned_driver_id?: string | null }).assigned_driver_id });
             const isDone = status === "completed";
             const isCancelled = status === "cancelled";
             const typeColor = TASK_TYPE_COLORS[job.taskType] || "text-[var(--t-text-muted)]";

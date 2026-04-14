@@ -14,19 +14,137 @@ export type DisplayStatus =
   | "needs_reschedule";
 
 /**
- * Derive the operator-facing display status from stored job status + invoice context.
+ * Minimum shape required to derive a live display status from a job.
  *
- * @param storedStatus - The raw job.status from the database
- * @param invoiceStatus - The invoice status if one exists (null/undefined = no invoice)
+ * All fields except `status` are optional so any call site can pass
+ * whatever it has on hand, but at least one of `assigned_driver_id` /
+ * `assigned_driver` MUST be present for the "Assigned" precedence
+ * check to kick in — otherwise the call falls through to the legacy
+ * status-only branch (same behavior as passing a bare string). See
+ * `deriveDisplayStatus` below for the precedence rules.
+ */
+export interface DeriveDisplayStatusInput {
+  status: string;
+  /**
+   * Current `assigned_driver_id` column value. `null` / `undefined` /
+   * empty string all mean "no driver currently assigned". This is
+   * the authoritative source for the Assigned display state — NOT
+   * any historical `assigned_at` / `dispatched_at` timestamp.
+   */
+  assigned_driver_id?: string | null;
+  /**
+   * Some fetch paths (notably the dispatch board) serialize the
+   * driver as a nested object instead of a bare id. Both forms are
+   * accepted: a truthy value here is treated the same as a truthy
+   * `assigned_driver_id`.
+   */
+  assigned_driver?: unknown;
+  /**
+   * Optional execution-state timestamps. When present they win over
+   * the stored `status` column — useful for backends that advance
+   * timestamps before updating status, or for preventing stale
+   * status values from pulling a job backward into `assigned` after
+   * it has already been `en_route`.
+   */
+  en_route_at?: string | Date | null;
+  arrived_at?: string | Date | null;
+  completed_at?: string | Date | null;
+}
+
+/**
+ * Derive the operator-facing display status for a job.
+ *
+ * Two input forms are supported:
+ *
+ *   1. `deriveDisplayStatus("dispatched")` — legacy string form used
+ *      by status-label dropdowns, override-note builders, and toast
+ *      messages. Returns the plain status-to-label mapping with no
+ *      driver-awareness. Intentionally unchanged behavior — these
+ *      call sites are converting status STRINGS to display labels,
+ *      not rendering a live job, so `driver_id` isn't knowable.
+ *
+ *   2. `deriveDisplayStatus(job, invoiceStatus?)` — live derivation
+ *      for a specific fetched job. This is the form every status
+ *      chip / lifecycle timeline SHOULD use. Applies strict
+ *      top-to-bottom precedence:
+ *
+ *        cancelled        → cancelled
+ *        needs_reschedule → needs_reschedule
+ *        completed_at OR status=completed            → completed
+ *        arrived_at  OR status=arrived / in_progress → arrived
+ *        en_route_at OR status=en_route              → en_route
+ *        assigned_driver_id (or assigned_driver obj) → assigned
+ *        pending + unpaid invoice                    → pending_payment
+ *        otherwise                                   → unassigned
+ *
+ *      KEY FIX: "assigned" is a LIVE derived state, not a sticky
+ *      historical milestone. A job whose raw status is `dispatched`
+ *      but whose driver has been unassigned (assigned_driver_id is
+ *      null) falls through to `unassigned` — even though a
+ *      historical `assigned_at` / `dispatched_at` timestamp may
+ *      still exist on the row. The execution-state branches above
+ *      keep firing correctly even when the driver is still
+ *      populated, so a job that has already been en_route never
+ *      regresses to `assigned` just because the driver was
+ *      unassigned post-start.
  */
 export function deriveDisplayStatus(
+  jobOrStatus: string | DeriveDisplayStatusInput,
+  invoiceStatus?: string | null,
+): DisplayStatus {
+  // Legacy string form — dropdowns, label lookups, override notes.
+  // Preserved byte-for-byte so existing call sites keep working.
+  if (typeof jobOrStatus === "string") {
+    return deriveFromStatusString(jobOrStatus, invoiceStatus);
+  }
+
+  const job = jobOrStatus;
+  const { status } = job;
+
+  // ── Strict top-to-bottom precedence ──
+
+  // Terminal states
+  if (status === "cancelled") return "cancelled";
+  if (status === "needs_reschedule") return "needs_reschedule";
+
+  // Execution states win over assignment — a job that is already
+  // en_route / arrived / completed must NEVER regress to "assigned"
+  // just because we also have a driver_id populated.
+  if (job.completed_at || status === "completed") return "completed";
+  if (job.arrived_at || status === "arrived" || status === "in_progress") return "arrived";
+  if (job.en_route_at || status === "en_route") return "en_route";
+
+  // KEY FIX: assignment is derived from the CURRENT driver_id, not
+  // from the raw `dispatched` status or any historical assignment
+  // timestamp. Both naming conventions across the codebase
+  // (`assigned_driver_id` bare column / `assigned_driver` nested
+  // object) are accepted.
+  const hasLiveDriver =
+    (job.assigned_driver_id !== undefined && job.assigned_driver_id !== null && job.assigned_driver_id !== "") ||
+    Boolean(job.assigned_driver);
+  if (hasLiveDriver) return "assigned";
+
+  // No driver currently assigned. Refine "pending + unpaid" into
+  // the dedicated pending_payment state; everything else rolls up
+  // to unassigned.
+  if (status === "pending" && invoiceStatus && invoiceStatus !== "paid" && invoiceStatus !== "partial") {
+    return "pending_payment";
+  }
+  return "unassigned";
+}
+
+/**
+ * Legacy status-only mapping. Preserved for string-form call sites
+ * that convert a status constant to a display label (dropdowns,
+ * toast messages, override builders). NEVER call this path for a
+ * live job — use the object form instead.
+ */
+function deriveFromStatusString(
   storedStatus: string,
   invoiceStatus?: string | null,
 ): DisplayStatus {
   switch (storedStatus) {
     case "pending": {
-      // Pending + no invoice or paid invoice = dispatch-ready → Unassigned
-      // Pending + open/unpaid invoice = Pending Payment
       if (!invoiceStatus || invoiceStatus === "paid" || invoiceStatus === "partial") {
         return "unassigned";
       }
@@ -235,16 +353,32 @@ export function deriveCustomerTimeline(
   };
 
   // Step 1: Ordered
-  if (["pending", "confirmed"].includes(status) && jobType === "delivery") {
+  //
+  // "Ordered" covers the entire pre-execution phase from the
+  // customer's perspective: booked, scheduled, and even
+  // dispatcher-assigned (driver picked but not yet on the way).
+  // KEY FIX: `dispatched` is now grouped with pending/confirmed
+  // here. Previously `dispatched` was treated as "Delivery in
+  // Progress" in step 2, which meant a customer saw "on the way"
+  // for a job that was still sitting in the dispatch queue and —
+  // worse — continued to show "on the way" after the office
+  // unassigned the driver. The customer-facing semantic for
+  // progress is now strictly tied to real execution states.
+  if (["pending", "confirmed", "dispatched"].includes(status) && jobType === "delivery") {
     push("ordered", "current");
   } else {
     push("ordered", "done");
   }
 
   // Step 2: Delivery in progress / Delivered
-  if (["dispatched", "en_route", "arrived"].includes(status) && jobType === "delivery") {
+  //
+  // KEY FIX: only `en_route` / `arrived` mark this step as current.
+  // A `dispatched` job is no longer treated as "Delivery in
+  // Progress" — the portal must never imply the truck is on the
+  // way unless the job is in an actual live execution state.
+  if (["en_route", "arrived"].includes(status) && jobType === "delivery") {
     push("delivery_in_progress", "current");
-  } else if (["pending", "confirmed"].includes(status) && jobType === "delivery") {
+  } else if (["pending", "confirmed", "dispatched"].includes(status) && jobType === "delivery") {
     push("delivery_in_progress", "future");
   } else {
     push("delivered", "done");

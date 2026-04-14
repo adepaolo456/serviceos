@@ -131,8 +131,11 @@ function ChainRow({ chain }: { chain: DashboardChain }) {
 }
 
 function ChainLinkPill({ link }: { link: DashboardJobLink }) {
+  // Live-derived: pass the object form so the Assigned chip reflects
+  // the current driver assignment. `link.assignedDriverId` is carried
+  // from the backend customer-dashboard aggregator.
   const displayStatus = deriveDisplayStatus(
-    link.jobStatus,
+    { status: link.jobStatus, assigned_driver_id: link.assignedDriverId },
     link.linkedInvoiceStatus,
   );
   return (
@@ -158,8 +161,9 @@ function ChainLinkPill({ link }: { link: DashboardJobLink }) {
 // ────────────────────────────────────────────────────────────────────
 
 function StandaloneJobRow({ job }: { job: DashboardStandaloneJob }) {
+  // Live-derived: see ChainLinkPill above.
   const displayStatus = deriveDisplayStatus(
-    job.jobStatus,
+    { status: job.jobStatus, assigned_driver_id: job.assignedDriverId },
     job.linkedInvoiceStatus,
   );
   return (

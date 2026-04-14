@@ -35,6 +35,11 @@ interface Customer {
 interface Job {
   id: string; job_number: string; job_type: string; service_type: string;
   status: string; scheduled_date: string; total_price: number;
+  // Live driver assignment — required for the driver-aware
+  // `deriveDisplayStatus` object form so the customer detail Jobs
+  // table never shows a stale "Assigned" chip after the driver is
+  // unassigned from dispatch.
+  assigned_driver_id?: string | null;
   asset: { id: string; identifier: string } | null;
   created_at: string;
 }
@@ -58,7 +63,11 @@ interface CustomerChainLink {
   task_type: string;
   status: string;
   scheduled_date: string;
-  job: { id: string; job_number: string; status: string; asset_subtype?: string } | null;
+  // `assigned_driver_id` is carried on the nested job shape so the
+  // child chain row's Assigned chip can use the driver-aware
+  // `deriveDisplayStatus` object form without needing a full job
+  // refetch. Backend already returns it on the rental-chain link.
+  job: { id: string; job_number: string; status: string; asset_subtype?: string; assigned_driver_id?: string | null } | null;
 }
 interface CustomerChain {
   id: string;
@@ -378,12 +387,19 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
                             {j.scheduled_date}
                           </span>
                         )}
-                        <span
-                          className="text-[10px] font-medium"
-                          style={{ color: displayStatusColor(deriveDisplayStatus(j.status)) }}
-                        >
-                          {DISPLAY_STATUS_LABELS[deriveDisplayStatus(j.status)]}
-                        </span>
+                        {(() => {
+                          // Live-derived: pass the job so the chip
+                          // reflects the current driver assignment.
+                          const ds = deriveDisplayStatus(j);
+                          return (
+                            <span
+                              className="text-[10px] font-medium"
+                              style={{ color: displayStatusColor(ds) }}
+                            >
+                              {DISPLAY_STATUS_LABELS[ds]}
+                            </span>
+                          );
+                        })()}
                       </div>
                     </Link>
                   ))}
@@ -751,10 +767,12 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
                                   if (!childJob) return null;
                                   // Pull the fuller Job record from
                                   // the flat `jobs[]` fetch (which
-                                  // has asset + price) when available;
-                                  // fall back to the link.job shape.
+                                  // has asset + price + driver info)
+                                  // when available; fall back to the
+                                  // link.job shape. Live-derived so
+                                  // the Assigned chip is driver-aware.
                                   const fullJob = jobs.find((j) => j.id === childJob.id);
-                                  const display = deriveDisplayStatus(childJob.status);
+                                  const display = deriveDisplayStatus(fullJob ?? childJob);
                                   return (
                                     <tr
                                       key={`${chain.id}-child-${link.job_id}`}
@@ -833,7 +851,16 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
                               <td className="px-4 py-3 text-[var(--t-text-primary)] capitalize">{j.job_type}</td>
                               <td className="px-4 py-3 text-[var(--t-text-primary)]">{j.scheduled_date || "—"}</td>
                               <td className="px-4 py-3 text-[var(--t-text-muted)]">{j.asset?.identifier || "—"}</td>
-                              <td className="px-4 py-3"><span className="text-[10px] font-medium" style={{ color: displayStatusColor(deriveDisplayStatus(j.status)) }}>{DISPLAY_STATUS_LABELS[deriveDisplayStatus(j.status)]}</span></td>
+                              {(() => {
+                                // Live-derived: pass the job so the
+                                // Assigned chip reflects the current
+                                // driver assignment, not the raw
+                                // `dispatched` status column.
+                                const ds = deriveDisplayStatus(j);
+                                return (
+                                  <td className="px-4 py-3"><span className="text-[10px] font-medium" style={{ color: displayStatusColor(ds) }}>{DISPLAY_STATUS_LABELS[ds]}</span></td>
+                                );
+                              })()}
                               <td className="px-4 py-3 text-[var(--t-text-primary)] tabular-nums">{j.total_price ? fmtMoneyShort(j.total_price) : "—"}</td>
                             </tr>
                           ))}

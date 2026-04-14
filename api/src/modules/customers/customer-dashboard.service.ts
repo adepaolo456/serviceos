@@ -166,6 +166,9 @@ export class CustomerDashboardService {
             jobStatus: job?.status ?? 'unknown',
             jobType: job?.job_type ?? l.task_type,
             assetSubtype: job?.asset_subtype ?? null,
+            // Live driver assignment — used by the customer detail
+            // JobsTimeline to render a driver-aware display status.
+            assignedDriverId: job?.assigned_driver_id ?? null,
             linkedInvoiceStatus: linkedInvoice?.status ?? null,
             previousLinkId: l.previous_link_id,
             nextLinkId: l.next_link_id,
@@ -191,6 +194,8 @@ export class CustomerDashboardService {
         scheduledDate: j.scheduled_date ?? null,
         assetSubtype: j.asset_subtype ?? null,
         totalPrice: Number(j.total_price) || 0,
+        // Live driver assignment — see `CustomerDashboardJobLink`.
+        assignedDriverId: j.assigned_driver_id ?? null,
         linkedInvoiceStatus: invoicesByJobId.get(j.id)?.status ?? null,
       }));
 

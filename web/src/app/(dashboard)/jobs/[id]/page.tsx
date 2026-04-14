@@ -740,7 +740,43 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
 
   const addr = job.service_address;
   const transitions = (VALID_TRANSITIONS[job.status] || []).filter((t) => t !== "dispatched" || !!job.assigned_driver);
-  const statusIdx = TIMELINE_STEPS.findIndex((s) => s.status === job.status);
+  // Lifecycle timeline step index is derived from the LIVE display
+  // status, not from the raw `status` column. Previously this used
+  // `findIndex(s => s.status === job.status)` which meant a job
+  // whose raw status was still `dispatched` after the driver was
+  // unassigned kept pointing at the Assigned step forever. The
+  // display status (via the new `deriveDisplayStatus(job)` object
+  // form) is driver-aware, so unassignment cleanly pulls the
+  // timeline back to the Unassigned step.
+  const liveDisplayStatus = deriveDisplayStatus(job);
+  const statusIdx = (() => {
+    // Cancelled jobs are rendered via a special-case branch below
+    // (muted X icon, no "current" step). Keep the -1 contract.
+    if (job.status === "cancelled") return -1;
+    switch (liveDisplayStatus) {
+      case "completed":
+        return 5;
+      case "arrived":
+        return 4;
+      case "en_route":
+        return 3;
+      case "assigned":
+        return 2;
+      case "unassigned":
+      case "needs_reschedule":
+        // Preserve the pre-existing distinction between "Created"
+        // (raw status=pending) and "Unassigned" (raw status=confirmed
+        // or dispatched-without-driver). Only bare pending sits at
+        // step 0; anything else without a driver sits at step 1.
+        return job.status === "pending" ? 0 : 1;
+      case "pending_payment":
+        // Pending with an open invoice — still pre-dispatch. Show
+        // the Created dot.
+        return 0;
+      default:
+        return 0;
+    }
+  })();
   const typeColor = JOB_TYPE_COLORS[job.job_type] || "text-blue-400";
   const sizeColor = job.asset?.subtype ? (SIZE_COLORS[job.asset.subtype] || "text-[var(--t-text-muted)]") : "";
   // Rental duration truth source (bug fix for the "20,557 days"
@@ -790,8 +826,8 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
         <div>
           <div className="flex items-center gap-3 mb-1 flex-wrap">
             <h1 className="text-[28px] font-bold tracking-[-1px] text-[var(--t-frame-text)]">{formatJobNumber(job.job_number)}</h1>
-            <span className="text-xs font-medium" style={{ color: displayStatusColor(deriveDisplayStatus(job.status)) }}>
-              {DISPLAY_STATUS_LABELS[deriveDisplayStatus(job.status)]}
+            <span className="text-xs font-medium" style={{ color: displayStatusColor(liveDisplayStatus) }}>
+              {DISPLAY_STATUS_LABELS[liveDisplayStatus]}
             </span>
             <span className={`text-[11px] font-medium capitalize ${typeColor}`}>
               {job.job_type}
@@ -1158,7 +1194,16 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
           {TIMELINE_STEPS.map((step, i) => {
             const isCompleted = i <= statusIdx && job.status !== "cancelled";
             const isCurrent = i === statusIdx;
-            const timestamp = (job as unknown as Record<string, string>)[step.key];
+            const rawTimestamp = (job as unknown as Record<string, string>)[step.key];
+            // Timestamp safety: only show the `dispatched_at`
+            // ("Assigned") timestamp when the live derived state is
+            // actually at or past the Assigned step. Otherwise we'd
+            // render a stale historical timestamp under an inactive
+            // step — the exact "ghost Assigned" bug this fix is for.
+            // Same guard applies to `en_route_at` / `arrived_at` /
+            // `completed_at` so an unassignment after en_route never
+            // leaves an orphaned later-step timestamp visible.
+            const timestamp = i <= statusIdx ? rawTimestamp : undefined;
             return (
               <div key={step.key} className="flex flex-1 items-center">
                 <div className="flex flex-col items-center">

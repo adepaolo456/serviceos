@@ -1224,7 +1224,16 @@ function ScheduleModule({ scheduleDate, setScheduleDate, todayJobs, unassignedJo
                         {job.assigned_driver ? <p style={{ fontSize: 12, color: "var(--t-text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{job.assigned_driver.first_name}</p> : <span style={{ fontSize: 11, fontWeight: 600, color: "var(--t-error)" }}>Unassigned</span>}
                         {job.asset && <p style={{ fontSize: 11, color: "var(--t-text-muted)" }}>{job.asset.identifier}</p>}
                       </div>
-                      <span style={{ fontSize: 11, fontWeight: 600, color: displayStatusColor(deriveDisplayStatus(job.status)), flexShrink: 0 }}>{DISPLAY_STATUS_LABELS[deriveDisplayStatus(job.status)]}</span>
+                      {(() => {
+                        // Live-derived: pass the job so the Today
+                        // Schedule chip reflects the current driver
+                        // assignment (assigned_driver nested object
+                        // or `null`), not the raw `dispatched` status.
+                        const ds = deriveDisplayStatus(job);
+                        return (
+                          <span style={{ fontSize: 11, fontWeight: 600, color: displayStatusColor(ds), flexShrink: 0 }}>{DISPLAY_STATUS_LABELS[ds]}</span>
+                        );
+                      })()}
                     </Link>
                   );
                 })}

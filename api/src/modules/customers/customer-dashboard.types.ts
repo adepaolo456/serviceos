@@ -47,6 +47,15 @@ export interface CustomerDashboardJobLink {
   jobStatus: string;
   jobType: string;
   assetSubtype: string | null;
+  /**
+   * Live driver assignment on the hydrated job. `null` when no
+   * driver is currently assigned. Carried through so the customer
+   * detail Jobs timeline can use the driver-aware
+   * `deriveDisplayStatus` object form — otherwise chain link chips
+   * would stay stuck on "Assigned" after the office unassigned the
+   * driver. Additive, nullable, no DB change.
+   */
+  assignedDriverId: string | null;
   /** Optional linked invoice status hint for client-side display derivation. */
   linkedInvoiceStatus: string | null;
   previousLinkId: string | null;
@@ -70,6 +79,11 @@ export interface CustomerDashboardStandaloneJob {
   scheduledDate: string | null;
   assetSubtype: string | null;
   totalPrice: number;
+  /**
+   * Live driver assignment for the standalone job — see
+   * `CustomerDashboardJobLink.assignedDriverId` for rationale.
+   */
+  assignedDriverId: string | null;
   linkedInvoiceStatus: string | null;
 }
 
