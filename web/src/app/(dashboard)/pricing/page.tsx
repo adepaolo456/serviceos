@@ -1,47 +1,52 @@
 "use client";
 
+/**
+ * Pricing hub — main landing page for the Pricing admin surface.
+ *
+ * Before this refactor, the landing page tried to render every
+ * pricing rule as a large tile in a responsive grid. That worked
+ * for 3-4 dumpster sizes but would not scale once a tenant had 15+
+ * rules or once ServiceOS expanded into other service categories
+ * (portable storage, restrooms, equipment rentals).
+ *
+ * The landing page now acts as a hub: it shows a compact summary
+ * card for Pricing Rules (with a count and a small preview) and
+ * links into the dedicated `/pricing/rules` page where the full
+ * scalable table view lives. Delivery Zones, Surcharge Templates,
+ * and Terms & Conditions are preserved in their existing shapes.
+ *
+ * Pricing LOGIC is unchanged — this page still reads from the same
+ * endpoints, the pricing rules themselves still flow through the
+ * same create / update / delete APIs (on the dedicated rules page),
+ * and invoice / billing / customer-facing service descriptions are
+ * deliberately untouched.
+ */
+
 import { useState, useEffect, useCallback } from "react";
-import { Plus, DollarSign, Mail, Pencil, Trash2, Check, X, MapPin } from "lucide-react";
+import { Plus, DollarSign, Pencil, Trash2, Check, X, MapPin, ArrowRight, FileText } from "lucide-react";
 import Link from "next/link";
 import { api } from "@/lib/api";
-import SlideOver from "@/components/slide-over";
 import { useToast } from "@/components/toast";
 import AddressAutocomplete from "@/components/address-autocomplete";
+import { FEATURE_REGISTRY } from "@/lib/feature-registry";
 
-interface PricingRule {
+// Minimal shape — only the fields the hub summary preview needs.
+// The dedicated /pricing/rules page pulls the full PricingRule shape.
+interface PricingRuleSummary {
   id: string;
   name: string;
-  service_type: string;
   asset_subtype: string;
-  customer_type: string | null;
   base_price: number;
-  rental_period_days: number;
-  extra_day_rate: number;
-  included_miles: number;
-  per_mile_charge: number;
-  max_service_miles: number;
-  included_tons: number;
-  overage_per_ton: number;
-  delivery_fee: number;
-  pickup_fee: number;
-  exchange_fee: number;
-  require_deposit: boolean;
-  deposit_amount: number;
-  tax_rate: number;
-  failed_trip_base_fee: number;
-  is_active: boolean;
 }
 
 interface PricingResponse {
-  data: PricingRule[];
+  data: PricingRuleSummary[];
   meta: { total: number };
 }
 
 export default function PricingPage() {
-  const [rules, setRules] = useState<PricingRule[]>([]);
+  const [rules, setRules] = useState<PricingRuleSummary[]>([]);
   const [loading, setLoading] = useState(true);
-  const [editOpen, setEditOpen] = useState(false);
-  const [editRule, setEditRule] = useState<PricingRule | null>(null);
   const [zones, setZones] = useState<Array<{ id: string; zone_name: string; min_miles: number; max_miles: number; surcharge: number }>>([]);
   const [editingZone, setEditingZone] = useState<string | null>(null);
   const [zoneForm, setZoneForm] = useState({ zoneName: "", minMiles: "", maxMiles: "", surcharge: "" });
@@ -75,135 +80,140 @@ export default function PricingPage() {
 
   useEffect(() => { fetchRules(); }, [fetchRules]);
 
-  const saveRule = async (data: Record<string, unknown>) => {
-    try {
-      if (editRule) {
-        await api.patch(`/pricing/${editRule.id}`, data);
-        toast("success", `${editRule.asset_subtype || "Rule"} pricing updated`);
-      } else {
-        await api.post("/pricing", {
-          serviceType: "dumpster_rental",
-          ...data,
-        });
-        toast("success", `${data.assetSubtype || "New"} pricing created`);
-      }
-      setEditOpen(false);
-      fetchRules();
-    } catch {
-      toast("error", "Failed to save");
-    }
-  };
+  const rulesCardLabel =
+    FEATURE_REGISTRY.pricing_hub_rules_card_title?.label ?? "Pricing Rules";
+  const rulesCardDesc =
+    FEATURE_REGISTRY.pricing_hub_rules_card_description?.shortDescription
+      ?? "Base prices, included capacity, durations, and overage rates.";
+  const rulesCta =
+    FEATURE_REGISTRY.pricing_hub_rules_manage_cta?.label ?? "Manage pricing rules";
 
   return (
     <div>
       {/* Header */}
       <div className="flex items-start justify-between gap-4 mb-8">
         <div>
-          <h1 className="text-[28px] font-bold tracking-[-1px] text-[var(--t-frame-text)]">Pricing</h1>
-          <p className="mt-1 text-[13px] text-[var(--t-frame-text-muted)]">{rules.length} pricing rule{rules.length !== 1 ? "s" : ""}</p>
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <button
-            onClick={() => { setEditRule(null); setEditOpen(true); }}
-            className="inline-flex items-center gap-1.5 rounded-full bg-[var(--t-accent)] px-5 py-2.5 text-sm font-semibold text-[var(--t-accent-on-accent)] transition-all hover:brightness-110"
-          >
-            <Plus className="h-4 w-4" /> Add Size
-          </button>
+          <h1 className="text-[28px] font-bold tracking-[-1px] text-[var(--t-frame-text)]">
+            {FEATURE_REGISTRY.pricing_hub_title?.label ?? "Pricing"}
+          </h1>
+          <p className="mt-1 text-[13px] text-[var(--t-frame-text-muted)]">
+            {FEATURE_REGISTRY.pricing_hub_subtitle?.shortDescription
+              ?? "Rules, delivery zones, surcharges, and customer-facing terms."}
+          </p>
         </div>
       </div>
 
-      {/* Controls */}
-      <div className="flex items-center gap-3 mb-6">
-        <Link href="/pricing/surcharges" className="flex items-center gap-2 rounded-[16px] border px-4 py-2.5 text-sm font-medium transition-colors hover:bg-[var(--t-bg-card-hover)]"
-          style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)", color: "var(--t-text-primary)" }}>
-          <DollarSign className="h-4 w-4" style={{ color: "var(--t-accent)" }} /> Surcharge Templates
-        </Link>
-        <Link href="/pricing/terms" className="flex items-center gap-2 rounded-[16px] border px-4 py-2.5 text-sm font-medium transition-colors hover:bg-[var(--t-bg-card-hover)]"
-          style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)", color: "var(--t-text-primary)" }}>
-          <Mail className="h-4 w-4" style={{ color: "var(--t-accent)" }} /> Terms &amp; Conditions
-        </Link>
-      </div>
-
-      {/* ── PRICING RULES ── */}
-      <p className="text-[11px] font-extrabold uppercase tracking-[1.2px] mb-3" style={{ color: "var(--t-frame-text-muted)" }}>PRICING RULES</p>
-      {loading ? (
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3.5">
-          {[1, 2, 3, 4].map((i) => <div key={i} className="h-28 skeleton rounded-[14px]" />)}
-        </div>
-      ) : (
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3.5">
-          {rules.map((rule) => (
-            <div
-              key={rule.id}
-              className="group relative text-left rounded-[14px] border p-5 transition-all duration-150 cursor-pointer hover:-translate-y-0.5"
-              style={{
-                background: "var(--t-bg-secondary)",
-                borderColor: "var(--t-border)",
-                boxShadow: "0 2px 12px var(--t-shadow)",
-              }}
-              onMouseEnter={(e) => { e.currentTarget.style.boxShadow = "0 6px 20px rgba(0,0,0,0.12)"; }}
-              onMouseLeave={(e) => { e.currentTarget.style.boxShadow = "0 2px 12px var(--t-shadow)"; }}
-              onClick={() => { setEditRule(rule); setEditOpen(true); }}
-            >
-              {/* Edit/Delete icons */}
-              <div className="absolute top-3 right-3 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
-                <button onClick={() => { setEditRule(rule); setEditOpen(true); }}
-                  className="p-1.5 rounded-lg transition-colors" style={{ color: "var(--t-text-muted)" }}
-                  onMouseEnter={e => { e.currentTarget.style.color = "var(--t-accent)"; }}
-                  onMouseLeave={e => { e.currentTarget.style.color = "var(--t-text-muted)"; }}>
-                  <Pencil className="h-3.5 w-3.5" />
-                </button>
-                <button onClick={async () => {
-                    if (!confirm(`Delete ${rule.asset_subtype || rule.name} pricing rule? Existing invoices will keep their original pricing.`)) return;
-                    try { await api.delete(`/pricing/${rule.id}`); toast("success", "Pricing rule deleted"); fetchRules(); }
-                    catch { toast("error", "Failed to delete"); }
-                  }}
-                  className="p-1.5 rounded-lg transition-colors" style={{ color: "var(--t-text-muted)" }}
-                  onMouseEnter={e => { e.currentTarget.style.color = "var(--t-error)"; }}
-                  onMouseLeave={e => { e.currentTarget.style.color = "var(--t-text-muted)"; }}>
-                  <Trash2 className="h-3.5 w-3.5" />
-                </button>
-              </div>
-              <p className="text-[11px] font-extrabold uppercase tracking-[1.2px]" style={{ color: "var(--t-text-tertiary)" }}>
-                {rule.asset_subtype?.replace("yd", " Yard") || rule.name || "Unknown Size"}
-              </p>
-              <p className="text-[28px] font-extrabold tracking-tight mt-1" style={{ color: "var(--t-text-primary)", letterSpacing: "-1px" }}>
-                ${Number(rule.base_price).toLocaleString()}
-              </p>
-              <p className="text-[12px] mt-1.5" style={{ color: "var(--t-text-muted)" }}>
-                {Number(rule.included_tons)} ton{Number(rule.included_tons) !== 1 ? "s" : ""} · {rule.rental_period_days} days · ${Number(rule.extra_day_rate)}/day
-              </p>
-              <p className="text-[11px] mt-1 font-semibold" style={{ color: "var(--t-accent)" }}>
-                ${Number(rule.overage_per_ton)}/ton overage
+      {/* ── PRICING RULES summary card ── */}
+      <p
+        className="text-[11px] font-extrabold uppercase tracking-[1.2px] mb-3"
+        style={{ color: "var(--t-frame-text-muted)" }}
+      >
+        {(FEATURE_REGISTRY.pricing_hub_section_rules?.label ?? "Pricing Rules").toUpperCase()}
+      </p>
+      <Link
+        href="/pricing/rules"
+        className="block rounded-[14px] border p-5 mb-6 transition-all hover:border-[var(--t-accent)]"
+        style={{
+          background: "var(--t-bg-secondary)",
+          borderColor: "var(--t-border)",
+          boxShadow: "0 2px 12px var(--t-shadow)",
+        }}
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 mb-1.5">
+              <DollarSign className="h-4 w-4 shrink-0" style={{ color: "var(--t-accent)" }} />
+              <p
+                className="text-[14px] font-semibold"
+                style={{ color: "var(--t-text-primary)" }}
+              >
+                {rulesCardLabel}
               </p>
             </div>
-          ))}
-          {/* Add new size card */}
-          <button
-            onClick={() => {
-              setEditRule(null);
-              setEditOpen(true);
-            }}
-            className="rounded-[14px] border border-dashed p-5 transition-all duration-150 flex flex-col items-center justify-center cursor-pointer"
-            style={{
-              borderColor: "var(--t-border)",
-              color: "var(--t-text-muted)",
-              minHeight: 120,
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.borderColor = "var(--t-accent)";
-              e.currentTarget.style.color = "var(--t-accent)";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.borderColor = "var(--t-border)";
-              e.currentTarget.style.color = "var(--t-text-muted)";
-            }}
+            <p className="text-[12px] mb-3" style={{ color: "var(--t-text-muted)" }}>
+              {rulesCardDesc}
+            </p>
+            {loading ? (
+              <div className="h-5 w-40 skeleton rounded" />
+            ) : rules.length === 0 ? (
+              <p className="text-[12px] italic" style={{ color: "var(--t-text-tertiary)" }}>
+                {FEATURE_REGISTRY.pricing_hub_rules_empty?.label
+                  ?? "No pricing rules configured yet"}
+              </p>
+            ) : (
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                <span
+                  className="text-[12px] font-semibold tabular-nums"
+                  style={{ color: "var(--t-text-primary)" }}
+                >
+                  {rules.length} rule{rules.length === 1 ? "" : "s"}
+                </span>
+                <span style={{ color: "var(--t-text-tertiary)" }}>·</span>
+                <span className="text-[12px]" style={{ color: "var(--t-text-muted)" }}>
+                  {rules
+                    .slice(0, 5)
+                    .map((r) => r.asset_subtype || r.name)
+                    .filter(Boolean)
+                    .join(" · ")}
+                  {rules.length > 5 ? ` · +${rules.length - 5} more` : ""}
+                </span>
+              </div>
+            )}
+          </div>
+          <div
+            className="flex items-center gap-1.5 text-[12px] font-semibold shrink-0"
+            style={{ color: "var(--t-accent)" }}
           >
-            <Plus className="h-6 w-6 mb-1" />
-            <span className="text-xs font-semibold">Add Size</span>
-          </button>
+            {rulesCta} <ArrowRight className="h-3.5 w-3.5" />
+          </div>
         </div>
-      )}
+      </Link>
+
+      {/* ── OTHER SECTIONS — Surcharges, Terms ── */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 mb-8">
+        <Link
+          href="/pricing/surcharges"
+          className="flex items-start gap-3 rounded-[14px] border p-5 transition-all hover:border-[var(--t-accent)]"
+          style={{
+            background: "var(--t-bg-secondary)",
+            borderColor: "var(--t-border)",
+            boxShadow: "0 2px 12px var(--t-shadow)",
+          }}
+        >
+          <DollarSign className="h-5 w-5 shrink-0 mt-0.5" style={{ color: "var(--t-accent)" }} />
+          <div className="min-w-0 flex-1">
+            <p className="text-[14px] font-semibold" style={{ color: "var(--t-text-primary)" }}>
+              {FEATURE_REGISTRY.pricing_hub_section_surcharges?.label ?? "Surcharge Templates"}
+            </p>
+            <p className="text-[12px] mt-0.5" style={{ color: "var(--t-text-muted)" }}>
+              {FEATURE_REGISTRY.pricing_hub_surcharges_description?.shortDescription
+                ?? "Reusable charges applied to jobs or invoices."}
+            </p>
+          </div>
+          <ArrowRight className="h-3.5 w-3.5 shrink-0 mt-1" style={{ color: "var(--t-accent)" }} />
+        </Link>
+        <Link
+          href="/pricing/terms"
+          className="flex items-start gap-3 rounded-[14px] border p-5 transition-all hover:border-[var(--t-accent)]"
+          style={{
+            background: "var(--t-bg-secondary)",
+            borderColor: "var(--t-border)",
+            boxShadow: "0 2px 12px var(--t-shadow)",
+          }}
+        >
+          <FileText className="h-5 w-5 shrink-0 mt-0.5" style={{ color: "var(--t-accent)" }} />
+          <div className="min-w-0 flex-1">
+            <p className="text-[14px] font-semibold" style={{ color: "var(--t-text-primary)" }}>
+              {FEATURE_REGISTRY.pricing_hub_section_terms?.label ?? "Terms & Conditions"}
+            </p>
+            <p className="text-[12px] mt-0.5" style={{ color: "var(--t-text-muted)" }}>
+              {FEATURE_REGISTRY.pricing_hub_terms_description?.shortDescription
+                ?? "Customer-facing legal text shown on quotes and invoices."}
+            </p>
+          </div>
+          <ArrowRight className="h-3.5 w-3.5 shrink-0 mt-1" style={{ color: "var(--t-accent)" }} />
+        </Link>
+      </div>
 
       {/* ── DELIVERY ZONES ── */}
       <div className="mt-8">
@@ -386,192 +396,11 @@ export default function PricingPage() {
         )}
       </div>
 
-      {/* Edit Pricing SlideOver */}
-      <SlideOver
-        open={editOpen}
-        onClose={() => setEditOpen(false)}
-        title={
-          editRule ? `Edit ${editRule.asset_subtype || editRule.name || ""} Pricing` : "Add New Size"
-        }
-      >
-        <PricingForm
-          rule={editRule}
-          onSave={saveRule}
-          onClose={() => setEditOpen(false)}
-        />
-      </SlideOver>
-    </div>
-  );
-}
-
-/* ── Pricing Edit Form ── */
-function PricingForm({
-  rule,
-  onSave,
-  onClose,
-}: {
-  rule: PricingRule | null;
-  onSave: (data: Record<string, unknown>) => void;
-  onClose: () => void;
-}) {
-  const [sizeName, setSizeName] = useState(rule?.asset_subtype || "");
-  const [basePrice, setBasePrice] = useState(
-    rule ? String(Number(rule.base_price)) : ""
-  );
-  const [includedTons, setIncludedTons] = useState(
-    rule ? String(Number(rule.included_tons)) : ""
-  );
-  const [overageRate, setOverageRate] = useState(
-    rule ? String(Number(rule.overage_per_ton)) : ""
-  );
-  const [rentalDays, setRentalDays] = useState(
-    rule ? String(rule.rental_period_days) : "14"
-  );
-  const [extraDayRate, setExtraDayRate] = useState(
-    rule ? String(Number(rule.extra_day_rate)) : ""
-  );
-  const [sizeError, setSizeError] = useState("");
-  const inputStyle = {
-    background: "var(--t-bg-card)",
-    borderColor: "var(--t-border)",
-    color: "var(--t-text-primary)",
-  };
-
-  const fields = [
-    {
-      label: "Base Price",
-      value: basePrice,
-      set: setBasePrice,
-      prefix: "$",
-      suffix: undefined,
-    },
-    {
-      label: "Included Tonnage",
-      value: includedTons,
-      set: setIncludedTons,
-      prefix: undefined,
-      suffix: "tons",
-    },
-    {
-      label: "Overage Rate",
-      value: overageRate,
-      set: setOverageRate,
-      prefix: "$",
-      suffix: "/ton",
-    },
-    {
-      label: "Rental Period",
-      value: rentalDays,
-      set: setRentalDays,
-      prefix: undefined,
-      suffix: "days",
-    },
-    {
-      label: "Extra Day Rate",
-      value: extraDayRate,
-      set: setExtraDayRate,
-      prefix: "$",
-      suffix: "/day",
-    },
-  ];
-
-  return (
-    <div className="space-y-5">
-      {/* Size Name — required */}
-      <div>
-        <label
-          className="block text-[12px] font-semibold uppercase tracking-wide mb-1.5"
-          style={{ color: "var(--t-text-muted)" }}
-        >
-          Size Name <span style={{ color: "var(--t-error, #ef4444)" }}>*</span>
-        </label>
-        <input
-          value={sizeName}
-          onChange={(e) => { setSizeName(e.target.value); setSizeError(""); }}
-          placeholder="e.g. 10yd, 20yd, 30yd, Compactor"
-          className="w-full rounded-[14px] border px-4 py-2.5 text-sm outline-none transition-colors focus:border-[var(--t-accent)]"
-          style={{
-            ...inputStyle,
-            borderColor: sizeError ? "var(--t-error, #ef4444)" : inputStyle.borderColor,
-          }}
-        />
-        {sizeError && (
-          <p className="mt-1 text-xs" style={{ color: "var(--t-error, #ef4444)" }}>{sizeError}</p>
-        )}
-      </div>
-
-      {fields.map((field) => (
-        <div key={field.label}>
-          <label
-            className="block text-[12px] font-semibold uppercase tracking-wide mb-1.5"
-            style={{ color: "var(--t-text-muted)" }}
-          >
-            {field.label}
-          </label>
-          <div className="relative">
-            {field.prefix && (
-              <span
-                className="absolute left-4 top-1/2 -translate-y-1/2 text-sm"
-                style={{ color: "var(--t-text-muted)" }}
-              >
-                {field.prefix}
-              </span>
-            )}
-            <input
-              value={field.value}
-              onChange={(e) => field.set(e.target.value)}
-              type="number"
-              className="w-full rounded-[14px] border px-4 py-2.5 text-sm outline-none transition-colors focus:border-[var(--t-accent)]"
-              style={{
-                ...inputStyle,
-                paddingLeft: field.prefix ? 28 : 16,
-              }}
-            />
-            {field.suffix && (
-              <span
-                className="absolute right-4 top-1/2 -translate-y-1/2 text-xs"
-                style={{ color: "var(--t-text-muted)" }}
-              >
-                {field.suffix}
-              </span>
-            )}
-          </div>
-        </div>
-      ))}
-
-      <div className="flex gap-3 pt-4">
-        <button
-          onClick={() => {
-            if (!sizeName.trim()) {
-              setSizeError("Size Name is required");
-              return;
-            }
-            onSave({
-              name: `${sizeName.trim()} Dumpster`,
-              assetSubtype: sizeName.trim(),
-              basePrice: Number(basePrice),
-              includedTons: Number(includedTons),
-              overagePerTon: Number(overageRate),
-              rentalPeriodDays: Number(rentalDays),
-              extraDayRate: Number(extraDayRate),
-            });
-          }}
-          className="flex-1 rounded-full py-3 text-[13px] font-bold"
-          style={{ background: "var(--t-accent)", color: "var(--t-accent-on-accent)" }}
-        >
-          Save
-        </button>
-        <button
-          onClick={onClose}
-          className="rounded-full px-6 py-3 text-[13px] font-medium border"
-          style={{
-            borderColor: "var(--t-border)",
-            color: "var(--t-text-muted)",
-          }}
-        >
-          Cancel
-        </button>
-      </div>
+      {/*
+       * Rule edit SlideOver moved to `/pricing/rules`. That page
+       * owns the full PricingForm and the compact table that
+       * replaces the legacy big-card grid.
+       */}
     </div>
   );
 }
