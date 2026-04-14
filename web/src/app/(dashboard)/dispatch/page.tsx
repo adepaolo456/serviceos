@@ -24,6 +24,7 @@ import { formatPhone } from "@/lib/utils";
 import { useToast } from "@/components/toast";
 import QuickView, { QuickViewSkeleton } from "@/components/quick-view";
 import Dropdown from "@/components/dropdown";
+import AddressAutocomplete, { type AddressValue } from "@/components/address-autocomplete";
 import { FEATURE_REGISTRY } from "@/lib/feature-registry";
 import { useLifecycleSync, useVisibilityRefresh } from "@/lib/lifecycle-sync";
 import { useTenantTimezone } from "@/lib/use-modules";
@@ -1013,6 +1014,7 @@ export default function DispatchPage() {
                       onStatusChange={async (jid, s) => { try { await api.patch(`/jobs/${jid}/status`, { status: s, cancellationReason: s === "failed" ? "Dispatcher override" : undefined }); toast("success", `Status → ${s.replace(/_/g, " ")}`); await fetchBoard(true); } catch (err) { toast("error", isCreditBlockError(err) ?? "Failed"); } }}
                       collapsed={collapsedCols.has("unassigned")} onToggleCollapse={() => toggleCollapse("unassigned")}
                       onHide={() => setUnassignedRail(true)}
+                      onAddTask={() => setNewTaskOpen({ defaultDate: date })}
                       driverJobCities={driverJobCities}
                       selectedJobs={selectedJobs} onSelectJob={handleSelectJob} onCheckboxToggle={handleCheckboxToggle}
                       onMoveJob={handleMoveJob} />
@@ -1029,6 +1031,7 @@ export default function DispatchPage() {
                   onStatusChange={async (jid, s) => { try { await api.patch(`/jobs/${jid}/status`, { status: s, cancellationReason: s === "failed" ? "Dispatcher override" : undefined }); toast("success", `Status → ${s.replace(/_/g, " ")}`); await fetchBoard(true); } catch (err) { toast("error", isCreditBlockError(err) ?? "Failed"); } }}
                   collapsed={collapsedCols.has(col.driver.id)} onToggleCollapse={() => toggleCollapse(col.driver.id)}
                   onHide={() => hideColumn(col.driver.id)}
+                  onAddTask={() => setNewTaskOpen({ defaultDriverId: col.driver.id, defaultDate: date })}
                   onColumnDrag={makeColumnDrag(col.driver.id)}
                   selectedJobs={selectedJobs} onSelectJob={handleSelectJob} onCheckboxToggle={handleCheckboxToggle}
                   onMoveJob={handleMoveJob} avgJobCount={avgJobCount}
@@ -1527,35 +1530,70 @@ function NewTaskDrawer({
   const [title, setTitle] = useState("");
   const [driverId, setDriverId] = useState<string>(defaultDriverId || "");
   const [scheduledDate, setScheduledDate] = useState(defaultDate);
-  const [address, setAddress] = useState("");
+  // Structured address populated by the shared AddressAutocomplete
+  // component. `null` means no address on file. Sent to the backend
+  // as `serviceAddress` (same shape the customer / public booking
+  // flows already use).
+  const [address, setAddress] = useState<AddressValue | null>(null);
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  // Inline error surface so validation + request failures are
+  // visible inside the drawer itself, not only via the parent toast.
+  const [formError, setFormError] = useState<string | null>(null);
+  const [titleError, setTitleError] = useState<string | null>(null);
+  // Ref to the native date input so clicking anywhere on the field
+  // wrapper (not just the calendar icon) opens the picker.
+  const dateInputRef = useRef<HTMLInputElement | null>(null);
 
   const inputCls =
     "w-full rounded-[14px] border bg-[var(--t-bg-card)] border-[var(--t-border)] px-4 py-2.5 text-sm text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)]";
   const labelCls =
     "block text-[11px] font-semibold uppercase tracking-wide mb-1.5 text-[var(--t-text-muted)]";
 
-  const handleSubmit = async () => {
-    const trimmed = title.trim();
-    if (!trimmed) {
-      onError(FEATURE_REGISTRY.dispatch_new_task_title_required?.label ?? "Task title is required");
+  const handleSubmit = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    setFormError(null);
+    setTitleError(null);
+    const trimmedTitle = title.trim();
+    if (!trimmedTitle) {
+      const msg = FEATURE_REGISTRY.dispatch_new_task_title_required?.label ?? "Task title is required";
+      setTitleError(msg);
+      setFormError(msg);
+      return;
+    }
+    if (!scheduledDate) {
+      setFormError(FEATURE_REGISTRY.dispatch_new_task_date_required?.label ?? "Scheduled date is required");
       return;
     }
     setSubmitting(true);
     try {
+      // Structured service address passthrough. If the user typed
+      // nothing, skip the field entirely. If they selected a
+      // geocoded suggestion, send the whole AddressValue shape so
+      // the downstream driver route / map can render the pin.
+      const serviceAddress = address && (address.formatted || address.street)
+        ? {
+            street: address.street || "",
+            city: address.city || "",
+            state: address.state || "",
+            zip: address.zip || "",
+            lat: address.lat ?? null,
+            lng: address.lng ?? null,
+            formatted: address.formatted || "",
+          }
+        : null;
+
       await api.post("/jobs/driver-task", {
-        title: trimmed,
+        title: trimmedTitle,
         assignedDriverId: driverId || null,
         scheduledDate,
-        serviceAddress: address.trim()
-          ? { street: address.trim() }
-          : null,
+        serviceAddress,
         notes: notes.trim() || null,
       });
       onCreated();
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to create task";
+      setFormError(msg);
       onError(msg);
     } finally {
       setSubmitting(false);
@@ -1583,12 +1621,29 @@ function NewTaskDrawer({
                 ?? "Internal one-off task — not a customer rental job."}
             </p>
           </div>
-          <button onClick={onClose} className="p-1 rounded hover:bg-[var(--t-bg-card-hover)]">
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1 rounded hover:bg-[var(--t-bg-card-hover)]"
+          >
             <X className="h-4 w-4 text-[var(--t-text-muted)]" />
           </button>
         </div>
 
-        <div className="p-5 space-y-4">
+        <form onSubmit={handleSubmit} className="p-5 space-y-4">
+          {/* Form-level error banner — visible inline so create
+              failures are never silent. Also mirrored as a toast
+              via `onError`. */}
+          {formError && (
+            <div
+              role="alert"
+              className="rounded-[14px] px-4 py-3 text-xs font-medium"
+              style={{ background: "var(--t-error-soft)", color: "var(--t-error)" }}
+            >
+              {formError}
+            </div>
+          )}
+
           <div>
             <label className={labelCls}>
               {FEATURE_REGISTRY.dispatch_new_task_field_title?.label ?? "Task Title"}
@@ -1596,14 +1651,21 @@ function NewTaskDrawer({
             </label>
             <input
               value={title}
-              onChange={(e) => setTitle(e.target.value)}
+              onChange={(e) => { setTitle(e.target.value); if (titleError) setTitleError(null); }}
               placeholder={
                 FEATURE_REGISTRY.dispatch_new_task_field_title_placeholder?.label
                   ?? "e.g. Bring truck to Smith Auto Repair"
               }
               className={inputCls}
+              style={titleError ? { borderColor: "var(--t-error, #ef4444)" } : undefined}
               autoFocus
+              aria-invalid={!!titleError}
             />
+            {titleError && (
+              <p className="mt-1 text-[11px]" style={{ color: "var(--t-error, #ef4444)" }}>
+                {titleError}
+              </p>
+            )}
           </div>
 
           <div>
@@ -1628,12 +1690,25 @@ function NewTaskDrawer({
             <label className={labelCls}>
               {FEATURE_REGISTRY.dispatch_new_task_field_date?.label ?? "Scheduled Date"}
             </label>
-            <input
-              type="date"
-              value={scheduledDate}
-              onChange={(e) => setScheduledDate(e.target.value)}
-              className={inputCls}
-            />
+            {/* Full-width click target: clicking anywhere on the
+                wrapper calls `showPicker()` on the native date
+                input. This matches the pattern used on the portal
+                rental-detail delivery-date wrapper and the tenant
+                settings rental-period input. Native `showPicker`
+                has ~97% browser coverage; the native calendar icon
+                is still available as a fallback for older browsers. */}
+            <div
+              className="relative cursor-pointer"
+              onClick={() => dateInputRef.current?.showPicker?.()}
+            >
+              <input
+                ref={dateInputRef}
+                type="date"
+                value={scheduledDate}
+                onChange={(e) => setScheduledDate(e.target.value)}
+                className={`${inputCls} cursor-pointer`}
+              />
+            </div>
           </div>
 
           <div>
@@ -1643,14 +1718,17 @@ function NewTaskDrawer({
                 (optional)
               </span>
             </label>
-            <input
-              value={address}
-              onChange={(e) => setAddress(e.target.value)}
+            {/* Shared geocoded autocomplete — same component the
+                customer edit form, booking wizard, and yard-location
+                settings use. Returns a structured AddressValue with
+                lat/lng so the driver route and map can pin the task. */}
+            <AddressAutocomplete
+              value={address || undefined}
+              onChange={(addr) => setAddress(addr)}
               placeholder={
                 FEATURE_REGISTRY.dispatch_new_task_field_address_placeholder?.label
                   ?? "e.g. 123 Shop Ln, Portland, ME"
               }
-              className={inputCls}
             />
           </div>
 
@@ -1676,8 +1754,8 @@ function NewTaskDrawer({
 
           <div className="flex gap-3 pt-2">
             <button
-              onClick={handleSubmit}
-              disabled={submitting || !title.trim()}
+              type="submit"
+              disabled={submitting}
               className="flex-1 rounded-full py-3 text-sm font-bold disabled:opacity-40"
               style={{ background: "var(--t-accent)", color: "var(--t-accent-on-accent)" }}
             >
@@ -1686,6 +1764,7 @@ function NewTaskDrawer({
                 : (FEATURE_REGISTRY.dispatch_new_task_submit?.label ?? "Create Task")}
             </button>
             <button
+              type="button"
               onClick={onClose}
               className="rounded-full px-6 py-3 text-sm font-medium border text-[var(--t-text-muted)]"
               style={{ borderColor: "var(--t-border)" }}
@@ -1693,7 +1772,7 @@ function NewTaskDrawer({
               Cancel
             </button>
           </div>
-        </div>
+        </form>
       </div>
     </div>,
     document.body,
@@ -1858,7 +1937,7 @@ function DispatchMap({ board, activeJobId }: { board: DispatchBoard | null; acti
    Column Card — white card with accordion collapse
    ═══════════════════════════════════════════════════ */
 
-function ColumnCard({ columnId, title, driver, isUnassigned, count, progress, jobs, drivers, onAssign, onUnassign, onQuickView, onStatusChange, onCtxMenu, activeId, collapsed, onToggleCollapse, onHide, onColumnDrag, driverJobCities, selectedJobs, onSelectJob, onCheckboxToggle, onMoveJob, avgJobCount }: {
+function ColumnCard({ columnId, title, driver, isUnassigned, count, progress, jobs, drivers, onAssign, onUnassign, onQuickView, onStatusChange, onCtxMenu, activeId, collapsed, onToggleCollapse, onHide, onAddTask, onColumnDrag, driverJobCities, selectedJobs, onSelectJob, onCheckboxToggle, onMoveJob, avgJobCount }: {
   columnId: string; title: string; driver?: Driver; isUnassigned?: boolean;
   count: number; progress?: { completed: number; total: number };
   jobs: DispatchJob[]; drivers?: Driver[];
@@ -1869,6 +1948,10 @@ function ColumnCard({ columnId, title, driver, isUnassigned, count, progress, jo
   onCtxMenu?: (e: React.MouseEvent, job: DispatchJob) => void;
   activeId: string | null;
   collapsed: boolean; onToggleCollapse: () => void; onHide?: () => void;
+  // Driver Task V1 — opens the New Driver Task slide-over with
+  // this column's driver pre-selected. Wired from the top-level
+  // DispatchPage via `setNewTaskOpen({ defaultDriverId: ... })`.
+  onAddTask?: () => void;
   onColumnDrag?: { onDragStart: (e: React.DragEvent) => void; onDragOver: (e: React.DragEvent) => void; onDrop: (e: React.DragEvent) => void; onDragEnd: (e: React.DragEvent) => void };
   driverJobCities?: Array<{ driverName: string; cities: string[] }>;
   selectedJobs?: Set<string>;
@@ -1983,6 +2066,20 @@ function ColumnCard({ columnId, title, driver, isUnassigned, count, progress, jo
                 <MoreHorizontal className="h-4 w-4" />
               </button>
             } align="right">
+              {/* Driver Task V1 — per-column "Add Task" entry point.
+                  Opens the same slide-over as the top-bar New Task
+                  button but with this column's driver pre-selected. */}
+              {onAddTask && (
+                <button
+                  type="button"
+                  onClick={onAddTask}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-xs"
+                  style={{ color: "var(--t-text-primary)" }}
+                >
+                  <Plus className="h-3 w-3" />
+                  {FEATURE_REGISTRY.dispatch_column_add_task?.label ?? "Add Task"}
+                </button>
+              )}
               {onHide && <button onClick={onHide} className="flex w-full items-center gap-2 px-3 py-2 text-xs" style={{ color: "var(--t-text-primary)" }}><EyeOff className="h-3 w-3" /> Hide Column</button>}
               <button onClick={onToggleCollapse} className="flex w-full items-center gap-2 px-3 py-2 text-xs" style={{ color: "var(--t-text-primary)" }}>
                 {collapsed ? <Eye className="h-3 w-3" /> : <ChevronUp className="h-3 w-3" />} {collapsed ? "Show All" : "Collapse"}
