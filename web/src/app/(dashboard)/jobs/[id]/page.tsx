@@ -660,6 +660,37 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
     } catch { toast("error", "Failed to delete"); }
   };
 
+  // Driver Task V1 — dedicated task-level delete path. For
+  // `job_type = 'driver_task'` records the backend `cascadeDelete`
+  // branch physically deletes the row instead of soft-cancelling it,
+  // so the task disappears from dispatch, driver route, and every
+  // operational surface the next time the board is fetched. Task-
+  // specific confirmation copy keeps office users in the "task"
+  // mental model, not the "rental job" one.
+  const deleteTask = async () => {
+    if (
+      !confirm(
+        FEATURE_REGISTRY.driver_task_delete_confirm?.guideDescription
+          ?? "Delete Task?\n\nThis will permanently remove the internal driver task from dispatch and driver views. This cannot be undone.",
+      )
+    ) {
+      return;
+    }
+    try {
+      await api.delete(`/jobs/${id}`);
+      toast(
+        "success",
+        FEATURE_REGISTRY.driver_task_delete_success?.label ?? "Task deleted",
+      );
+      router.push("/dispatch");
+    } catch {
+      toast(
+        "error",
+        FEATURE_REGISTRY.driver_task_delete_failed?.label ?? "Failed to delete task",
+      );
+    }
+  };
+
   const scheduleNext = async (type: string) => {
     const scheduledDate = prompt(`Scheduled date for ${type.replace(/_/g, " ")} (YYYY-MM-DD):`);
     if (!scheduledDate) return;
@@ -784,39 +815,61 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
             );
           })}
 
-          {/* Actions menu */}
+          {/* Actions menu
+              ──────────────────────────────────────────────────────
+              Driver Task V1 — for `job_type === 'driver_task'` the
+              entire menu collapses to a single task-specific Delete
+              Task action. Customer-lifecycle concepts (Cancel Job,
+              Schedule Pickup / Exchange / Dump & Return, Override
+              Status) are intentionally hidden because driver tasks
+              have no lifecycle, no invoice, no customer, and no
+              billing state — surfacing those options here would just
+              confuse office users about whether this is a rental
+              job. Lifecycle jobs keep the existing full menu below. */}
           <Dropdown
             trigger={<button className="rounded-full border border-[var(--t-border)] p-2 text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)] transition-colors"><MoreHorizontal className="h-4 w-4" /></button>}
             align="right"
           >
-            {transitions.includes("cancelled") && (
-              <button onClick={() => changeStatus("cancelled")} className="flex w-full items-center gap-2 px-4 py-2 text-sm text-[var(--t-error)] hover:bg-[var(--t-bg-card-hover)] transition-colors">
-                <XCircle className="h-3.5 w-3.5" /> Cancel Job
+            {job.job_type === "driver_task" ? (
+              <button
+                onClick={deleteTask}
+                className="flex w-full items-center gap-2 px-4 py-2 text-sm text-[var(--t-error)] hover:bg-[var(--t-bg-card-hover)] transition-colors"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                {FEATURE_REGISTRY.driver_task_delete_action?.label ?? "Delete Task"}
               </button>
-            )}
-            <button onClick={deleteJob} className="flex w-full items-center gap-2 px-4 py-2 text-sm text-[var(--t-error)] hover:bg-[var(--t-bg-card-hover)] transition-colors">
-              <Trash2 className="h-3.5 w-3.5" /> Delete Job
-            </button>
-            {(OVERRIDE_TARGETS[job.status]?.length ?? 0) > 0 && (
+            ) : (
               <>
-                <div className="my-1 border-t border-[var(--t-border)]" />
-                <button onClick={() => { setOverrideTarget(OVERRIDE_TARGETS[job.status]?.[0] || ""); setOverrideReason(""); setOverrideOpen(true); }} className="flex w-full items-center gap-2 px-4 py-2 text-sm text-[var(--t-text-muted)] hover:bg-[var(--t-bg-card-hover)] transition-colors">
-                  <AlertTriangle className="h-3.5 w-3.5" /> Override Status
+                {transitions.includes("cancelled") && (
+                  <button onClick={() => changeStatus("cancelled")} className="flex w-full items-center gap-2 px-4 py-2 text-sm text-[var(--t-error)] hover:bg-[var(--t-bg-card-hover)] transition-colors">
+                    <XCircle className="h-3.5 w-3.5" /> Cancel Job
+                  </button>
+                )}
+                <button onClick={deleteJob} className="flex w-full items-center gap-2 px-4 py-2 text-sm text-[var(--t-error)] hover:bg-[var(--t-bg-card-hover)] transition-colors">
+                  <Trash2 className="h-3.5 w-3.5" /> Delete Job
                 </button>
-              </>
-            )}
-            {job.status === "completed" && (job.job_type === "delivery" || job.job_type === "drop_off") && (
-              <>
-                <div className="my-1 border-t border-[var(--t-border)]" />
-                <button onClick={() => scheduleNext("pickup")} disabled={actionLoading} className="flex w-full items-center gap-2 px-4 py-2 text-sm text-[var(--t-text-primary)] hover:bg-[var(--t-bg-card-hover)] transition-colors">
-                  <ArrowRight className="h-3.5 w-3.5" /> Schedule Pickup
-                </button>
-                <button onClick={() => scheduleNext("exchange")} disabled={actionLoading} className="flex w-full items-center gap-2 px-4 py-2 text-sm text-[var(--t-text-primary)] hover:bg-[var(--t-bg-card-hover)] transition-colors">
-                  <ArrowRight className="h-3.5 w-3.5" /> Schedule Exchange
-                </button>
-                <button onClick={() => scheduleNext("dump_and_return")} disabled={actionLoading} className="flex w-full items-center gap-2 px-4 py-2 text-sm text-[var(--t-text-primary)] hover:bg-[var(--t-bg-card-hover)] transition-colors">
-                  <ArrowRight className="h-3.5 w-3.5" /> Schedule Dump & Return
-                </button>
+                {(OVERRIDE_TARGETS[job.status]?.length ?? 0) > 0 && (
+                  <>
+                    <div className="my-1 border-t border-[var(--t-border)]" />
+                    <button onClick={() => { setOverrideTarget(OVERRIDE_TARGETS[job.status]?.[0] || ""); setOverrideReason(""); setOverrideOpen(true); }} className="flex w-full items-center gap-2 px-4 py-2 text-sm text-[var(--t-text-muted)] hover:bg-[var(--t-bg-card-hover)] transition-colors">
+                      <AlertTriangle className="h-3.5 w-3.5" /> Override Status
+                    </button>
+                  </>
+                )}
+                {job.status === "completed" && (job.job_type === "delivery" || job.job_type === "drop_off") && (
+                  <>
+                    <div className="my-1 border-t border-[var(--t-border)]" />
+                    <button onClick={() => scheduleNext("pickup")} disabled={actionLoading} className="flex w-full items-center gap-2 px-4 py-2 text-sm text-[var(--t-text-primary)] hover:bg-[var(--t-bg-card-hover)] transition-colors">
+                      <ArrowRight className="h-3.5 w-3.5" /> Schedule Pickup
+                    </button>
+                    <button onClick={() => scheduleNext("exchange")} disabled={actionLoading} className="flex w-full items-center gap-2 px-4 py-2 text-sm text-[var(--t-text-primary)] hover:bg-[var(--t-bg-card-hover)] transition-colors">
+                      <ArrowRight className="h-3.5 w-3.5" /> Schedule Exchange
+                    </button>
+                    <button onClick={() => scheduleNext("dump_and_return")} disabled={actionLoading} className="flex w-full items-center gap-2 px-4 py-2 text-sm text-[var(--t-text-primary)] hover:bg-[var(--t-bg-card-hover)] transition-colors">
+                      <ArrowRight className="h-3.5 w-3.5" /> Schedule Dump & Return
+                    </button>
+                  </>
+                )}
               </>
             )}
           </Dropdown>
