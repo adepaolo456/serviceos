@@ -988,48 +988,105 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
             trigger={<button className="rounded-full border border-[var(--t-border)] p-2 text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)] transition-colors"><MoreHorizontal className="h-4 w-4" /></button>}
             align="right"
           >
+            {/* Polish pass — rows tightened to px-3 py-1.5 with a
+                min-h-[36px] floor so tap targets stay comfortable.
+                Group order: lifecycle/scheduling first (most common
+                forward actions), destructive Cancel/Delete at the
+                bottom, separated by a divider. Override Status sits
+                with lifecycle because it's a constructive correction
+                path, not a destructive one; its AlertTriangle icon is
+                tinted with var(--t-warning) so it still reads as a
+                caution action without turning the whole row yellow.
+                Schedule Pickup uses Truck (already imported) to
+                differentiate from the generic ArrowRight on the
+                other two scheduling actions — Exchange and Dump &
+                Return keep ArrowRight because the Lucide icons that
+                would better fit (ArrowLeftRight, RefreshCw) are not
+                already imported and the spec forbids new imports. */}
             {job.job_type === "driver_task" ? (
               <button
                 onClick={deleteTask}
-                className="flex w-full items-center gap-2 px-4 py-2 text-sm text-[var(--t-error)] hover:bg-[var(--t-bg-card-hover)] transition-colors"
+                className="flex w-full min-h-[36px] items-center gap-2 px-3 py-1.5 text-sm text-[var(--t-error)] hover:bg-[var(--t-bg-card-hover)] transition-colors"
               >
                 <Trash2 className="h-3.5 w-3.5" />
                 {FEATURE_REGISTRY.driver_task_delete_action?.label ?? "Delete Task"}
               </button>
-            ) : (
-              <>
-                {transitions.includes("cancelled") && (
-                  <button onClick={() => changeStatus("cancelled")} className="flex w-full items-center gap-2 px-4 py-2 text-sm text-[var(--t-error)] hover:bg-[var(--t-bg-card-hover)] transition-colors">
-                    <XCircle className="h-3.5 w-3.5" /> Cancel Job
+            ) : (() => {
+              const canOverride = (OVERRIDE_TARGETS[job.status]?.length ?? 0) > 0;
+              const canSchedule =
+                job.status === "completed" &&
+                (job.job_type === "delivery" || job.job_type === "drop_off");
+              const hasLifecycleGroup = canOverride || canSchedule;
+              const canCancel = transitions.includes("cancelled");
+              return (
+                <>
+                  {/* ── Lifecycle / scheduling group ── */}
+                  {canOverride && (
+                    <button
+                      onClick={() => {
+                        setOverrideTarget(OVERRIDE_TARGETS[job.status]?.[0] || "");
+                        setOverrideReason("");
+                        setOverrideOpen(true);
+                      }}
+                      className="flex w-full min-h-[36px] items-center gap-2 px-3 py-1.5 text-sm text-[var(--t-text-primary)] hover:bg-[var(--t-bg-card-hover)] transition-colors"
+                    >
+                      <AlertTriangle className="h-3.5 w-3.5 text-[var(--t-warning)]" />
+                      Override Status
+                    </button>
+                  )}
+                  {canSchedule && (
+                    <>
+                      {canOverride && (
+                        <div className="my-1 border-t border-[var(--t-border)]" />
+                      )}
+                      <button
+                        onClick={() => scheduleNext("pickup")}
+                        disabled={actionLoading}
+                        className="flex w-full min-h-[36px] items-center gap-2 px-3 py-1.5 text-sm text-[var(--t-text-primary)] hover:bg-[var(--t-bg-card-hover)] transition-colors disabled:opacity-50"
+                      >
+                        <Truck className="h-3.5 w-3.5 text-[var(--t-text-muted)]" />
+                        Schedule Pickup
+                      </button>
+                      <button
+                        onClick={() => scheduleNext("exchange")}
+                        disabled={actionLoading}
+                        className="flex w-full min-h-[36px] items-center gap-2 px-3 py-1.5 text-sm text-[var(--t-text-primary)] hover:bg-[var(--t-bg-card-hover)] transition-colors disabled:opacity-50"
+                      >
+                        <ArrowRight className="h-3.5 w-3.5 text-[var(--t-text-muted)]" />
+                        Schedule Exchange
+                      </button>
+                      <button
+                        onClick={() => scheduleNext("dump_and_return")}
+                        disabled={actionLoading}
+                        className="flex w-full min-h-[36px] items-center gap-2 px-3 py-1.5 text-sm text-[var(--t-text-primary)] hover:bg-[var(--t-bg-card-hover)] transition-colors disabled:opacity-50"
+                      >
+                        <ArrowRight className="h-3.5 w-3.5 text-[var(--t-text-muted)]" />
+                        Schedule Dump & Return
+                      </button>
+                    </>
+                  )}
+
+                  {/* ── Destructive group ── */}
+                  {hasLifecycleGroup && (
+                    <div className="my-1 border-t border-[var(--t-border)]" />
+                  )}
+                  {canCancel && (
+                    <button
+                      onClick={() => changeStatus("cancelled")}
+                      className="flex w-full min-h-[36px] items-center gap-2 px-3 py-1.5 text-sm text-[var(--t-error)] hover:bg-[var(--t-bg-card-hover)] transition-colors"
+                    >
+                      <XCircle className="h-3.5 w-3.5" /> Cancel Job
+                    </button>
+                  )}
+                  <button
+                    onClick={deleteJob}
+                    className="flex w-full min-h-[36px] items-center gap-2 px-3 py-1.5 text-sm text-[var(--t-error)] hover:bg-[var(--t-bg-card-hover)] transition-colors"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" /> Delete Job
                   </button>
-                )}
-                <button onClick={deleteJob} className="flex w-full items-center gap-2 px-4 py-2 text-sm text-[var(--t-error)] hover:bg-[var(--t-bg-card-hover)] transition-colors">
-                  <Trash2 className="h-3.5 w-3.5" /> Delete Job
-                </button>
-                {(OVERRIDE_TARGETS[job.status]?.length ?? 0) > 0 && (
-                  <>
-                    <div className="my-1 border-t border-[var(--t-border)]" />
-                    <button onClick={() => { setOverrideTarget(OVERRIDE_TARGETS[job.status]?.[0] || ""); setOverrideReason(""); setOverrideOpen(true); }} className="flex w-full items-center gap-2 px-4 py-2 text-sm text-[var(--t-text-muted)] hover:bg-[var(--t-bg-card-hover)] transition-colors">
-                      <AlertTriangle className="h-3.5 w-3.5" /> Override Status
-                    </button>
-                  </>
-                )}
-                {job.status === "completed" && (job.job_type === "delivery" || job.job_type === "drop_off") && (
-                  <>
-                    <div className="my-1 border-t border-[var(--t-border)]" />
-                    <button onClick={() => scheduleNext("pickup")} disabled={actionLoading} className="flex w-full items-center gap-2 px-4 py-2 text-sm text-[var(--t-text-primary)] hover:bg-[var(--t-bg-card-hover)] transition-colors">
-                      <ArrowRight className="h-3.5 w-3.5" /> Schedule Pickup
-                    </button>
-                    <button onClick={() => scheduleNext("exchange")} disabled={actionLoading} className="flex w-full items-center gap-2 px-4 py-2 text-sm text-[var(--t-text-primary)] hover:bg-[var(--t-bg-card-hover)] transition-colors">
-                      <ArrowRight className="h-3.5 w-3.5" /> Schedule Exchange
-                    </button>
-                    <button onClick={() => scheduleNext("dump_and_return")} disabled={actionLoading} className="flex w-full items-center gap-2 px-4 py-2 text-sm text-[var(--t-text-primary)] hover:bg-[var(--t-bg-card-hover)] transition-colors">
-                      <ArrowRight className="h-3.5 w-3.5" /> Schedule Dump & Return
-                    </button>
-                  </>
-                )}
-              </>
-            )}
+                </>
+              );
+            })()}
           </Dropdown>
         </div>
       </div>
