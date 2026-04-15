@@ -2454,9 +2454,24 @@ export class JobsService {
     // creating one. The guardrail that forbids unassigning a completed
     // job's asset lives in `changeAsset` (the office correction entry
     // point), so by the time we get here we're cleared to clear.
+    //
+    // CRITICAL — we must null BOTH the scalar FK column (`asset_id`)
+    // AND the eagerly-loaded relation object (`asset`). TypeORM's
+    // save path re-derives the FK from the relation object when one
+    // is present; setting only the scalar is silently overwritten
+    // before the SQL UPDATE is issued. `findOne` (jobs.service.ts:560)
+    // uses `leftJoinAndSelect('j.asset')`, so every call site that
+    // unassigns through this method has the relation loaded. Nulling
+    // the relation tells TypeORM there is no referenced Asset, and
+    // the FK is written as NULL.
     if (mainAssetUnassigned) {
       const previousAssetId = job.asset_id;
-      (job as { asset_id: string | null }).asset_id = null;
+      const jobRef = job as Job & {
+        asset_id: string | null;
+        asset: Asset | null;
+      };
+      jobRef.asset_id = null;
+      jobRef.asset = null;
       history.push({
         previous_asset_id: previousAssetId,
         new_asset_id: null,
