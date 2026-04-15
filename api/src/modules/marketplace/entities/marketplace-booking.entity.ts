@@ -22,7 +22,7 @@ export class MarketplaceBooking {
   @JoinColumn({ name: 'tenant_id' })
   tenant!: Tenant;
 
-  @Column({ name: 'marketplace_booking_id', unique: true })
+  @Column({ name: 'marketplace_booking_id' })
   marketplace_booking_id!: string;
 
   @Column({ name: 'listing_type' })
