@@ -45,13 +45,14 @@ function label(id: string, fallback: string): string {
 function pivotTrends(rows: TrendRow[]) {
   const map = new Map<string, Record<string, number>>();
   for (const r of rows) {
+    if (typeof r.day !== "string") continue;
     const day = r.day.slice(0, 10);
-    if (!map.has(day)) map.set(day, { day: 0 });
+    if (!map.has(day)) map.set(day, {});
     const bucket = map.get(day)!;
     bucket[r.event_type] = (bucket[r.event_type] ?? 0) + r.count;
   }
   return Array.from(map.entries())
-    .map(([day, data]) => ({ day, ...data }))
+    .map(([day, data]) => ({ ...data, day }))
     .sort((a, b) => a.day.localeCompare(b.day));
 }
 
