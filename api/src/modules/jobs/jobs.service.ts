@@ -905,10 +905,28 @@ export class JobsService {
       );
     }
 
+    // Delivery-specific asset gate. Fires first (before the generic
+    // gate below) so delivery completions surface a distinct error
+    // code the frontend can route to the asset picker. Functionally
+    // overlaps the generic check but the clearer code matters for the
+    // override flow where the operator needs a specific "assign asset
+    // before completing a delivery" message, not a generic one.
+    if (
+      dto.status === 'completed' &&
+      job.job_type === 'delivery' &&
+      !job.asset_id
+    ) {
+      throw new BadRequestException(
+        'delivery_completion_requires_asset: Asset must be assigned before completing a delivery job',
+      );
+    }
+
     // Phase 11A — asset-required gate for completion. Server-
     // authoritative: frontend validation is a UX guard, this is the
     // truth. Applies to every job type (delivery, pickup, exchange,
-    // drop_off, removal, dump_run, dump_and_return).
+    // drop_off, removal, dump_run, dump_and_return). Delivery is
+    // handled above with a more specific error code but this generic
+    // check remains the canonical gate for all other types.
     if (dto.status === 'completed' && !job.asset_id) {
       throw new BadRequestException(
         'asset_required: An asset must be assigned before completing this job',
