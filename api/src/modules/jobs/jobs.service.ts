@@ -901,6 +901,12 @@ export class JobsService {
           userName: userName ?? null,
           sizeMismatch: !!dto.assetSizeMismatch,
           dropOffAssetId: dto.dropOffAssetId,
+          // Phase B1 — signal completion-time conflict check only
+          // when the caller is actually transitioning to completed.
+          // All other status transitions (dispatched, en_route,
+          // arrived, in_progress) leave `isCompletion` undefined so
+          // the new guard is skipped and behavior is unchanged.
+          isCompletion: dto.status === 'completed',
         },
       );
     }
@@ -2229,6 +2235,81 @@ export class JobsService {
   }
 
   /**
+   * Phase B1 — Completion-time asset conflict detection.
+   *
+   * Distinct from `findActiveAssignmentConflict`: that guard prevents
+   * an asset from being committed as the main `asset_id` on two
+   * non-terminal jobs at pre-assignment time. This check is the
+   * completion-time equivalent, scoped to the moment a job is
+   * transitioning to `completed` with a supplied asset. Required by
+   * Phase B2, which removes pre-assignment for delivery jobs — once
+   * assets are captured only at completion, the pre-assignment guard
+   * no longer has an opportunity to fire for those jobs.
+   *
+   * Semantics: "Is this asset physically deployed at another
+   * non-terminal job right now?" Requires BOTH conditions to hold:
+   *
+   *   1. Job-level — another non-terminal job in this tenant
+   *      (excluding `excludeJobId`) references the asset on either
+   *      `asset_id` or `drop_off_asset_id`.
+   *   2. Asset-level — the `assets` row's own `status` is `'on_site'`,
+   *      i.e. the inventory state machine confirms actual deployment,
+   *      not merely a legacy reference.
+   *
+   * Requiring both conditions avoids false positives from either:
+   *   - legacy drift (job references an asset whose status machine
+   *     has moved on), or
+   *   - orphaned inventory (asset is on_site but no non-terminal job
+   *     references it — typically a completed prior rental).
+   *
+   * Both queries are tenant-scoped. Returns `null` if clean. This
+   * method is private and not exposed via any controller.
+   */
+  private async findCompletionConflict(
+    tenantId: string,
+    assetId: string,
+    excludeJobId: string,
+  ): Promise<{
+    conflictJobId: string;
+    conflictJobNumber: string;
+  } | null> {
+    // Condition 2: asset-level. Load and verify the asset is actually
+    // deployed. Short-circuits the job query when the asset isn't
+    // on_site — the common clean path.
+    const asset = await this.assetRepo.findOne({
+      where: { id: assetId, tenant_id: tenantId },
+    });
+    if (!asset || asset.status !== 'on_site') return null;
+
+    // Condition 1: job-level. Any other non-terminal job in this
+    // tenant referencing the asset as pickup or drop-off. Mirrors the
+    // column-coverage of `findActiveAssignmentConflict` but with a
+    // narrower terminal set (this check is per spec; pre-assignment
+    // guard includes 'failed' which is irrelevant for completion).
+    const conflict = await this.jobsRepository
+      .createQueryBuilder('j')
+      .select(['j.id', 'j.job_number'])
+      .where('j.tenant_id = :tenantId', { tenantId })
+      .andWhere(
+        '(j.asset_id = :assetId OR j.drop_off_asset_id = :assetId)',
+        { assetId },
+      )
+      .andWhere('j.id != :excludeId', { excludeId: excludeJobId })
+      .andWhere('j.status NOT IN (:...terminal)', {
+        terminal: ['completed', 'cancelled'],
+      })
+      .orderBy('j.scheduled_date', 'ASC')
+      .limit(1)
+      .getOne();
+
+    if (!conflict) return null;
+    return {
+      conflictJobId: conflict.id,
+      conflictJobNumber: conflict.job_number,
+    };
+  }
+
+  /**
    * Core asset assignment/correction path. Validates tenant scoping
    * on the new asset, runs the active-assignment conflict guard,
    * mutates `jobs.asset_id`, appends an audit entry to
@@ -2260,6 +2341,13 @@ export class JobsService {
       // only pass this on exchange jobs (which the DTO layer and
       // the driver controller both respect).
       dropOffAssetId?: string;
+      // Phase B1 — set by `changeStatus` only when the caller is
+      // transitioning the job to `completed`. Enables the
+      // completion-time conflict check below. Defaults to false so
+      // all existing callers (office correction, booking auto-
+      // assign, mid-flight status changes that are not completions)
+      // are unaffected.
+      isCompletion?: boolean;
     },
   ): Promise<Job> {
     const mainAssetChanged =
@@ -2305,6 +2393,26 @@ export class JobsService {
         throw new BadRequestException(
           `asset_active_conflict: Asset is already assigned to active job ${conflict.job_number} (${conflict.job_type}, ${conflict.scheduled_date}) on field ${conflict.conflict_field}. Pass overrideAssetConflict=true to override.`,
         );
+      }
+
+      // Phase B1 — completion-time conflict guard. Runs ONLY when the
+      // calling context is a completion transition (signalled via
+      // `opts.isCompletion` from `changeStatus`). This is the guard
+      // that will replace pre-assignment protection for delivery jobs
+      // once Phase B2 removes the auto-reservation paths. Strictly
+      // additive: existing callers do not pass `isCompletion`, so
+      // they retain their current behavior.
+      if (opts.isCompletion) {
+        const completionConflict = await this.findCompletionConflict(
+          tenantId,
+          newAssetId,
+          job.id,
+        );
+        if (completionConflict) {
+          throw new BadRequestException(
+            `asset_completion_conflict: Asset is already on-site at job ${completionConflict.conflictJobNumber}`,
+          );
+        }
       }
 
       const previousAssetId = job.asset_id ?? null;
