@@ -1,12 +1,14 @@
 import {
-  Injectable,
-  NotFoundException,
   BadRequestException,
   ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { MarketplaceBooking } from './entities/marketplace-booking.entity';
+import { MarketplaceIntegration } from './entities/marketplace-integration.entity';
 import { Customer } from '../customers/entities/customer.entity';
 import { Job } from '../jobs/entities/job.entity';
 import { Asset } from '../assets/entities/asset.entity';
@@ -24,6 +26,8 @@ export class MarketplaceService {
   constructor(
     @InjectRepository(MarketplaceBooking)
     private bookingsRepository: Repository<MarketplaceBooking>,
+    @InjectRepository(MarketplaceIntegration)
+    private integrationsRepository: Repository<MarketplaceIntegration>,
     @InjectRepository(Customer)
     private customersRepository: Repository<Customer>,
     @InjectRepository(Job)
@@ -35,18 +39,50 @@ export class MarketplaceService {
     private pricingService: PricingService,
   ) {}
 
-  async createBooking(dto: CreateMarketplaceBookingDto) {
+  // Looks up a marketplace integration by its public key id. The controller
+  // uses the returned row's signing_secret to verify the HMAC and the
+  // tenant_id to scope the booking — never trusting the request body for
+  // either value. 404 means the key id is unknown to this system; 403 means
+  // the tenant has paused the integration. Both distinctions are intentional
+  // so the caller can tell "wrong key" from "right key, off right now".
+  async resolveIntegration(
+    keyId: string,
+    source = 'rentthis',
+  ): Promise<MarketplaceIntegration> {
+    const integration = await this.integrationsRepository.findOne({
+      where: { source, key_id: keyId },
+    });
+    if (!integration) {
+      throw new NotFoundException('Unknown marketplace integration key');
+    }
+    if (!integration.enabled) {
+      throw new ForbiddenException('Marketplace integration is disabled');
+    }
+    return integration;
+  }
+
+  async createBooking(tenantId: string, dto: CreateMarketplaceBookingDto) {
+    // Tenant-scoped existence check. The compound unique index on
+    // (tenant_id, marketplace_booking_id) also enforces this at the DB layer,
+    // but we check first so we can return a clean 409 instead of a raw
+    // unique-violation.
     const existing = await this.bookingsRepository.findOne({
-      where: { marketplace_booking_id: dto.marketplaceBookingId },
+      where: {
+        tenant_id: tenantId,
+        marketplace_booking_id: dto.marketplaceBookingId,
+      },
     });
     if (existing) {
       throw new ConflictException(
-        `Booking ${dto.marketplaceBookingId} already exists`,
+        `Booking ${dto.marketplaceBookingId} already exists for this tenant`,
       );
     }
 
+    // Fail closed if the resolved tenant is no longer active. The integration
+    // can be enabled while its parent tenant is paused — we do not want to
+    // accept new bookings in that window.
     const tenant = await this.tenantsRepository.findOne({
-      where: { id: dto.tenantId, is_active: true },
+      where: { id: tenantId, is_active: true },
     });
     if (!tenant) {
       throw new NotFoundException('Tenant not found or inactive');
@@ -56,7 +92,7 @@ export class MarketplaceService {
     const netPrice = Math.round((dto.quotedPrice - fee) * 100) / 100;
 
     const booking = this.bookingsRepository.create({
-      tenant_id: dto.tenantId,
+      tenant_id: tenantId,
       marketplace_booking_id: dto.marketplaceBookingId,
       listing_type: dto.listingType,
       asset_subtype: dto.assetSubtype,

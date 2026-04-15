@@ -56,6 +56,7 @@ import { NotificationPreference } from './modules/notifications/entities/notific
 import { ClientNotificationOverride } from './modules/notifications/entities/client-notification-override.entity';
 import { ScheduledNotification } from './modules/notifications/entities/scheduled-notification.entity';
 import { MarketplaceBooking } from './modules/marketplace/entities/marketplace-booking.entity';
+import { MarketplaceIntegration } from './modules/marketplace/entities/marketplace-integration.entity';
 import { AutomationModule } from './modules/automation/automation.module';
 import { DriverModule } from './modules/driver/driver.module';
 import { DumpLocationsModule } from './modules/dump-locations/dump-locations.module';
@@ -135,6 +136,7 @@ import { Alert } from './modules/alerts/entities/alert.entity';
             ClientNotificationOverride,
             ScheduledNotification,
             MarketplaceBooking,
+            MarketplaceIntegration,
             DemoRequest,
             Yard,
             CustomerNote,
