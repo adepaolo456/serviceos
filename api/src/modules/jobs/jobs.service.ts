@@ -1201,7 +1201,18 @@ export class JobsService {
       } catch { /* best effort — don't block status transition */ }
     }
 
-    // Log admin status overrides (backward transitions)
+    // Log admin status overrides (backward transitions).
+    //
+    // Phase B3-Fix — body now includes `reason: dto.overrideReason`
+    // so the operator-provided explanation is captured in the audit
+    // log at the same moment the status change commits. Previously
+    // the reason traveled via a second `PATCH /jobs/:id` call with
+    // `{ driver_notes }`, which was silently stripped by the global
+    // `whitelist: true` ValidationPipe because `UpdateJobDto` has no
+    // such field, so every override's reason was lost. Null when
+    // no reason was provided (driver-app transitions, programmatic
+    // changes, legacy callers) — preserves backward compatibility
+    // with any existing audit-log consumers.
     if (isAdmin && previousStatus !== dto.status) {
       try {
         await this.notifRepo.save(this.notifRepo.create({
@@ -1210,7 +1221,12 @@ export class JobsService {
           channel: 'automation',
           type: 'status_override',
           recipient: 'system',
-          body: JSON.stringify({ from: previousStatus, to: dto.status, overriddenBy: userRole }),
+          body: JSON.stringify({
+            from: previousStatus,
+            to: dto.status,
+            overriddenBy: userRole,
+            reason: dto.overrideReason ?? null,
+          }),
           status: 'logged',
           sent_at: new Date(),
         }));

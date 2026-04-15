@@ -262,6 +262,19 @@ export class ChangeStatusDto {
   @IsString()
   cancellationReason?: string;
 
+  // Phase B3-Fix — operator-supplied reason when an admin/dispatcher
+  // overrides a job's status. Previously the frontend sent a second
+  // `PATCH /jobs/:id { driver_notes: ... }` call that was silently
+  // stripped by the global `whitelist: true` ValidationPipe because
+  // `UpdateJobDto` has no such field, so every override in the
+  // system lost its reason. This field lets the reason travel with
+  // the status change on the single canonical call; `changeStatus`
+  // records it in the existing admin-override audit log body.
+  @ApiPropertyOptional({ example: 'Driver tapped wrong button' })
+  @IsOptional()
+  @IsString()
+  overrideReason?: string;
+
   // Phase 11A — drivers can pass the asset they are confirming on
   // arrival/completion in the same transition. When present, the
   // backend updates `jobs.asset_id` (with audit entry) before
