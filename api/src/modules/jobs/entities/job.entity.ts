@@ -297,7 +297,7 @@ export class Job {
     // need a backfill for historical rows.
     field?: 'asset_id' | 'drop_off_asset_id';
     previous_asset_id: string | null;
-    new_asset_id: string;
+    new_asset_id: string | null;
     changed_by: string | null;
     changed_by_name: string | null;
     changed_at: string;

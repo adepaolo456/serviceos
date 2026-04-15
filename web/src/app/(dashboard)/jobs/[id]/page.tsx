@@ -42,6 +42,12 @@ import DumpTicketForm, { type DumpTicketFormTicket } from "./_components/DumpTic
 import VoidDumpTicketDialog from "./_components/VoidDumpTicketDialog";
 import ScheduleChangeHistoryCard from "./_components/ScheduleChangeHistoryCard";
 
+// Sentinel value stored in `assetEditSelection` when the user chooses
+// "No Asset / Unassign" in the Edit Asset modal. Distinct from `null`
+// (nothing selected) so the Save button can enable for an explicit
+// unassign. Maps to `assetId: null` on the backend PATCH payload.
+const ASSET_UNASSIGN = "__unassign__";
+
 /* --- Types --- */
 
 interface Job {
@@ -502,7 +508,8 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
         ...(isMismatch ? { sizeMismatch: true } : {}),
       };
       if (assetEditRole === "pickup") {
-        payload.assetId = assetEditSelection;
+        payload.assetId =
+          assetEditSelection === ASSET_UNASSIGN ? null : assetEditSelection;
       } else {
         payload.dropOffAssetId = assetEditSelection;
       }
@@ -2180,6 +2187,38 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
               )}
             </div>
 
+            {/* Unassign option — pickup role only, only when a pickup
+                asset is currently set. Rendered above the asset groups
+                so it's the first thing in the scroll container.
+                Intentionally styled with amber/warning tones so it
+                reads as a distinct, destructive-ish action rather than
+                "pick another dumpster". */}
+            {assetEditRole === "pickup" && job.asset_id && (
+              <button
+                onClick={() => {
+                  setAssetEditSelection(ASSET_UNASSIGN);
+                  setAssetEditConflict(null);
+                  setAssetEditOverride(false);
+                  setAssetEditMismatchAck(false);
+                }}
+                className={`w-full flex items-center gap-2 rounded-[12px] border px-3 py-2.5 text-left transition-colors mb-3 ${
+                  assetEditSelection === ASSET_UNASSIGN
+                    ? "border-amber-500 bg-amber-500/15"
+                    : "border-amber-500/40 bg-amber-500/5 hover:bg-amber-500/10"
+                }`}
+              >
+                <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0" />
+                <div className="flex flex-col min-w-0">
+                  <span className="text-xs font-semibold text-[var(--t-text-primary)]">
+                    No Asset / Unassign
+                  </span>
+                  <span className="text-[11px] text-[var(--t-text-muted)]">
+                    Removes the current dumpster and returns it to the yard
+                  </span>
+                </div>
+              </button>
+            )}
+
             {/* Grouped asset list */}
             <div className="max-h-64 overflow-y-auto space-y-3 mb-3">
               {assetOptionsLoading ? (
@@ -2288,11 +2327,13 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
               >
                 {assetEditSaving
                   ? "Saving…"
-                  : assetEditRole === "drop_off"
-                    ? FEATURE_REGISTRY.update_delivery_asset?.label ?? "Update Delivery Asset"
-                    : job.job_type === "exchange"
-                      ? FEATURE_REGISTRY.update_pickup_asset?.label ?? "Update Pickup Asset"
-                      : FEATURE_REGISTRY.update_asset?.label ?? "Update Asset"}
+                  : assetEditSelection === ASSET_UNASSIGN
+                    ? "Unassign Asset"
+                    : assetEditRole === "drop_off"
+                      ? FEATURE_REGISTRY.update_delivery_asset?.label ?? "Update Delivery Asset"
+                      : job.job_type === "exchange"
+                        ? FEATURE_REGISTRY.update_pickup_asset?.label ?? "Update Pickup Asset"
+                        : FEATURE_REGISTRY.update_asset?.label ?? "Update Asset"}
               </button>
             </div>
           </div>

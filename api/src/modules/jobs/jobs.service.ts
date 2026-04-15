@@ -2246,13 +2246,18 @@ export class JobsService {
   ): Promise<Job> {
     const mainAssetChanged =
       !!newAssetId && newAssetId !== job.asset_id;
+    // `newAssetId === null` is the explicit unassign signal (distinct
+    // from `undefined`, which means "don't touch"). Only meaningful
+    // when there's actually a current asset to remove.
+    const mainAssetUnassigned =
+      newAssetId === null && !!job.asset_id;
     const dropOffAssetChanged =
       !!opts.dropOffAssetId &&
       opts.dropOffAssetId !== job.drop_off_asset_id;
 
     // No-op: called with neither field actually changing. Skipping
     // keeps the audit log clean and avoids redundant DB lookups.
-    if (!mainAssetChanged && !dropOffAssetChanged) {
+    if (!mainAssetChanged && !mainAssetUnassigned && !dropOffAssetChanged) {
       return job;
     }
 
@@ -2295,6 +2300,24 @@ export class JobsService {
         reason: opts.reason,
         ...(conflict ? { override_conflict: true } : {}),
         ...(opts.sizeMismatch ? { size_mismatch: true } : {}),
+      });
+    }
+
+    // ── Main asset unassign (asset_id = null) ──
+    // No tenant/conflict validation: we're removing a pointer, not
+    // creating one. The guardrail that forbids unassigning a completed
+    // job's asset lives in `changeAsset` (the office correction entry
+    // point), so by the time we get here we're cleared to clear.
+    if (mainAssetUnassigned) {
+      const previousAssetId = job.asset_id;
+      (job as { asset_id: string | null }).asset_id = null;
+      history.push({
+        previous_asset_id: previousAssetId,
+        new_asset_id: null,
+        changed_by: opts.userId,
+        changed_by_name: opts.userName,
+        changed_at: new Date().toISOString(),
+        reason: opts.reason,
       });
     }
 
@@ -2359,7 +2382,9 @@ export class JobsService {
     tenantId: string,
     jobId: string,
     dto: {
-      assetId?: string;
+      // `null` = explicit unassign; `undefined` = don't touch the
+      // pickup asset. The runtime check below distinguishes the two.
+      assetId?: string | null;
       overrideAssetConflict?: boolean;
       reason?: string;
       sizeMismatch?: boolean;
@@ -2371,12 +2396,11 @@ export class JobsService {
     userId: string | null,
     userName: string | null,
   ): Promise<Job> {
-    // Phase 14 — at least one of the two asset fields must be
-    // provided. Previously this was implicit because `assetId` was
-    // required in the DTO, but making `assetId` optional lets the
-    // office correct ONLY the drop-off asset on an exchange without
-    // having to redundantly pass the current pickup asset.
-    if (!dto.assetId && !dto.dropOffAssetId) {
+    // At least one asset field must be provided. `assetId: null` IS
+    // a valid "provided" value (explicit unassign), so we distinguish
+    // it from `undefined` explicitly rather than relying on falsy.
+    const assetFieldProvided = dto.assetId !== undefined;
+    if (!assetFieldProvided && !dto.dropOffAssetId) {
       throw new BadRequestException(
         'asset_required: Either assetId or dropOffAssetId must be provided',
       );
@@ -2386,6 +2410,17 @@ export class JobsService {
     const previousAssetId = job.asset_id ?? null;
     const previousDropOffAssetId = job.drop_off_asset_id ?? null;
     const wasCompleted = job.status === 'completed';
+    const isUnassign = dto.assetId === null;
+
+    // Guardrail: unassigning a completed job's asset would desync the
+    // historical record from inventory. Block it here — the frontend
+    // also hides the Unassign button on completed jobs, but the
+    // backend is authoritative.
+    if (isUnassign && wasCompleted) {
+      throw new BadRequestException(
+        'asset_unassign_forbidden: Cannot remove asset from completed job',
+      );
+    }
 
     await this.assignAssetToJob(tenantId, job, dto.assetId, {
       overrideConflict: !!dto.overrideAssetConflict,
@@ -2397,6 +2432,21 @@ export class JobsService {
     });
 
     const saved = await this.jobsRepository.save(job);
+
+    // Unassign path — return the previous asset to inventory. Only
+    // reachable for non-completed jobs (completed is blocked by the
+    // guardrail above), so we never collide with the `wasCompleted`
+    // revert branch below.
+    if (isUnassign && previousAssetId) {
+      await this.assetRepo.update(
+        { id: previousAssetId, tenant_id: tenantId } as any,
+        {
+          status: 'available',
+          current_job_id: null,
+          current_location_type: 'yard',
+        } as any,
+      );
+    }
 
     // If the job was completed, revert the previous asset's state and
     // reapply the new asset's state so the yard/customer location
