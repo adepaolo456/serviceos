@@ -29,7 +29,7 @@ interface TopCustomer {
 }
 
 interface TopUser {
-  user_id: string;
+  user_id: string | null;
   booking_overrides: number;
   dispatch_overrides: number;
   total: number;
@@ -180,9 +180,9 @@ export default function CreditAnalyticsPage() {
                 <span className="text-right">{label("credit_analytics_col_dispatch", "Dispatch")}</span>
                 <span className="text-right">{label("credit_analytics_col_total", "Total")}</span>
               </div>
-              {topUsers.map((u) => (
-                <div key={u.user_id} className="grid grid-cols-[1fr_70px_70px_60px] gap-2 py-2 items-center text-xs" style={{ borderBottom: "1px solid var(--t-border)" }}>
-                  <span className="truncate font-mono text-[11px]" style={{ color: "var(--t-text-primary)" }}>{u.user_id.slice(0, 8)}...</span>
+              {topUsers.map((u, idx) => (
+                <div key={u.user_id ?? `system-${idx}`} className="grid grid-cols-[1fr_70px_70px_60px] gap-2 py-2 items-center text-xs" style={{ borderBottom: "1px solid var(--t-border)" }}>
+                  <span className="truncate font-mono text-[11px]" style={{ color: "var(--t-text-primary)" }}>{u.user_id ? `${u.user_id.slice(0, 8)}...` : "system"}</span>
                   <span className="text-right tabular-nums" style={{ color: "var(--t-text-primary)" }}>{u.booking_overrides}</span>
                   <span className="text-right tabular-nums" style={{ color: "var(--t-text-primary)" }}>{u.dispatch_overrides}</span>
                   <span className="text-right tabular-nums font-semibold" style={{ color: "var(--t-accent)" }}>{u.total}</span>
