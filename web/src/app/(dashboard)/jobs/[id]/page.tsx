@@ -312,6 +312,23 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
   const [overrideOpen, setOverrideOpen] = useState(false);
   const [overrideTarget, setOverrideTarget] = useState("");
   const [overrideReason, setOverrideReason] = useState("");
+  // Phase B3-UI Issue 2 — current user's role, used to gate the
+  // clickable lifecycle chip shortcut. Only office roles (owner,
+  // admin, dispatcher) see chips as interactive; drivers see them
+  // as static. Fetched once on mount; null while loading (chips
+  // render as static until the role is known, avoiding a flash of
+  // clickable UI before auth is confirmed).
+  const [currentUserRole, setCurrentUserRole] = useState<string | null>(null);
+  useEffect(() => {
+    api
+      .get<{ role: string }>("/auth/profile")
+      .then((p) => setCurrentUserRole(p?.role ?? null))
+      .catch(() => setCurrentUserRole(null));
+  }, []);
+  const isOfficeRole =
+    currentUserRole === "owner" ||
+    currentUserRole === "admin" ||
+    currentUserRole === "dispatcher";
   // Refresh signal for <LifecycleContextPanel/>. Bumped after any
   // mutation that can change a job's live status (override,
   // forward transition, cancel) so the panel refetches the
@@ -337,6 +354,14 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
   const [assetEditOpen, setAssetEditOpen] = useState(false);
   const [assetOptions, setAssetOptions] = useState<AssetOption[]>([]);
   const [assetOptionsLoading, setAssetOptionsLoading] = useState(false);
+  // Phase B3-UI Issue 3 — free-text search inside the Update Asset
+  // modal. Client-side only; matches on identifier, subtype/size, or
+  // any typed fragment (case-insensitive). Non-empty search flattens
+  // the size-based grouping into a single filtered list; empty
+  // search preserves the existing Matching/Other grouping behavior.
+  // Cleared by `openAssetEdit` on every open so each launch starts
+  // with a clean search.
+  const [assetEditSearch, setAssetEditSearch] = useState("");
   const [assetEditSelection, setAssetEditSelection] = useState<string | null>(null);
   const [assetEditReason, setAssetEditReason] = useState("");
   const [assetEditConflict, setAssetEditConflict] = useState<string | null>(null);
@@ -411,6 +436,7 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
     setAssetEditOverride(false);
     setAssetEditShowAll(false);
     setAssetEditMismatchAck(false);
+    setAssetEditSearch("");
     setAssetOptionsLoading(true);
     try {
       const res = await api.get<{ data: AssetOption[] }>(`/assets?limit=200`);
@@ -897,17 +923,17 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Status transition buttons — office-allowed only */}
-          {transitions.filter((t) => OFFICE_ALLOWED_TRANSITIONS.has(t) && t !== "cancelled").map((t) => {
-            const style = TRANSITION_STYLES[t];
-            if (!style) return null;
-            const Icon = style.icon;
-            return (
-              <button key={t} onClick={() => changeStatus(t)} disabled={actionLoading} className={`flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-all disabled:opacity-50 ${style.className}`}>
-                <Icon className="h-4 w-4" /> {style.label}
-              </button>
-            );
-          })}
+          {/* Phase B3-UI Issue 1 — the top-right "Assign" CTA was
+              removed. Driver assignment now happens exclusively from
+              the Dispatch board's Unassigned lane, so the only
+              office-allowed primary transition here (`dispatched` →
+              label "Assign") was a dead shortcut. The filter
+              `OFFICE_ALLOWED_TRANSITIONS` only resolved to `dispatched`
+              once `cancelled` was excluded, so the whole
+              transitions.filter().map() block collapsed to a single
+              dead button. Override Status in the actions menu covers
+              any remaining office-side need to advance a job
+              manually. */}
 
           {/* Actions menu
               ──────────────────────────────────────────────────────
@@ -1252,31 +1278,66 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
             // `completed_at` so an unassignment after en_route never
             // leaves an orphaned later-step timestamp visible.
             const timestamp = i <= statusIdx ? rawTimestamp : undefined;
-            return (
-              <div key={step.key} className="flex flex-1 items-center">
-                <div className="flex flex-col items-center">
-                  <div className={`flex h-9 w-9 items-center justify-center rounded-full text-xs font-bold transition-colors ${
-                    job.status === "cancelled" && i > statusIdx ? "bg-[var(--t-border)] text-[var(--t-text-muted)]" :
-                    isCurrent ? "bg-[var(--t-accent)] text-[var(--t-accent-on-accent)] ring-4 ring-[var(--t-accent)]/20" :
-                    isCompleted ? "bg-[var(--t-accent)]/20 text-[var(--t-accent)]" : "bg-[var(--t-border)] text-[var(--t-text-muted)]"
-                  }`}>
-                    {job.status === "cancelled" && isCurrent ? (
-                      <XCircle className="h-4 w-4 text-[var(--t-error)]" />
-                    ) : isCompleted ? (
-                      <CheckCircle2 className="h-4 w-4" />
-                    ) : (
-                      i + 1
-                    )}
-                  </div>
-                  <span className={`mt-2 text-[11px] font-medium ${isCurrent ? "text-[var(--t-accent)]" : isCompleted ? "text-[var(--t-text-primary)]" : "text-[var(--t-text-muted)]"}`}>
-                    {step.label}
-                  </span>
-                  {timestamp && (
-                    <span className="mt-0.5 text-[10px] text-[var(--t-text-muted)] tabular-nums">
-                      {new Date(timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                    </span>
+            // Phase B3-UI Issue 2 — clickable-chip override shortcut.
+            // A step chip is interactive iff (a) the viewer is an
+            // office role AND (b) the step's raw status is in
+            // `OVERRIDE_TARGETS[job.status]` AND (c) it isn't the
+            // current status (overriding to self is a no-op). Reuses
+            // the existing override modal — sets the same state the
+            // kebab menu sets — so reason entry and audit trail are
+            // identical to the three-dot path.
+            const chipIsOverrideTarget =
+              isOfficeRole &&
+              step.status !== job.status &&
+              (OVERRIDE_TARGETS[job.status] || []).includes(step.status);
+            const chipOnClick = chipIsOverrideTarget
+              ? () => {
+                  setOverrideTarget(step.status);
+                  setOverrideReason("");
+                  setOverrideOpen(true);
+                }
+              : undefined;
+            const chipInner = (
+              <>
+                <div className={`flex h-9 w-9 items-center justify-center rounded-full text-xs font-bold transition-colors ${
+                  job.status === "cancelled" && i > statusIdx ? "bg-[var(--t-border)] text-[var(--t-text-muted)]" :
+                  isCurrent ? "bg-[var(--t-accent)] text-[var(--t-accent-on-accent)] ring-4 ring-[var(--t-accent)]/20" :
+                  isCompleted ? "bg-[var(--t-accent)]/20 text-[var(--t-accent)]" : "bg-[var(--t-border)] text-[var(--t-text-muted)]"
+                }`}>
+                  {job.status === "cancelled" && isCurrent ? (
+                    <XCircle className="h-4 w-4 text-[var(--t-error)]" />
+                  ) : isCompleted ? (
+                    <CheckCircle2 className="h-4 w-4" />
+                  ) : (
+                    i + 1
                   )}
                 </div>
+                <span className={`mt-2 text-[11px] font-medium ${isCurrent ? "text-[var(--t-accent)]" : isCompleted ? "text-[var(--t-text-primary)]" : "text-[var(--t-text-muted)]"}`}>
+                  {step.label}
+                </span>
+                {timestamp && (
+                  <span className="mt-0.5 text-[10px] text-[var(--t-text-muted)] tabular-nums">
+                    {new Date(timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                  </span>
+                )}
+              </>
+            );
+            return (
+              <div key={step.key} className="flex flex-1 items-center">
+                {chipIsOverrideTarget ? (
+                  <button
+                    type="button"
+                    onClick={chipOnClick}
+                    aria-label={`Override status to ${step.label}`}
+                    className="flex flex-col items-center rounded-lg px-1 py-0.5 transition-colors cursor-pointer hover:bg-[var(--t-bg-card-hover)] focus:outline-none focus:ring-2 focus:ring-[var(--t-accent)]/40"
+                  >
+                    {chipInner}
+                  </button>
+                ) : (
+                  <div className="flex flex-col items-center">
+                    {chipInner}
+                  </div>
+                )}
                 {i < TIMELINE_STEPS.length - 1 && (
                   <div className={`mx-2 h-0.5 flex-1 rounded-full transition-colors ${
                     i < statusIdx && job.status !== "cancelled" ? "bg-[var(--t-accent)]/30" : "bg-[var(--t-border)]"
@@ -2087,6 +2148,24 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
       {assetEditOpen && job && (() => {
         const requiredSize =
           job.rental_chain_dumpster_size || job.asset_subtype || null;
+        // Phase B3-UI Issue 3 — client-side free-text filter. Empty
+        // query preserves the existing Matching/Other grouping
+        // behavior; non-empty query collapses into a single flat
+        // filtered list so the operator sees every match regardless
+        // of size. Match is case-insensitive across identifier and
+        // subtype — "any typed fragment" per the spec.
+        const searchQuery = assetEditSearch.trim().toLowerCase();
+        const searchActive = searchQuery.length > 0;
+        const searchFiltered = searchActive
+          ? assetOptions.filter((a) => {
+              const identifier = (a.identifier || "").toLowerCase();
+              const subtype = (a.subtype || "").toLowerCase();
+              return (
+                identifier.includes(searchQuery) ||
+                subtype.includes(searchQuery)
+              );
+            })
+          : [];
         const matching = requiredSize
           ? assetOptions.filter((a) => a.subtype === requiredSize)
           : [];
@@ -2237,12 +2316,39 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
               </button>
             )}
 
-            {/* Grouped asset list */}
+            {/* Phase B3-UI Issue 3 — search input. Visible only when
+                assets have finished loading and at least one exists,
+                so it doesn't compete with loading / empty copy. */}
+            {!assetOptionsLoading && assetOptions.length > 0 && (
+              <input
+                type="text"
+                value={assetEditSearch}
+                onChange={(e) => setAssetEditSearch(e.target.value)}
+                placeholder={
+                  FEATURE_REGISTRY.asset_search_placeholder?.label
+                  ?? "Search assets…"
+                }
+                aria-label="Search assets"
+                className="w-full rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-3.5 py-2 text-sm text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)] mb-3"
+              />
+            )}
+
+            {/* Grouped asset list — flattens into a single filtered
+                list when the search query is non-empty, per Phase
+                B3-UI Issue 3. */}
             <div className="max-h-64 overflow-y-auto space-y-3 mb-3">
               {assetOptionsLoading ? (
                 <p className="text-xs text-[var(--t-text-muted)] py-4 text-center">Loading…</p>
               ) : assetOptions.length === 0 ? (
                 <p className="text-xs text-[var(--t-text-muted)] py-4 text-center">No assets found</p>
+              ) : searchActive ? (
+                searchFiltered.length > 0 ? (
+                  <div className="space-y-1.5">{searchFiltered.map(renderAssetButton)}</div>
+                ) : (
+                  <p className="text-xs text-[var(--t-text-muted)] py-4 text-center">
+                    No assets match &quot;{assetEditSearch}&quot;
+                  </p>
+                )
               ) : requiredSize ? (
                 <>
                   {/* Matching size section */}
@@ -2276,8 +2382,10 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
               )}
             </div>
 
-            {/* Show all toggle */}
-            {requiredSize && other.length > 0 && (
+            {/* Show all toggle — hidden while a search is active
+                because the flat search results already span every
+                size. */}
+            {!searchActive && requiredSize && other.length > 0 && (
               <button
                 onClick={() => setAssetEditShowAll((v) => !v)}
                 className="w-full mb-3 text-[11px] font-medium text-[var(--t-accent)] hover:underline text-center"
