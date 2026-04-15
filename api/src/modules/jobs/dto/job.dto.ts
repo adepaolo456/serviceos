@@ -319,10 +319,15 @@ export class ChangeStatusDto {
 // `changeAsset` enforces that at least one of `assetId` or
 // `dropOffAssetId` is provided.
 export class UpdateJobAssetDto {
-  @ApiPropertyOptional({ example: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890' })
+  // `null` means "explicit unassign" (remove the current asset). The
+  // `@ValidateIf` lets class-validator skip UUID validation on null
+  // while still rejecting non-UUID strings. Undefined is treated as
+  // "not provided" by the runtime check in `changeAsset`.
+  @ApiPropertyOptional({ example: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890', nullable: true })
   @IsOptional()
+  @ValidateIf((o) => o.assetId !== null)
   @IsUUID()
-  assetId?: string;
+  assetId?: string | null;
 
   @ApiPropertyOptional()
   @IsOptional()
