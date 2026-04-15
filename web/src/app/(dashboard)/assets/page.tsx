@@ -430,7 +430,7 @@ export default function AssetsPage() {
             return (
               <button
                 key={kpi.label}
-                onClick={() => { setStatusFilter(isActive ? "all" : kpi.filter); setSelectedSize(null); }}
+                onClick={() => setStatusFilter(isActive ? "all" : kpi.filter)}
                 style={{
                   borderRadius: 14,
                   border: isActive ? "2px solid var(--t-accent)" : "1px solid var(--t-border)",
