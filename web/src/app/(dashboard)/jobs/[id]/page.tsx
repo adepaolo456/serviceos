@@ -2397,9 +2397,26 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
                   className="w-full rounded-[14px] border px-3.5 py-2.5 text-sm outline-none focus:border-[var(--t-accent)]"
                   style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)", color: "var(--t-text-primary)" }}
                 >
-                  {(OVERRIDE_TARGETS[job.status] || []).map((s) => (
-                    <option key={s} value={s}>{DISPLAY_STATUS_LABELS[deriveDisplayStatus(s)]}</option>
-                  ))}
+                  {/* Dedupe override targets by display status so
+                      `arrived` and `in_progress` (which both collapse
+                      to the "Arrived" display label in
+                      `deriveDisplayStatus`) don't render two options
+                      with the same label. Keeps the first occurrence
+                      so the canonical raw value for each display step
+                      survives. */}
+                  {(() => {
+                    const seen = new Set<string>();
+                    return (OVERRIDE_TARGETS[job.status] || [])
+                      .filter((s) => {
+                        const disp = deriveDisplayStatus(s);
+                        if (seen.has(disp)) return false;
+                        seen.add(disp);
+                        return true;
+                      })
+                      .map((s) => (
+                        <option key={s} value={s}>{DISPLAY_STATUS_LABELS[deriveDisplayStatus(s)]}</option>
+                      ));
+                  })()}
                 </select>
               </div>
               <div>
@@ -2412,10 +2429,80 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
                   style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)", color: "var(--t-text-primary)" }}
                 />
               </div>
+
+              {/* Delivery override → Completed must capture asset.
+                  Backend enforces this with `delivery_completion_requires_asset`
+                  in `jobs.service.ts#changeStatus`; this panel is the
+                  UX guardrail that surfaces the requirement up-front
+                  and guides the operator to the asset picker instead
+                  of letting them hit the error. */}
+              {overrideTarget === "completed" && job.job_type === "delivery" && (
+                job.asset_id ? (
+                  <div className="rounded-[12px] bg-[var(--t-accent-soft)] border border-[var(--t-accent)] px-3 py-2.5">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--t-accent)] mb-1">
+                      Confirm asset on completion
+                    </p>
+                    <p className="text-xs text-[var(--t-text-primary)]">
+                      {job.asset?.identifier ?? job.asset_id}
+                      {job.asset?.subtype ? ` — ${job.asset.subtype}` : ""}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="rounded-[12px] bg-amber-500/10 border border-amber-500/40 px-3 py-2.5">
+                    <div className="flex items-start gap-2 mb-2">
+                      <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
+                      <p className="text-xs text-[var(--t-text-primary)] leading-snug">
+                        Delivery completion requires an asset. Assign one before overriding to Completed.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => { setOverrideOpen(false); openAssetEdit("pickup"); }}
+                      className="text-xs font-semibold text-[var(--t-accent)] hover:underline"
+                    >
+                      Assign asset →
+                    </button>
+                  </div>
+                )
+              )}
+
+              {/* Dump-slip-eligible override → Completed must have an
+                  active dump slip. Backend enforces via
+                  `dump_slip_required` in the same gate; this panel
+                  mirrors the normal `tryMarkComplete` flow so the
+                  override path doesn't silently hit the error toast. */}
+              {overrideTarget === "completed" &&
+                (job.job_type === "pickup" || job.job_type === "exchange" || job.job_type === "removal") &&
+                dumpTickets.filter((t) => t.status !== "voided").length === 0 && (
+                  <div className="rounded-[12px] bg-amber-500/10 border border-amber-500/40 px-3 py-2.5">
+                    <div className="flex items-start gap-2 mb-2">
+                      <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
+                      <p className="text-xs text-[var(--t-text-primary)] leading-snug">
+                        {job.job_type === "pickup" ? "Pickup" : job.job_type === "exchange" ? "Exchange" : "Removal"} completion requires an active dump slip. Record one before overriding to Completed.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => { setOverrideOpen(false); openDumpSlipCreate(); }}
+                      className="text-xs font-semibold text-[var(--t-accent)] hover:underline"
+                    >
+                      Add dump slip →
+                    </button>
+                  </div>
+                )}
+
               <div className="flex gap-2 pt-2">
                 <button
                   onClick={handleOverride}
-                  disabled={!overrideTarget || !overrideReason.trim() || actionLoading}
+                  disabled={
+                    !overrideTarget ||
+                    !overrideReason.trim() ||
+                    actionLoading ||
+                    (overrideTarget === "completed" && job.job_type === "delivery" && !job.asset_id) ||
+                    (overrideTarget === "completed" &&
+                      (job.job_type === "pickup" || job.job_type === "exchange" || job.job_type === "removal") &&
+                      dumpTickets.filter((t) => t.status !== "voided").length === 0)
+                  }
                   className="flex-1 rounded-full py-2.5 text-sm font-semibold transition-opacity hover:opacity-90 disabled:opacity-40"
                   style={{ backgroundColor: "var(--t-warning)", color: "#000" }}
                 >
