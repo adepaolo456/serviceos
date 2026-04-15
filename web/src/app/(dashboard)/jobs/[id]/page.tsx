@@ -207,9 +207,27 @@ const TRANSITION_STYLES: Record<string, { label: string; className: string; icon
 const OFFICE_ALLOWED_TRANSITIONS = new Set(["dispatched", "cancelled"]);
 
 // Override corrections: current stored status → allowed correction targets
+//
+// `confirmed` is the post-assign-auto-flip state from
+// `JobsService.assignJob` (sets status='confirmed' when a driver is
+// assigned to a pending job). The UI labels these jobs "Assigned" via
+// `deriveDisplayStatus`'s live-driver branch, but the raw status is
+// `confirmed`, not `dispatched`. Without this entry the office kebab
+// hid Override Status for assigned jobs entirely, blocking the
+// office completion workflow.
+//
+// `dispatched`, `en_route`, `arrived` widened to include `completed`
+// so the office can shortcut from any active stage to completion in
+// a single override. The backend admin override at
+// `jobs.service.ts:864` already permits any forward transition for
+// admin/dispatcher/owner — these targets just expose what's already
+// legal server-side. Asset/dump-slip completion gates remain
+// authoritative on the backend (see `delivery_completion_requires_asset`
+// and `dump_slip_required` in `changeStatus`).
 const OVERRIDE_TARGETS: Record<string, string[]> = {
-  dispatched: ["en_route"],
-  en_route: ["dispatched", "arrived", "in_progress"],
+  confirmed: ["dispatched", "en_route", "arrived", "in_progress", "completed"],
+  dispatched: ["en_route", "arrived", "in_progress", "completed"],
+  en_route: ["dispatched", "arrived", "in_progress", "completed"],
   arrived: ["en_route", "in_progress", "completed"],
   in_progress: ["arrived", "completed"],
 };
