@@ -141,6 +141,11 @@ const JOB_TYPE_CHIPS: ReadonlyArray<{ value: string; label: string }> = [
   { value: "exchange", label: "Exchanges" },
 ];
 
+// Collapsible-section preference persistence. Stores only boolean UI
+// state — no PII, no tenant coupling — so a plain namespaced key is
+// fine. Shape: { customerJobs: boolean, standaloneJobs: boolean }.
+const JOBS_SECTIONS_LS_KEY = "serviceos_jobs_sections";
+
 /* ─── Helpers ─── */
 
 function fmtDate(d: string): string {
@@ -286,6 +291,48 @@ function JobsPageContent() {
       expandedChainIds: Array.from(expandedChainsRef.current),
     });
   }, []);
+
+  // Collapsible section preferences. Customer Jobs open by default,
+  // Standalone Jobs collapsed by default. Restored from localStorage
+  // on mount; persisted on every change. UI-only state, no tenant
+  // coupling — see `JOBS_SECTIONS_LS_KEY`.
+  const [showCustomerJobs, setShowCustomerJobs] = useState(true);
+  const [showStandaloneJobs, setShowStandaloneJobs] = useState(false);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const raw = window.localStorage.getItem(JOBS_SECTIONS_LS_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as {
+        customerJobs?: unknown;
+        standaloneJobs?: unknown;
+      };
+      if (typeof parsed.customerJobs === "boolean") {
+        setShowCustomerJobs(parsed.customerJobs);
+      }
+      if (typeof parsed.standaloneJobs === "boolean") {
+        setShowStandaloneJobs(parsed.standaloneJobs);
+      }
+    } catch {
+      // Missing key or corrupt JSON — fall through to defaults.
+    }
+  }, []);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem(
+        JOBS_SECTIONS_LS_KEY,
+        JSON.stringify({
+          customerJobs: showCustomerJobs,
+          standaloneJobs: showStandaloneJobs,
+        }),
+      );
+    } catch {
+      // Quota exceeded / private mode — state still works for the
+      // current session, just won't persist across refreshes.
+    }
+  }, [showCustomerJobs, showStandaloneJobs]);
+
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [panelOpen, setPanelOpen] = useState(false);
@@ -745,7 +792,27 @@ function JobsPageContent() {
         <>
           {/* Lifecycle rows (grouped — expandable) */}
           {filteredChains.length > 0 && (
-            <div className="surface-card" style={{ overflow: "hidden", padding: 0 }}>
+            <div>
+              <button
+                type="button"
+                onClick={() => setShowCustomerJobs((v) => !v)}
+                aria-expanded={showCustomerJobs}
+                aria-controls="jobs-section-customer-jobs"
+                className="w-full flex items-center justify-between px-4 py-2 mb-3 rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] hover:bg-[var(--t-bg-card-hover)] transition-colors cursor-pointer"
+              >
+                <span className="text-sm font-semibold text-[var(--t-text-primary)]">
+                  {FEATURE_REGISTRY.jobs_section_customer_jobs?.label ?? "Customer Jobs"}
+                  <span className="ml-2 text-xs font-normal text-[var(--t-text-muted)]">
+                    ({filteredChains.length})
+                  </span>
+                </span>
+                <ChevronDown
+                  className="h-4 w-4 text-[var(--t-text-muted)] transition-transform duration-150 ease-out"
+                  style={{ transform: showCustomerJobs ? "rotate(0deg)" : "rotate(-90deg)" }}
+                />
+              </button>
+              {showCustomerJobs && (
+              <div id="jobs-section-customer-jobs" className="surface-card" style={{ overflow: "hidden", padding: 0 }}>
               <div className="table-scroll">
                 <table className="w-full" style={{ fontSize: 13, borderCollapse: "collapse" }}>
                   <thead>
@@ -905,18 +972,36 @@ function JobsPageContent() {
                   </tbody>
                 </table>
               </div>
+              </div>
+              )}
             </div>
           )}
 
           {/* Standalone Jobs */}
           {standaloneJobs.length > 0 && (
             <div className="mt-6">
-              <h2 className="text-sm font-semibold text-[var(--t-text-muted)] mb-3">
-                {jobTypeFilter.size > 0
-                  ? `${JOB_TYPE_CHIPS.filter(c => jobTypeFilter.has(c.value)).map(c => c.label).join(" · ")} (${standaloneJobs.length})`
-                  : `${FEATURE_REGISTRY.lifecycle_standalone_jobs?.label ?? "Standalone Jobs"} (${standaloneJobs.length})`}
-              </h2>
-              <div className="surface-card" style={{ overflow: "hidden", padding: 0 }}>
+              <button
+                type="button"
+                onClick={() => setShowStandaloneJobs((v) => !v)}
+                aria-expanded={showStandaloneJobs}
+                aria-controls="jobs-section-standalone-jobs"
+                className="w-full flex items-center justify-between px-4 py-2 mb-3 rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] hover:bg-[var(--t-bg-card-hover)] transition-colors cursor-pointer"
+              >
+                <span className="text-sm font-semibold text-[var(--t-text-primary)]">
+                  {jobTypeFilter.size > 0
+                    ? `${JOB_TYPE_CHIPS.filter(c => jobTypeFilter.has(c.value)).map(c => c.label).join(" · ")}`
+                    : FEATURE_REGISTRY.jobs_section_standalone_jobs?.label ?? FEATURE_REGISTRY.lifecycle_standalone_jobs?.label ?? "Standalone Jobs"}
+                  <span className="ml-2 text-xs font-normal text-[var(--t-text-muted)]">
+                    ({standaloneJobs.length})
+                  </span>
+                </span>
+                <ChevronDown
+                  className="h-4 w-4 text-[var(--t-text-muted)] transition-transform duration-150 ease-out"
+                  style={{ transform: showStandaloneJobs ? "rotate(0deg)" : "rotate(-90deg)" }}
+                />
+              </button>
+              {showStandaloneJobs && (
+              <div id="jobs-section-standalone-jobs" className="surface-card" style={{ overflow: "hidden", padding: 0 }}>
                 <div className="table-scroll">
                   <table className="w-full" style={{ fontSize: 13, borderCollapse: "collapse" }}>
                     <thead>
@@ -967,6 +1052,7 @@ function JobsPageContent() {
                   </table>
                 </div>
               </div>
+              )}
             </div>
           )}
         </>
