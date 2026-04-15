@@ -7,6 +7,7 @@ import { Invoice } from '../entities/invoice.entity';
 import { InvoiceLineItem } from '../entities/invoice-line-item.entity';
 import { RentalChain } from '../../rental-chains/entities/rental-chain.entity';
 import { TaskChainLink } from '../../rental-chains/entities/task-chain-link.entity';
+import { TenantSettings } from '../../tenant-settings/entities/tenant-settings.entity';
 import { issueNextJobNumber } from '../../../common/utils/job-number.util';
 
 /* ------------------------------------------------------------------ */
@@ -90,6 +91,17 @@ export class BookingCompletionService {
     const deliveryNumber = await issueNextJobNumber(seqManager, tenantId, 'delivery');
     const pickupNumber = await issueNextJobNumber(seqManager, tenantId, 'pickup');
 
+    // Phase B2 — read the tenant's pre-assignment flag up-front. When
+    // enabled, the delivery job's asset_id and the asset's `reserved`
+    // status are both left unset at booking time, and the asset is
+    // captured at delivery completion via the existing `changeAsset`
+    // path + `findCompletionConflict` (Phase B1) guard. Pickup-side
+    // pre-assignment is intentionally retained — see step 4 of the
+    // B2 spec. Default false for all tenants until explicitly
+    // opted in.
+    const preAssignmentDisabled =
+      await this.isPreAssignmentDisabled(tenantId, manager);
+
     // 2. Asset availability check + auto-approve
     let autoApproved = false;
     let assignedAsset: { id: string; identifier: string } | null = null;
@@ -103,7 +115,14 @@ export class BookingCompletionService {
         autoApproved = true;
         jobStatus = 'confirmed';
         assignedAsset = { id: availableAsset.id, identifier: availableAsset.identifier };
-        await assetRepo.update(availableAsset.id, { status: 'reserved' });
+        // Phase B2 — only mark the asset `reserved` when pre-
+        // assignment is enabled. When disabled the asset stays
+        // `available` until the delivery driver captures it on
+        // completion, avoiding a state where the asset is reserved
+        // for a delivery whose asset_id is null.
+        if (!preAssignmentDisabled) {
+          await assetRepo.update(availableAsset.id, { status: 'reserved' });
+        }
       } else {
         const pickupCount = await jobRepo
           .createQueryBuilder('j')
@@ -136,7 +155,10 @@ export class BookingCompletionService {
       base_price: basePrice,
       total_price: totalPrice,
       rental_days: rentalDays,
-      ...(assignedAsset ? { asset_id: assignedAsset.id } : {}),
+      // Phase B2 — delivery-side asset gate. Pickup below is
+      // unaffected per the B2 spec (pickup pre-assignment handling
+      // is a separate future concern).
+      ...((assignedAsset && !preAssignmentDisabled) ? { asset_id: assignedAsset.id } : {}),
     } as Partial<Job> as Job);
     const savedDelivery = await jobRepo.save(deliveryJob);
 
@@ -262,5 +284,24 @@ export class BookingCompletionService {
       autoApproved,
       assignedAsset,
     };
+  }
+
+  /**
+   * Phase B2 — resolve the `pre_assignment_disabled` tenant flag.
+   * Mirrors the pattern used by `JobsService.loadTenantTimezone`:
+   * no new repo injection, resolved via the DataSource (or the
+   * outer transaction manager when one is provided). Null-safe —
+   * tenants without a `tenant_settings` row default to `false`,
+   * preserving existing behavior until the flag is explicitly set.
+   */
+  private async isPreAssignmentDisabled(
+    tenantId: string,
+    manager?: EntityManager,
+  ): Promise<boolean> {
+    const repo = manager
+      ? manager.getRepository(TenantSettings)
+      : this.dataSource.getRepository(TenantSettings);
+    const s = await repo.findOne({ where: { tenant_id: tenantId } });
+    return s?.pre_assignment_disabled === true;
   }
 }
