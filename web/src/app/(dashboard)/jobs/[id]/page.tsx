@@ -312,6 +312,18 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
   const [overrideOpen, setOverrideOpen] = useState(false);
   const [overrideTarget, setOverrideTarget] = useState("");
   const [overrideReason, setOverrideReason] = useState("");
+  // Phase B3-Fix — stash of the in-progress override when the user
+  // detours through the asset picker via cf28ef1's "Assign asset →"
+  // button. After the asset save succeeds and the job refetches,
+  // `handleAssetEditSave` auto-reopens the override modal with these
+  // values pre-filled so the operator doesn't have to re-select
+  // Completed and re-type the reason. Cleared on override cancel,
+  // on successful override submission, or on a non-detour asset
+  // save — null means "no pending reopen."
+  const [pendingOverride, setPendingOverride] = useState<{
+    target: string;
+    reason: string;
+  } | null>(null);
   // Phase B3-UI Issue 2 — current user's role, used to gate the
   // clickable lifecycle chip shortcut. Only office roles (owner,
   // admin, dispatcher) see chips as interactive; drivers see them
@@ -568,6 +580,22 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
       );
       setAssetEditOpen(false);
       await fetchJob();
+      // Phase B3-Fix — if the user reached the asset picker via the
+      // "Assign asset →" button in the override modal, restore the
+      // override context now that the asset is assigned and the job
+      // has been refetched. The operator lands back in the override
+      // modal with Completed pre-selected and their reason intact —
+      // one more Confirm Override click finishes the flow. Runs only
+      // when `pendingOverride` is set (so normal Edit Asset flows
+      // that have no pending override are unaffected) and only after
+      // a successful save + refetch (failures fall into the catch
+      // block below and never reach this point).
+      if (pendingOverride) {
+        setOverrideTarget(pendingOverride.target);
+        setOverrideReason(pendingOverride.reason);
+        setPendingOverride(null);
+        setOverrideOpen(true);
+      }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "";
       // Phase 14 — conflict error codes are distinct per field so
@@ -702,13 +730,23 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
     if (!overrideTarget || !overrideReason.trim()) return;
     setActionLoading(true);
     try {
-      await api.patch(`/jobs/${id}/status`, { status: overrideTarget });
-      // Record override as a note on the job
-      const existing = job?.driver_notes || "";
-      const overrideNote = `[Status Override] ${DISPLAY_STATUS_LABELS[deriveDisplayStatus(overrideTarget)]} — ${overrideReason.trim()}`;
-      await api.patch(`/jobs/${id}`, { driver_notes: existing ? `${overrideNote}\n${existing}` : overrideNote });
+      // Phase B3-Fix — single atomic call. The reason travels with
+      // the status change so the backend's admin-override audit log
+      // captures it on the same commit. The previous implementation
+      // used a two-call sequence that fired a second
+      // `PATCH /jobs/:id { driver_notes }` which was silently
+      // stripped by the global `whitelist: true` ValidationPipe
+      // because `UpdateJobDto` has no `driver_notes` field, losing
+      // the reason on every override.
+      await api.patch(`/jobs/${id}/status`, {
+        status: overrideTarget,
+        overrideReason: overrideReason.trim(),
+      });
       toast("success", `Status overridden to ${DISPLAY_STATUS_LABELS[deriveDisplayStatus(overrideTarget)]}`);
       setOverrideOpen(false);
+      // A successful submission clears any pending-override stash so
+      // a subsequent asset save does not auto-reopen this modal.
+      setPendingOverride(null);
       await fetchJob();
       // Override can move status BACKWARDS (e.g. en_route → dispatched).
       // The lifecycle-context panel caches node rows internally, so it
@@ -2506,9 +2544,22 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
       />
 
       {/* --- Override Status Modal --- */}
-      {overrideOpen && job && (
+      {overrideOpen && job && (() => {
+        // Phase B3-Fix — centralize the close-without-submit path so
+        // both the backdrop and the Cancel button clear any
+        // pendingOverride stash. Without this, cancelling the modal
+        // after the asset-picker auto-reopen would leave a dangling
+        // stash that could re-fire on a subsequent unrelated asset
+        // save. Explicit-submit close (inside handleOverride) also
+        // clears pendingOverride — this helper is only for the
+        // close-without-submit cases.
+        const closeOverrideWithoutSubmit = () => {
+          setPendingOverride(null);
+          setOverrideOpen(false);
+        };
+        return (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setOverrideOpen(false)} />
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" onClick={closeOverrideWithoutSubmit} />
           <div className="relative rounded-[20px] p-6 w-full max-w-md shadow-2xl" style={{ backgroundColor: "var(--t-bg-secondary)", border: "1px solid var(--t-border)" }}>
             <h3 className="text-base font-semibold mb-1" style={{ color: "var(--t-text-primary)" }}>Override Status</h3>
             <p className="text-xs mb-4" style={{ color: "var(--t-text-muted)" }}>
@@ -2583,7 +2634,19 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
                     </div>
                     <button
                       type="button"
-                      onClick={() => { setOverrideOpen(false); openAssetEdit("pickup"); }}
+                      onClick={() => {
+                        // Phase B3-Fix — stash the in-progress override
+                        // before detouring to the asset picker so
+                        // `handleAssetEditSave` can auto-reopen this
+                        // modal with target + reason intact after the
+                        // asset is assigned.
+                        setPendingOverride({
+                          target: overrideTarget,
+                          reason: overrideReason,
+                        });
+                        setOverrideOpen(false);
+                        openAssetEdit("pickup");
+                      }}
                       className="text-xs font-semibold text-[var(--t-accent)] hover:underline"
                     >
                       Assign asset →
@@ -2635,7 +2698,7 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
                   {actionLoading ? "Overriding..." : "Confirm Override"}
                 </button>
                 <button
-                  onClick={() => setOverrideOpen(false)}
+                  onClick={closeOverrideWithoutSubmit}
                   className="rounded-full px-5 py-2.5 text-sm font-medium border transition-colors hover:bg-[var(--t-bg-card-hover)]"
                   style={{ borderColor: "var(--t-border)", color: "var(--t-text-muted)" }}
                 >
@@ -2645,7 +2708,8 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
     </div>
   );
 }
