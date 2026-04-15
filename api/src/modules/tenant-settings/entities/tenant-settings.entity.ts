@@ -100,6 +100,18 @@ export class TenantSettings {
   @Column({ name: 'timezone', type: 'text', default: 'America/New_York' })
   timezone!: string;
 
+  // Phase B2 — when true, disables pre-assignment of delivery jobs'
+  // asset_id at booking, dispatch, and chain propagation time. The
+  // asset is instead captured at completion by the driver (via the
+  // existing `changeAsset` path) and validated by the
+  // `delivery_completion_requires_asset` and `findCompletionConflict`
+  // gates in `changeStatus`. Default false — existing behavior
+  // preserved for every tenant until explicitly opted in. Only
+  // affects delivery jobs; pickup and exchange propagation paths
+  // are unchanged.
+  @Column({ name: 'pre_assignment_disabled', type: 'boolean', default: false })
+  pre_assignment_disabled!: boolean;
+
   @CreateDateColumn({ name: 'created_at' })
   created_at!: Date;
 

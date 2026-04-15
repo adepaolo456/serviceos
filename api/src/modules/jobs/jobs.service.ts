@@ -1869,6 +1869,26 @@ export class JobsService {
   }
 
   /**
+   * Phase B2 — resolve the `pre_assignment_disabled` tenant flag.
+   * Mirrors the `loadTenantTimezone` pattern: no new repo injection,
+   * resolved via the DataSource (or outer transaction manager). Null-
+   * safe — tenants without a `tenant_settings` row default to `false`,
+   * preserving existing behavior until the flag is explicitly set.
+   * Called by `assignJob` (W7 gate) and `scheduleNextTask` (W8 gate
+   * on the dump_and_return delivery sub-path).
+   */
+  private async isPreAssignmentDisabled(
+    tenantId: string,
+    manager?: EntityManager,
+  ): Promise<boolean> {
+    const repo = manager
+      ? manager.getRepository(TenantSettings)
+      : this.dataSource.getRepository(TenantSettings);
+    const s = await repo.findOne({ where: { tenant_id: tenantId } });
+    return s?.pre_assignment_disabled === true;
+  }
+
+  /**
    * Canonical date-change mutation. Used by BOTH:
    *   - Office path: `PUT /jobs/:id/scheduled-date` (dispatcher+)
    *   - Portal paths: `changePickupDate`, `requestEarlyPickup`,
@@ -2778,23 +2798,36 @@ export class JobsService {
     const updates: Record<string, unknown> = {};
 
     if ('assetId' in body) {
-      const newAssetId = (body.assetId as string) || null;
-      updates.asset_id = newAssetId;
+      // Phase B2 — when the tenant has opted into completion-time
+      // asset capture AND this is a delivery job, skip the asset
+      // pre-assignment entirely. Driver assignment (below) is
+      // unaffected; only the asset side of this endpoint is gated.
+      // Pickup/exchange/other types continue to pre-assign as
+      // before so their existing lifecycle is unchanged.
+      const preAssignmentDisabled =
+        await this.isPreAssignmentDisabled(tenantId);
+      const skipAssetAssign =
+        preAssignmentDisabled && job.job_type === 'delivery';
 
-      // Release old asset if switching or unassigning
-      if (job.asset_id && job.asset_id !== newAssetId) {
-        await this.assetRepo.update({ id: job.asset_id, tenant_id: tenantId } as any, {
-          status: 'available',
-          current_job_id: null,
-        } as any);
-      }
+      if (!skipAssetAssign) {
+        const newAssetId = (body.assetId as string) || null;
+        updates.asset_id = newAssetId;
 
-      // Reserve new asset
-      if (newAssetId && newAssetId !== job.asset_id) {
-        await this.assetRepo.update({ id: newAssetId, tenant_id: tenantId } as any, {
-          status: 'reserved',
-          current_job_id: id,
-        } as any);
+        // Release old asset if switching or unassigning
+        if (job.asset_id && job.asset_id !== newAssetId) {
+          await this.assetRepo.update({ id: job.asset_id, tenant_id: tenantId } as any, {
+            status: 'available',
+            current_job_id: null,
+          } as any);
+        }
+
+        // Reserve new asset
+        if (newAssetId && newAssetId !== job.asset_id) {
+          await this.assetRepo.update({ id: newAssetId, tenant_id: tenantId } as any, {
+            status: 'reserved',
+            current_job_id: id,
+          } as any);
+        }
       }
     }
 
@@ -3181,10 +3214,24 @@ export class JobsService {
         });
       }
     } else if (body.type === 'dump_and_return') {
+      // Phase B2 — pickup retains its parent-asset inheritance (not
+      // in scope for B2). Only the delivery sub-path's asset
+      // propagation is gated: when the tenant has enabled completion-
+      // time capture, the delivery job is created with asset_id=null
+      // and the driver captures the actual asset on completion. All
+      // other scheduleNextTask sub-paths (pickup, exchange) are
+      // unchanged per the B2 scope rules.
+      const preAssignmentDisabled =
+        await this.isPreAssignmentDisabled(tenantId);
       const pickupJob = this.jobsRepository.create({ ...baseJob, job_number: await this.generateJobNumber(tenantId, 'pickup'), job_type: 'pickup', asset_id: parent.asset_id });
       const saved1 = await this.jobsRepository.save(pickupJob);
       jobs.push(saved1);
-      const deliveryJob = this.jobsRepository.create({ ...baseJob, job_number: await this.generateJobNumber(tenantId, 'delivery'), job_type: 'delivery', asset_id: parent.asset_id });
+      const deliveryJob = this.jobsRepository.create({
+        ...baseJob,
+        job_number: await this.generateJobNumber(tenantId, 'delivery'),
+        job_type: 'delivery',
+        asset_id: preAssignmentDisabled ? null : parent.asset_id,
+      });
       const saved2 = await this.jobsRepository.save(deliveryJob);
       jobs.push(saved2);
     }
