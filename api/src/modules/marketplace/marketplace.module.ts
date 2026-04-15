@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { MarketplaceBooking } from './entities/marketplace-booking.entity';
+import { MarketplaceIntegration } from './entities/marketplace-integration.entity';
 import { Customer } from '../customers/entities/customer.entity';
 import { Job } from '../jobs/entities/job.entity';
 import { Asset } from '../assets/entities/asset.entity';
@@ -13,6 +14,7 @@ import { MarketplaceController } from './marketplace.controller';
   imports: [
     TypeOrmModule.forFeature([
       MarketplaceBooking,
+      MarketplaceIntegration,
       Customer,
       Job,
       Asset,
