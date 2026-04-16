@@ -368,12 +368,49 @@ export class JobsService {
       qb.andWhere('j.scheduled_date <= :dateTo', { dateTo: query.dateTo });
     }
 
+    // Stale-jobs filter — active jobs past their scheduled_date that
+    // have not been resolved. Additive: combinable with other filters
+    // if supplied. The WHERE clauses mirror the operator-visible
+    // definition shown on the Assets availability warnings.
+    if (query.stale === true) {
+      qb.andWhere(
+        "j.status NOT IN ('completed', 'cancelled', 'failed', 'needs_reschedule')",
+      )
+        .andWhere('j.scheduled_date < CURRENT_DATE')
+        .andWhere('j.completed_at IS NULL');
+    }
+
     qb.orderBy('j.scheduled_date', 'ASC')
       .addOrderBy('j.created_at', 'DESC')
       .skip(skip)
       .take(limit);
 
     const [data, total] = await qb.getManyAndCount();
+
+    // Stale-view decoration — attach `days_overdue` per row so the
+    // operator UI can render the overdue severity without a second
+    // computation. Uses server-side date arithmetic (current date
+    // via `Date`, truncated to midnight) so it matches the WHERE
+    // clause above. Preserves the existing response shape for every
+    // other caller — the field only appears when `stale=true`.
+    if (query.stale === true && data.length > 0) {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      for (const job of data) {
+        const scheduled = job.scheduled_date
+          ? new Date(`${job.scheduled_date}T00:00:00`)
+          : null;
+        const daysOverdue = scheduled
+          ? Math.max(
+              0,
+              Math.floor(
+                (today.getTime() - scheduled.getTime()) / 86400000,
+              ),
+            )
+          : 0;
+        (job as Job & { days_overdue?: number }).days_overdue = daysOverdue;
+      }
+    }
 
     // Opt-in operational-board enrichment. Zero effect on callers that
     // don't pass ?enrichment=board. Runs three parallel lookups scoped
