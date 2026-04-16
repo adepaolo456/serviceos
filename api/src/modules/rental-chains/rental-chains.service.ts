@@ -9,11 +9,17 @@ import { RentalChain } from './entities/rental-chain.entity';
 import { TaskChainLink } from './entities/task-chain-link.entity';
 import { Job } from '../jobs/entities/job.entity';
 import { TenantSettings } from '../tenant-settings/entities/tenant-settings.entity';
+import { Customer } from '../customers/entities/customer.entity';
 import { CreateRentalChainDto } from './dto/create-rental-chain.dto';
 import { UpdateRentalChainDto } from './dto/update-rental-chain.dto';
 import { CreateExchangeDto } from './dto/create-exchange.dto';
 import { RescheduleExchangeDto } from './dto/reschedule-exchange.dto';
 import { issueNextJobNumber } from '../../common/utils/job-number.util';
+// Path α — lifecycle exchanges reuse the existing pricing engine +
+// canonical billing path so they price/invoice identically to
+// booking-wizard exchanges.
+import { PricingService } from '../pricing/pricing.service';
+import { BillingService } from '../billing/billing.service';
 
 // ── Date helpers (UTC, date-only) ──
 function shiftDateStr(date: string, days: number): string {
@@ -51,6 +57,10 @@ export class RentalChainsService {
     @InjectRepository(TenantSettings)
     private tenantSettingsRepo: Repository<TenantSettings>,
     private dataSource: DataSource,
+    // Path α injections — no new repos needed; both services are
+    // already exported from their modules (see rental-chains.module.ts).
+    private pricingService: PricingService,
+    private billingService: BillingService,
   ) {}
 
   // ─────────────────────────────────────────────────────────
@@ -595,6 +605,69 @@ export class RentalChainsService {
     const size = dto.dumpster_size || chain.dumpster_size;
     const assetId = dto.asset_id ?? chain.asset_id ?? null;
 
+    // ── Path α: price the exchange via the existing pricing engine ──
+    // All inputs derived server-side from chain context — zero frontend
+    // payload change required. Uses the exact same pricing call the
+    // booking wizard uses (`PricingService.calculate` with jobType:
+    // 'exchange' + exchange_context), so lifecycle exchange pricing now
+    // matches booking-wizard exchange pricing byte-for-byte, including
+    // tenant-configured `rule.exchange_fee` discount behavior.
+    //
+    // Coordinates: sourced from the chain's drop-off job's
+    // service_address. When missing/invalid, the pricing engine
+    // detects invalid coord pair and falls through with zero distance
+    // surcharge — the exchange still gets base_price + fees. Accepted
+    // degradation for legacy rows without geocoded addresses.
+    //
+    // Customer type: loaded from the customer row (residential vs
+    // commercial affects rental-period policy). Defaults to
+    // 'residential' when absent.
+    //
+    // rentalDays: computed from the new segment (exchange_date →
+    // newPickupDateStr) so extra-day charges price correctly when
+    // the operator overrides the pickup.
+    //
+    // Pricing runs OUTSIDE the write transaction — the call is a pure
+    // read over pricing_rules / client_pricing_overrides / tenant_fees
+    // / yards. If it throws (e.g. no active rule for the dropoff size),
+    // the caller sees the error before any chain mutation occurs —
+    // correct by design: we never want an unpriced exchange to land.
+    const deliveryLink = await this.linkRepo.findOne({
+      where: { rental_chain_id: chain.id, task_type: 'drop_off' },
+      relations: ['job'],
+      order: { sequence_number: 'ASC' },
+    });
+    const svcAddr = (deliveryLink?.job?.service_address ?? null) as
+      | { lat?: number | string | null; lng?: number | string | null }
+      | null;
+    const customerLat = Number(svcAddr?.lat) || 0;
+    const customerLng = Number(svcAddr?.lng) || 0;
+
+    const customer = await this.dataSource.getRepository(Customer).findOne({
+      where: { id: chain.customer_id, tenant_id: tenantId },
+    });
+    const customerType: 'residential' | 'commercial' =
+      customer?.type === 'commercial' ? 'commercial' : 'residential';
+
+    const segmentDays = daysBetween(dto.exchange_date, newPickupDateStr);
+
+    const quote = await this.pricingService.calculate(tenantId, {
+      serviceType: 'dumpster_rental',
+      assetSubtype: size,
+      jobType: 'exchange',
+      customerType,
+      customerLat,
+      customerLng,
+      rentalDays: segmentDays,
+      customerId: chain.customer_id,
+      exchange_context: {
+        pickup_asset_subtype: chain.dumpster_size ?? size,
+        dropoff_asset_subtype: size,
+      },
+    });
+    const exchangeTotal = Number(quote.breakdown?.total) || 0;
+    const exchangeBasePrice = Number(quote.breakdown?.basePrice) || 0;
+
     return this.dataSource.transaction(async (trx) => {
       const chainRepo = trx.getRepository(RentalChain);
       const linkRepo = trx.getRepository(TaskChainLink);
@@ -714,6 +787,55 @@ export class RentalChainsService {
       chain.expected_pickup_date = newPickupDateStr;
       if (dto.dumpster_size) chain.dumpster_size = dto.dumpster_size;
       await chainRepo.save(chain);
+
+      // 7. Path α — persist computed price on the exchange job so
+      // the per-job prepayment gate (`enforceJobPrepayment`) no
+      // longer short-circuits on `price <= 0`. Mirrors how
+      // booking-flow exchange jobs end up priced, but sourced from
+      // the same pricing engine response we just computed above.
+      await jobRepo.update(
+        { id: savedExchangeJob.id, tenant_id: tenantId },
+        {
+          total_price: exchangeTotal,
+          base_price: exchangeBasePrice,
+        },
+      );
+
+      // 8. Path α — create a NEW invoice for the exchange via the
+      // canonical billing path. Status defaults to 'open', which is
+      // what the existing dispatch prepayment gate
+      // (`hasPaidLinkedInvoice`) reads — unpaid lifecycle exchanges
+      // now block assignment/dispatch the same way booking-flow
+      // unpaid exchanges do. Passing `trx` joins the outer
+      // transaction so the invoice + line items commit atomically
+      // with the chain writes; a rollback anywhere in this block
+      // unwinds everything together.
+      //
+      // Zero-price exchanges (edge case — e.g. rule base_price = 0
+      // on a free promo size) skip invoice creation, matching the
+      // booking-flow `if (exchangeFee > 0)` guard.
+      if (exchangeTotal > 0) {
+        await this.billingService.createInternalInvoice(
+          tenantId,
+          {
+            customerId: chain.customer_id,
+            jobId: savedExchangeJob.id,
+            source: 'exchange',
+            invoiceType: 'exchange',
+            status: 'open',
+            lineItems: [
+              {
+                description: 'Dumpster Exchange',
+                quantity: 1,
+                unitPrice: exchangeTotal,
+                amount: exchangeTotal,
+              },
+            ],
+            notes: `Exchange scheduled on rental chain ${chain.id}`,
+          },
+          trx,
+        );
+      }
 
       return this.findOne(tenantId, chain.id);
     });
