@@ -41,10 +41,20 @@ export class AssetsController {
   }
 
   @Get('availability')
-  @ApiOperation({ summary: 'Get projected asset availability for a date' })
+  @ApiOperation({
+    summary:
+      'Get projected asset availability — single subtype (object) or all subtypes (array when omitted)',
+  })
   getAvailability(
     @TenantId() tenantId: string,
-    @Query('subtype') subtype: string,
+    // When omitted, the service returns an array covering every
+    // distinct asset subtype for the tenant. When provided, the
+    // service returns the original single-object response shape
+    // for that subtype. No silent default — the old `|| '20yd'`
+    // fallback was removed because it masked the multi-subtype
+    // path and gave the wrong answer for tenants without a 20yd
+    // subtype.
+    @Query('subtype') subtype?: string,
     @Query('date') date?: string,
     // Phase B — when `true`, exclude pending jobs from both outgoing
     // and incoming sets. Default `false` keeps the existing optimistic
@@ -56,7 +66,7 @@ export class AssetsController {
   ) {
     return this.assetsService.getAvailability(
       tenantId,
-      subtype || '20yd',
+      subtype,
       date,
       { confirmedOnly: confirmedOnly === 'true' },
     );

@@ -200,6 +200,76 @@ export class AssetsService {
   }
 
   /**
+   * Public dispatcher for projected availability.
+   *
+   * When `subtype` is a non-empty string, returns the single
+   * subtype's availability object (the pre-existing response shape,
+   * unchanged). When `subtype` is omitted or empty, returns an
+   * array of availability objects — one per distinct subtype in
+   * the tenant's asset inventory, ordered ascending by subtype for
+   * deterministic rendering. Consumers that previously fired N
+   * parallel per-subtype calls (Assets page projection table, the
+   * booking-flow per-pill signal) can switch to the array form to
+   * guarantee consistent numbers across subtypes and reduce DB
+   * round-trips on the client side.
+   *
+   * Multi-subtype path delegates to
+   * `calculateAvailabilityForSubtype` per subtype — the same
+   * helper the single-subtype path uses — so both paths share
+   * identical formula, filters, warnings, and exchange-subtype
+   * resolution logic. No shortcut logic, no merged query, no
+   * duplicated math.
+   */
+  async getAvailability(
+    tenantId: string,
+    subtype: string | undefined,
+    date?: string,
+    options: { confirmedOnly?: boolean } = {},
+  ) {
+    if (subtype && subtype.trim().length > 0) {
+      return this.calculateAvailabilityForSubtype(
+        tenantId,
+        subtype,
+        date,
+        options,
+      );
+    }
+
+    // Multi-subtype path — source subtypes from DISTINCT
+    // `assets.subtype` scoped to this tenant. Nulls are excluded
+    // (they cannot be projected against). Ordering is ASC so
+    // consumer UIs stay stable between calls.
+    const rows = await this.assetsRepository
+      .createQueryBuilder('a')
+      .select('DISTINCT a.subtype', 'subtype')
+      .where('a.tenant_id = :tenantId', { tenantId })
+      .andWhere('a.subtype IS NOT NULL')
+      .orderBy('a.subtype', 'ASC')
+      .getRawMany<{ subtype: string | null }>();
+
+    const subtypes = rows
+      .map((r) => r.subtype)
+      .filter((s): s is string => typeof s === 'string' && s.length > 0);
+
+    // Sequential await — tenants have ~3–6 subtypes, so pipeline
+    // depth matters less than predictable connection usage. Each
+    // helper call runs a handful of tenant-scoped queries; running
+    // them sequentially keeps peak DB load bounded.
+    const results = [];
+    for (const st of subtypes) {
+      results.push(
+        await this.calculateAvailabilityForSubtype(
+          tenantId,
+          st,
+          date,
+          options,
+        ),
+      );
+    }
+    return results;
+  }
+
+  /**
    * Phase B — Projected asset availability for a target date.
    *
    * Formula:
@@ -240,7 +310,7 @@ export class AssetsService {
    * both the outgoing and incoming sets — a conservative view for
    * planning use cases that only want firmly-committed capacity.
    */
-  async getAvailability(
+  private async calculateAvailabilityForSubtype(
     tenantId: string,
     subtype: string,
     date?: string,
