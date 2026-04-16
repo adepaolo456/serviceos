@@ -835,7 +835,7 @@ export default function AssetsPage() {
             className="w-full flex items-center justify-between px-4 py-2 mb-3 rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] hover:bg-[var(--t-bg-card-hover)] transition-colors cursor-pointer"
           >
             <span className="text-sm font-semibold text-[var(--t-text-primary)]">
-              {FEATURE_REGISTRY.projected_availability_section?.label ?? "Projected Availability"}
+              {FEATURE_REGISTRY.assets_availability_panel_label?.label ?? "Availability"}
             </span>
             <ChevronDown
               className="h-4 w-4 text-[var(--t-text-muted)] transition-transform duration-150 ease-out"
@@ -902,6 +902,89 @@ export default function AssetsPage() {
                 {FEATURE_REGISTRY.projected_availability_formula_hint?.label ??
                   "Projected = Available + Incoming \u2212 Outgoing"}
               </p>
+
+              {/* Summary block — aggregated totals across every
+                  subtype so operators see a single roll-up before
+                  drilling into the per-subtype table. Reuses the
+                  same `projectionData` fetched for the table below
+                  (no additional API call). "Available Now" sums the
+                  strict `base_available` field from projectionData
+                  (not `quickStats.available`) so the summary's own
+                  math stays self-consistent: base + incoming −
+                  outgoing = TOTAL exactly. The tile separately uses
+                  `quickStats.available` for its left-hand number —
+                  the two can legitimately differ by a few units
+                  because the strict backend filter excludes
+                  `needs_dump` and referentially-held assets. */}
+              {!projectionLoading && !projectionError && projectionData && (() => {
+                const baseTotal = projectionData.reduce(
+                  (sum, r) => sum + r.base_available,
+                  0,
+                );
+                const incomingTotal = projectionData.reduce(
+                  (sum, r) => sum + r.incoming_count,
+                  0,
+                );
+                const outgoingTotal = projectionData.reduce(
+                  (sum, r) => sum + r.outgoing_count,
+                  0,
+                );
+                const projectedTotal = projectionData.reduce(
+                  (sum, r) => sum + r.projected_available,
+                  0,
+                );
+                const totalColor =
+                  projectedTotal === 0
+                    ? "var(--t-error)"
+                    : projectedTotal <= 2
+                      ? "var(--t-warning)"
+                      : "var(--t-accent)";
+                return (
+                  <div
+                    className="mb-4 rounded-[12px] px-4 py-3"
+                    style={{
+                      background: "var(--t-bg-elevated, var(--t-bg-secondary))",
+                      border: "1px solid var(--t-border)",
+                    }}
+                  >
+                    <div className="flex justify-between items-center text-sm mb-1.5">
+                      <span className="text-[var(--t-text-muted)]">Available Now</span>
+                      <span className="tabular-nums font-semibold" style={{ color: "var(--t-text-primary)" }}>
+                        {baseTotal}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center text-sm mb-1.5">
+                      <span className="text-[var(--t-text-muted)]">Incoming</span>
+                      <span className="tabular-nums font-semibold" style={{ color: "var(--t-text-primary)" }}>
+                        +{incomingTotal}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-[var(--t-text-muted)]">Outgoing</span>
+                      <span className="tabular-nums font-semibold" style={{ color: "var(--t-text-primary)" }}>
+                        &minus;{outgoingTotal}
+                      </span>
+                    </div>
+                    <div
+                      className="flex justify-between items-center mt-2.5 pt-2.5"
+                      style={{ borderTop: "1px solid var(--t-border)" }}
+                    >
+                      <span
+                        className="uppercase tracking-wider font-bold"
+                        style={{ fontSize: 11, color: "var(--t-text-muted)" }}
+                      >
+                        Total
+                      </span>
+                      <span
+                        className="tabular-nums"
+                        style={{ fontSize: 20, fontWeight: 700, color: totalColor }}
+                      >
+                        {projectedTotal}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Body: loading / error / table */}
               {projectionLoading ? (
