@@ -329,6 +329,47 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
   const [cancelContextLoading, setCancelContextLoading] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
 
+  // Connected Lifecycle Navigation — separate state from the cancel
+  // modal so the prev/current/next triplet under the job header can
+  // render without waiting for (or depending on) the modal being
+  // opened. Reuses the existing read-only /cancellation-context
+  // endpoint — no new backend surface, no duplicated chain query
+  // logic. `isChain === false` → section renders nothing; fetch
+  // errors are silent and the section simply does not render.
+  const [navContext, setNavContext] = useState<CancellationContext | null>(
+    null,
+  );
+  const [navContextLoading, setNavContextLoading] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setNavContextLoading(true);
+    setNavContext(null);
+    api
+      .get<CancellationContext>(`/jobs/${id}/cancellation-context`)
+      .then((ctx) => {
+        if (cancelled) return;
+        // Defensive shape check — same guard the cancel modal uses.
+        if (
+          ctx &&
+          typeof ctx === "object" &&
+          typeof ctx.isChain === "boolean" &&
+          Array.isArray(ctx.jobs)
+        ) {
+          setNavContext(ctx);
+        }
+      })
+      .catch(() => {
+        /* silent — spec: do not render section on error */
+      })
+      .finally(() => {
+        if (!cancelled) setNavContextLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
+
   // Escape-to-dismiss for the cancellation modal. Ignores the event
   // while a confirm mutation is in flight so an accidental Escape
   // during the PATCH doesn't leave the operator unsure whether the
@@ -1234,6 +1275,155 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
           </Dropdown>
         </div>
       </div>
+
+      {/*
+        ── Connected Lifecycle Navigation ──
+        Prev / Current / Next triplet derived from the same
+        /cancellation-context response used by the guided-cancel
+        modal. Chain jobs only — standalone jobs render nothing.
+        Silent on fetch error; loading renders a 3-slot skeleton
+        that does NOT block the rest of the page.
+      */}
+      {navContextLoading && (
+        <div className="grid grid-cols-3 gap-3 mb-6">
+          {[0, 1, 2].map((i) => (
+            <div
+              key={i}
+              className="h-20 rounded-[14px] skeleton"
+            />
+          ))}
+        </div>
+      )}
+      {!navContextLoading && navContext && navContext.isChain && (() => {
+        const currentIdx = navContext.jobs.findIndex((j) => j.is_current);
+        if (currentIdx < 0) return null;
+        const prev =
+          currentIdx > 0 ? navContext.jobs[currentIdx - 1] : null;
+        const current = navContext.jobs[currentIdx];
+        const next =
+          currentIdx < navContext.jobs.length - 1
+            ? navContext.jobs[currentIdx + 1]
+            : null;
+
+        const prevLabel =
+          FEATURE_REGISTRY.connected_lifecycle_previous?.label ?? "Previous";
+        const currentLabel =
+          FEATURE_REGISTRY.connected_lifecycle_current?.label ?? "Current";
+        const nextLabel =
+          FEATURE_REGISTRY.connected_lifecycle_next?.label ?? "Next";
+        const sectionTitle =
+          FEATURE_REGISTRY.connected_lifecycle_title?.label ??
+          "Connected Lifecycle";
+
+        type NavJob = CancellationContext["jobs"][number];
+        const renderSlot = (
+          slotLabel: string,
+          node: NavJob | null,
+          isCurrent: boolean,
+        ) => {
+          if (!node) {
+            return (
+              <div
+                className="rounded-[14px] border px-4 py-3"
+                style={{
+                  borderColor: "var(--t-border)",
+                  borderStyle: "dashed",
+                  background: "var(--t-bg-card)",
+                }}
+              >
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--t-text-muted)] mb-2">
+                  {slotLabel}
+                </p>
+                <p className="text-sm text-[var(--t-text-tertiary)]">—</p>
+              </div>
+            );
+          }
+          const nodeStatus = deriveDisplayStatus(node.status);
+          const body = (
+            <>
+              <div className="flex items-baseline gap-2 mb-1">
+                <span
+                  className="text-[11px] font-bold uppercase"
+                  style={{ color: "var(--t-text-muted)" }}
+                >
+                  {node.job_type}
+                </span>
+                <span className="text-sm font-semibold text-[var(--t-text-primary)]">
+                  {formatJobNumber(node.job_number)}
+                </span>
+              </div>
+              <p className="text-[11px] text-[var(--t-text-muted)] mb-1">
+                {node.scheduled_date ?? "—"}
+              </p>
+              <span
+                className="text-[11px] font-semibold"
+                style={{ color: displayStatusColor(nodeStatus) }}
+              >
+                {DISPLAY_STATUS_LABELS[nodeStatus] ?? node.status}
+              </span>
+            </>
+          );
+          if (isCurrent) {
+            return (
+              <div
+                className="rounded-[14px] border-2 px-4 py-3"
+                style={{
+                  borderColor: "var(--t-accent)",
+                  background: "var(--t-accent-soft)",
+                }}
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <p
+                    className="text-[10px] font-semibold uppercase tracking-wider"
+                    style={{ color: "var(--t-accent-text)" }}
+                  >
+                    {slotLabel}
+                  </p>
+                  <span
+                    className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded"
+                    style={{
+                      background: "var(--t-accent)",
+                      color: "var(--t-accent-on-accent)",
+                    }}
+                  >
+                    {currentLabel}
+                  </span>
+                </div>
+                {body}
+              </div>
+            );
+          }
+          return (
+            <button
+              type="button"
+              onClick={() => router.push(`/jobs/${node.id}`)}
+              className="rounded-[14px] border px-4 py-3 text-left transition-colors hover:bg-[var(--t-bg-card-hover)]"
+              style={{
+                borderColor: "var(--t-border)",
+                background: "var(--t-bg-card)",
+              }}
+            >
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--t-text-muted)] mb-2">
+                {slotLabel}
+              </p>
+              {body}
+            </button>
+          );
+        };
+
+        return (
+          <div className="mb-6">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--t-text-muted)] mb-2">
+              {sectionTitle}
+            </p>
+            <div className="grid grid-cols-3 gap-3">
+              {renderSlot(prevLabel, prev, false)}
+              {renderSlot(currentLabel, current, true)}
+              {renderSlot(nextLabel, next, false)}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ─── Blocked panel (contextual — only shown when this job is blocked) ─── */}
       {/*
