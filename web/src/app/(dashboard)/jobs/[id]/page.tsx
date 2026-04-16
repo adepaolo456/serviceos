@@ -48,6 +48,39 @@ import ScheduleChangeHistoryCard from "./_components/ScheduleChangeHistoryCard";
 // unassign. Maps to `assetId: null` on the backend PATCH payload.
 const ASSET_UNASSIGN = "__unassign__";
 
+// Cancellation Orchestrator Phase 2 — response shape for
+// `GET /jobs/:id/cancellation-context` (shipped server-side in
+// fab178c). Kept local to this file since the modal is the only
+// consumer today; if other surfaces need it later, promote to a
+// shared types module.
+interface CancellationContext {
+  isChain: boolean;
+  jobs: Array<{
+    id: string;
+    job_number: string;
+    job_type: string;
+    status: string;
+    scheduled_date: string | null;
+    is_current: boolean;
+  }>;
+  invoices: Array<{
+    id: string;
+    invoice_number: string;
+    invoice_status: string;
+    amount_paid: number;
+    balance_due: number;
+    total_amount: number;
+  }>;
+  summary: {
+    totalJobs: number;
+    hasCompletedJobs: boolean;
+    hasActiveJobs: boolean;
+    hasInvoices: boolean;
+    hasPaidInvoices: boolean;
+    hasUnpaidInvoices: boolean;
+  };
+}
+
 /* --- Types --- */
 
 interface Job {
@@ -286,6 +319,32 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
   const [isPostCreate, setIsPostCreate] = useState(false);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
+  // Cancellation Orchestrator Phase 2 — guided-cancel modal state.
+  // `cancelContext` is null while loading or on fetch failure; the
+  // failure case routes through `cancelWithReasonFallback` below
+  // which preserves the pre-Phase-2 prompt() flow.
+  const [cancelModalOpen, setCancelModalOpen] = useState(false);
+  const [cancelContext, setCancelContext] =
+    useState<CancellationContext | null>(null);
+  const [cancelContextLoading, setCancelContextLoading] = useState(false);
+  const [cancelReason, setCancelReason] = useState("");
+
+  // Escape-to-dismiss for the cancellation modal. Ignores the event
+  // while a confirm mutation is in flight so an accidental Escape
+  // during the PATCH doesn't leave the operator unsure whether the
+  // cancellation committed.
+  useEffect(() => {
+    if (!cancelModalOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !actionLoading) {
+        setCancelModalOpen(false);
+        setCancelReason("");
+        setCancelContext(null);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [cancelModalOpen, actionLoading]);
   const [dumpTickets, setDumpTickets] = useState<Array<{
     id: string; ticket_number: string; waste_type: string; weight_tons: number;
     dump_location_id: string;
@@ -703,18 +762,103 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
     }
   }, [searchParams, id, router]);
 
+  // Phase 2 — pre-modal existing behavior, preserved as the fallback
+  // path when the cancellation-context fetch fails. Kept byte-for-byte
+  // equivalent to the pre-Phase-2 flow so a backend outage on the new
+  // read-only endpoint never blocks an operator from cancelling.
+  const cancelWithReasonFallback = async () => {
+    const reason = prompt("Cancellation reason:");
+    if (!reason) return;
+    setActionLoading(true);
+    try {
+      await api.patch(`/jobs/${id}/status`, {
+        status: "cancelled",
+        cancellationReason: reason,
+      });
+      toast("success", "Job cancelled");
+      await fetchJob();
+      setLifecyclePanelRefresh((n) => n + 1);
+    } catch {
+      toast("error", "Failed to update");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // Phase 2 — primary cancel entry point. Opens the guided modal,
+  // fetches lifecycle + billing context, and renders impact before
+  // the operator confirms. Any fetch failure routes through
+  // `cancelWithReasonFallback` so the cancel path never gets blocked.
+  const openCancelModal = async () => {
+    if (actionLoading || cancelContextLoading) return;
+    setCancelReason("");
+    setCancelContext(null);
+    setCancelModalOpen(true);
+    setCancelContextLoading(true);
+    try {
+      const ctx = await api.get<CancellationContext>(
+        `/jobs/${id}/cancellation-context`,
+      );
+      // Defensive shape check — if the endpoint returns something
+      // unexpected, fall back to the pre-Phase-2 flow rather than
+      // rendering a half-baked modal.
+      if (!ctx || typeof ctx !== "object" || !ctx.summary || !Array.isArray(ctx.jobs)) {
+        setCancelModalOpen(false);
+        await cancelWithReasonFallback();
+        return;
+      }
+      setCancelContext(ctx);
+    } catch {
+      // Network error, 500, timeout — silent log + graceful fallback
+      // to the existing prompt() flow. Spec: "do NOT block the operator."
+      setCancelModalOpen(false);
+      await cancelWithReasonFallback();
+    } finally {
+      setCancelContextLoading(false);
+    }
+  };
+
+  // Phase 2 — confirm handler. Calls the existing cancel PATCH path
+  // unchanged (no new backend flags, no chain-level mutation) and
+  // preserves the existing cancellationReason capture from the
+  // pre-modal prompt flow.
+  const confirmCancelFromModal = async () => {
+    if (!cancelReason.trim()) return;
+    setActionLoading(true);
+    try {
+      await api.patch(`/jobs/${id}/status`, {
+        status: "cancelled",
+        cancellationReason: cancelReason.trim(),
+      });
+      toast("success", "Job cancelled");
+      setCancelModalOpen(false);
+      setCancelReason("");
+      setCancelContext(null);
+      await fetchJob();
+      setLifecyclePanelRefresh((n) => n + 1);
+    } catch {
+      // Keep the modal open so the operator can retry without
+      // losing the reason text.
+      toast("error", "Failed to update");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const closeCancelModal = () => {
+    if (actionLoading) return;
+    setCancelModalOpen(false);
+    setCancelReason("");
+    setCancelContext(null);
+  };
+
   const changeStatus = async (newStatus: string) => {
     if (actionLoading) return;
     if (newStatus === "cancelled") {
-      const reason = prompt("Cancellation reason:");
-      if (!reason) return;
-      setActionLoading(true);
-      try {
-        await api.patch(`/jobs/${id}/status`, { status: newStatus, cancellationReason: reason });
-        toast("success", "Job cancelled");
-        await fetchJob();
-        setLifecyclePanelRefresh((n) => n + 1);
-      } catch { toast("error", "Failed to update"); } finally { setActionLoading(false); }
+      // Route cancel through the guided modal — same PATCH contract,
+      // richer confirmation UX. Fetch failures fall back to the
+      // pre-Phase-2 prompt() path inside `openCancelModal` itself.
+      await openCancelModal();
       return;
     }
     setActionLoading(true);
@@ -2810,6 +2954,284 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
         </div>
         );
       })()}
+
+      {/*
+        Cancellation Orchestrator Phase 2 — guided cancel modal.
+        Intercepts the `changeStatus("cancelled")` path from the
+        kebab menu, fetches the read-only preview endpoint
+        `GET /jobs/:id/cancellation-context`, and renders the
+        lifecycle + billing impact before the operator confirms.
+        Fetch failures bypass this modal and fall through to the
+        pre-Phase-2 prompt() flow (see `openCancelModal`).
+      */}
+      {cancelModalOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4"
+          onClick={closeCancelModal}
+          role="presentation"
+        >
+          <div
+            className="rounded-2xl border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6 w-full max-w-lg min-w-0 max-h-[85vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="cancel-job-modal-title"
+          >
+            <h3
+              id="cancel-job-modal-title"
+              className="text-sm font-semibold text-[var(--t-text-primary)] mb-4"
+            >
+              {(
+                FEATURE_REGISTRY.cancel_job_modal_title?.label ?? "Cancel Job {N}?"
+              ).replace("{N}", formatJobNumber(job?.job_number ?? ""))}
+            </h3>
+
+            {cancelContextLoading && !cancelContext && (
+              <div className="py-8 flex items-center justify-center gap-2">
+                <Clock
+                  className="h-4 w-4 animate-pulse"
+                  style={{ color: "var(--t-text-muted)" }}
+                />
+                <span className="text-xs text-[var(--t-text-muted)]">
+                  Loading impact…
+                </span>
+              </div>
+            )}
+
+            {cancelContext && (
+              <>
+                {/* ── Warning flags ─────────────────────────── */}
+                <div className="space-y-2 mb-4">
+                  {cancelContext.summary.hasCompletedJobs && (
+                    <div
+                      className="rounded-[12px] px-3 py-2 text-xs flex items-start gap-2"
+                      style={{
+                        background: "var(--t-error-soft)",
+                        color: "var(--t-error)",
+                        border: "1px solid var(--t-error)",
+                      }}
+                      role="alert"
+                    >
+                      <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                      <span>
+                        {FEATURE_REGISTRY.cancel_job_warning_completed?.label ??
+                          "A completed job exists in this lifecycle — service may have already occurred."}
+                      </span>
+                    </div>
+                  )}
+                  {cancelContext.summary.hasActiveJobs && (
+                    <div
+                      className="rounded-[12px] px-3 py-2 text-xs flex items-start gap-2"
+                      style={{
+                        background: "var(--t-bg-elevated)",
+                        color: "var(--t-warning)",
+                        border: "1px solid var(--t-warning)",
+                      }}
+                    >
+                      <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                      <span>
+                        {FEATURE_REGISTRY.cancel_job_warning_active?.label ??
+                          "Other active jobs in this lifecycle will remain after this cancellation."}
+                      </span>
+                    </div>
+                  )}
+                  {cancelContext.summary.hasPaidInvoices && (
+                    <div
+                      className="rounded-[12px] px-3 py-2 text-xs flex items-start gap-2"
+                      style={{
+                        background: "var(--t-bg-elevated)",
+                        color: "var(--t-warning)",
+                        border: "1px solid var(--t-warning)",
+                      }}
+                    >
+                      <DollarSign className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                      <span>
+                        {FEATURE_REGISTRY.cancel_job_warning_paid_invoice?.label ??
+                          "Paid invoices exist — a credit memo or refund may be required."}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {/* ── Lifecycle section (chain only) ────────── */}
+                {cancelContext.isChain && (
+                  <div className="mb-4">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--t-text-muted)] mb-1">
+                      {FEATURE_REGISTRY.cancel_job_lifecycle_section_title?.label ??
+                        "Related Jobs"}
+                    </p>
+                    <p className="text-[11px] text-[var(--t-text-muted)] mb-2">
+                      {(
+                        FEATURE_REGISTRY.cancel_job_lifecycle_hint?.label ??
+                        "{N} related jobs in this lifecycle"
+                      ).replace(
+                        "{N}",
+                        String(cancelContext.summary.totalJobs),
+                      )}
+                    </p>
+                    <ul
+                      className="space-y-1.5 rounded-[12px] border p-2"
+                      style={{
+                        background: "var(--t-bg-elevated)",
+                        borderColor: "var(--t-border)",
+                      }}
+                    >
+                      {cancelContext.jobs.map((j) => (
+                        <li
+                          key={j.id}
+                          className="flex items-center justify-between gap-2 px-2 py-1 rounded-md"
+                          style={{
+                            background: j.is_current
+                              ? "var(--t-accent-soft)"
+                              : "transparent",
+                          }}
+                        >
+                          <span className="text-xs font-medium text-[var(--t-text-primary)]">
+                            {formatJobNumber(j.job_number)}
+                            {j.is_current && (
+                              <span
+                                className="ml-1.5 text-[10px] font-semibold uppercase"
+                                style={{ color: "var(--t-accent-text)" }}
+                              >
+                                (this job)
+                              </span>
+                            )}
+                          </span>
+                          <span className="text-[11px] text-[var(--t-text-muted)] flex items-center gap-2">
+                            <span>{j.job_type}</span>
+                            <span>·</span>
+                            <span
+                              style={{
+                                color: displayStatusColor(
+                                  deriveDisplayStatus(j.status),
+                                ),
+                              }}
+                            >
+                              {DISPLAY_STATUS_LABELS[
+                                deriveDisplayStatus(j.status)
+                              ] ?? j.status}
+                            </span>
+                            {j.scheduled_date && (
+                              <>
+                                <span>·</span>
+                                <span>{j.scheduled_date}</span>
+                              </>
+                            )}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* ── Billing section (if any invoices) ─────── */}
+                {cancelContext.summary.hasInvoices && (
+                  <div className="mb-4">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--t-text-muted)] mb-2">
+                      {FEATURE_REGISTRY.cancel_job_billing_section_title?.label ??
+                        "Linked Invoices"}
+                    </p>
+                    <ul
+                      className="space-y-1.5 rounded-[12px] border p-2"
+                      style={{
+                        background: "var(--t-bg-elevated)",
+                        borderColor: "var(--t-border)",
+                      }}
+                    >
+                      {cancelContext.invoices.map((inv) => (
+                        <li
+                          key={inv.id}
+                          className="flex items-center justify-between gap-2 px-2 py-1"
+                        >
+                          <span className="text-xs font-medium text-[var(--t-text-primary)] flex items-center gap-2">
+                            <span>#{inv.invoice_number}</span>
+                            <span className="text-[10px] uppercase text-[var(--t-text-muted)]">
+                              {inv.invoice_status}
+                            </span>
+                          </span>
+                          <span className="text-[11px] text-[var(--t-text-muted)] tabular-nums">
+                            Paid {formatCurrency(inv.amount_paid)} · Balance{" "}
+                            <span
+                              style={{
+                                color:
+                                  inv.balance_due > 0
+                                    ? "var(--t-warning)"
+                                    : undefined,
+                              }}
+                            >
+                              {formatCurrency(inv.balance_due)}
+                            </span>
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* ── Cancellation reason (required) ────────── */}
+                <div className="mb-4">
+                  <label className="text-[11px] font-semibold uppercase tracking-wide text-[var(--t-text-muted)] mb-1 block">
+                    {FEATURE_REGISTRY.cancel_job_reason_label?.label ??
+                      "Cancellation reason"}
+                    <span
+                      className="ml-1"
+                      style={{ color: "var(--t-error)" }}
+                    >
+                      *
+                    </span>
+                  </label>
+                  <textarea
+                    value={cancelReason}
+                    onChange={(e) => setCancelReason(e.target.value)}
+                    placeholder={
+                      FEATURE_REGISTRY.cancel_job_reason_placeholder?.label ??
+                      "Why is this job being cancelled?"
+                    }
+                    rows={3}
+                    className="w-full rounded-[12px] border px-3 py-2 text-sm resize-none focus:outline-none focus:border-[var(--t-accent)]"
+                    style={{
+                      background: "var(--t-bg-card)",
+                      borderColor: "var(--t-border)",
+                      color: "var(--t-text-primary)",
+                    }}
+                    autoFocus
+                  />
+                </div>
+
+                {/* ── Actions ──────────────────────────────── */}
+                <div className="flex justify-end gap-2">
+                  <button
+                    onClick={closeCancelModal}
+                    disabled={actionLoading}
+                    className="rounded-full px-4 py-2 text-xs font-medium border transition-colors hover:bg-[var(--t-bg-card-hover)] disabled:opacity-40"
+                    style={{
+                      borderColor: "var(--t-border)",
+                      color: "var(--t-text-muted)",
+                    }}
+                  >
+                    {FEATURE_REGISTRY.cancel_job_modal_dismiss?.label ??
+                      "Keep Job"}
+                  </button>
+                  <button
+                    onClick={confirmCancelFromModal}
+                    disabled={!cancelReason.trim() || actionLoading}
+                    className="rounded-full px-4 py-2 text-xs font-semibold transition-opacity hover:opacity-90 disabled:opacity-40"
+                    style={{
+                      background: "var(--t-error)",
+                      color: "var(--t-accent-on-accent)",
+                    }}
+                  >
+                    {actionLoading
+                      ? "Cancelling…"
+                      : FEATURE_REGISTRY.cancel_job_modal_confirm?.label ??
+                        "Confirm Cancellation"}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
