@@ -156,6 +156,43 @@ export default function LifecycleContextPanel({
     }, null);
   }, [data]);
 
+  // Discoverability pass — current non-cancelled pickup node for
+  // the chain (the node the header action opens for editing).
+  // When the chain has an exchange, the old pickup link is
+  // cancelled and a new one is inserted with a higher
+  // sequence_number, so "latest by sequence_number" is the right
+  // representative. Drives the header "Change Pickup Date"
+  // button; the button and the modal render guard share the
+  // same preconditions so the two can't disagree.
+  const pickupNode = useMemo<LifecycleNode | null>(() => {
+    if (!data?.nodes || data.nodes.length === 0) return null;
+    const candidates = data.nodes.filter(
+      (n) =>
+        n.task_type === "pick_up" &&
+        n.status !== "cancelled" &&
+        n.link_status !== "cancelled" &&
+        !!n.scheduled_date,
+    );
+    if (candidates.length === 0) return null;
+    return candidates.reduce<LifecycleNode | null>(
+      (max, n) => (!max || n.sequence_number > max.sequence_number ? n : max),
+      null,
+    );
+  }, [data]);
+
+  // All preconditions the modal render guard below checks —
+  // gated here so the header button only shows when clicking it
+  // will actually produce a working modal. Hides on loading,
+  // error, standalone jobs, or incomplete chain date fields.
+  const canEditPickup =
+    !loading &&
+    !error &&
+    !!data &&
+    !data.is_standalone &&
+    !!pickupNode &&
+    !!data.chain?.drop_off_date &&
+    !!data.chain?.expected_pickup_date;
+
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
@@ -201,6 +238,28 @@ export default function LifecycleContextPanel({
           {panelLabel}
         </h3>
         <HelpTooltip featureId="connected_job_lifecycle" placement="right" />
+        {/* Discoverability pass — promoted Change Pickup Date
+            action for the chain's current pickup node. Reuses the
+            same modal path the per-row pencil icon uses (setEditingNode),
+            so the Phase 2b parity fixes (broadcast, exchange guard,
+            auto/override preview) all apply unchanged. The per-row
+            pencil stays in place during this bake period. Registry
+            label reused verbatim from the rentals-page flow. */}
+        {canEditPickup && pickupNode && (
+          <button
+            type="button"
+            onClick={() => setEditingNode(pickupNode)}
+            className="ml-auto inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-semibold transition-colors hover:bg-[var(--t-bg-card-hover)]"
+            style={{
+              borderColor: "var(--t-border)",
+              color: "var(--t-accent)",
+              background: "var(--t-bg-elevated)",
+            }}
+          >
+            <CalendarClock className="h-3 w-3" />
+            {getFeatureLabel("lifecycle_action_edit_pickup")}
+          </button>
+        )}
       </div>
 
       {/* ── Body states ───────────────────────────────────── */}
