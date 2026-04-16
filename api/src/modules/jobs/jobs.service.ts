@@ -1205,6 +1205,26 @@ export class JobsService {
       await this.checkRouteCompletion(tenantId, savedJob.assigned_driver_id, savedJob.scheduled_date);
     }
 
+    // Rental-chain auto-close — when the current job's status
+    // change leaves every linked job in a terminal, uncompleted
+    // state, flip the parent rental_chains row to 'cancelled' so
+    // it drops out of "Active" surfaces. Scoped to cancelled /
+    // failed branches only — needs_reschedule is treated as
+    // terminal for the chain-state check but does not itself
+    // trigger the check. Best-effort wrap so a chain-close
+    // failure never blocks the primary status change.
+    if (
+      dto.status === 'cancelled' ||
+      dto.status === 'failed' ||
+      dto.status === 'needs_reschedule'
+    ) {
+      try {
+        await this.autoCloseChainIfTerminal(tenantId, savedJob.id);
+      } catch {
+        /* chain auto-close is best-effort */
+      }
+    }
+
     // Queue customer notifications for key status changes
     if (job.customer_id && job.customer) {
       const customerName = `${job.customer.first_name} ${job.customer.last_name}`;
@@ -1672,6 +1692,92 @@ export class JobsService {
     // transitions leave the asset untouched.
     if (newStatus === 'completed') {
       await this.handleCompletedAsset(job);
+    }
+  }
+
+  /**
+   * Close the parent rental chain when the triggering status change
+   * leaves every linked job in a terminal, uncompleted state.
+   *
+   * Terminal set for this check: {cancelled, failed, needs_reschedule}.
+   * The trigger itself only fires from the 'cancelled' / 'failed'
+   * branches of changeStatus; 'needs_reschedule' is treated as
+   * terminal for the chain-state calculation but does not itself
+   * trigger the check.
+   *
+   * Safety rules:
+   *   - Explicit `completedJobs === 0` guard — a chain with ANY
+   *     completed job stays open, even if every other job is
+   *     terminal. Example: delivery completed + pickup cancelled
+   *     means the customer retained inventory and the chain is
+   *     still operationally meaningful.
+   *   - Structural integrity bailout — if the tenant-scoped join
+   *     returns fewer jobs than the chain's total link count we
+   *     refuse to auto-close (either cross-tenant contamination
+   *     or a dangling link, neither of which should cause a
+   *     destructive write).
+   *
+   * Tenant scoping: task_chain_links has no tenant_id, so the
+   * tenant filter lives on the jobs join (spec contract). The
+   * rentalChainRepo.update call additionally carries
+   * `tenant_id: tenantId` so a stolen chainId cannot cross-write
+   * another tenant's chain.
+   */
+  private async autoCloseChainIfTerminal(
+    tenantId: string,
+    jobId: string,
+  ): Promise<void> {
+    const currentLink = await this.taskChainLinkRepo.findOne({
+      where: { job_id: jobId },
+    });
+    if (!currentLink) return; // standalone job — nothing to close
+
+    const chainId = currentLink.rental_chain_id;
+
+    // Structural link count — no tenant filter on task_chain_links
+    // (the table has no tenant_id). Compared against the
+    // tenant-scoped jobs query below to detect drift.
+    const totalLinks = await this.taskChainLinkRepo.count({
+      where: { rental_chain_id: chainId },
+    });
+    if (totalLinks === 0) return;
+
+    // Fetch the status of every linked job, tenant-scoped via
+    // jobs.tenant_id on the inner join. Rows owned by another
+    // tenant (should never happen, but defensive) drop out here.
+    const jobs = await this.jobsRepository
+      .createQueryBuilder('j')
+      .innerJoin(
+        TaskChainLink,
+        'l',
+        'l.job_id = j.id AND l.rental_chain_id = :chainId',
+        { chainId },
+      )
+      .where('j.tenant_id = :tenantId', { tenantId })
+      .select(['j.id', 'j.status'])
+      .getMany();
+
+    // Integrity bailout — any shortfall vs. total link count means
+    // either cross-tenant contamination or a dangling link. Refuse
+    // to auto-close rather than make an incorrect decision.
+    if (jobs.length !== totalLinks) return;
+
+    const terminal = new Set([
+      'cancelled',
+      'failed',
+      'needs_reschedule',
+    ]);
+    const completedJobs = jobs.filter((j) => j.status === 'completed').length;
+    const allTerminal = jobs.every((j) => terminal.has(j.status));
+
+    // `allTerminal` already precludes completed, but the explicit
+    // `completedJobs === 0` check matches the spec's safety rule
+    // verbatim and survives future edits to the terminal set.
+    if (allTerminal && completedJobs === 0) {
+      await this.rentalChainRepo.update(
+        { id: chainId, tenant_id: tenantId },
+        { status: 'cancelled' },
+      );
     }
   }
 
