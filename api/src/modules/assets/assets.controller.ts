@@ -46,8 +46,20 @@ export class AssetsController {
     @TenantId() tenantId: string,
     @Query('subtype') subtype: string,
     @Query('date') date?: string,
+    // Phase B — when `true`, exclude pending jobs from both outgoing
+    // and incoming sets. Default `false` keeps the existing optimistic
+    // behavior for backward compatibility. String comparison because
+    // query params arrive as strings; any value other than the literal
+    // `"true"` is treated as false so we don't silently flip when a
+    // client sends `?confirmedOnly=0` or similar.
+    @Query('confirmedOnly') confirmedOnly?: string,
   ) {
-    return this.assetsService.getAvailability(tenantId, subtype || '20yd', date);
+    return this.assetsService.getAvailability(
+      tenantId,
+      subtype || '20yd',
+      date,
+      { confirmedOnly: confirmedOnly === 'true' },
+    );
   }
 
   @Get('awaiting-dump')
