@@ -697,7 +697,7 @@ export default function AssetsPage() {
               className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-4"
             >
               {/* Controls */}
-              <div className="flex items-center gap-4 mb-4 flex-wrap">
+              <div className="flex items-center gap-4 mb-2 flex-wrap">
                 <label className="flex items-center gap-2 text-xs text-[var(--t-text-muted)]">
                   <span>
                     {FEATURE_REGISTRY.projected_availability_date_label?.label ?? "Project to date"}
@@ -725,11 +725,32 @@ export default function AssetsPage() {
                   <span className="text-[var(--t-text-muted)]">
                     {FEATURE_REGISTRY.projected_availability_confirmed_only?.label ?? "Confirmed jobs only"}
                   </span>
-                  <span className="text-[10px] text-[var(--t-text-muted)] opacity-70">
-                    ({FEATURE_REGISTRY.projected_availability_confirmed_only_hint?.label ?? "Only include confirmed/dispatched jobs"})
-                  </span>
                 </label>
+                {/* Phase C1 — active-state badge. Appears next to the
+                    confirmed-only toggle when the projection is
+                    filtered to firmly-committed jobs, so operators
+                    always see which mode the numbers represent. */}
+                {projectionConfirmedOnly && (
+                  <span
+                    className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold"
+                    style={{
+                      background: "var(--t-accent-soft, var(--t-bg-elevated))",
+                      color: "var(--t-accent)",
+                    }}
+                  >
+                    {FEATURE_REGISTRY.projected_availability_confirmed_active?.label ??
+                      "Showing confirmed jobs only"}
+                  </span>
+                )}
               </div>
+              {/* Phase C1 — formula hint. Small muted line under the
+                  controls that makes the Projected math explicit so
+                  operators don't have to infer the relationship
+                  between the four table columns. */}
+              <p className="text-[10px] text-[var(--t-text-muted)] mb-4 italic">
+                {FEATURE_REGISTRY.projected_availability_formula_hint?.label ??
+                  "Projected = Available + Incoming \u2212 Outgoing"}
+              </p>
 
               {/* Body: loading / error / table */}
               {projectionLoading ? (
@@ -779,12 +800,23 @@ export default function AssetsPage() {
                         // spec's "green if > 0, amber if 1-2, red if
                         // 0" — interpreted as 3+ / 1-2 / 0 since the
                         // literal "both > 0 and 1-2" is inconsistent.
+                        // Phase C1 — tinted pill background keyed to
+                        // the same three buckets. Uses existing
+                        // `*-soft` tokens with fallback to
+                        // `--t-bg-elevated` so the pill still renders
+                        // cleanly if a soft token isn't defined.
                         const projColor =
                           row.projected_available === 0
                             ? "var(--t-error)"
                             : row.projected_available <= 2
                               ? "var(--t-warning)"
                               : "var(--t-accent)";
+                        const projBg =
+                          row.projected_available === 0
+                            ? "var(--t-error-soft, var(--t-bg-elevated))"
+                            : row.projected_available <= 2
+                              ? "var(--t-warning-soft, var(--t-bg-elevated))"
+                              : "var(--t-accent-soft, var(--t-bg-elevated))";
                         return (
                           <tr
                             key={row.subtype}
@@ -796,14 +828,36 @@ export default function AssetsPage() {
                             <td className="text-right tabular-nums" style={{ padding: "10px 12px", color: "var(--t-text-primary)" }}>
                               {row.base_available}
                             </td>
+                            {/* Phase C1 — plain numbers on Outgoing
+                                and Incoming. The column headers
+                                already indicate direction, so the
+                                prior `−` / `+` prefixes were
+                                redundant and visually noisy. */}
                             <td className="text-right tabular-nums" style={{ padding: "10px 12px", color: "var(--t-text-muted)" }}>
-                              &minus;{row.outgoing_count}
+                              {row.outgoing_count}
                             </td>
                             <td className="text-right tabular-nums" style={{ padding: "10px 12px", color: "var(--t-text-muted)" }}>
-                              +{row.incoming_count}
+                              {row.incoming_count}
                             </td>
-                            <td className="text-right tabular-nums" style={{ padding: "10px 12px", fontWeight: 700, color: projColor }}>
-                              {row.projected_available}
+                            {/* Phase C1 — emphasized Projected cell.
+                                Larger text, pill background, strong
+                                color. This is the key decision
+                                metric and should dominate the row. */}
+                            <td className="text-right" style={{ padding: "10px 12px" }}>
+                              <span
+                                className="inline-block tabular-nums rounded-full"
+                                style={{
+                                  fontSize: 15,
+                                  fontWeight: 700,
+                                  color: projColor,
+                                  background: projBg,
+                                  padding: "2px 12px",
+                                  minWidth: 36,
+                                  textAlign: "center",
+                                }}
+                              >
+                                {row.projected_available}
+                              </span>
                             </td>
                           </tr>
                         );
@@ -813,15 +867,23 @@ export default function AssetsPage() {
                 </div>
               )}
 
-              {/* Warnings */}
+              {/* Warnings — Phase C1: grouped by subtype with bullet
+                  lists for scannability. Each subtype gets a bold
+                  header followed by its own bulleted warning list,
+                  and subtype groups are visually separated. Warning
+                  text content is unchanged — only the rendering
+                  structure is different. */}
               {!projectionLoading &&
                 !projectionError &&
                 projectionData &&
                 (() => {
-                  const allWarnings = projectionData.flatMap((r) =>
-                    r.warnings.map((w) => ({ subtype: r.subtype, message: w })),
-                  );
-                  if (allWarnings.length === 0) return null;
+                  const warningsBySubtype = projectionData
+                    .filter((r) => r.warnings.length > 0)
+                    .map((r) => ({
+                      subtype: r.subtype,
+                      messages: r.warnings,
+                    }));
+                  if (warningsBySubtype.length === 0) return null;
                   return (
                     <div
                       className="mt-4 rounded-[12px] px-3 py-2.5"
@@ -830,7 +892,7 @@ export default function AssetsPage() {
                         border: "1px solid var(--t-warning)",
                       }}
                     >
-                      <div className="flex items-start gap-2 mb-1.5">
+                      <div className="flex items-start gap-2 mb-2">
                         <AlertTriangle
                           className="h-3.5 w-3.5 shrink-0 mt-0.5"
                           style={{ color: "var(--t-warning)" }}
@@ -842,13 +904,26 @@ export default function AssetsPage() {
                           Warnings
                         </span>
                       </div>
-                      <ul className="space-y-1 text-[11px] pl-5" style={{ color: "var(--t-text-primary)" }}>
-                        {allWarnings.map((w, i) => (
-                          <li key={i}>
-                            <span className="font-semibold">{w.subtype}:</span> {w.message}
-                          </li>
+                      <div className="space-y-3 pl-5">
+                        {warningsBySubtype.map((group) => (
+                          <div key={group.subtype}>
+                            <p
+                              className="text-[11px] font-bold mb-0.5"
+                              style={{ color: "var(--t-text-primary)" }}
+                            >
+                              {group.subtype.replace(/yd$/i, "Y").toUpperCase()}
+                            </p>
+                            <ul
+                              className="space-y-0.5 text-[11px] pl-4 list-disc list-outside"
+                              style={{ color: "var(--t-text-primary)" }}
+                            >
+                              {group.messages.map((m, i) => (
+                                <li key={i}>{m}</li>
+                              ))}
+                            </ul>
+                          </div>
                         ))}
-                      </ul>
+                      </div>
                     </div>
                   );
                 })()}
