@@ -403,6 +403,17 @@ export default function AssetsPage() {
   // manual state so it survives across renders without triggering
   // unnecessary re-renders.
   const manualSectionOpenRef = useRef<Record<string, boolean> | null>(null);
+
+  // Per-section DOM refs for tile-click scroll-into-view orientation.
+  // Populated via callback refs on each section wrapper below. Used
+  // only for scroll + brief highlight — does not affect rendering.
+  const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
+  // Short-lived highlight key set by a tile click so the landed
+  // section gets a visible focus flash for ~1.2s after scrolling.
+  const [highlightedSection, setHighlightedSection] = useState<
+    string | null
+  >(null);
   useEffect(() => {
     const keyMap: Record<string, string> = {
       available: "available",
@@ -743,7 +754,31 @@ export default function AssetsPage() {
           <div className="grid grid-cols-4 gap-4 mb-8">
             {/* Availability tile (merged current → projected) */}
             <button
-              onClick={() => setStatusFilter(availIsActive ? "all" : "available")}
+              onClick={() => {
+                const nextActive = !availIsActive;
+                setStatusFilter(nextActive ? "available" : "all");
+                // When activating, orient the user: scroll the
+                // Ready Assets section into view and flash it
+                // briefly. Delay gives React a frame to commit
+                // the filter change + auto-expand side-effect
+                // before we try to scroll to the now-open section.
+                if (nextActive) {
+                  setTimeout(() => {
+                    const el = sectionRefs.current["available"];
+                    if (el) {
+                      el.scrollIntoView({
+                        behavior: "smooth",
+                        block: "start",
+                      });
+                      setHighlightedSection("available");
+                      setTimeout(
+                        () => setHighlightedSection(null),
+                        1200,
+                      );
+                    }
+                  }, 80);
+                }
+              }}
               style={{
                 ...tileBase,
                 border: availIsActive ? "2px solid var(--t-accent)" : "1px solid var(--t-border)",
@@ -1365,8 +1400,14 @@ export default function AssetsPage() {
             const end = Math.min(start + ASSET_PAGE_SIZE, total);
             const pageAssets = section.assets.slice(start, end);
             const totalPages = Math.ceil(total / ASSET_PAGE_SIZE);
+            const isHighlighted = highlightedSection === section.key;
             return (
-              <div key={section.key}>
+              <div
+                key={section.key}
+                ref={(el) => {
+                  sectionRefs.current[section.key] = el;
+                }}
+              >
                 <button
                   type="button"
                   onClick={() =>
@@ -1376,7 +1417,16 @@ export default function AssetsPage() {
                     }))
                   }
                   aria-expanded={isOpen}
-                  className="w-full flex items-center justify-between px-4 py-2 mb-3 rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] hover:bg-[var(--t-bg-card-hover)] transition-colors cursor-pointer"
+                  className="w-full flex items-center justify-between px-4 py-2 mb-3 rounded-[14px] border bg-[var(--t-bg-card)] hover:bg-[var(--t-bg-card-hover)] transition-all cursor-pointer"
+                  style={{
+                    borderColor: isHighlighted
+                      ? "var(--t-accent)"
+                      : "var(--t-border)",
+                    boxShadow: isHighlighted
+                      ? "0 0 0 2px var(--t-accent)"
+                      : "none",
+                    transitionDuration: "250ms",
+                  }}
                 >
                   <span className="text-sm font-semibold text-[var(--t-text-primary)]">
                     {section.label}
