@@ -35,6 +35,7 @@ import { useToast } from "@/components/toast";
 import MapboxMap from "@/components/mapbox-map";
 import AddressAutocomplete, { type AddressValue } from "@/components/address-autocomplete";
 import { FEATURE_REGISTRY } from "@/lib/feature-registry";
+import { resolveRepresentativeJobId } from "@/lib/lifecycle-job-resolver";
 import { getBlockedReason } from "@/lib/blocked-job";
 import { JobBlockedResolutionDrawer } from "@/components/job-blocked-resolution-drawer";
 import LifecycleContextPanel from "./_components/LifecycleContextPanel";
@@ -456,6 +457,13 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
   // when the chain-graph-driven panel shipped in Phase 15.
   // Rental chain ID for lifecycle link
   const [chainId, setChainId] = useState<string | null>(null);
+  // Phase 3 — representative job id for the Lifecycle Strip's
+  // inbound-link rewire (away from /rentals/[chain_id]). Derived
+  // once inside resolveChainId from the chain's links array; no
+  // extra fetch.
+  const [chainRepresentativeJobId, setChainRepresentativeJobId] = useState<
+    string | null
+  >(null);
   // Lifecycle strip data (compact summary from chain endpoint)
   const [lifecycleStrip, setLifecycleStrip] = useState<{
     dropOffDate: string | null; pickupDate: string | null; rentalDays: number | null;
@@ -741,12 +749,32 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
   const resolveChainId = async (currentJob: Job) => {
     if (!currentJob.customer?.id) return;
     try {
-      const chains = await api.get<Array<{ id: string; links?: Array<{ job_id: string }> }>>(
-        `/rental-chains?customerId=${currentJob.customer.id}`
-      );
+      // Phase 3 — widened link shape so the representative job
+      // resolver (below) can use task_type/sequence_number/status.
+      // The backend already returns these fields on this endpoint;
+      // the previous narrow type was only what resolveChainId
+      // itself needed.
+      const chains = await api.get<
+        Array<{
+          id: string;
+          links?: Array<{
+            job_id: string;
+            task_type: string;
+            sequence_number: number;
+            status: string;
+          }>;
+        }>
+      >(`/rental-chains?customerId=${currentJob.customer.id}`);
       for (const chain of chains) {
         if (chain.links?.some(l => l.job_id === currentJob.id)) {
           setChainId(chain.id);
+          // Phase 3 — stash the chain's representative job id so
+          // the Lifecycle Strip click can redirect to it instead
+          // of /rentals/[chain_id]. Null result is handled at the
+          // click site (keeps /rentals/[chain_id] as fallback).
+          setChainRepresentativeJobId(
+            resolveRepresentativeJobId(chain.links),
+          );
           // Fetch lifecycle data for the strip AND the Chain
           // Financials card. Single network call — response type
           // widened to also cover financials/invoices/payments/
@@ -1856,7 +1884,17 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
 
       {/* --- Lifecycle Strip --- */}
       {chainId && lifecycleStrip && (
-        <Link href={`/rentals/${chainId}`}
+        // Phase 3 — Lifecycle Strip drills through to the chain's
+        // representative job when one can be resolved (the live
+        // pickup node, by preference). Falls back to the chain
+        // route only when resolution fails. Self-nav when the
+        // current job IS the representative is a harmless no-op.
+        <Link
+          href={
+            chainRepresentativeJobId
+              ? `/jobs/${chainRepresentativeJobId}`
+              : `/rentals/${chainId}`
+          }
           className="block rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-5 py-3 mb-2 hover:border-[var(--t-accent)] transition-colors cursor-pointer">
           <div className="flex items-center justify-between flex-wrap gap-2">
             <div className="flex items-center gap-4 text-xs">

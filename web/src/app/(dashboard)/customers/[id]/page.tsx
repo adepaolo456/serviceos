@@ -19,6 +19,7 @@ import { CUSTOMER_DASHBOARD_LABELS } from "@/lib/customer-dashboard-labels";
 import { navigateBack } from "@/lib/navigation";
 import { CustomerCreditPanel } from "@/components/customer-credit-panel";
 import { FEATURE_REGISTRY } from "@/lib/feature-registry";
+import { resolveRepresentativeJobId } from "@/lib/lifecycle-job-resolver";
 
 /* ---- Types ---- */
 
@@ -750,7 +751,19 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
                                   <td className="pr-3">
                                     <button
                                       type="button"
-                                      onClick={(e) => { e.stopPropagation(); router.push(`/rentals/${chain.id}`); }}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        // Phase 3 — prefer the chain's
+                                        // representative job as the navigation
+                                        // target; keep the chain route as a
+                                        // safe fallback when resolution fails.
+                                        const repJobId = resolveRepresentativeJobId(chain.links);
+                                        if (repJobId) {
+                                          router.push(`/jobs/${repJobId}`);
+                                        } else {
+                                          router.push(`/rentals/${chain.id}`);
+                                        }
+                                      }}
                                       className="p-1 rounded transition-colors"
                                       style={{ color: "var(--t-text-muted)" }}
                                       aria-label={FEATURE_REGISTRY.view_lifecycle?.label ?? "View full lifecycle"}

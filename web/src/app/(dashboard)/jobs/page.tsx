@@ -32,6 +32,7 @@ import { useToast } from "@/components/toast";
 import { CreditCard, FileWarning, MapPinOff, Package } from "lucide-react";
 import { FEATURE_REGISTRY } from "@/lib/feature-registry";
 import { useLifecycleSync, useVisibilityRefresh } from "@/lib/lifecycle-sync";
+import { resolveRepresentativeJobId } from "@/lib/lifecycle-job-resolver";
 import { getBlockedReason, isJobBlocked } from "@/lib/blocked-job";
 import { useTenantTimezone } from "@/lib/use-modules";
 import { getTenantToday, getTenantNowParts } from "@/lib/utils/tenantDate";
@@ -1128,7 +1129,20 @@ function JobsPageContent() {
                                 }}>{lcStatus}</span>
                                 <button
                                   type="button"
-                                  onClick={(e) => { e.stopPropagation(); snapshotListState(); router.push(`/rentals/${chain.id}`); }}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    snapshotListState();
+                                    // Phase 3 — redirect chain drill-through to
+                                    // the chain's representative job; fall back
+                                    // to the chain route only when no non-
+                                    // cancelled link exists (rare edge case).
+                                    const repJobId = resolveRepresentativeJobId(chain.links);
+                                    if (repJobId) {
+                                      router.push(`/jobs/${repJobId}`);
+                                    } else {
+                                      router.push(`/rentals/${chain.id}`);
+                                    }
+                                  }}
                                   className="p-1 rounded transition-colors"
                                   style={{ color: "var(--t-text-muted)" }}
                                   aria-label={FEATURE_REGISTRY.view_lifecycle?.label ?? "View full lifecycle"}
