@@ -1820,15 +1820,6 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
                       </Link>
                     ))}
                   </div>
-                  {job.rental_chain_id && (
-                    <Link
-                      href={`/rentals/${job.rental_chain_id}`}
-                      className="inline-flex items-center gap-1 mt-3 text-[11px] font-medium text-[var(--t-accent)] hover:underline"
-                    >
-                      {FEATURE_REGISTRY.view_lifecycle?.label ?? "View full lifecycle"}
-                      <ArrowRight className="h-3 w-3" />
-                    </Link>
-                  )}
                 </div>
               )}
             </div>
