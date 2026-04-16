@@ -141,6 +141,33 @@ export class JobsController {
   }
 
   /**
+   * Cancellation Orchestrator Phase 1 — read-only impact preview.
+   *
+   * Returns the lifecycle + billing context that a future UI layer
+   * (confirmation modals, bulk-cancel warnings) would use to tell
+   * the operator exactly what a cancellation will affect before
+   * they commit. Strictly read-only: no mutations, no notifications,
+   * no audit rows.
+   *
+   * Authorization mirrors the actual cancellation path
+   * (`PATCH :id/status`), which is unguarded beyond the base auth
+   * middleware — any authenticated tenant user can change a job's
+   * status, so the preview is correspondingly open. Tenant scoping
+   * lives on every underlying query via @TenantId().
+   */
+  @Get(':id/cancellation-context')
+  @ApiOperation({
+    summary:
+      'Preview the lifecycle + billing impact of cancelling a job (read-only, no mutations)',
+  })
+  getCancellationContext(
+    @TenantId() tenantId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.jobsService.getCancellationContext(tenantId, id);
+  }
+
+  /**
    * Phase 16.1 — edit a delivery, pickup, or exchange job's
    * scheduled date from the Connected Job Lifecycle panel.
    * Single consolidated endpoint that replaces Phase 16's
