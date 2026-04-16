@@ -67,6 +67,41 @@ export interface JobsDispatchActor {
   creditOverride: { reason?: string } | null;
 }
 
+/**
+ * Cancellation Orchestrator Phase 1 — response shape for the
+ * read-only preview endpoint `GET /jobs/:id/cancellation-context`.
+ * Exposed at module scope so the controller's return-type inference
+ * picks it up without a separate DTO class (matches the read-only
+ * preview pattern used by `LifecycleContextResponse`).
+ */
+export interface CancellationContext {
+  isChain: boolean;
+  jobs: Array<{
+    id: string;
+    job_number: string;
+    job_type: string;
+    status: string;
+    scheduled_date: string | null;
+    is_current: boolean;
+  }>;
+  invoices: Array<{
+    id: string;
+    invoice_number: string;
+    invoice_status: string;
+    amount_paid: number;
+    balance_due: number;
+    total_amount: number;
+  }>;
+  summary: {
+    totalJobs: number;
+    hasCompletedJobs: boolean;
+    hasActiveJobs: boolean;
+    hasInvoices: boolean;
+    hasPaidInvoices: boolean;
+    hasUnpaidInvoices: boolean;
+  };
+}
+
 const EMPTY_DISPATCH_ACTOR: JobsDispatchActor = {
   userId: undefined,
   userRole: undefined,
@@ -1779,6 +1814,152 @@ export class JobsService {
         { status: 'cancelled' },
       );
     }
+  }
+
+  /**
+   * Cancellation Orchestrator Phase 1 — read-only preview of the
+   * lifecycle + billing fallout of cancelling the given job.
+   * Returns chain siblings (tenant-scoped via jobs.tenant_id) and
+   * any linked invoices (tenant-scoped via invoices.tenant_id) so a
+   * confirmation UI can show the operator exactly what else will be
+   * affected before they commit the cancel. This method performs
+   * NO writes of any kind — no save/update/delete, no side effects,
+   * no notifications, no audit trail, no cache invalidation.
+   *
+   * Shape and chain-lookup pattern mirror `autoCloseChainIfTerminal`
+   * above: task_chain_links has no tenant_id column, so the tenant
+   * filter lives on the jobs inner-join. For standalone jobs (no
+   * task_chain_links row), we also pull any `invoices.job_id`-linked
+   * invoices so the operator still sees billing context.
+   */
+  async getCancellationContext(
+    tenantId: string,
+    jobId: string,
+  ): Promise<CancellationContext> {
+    // Tenant-scoped existence check — surfaces 404 before any
+    // chain / invoice work so cross-tenant probes cannot enumerate.
+    const targetJob = await this.jobsRepository.findOne({
+      where: { id: jobId, tenant_id: tenantId },
+      select: ['id', 'job_number', 'job_type', 'status', 'scheduled_date'],
+    });
+    if (!targetJob) throw new NotFoundException('Job not found');
+
+    // Shared mappers / helpers
+    const terminalStatuses = new Set([
+      'cancelled',
+      'failed',
+      'needs_reschedule',
+    ]);
+    const mapJob = (j: Job) => ({
+      id: j.id,
+      job_number: j.job_number,
+      job_type: j.job_type,
+      status: j.status,
+      scheduled_date: j.scheduled_date ?? null,
+      is_current: j.id === jobId,
+    });
+    const mapInvoice = (i: Invoice) => ({
+      id: i.id,
+      invoice_number: String(i.invoice_number),
+      invoice_status: i.status,
+      amount_paid: Number(i.amount_paid),
+      balance_due: Number(i.balance_due),
+      total_amount: Number(i.total),
+    });
+
+    const currentLink = await this.taskChainLinkRepo.findOne({
+      where: { job_id: jobId },
+    });
+
+    if (!currentLink) {
+      // Standalone path — single job + any directly-linked invoices.
+      // invoices.job_id is tenant-scoped alongside the job_id filter
+      // so a stolen job UUID cannot leak another tenant's billing.
+      const directInvoices = await this.invoiceRepo.find({
+        where: { job_id: jobId, tenant_id: tenantId },
+      });
+      const invoices = directInvoices.map(mapInvoice);
+      const jobs = [mapJob(targetJob)];
+      return {
+        isChain: false,
+        jobs,
+        invoices,
+        summary: {
+          totalJobs: jobs.length,
+          hasCompletedJobs: targetJob.status === 'completed',
+          hasActiveJobs:
+            !terminalStatuses.has(targetJob.status) &&
+            targetJob.status !== 'completed',
+          hasInvoices: invoices.length > 0,
+          hasPaidInvoices: invoices.some((i) => i.amount_paid > 0),
+          hasUnpaidInvoices: invoices.some((i) => i.balance_due > 0),
+        },
+      };
+    }
+
+    const chainId = currentLink.rental_chain_id;
+
+    // Chain siblings — tenant-scoped via the inner-join on jobs.
+    // Ordered by scheduled_date ASC so the preview UI can render
+    // the lifecycle in operator order.
+    const chainJobs = await this.jobsRepository
+      .createQueryBuilder('j')
+      .innerJoin(
+        TaskChainLink,
+        'l',
+        'l.job_id = j.id AND l.rental_chain_id = :chainId',
+        { chainId },
+      )
+      .where('j.tenant_id = :tenantId', { tenantId })
+      .select([
+        'j.id',
+        'j.job_number',
+        'j.job_type',
+        'j.status',
+        'j.scheduled_date',
+      ])
+      .orderBy('j.scheduled_date', 'ASC')
+      .getMany();
+
+    // Collect invoice_id values from every chain link, then
+    // tenant-scope the invoice read so a stolen invoice UUID
+    // smuggled into a link row cannot leak cross-tenant billing.
+    const allLinks = await this.taskChainLinkRepo.find({
+      where: { rental_chain_id: chainId },
+      select: ['invoice_id'],
+    });
+    const invoiceIds = Array.from(
+      new Set(
+        allLinks
+          .map((l) => l.invoice_id)
+          .filter((v): v is string => typeof v === 'string' && v.length > 0),
+      ),
+    );
+    const chainInvoices =
+      invoiceIds.length > 0
+        ? await this.invoiceRepo.find({
+            where: { id: In(invoiceIds), tenant_id: tenantId },
+          })
+        : [];
+    const invoices = chainInvoices.map(mapInvoice);
+
+    const jobs = chainJobs.map(mapJob);
+    return {
+      isChain: true,
+      jobs,
+      invoices,
+      summary: {
+        totalJobs: jobs.length,
+        hasCompletedJobs: jobs.some((j) => j.status === 'completed'),
+        hasActiveJobs: jobs.some(
+          (j) =>
+            !terminalStatuses.has(j.status) && j.status !== 'completed',
+        ),
+        hasInvoices: invoices.length > 0,
+        hasPaidInvoices: invoices.some((i) => i.amount_paid > 0),
+        hasUnpaidInvoices: invoices.some((i) => i.balance_due > 0),
+      },
+    };
   }
 
   // ─────────────────────────────────────────────────────────
