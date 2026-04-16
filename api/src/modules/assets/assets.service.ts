@@ -290,14 +290,26 @@ export class AssetsService {
       ...(confirmedOnly ? ['pending'] : []),
     ];
 
-    // Outgoing — deliveries + exchange (drop-off side). Exchange is
-    // matched via `asset_subtype`, which per
-    // `pricing.service.ts:274-275` stores the drop-off (new) subtype
-    // on exchange jobs. The pickup-side subtype (the old dumpster)
-    // is not derivable from the job row alone and is intentionally
-    // ignored in Phase B — chain traversal is a later phase.
+    // Outgoing — deliveries + exchange (drop-off side).
+    //
+    // Delivery: filtered by the denormalized `j.asset_subtype` column
+    // which is always populated at booking time for deliveries.
+    //
+    // Exchange (drop-off side): production data shows `asset_subtype`
+    // is NULL on most exchange rows, so the primary resolution path
+    // is the `drop_off_asset_id` → `assets.subtype` join. Falls back
+    // to `j.asset_subtype` when no drop-off asset is pre-assigned
+    // (covers the `asset_subtype` set / `drop_off_asset_id` null
+    // case). Exchanges where NEITHER resolves are excluded — an
+    // exchange with no committed drop-off subtype cannot contribute
+    // a known size to the projection.
     const outgoingJobs = await this.jobsRepository
       .createQueryBuilder('j')
+      .leftJoin(
+        'assets',
+        'dropoff_asset',
+        'dropoff_asset.id = j.drop_off_asset_id',
+      )
       .select([
         'j.id',
         'j.job_number',
@@ -306,10 +318,14 @@ export class AssetsService {
         'j.job_type',
       ])
       .where('j.tenant_id = :tenantId', { tenantId })
-      .andWhere('j.job_type IN (:...outTypes)', {
-        outTypes: ['delivery', 'exchange'],
-      })
-      .andWhere('j.asset_subtype = :subtype', { subtype })
+      .andWhere(
+        '((j.job_type = :deliveryType AND j.asset_subtype = :subtype) OR (j.job_type = :exchangeType AND COALESCE(dropoff_asset.subtype, j.asset_subtype) = :subtype))',
+        {
+          deliveryType: 'delivery',
+          exchangeType: 'exchange',
+          subtype,
+        },
+      )
       .andWhere('j.status NOT IN (:...excluded)', {
         excluded: excludedStatuses,
       })
@@ -318,11 +334,21 @@ export class AssetsService {
       .orderBy('j.scheduled_date', 'ASC')
       .getMany();
 
-    // Incoming — pickups that return inventory by the target date.
-    // Same subtype key and same status exclusion set as outgoing so
-    // the two sides are consistent.
+    // Incoming — pickups + exchange (pickup side). Before this fix
+    // exchange pickup-side was entirely absent from incoming, which
+    // undercounted returning inventory.
+    //
+    // Pickup: filtered by `j.asset_subtype` (denorm reliable for
+    // pure pickups).
+    //
+    // Exchange (pickup side): primary resolution via `asset_id` →
+    // `assets.subtype` (confirmed present on 4 of 5 production
+    // exchanges), falling back to `j.asset_subtype` for the rare
+    // asset_id-null case. Exchanges where NEITHER resolves are
+    // excluded.
     const incomingJobs = await this.jobsRepository
       .createQueryBuilder('j')
+      .leftJoin('assets', 'pickup_asset', 'pickup_asset.id = j.asset_id')
       .select([
         'j.id',
         'j.job_number',
@@ -331,8 +357,14 @@ export class AssetsService {
         'j.job_type',
       ])
       .where('j.tenant_id = :tenantId', { tenantId })
-      .andWhere('j.job_type = :type', { type: 'pickup' })
-      .andWhere('j.asset_subtype = :subtype', { subtype })
+      .andWhere(
+        '((j.job_type = :pickupType AND j.asset_subtype = :subtype) OR (j.job_type = :exchangeType AND COALESCE(pickup_asset.subtype, j.asset_subtype) = :subtype))',
+        {
+          pickupType: 'pickup',
+          exchangeType: 'exchange',
+          subtype,
+        },
+      )
       .andWhere('j.status NOT IN (:...excluded)', {
         excluded: excludedStatuses,
       })
@@ -348,28 +380,34 @@ export class AssetsService {
       availableNow + incomingCount - outgoingCount,
     );
 
-    // Stale past-due count — active jobs with scheduled_date strictly
-    // before today. Computed in SQL to avoid ambiguity around how
-    // TypeORM serializes DATE columns (string vs Date object).
+    // Stale past-due count — active delivery/exchange jobs with
+    // scheduled_date strictly before today. Mirrors the outgoing
+    // subtype-resolution rules (delivery via asset_subtype,
+    // exchange via drop_off_asset join with asset_subtype
+    // fallback) so the reported count matches what is actually
+    // included in outgoing_count.
     const stalePastDue = await this.jobsRepository
       .createQueryBuilder('j')
+      .leftJoin(
+        'assets',
+        'dropoff_asset',
+        'dropoff_asset.id = j.drop_off_asset_id',
+      )
       .where('j.tenant_id = :tenantId', { tenantId })
-      .andWhere('j.asset_subtype = :subtype', { subtype })
-      .andWhere('j.job_type IN (:...outTypes)', {
-        outTypes: ['delivery', 'exchange'],
-      })
+      .andWhere(
+        '((j.job_type = :deliveryType AND j.asset_subtype = :subtype) OR (j.job_type = :exchangeType AND COALESCE(dropoff_asset.subtype, j.asset_subtype) = :subtype))',
+        {
+          deliveryType: 'delivery',
+          exchangeType: 'exchange',
+          subtype,
+        },
+      )
       .andWhere('j.status NOT IN (:...excluded)', {
         excluded: excludedStatuses,
       })
       .andWhere('j.scheduled_date IS NOT NULL')
       .andWhere('j.scheduled_date < :today', { today: todayStr })
       .getCount();
-
-    // Exchange count from the outgoing list — safe in-memory check
-    // because `j.job_type` is a plain string column.
-    const exchangeInOutgoing = outgoingJobs.filter(
-      (j) => j.job_type === 'exchange',
-    ).length;
 
     // Deterministic warnings. Strings are plain English, contain no
     // PII, and are safe to render directly in an operator UI.
@@ -382,11 +420,6 @@ export class AssetsService {
     if (stalePastDue > 0) {
       warnings.push(
         `${stalePastDue} active delivery/exchange job(s) have scheduled_date before today (${todayStr}). They are included in outgoing_count as committed capacity, but likely represent stale data that should be completed or cancelled.`,
-      );
-    }
-    if (exchangeInOutgoing > 0) {
-      warnings.push(
-        `${exchangeInOutgoing} exchange job(s) are counted as delivery-side only in Phase B. The pickup-side subtype (the dumpster being removed) is not derivable from the job row alone — chain-traversal derivation is deferred to a later phase.`,
       );
     }
 
