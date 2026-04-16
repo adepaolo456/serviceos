@@ -7,7 +7,7 @@ import { useToast } from "@/components/toast";
 import { useQuickQuote } from "@/components/quick-quote-provider";
 import SlideOver from "@/components/slide-over";
 import AddressAutocomplete, { type AddressValue } from "@/components/address-autocomplete";
-import { getFeatureLabel } from "@/lib/feature-registry";
+import { getFeatureLabel, FEATURE_REGISTRY } from "@/lib/feature-registry";
 import { QUOTE_SEND_LABELS, deliveryReasonLabel } from "@/lib/quote-send-labels";
 import QuoteSendPanel from "@/components/quote-send-panel";
 import type { InitialSchedule } from "@/components/booking-wizard";
@@ -93,6 +93,14 @@ export default function QuickQuoteDrawer() {
   const [address, setAddress] = useState<AddressValue | null>(null);
   const [addressDisplay, setAddressDisplay] = useState("");
 
+  // Projected availability per subtype (Phase D read-only signal).
+  // null = not yet loaded / fetch failed; shown as "—" in the UI.
+  // Fetched in parallel once rules arrive for the default target
+  // date (today + 7 days) since the quote flow has no firm service
+  // date of its own. Reuses the Assets-page /assets/availability
+  // endpoint — no new endpoint, no new projection math.
+  const [projections, setProjections] = useState<Record<string, number | null>>({});
+
   // Full pricing engine result
   const [pricingResult, setPricingResult] = useState<PricingResult | null>(null);
   const [calculating, setCalculating] = useState(false);
@@ -154,6 +162,48 @@ export default function QuickQuoteDrawer() {
       .catch(() => {})
       .finally(() => setRulesLoading(false));
   }, [drawerOpen]);
+
+  // Phase D — fetch projected availability for every subtype in the
+  // size pill set in parallel, using today + 7 days as the target
+  // date (quote flow has no firm service date). Confirmed-only so
+  // the signal reflects committed pipeline, not speculative holds.
+  // Errors are swallowed silently — per spec the signal must never
+  // surface error text inside the size selector.
+  useEffect(() => {
+    if (!drawerOpen || rules.length === 0) return;
+    const target = new Date();
+    target.setDate(target.getDate() + 7);
+    const dateStr = target.toISOString().slice(0, 10);
+
+    let cancelled = false;
+    Promise.all(
+      rules.map((r) =>
+        api
+          .get<{ projected_available?: number; availableOnDate?: number; availableNow?: number }>(
+            `/assets/availability?subtype=${encodeURIComponent(r.asset_subtype)}&date=${dateStr}&confirmedOnly=true`,
+          )
+          .then((res) => ({
+            subtype: r.asset_subtype,
+            value:
+              typeof res.projected_available === "number"
+                ? res.projected_available
+                : typeof res.availableOnDate === "number"
+                  ? res.availableOnDate
+                  : null,
+          }))
+          .catch(() => ({ subtype: r.asset_subtype, value: null as number | null })),
+      ),
+    ).then((results) => {
+      if (cancelled) return;
+      const map: Record<string, number | null> = {};
+      for (const r of results) map[r.subtype] = r.value;
+      setProjections(map);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [drawerOpen, rules]);
 
   // No reset-on-open effect needed — provider remounts this component via key on close
 
@@ -348,20 +398,51 @@ export default function QuickQuoteDrawer() {
             </div>
           ) : (
             <div className="flex flex-wrap gap-1.5">
-              {rules.map((rule) => (
-                <button
-                  key={rule.id}
-                  onClick={() => setSelectedSize(rule.asset_subtype)}
-                  className="rounded-full px-3.5 py-1.5 text-[13px] font-bold border transition-all"
-                  style={{
-                    background: selectedSize === rule.asset_subtype ? "var(--t-accent)" : "var(--t-bg-secondary)",
-                    color: selectedSize === rule.asset_subtype ? "var(--t-accent-on-accent)" : "var(--t-text-primary)",
-                    borderColor: selectedSize === rule.asset_subtype ? "var(--t-accent)" : "var(--t-border)",
-                  }}
-                >
-                  {rule.asset_subtype || rule.name || "Unknown"} — ${Number(rule.base_price)}
-                </button>
-              ))}
+              {rules.map((rule) => {
+                const isSelected = selectedSize === rule.asset_subtype;
+                // Phase D signal — resolve color bucket. null/undefined
+                // keeps muted loading state; 0 goes red with ⚠️; 1-2
+                // amber; >=3 stays muted (informational only).
+                const projected = projections[rule.asset_subtype];
+                const signalColor =
+                  projected === 0
+                    ? "var(--t-error)"
+                    : projected !== null && projected !== undefined && projected <= 2
+                      ? "var(--t-warning)"
+                      : "var(--t-text-muted)";
+                const signalText =
+                  projected === null || projected === undefined
+                    ? "\u2014"
+                    : `${projected}${projected === 0 ? " \u26A0" : ""}`;
+                const signalLabel =
+                  FEATURE_REGISTRY.dispatch_availability_signal?.label ?? "Projected";
+                const tooltip =
+                  FEATURE_REGISTRY.dispatch_availability_tooltip?.label ??
+                  "Projected availability for this date based on current jobs.";
+                return (
+                  <button
+                    key={rule.id}
+                    onClick={() => setSelectedSize(rule.asset_subtype)}
+                    title={tooltip}
+                    className="rounded-full px-3.5 py-1.5 text-[13px] font-bold border transition-all inline-flex items-center gap-1.5"
+                    style={{
+                      background: isSelected ? "var(--t-accent)" : "var(--t-bg-secondary)",
+                      color: isSelected ? "var(--t-accent-on-accent)" : "var(--t-text-primary)",
+                      borderColor: isSelected ? "var(--t-accent)" : "var(--t-border)",
+                    }}
+                  >
+                    <span>
+                      {rule.asset_subtype || rule.name || "Unknown"} — ${Number(rule.base_price)}
+                    </span>
+                    <span
+                      className="text-[11px] font-semibold tabular-nums"
+                      style={{ color: signalColor, opacity: isSelected ? 0.9 : 1 }}
+                    >
+                      · {signalLabel}: {signalText}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           )}
         </div>
