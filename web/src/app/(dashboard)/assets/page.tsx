@@ -32,6 +32,26 @@ import { api } from "@/lib/api";
 import SlideOver from "@/components/slide-over";
 import Dropdown from "@/components/dropdown";
 import { useToast } from "@/components/toast";
+import { FEATURE_REGISTRY } from "@/lib/feature-registry";
+
+// Phase C — localStorage key for the "Projected Availability" panel
+// collapse state. Stores only `{ showProjection: boolean }` — UI
+// preference, no PII, no tenant coupling. Date + confirmedOnly are
+// intentionally session-scoped and reset on each visit.
+const PROJECTION_LS_KEY = "serviceos_assets_projection";
+
+// Phase C — default target date for the projection panel: local
+// today + 7 days. The backend authoritatively interprets the date
+// against tenant_settings.timezone via getTenantToday(), so browser-
+// local is fine as a default; the operator can override at will.
+function defaultProjectionDate(): string {
+  const d = new Date();
+  d.setDate(d.getDate() + 7);
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
 
 /* ─── Types ─── */
 
@@ -228,6 +248,29 @@ export default function AssetsPage() {
   const [bulkMode, setBulkMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkEditOpen, setBulkEditOpen] = useState(false);
+  // Phase C — Projected Availability panel state. Collapse state is
+  // persisted via `PROJECTION_LS_KEY`; target date + confirmedOnly
+  // reset on each visit. Default collapsed=open per the Phase C spec
+  // (operators should see projections by default on load).
+  const [showProjection, setShowProjection] = useState(true);
+  const [projectionDate, setProjectionDate] = useState<string>(
+    defaultProjectionDate,
+  );
+  const [projectionConfirmedOnly, setProjectionConfirmedOnly] =
+    useState(false);
+  const [projectionData, setProjectionData] = useState<
+    Array<{
+      subtype: string;
+      base_available: number;
+      outgoing_count: number;
+      incoming_count: number;
+      projected_available: number;
+      reserved_count: number;
+      warnings: string[];
+    }> | null
+  >(null);
+  const [projectionLoading, setProjectionLoading] = useState(false);
+  const [projectionError, setProjectionError] = useState<string | null>(null);
   const { toast } = useToast();
   const router = useRouter();
 
@@ -251,6 +294,35 @@ export default function AssetsPage() {
     return () => clearInterval(interval);
   }, [fetchAssets]);
 
+  // Phase C — restore the projection-panel collapse preference on
+  // mount. Null-safe on SSR and on parse errors.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const raw = window.localStorage.getItem(PROJECTION_LS_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as { showProjection?: unknown };
+      if (typeof parsed.showProjection === "boolean") {
+        setShowProjection(parsed.showProjection);
+      }
+    } catch {
+      // Missing key / corrupt JSON → fall through to default (open).
+    }
+  }, []);
+
+  // Phase C — persist the projection-panel collapse preference.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem(
+        PROJECTION_LS_KEY,
+        JSON.stringify({ showProjection }),
+      );
+    } catch {
+      // Quota / private mode — collapse still works for the session.
+    }
+  }, [showProjection]);
+
   const sizeGroups: SizeGroup[] = useMemo(() => {
     return SIZES.map((size) => {
       const sizeAssets = assets.filter((a) => a.subtype === size);
@@ -261,6 +333,74 @@ export default function AssetsPage() {
       return { size, assets: sizeAssets, total: sizeAssets.length, available, deployed, maintenance, reserved };
     }).filter((g) => g.total > 0);
   }, [assets]);
+
+  // Phase C — stable dependency key for the projection fetch effect.
+  // Without this, the effect would re-run every 30s when the asset
+  // poll refreshes `assets` and creates a new `sizeGroups` object
+  // reference. By reducing sizeGroups to a sorted comma-joined
+  // string, we only refetch when the SET of active subtypes actually
+  // changes — not when their internal counts change.
+  const projectionSubtypesKey = useMemo(
+    () => sizeGroups.map((g) => g.size).sort().join(","),
+    [sizeGroups],
+  );
+
+  // Phase C — fetch projected availability for every active subtype
+  // in parallel. Re-runs on mount, when the active subtype set
+  // changes, when the target date changes, or when the confirmedOnly
+  // toggle flips. Uses the existing `GET /assets/availability`
+  // endpoint fixed in Phase B (commit 46230ca). Does NOT poll —
+  // the data refreshes only on explicit control changes.
+  useEffect(() => {
+    if (!projectionSubtypesKey) {
+      setProjectionData(null);
+      return;
+    }
+    const subtypes = projectionSubtypesKey.split(",");
+    let cancelled = false;
+    setProjectionLoading(true);
+    setProjectionError(null);
+    Promise.all(
+      subtypes.map(async (subtype) => {
+        const data = await api.get<{
+          base_available: number;
+          outgoing_count: number;
+          incoming_count: number;
+          projected_available: number;
+          reserved_count: number;
+          warnings: string[];
+        }>(
+          `/assets/availability?subtype=${encodeURIComponent(subtype)}` +
+            `&date=${encodeURIComponent(projectionDate)}` +
+            `&confirmedOnly=${projectionConfirmedOnly ? "true" : "false"}`,
+        );
+        return {
+          subtype,
+          base_available: data.base_available ?? 0,
+          outgoing_count: data.outgoing_count ?? 0,
+          incoming_count: data.incoming_count ?? 0,
+          projected_available: data.projected_available ?? 0,
+          reserved_count: data.reserved_count ?? 0,
+          warnings: Array.isArray(data.warnings) ? data.warnings : [],
+        };
+      }),
+    )
+      .then((results) => {
+        if (!cancelled) setProjectionData(results);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setProjectionError("Could not load availability data");
+          setProjectionData(null);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setProjectionLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [projectionSubtypesKey, projectionDate, projectionConfirmedOnly]);
 
   const filteredAssets = useMemo(() => {
     let result = [...assets];
@@ -525,6 +665,195 @@ export default function AssetsPage() {
           >
             <RefreshCw className={`h-3 w-3 ${refreshing ? "animate-spin" : ""}`} />
           </button>
+        </div>
+      )}
+
+      {/* ─── Projected Availability (Phase C) ─── */}
+      {/* Collapsible section matching the Jobs page pattern from
+          commit 0c6e74b. Reads from the Phase-B-fixed
+          GET /assets/availability endpoint. Default open, persisted
+          in localStorage. Re-fetches only on target-date change or
+          confirmedOnly toggle — never polls. */}
+      {!loading && sizeGroups.length > 0 && (
+        <div className="mb-6">
+          <button
+            type="button"
+            onClick={() => setShowProjection((v) => !v)}
+            aria-expanded={showProjection}
+            aria-controls="assets-projection-panel"
+            className="w-full flex items-center justify-between px-4 py-2 mb-3 rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] hover:bg-[var(--t-bg-card-hover)] transition-colors cursor-pointer"
+          >
+            <span className="text-sm font-semibold text-[var(--t-text-primary)]">
+              {FEATURE_REGISTRY.projected_availability_section?.label ?? "Projected Availability"}
+            </span>
+            <ChevronDown
+              className="h-4 w-4 text-[var(--t-text-muted)] transition-transform duration-150 ease-out"
+              style={{ transform: showProjection ? "rotate(0deg)" : "rotate(-90deg)" }}
+            />
+          </button>
+          {showProjection && (
+            <div
+              id="assets-projection-panel"
+              className="rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-4"
+            >
+              {/* Controls */}
+              <div className="flex items-center gap-4 mb-4 flex-wrap">
+                <label className="flex items-center gap-2 text-xs text-[var(--t-text-muted)]">
+                  <span>
+                    {FEATURE_REGISTRY.projected_availability_date_label?.label ?? "Project to date"}
+                  </span>
+                  <input
+                    type="date"
+                    value={projectionDate}
+                    onChange={(e) => setProjectionDate(e.target.value)}
+                    className="rounded-[10px] border border-[var(--t-border)] bg-[var(--t-bg-secondary)] px-2.5 py-1 text-xs text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)]"
+                  />
+                </label>
+                <label
+                  className="flex items-center gap-2 text-xs cursor-pointer"
+                  title={
+                    FEATURE_REGISTRY.projected_availability_confirmed_only_hint?.label ??
+                    "Only include confirmed/dispatched jobs"
+                  }
+                >
+                  <input
+                    type="checkbox"
+                    checked={projectionConfirmedOnly}
+                    onChange={(e) => setProjectionConfirmedOnly(e.target.checked)}
+                    className="cursor-pointer"
+                  />
+                  <span className="text-[var(--t-text-muted)]">
+                    {FEATURE_REGISTRY.projected_availability_confirmed_only?.label ?? "Confirmed jobs only"}
+                  </span>
+                  <span className="text-[10px] text-[var(--t-text-muted)] opacity-70">
+                    ({FEATURE_REGISTRY.projected_availability_confirmed_only_hint?.label ?? "Only include confirmed/dispatched jobs"})
+                  </span>
+                </label>
+              </div>
+
+              {/* Body: loading / error / table */}
+              {projectionLoading ? (
+                <div className="space-y-2">
+                  {[1, 2, 3].map((i) => (
+                    <div
+                      key={i}
+                      className="h-8 rounded animate-pulse"
+                      style={{ background: "var(--t-bg-elevated)" }}
+                    />
+                  ))}
+                </div>
+              ) : projectionError ? (
+                <p className="text-xs text-[var(--t-error)] py-4 text-center">
+                  {projectionError}
+                </p>
+              ) : !projectionData || projectionData.length === 0 ? (
+                <p className="text-xs text-[var(--t-text-muted)] py-4 text-center">
+                  No subtypes to project
+                </p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full" style={{ fontSize: 12, borderCollapse: "collapse" }}>
+                    <thead>
+                      <tr className="text-left" style={{ borderBottom: "1px solid var(--t-border)" }}>
+                        <th style={{ padding: "8px 12px", fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--t-text-muted)" }}>
+                          Subtype
+                        </th>
+                        <th className="text-right" style={{ padding: "8px 12px", fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--t-text-muted)" }}>
+                          {FEATURE_REGISTRY.projected_availability_base?.label ?? "Available Now"}
+                        </th>
+                        <th className="text-right" style={{ padding: "8px 12px", fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--t-text-muted)" }}>
+                          {FEATURE_REGISTRY.projected_availability_outgoing?.label ?? "Outgoing"}
+                        </th>
+                        <th className="text-right" style={{ padding: "8px 12px", fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--t-text-muted)" }}>
+                          {FEATURE_REGISTRY.projected_availability_incoming?.label ?? "Incoming"}
+                        </th>
+                        <th className="text-right" style={{ padding: "8px 12px", fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--t-text-muted)" }}>
+                          {FEATURE_REGISTRY.projected_availability_projected?.label ?? "Projected"}
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {projectionData.map((row) => {
+                        // Color-coding: 0 → error, 1-2 → warning,
+                        // >= 3 → accent (healthy). Per the Phase C
+                        // spec's "green if > 0, amber if 1-2, red if
+                        // 0" — interpreted as 3+ / 1-2 / 0 since the
+                        // literal "both > 0 and 1-2" is inconsistent.
+                        const projColor =
+                          row.projected_available === 0
+                            ? "var(--t-error)"
+                            : row.projected_available <= 2
+                              ? "var(--t-warning)"
+                              : "var(--t-accent)";
+                        return (
+                          <tr
+                            key={row.subtype}
+                            style={{ borderBottom: "1px solid var(--t-border-subtle)" }}
+                          >
+                            <td style={{ padding: "10px 12px", fontWeight: 600, color: "var(--t-text-primary)" }}>
+                              {row.subtype.replace(/yd$/i, "Y").toUpperCase()}
+                            </td>
+                            <td className="text-right tabular-nums" style={{ padding: "10px 12px", color: "var(--t-text-primary)" }}>
+                              {row.base_available}
+                            </td>
+                            <td className="text-right tabular-nums" style={{ padding: "10px 12px", color: "var(--t-text-muted)" }}>
+                              &minus;{row.outgoing_count}
+                            </td>
+                            <td className="text-right tabular-nums" style={{ padding: "10px 12px", color: "var(--t-text-muted)" }}>
+                              +{row.incoming_count}
+                            </td>
+                            <td className="text-right tabular-nums" style={{ padding: "10px 12px", fontWeight: 700, color: projColor }}>
+                              {row.projected_available}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {/* Warnings */}
+              {!projectionLoading &&
+                !projectionError &&
+                projectionData &&
+                (() => {
+                  const allWarnings = projectionData.flatMap((r) =>
+                    r.warnings.map((w) => ({ subtype: r.subtype, message: w })),
+                  );
+                  if (allWarnings.length === 0) return null;
+                  return (
+                    <div
+                      className="mt-4 rounded-[12px] px-3 py-2.5"
+                      style={{
+                        background: "var(--t-warning-soft, var(--t-bg-elevated))",
+                        border: "1px solid var(--t-warning)",
+                      }}
+                    >
+                      <div className="flex items-start gap-2 mb-1.5">
+                        <AlertTriangle
+                          className="h-3.5 w-3.5 shrink-0 mt-0.5"
+                          style={{ color: "var(--t-warning)" }}
+                        />
+                        <span
+                          className="text-[10px] font-bold uppercase tracking-wider"
+                          style={{ color: "var(--t-warning)" }}
+                        >
+                          Warnings
+                        </span>
+                      </div>
+                      <ul className="space-y-1 text-[11px] pl-5" style={{ color: "var(--t-text-primary)" }}>
+                        {allWarnings.map((w, i) => (
+                          <li key={i}>
+                            <span className="font-semibold">{w.subtype}:</span> {w.message}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  );
+                })()}
+            </div>
+          )}
         </div>
       )}
 
