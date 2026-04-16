@@ -1285,11 +1285,11 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
         that does NOT block the rest of the page.
       */}
       {navContextLoading && (
-        <div className="grid grid-cols-3 gap-3 mb-6">
+        <div className="grid grid-cols-3 gap-2 mb-6">
           {[0, 1, 2].map((i) => (
             <div
               key={i}
-              className="h-20 rounded-[14px] skeleton"
+              className="h-16 rounded-[14px] skeleton"
             />
           ))}
         </div>
@@ -1312,8 +1312,7 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
         const nextLabel =
           FEATURE_REGISTRY.connected_lifecycle_next?.label ?? "Next";
         const sectionTitle =
-          FEATURE_REGISTRY.connected_lifecycle_title?.label ??
-          "Connected Lifecycle";
+          FEATURE_REGISTRY.connected_lifecycle_title?.label ?? "Lifecycle";
 
         type NavJob = CancellationContext["jobs"][number];
         const renderSlot = (
@@ -1324,39 +1323,36 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
           if (!node) {
             return (
               <div
-                className="rounded-[14px] border px-4 py-3"
+                className="rounded-[14px] border p-2"
                 style={{
                   borderColor: "var(--t-border)",
                   borderStyle: "dashed",
                   background: "var(--t-bg-card)",
                 }}
               >
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--t-text-muted)] mb-2">
+                <p className="text-[10px] text-[var(--t-text-muted)] mb-1">
                   {slotLabel}
                 </p>
-                <p className="text-sm text-[var(--t-text-tertiary)]">—</p>
+                <p className="text-[11px] text-[var(--t-text-tertiary)]">—</p>
               </div>
             );
           }
           const nodeStatus = deriveDisplayStatus(node.status);
           const body = (
             <>
-              <div className="flex items-baseline gap-2 mb-1">
-                <span
-                  className="text-[11px] font-bold uppercase"
-                  style={{ color: "var(--t-text-muted)" }}
-                >
+              <div className="flex items-baseline gap-1 mb-0.5">
+                <span className="text-[10px] text-[var(--t-text-muted)]">
                   {node.job_type}
                 </span>
-                <span className="text-sm font-semibold text-[var(--t-text-primary)]">
+                <span className="text-sm font-medium text-[var(--t-text-primary)]">
                   {formatJobNumber(node.job_number)}
                 </span>
               </div>
-              <p className="text-[11px] text-[var(--t-text-muted)] mb-1">
+              <p className="text-[11px] text-[var(--t-text-tertiary)] mb-0.5">
                 {node.scheduled_date ?? "—"}
               </p>
               <span
-                className="text-[11px] font-semibold"
+                className="text-[11px] font-medium"
                 style={{ color: displayStatusColor(nodeStatus) }}
               >
                 {DISPLAY_STATUS_LABELS[nodeStatus] ?? node.status}
@@ -1366,29 +1362,19 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
           if (isCurrent) {
             return (
               <div
-                className="rounded-[14px] border-2 px-4 py-3"
+                className="rounded-[14px] border p-2"
                 style={{
-                  borderColor: "var(--t-accent)",
-                  background: "var(--t-accent-soft)",
+                  borderColor: "var(--t-border)",
+                  borderLeft: "3px solid var(--t-accent)",
+                  background: "var(--t-bg-card)",
                 }}
               >
-                <div className="flex items-center justify-between mb-2">
-                  <p
-                    className="text-[10px] font-semibold uppercase tracking-wider"
-                    style={{ color: "var(--t-accent-text)" }}
-                  >
-                    {slotLabel}
-                  </p>
-                  <span
-                    className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded"
-                    style={{
-                      background: "var(--t-accent)",
-                      color: "var(--t-accent-on-accent)",
-                    }}
-                  >
-                    {currentLabel}
-                  </span>
-                </div>
+                <p
+                  className="text-[10px] mb-1"
+                  style={{ color: "var(--t-accent)" }}
+                >
+                  {slotLabel}
+                </p>
                 {body}
               </div>
             );
@@ -1397,13 +1383,13 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
             <button
               type="button"
               onClick={() => router.push(`/jobs/${node.id}`)}
-              className="rounded-[14px] border px-4 py-3 text-left transition-colors hover:bg-[var(--t-bg-card-hover)]"
+              className="rounded-[14px] border p-2 text-left transition-colors hover:bg-[var(--t-bg-card-hover)]"
               style={{
                 borderColor: "var(--t-border)",
                 background: "var(--t-bg-card)",
               }}
             >
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--t-text-muted)] mb-2">
+              <p className="text-[10px] text-[var(--t-text-muted)] mb-1">
                 {slotLabel}
               </p>
               {body}
@@ -1413,10 +1399,10 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
 
         return (
           <div className="mb-6">
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--t-text-muted)] mb-2">
+            <p className="text-sm font-medium text-[var(--t-text-muted)] mb-2">
               {sectionTitle}
             </p>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-3 gap-2">
               {renderSlot(prevLabel, prev, false)}
               {renderSlot(currentLabel, current, true)}
               {renderSlot(nextLabel, next, false)}
