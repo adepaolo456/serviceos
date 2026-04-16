@@ -15,6 +15,7 @@ import {
   Search,
   MoreHorizontal,
   AlertTriangle,
+  AlertCircle,
   Eye,
   ClipboardList,
   Shield,
@@ -39,6 +40,7 @@ import { FEATURE_REGISTRY } from "@/lib/feature-registry";
 // preference, no PII, no tenant coupling. Date + confirmedOnly are
 // intentionally session-scoped and reset on each visit.
 const PROJECTION_LS_KEY = "serviceos_assets_projection";
+const FILTERS_LS_KEY = "serviceos_assets_filters";
 
 // Phase C — default target date for the projection panel: local
 // today + 7 days. The backend authoritatively interprets the date
@@ -248,6 +250,9 @@ export default function AssetsPage() {
   const [bulkMode, setBulkMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkEditOpen, setBulkEditOpen] = useState(false);
+  // Collapsible filter section state — defaults open, persisted via
+  // `FILTERS_LS_KEY`. Matches the Jobs page collapsible pattern.
+  const [showFilters, setShowFilters] = useState(true);
   // Phase C — Projected Availability panel state. Collapse state is
   // persisted via `PROJECTION_LS_KEY`; target date + confirmedOnly
   // reset on each visit. Default collapsed=open per the Phase C spec
@@ -322,6 +327,30 @@ export default function AssetsPage() {
       // Quota / private mode — collapse still works for the session.
     }
   }, [showProjection]);
+
+  // Filters section collapse — load on mount.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const raw = window.localStorage.getItem(FILTERS_LS_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as { showFilters?: unknown };
+      if (typeof parsed.showFilters === "boolean") {
+        setShowFilters(parsed.showFilters);
+      }
+    } catch { /* fall through to default (open) */ }
+  }, []);
+
+  // Filters section collapse — persist on change.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem(
+        FILTERS_LS_KEY,
+        JSON.stringify({ showFilters }),
+      );
+    } catch { /* quota / private mode */ }
+  }, [showFilters]);
 
   const sizeGroups: SizeGroup[] = useMemo(() => {
     return SIZES.map((size) => {
@@ -595,59 +624,78 @@ export default function AssetsPage() {
         </div>
       )}
 
-      {/* ─── Filter Tabs (Segmented Pills) ─── */}
+      {/* ─── Filter Tabs (Segmented Pills) — collapsible ─── */}
       {!loading && (
-        <div className="flex items-center gap-3 mb-6 flex-wrap">
-          {/* Status group */}
-          <div style={{ display: "inline-flex", borderRadius: 22, backgroundColor: "var(--t-bg-secondary)", border: "1px solid var(--t-border)", padding: 3, gap: 2 }}>
-            {STATUS_FILTERS.map((s) => {
-              const isActive = statusFilter === s;
-              const count = s === "all"
-                ? assets.length
-                : s === "on_site"
-                  ? assets.filter((a) => a.status === "on_site" || a.status === "deployed").length
-                  : assets.filter((a) => a.status === s).length;
-              return (
-                <button
-                  key={s}
-                  onClick={() => setStatusFilter(s)}
-                  style={{
-                    display: "inline-flex", alignItems: "center", gap: 5,
-                    padding: "5px 12px", borderRadius: 18, fontSize: 12, fontWeight: 600,
-                    background: isActive ? "var(--t-accent)" : "transparent",
-                    color: isActive ? "#fff" : "var(--t-text-muted)",
-                    border: "none", transition: "all 0.15s ease", cursor: "pointer",
-                  }}
-                >
-                  {STATUS_LABELS[s]}
-                  <span style={{ fontSize: 10, fontWeight: 700, opacity: isActive ? 0.85 : 0.6 }}>{count}</span>
-                </button>
-              );
-            })}
-          </div>
+        <div className="mb-6">
+          <button
+            type="button"
+            onClick={() => setShowFilters((v) => !v)}
+            aria-expanded={showFilters}
+            aria-controls="assets-filter-tabs"
+            className="w-full flex items-center justify-between px-4 py-2 mb-3 rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] hover:bg-[var(--t-bg-card-hover)] transition-colors cursor-pointer"
+          >
+            <span className="text-sm font-semibold text-[var(--t-text-primary)]">
+              {FEATURE_REGISTRY.assets_filters_section?.label ?? "Filters"}
+            </span>
+            <ChevronDown
+              className="h-4 w-4 text-[var(--t-text-muted)] transition-transform duration-150 ease-out"
+              style={{ transform: showFilters ? "rotate(0deg)" : "rotate(-90deg)" }}
+            />
+          </button>
+          {showFilters && (
+            <div id="assets-filter-tabs" className="flex items-center gap-3 flex-wrap">
+              {/* Status group */}
+              <div style={{ display: "inline-flex", borderRadius: 22, backgroundColor: "var(--t-bg-secondary)", border: "1px solid var(--t-border)", padding: 3, gap: 2 }}>
+                {STATUS_FILTERS.map((s) => {
+                  const isActive = statusFilter === s;
+                  const count = s === "all"
+                    ? assets.length
+                    : s === "on_site"
+                      ? assets.filter((a) => a.status === "on_site" || a.status === "deployed").length
+                      : assets.filter((a) => a.status === s).length;
+                  return (
+                    <button
+                      key={s}
+                      onClick={() => setStatusFilter(s)}
+                      style={{
+                        display: "inline-flex", alignItems: "center", gap: 5,
+                        padding: "5px 12px", borderRadius: 18, fontSize: 12, fontWeight: 600,
+                        background: isActive ? "var(--t-accent)" : "transparent",
+                        color: isActive ? "#fff" : "var(--t-text-muted)",
+                        border: "none", transition: "all 0.15s ease", cursor: "pointer",
+                      }}
+                    >
+                      {STATUS_LABELS[s]}
+                      <span style={{ fontSize: 10, fontWeight: 700, opacity: isActive ? 0.85 : 0.6 }}>{count}</span>
+                    </button>
+                  );
+                })}
+              </div>
 
-          {/* Size group */}
-          {sizeGroups.length > 0 && (
-            <div style={{ display: "inline-flex", borderRadius: 22, backgroundColor: "var(--t-bg-secondary)", border: "1px solid var(--t-border)", padding: 3, gap: 2 }}>
-              {sizeGroups.map((g) => {
-                const isActive = selectedSize === g.size;
-                return (
-                  <button
-                    key={g.size}
-                    onClick={() => handleTileClick(g.size)}
-                    style={{
-                      display: "inline-flex", alignItems: "center", gap: 5,
-                      padding: "5px 12px", borderRadius: 18, fontSize: 12, fontWeight: 600,
-                      background: isActive ? "var(--t-accent)" : "transparent",
-                      color: isActive ? "#fff" : "var(--t-text-muted)",
-                      border: "none", transition: "all 0.15s ease", cursor: "pointer",
-                    }}
-                  >
-                    {g.size}
-                    <span style={{ fontSize: 10, fontWeight: 700, opacity: isActive ? 0.85 : 0.6 }}>{g.total}</span>
-                  </button>
-                );
-              })}
+              {/* Size group */}
+              {sizeGroups.length > 0 && (
+                <div style={{ display: "inline-flex", borderRadius: 22, backgroundColor: "var(--t-bg-secondary)", border: "1px solid var(--t-border)", padding: 3, gap: 2 }}>
+                  {sizeGroups.map((g) => {
+                    const isActive = selectedSize === g.size;
+                    return (
+                      <button
+                        key={g.size}
+                        onClick={() => handleTileClick(g.size)}
+                        style={{
+                          display: "inline-flex", alignItems: "center", gap: 5,
+                          padding: "5px 12px", borderRadius: 18, fontSize: 12, fontWeight: 600,
+                          background: isActive ? "var(--t-accent)" : "transparent",
+                          color: isActive ? "#fff" : "var(--t-text-muted)",
+                          border: "none", transition: "all 0.15s ease", cursor: "pointer",
+                        }}
+                      >
+                        {g.size}
+                        <span style={{ fontSize: 10, fontWeight: 700, opacity: isActive ? 0.85 : 0.6 }}>{g.total}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -867,12 +915,13 @@ export default function AssetsPage() {
                 </div>
               )}
 
-              {/* Warnings — Phase C1: grouped by subtype with bullet
-                  lists for scannability. Each subtype gets a bold
-                  header followed by its own bulleted warning list,
-                  and subtype groups are visually separated. Warning
-                  text content is unchanged — only the rendering
-                  structure is different. */}
+              {/* Insights panel — softened from the Phase C1
+                  "Warnings" panel. The content is operational context
+                  (legacy reserved counts, stale past-due jobs,
+                  exchange Phase B limitation), not an urgent failure
+                  state. Neutral background + border + muted icon
+                  make it read as informational rather than alarming.
+                  Grouped-by-subtype rendering preserved from C1. */}
               {!projectionLoading &&
                 !projectionError &&
                 projectionData &&
@@ -888,20 +937,20 @@ export default function AssetsPage() {
                     <div
                       className="mt-4 rounded-[12px] px-3 py-2.5"
                       style={{
-                        background: "var(--t-warning-soft, var(--t-bg-elevated))",
-                        border: "1px solid var(--t-warning)",
+                        background: "var(--t-bg-elevated, var(--t-bg-secondary))",
+                        border: "1px solid var(--t-border)",
                       }}
                     >
                       <div className="flex items-start gap-2 mb-2">
-                        <AlertTriangle
+                        <AlertCircle
                           className="h-3.5 w-3.5 shrink-0 mt-0.5"
-                          style={{ color: "var(--t-warning)" }}
+                          style={{ color: "var(--t-text-muted)" }}
                         />
                         <span
                           className="text-[10px] font-bold uppercase tracking-wider"
-                          style={{ color: "var(--t-warning)" }}
+                          style={{ color: "var(--t-text-muted)" }}
                         >
-                          Warnings
+                          {FEATURE_REGISTRY.assets_insights_section?.label ?? "Insights"}
                         </span>
                       </div>
                       <div className="space-y-3 pl-5">
@@ -915,7 +964,7 @@ export default function AssetsPage() {
                             </p>
                             <ul
                               className="space-y-0.5 text-[11px] pl-4 list-disc list-outside"
-                              style={{ color: "var(--t-text-primary)" }}
+                              style={{ color: "var(--t-text-muted)" }}
                             >
                               {group.messages.map((m, i) => (
                                 <li key={i}>{m}</li>
