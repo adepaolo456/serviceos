@@ -462,6 +462,17 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
     chainStatus: string; dropOffStatus: string | null; pickupStatus: string | null;
     hasExchange: boolean;
   } | null>(null);
+  // Chain Financials rollup data — consolidation Phase 1 (additive).
+  // Read rollups previously visible only on /rentals/[id] are now
+  // surfaced here too via the SAME /rental-chains/:id/lifecycle
+  // fetch populated by resolveChainId — no additional network call.
+  // The rentals page remains unchanged; this card is additive only.
+  const [chainFinancials, setChainFinancials] = useState<{
+    financials: { revenue: number; cost: number; profit: number; margin: number } | null;
+    invoices: Array<{ id: string; invoiceNumber: number; total: number; status: string; balanceDue: number }>;
+    payments: Array<{ id: string; amount: number; status: string; paymentMethod: string; appliedAt: string }>;
+    dumpTickets: Array<{ id: string; ticketNumber: string | null; weightTons: number; totalCost: number; customerCharges: number; wasteType: string | null }>;
+  } | null>(null);
   // Phase 11A — asset edit modal state
   const [assetEditOpen, setAssetEditOpen] = useState(false);
   const [assetOptions, setAssetOptions] = useState<AssetOption[]>([]);
@@ -736,10 +747,17 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
       for (const chain of chains) {
         if (chain.links?.some(l => l.job_id === currentJob.id)) {
           setChainId(chain.id);
-          // Fetch lifecycle data for the strip
+          // Fetch lifecycle data for the strip AND the Chain
+          // Financials card. Single network call — response type
+          // widened to also cover financials/invoices/payments/
+          // dumpTickets so both consumers read from one fetch.
           api.get<{
             rentalChain: { status: string; dropOffDate: string; expectedPickupDate: string | null; rentalDays: number };
             jobs: Array<{ taskType: string; status: string; scheduledDate: string }>;
+            financials?: { revenue: number; cost: number; profit: number; margin: number };
+            invoices?: Array<{ id: string; invoiceNumber: number; total: number; status: string; balanceDue: number }>;
+            payments?: Array<{ id: string; amount: number; status: string; paymentMethod: string; appliedAt: string }>;
+            dumpTickets?: Array<{ id: string; ticketNumber: string | null; weightTons: number; totalCost: number; customerCharges: number; wasteType: string | null }>;
           }>(`/rental-chains/${chain.id}/lifecycle`).then(lc => {
             const dropOffTask = lc.jobs?.find(j => j.taskType === "drop_off");
             const pickUpTask = lc.jobs?.find(j => j.taskType === "pick_up");
@@ -752,6 +770,15 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
               dropOffStatus: dropOffTask?.status ?? null,
               pickupStatus: pickUpTask?.status ?? null,
               hasExchange,
+            });
+            // Chain Financials — populated from the same response.
+            // Defensive defaults so the card can render partial data
+            // if the backend ever omits an optional field.
+            setChainFinancials({
+              financials: lc.financials ?? null,
+              invoices: Array.isArray(lc.invoices) ? lc.invoices : [],
+              payments: Array.isArray(lc.payments) ? lc.payments : [],
+              dumpTickets: Array.isArray(lc.dumpTickets) ? lc.dumpTickets : [],
             });
           }).catch(() => {});
           return;
@@ -2054,6 +2081,196 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
               every job; the panel itself handles the standalone
               empty state. */}
           <LifecycleContextPanel jobId={id} refreshSignal={lifecyclePanelRefresh} />
+
+          {/* Chain Financials — additive read rollup from the same
+              /rental-chains/:id/lifecycle fetch the Lifecycle Strip
+              already uses. Placed immediately after LifecycleContext-
+              Panel so chain-level rollups sit next to chain-level
+              navigation; per-job sections (Driver Notes, Photos,
+              Dump Slip) follow below. The rentals page still owns
+              the mutation flows — this card is read-only. */}
+          {chainFinancials &&
+            (chainFinancials.financials ||
+              chainFinancials.invoices.length > 0 ||
+              chainFinancials.payments.length > 0 ||
+              chainFinancials.dumpTickets.length > 0) && (
+            <Card
+              title={FEATURE_REGISTRY.rental_lifecycle_financials?.label ?? "Financials"}
+              icon={DollarSign}
+            >
+              {/* Financials rollup */}
+              {chainFinancials.financials && (
+                <div className="grid grid-cols-4 gap-4 mb-4">
+                  <div>
+                    <p className="text-[10px] font-medium uppercase tracking-wider text-[var(--t-text-muted)]">Revenue</p>
+                    <p className="text-sm font-bold text-[var(--t-text-primary)] tabular-nums">
+                      {formatCurrency(chainFinancials.financials.revenue)}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-medium uppercase tracking-wider text-[var(--t-text-muted)]">Cost</p>
+                    <p className="text-sm font-bold text-[var(--t-text-primary)] tabular-nums">
+                      {formatCurrency(chainFinancials.financials.cost)}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-medium uppercase tracking-wider text-[var(--t-text-muted)]">Profit</p>
+                    <p
+                      className="text-sm font-bold tabular-nums"
+                      style={{
+                        color:
+                          chainFinancials.financials.profit >= 0
+                            ? "var(--t-accent)"
+                            : "var(--t-error)",
+                      }}
+                    >
+                      {formatCurrency(chainFinancials.financials.profit)}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-medium uppercase tracking-wider text-[var(--t-text-muted)]">Margin</p>
+                    <p className="text-sm font-bold text-[var(--t-text-primary)] tabular-nums">
+                      {(chainFinancials.financials.margin ?? 0).toFixed(1)}%
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Invoices — chain-scoped, each row deep-links to the
+                  specific invoice (fixes the generic `/invoices`
+                  link that the rentals page still uses). */}
+              {chainFinancials.invoices.length > 0 && (
+                <div className="border-t border-[var(--t-border)] pt-4 space-y-2">
+                  {chainFinancials.invoices.map((inv) => {
+                    const isPaid = inv.status === "paid";
+                    const isOverdue = inv.status === "open" && Number(inv.balanceDue) > 0;
+                    return (
+                      <Link
+                        key={inv.id}
+                        href={`/invoices/${inv.id}`}
+                        className="flex items-center justify-between rounded-[14px] border border-[var(--t-border)] px-3.5 py-2.5 hover:bg-[var(--t-bg-card-hover)] transition-colors"
+                      >
+                        <div className="flex items-center gap-3">
+                          <FileText className="h-3.5 w-3.5 text-[var(--t-text-muted)]" />
+                          <span className="text-xs font-medium text-[var(--t-text-primary)]">
+                            Invoice #{inv.invoiceNumber}
+                          </span>
+                          <span className="text-xs text-[var(--t-text-muted)] tabular-nums">
+                            {formatCurrency(inv.total)}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {!isPaid && Number(inv.balanceDue) > 0 && (
+                            <span
+                              className="text-[10px] font-semibold tabular-nums"
+                              style={{ color: "var(--t-warning)" }}
+                            >
+                              Due: {formatCurrency(inv.balanceDue)}
+                            </span>
+                          )}
+                          <span
+                            className="text-[10px] font-semibold"
+                            style={{
+                              color: isPaid
+                                ? "var(--t-accent)"
+                                : isOverdue
+                                  ? "var(--t-error)"
+                                  : "var(--t-warning)",
+                            }}
+                          >
+                            {isPaid ? "Paid" : inv.status === "draft" ? "Draft" : "Unpaid"}
+                          </span>
+                        </div>
+                      </Link>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Payments */}
+              {chainFinancials.payments.length > 0 && (
+                <div className="border-t border-[var(--t-border)] pt-3 mt-3">
+                  <p className="text-[10px] font-medium uppercase tracking-wider text-[var(--t-text-muted)] mb-2">
+                    Payments
+                  </p>
+                  <div className="space-y-1.5">
+                    {chainFinancials.payments.map((p) => (
+                      <div key={p.id} className="flex items-center justify-between text-xs">
+                        <span className="text-[var(--t-text-muted)]">
+                          {p.paymentMethod || "—"} ·{" "}
+                          {p.appliedAt ? new Date(p.appliedAt).toLocaleDateString() : "—"}
+                        </span>
+                        <span
+                          className="font-medium tabular-nums"
+                          style={{
+                            color:
+                              p.status === "completed"
+                                ? "var(--t-accent)"
+                                : "var(--t-text-muted)",
+                          }}
+                        >
+                          {formatCurrency(p.amount)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Disposal rollup — chain-scoped aggregate (per-job
+                  dump tickets remain on the job detail Dump Slip
+                  card below). */}
+              {chainFinancials.dumpTickets.length > 0 && (() => {
+                const totalDisposalCost = chainFinancials.dumpTickets.reduce(
+                  (sum, t) => sum + (Number(t.totalCost) || 0),
+                  0,
+                );
+                const totalDisposalCustomerCharges = chainFinancials.dumpTickets.reduce(
+                  (sum, t) => sum + (Number(t.customerCharges) || 0),
+                  0,
+                );
+                return (
+                  <div className="border-t border-[var(--t-border)] pt-3 mt-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-[10px] font-medium uppercase tracking-wider text-[var(--t-text-muted)]">
+                        {FEATURE_REGISTRY.dump_slip_section?.label ?? "Disposal Details"}
+                      </p>
+                      <p className="text-[11px] font-semibold text-[var(--t-text-primary)] tabular-nums">
+                        {FEATURE_REGISTRY.disposal_cost_total?.label ?? "Total Disposal Cost"}:{" "}
+                        {formatCurrency(totalDisposalCost)}
+                      </p>
+                    </div>
+                    <div className="space-y-1.5">
+                      {chainFinancials.dumpTickets.map((t) => (
+                        <div key={t.id} className="flex items-center justify-between text-xs">
+                          <span className="text-[var(--t-text-muted)]">
+                            Ticket #{t.ticketNumber || "—"}
+                            {t.wasteType ? ` · ${t.wasteType.replace(/_/g, " ")}` : ""}
+                            {Number.isFinite(Number(t.weightTons))
+                              ? ` · ${Number(t.weightTons).toFixed(2)}t`
+                              : ""}
+                          </span>
+                          <span className="font-medium text-[var(--t-text-primary)] tabular-nums">
+                            {formatCurrency(Number(t.totalCost) || 0)}
+                          </span>
+                        </div>
+                      ))}
+                      {totalDisposalCustomerCharges > 0 && (
+                        <div
+                          className="flex items-center justify-between text-[11px] text-[var(--t-text-muted)] pt-1 mt-1 border-t border-dashed border-[var(--t-border)]"
+                        >
+                          <span>Customer charges pass-through</span>
+                          <span className="tabular-nums">
+                            {formatCurrency(totalDisposalCustomerCharges)}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
+            </Card>
+          )}
 
           {/* Driver Notes */}
           {job.driver_notes && (
