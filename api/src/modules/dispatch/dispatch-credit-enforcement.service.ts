@@ -404,16 +404,50 @@ export class DispatchCreditEnforcementService {
     tenantId: string,
     jobId: string,
   ): Promise<boolean> {
-    const match = await this.invoiceRepo
+    // Chain-leak fix: invoices with a direct `job_id` are the canonical
+    // payment source for that specific job. Do not cross-link them to
+    // other jobs on the same rental_chain_id. Prior behavior treated any
+    // paid invoice on the chain as satisfying prepay for every job on
+    // the chain, which allowed exchange jobs to dispatch without payment
+    // whenever the original delivery invoice was paid. Chain-only
+    // invoices (invoice.job_id IS NULL) still fall back to chain
+    // matching for legacy compatibility.
+    //
+    // Both queries carry `inv.tenant_id = :tenantId` as the first
+    // WHERE clause — tenant scoping preserved byte-for-byte.
+
+    // Step 1 — canonical per-job invoices. When any exist for this
+    // exact job, they are the authoritative payment source. Return
+    // true iff at least one is paid/partial; never fall through to
+    // chain-level matching.
+    const directInvoices = await this.invoiceRepo
+      .createQueryBuilder('inv')
+      .select('inv.status', 'status')
+      .where('inv.tenant_id = :tenantId', { tenantId })
+      .andWhere('inv.job_id = :jobId', { jobId })
+      .getRawMany<{ status: string }>();
+
+    if (directInvoices.length > 0) {
+      return directInvoices.some(
+        (i) => i.status === 'paid' || i.status === 'partial',
+      );
+    }
+
+    // Step 2 — legacy fallback. Only runs when no direct invoice
+    // exists for the job. Matches chain-only invoices
+    // (invoice.job_id IS NULL) that pre-date the per-job invoicing
+    // model introduced by Path α.
+    const chainOnlyMatch = await this.invoiceRepo
       .createQueryBuilder('inv')
       .select('inv.id')
       .where('inv.tenant_id = :tenantId', { tenantId })
+      .andWhere('inv.job_id IS NULL')
       .andWhere(
-        `(inv.job_id = :jobId OR inv.rental_chain_id IN (
+        `inv.rental_chain_id IN (
            SELECT tcl.rental_chain_id
              FROM task_chain_links tcl
             WHERE tcl.job_id = :jobId
-        ))`,
+        )`,
         { jobId },
       )
       .andWhere('inv.status IN (:...paidStatuses)', {
@@ -421,7 +455,7 @@ export class DispatchCreditEnforcementService {
       })
       .limit(1)
       .getOne();
-    return !!match;
+    return !!chainOnlyMatch;
   }
 }
 

@@ -189,29 +189,49 @@ export class DispatchService {
         chain_job_id: string | null;
       }>();
 
-    // Group invoices by candidate job id, considering both direct
-    // and chain links. A single invoice may map to multiple jobs in
-    // the chain case.
+    // Chain-leak fix: invoices with a direct `job_id` are the canonical
+    // payment source for that specific job. Do not cross-link them to
+    // other jobs on the same rental_chain_id. Prior behavior treated any
+    // paid invoice on the chain as satisfying prepay for every job on
+    // the chain, which allowed exchange jobs to dispatch without payment
+    // whenever the original delivery invoice was paid. Chain-only
+    // invoices (invoice.job_id IS NULL) still fall back to chain
+    // matching for legacy compatibility.
     const candidateSet = new Set(candidateIds);
     const invoicesByJob = new Map<
       string,
       Array<{ id: string; status: string }>
     >();
     for (const r of rows) {
-      const matched: string[] = [];
+      // Direct match: invoice.job_id = candidate_job_id. Job-direct
+      // invoices are the canonical payment source for that job; never
+      // let them satisfy prepay for sibling jobs on the same chain.
       if (r.direct_job_id && candidateSet.has(r.direct_job_id)) {
-        matched.push(r.direct_job_id);
+        if (!invoicesByJob.has(r.direct_job_id)) {
+          invoicesByJob.set(r.direct_job_id, []);
+        }
+        invoicesByJob.get(r.direct_job_id)!.push({
+          id: r.invoice_id,
+          status: r.invoice_status,
+        });
+        continue;
       }
+
+      // Chain fallback: legacy support for rental-chain-scoped
+      // invoices that predate the per-job invoicing model. Only fires
+      // when the invoice has no direct job_id (chain-only).
       if (
+        !r.direct_job_id &&
         r.chain_job_id &&
-        candidateSet.has(r.chain_job_id) &&
-        r.chain_job_id !== r.direct_job_id
+        candidateSet.has(r.chain_job_id)
       ) {
-        matched.push(r.chain_job_id);
-      }
-      for (const jid of matched) {
-        if (!invoicesByJob.has(jid)) invoicesByJob.set(jid, []);
-        invoicesByJob.get(jid)!.push({ id: r.invoice_id, status: r.invoice_status });
+        if (!invoicesByJob.has(r.chain_job_id)) {
+          invoicesByJob.set(r.chain_job_id, []);
+        }
+        invoicesByJob.get(r.chain_job_id)!.push({
+          id: r.invoice_id,
+          status: r.invoice_status,
+        });
       }
     }
 
