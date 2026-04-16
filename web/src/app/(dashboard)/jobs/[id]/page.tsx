@@ -1903,35 +1903,29 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
               )}
               <Field label="Priority" value={job.priority} capitalize />
             </div>
-            {/* Dates — context-aware by job type.
-                Phase 15 — sibling dates come from lifecycleStrip
-                (fetched by resolveChainId from the rental-chains
-                lifecycle endpoint) instead of the deleted
-                relatedJobs state. This is the same chain-truth
-                source the Connected Job Lifecycle panel uses, so
-                the Summary card never disagrees with the panel. */}
+            {/* Dates — this job's own scheduled date only.
+                Chain-level sibling dates (delivery date on a pickup
+                job, pickup date on a delivery job, etc.) were
+                removed from this card because they duplicate the
+                Lifecycle Strip above — same values, same chain-
+                truth source. What remains here is strictly the
+                date that belongs to *this* job. */}
             <div className="mt-4 pt-4 border-t border-[var(--t-border)] grid grid-cols-2 gap-4">
               {(() => {
-                const chainDropOffDate = lifecycleStrip?.dropOffDate ?? null;
-                const chainPickupDate = lifecycleStrip?.pickupDate ?? null;
                 if (job.job_type === "delivery") {
-                  return (<>
+                  return (
                     <Field label={FEATURE_REGISTRY.job_detail_delivery_date?.label ?? "Delivery Date"} value={job.scheduled_date ? fmtDateFull(job.scheduled_date) : "—"} />
-                    <Field label={FEATURE_REGISTRY.job_detail_pickup_date?.label ?? "Pickup Date"} value={chainPickupDate ? fmtDateFull(chainPickupDate) : "—"} />
-                  </>);
+                  );
                 }
                 if (job.job_type === "pickup") {
-                  return (<>
-                    <Field label={FEATURE_REGISTRY.job_detail_delivery_date?.label ?? "Delivery Date"} value={chainDropOffDate ? fmtDateFull(chainDropOffDate) : "—"} />
+                  return (
                     <Field label={FEATURE_REGISTRY.job_detail_pickup_date?.label ?? "Pickup Date"} value={job.scheduled_date ? fmtDateFull(job.scheduled_date) : "—"} />
-                  </>);
+                  );
                 }
-                // Exchange: show both contexts
-                return (<>
-                  <Field label={FEATURE_REGISTRY.job_detail_delivery_date?.label ?? "Delivery Date"} value={chainDropOffDate ? fmtDateFull(chainDropOffDate) : "—"} />
+                // Exchange
+                return (
                   <Field label="Exchange Date" value={job.scheduled_date ? fmtDateFull(job.scheduled_date) : "—"} />
-                  {chainPickupDate && <Field label={FEATURE_REGISTRY.job_detail_pickup_date?.label ?? "Pickup Date"} value={fmtDateFull(chainPickupDate)} />}
-                </>);
+                );
               })()}
               <Field label="Time Window" value={
                 job.scheduled_window_start
