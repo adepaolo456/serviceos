@@ -163,47 +163,51 @@ export default function QuickQuoteDrawer() {
       .finally(() => setRulesLoading(false));
   }, [drawerOpen]);
 
-  // Phase D — fetch projected availability for every subtype in the
-  // size pill set in parallel, using today + 7 days as the target
-  // date (quote flow has no firm service date). Confirmed-only so
-  // the signal reflects committed pipeline, not speculative holds.
-  // Errors are swallowed silently — per spec the signal must never
-  // surface error text inside the size selector.
+  // Phase D — fetch projected availability once per drawer open
+  // using the multi-subtype endpoint. Returns an array covering
+  // every subtype in the tenant; we index it into a {subtype →
+  // projected} map consumed inline by each size pill. Target date
+  // is today + 7 days (quote flow has no firm service date).
+  // Confirmed-only so the signal reflects committed pipeline, not
+  // speculative holds. Errors are swallowed silently — the pill
+  // falls back to the "—" loading state per spec.
   useEffect(() => {
-    if (!drawerOpen || rules.length === 0) return;
+    if (!drawerOpen) return;
     const target = new Date();
     target.setDate(target.getDate() + 7);
     const dateStr = target.toISOString().slice(0, 10);
 
     let cancelled = false;
-    Promise.all(
-      rules.map((r) =>
-        api
-          .get<{ projected_available?: number; availableOnDate?: number; availableNow?: number }>(
-            `/assets/availability?subtype=${encodeURIComponent(r.asset_subtype)}&date=${dateStr}&confirmedOnly=true`,
-          )
-          .then((res) => ({
-            subtype: r.asset_subtype,
-            value:
-              typeof res.projected_available === "number"
-                ? res.projected_available
-                : typeof res.availableOnDate === "number"
-                  ? res.availableOnDate
-                  : null,
-          }))
-          .catch(() => ({ subtype: r.asset_subtype, value: null as number | null })),
-      ),
-    ).then((results) => {
-      if (cancelled) return;
-      const map: Record<string, number | null> = {};
-      for (const r of results) map[r.subtype] = r.value;
-      setProjections(map);
-    });
+    api
+      .get<
+        Array<{
+          subtype: string;
+          projected_available?: number;
+          availableOnDate?: number;
+        }>
+      >(`/assets/availability?date=${dateStr}&confirmedOnly=true`)
+      .then((res) => {
+        if (cancelled) return;
+        const rows = Array.isArray(res) ? res : [];
+        const map: Record<string, number | null> = {};
+        for (const r of rows) {
+          map[r.subtype] =
+            typeof r.projected_available === "number"
+              ? r.projected_available
+              : typeof r.availableOnDate === "number"
+                ? r.availableOnDate
+                : null;
+        }
+        setProjections(map);
+      })
+      .catch(() => {
+        // silent — pill stays on loading state
+      });
 
     return () => {
       cancelled = true;
     };
-  }, [drawerOpen, rules]);
+  }, [drawerOpen]);
 
   // No reset-on-open effect needed — provider remounts this component via key on close
 

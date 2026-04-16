@@ -452,48 +452,55 @@ export default function AssetsPage() {
     [sizeGroups],
   );
 
-  // Phase C — fetch projected availability for every active subtype
-  // in parallel. Re-runs on mount, when the active subtype set
-  // changes, when the target date changes, or when the confirmedOnly
-  // toggle flips. Uses the existing `GET /assets/availability`
-  // endpoint fixed in Phase B (commit 46230ca). Does NOT poll —
-  // the data refreshes only on explicit control changes.
+  // Fetch projected availability for the tenant in a single call.
+  // The backend multi-subtype endpoint returns one entry per
+  // DISTINCT assets.subtype — replaces the old per-subtype parallel
+  // Promise.all. Re-runs on mount, when the active subtype set
+  // changes (auto-refresh when a new size is provisioned), when
+  // the target date changes, or when the confirmedOnly toggle
+  // flips. Does NOT poll — data refreshes only on explicit control
+  // changes.
   useEffect(() => {
     if (!projectionSubtypesKey) {
       setProjectionData(null);
       return;
     }
-    const subtypes = projectionSubtypesKey.split(",");
     let cancelled = false;
     setProjectionLoading(true);
     setProjectionError(null);
-    Promise.all(
-      subtypes.map(async (subtype) => {
-        const data = await api.get<{
+    api
+      .get<
+        Array<{
+          subtype: string;
           base_available: number;
           outgoing_count: number;
           incoming_count: number;
           projected_available: number;
           reserved_count: number;
           warnings: string[];
-        }>(
-          `/assets/availability?subtype=${encodeURIComponent(subtype)}` +
-            `&date=${encodeURIComponent(projectionDate)}` +
-            `&confirmedOnly=${projectionConfirmedOnly ? "true" : "false"}`,
+        }>
+      >(
+        `/assets/availability?date=${encodeURIComponent(projectionDate)}` +
+          `&confirmedOnly=${projectionConfirmedOnly ? "true" : "false"}`,
+      )
+      .then((data) => {
+        if (cancelled) return;
+        // Defensive — the multi-subtype path returns an array; the
+        // legacy single-subtype shape was an object. If something
+        // upstream misroutes and returns a single object we fall
+        // back to an empty list rather than rendering garbage.
+        const rows = Array.isArray(data) ? data : [];
+        setProjectionData(
+          rows.map((r) => ({
+            subtype: r.subtype,
+            base_available: r.base_available ?? 0,
+            outgoing_count: r.outgoing_count ?? 0,
+            incoming_count: r.incoming_count ?? 0,
+            projected_available: r.projected_available ?? 0,
+            reserved_count: r.reserved_count ?? 0,
+            warnings: Array.isArray(r.warnings) ? r.warnings : [],
+          })),
         );
-        return {
-          subtype,
-          base_available: data.base_available ?? 0,
-          outgoing_count: data.outgoing_count ?? 0,
-          incoming_count: data.incoming_count ?? 0,
-          projected_available: data.projected_available ?? 0,
-          reserved_count: data.reserved_count ?? 0,
-          warnings: Array.isArray(data.warnings) ? data.warnings : [],
-        };
-      }),
-    )
-      .then((results) => {
-        if (!cancelled) setProjectionData(results);
       })
       .catch(() => {
         if (!cancelled) {
