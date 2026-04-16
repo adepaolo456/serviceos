@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo, type FormEvent } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef, type FormEvent } from "react";
 import {
   Plus,
   Box,
@@ -383,13 +383,52 @@ export default function AssetsPage() {
     } catch { /* fall through */ }
   }, []);
 
-  // Sections LS — persist on change.
+  // Sections LS — persist on change. Only persist when statusFilter
+  // is "all" (user-manual state). Tile-driven section overrides are
+  // ephemeral and should NOT pollute the saved preference — otherwise
+  // switching back to "All" would restore a tile-driven snapshot
+  // instead of the user's manual preference.
   useEffect(() => {
     if (typeof window === "undefined") return;
+    if (statusFilter !== "all") return;
     try {
       window.localStorage.setItem(SECTIONS_LS_KEY, JSON.stringify(sectionOpen));
     } catch { /* quota / private mode */ }
-  }, [sectionOpen]);
+  }, [sectionOpen, statusFilter]);
+
+  // Tile → section auto-expand. When a status tile is active, open
+  // ONLY the matching section and close the rest. When "All" is
+  // restored, re-apply the user's manual open/closed preference
+  // from before the tile was selected. Uses a ref to stash the
+  // manual state so it survives across renders without triggering
+  // unnecessary re-renders.
+  const manualSectionOpenRef = useRef<Record<string, boolean> | null>(null);
+  useEffect(() => {
+    const keyMap: Record<string, string> = {
+      available: "available",
+      on_site: "deployed",
+      reserved: "staged",
+      maintenance: "maintenance",
+    };
+    if (statusFilter === "all") {
+      if (manualSectionOpenRef.current) {
+        setSectionOpen(manualSectionOpenRef.current);
+        manualSectionOpenRef.current = null;
+      }
+    } else {
+      const sectionKey = keyMap[statusFilter];
+      if (sectionKey) {
+        setSectionOpen((prev) => {
+          if (!manualSectionOpenRef.current) {
+            manualSectionOpenRef.current = { ...prev };
+          }
+          const next: Record<string, boolean> = {};
+          for (const k of Object.keys(prev)) next[k] = k === sectionKey;
+          return next;
+        });
+      }
+    }
+  }, [statusFilter]);
 
   const sizeGroups: SizeGroup[] = useMemo(() => {
     return SIZES.map((size) => {
@@ -704,83 +743,6 @@ export default function AssetsPage() {
         </div>
       )}
 
-      {/* ─── Filter Tabs (Segmented Pills) — collapsible ─── */}
-      {!loading && (
-        <div className="mb-6">
-          <button
-            type="button"
-            onClick={() => setShowFilters((v) => !v)}
-            aria-expanded={showFilters}
-            aria-controls="assets-filter-tabs"
-            className="w-full flex items-center justify-between px-4 py-2 mb-3 rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] hover:bg-[var(--t-bg-card-hover)] transition-colors cursor-pointer"
-          >
-            <span className="text-sm font-semibold text-[var(--t-text-primary)]">
-              {FEATURE_REGISTRY.assets_filters_section?.label ?? "Filters"}
-            </span>
-            <ChevronDown
-              className="h-4 w-4 text-[var(--t-text-muted)] transition-transform duration-150 ease-out"
-              style={{ transform: showFilters ? "rotate(0deg)" : "rotate(-90deg)" }}
-            />
-          </button>
-          {showFilters && (
-            <div id="assets-filter-tabs" className="flex items-center gap-3 flex-wrap">
-              {/* Status group */}
-              <div style={{ display: "inline-flex", borderRadius: 22, backgroundColor: "var(--t-bg-secondary)", border: "1px solid var(--t-border)", padding: 3, gap: 2 }}>
-                {STATUS_FILTERS.map((s) => {
-                  const isActive = statusFilter === s;
-                  const count = s === "all"
-                    ? assets.length
-                    : s === "on_site"
-                      ? assets.filter((a) => a.status === "on_site" || a.status === "deployed").length
-                      : assets.filter((a) => a.status === s).length;
-                  return (
-                    <button
-                      key={s}
-                      onClick={() => setStatusFilter(s)}
-                      style={{
-                        display: "inline-flex", alignItems: "center", gap: 5,
-                        padding: "5px 12px", borderRadius: 18, fontSize: 12, fontWeight: 600,
-                        background: isActive ? "var(--t-accent)" : "transparent",
-                        color: isActive ? "#fff" : "var(--t-text-muted)",
-                        border: "none", transition: "all 0.15s ease", cursor: "pointer",
-                      }}
-                    >
-                      {STATUS_LABELS[s]}
-                      <span style={{ fontSize: 10, fontWeight: 700, opacity: isActive ? 0.85 : 0.6 }}>{count}</span>
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* Size group */}
-              {sizeGroups.length > 0 && (
-                <div style={{ display: "inline-flex", borderRadius: 22, backgroundColor: "var(--t-bg-secondary)", border: "1px solid var(--t-border)", padding: 3, gap: 2 }}>
-                  {sizeGroups.map((g) => {
-                    const isActive = selectedSize === g.size;
-                    return (
-                      <button
-                        key={g.size}
-                        onClick={() => handleTileClick(g.size)}
-                        style={{
-                          display: "inline-flex", alignItems: "center", gap: 5,
-                          padding: "5px 12px", borderRadius: 18, fontSize: 12, fontWeight: 600,
-                          background: isActive ? "var(--t-accent)" : "transparent",
-                          color: isActive ? "#fff" : "var(--t-text-muted)",
-                          border: "none", transition: "all 0.15s ease", cursor: "pointer",
-                        }}
-                      >
-                        {g.size}
-                        <span style={{ fontSize: 10, fontWeight: 700, opacity: isActive ? 0.85 : 0.6 }}>{g.total}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-
       {/* Last updated + refresh */}
       {!loading && (
         <div className="flex items-center gap-2 mb-4" style={{ fontSize: 11, color: "var(--t-frame-text-muted)" }}>
@@ -1058,6 +1020,34 @@ export default function AssetsPage() {
                 })()}
             </div>
           )}
+        </div>
+      )}
+
+      {/* ─── Size pills (status pills removed — tiles are the
+          primary status control now) ─── */}
+      {!loading && sizeGroups.length > 0 && (
+        <div className="mb-6 flex items-center gap-3 flex-wrap">
+          <div style={{ display: "inline-flex", borderRadius: 22, backgroundColor: "var(--t-bg-secondary)", border: "1px solid var(--t-border)", padding: 3, gap: 2 }}>
+            {sizeGroups.map((g) => {
+              const isActive = selectedSize === g.size;
+              return (
+                <button
+                  key={g.size}
+                  onClick={() => handleTileClick(g.size)}
+                  style={{
+                    display: "inline-flex", alignItems: "center", gap: 5,
+                    padding: "5px 12px", borderRadius: 18, fontSize: 12, fontWeight: 600,
+                    background: isActive ? "var(--t-accent)" : "transparent",
+                    color: isActive ? "#fff" : "var(--t-text-muted)",
+                    border: "none", transition: "all 0.15s ease", cursor: "pointer",
+                  }}
+                >
+                  {g.size}
+                  <span style={{ fontSize: 10, fontWeight: 700, opacity: isActive ? 0.85 : 0.6 }}>{g.total}</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
       )}
 
