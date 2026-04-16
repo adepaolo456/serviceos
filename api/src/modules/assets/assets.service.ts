@@ -1,13 +1,27 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In } from 'typeorm';
+import { Repository, In, DataSource } from 'typeorm';
 import { Asset } from './entities/asset.entity';
 import { Job } from '../jobs/entities/job.entity';
+import { TenantSettings } from '../tenant-settings/entities/tenant-settings.entity';
+import { getTenantToday } from '../../common/utils/tenant-date.util';
 import {
   CreateAssetDto,
   UpdateAssetDto,
   ListAssetsQueryDto,
 } from './dto/asset.dto';
+
+// Phase B — job statuses that mean "job is no longer consuming inventory
+// for projection purposes". Terminal states (completed/cancelled) plus
+// failed and needs_reschedule — both of which leave the asset in a
+// distinct physical state but are no longer committing new capacity
+// against the projection window.
+const TERMINAL_JOB_STATUSES = [
+  'completed',
+  'cancelled',
+  'failed',
+  'needs_reschedule',
+] as const;
 
 @Injectable()
 export class AssetsService {
@@ -16,7 +30,26 @@ export class AssetsService {
     private assetsRepository: Repository<Asset>,
     @InjectRepository(Job)
     private jobsRepository: Repository<Job>,
+    // DataSource is a globally-registered provider by `TypeOrmModule.forRoot`.
+    // Used only by `loadTenantTimezone` to read `tenant_settings` without
+    // requiring `TenantSettings` to be added to this module's
+    // `TypeOrmModule.forFeature([...])` list. Mirrors the
+    // `JobsService.loadTenantTimezone` pattern.
+    private dataSource: DataSource,
   ) {}
+
+  /**
+   * Phase B — tenant-local timezone resolver. Mirrors
+   * `JobsService.loadTenantTimezone`. Fallback is `undefined` so
+   * `getTenantToday()` uses its canonical default of America/New_York.
+   */
+  private async loadTenantTimezone(
+    tenantId: string,
+  ): Promise<string | undefined> {
+    const repo = this.dataSource.getRepository(TenantSettings);
+    const s = await repo.findOne({ where: { tenant_id: tenantId } });
+    return s?.timezone ?? undefined;
+  }
 
   async create(tenantId: string, dto: CreateAssetDto): Promise<Asset> {
     const asset = this.assetsRepository.create({
@@ -166,57 +199,212 @@ export class AssetsService {
     await this.assetsRepository.update(assetId, { operational_history: history } as any);
   }
 
+  /**
+   * Phase B — Projected asset availability for a target date.
+   *
+   * Formula:
+   *
+   *   base_available   = COUNT(assets.status = 'available'
+   *                            AND subtype = :subtype
+   *                            AND needs_dump = false
+   *                            AND current_job_id IS NULL)
+   *   outgoing_count   = COUNT(jobs.job_type IN ('delivery','exchange')
+   *                            AND jobs.asset_subtype = :subtype
+   *                            AND jobs.scheduled_date <= :targetDate
+   *                            AND jobs.status NOT IN (TERMINAL_JOB_STATUSES))
+   *   incoming_count   = COUNT(jobs.job_type = 'pickup'
+   *                            AND jobs.asset_subtype = :subtype
+   *                            AND jobs.scheduled_date <= :targetDate
+   *                            AND jobs.status NOT IN (TERMINAL_JOB_STATUSES))
+   *   projected        = max(0, base_available + incoming_count - outgoing_count)
+   *
+   * Key decisions (vs. the pre-Phase-B implementation):
+   * - Uses `getTenantToday(tz)` for today rather than UTC rollover.
+   * - Job queries are subtype-filtered by `job.asset_subtype` (not by
+   *   joining through `asset.subtype`, because under Phase B2
+   *   `asset_id` may be null pre-completion).
+   * - Status exclusion set widens to include `failed` and
+   *   `needs_reschedule` (previously only completed/cancelled).
+   * - Date filter is symmetric: `scheduled_date <= :target` on both
+   *   sides. No `>= today` lower bound — past-due active jobs count
+   *   as committed inventory, which matches operational reality.
+   * - Base excludes `reserved` (legacy pre-B2 state) to avoid
+   *   double-counting with the delivery in the outgoing set.
+   * - Exchange is counted delivery-side only; pickup-side subtype
+   *   requires rental-chain traversal which is deferred to a later
+   *   phase. A warning is emitted when exchanges are present.
+   * - `dump_run` / `dump_and_return` are ignored (net-zero at day
+   *   granularity).
+   *
+   * `confirmedOnly=true` additionally excludes `pending` jobs from
+   * both the outgoing and incoming sets — a conservative view for
+   * planning use cases that only want firmly-committed capacity.
+   */
   async getAvailability(
     tenantId: string,
     subtype: string,
     date?: string,
+    options: { confirmedOnly?: boolean } = {},
   ) {
-    const targetDate = date || new Date().toISOString().split('T')[0];
-    const todayStr = new Date().toISOString().split('T')[0];
+    const { confirmedOnly = false } = options;
 
-    // Count assets by status
+    // Tenant-local today — replaces the UTC-rollover bug. After 8pm
+    // Eastern, `new Date().toISOString().split('T')[0]` would return
+    // tomorrow's date in the tenant's local frame. `getTenantToday`
+    // resolves via tenant_settings.timezone.
+    const tz = await this.loadTenantTimezone(tenantId);
+    const todayStr = getTenantToday(tz);
+    const targetDate = date || todayStr;
+
+    // Fetch all assets matching subtype for the informational counts
+    // (deployed/reserved/in_transit/maintenance) that the old response
+    // shape returns. The strict base filter is applied in-memory on
+    // this fetched list so we don't hit the DB twice.
     const assets = await this.assetsRepository.find({
       where: { tenant_id: tenantId, subtype },
     });
 
     const total = assets.length;
-    const deployed = assets.filter((a) => a.status === 'on_site' || a.status === 'deployed').length;
+    const deployed = assets.filter(
+      (a) => a.status === 'on_site' || a.status === 'deployed',
+    ).length;
     const reserved = assets.filter((a) => a.status === 'reserved').length;
     const inTransit = assets.filter((a) => a.status === 'in_transit').length;
     const maintenance = assets.filter((a) => a.status === 'maintenance').length;
-    const availableNow = assets.filter((a) => a.status === 'available').length;
 
-    // Count pickup jobs scheduled between now and target date
-    let pickupsBeforeDate = 0;
-    if (targetDate > todayStr) {
-      const pickups = await this.jobsRepository
-        .createQueryBuilder('j')
-        .where('j.tenant_id = :tenantId', { tenantId })
-        .andWhere('j.job_type = :type', { type: 'pickup' })
-        .andWhere('j.status NOT IN (:...excluded)', { excluded: ['completed', 'cancelled'] })
-        .andWhere('j.scheduled_date >= :today', { today: todayStr })
-        .andWhere('j.scheduled_date <= :target', { target: targetDate })
-        .getCount();
-      pickupsBeforeDate = pickups;
+    // Strict base filter — status='available' AND not pending dump
+    // AND not referentially held by any job. Matches the stricter
+    // filter used by `findAvailable` above and excludes every known
+    // "out of inventory" condition without trusting any single flag.
+    const availableNow = assets.filter(
+      (a) =>
+        a.status === 'available' &&
+        !a.needs_dump &&
+        !a.current_job_id,
+    ).length;
+
+    // Expand the terminal set with `pending` when the caller wants
+    // only firmly-committed capacity.
+    const excludedStatuses: string[] = [
+      ...TERMINAL_JOB_STATUSES,
+      ...(confirmedOnly ? ['pending'] : []),
+    ];
+
+    // Outgoing — deliveries + exchange (drop-off side). Exchange is
+    // matched via `asset_subtype`, which per
+    // `pricing.service.ts:274-275` stores the drop-off (new) subtype
+    // on exchange jobs. The pickup-side subtype (the old dumpster)
+    // is not derivable from the job row alone and is intentionally
+    // ignored in Phase B — chain traversal is a later phase.
+    const outgoingJobs = await this.jobsRepository
+      .createQueryBuilder('j')
+      .select([
+        'j.id',
+        'j.job_number',
+        'j.scheduled_date',
+        'j.status',
+        'j.job_type',
+      ])
+      .where('j.tenant_id = :tenantId', { tenantId })
+      .andWhere('j.job_type IN (:...outTypes)', {
+        outTypes: ['delivery', 'exchange'],
+      })
+      .andWhere('j.asset_subtype = :subtype', { subtype })
+      .andWhere('j.status NOT IN (:...excluded)', {
+        excluded: excludedStatuses,
+      })
+      .andWhere('j.scheduled_date IS NOT NULL')
+      .andWhere('j.scheduled_date <= :target', { target: targetDate })
+      .orderBy('j.scheduled_date', 'ASC')
+      .getMany();
+
+    // Incoming — pickups that return inventory by the target date.
+    // Same subtype key and same status exclusion set as outgoing so
+    // the two sides are consistent.
+    const incomingJobs = await this.jobsRepository
+      .createQueryBuilder('j')
+      .select([
+        'j.id',
+        'j.job_number',
+        'j.scheduled_date',
+        'j.status',
+        'j.job_type',
+      ])
+      .where('j.tenant_id = :tenantId', { tenantId })
+      .andWhere('j.job_type = :type', { type: 'pickup' })
+      .andWhere('j.asset_subtype = :subtype', { subtype })
+      .andWhere('j.status NOT IN (:...excluded)', {
+        excluded: excludedStatuses,
+      })
+      .andWhere('j.scheduled_date IS NOT NULL')
+      .andWhere('j.scheduled_date <= :target', { target: targetDate })
+      .orderBy('j.scheduled_date', 'ASC')
+      .getMany();
+
+    const outgoingCount = outgoingJobs.length;
+    const incomingCount = incomingJobs.length;
+    const projectedAvailable = Math.max(
+      0,
+      availableNow + incomingCount - outgoingCount,
+    );
+
+    // Stale past-due count — active jobs with scheduled_date strictly
+    // before today. Computed in SQL to avoid ambiguity around how
+    // TypeORM serializes DATE columns (string vs Date object).
+    const stalePastDue = await this.jobsRepository
+      .createQueryBuilder('j')
+      .where('j.tenant_id = :tenantId', { tenantId })
+      .andWhere('j.asset_subtype = :subtype', { subtype })
+      .andWhere('j.job_type IN (:...outTypes)', {
+        outTypes: ['delivery', 'exchange'],
+      })
+      .andWhere('j.status NOT IN (:...excluded)', {
+        excluded: excludedStatuses,
+      })
+      .andWhere('j.scheduled_date IS NOT NULL')
+      .andWhere('j.scheduled_date < :today', { today: todayStr })
+      .getCount();
+
+    // Exchange count from the outgoing list — safe in-memory check
+    // because `j.job_type` is a plain string column.
+    const exchangeInOutgoing = outgoingJobs.filter(
+      (j) => j.job_type === 'exchange',
+    ).length;
+
+    // Deterministic warnings. Strings are plain English, contain no
+    // PII, and are safe to render directly in an operator UI.
+    const warnings: string[] = [];
+    if (reserved > 0) {
+      warnings.push(
+        `${reserved} asset(s) in subtype '${subtype}' are marked 'reserved' (legacy pre-B2 state) and are excluded from base_available. Their linked delivery jobs are already counted in outgoing_count — including reserved in the base would double-subtract.`,
+      );
+    }
+    if (stalePastDue > 0) {
+      warnings.push(
+        `${stalePastDue} active delivery/exchange job(s) have scheduled_date before today (${todayStr}). They are included in outgoing_count as committed capacity, but likely represent stale data that should be completed or cancelled.`,
+      );
+    }
+    if (exchangeInOutgoing > 0) {
+      warnings.push(
+        `${exchangeInOutgoing} exchange job(s) are counted as delivery-side only in Phase B. The pickup-side subtype (the dumpster being removed) is not derivable from the job row alone — chain-traversal derivation is deferred to a later phase.`,
+      );
     }
 
-    // Count delivery/exchange jobs booked for dates between now and target
-    let reservedForDate = 0;
-    if (targetDate > todayStr) {
-      const futureBookings = await this.jobsRepository
-        .createQueryBuilder('j')
-        .where('j.tenant_id = :tenantId', { tenantId })
-        .andWhere('j.job_type IN (:...types)', { types: ['delivery', 'exchange'] })
-        .andWhere('j.status NOT IN (:...excluded)', { excluded: ['completed', 'cancelled'] })
-        .andWhere('j.scheduled_date > :today', { today: todayStr })
-        .andWhere('j.scheduled_date <= :target', { target: targetDate })
-        .getCount();
-      reservedForDate = futureBookings;
-    }
-
-    const availableOnDate = Math.max(0, availableNow + pickupsBeforeDate - reservedForDate);
+    // Lightweight mapper for job breakdown in the response
+    const mapJob = (j: Job) => ({
+      id: j.id,
+      job_number: j.job_number,
+      scheduled_date: j.scheduled_date,
+      status: j.status,
+      job_type: j.job_type,
+    });
 
     return {
+      // ── Backward-compat fields (existing response shape) ──
+      // The projection endpoint has been returning this exact shape
+      // since before Phase B. Preserved verbatim so any existing
+      // consumer (frontend widgets, dispatch board, tests) doesn't
+      // break. New canonical field names below.
       subtype,
       date: targetDate,
       total,
@@ -225,9 +413,28 @@ export class AssetsService {
       inTransit,
       maintenance,
       availableNow,
-      pickupsBeforeDate,
-      reservedForDate,
-      availableOnDate,
+      // Legacy name kept — value now matches the corrected formula.
+      // Before Phase B this counted pickups between today and target;
+      // after Phase B it counts every active pickup with
+      // scheduled_date <= target (including past-due, which is
+      // correct — past-due pickups still represent committed
+      // incoming capacity).
+      pickupsBeforeDate: incomingCount,
+      // Legacy name kept — value now matches the corrected formula.
+      reservedForDate: outgoingCount,
+      availableOnDate: projectedAvailable,
+
+      // ── Phase B canonical fields ──
+      target_date: targetDate,
+      base_available: availableNow,
+      outgoing_count: outgoingCount,
+      incoming_count: incomingCount,
+      projected_available: projectedAvailable,
+      reserved_count: reserved,
+      confirmed_only: confirmedOnly,
+      outgoing_jobs: outgoingJobs.map(mapJob),
+      incoming_jobs: incomingJobs.map(mapJob),
+      warnings,
     };
   }
 }
