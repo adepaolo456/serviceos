@@ -41,6 +41,8 @@ import { FEATURE_REGISTRY } from "@/lib/feature-registry";
 // intentionally session-scoped and reset on each visit.
 const PROJECTION_LS_KEY = "serviceos_assets_projection";
 const FILTERS_LS_KEY = "serviceos_assets_filters";
+const SECTIONS_LS_KEY = "serviceos_assets_sections";
+const ASSET_PAGE_SIZE = 25;
 
 // Phase C — default target date for the projection panel: local
 // today + 7 days. The backend authoritatively interprets the date
@@ -352,6 +354,43 @@ export default function AssetsPage() {
     } catch { /* quota / private mode */ }
   }, [showFilters]);
 
+  // Sectioned asset list — collapse + pagination state. Open/closed
+  // is persisted via `SECTIONS_LS_KEY`; per-section page numbers
+  // reset each visit (session-only). Defaults: Available=open, the
+  // rest collapsed — operators typically care about free inventory.
+  const [sectionOpen, setSectionOpen] = useState<Record<string, boolean>>({
+    available: true,
+    deployed: false,
+    staged: false,
+    maintenance: false,
+  });
+  const [sectionPages, setSectionPages] = useState<Record<string, number>>({});
+
+  // Sections LS — load on mount.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const raw = window.localStorage.getItem(SECTIONS_LS_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as Record<string, unknown>;
+      const next: Record<string, boolean> = {};
+      for (const k of ["available", "deployed", "staged", "maintenance"]) {
+        if (typeof parsed[k] === "boolean") next[k] = parsed[k] as boolean;
+      }
+      if (Object.keys(next).length > 0) {
+        setSectionOpen((prev) => ({ ...prev, ...next }));
+      }
+    } catch { /* fall through */ }
+  }, []);
+
+  // Sections LS — persist on change.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem(SECTIONS_LS_KEY, JSON.stringify(sectionOpen));
+    } catch { /* quota / private mode */ }
+  }, [sectionOpen]);
+
   const sizeGroups: SizeGroup[] = useMemo(() => {
     return SIZES.map((size) => {
       const sizeAssets = assets.filter((a) => a.subtype === size);
@@ -454,6 +493,47 @@ export default function AssetsPage() {
     result.sort((a, b) => a.identifier.localeCompare(b.identifier));
     return result;
   }, [assets, selectedSize, statusFilter, searchQuery]);
+
+  // Sectioned groups — splits filteredAssets by status for the
+  // Jobs-style segmented list view. Filtering + search happens
+  // first (in filteredAssets); then this memo groups the results.
+  // Sections with zero rows are hidden at render time. Section
+  // order matches the KPI tiles: Available → Deployed → Staged →
+  // Maintenance. An "other" catch-all captures any statuses not
+  // covered (in_transit, full_staged, retired, etc.).
+  const assetSections = useMemo(() => {
+    const sections = [
+      {
+        key: "available",
+        label: FEATURE_REGISTRY.assets_available_section?.label ?? "Available Assets",
+        assets: filteredAssets.filter((a) => a.status === "available"),
+      },
+      {
+        key: "deployed",
+        label: FEATURE_REGISTRY.assets_deployed_section?.label ?? "Deployed Assets",
+        assets: filteredAssets.filter(
+          (a) => a.status === "on_site" || a.status === "deployed",
+        ),
+      },
+      {
+        key: "staged",
+        label: FEATURE_REGISTRY.assets_staged_section?.label ?? "Staged Assets",
+        assets: filteredAssets.filter((a) => a.status === "reserved"),
+      },
+      {
+        key: "maintenance",
+        label: FEATURE_REGISTRY.assets_maintenance_section?.label ?? "Maintenance Assets",
+        assets: filteredAssets.filter((a) => a.status === "maintenance"),
+      },
+    ];
+    // Catch-all for statuses not in the four main groups
+    const coveredIds = new Set(sections.flatMap((s) => s.assets.map((a) => a.id)));
+    const other = filteredAssets.filter((a) => !coveredIds.has(a.id));
+    if (other.length > 0) {
+      sections.push({ key: "other", label: "Other", assets: other });
+    }
+    return sections;
+  }, [filteredAssets]);
 
   const overdueAssets = useMemo(() => {
     const today = new Date().toISOString().split("T")[0];
@@ -1126,8 +1206,139 @@ export default function AssetsPage() {
           )}
         </div>
       ) : viewMode === "list" ? (
-        <ListView assets={filteredAssets} onSelect={setDetailAsset} onQuickStatus={quickStatus} onEdit={setEditAsset} onDelete={deleteAsset}
-          bulkMode={bulkMode} selectedIds={selectedIds} onToggleSelect={toggleSelect} onToggleSelectAll={toggleSelectAll} />
+        /* Jobs-style sectioned list view. Each status group gets its
+           own collapsible header, per-section pagination, and a
+           "Showing X–Y of Z" footer. Sections with zero rows are
+           hidden. Bulk-selection is GLOBAL — `selectedIds` is the
+           same Set across all sections, and the per-section
+           onToggleSelectAll callback uses `setSelectedIds(prev=>...)`
+           so selections in one section don't clobber selections in
+           another. Grid view stays flat (unchanged). */
+        <div className="space-y-6">
+          {assetSections.map((section) => {
+            if (section.assets.length === 0) return null;
+            const isOpen = sectionOpen[section.key] ?? false;
+            const page = sectionPages[section.key] ?? 1;
+            const total = section.assets.length;
+            const start = (page - 1) * ASSET_PAGE_SIZE;
+            const end = Math.min(start + ASSET_PAGE_SIZE, total);
+            const pageAssets = section.assets.slice(start, end);
+            const totalPages = Math.ceil(total / ASSET_PAGE_SIZE);
+            return (
+              <div key={section.key}>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setSectionOpen((prev) => ({
+                      ...prev,
+                      [section.key]: !prev[section.key],
+                    }))
+                  }
+                  aria-expanded={isOpen}
+                  className="w-full flex items-center justify-between px-4 py-2 mb-3 rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] hover:bg-[var(--t-bg-card-hover)] transition-colors cursor-pointer"
+                >
+                  <span className="text-sm font-semibold text-[var(--t-text-primary)]">
+                    {section.label}
+                    <span className="ml-2 text-xs font-normal text-[var(--t-text-muted)]">
+                      ({total})
+                    </span>
+                  </span>
+                  <ChevronDown
+                    className="h-4 w-4 text-[var(--t-text-muted)] transition-transform duration-150 ease-out"
+                    style={{
+                      transform: isOpen ? "rotate(0deg)" : "rotate(-90deg)",
+                    }}
+                  />
+                </button>
+                {isOpen && (
+                  <>
+                    <ListView
+                      assets={pageAssets}
+                      onSelect={setDetailAsset}
+                      onQuickStatus={quickStatus}
+                      onEdit={setEditAsset}
+                      onDelete={deleteAsset}
+                      bulkMode={bulkMode}
+                      selectedIds={selectedIds}
+                      onToggleSelect={toggleSelect}
+                      onToggleSelectAll={() => {
+                        const ids = pageAssets.map((a) => a.id);
+                        setSelectedIds((prev) => {
+                          const allSelected = ids.every((id) =>
+                            prev.has(id),
+                          );
+                          const next = new Set(prev);
+                          if (allSelected) {
+                            ids.forEach((id) => next.delete(id));
+                          } else {
+                            ids.forEach((id) => next.add(id));
+                          }
+                          return next;
+                        });
+                      }}
+                    />
+                    {totalPages > 1 && (
+                      <div
+                        className="mt-3 flex items-center justify-between"
+                        style={{
+                          fontSize: 13,
+                          color: "var(--t-text-muted)",
+                        }}
+                      >
+                        <span>
+                          Showing {start + 1}–{end} of {total}
+                        </span>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() =>
+                              setSectionPages((prev) => ({
+                                ...prev,
+                                [section.key]: Math.max(1, page - 1),
+                              }))
+                            }
+                            disabled={page === 1}
+                            className="btn-ghost"
+                            style={{
+                              padding: "5px 12px",
+                              fontSize: 12,
+                              border: "1px solid var(--t-border)",
+                              borderRadius: 8,
+                              opacity: page === 1 ? 0.4 : 1,
+                            }}
+                          >
+                            Previous
+                          </button>
+                          <button
+                            onClick={() =>
+                              setSectionPages((prev) => ({
+                                ...prev,
+                                [section.key]: Math.min(
+                                  totalPages,
+                                  page + 1,
+                                ),
+                              }))
+                            }
+                            disabled={page === totalPages}
+                            className="btn-ghost"
+                            style={{
+                              padding: "5px 12px",
+                              fontSize: 12,
+                              border: "1px solid var(--t-border)",
+                              borderRadius: 8,
+                              opacity: page === totalPages ? 0.4 : 1,
+                            }}
+                          >
+                            Next
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            );
+          })}
+        </div>
       ) : (
         <GridView assets={filteredAssets} onSelect={setDetailAsset} onQuickStatus={quickStatus} />
       )}
@@ -1217,7 +1428,7 @@ function ListView({ assets, onSelect, onQuickStatus, onEdit, onDelete, bulkMode,
             <tr style={{ borderBottom: "1px solid var(--t-border)" }}>
               {bulkMode && (
                 <th style={{ padding: "12px 8px 12px 16px", width: 36 }}>
-                  <input type="checkbox" checked={selectedIds?.size === assets.length && assets.length > 0} onChange={onToggleSelectAll}
+                  <input type="checkbox" checked={assets.length > 0 && assets.every((a) => selectedIds?.has(a.id))} onChange={onToggleSelectAll}
                     className="h-4 w-4 rounded accent-[var(--t-accent)]" />
                 </th>
               )}
