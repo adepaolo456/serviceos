@@ -1567,7 +1567,29 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
                 label={FEATURE_REGISTRY.job_dumpster_size?.label ?? "Dumpster Size"}
                 value={(job.rental_chain_dumpster_size || job.asset_subtype || "—") as string}
               />
-              <Field label="Asset" value={job.asset ? `${job.asset.identifier} (${job.asset.subtype})` : "None assigned"} />
+              {/* Phase B2 pilot UX — delivery jobs no longer have
+                  asset_id pre-populated; the driver (or an office
+                  override) captures it at completion. A flat
+                  "None assigned" reads as broken state to office
+                  users, so pre-completion delivery jobs get an
+                  explicit "Not yet assigned" primary line plus a
+                  muted "Captured at completion" helper to explain
+                  the new workflow. Completed deliveries and every
+                  other job type fall through to the original
+                  single-line Field display unchanged. */}
+              {job.job_type === "delivery" && job.status !== "completed" && !job.asset_id ? (
+                <div>
+                  <p className="text-xs text-[var(--t-text-muted)] mb-0.5">Asset</p>
+                  <p className="text-sm text-[var(--t-text-primary)] font-medium">
+                    {FEATURE_REGISTRY.delivery_asset_pending_label?.label ?? "Not yet assigned"}
+                  </p>
+                  <p className="text-xs text-[var(--t-text-muted)] mt-0.5">
+                    {FEATURE_REGISTRY.delivery_asset_captured_hint?.label ?? "Captured at completion"}
+                  </p>
+                </div>
+              ) : (
+                <Field label="Asset" value={job.asset ? `${job.asset.identifier} (${job.asset.subtype})` : "None assigned"} />
+              )}
               <Field label="Priority" value={job.priority} capitalize />
             </div>
             {/* Dates — context-aware by job type.
@@ -2118,6 +2140,27 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
                           </p>
                         </div>
                       )}
+                    </>
+                  ) : /* Phase B2 pilot UX — a pre-completion delivery
+                       with no pickup-side asset is no longer an error
+                       state; it's the expected state under the new
+                       "capture at completion" model. Show the
+                       pending/helper messaging instead of the red
+                       "No asset recorded" string. Exchange drop-off
+                       cards, pickup jobs, and every other case
+                       continue to use the existing emptyLabel in
+                       error color so legacy missing-asset states
+                       stay visible. */
+                  role === "pickup" &&
+                    job.job_type === "delivery" &&
+                    job.status !== "completed" ? (
+                    <>
+                      <p className="text-sm font-medium text-[var(--t-text-primary)]">
+                        {FEATURE_REGISTRY.delivery_asset_pending_label?.label ?? "Not yet assigned"}
+                      </p>
+                      <p className="text-xs text-[var(--t-text-muted)] mt-0.5">
+                        {FEATURE_REGISTRY.delivery_asset_captured_hint?.label ?? "Captured at completion"}
+                      </p>
                     </>
                   ) : (
                     <p className="text-sm text-[var(--t-error)]">{emptyLabel}</p>
