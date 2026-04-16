@@ -11,6 +11,7 @@ import { FEATURE_REGISTRY } from "@/lib/feature-registry";
 import { deriveDisplayStatus, DISPLAY_STATUS_LABELS, displayStatusColor } from "@/lib/job-status";
 import { broadcastLifecycleChange } from "@/lib/lifecycle-sync";
 import { navigateBack } from "@/lib/navigation";
+import ScheduleExchangeModal from "@/components/schedule-exchange-modal";
 
 /* ── Types (from /rental-chains/:id/lifecycle response) ── */
 
@@ -233,31 +234,21 @@ export default function RentalLifecyclePage({ params }: { params: Promise<{ id: 
   const [pickupDate, setPickupDate] = useState("");
   const [pickupSaving, setPickupSaving] = useState(false);
   const [pickupError, setPickupError] = useState("");
-  // Schedule exchange modal state
-  const [exchangeModalOpen, setExchangeModalOpen] = useState(false);
-  const [exchangeDate, setExchangeDate] = useState("");
-  const [exchangeSize, setExchangeSize] = useState("");
-  const [exchangeOverridePickup, setExchangeOverridePickup] = useState("");
-  const [exchangeSaving, setExchangeSaving] = useState(false);
-  const [exchangeError, setExchangeError] = useState("");
-  // Active dumpster sizes from tenant pricing rules — driven by
-  // `pricing_rules.asset_subtype` where is_active=true. Fetched once
-  // when the modal first opens so typical page loads stay lean.
-  const [availableSizes, setAvailableSizes] = useState<string[] | null>(null);
-  const [sizesLoading, setSizesLoading] = useState(false);
+  // Phase 4b-extract — replaced inline exchange state with lightweight
+  // open-state flags. The shared <ScheduleExchangeModal /> component
+  // owns all form state, validation, pricing fetch, submit, and
+  // broadcastLifecycleChange internally.
+  const [createExchangeOpen, setCreateExchangeOpen] = useState(false);
+  const [editExchange, setEditExchange] = useState<{
+    linkId: string;
+    currentDate: string;
+  } | null>(null);
   // Edit delivery date modal state
   const [deliveryModalOpen, setDeliveryModalOpen] = useState(false);
   const [deliveryDate, setDeliveryDate] = useState("");
   const [deliveryShift, setDeliveryShift] = useState(true);
   const [deliverySaving, setDeliverySaving] = useState(false);
   const [deliveryError, setDeliveryError] = useState("");
-  // Edit existing exchange modal state (keyed by linkId so the
-  // timeline pencil icon opens the modal for the specific exchange row)
-  const [editExchangeLinkId, setEditExchangeLinkId] = useState<string | null>(null);
-  const [editExchangeDate, setEditExchangeDate] = useState("");
-  const [editExchangeOverride, setEditExchangeOverride] = useState("");
-  const [editExchangeSaving, setEditExchangeSaving] = useState(false);
-  const [editExchangeError, setEditExchangeError] = useState("");
 
   const reload = () => api.get<LifecycleData>(`/rental-chains/${id}/lifecycle`).then(setData).catch(() => {});
 
@@ -268,26 +259,8 @@ export default function RentalLifecyclePage({ params }: { params: Promise<{ id: 
       .finally(() => setLoading(false));
   }, [id]);
 
-  // Lazy-load active pricing sizes the first time the exchange modal
-  // is opened. The pricing endpoint already filters `is_active = true`
-  // by default, so deactivated sizes (e.g. 30yd/40yd) never surface.
-  useEffect(() => {
-    if (!exchangeModalOpen || availableSizes !== null || sizesLoading) return;
-    setSizesLoading(true);
-    api.get<{ data: Array<{ asset_subtype: string }> }>("/pricing?limit=100")
-      .then((res) => {
-        const uniq = Array.from(
-          new Set(
-            (res.data || [])
-              .map((p) => p.asset_subtype)
-              .filter((s): s is string => typeof s === "string" && s.length > 0),
-          ),
-        );
-        setAvailableSizes(uniq);
-      })
-      .catch(() => setAvailableSizes([]))
-      .finally(() => setSizesLoading(false));
-  }, [exchangeModalOpen, availableSizes, sizesLoading]);
+  // Phase 4b-extract — pricing fetch now lives inside
+  // <ScheduleExchangeModal /> (create mode), removed from this page.
 
   const handlePickupDateUpdate = async () => {
     if (!data || !pickupDate) return;
@@ -346,68 +319,10 @@ export default function RentalLifecyclePage({ params }: { params: Promise<{ id: 
     }
   };
 
-  const handleExchangeReschedule = async () => {
-    if (!data || !editExchangeLinkId || !editExchangeDate) return;
-    const deliveryDateStr = data.rentalChain.dropOffDate;
-    if (deliveryDateStr && editExchangeDate < deliveryDateStr) {
-      setEditExchangeError(FEATURE_REGISTRY.validation_exchange_before_delivery?.label ?? "Exchange date cannot be before delivery date");
-      return;
-    }
-    if (editExchangeOverride && editExchangeOverride <= editExchangeDate) {
-      setEditExchangeError(FEATURE_REGISTRY.validation_pickup_before_exchange?.label ?? "Pickup date cannot be before exchange date");
-      return;
-    }
-    setEditExchangeSaving(true);
-    setEditExchangeError("");
-    try {
-      await api.patch(`/rental-chains/${id}/exchanges/${editExchangeLinkId}`, {
-        exchange_date: editExchangeDate,
-        ...(editExchangeOverride ? { override_pickup_date: editExchangeOverride } : {}),
-      });
-      setEditExchangeLinkId(null);
-      setEditExchangeDate("");
-      setEditExchangeOverride("");
-      broadcastLifecycleChange(id);
-      await reload();
-    } catch (err: unknown) {
-      setEditExchangeError(err instanceof Error ? err.message : (FEATURE_REGISTRY.lifecycle_update_error?.label ?? "Failed to update lifecycle"));
-    } finally {
-      setEditExchangeSaving(false);
-    }
-  };
-
-  const handleScheduleExchange = async () => {
-    if (!data || !exchangeDate) return;
-    // Validate: exchange must be on or after delivery
-    const deliveryDate = data.rentalChain.dropOffDate;
-    if (deliveryDate && exchangeDate < deliveryDate) {
-      setExchangeError(FEATURE_REGISTRY.validation_exchange_before_delivery?.label ?? "Exchange date cannot be before delivery date");
-      return;
-    }
-    if (exchangeOverridePickup && exchangeOverridePickup <= exchangeDate) {
-      setExchangeError(FEATURE_REGISTRY.validation_pickup_before_exchange?.label ?? "Pickup date cannot be before exchange date");
-      return;
-    }
-    setExchangeSaving(true);
-    setExchangeError("");
-    try {
-      await api.post(`/rental-chains/${id}/exchanges`, {
-        exchange_date: exchangeDate,
-        ...(exchangeSize ? { dumpster_size: exchangeSize } : {}),
-        ...(exchangeOverridePickup ? { override_pickup_date: exchangeOverridePickup } : {}),
-      });
-      setExchangeModalOpen(false);
-      setExchangeDate("");
-      setExchangeSize("");
-      setExchangeOverridePickup("");
-      broadcastLifecycleChange(id);
-      await reload();
-    } catch (err: unknown) {
-      setExchangeError(err instanceof Error ? err.message : (FEATURE_REGISTRY.lifecycle_update_error?.label ?? "Failed to schedule exchange"));
-    } finally {
-      setExchangeSaving(false);
-    }
-  };
+  // Phase 4b-extract — handleExchangeReschedule + handleScheduleExchange
+  // were removed from this page. The shared <ScheduleExchangeModal />
+  // component now owns both submit paths + broadcastLifecycleChange;
+  // this page only provides an onSuccess callback that calls reload().
 
   if (loading) {
     return (
@@ -579,14 +494,7 @@ export default function RentalLifecyclePage({ params }: { params: Promise<{ id: 
             className="inline-flex items-center gap-1.5 rounded-full border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-2 text-xs font-medium text-[var(--t-text-primary)] hover:bg-[var(--t-bg-card-hover)] transition-colors">
             <Pencil className="h-3 w-3" /> {FEATURE_REGISTRY.lifecycle_action_edit_pickup?.label ?? "Change Pickup Date"}
           </button>
-          <button onClick={() => {
-              const today = new Date().toISOString().split("T")[0];
-              setExchangeModalOpen(true);
-              setExchangeDate(today);
-              setExchangeSize(rentalChain.dumpsterSize || "");
-              setExchangeOverridePickup("");
-              setExchangeError("");
-            }}
+          <button onClick={() => setCreateExchangeOpen(true)}
             className="inline-flex items-center gap-1.5 rounded-full border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-2 text-xs font-medium text-[var(--t-text-primary)] hover:bg-[var(--t-bg-card-hover)] transition-colors">
             <Repeat className="h-3 w-3" /> {FEATURE_REGISTRY.schedule_exchange?.label ?? "Schedule Exchange"}
           </button>
@@ -643,10 +551,10 @@ export default function RentalLifecyclePage({ params }: { params: Promise<{ id: 
                         onClick={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
-                          setEditExchangeLinkId(job.linkId!);
-                          setEditExchangeDate(job.scheduledDate || "");
-                          setEditExchangeOverride("");
-                          setEditExchangeError("");
+                          setEditExchange({
+                            linkId: job.linkId!,
+                            currentDate: job.scheduledDate || "",
+                          });
                         }}
                         title={FEATURE_REGISTRY.edit_exchange_date?.label ?? "Edit Exchange Date"}
                         className="text-[var(--t-accent)] hover:opacity-70 transition-opacity"
@@ -848,157 +756,36 @@ export default function RentalLifecyclePage({ params }: { params: Promise<{ id: 
         </div>
       )}
 
-      {/* Edit Exchange Date Modal */}
-      {editExchangeLinkId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4" onClick={() => setEditExchangeLinkId(null)}>
-          <div className="rounded-2xl border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6 w-full max-w-sm" onClick={e => e.stopPropagation()}>
-            <h3 className="text-sm font-semibold text-[var(--t-text-primary)] mb-1">
-              {FEATURE_REGISTRY.edit_exchange_date?.label ?? "Edit Exchange Date"}
-            </h3>
-            <p className="text-xs text-[var(--t-text-muted)] mb-4">
-              {FEATURE_REGISTRY.edit_exchange_date_description?.label ?? "Reschedule this exchange. The downstream pickup is recalculated from your tenant rental period unless you override it."}
-            </p>
-            <label className="text-xs text-[var(--t-text-muted)] mb-1 block">
-              {FEATURE_REGISTRY.exchange_date?.label ?? "Exchange date"}
-            </label>
-            <LifecycleDateInput
-              value={editExchangeDate}
-              onChange={(v) => { setEditExchangeDate(v); setEditExchangeError(""); }}
-              min={rentalChain.dropOffDate || undefined}
-              className="w-full rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-3 py-2 text-sm text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)] mb-3"
-            />
-
-            <label className="text-xs text-[var(--t-text-muted)] mb-1 block">
-              {FEATURE_REGISTRY.override_pickup_date?.label ?? "Override pickup date (optional)"}
-            </label>
-            <LifecycleDateInput
-              value={editExchangeOverride}
-              onChange={(v) => { setEditExchangeOverride(v); setEditExchangeError(""); }}
-              min={editExchangeDate || undefined}
-              className="w-full rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-3 py-2 text-sm text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)] mb-1"
-            />
-            <p className="text-[10px] text-[var(--t-text-muted)] mb-1">
-              {FEATURE_REGISTRY.override_pickup_date_hint?.label ?? "Leave blank to auto-calculate from your tenant rental period."}
-            </p>
-            {editExchangeDate && (
-              <PickupPreview
-                autoDate={shiftDays(editExchangeDate, tenantRentalDays)}
-                overrideDate={editExchangeOverride || undefined}
-                rentalDays={tenantRentalDays}
-              />
-            )}
-
-            {editExchangeError && (
-              <p className="text-xs text-[var(--t-error)] mb-3">{editExchangeError}</p>
-            )}
-            <div className="flex gap-2 justify-end">
-              <button onClick={() => setEditExchangeLinkId(null)} className="rounded-full px-4 py-2 text-xs font-medium text-[var(--t-text-muted)]">
-                Cancel
-              </button>
-              <button onClick={handleExchangeReschedule} disabled={!editExchangeDate || editExchangeSaving}
-                className="rounded-full bg-[var(--t-accent)] px-4 py-2 text-xs font-semibold text-[var(--t-accent-on-accent)] disabled:opacity-40 hover:opacity-90 transition-opacity">
-                {editExchangeSaving ? (FEATURE_REGISTRY.lifecycle_action_saving?.label ?? "Saving...") : (FEATURE_REGISTRY.lifecycle_action_confirm?.label ?? "Confirm")}
-              </button>
-            </div>
-          </div>
-        </div>
+      {/* Phase 4b-extract — shared Schedule Exchange modal.
+          Handles both create and edit flows via discriminated-union
+          props. broadcastLifecycleChange fires inside the component
+          on success; this page only supplies `reload` via onSuccess. */}
+      {editExchange && (
+        <ScheduleExchangeModal
+          mode="edit"
+          chainId={id}
+          deliveryDate={rentalChain.dropOffDate}
+          tenantRentalDays={tenantRentalDays}
+          linkId={editExchange.linkId}
+          currentExchangeDate={editExchange.currentDate}
+          onClose={() => setEditExchange(null)}
+          onSuccess={() => {
+            void reload();
+          }}
+        />
       )}
-
-      {/* Schedule Exchange Modal */}
-      {exchangeModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4" onClick={() => setExchangeModalOpen(false)}>
-          <div className="rounded-2xl border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6 w-full max-w-sm" onClick={e => e.stopPropagation()}>
-            <h3 className="text-sm font-semibold text-[var(--t-text-primary)] mb-1">
-              {FEATURE_REGISTRY.schedule_exchange?.label ?? "Schedule Exchange"}
-            </h3>
-            <p className="text-xs text-[var(--t-text-muted)] mb-4">
-              {FEATURE_REGISTRY.schedule_exchange_description?.label ?? "Swap the dumpster on this rental. A new pickup is automatically scheduled based on your tenant's default rental period."}
-            </p>
-
-            <label className="text-xs text-[var(--t-text-muted)] mb-1 block">
-              {FEATURE_REGISTRY.exchange_date?.label ?? "Exchange date"}
-            </label>
-            <LifecycleDateInput
-              value={exchangeDate}
-              onChange={(v) => { setExchangeDate(v); setExchangeError(""); }}
-              min={rentalChain.dropOffDate || undefined}
-              className="w-full rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-3 py-2 text-sm text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)] mb-3"
-            />
-
-            <label className="text-xs text-[var(--t-text-muted)] mb-1 block">
-              {FEATURE_REGISTRY.new_dumpster_size?.label ?? "New dumpster size"}
-            </label>
-            {(() => {
-              // Resolve option list: current size is always included
-              // so the dropdown never shows "no active sizes" when the
-              // rental itself is on a size that was recently deactivated.
-              const currentSize = rentalChain.dumpsterSize || "";
-              const baseList = availableSizes ?? [];
-              const hasCurrent = currentSize && baseList.includes(currentSize);
-              const options = hasCurrent || !currentSize ? baseList : [currentSize, ...baseList];
-              const isEmpty = !sizesLoading && options.length === 0;
-              return (
-                <>
-                  <select
-                    value={exchangeSize}
-                    onChange={e => setExchangeSize(e.target.value)}
-                    disabled={sizesLoading || isEmpty}
-                    className="w-full rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-3 py-2 text-sm text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)] mb-1 disabled:opacity-50"
-                  >
-                    {sizesLoading && <option value="">{FEATURE_REGISTRY.select_dumpster_size_loading?.label ?? "Loading sizes…"}</option>}
-                    {!sizesLoading && isEmpty && <option value="">{FEATURE_REGISTRY.no_available_sizes?.label ?? "No active sizes available"}</option>}
-                    {!sizesLoading && !isEmpty && (
-                      <>
-                        {!exchangeSize && <option value="" disabled>{FEATURE_REGISTRY.select_dumpster_size?.label ?? "Select a size"}</option>}
-                        {options.map(size => (
-                          <option key={size} value={size}>{size}</option>
-                        ))}
-                      </>
-                    )}
-                  </select>
-                  <p className="text-[10px] text-[var(--t-text-muted)] mb-3">
-                    {isEmpty
-                      ? (FEATURE_REGISTRY.no_available_sizes_hint?.label ?? "Add an active pricing rule to enable exchanges.")
-                      : (FEATURE_REGISTRY.new_dumpster_size_hint?.label ?? "Pre-filled with the current rental size.")}
-                  </p>
-                </>
-              );
-            })()}
-
-            <label className="text-xs text-[var(--t-text-muted)] mb-1 block">
-              {FEATURE_REGISTRY.override_pickup_date?.label ?? "Override pickup date (optional)"}
-            </label>
-            <LifecycleDateInput
-              value={exchangeOverridePickup}
-              onChange={(v) => { setExchangeOverridePickup(v); setExchangeError(""); }}
-              min={exchangeDate || undefined}
-              className="w-full rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-3 py-2 text-sm text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)] mb-1"
-            />
-            <p className="text-[10px] text-[var(--t-text-muted)] mb-1">
-              {FEATURE_REGISTRY.override_pickup_date_hint?.label ?? "Leave blank to auto-calculate from your tenant rental period."}
-            </p>
-            {exchangeDate && (
-              <PickupPreview
-                autoDate={shiftDays(exchangeDate, tenantRentalDays)}
-                overrideDate={exchangeOverridePickup || undefined}
-                rentalDays={tenantRentalDays}
-              />
-            )}
-
-            {exchangeError && (
-              <p className="text-xs text-[var(--t-error)] mb-3">{exchangeError}</p>
-            )}
-            <div className="flex gap-2 justify-end">
-              <button onClick={() => setExchangeModalOpen(false)} className="rounded-full px-4 py-2 text-xs font-medium text-[var(--t-text-muted)]">
-                Cancel
-              </button>
-              <button onClick={handleScheduleExchange} disabled={!exchangeDate || !exchangeSize || exchangeSaving}
-                className="rounded-full bg-[var(--t-accent)] px-4 py-2 text-xs font-semibold text-[var(--t-accent-on-accent)] disabled:opacity-40 hover:opacity-90 transition-opacity">
-                {exchangeSaving ? (FEATURE_REGISTRY.lifecycle_action_saving?.label ?? "Saving...") : (FEATURE_REGISTRY.lifecycle_action_confirm?.label ?? "Confirm")}
-              </button>
-            </div>
-          </div>
-        </div>
+      {createExchangeOpen && (
+        <ScheduleExchangeModal
+          mode="create"
+          chainId={id}
+          deliveryDate={rentalChain.dropOffDate}
+          tenantRentalDays={tenantRentalDays}
+          currentDumpsterSize={rentalChain.dumpsterSize || ""}
+          onClose={() => setCreateExchangeOpen(false)}
+          onSuccess={() => {
+            void reload();
+          }}
+        />
       )}
 
       {/* Change Pickup Date Modal */}
