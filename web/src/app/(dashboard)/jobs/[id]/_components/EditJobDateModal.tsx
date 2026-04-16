@@ -43,6 +43,7 @@ import { api } from "@/lib/api";
 import { useToast } from "@/components/toast";
 import { getFeatureLabel, getFeature } from "@/lib/feature-registry";
 import HelpTooltip from "@/components/ui/HelpTooltip";
+import { broadcastLifecycleChange } from "@/lib/lifecycle-sync";
 
 // ─────────────────────────────────────────────────────────────
 // Local helpers (duplicated from LifecycleContextPanel to keep
@@ -101,6 +102,20 @@ function dayBefore(iso: string): string {
   }
 }
 
+/**
+ * Shift a YYYY-MM-DD date by N days (UTC-safe). Used by the
+ * pickup-date auto-vs-override preview (Phase 2b G1).
+ */
+function shiftDays(iso: string, days: number): string {
+  try {
+    const d = new Date(`${iso}T00:00:00Z`);
+    d.setUTCDate(d.getUTCDate() + days);
+    return d.toISOString().split("T")[0];
+  } catch {
+    return iso;
+  }
+}
+
 // ─────────────────────────────────────────────────────────────
 // Type slug — maps task_type values (drop_off/pick_up/exchange)
 // to registry-key slugs (delivery/pickup/exchange). Keeps the
@@ -133,6 +148,9 @@ export default function EditJobDateModal({
   expectedPickupDate,
   onClose,
   onSaved,
+  chainId,
+  latestExchangeDate,
+  tenantRentalDays,
 }: {
   jobId: string;
   jobType: EditableJobType;
@@ -141,6 +159,28 @@ export default function EditJobDateModal({
   expectedPickupDate: string;
   onClose: () => void;
   onSaved: () => void;
+  /**
+   * Phase 2b G3 — rental chain id of the hosting lifecycle panel.
+   * When present, a successful save fires
+   * `broadcastLifecycleChange(chainId)` so dispatch, jobs list,
+   * and other useLifecycleSync subscribers refresh cross-tab —
+   * mirrors the rentals-page Change Pickup flow.
+   */
+  chainId?: string | null;
+  /**
+   * Phase 2b G2 — latest scheduled non-cancelled exchange date in
+   * this chain, if any. Used for the pickup-branch pre-submit
+   * guard: pickup must not land on or before the most recent
+   * exchange. Matches the rentals-page client-side rule at
+   * rentals/[id]/page.tsx:301-305.
+   */
+  latestExchangeDate?: string | null;
+  /**
+   * Phase 2b G1 — tenant-configured rental duration from the
+   * chain row. Drives the auto-vs-override preview line for the
+   * pickup branch. Null/absent hides the preview row.
+   */
+  tenantRentalDays?: number | null;
 }) {
   const toast = useToast();
   const dateInputRef = useRef<HTMLInputElement>(null);
@@ -201,6 +241,18 @@ export default function EditJobDateModal({
           errorKey: "edit_job_date_error_before_drop_off" as const,
         };
       }
+      // Phase 2b G2 — exchange-aware guard. A chain with a
+      // scheduled (non-cancelled) exchange must not accept a
+      // pickup date on or before that exchange. Neither backend
+      // endpoint enforces this today; the rentals-page modal was
+      // the only surface with this pre-submit check. Reuses the
+      // existing `validation_pickup_before_exchange` registry key.
+      if (latestExchangeDate && newDate <= latestExchangeDate) {
+        return {
+          valid: false,
+          errorKey: "validation_pickup_before_exchange" as const,
+        };
+      }
     } else {
       // exchange — must fall strictly inside the chain window
       if (!dropOffDate || newDate <= dropOffDate) {
@@ -241,6 +293,19 @@ export default function EditJobDateModal({
     oldDuration,
   ]);
 
+  // Phase 2b G1 — pickup auto-vs-override preview inputs.
+  // Matches the rentals-page rule exactly: base date is the latest
+  // non-cancelled exchange if one exists, otherwise the chain's
+  // drop_off_date. Auto pickup = base + tenant rental days.
+  const pickupAutoInfo = useMemo(() => {
+    if (slug !== "pickup") return null;
+    if (tenantRentalDays == null || tenantRentalDays <= 0) return null;
+    const baseDate = latestExchangeDate || dropOffDate;
+    if (!baseDate) return null;
+    const autoDate = shiftDays(baseDate, tenantRentalDays);
+    return { autoDate, rentalDays: tenantRentalDays };
+  }, [slug, tenantRentalDays, latestExchangeDate, dropOffDate]);
+
   const dirty = newDate !== currentDate;
   const durationChanged =
     durationAffecting && dirty && validation.valid && newDuration !== oldDuration;
@@ -254,6 +319,16 @@ export default function EditJobDateModal({
         scheduled_date: newDate,
       });
       toast.toast("success", getFeatureLabel(labelKey(jobType, "toast_saved")));
+      // Phase 2b G3 — cross-tab + cross-surface refresh invariant.
+      // Mirrors the rentals-page Change Pickup handler's post-save
+      // broadcast (rentals/[id]/page.tsx:316) so dispatch, jobs
+      // list, and any other useLifecycleSync subscriber refreshes
+      // immediately. Only fires when the hosting panel supplied a
+      // chainId (i.e. this job is actually part of a chain) and
+      // only after a successful backend write.
+      if (chainId) {
+        broadcastLifecycleChange(chainId);
+      }
       onSaved();
       onClose();
     } catch (err) {
@@ -442,6 +517,43 @@ export default function EditJobDateModal({
                   </span>
                 </div>
               )}
+
+              {/* Phase 2b G1 — pickup auto-vs-override preview.
+                  Parity with the rentals-page PickupPreview:
+                  shows whether the new date matches the tenant's
+                  auto-calculated pickup (base + rental days) or
+                  is a manual override, plus the auto value when
+                  divergent. Registry keys reused verbatim from
+                  the rentals flow (`auto_calculated_with_days`,
+                  `rental_rule_override`). */}
+              {slug === "pickup" && pickupAutoInfo && (() => {
+                const isAuto = newDate === pickupAutoInfo.autoDate;
+                const tpl = isAuto
+                  ? getFeatureLabel("auto_calculated_with_days")
+                  : getFeatureLabel("rental_rule_override");
+                const text = tpl
+                  .replace("{days}", String(pickupAutoInfo.rentalDays))
+                  .replace("{date}", fmtDate(pickupAutoInfo.autoDate));
+                return (
+                  <div
+                    className="flex justify-between pt-1.5 border-t"
+                    style={{ borderColor: "var(--t-border)" }}
+                  >
+                    <span style={{ color: "var(--t-text-muted)" }}>
+                      {getFeatureLabel("date_change_preview")}
+                    </span>
+                    <span
+                      style={{
+                        color: isAuto
+                          ? "var(--t-text-primary)"
+                          : "var(--t-warning)",
+                      }}
+                    >
+                      {text}
+                    </span>
+                  </div>
+                );
+              })()}
 
               {/* Manual Override badge */}
               <div
