@@ -40,7 +40,6 @@ import { FEATURE_REGISTRY } from "@/lib/feature-registry";
 // preference, no PII, no tenant coupling. Date + confirmedOnly are
 // intentionally session-scoped and reset on each visit.
 const PROJECTION_LS_KEY = "serviceos_assets_projection";
-const FILTERS_LS_KEY = "serviceos_assets_filters";
 const SECTIONS_LS_KEY = "serviceos_assets_sections";
 const ASSET_PAGE_SIZE = 25;
 
@@ -111,7 +110,6 @@ interface PricingRule {
 
 const SIZES = ["10yd", "15yd", "20yd", "30yd", "40yd"] as const;
 
-const STATUS_FILTERS = ["all", "available", "on_site", "reserved", "maintenance"] as const;
 const STATUS_LABELS: Record<string, string> = {
   all: "All",
   available: "Available",
@@ -252,9 +250,6 @@ export default function AssetsPage() {
   const [bulkMode, setBulkMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkEditOpen, setBulkEditOpen] = useState(false);
-  // Collapsible filter section state — defaults open, persisted via
-  // `FILTERS_LS_KEY`. Matches the Jobs page collapsible pattern.
-  const [showFilters, setShowFilters] = useState(true);
   // Phase C — Projected Availability panel state. Collapse state is
   // persisted via `PROJECTION_LS_KEY`; target date + confirmedOnly
   // reset on each visit. Default collapsed=open per the Phase C spec
@@ -329,30 +324,6 @@ export default function AssetsPage() {
       // Quota / private mode — collapse still works for the session.
     }
   }, [showProjection]);
-
-  // Filters section collapse — load on mount.
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    try {
-      const raw = window.localStorage.getItem(FILTERS_LS_KEY);
-      if (!raw) return;
-      const parsed = JSON.parse(raw) as { showFilters?: unknown };
-      if (typeof parsed.showFilters === "boolean") {
-        setShowFilters(parsed.showFilters);
-      }
-    } catch { /* fall through to default (open) */ }
-  }, []);
-
-  // Filters section collapse — persist on change.
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    try {
-      window.localStorage.setItem(
-        FILTERS_LS_KEY,
-        JSON.stringify({ showFilters }),
-      );
-    } catch { /* quota / private mode */ }
-  }, [showFilters]);
 
   // Sectioned asset list — collapse + pagination state. Open/closed
   // is persisted via `SECTIONS_LS_KEY`; per-section page numbers
@@ -633,11 +604,6 @@ export default function AssetsPage() {
     setSelectedIds(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   };
 
-  const toggleSelectAll = () => {
-    if (selectedIds.size === filteredAssets.length) setSelectedIds(new Set());
-    else setSelectedIds(new Set(filteredAssets.map(a => a.id)));
-  };
-
   const cancelBulk = () => { setBulkMode(false); setSelectedIds(new Set()); };
 
   const bulkDelete = async () => {
@@ -649,18 +615,6 @@ export default function AssetsPage() {
       cancelBulk();
       fetchAssets();
     } catch { toast("error", "Failed to delete some assets"); }
-  };
-
-  const bulkMaintenance = async (size: string) => {
-    const sizeAssets = assets.filter((a) => a.subtype === size && a.status !== "maintenance");
-    if (sizeAssets.length === 0) return;
-    try {
-      await Promise.all(sizeAssets.map((a) => api.patch(`/assets/${a.id}`, { status: "maintenance" })));
-      toast("success", `${sizeAssets.length} ${size} dumpsters marked as maintenance`);
-      fetchAssets();
-    } catch {
-      toast("error", "Failed to update some assets");
-    }
   };
 
   const handleTileClick = (size: string) => {
