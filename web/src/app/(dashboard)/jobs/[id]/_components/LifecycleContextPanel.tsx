@@ -33,6 +33,7 @@ import {
   TrendingDown,
   GitBranch,
   CalendarClock,
+  Repeat,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { getFeatureLabel, getFeature } from "@/lib/feature-registry";
@@ -50,6 +51,7 @@ import type {
   AlertSeverity,
 } from "./lifecycle-context-types";
 import EditJobDateModal, { type EditableJobType } from "./EditJobDateModal";
+import ScheduleExchangeModal from "@/components/schedule-exchange-modal";
 
 const EDITABLE_TASK_TYPES = new Set<EditableJobType>([
   "drop_off",
@@ -193,6 +195,32 @@ export default function LifecycleContextPanel({
     !!data.chain?.drop_off_date &&
     !!data.chain?.expected_pickup_date;
 
+  // Phase 4b-jobdetail-create — eligibility for the Schedule
+  // Exchange header action. Preconditions:
+  //   - chain loaded and active (not cancelled)
+  //   - an active pickup node exists (mid-rental context — the
+  //     chain still has somewhere for the exchange to insert)
+  //   - required modal inputs are present: chain id, drop_off_date,
+  //     rental_days. dumpster_size is not gated here — passes
+  //     through as "" when missing; the modal's size picker still
+  //     requires a selection before confirm, so UX stays safe.
+  const canScheduleExchange =
+    !loading &&
+    !error &&
+    !!data &&
+    !data.is_standalone &&
+    !!data.chain &&
+    data.chain.status !== "cancelled" &&
+    !!data.chain.id &&
+    !!data.chain.drop_off_date &&
+    data.chain.rental_days != null &&
+    !!pickupNode;
+
+  // Open-state for the shared ScheduleExchangeModal (create-mode
+  // only in this pass). Edit-mode on Job Detail is deferred until
+  // a future backend pass exposes link_id on LifecycleNode.
+  const [scheduleExchangeOpen, setScheduleExchangeOpen] = useState(false);
+
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
@@ -238,28 +266,54 @@ export default function LifecycleContextPanel({
           {panelLabel}
         </h3>
         <HelpTooltip featureId="connected_job_lifecycle" placement="right" />
-        {/* Discoverability pass — promoted Change Pickup Date
-            action for the chain's current pickup node. Reuses the
-            same modal path the per-row pencil icon uses (setEditingNode),
-            so the Phase 2b parity fixes (broadcast, exchange guard,
-            auto/override preview) all apply unchanged. The per-row
-            pencil stays in place during this bake period. Registry
-            label reused verbatim from the rentals-page flow. */}
-        {canEditPickup && pickupNode && (
-          <button
-            type="button"
-            onClick={() => setEditingNode(pickupNode)}
-            className="ml-auto inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-semibold transition-colors hover:bg-[var(--t-bg-card-hover)]"
-            style={{
-              borderColor: "var(--t-border)",
-              color: "var(--t-accent)",
-              background: "var(--t-bg-elevated)",
-            }}
-          >
-            <CalendarClock className="h-3 w-3" />
-            {getFeatureLabel("lifecycle_action_edit_pickup")}
-          </button>
-        )}
+        {/* Header action cluster — right-aligned. Order: Change
+            Pickup Date (primary, most common) then Schedule Exchange
+            (less frequent, chain-structural). Both open shared
+            modals whose internal success handlers fire
+            broadcastLifecycleChange(chainId) — parent only needs to
+            bump refetchKey on success. */}
+        <div className="ml-auto flex items-center gap-2">
+          {/* Promoted Change Pickup Date action. Reuses the per-row
+              pencil path (setEditingNode), so Phase 2b parity fixes
+              apply unchanged. Row-level pencil stays in place. */}
+          {canEditPickup && pickupNode && (
+            <button
+              type="button"
+              onClick={() => setEditingNode(pickupNode)}
+              className="inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-semibold transition-colors hover:bg-[var(--t-bg-card-hover)]"
+              style={{
+                borderColor: "var(--t-border)",
+                color: "var(--t-accent)",
+                background: "var(--t-bg-elevated)",
+              }}
+            >
+              <CalendarClock className="h-3 w-3" />
+              {getFeatureLabel("lifecycle_action_edit_pickup")}
+            </button>
+          )}
+          {/* Phase 4b-jobdetail-create — Schedule Exchange header
+              action. Restores exchange access on Job Detail (Phase 3
+              rewired inbound links to /jobs/[id], which had left
+              this flow stranded). Mounts the shared modal in
+              create-mode only; edit-mode is deferred to the future
+              link_id DTO pass. Registry label `schedule_exchange`
+              is reused verbatim from the rentals-page flow. */}
+          {canScheduleExchange && (
+            <button
+              type="button"
+              onClick={() => setScheduleExchangeOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-semibold transition-colors hover:bg-[var(--t-bg-card-hover)]"
+              style={{
+                borderColor: "var(--t-border)",
+                color: "var(--t-accent)",
+                background: "var(--t-bg-elevated)",
+              }}
+            >
+              <Repeat className="h-3 w-3" />
+              {getFeatureLabel("schedule_exchange")}
+            </button>
+          )}
+        </div>
       </div>
 
       {/* ── Body states ───────────────────────────────────── */}
@@ -337,6 +391,30 @@ export default function LifecycleContextPanel({
             chainId={data.chain.id}
             latestExchangeDate={latestExchangeDate}
             tenantRentalDays={data.chain.rental_days ?? null}
+          />
+        )}
+
+      {/* Phase 4b-jobdetail-create — shared ScheduleExchangeModal
+          in create-mode. Mounts when the header action fires and
+          all preconditions met (canScheduleExchange gate above
+          mirrors these checks). The modal fires
+          broadcastLifecycleChange(chainId) internally; this panel
+          only bumps refetchKey via onSuccess to pull fresh
+          lifecycle data. Edit-mode is intentionally not wired
+          here — requires link_id on LifecycleNode (future backend
+          pass). */}
+      {scheduleExchangeOpen &&
+        data?.chain &&
+        data.chain.drop_off_date &&
+        data.chain.rental_days != null && (
+          <ScheduleExchangeModal
+            mode="create"
+            chainId={data.chain.id}
+            deliveryDate={data.chain.drop_off_date}
+            tenantRentalDays={data.chain.rental_days}
+            currentDumpsterSize={data.chain.dumpster_size ?? ""}
+            onClose={() => setScheduleExchangeOpen(false)}
+            onSuccess={() => setRefetchKey((k) => k + 1)}
           />
         )}
     </div>
