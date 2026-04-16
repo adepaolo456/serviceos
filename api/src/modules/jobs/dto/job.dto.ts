@@ -13,7 +13,7 @@ import {
   ValidateIf,
   ValidateNested,
 } from 'class-validator';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 
 export class CreateJobDto {
   @ApiProperty({ example: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890' })
@@ -226,6 +226,16 @@ export class ListJobsQueryDto {
   @IsString()
   @IsIn(['board'])
   enrichment?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'When true, returns jobs whose scheduled_date is strictly before the server date, status is not in (completed, cancelled, failed, needs_reschedule), and completed_at is null. Each returned job is decorated with `days_overdue`. Ordering is scheduled_date ASC (oldest first). Combinable with pagination; other filters still apply if supplied.',
+    example: true,
+  })
+  @IsOptional()
+  @Transform(({ value }) => value === 'true' || value === true)
+  @IsBoolean()
+  stale?: boolean;
 }
 
 export class ChangeStatusDto {

@@ -73,6 +73,9 @@ interface Job {
   asset: { id: string; identifier: string; asset_type: string; subtype: string } | null;
   assigned_driver: { id: string; first_name: string; last_name: string } | null;
   is_overdue?: boolean;
+  // Server-computed on the Stale cleanup view only (`/jobs?stale=true`).
+  // Absent on every other branch — do not rely on it outside that flow.
+  days_overdue?: number;
   extra_days?: number;
   rescheduled_by_customer?: boolean;
   rescheduled_from_date?: string;
@@ -219,6 +222,9 @@ const JOBS_STATUS_ALLOWLIST = new Set([
   "overdue",
   "blocked",
   "pending_payment",
+  // Virtual filter for the stale-jobs cleanup flow — hits the
+  // /jobs?stale=true backend branch.
+  "stale",
   // Bare stored values (DISPLAY_TO_STORED fall-through path)
   "pending",
   "confirmed",
@@ -338,6 +344,9 @@ function JobsPageContent() {
   const [panelOpen, setPanelOpen] = useState(false);
   const [statusCounts, setStatusCounts] = useState<StatusCount[]>([]);
   const [overdueCount, setOverdueCount] = useState(0);
+  // Stale-jobs cleanup count — shown as a KPI tile badge. Fetched
+  // in a cheap `limit=1` call so we only read `meta.total`.
+  const [staleCount, setStaleCount] = useState(0);
   const [selectedJobIds, setSelectedJobIds] = useState<Set<string>>(new Set());
   const [bulkProgress, setBulkProgress] = useState<string | null>(null);
   // Lifecycle view state
@@ -387,6 +396,20 @@ function JobsPageContent() {
         const overdueJobs = await api.get<any[]>("/automation/overdue");
         setJobs(overdueJobs as unknown as Job[]);
         setTotal(overdueJobs.length);
+      } else if (statusFilter === "stale") {
+        // Stale cleanup flow — server-side filter +
+        // `days_overdue` decoration via `/jobs?stale=true`. Uses
+        // the same response shape so the existing table rendering
+        // composes cleanly; the stale-specific table below just
+        // renders additional columns (Days Overdue, checkbox).
+        const params = new URLSearchParams({
+          page: "1",
+          limit: "200",
+          stale: "true",
+        });
+        const res = await api.get<JobsResponse>(`/jobs?${params.toString()}`);
+        setJobs(res.data);
+        setTotal(res.meta.total);
       } else if (MULTI_STATUS[statusFilter]) {
         // Multi-status KPI tiles: fetch each status in parallel and merge
         const statuses = MULTI_STATUS[statusFilter];
@@ -467,6 +490,12 @@ function JobsPageContent() {
   useEffect(() => {
     api.get<StatusCount[]>("/analytics/jobs-by-status").then(setStatusCounts).catch(() => {});
     api.get<any[]>("/automation/overdue").then((r) => setOverdueCount(r.length)).catch(() => {});
+    // Stale cleanup count — minimal `limit=1` so we only read
+    // `meta.total` for the KPI tile badge.
+    api
+      .get<JobsResponse>("/jobs?stale=true&limit=1")
+      .then((r) => setStaleCount(r.meta.total))
+      .catch(() => {});
     // Tenant-wide blocker counts for the new Payment Blocked tile.
     api
       .get<{ payment_blocked: number; billing_issue: number; unassigned_active: number }>(
@@ -680,8 +709,17 @@ function JobsPageContent() {
           { label: "Overdue", value: overdue, color: overdue > 0 ? "var(--t-error)" : "var(--t-text-primary)", icon: AlertCircle },
           { label: FEATURE_REGISTRY.lifecycle_status_completed?.label ?? "Completed", value: completed, color: "var(--t-text-primary)", icon: CheckCircle2 },
         ];
+        // Stale tile is rendered separately below as a clickable
+        // button — unlike the four info tiles above, it drives the
+        // `statusFilter` state so operators can land directly on
+        // the cleanup view.
+        const staleLabel =
+          FEATURE_REGISTRY.stale_jobs_filter_label?.label ?? "Stale";
+        const staleActive = statusFilter === "stale";
+        const staleColor =
+          staleCount > 0 ? "var(--t-error)" : "var(--t-text-primary)";
         return (
-          <div className="grid grid-cols-4 gap-3 mb-6">
+          <div className="grid grid-cols-5 gap-3 mb-6">
             {stats.map(s => {
               const Icon = s.icon;
               return (
@@ -694,6 +732,35 @@ function JobsPageContent() {
                 </div>
               );
             })}
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedJobIds(new Set());
+                setStatusFilter(staleActive ? "all" : "stale");
+              }}
+              className="surface-card text-left px-4 py-3 transition-all"
+              style={{
+                cursor: "pointer",
+                border: staleActive
+                  ? "2px solid var(--t-accent)"
+                  : undefined,
+                background: staleActive
+                  ? "var(--t-bg-elevated)"
+                  : undefined,
+              }}
+            >
+              <div className="flex items-center gap-1.5 mb-1">
+                <AlertCircle
+                  style={{ width: 13, height: 13, color: staleColor }}
+                />
+              </div>
+              <p style={{ fontSize: 22, fontWeight: 700, color: staleColor, fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>
+                {staleCount}
+              </p>
+              <p style={{ fontSize: 11, fontWeight: 500, color: "var(--t-text-muted)", marginTop: 4 }}>
+                {staleLabel}
+              </p>
+            </button>
           </div>
         );
       })()}
@@ -767,6 +834,164 @@ function JobsPageContent() {
             <div key={i} className="h-14 w-full skeleton" style={{ borderRadius: 14 }} />
           ))}
         </div>
+      ) : statusFilter === "stale" ? (
+        // Stale cleanup flow — dedicated flat table with checkbox
+        // selection so operators can triage past-due jobs. Each row
+        // click still navigates to /jobs/:id for individual
+        // resolution (Mark Completed / Cancel / Reschedule all
+        // live there). Bulk cancel hangs off the existing floating
+        // bulk-action bar below, behind a window.confirm gate.
+        jobs.length === 0 ? (
+          <div className="surface-card py-16 flex flex-col items-center justify-center text-center">
+            <CheckCircle2 size={40} style={{ color: "var(--t-accent)", opacity: 0.4 }} className="mb-3" />
+            <h2 style={{ fontSize: 15, fontWeight: 600, color: "var(--t-text-primary)" }} className="mb-1">
+              No stale jobs
+            </h2>
+            <p style={{ fontSize: 12, color: "var(--t-text-muted)" }}>
+              Every active job is on or ahead of its scheduled date.
+            </p>
+          </div>
+        ) : (
+          <div className="surface-card" style={{ overflow: "hidden", padding: 0 }}>
+            <div className="table-scroll">
+              <table className="w-full" style={{ fontSize: 13, borderCollapse: "collapse" }}>
+                <thead>
+                  <tr className="table-header" style={{ borderBottom: "1px solid var(--t-border)" }}>
+                    <th style={{ ...thStyle, width: 36 }} aria-label="Select" onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={
+                          jobs.length > 0 &&
+                          jobs.every((j) => selectedJobIds.has(j.id))
+                        }
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedJobIds(new Set(jobs.map((j) => j.id)));
+                          } else {
+                            setSelectedJobIds(new Set());
+                          }
+                        }}
+                        style={{ cursor: "pointer" }}
+                      />
+                    </th>
+                    <th style={{ ...thStyle, width: 120 }}>Job #</th>
+                    <th style={{ ...thStyle, width: 90 }}>Type</th>
+                    <th style={{ ...thStyle, width: 110 }}>Status</th>
+                    <th style={{ ...thStyle, width: 110 }}>Scheduled</th>
+                    <th style={{ ...thStyle, width: 100 }}>Days Overdue</th>
+                    <th style={thStyle}>Customer</th>
+                    <th style={thStyle}>Location</th>
+                    <th style={{ ...thStyle, width: 120 }}>Driver</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {jobs.map((job) => {
+                    const customerName = job.customer
+                      ? `${job.customer.first_name} ${job.customer.last_name}`
+                      : "";
+                    const address = fmtAddress(job.service_address);
+                    const driverName = job.assigned_driver
+                      ? `${job.assigned_driver.first_name} ${job.assigned_driver.last_name}`
+                      : "";
+                    const displayStatus = deriveDisplayStatus(job);
+                    const daysOverdue = job.days_overdue ?? 0;
+                    const overdueColor =
+                      daysOverdue >= 14
+                        ? "var(--t-error)"
+                        : daysOverdue >= 7
+                          ? "var(--t-warning)"
+                          : "var(--t-text-primary)";
+                    const isSelected = selectedJobIds.has(job.id);
+                    return (
+                      <tr
+                        key={job.id}
+                        onClick={() => {
+                          snapshotListState();
+                          router.push(`/jobs/${job.id}`);
+                        }}
+                        className="table-row cursor-pointer"
+                        style={{
+                          borderBottom: "1px solid var(--t-border-subtle)",
+                          borderLeft: isSelected
+                            ? "3px solid var(--t-accent)"
+                            : "3px solid var(--t-warning)",
+                          background: isSelected
+                            ? "var(--t-bg-card-hover)"
+                            : undefined,
+                        }}
+                      >
+                        <td
+                          style={{ padding: "10px 0 10px 12px" }}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => {
+                              setSelectedJobIds((prev) => {
+                                const next = new Set(prev);
+                                if (next.has(job.id)) next.delete(job.id);
+                                else next.add(job.id);
+                                return next;
+                              });
+                            }}
+                            style={{ cursor: "pointer" }}
+                          />
+                        </td>
+                        <td style={{ padding: "10px 16px" }}>
+                          <span style={{ fontSize: 12, fontWeight: 600, color: "var(--t-text-primary)" }}>
+                            {formatJobNumber(job.job_number)}
+                          </span>
+                        </td>
+                        <td style={{ padding: "10px 16px" }}>
+                          <span
+                            className={jobTypeTextClass(job.job_type)}
+                            style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase" }}
+                          >
+                            {job.job_type}
+                          </span>
+                        </td>
+                        <td style={{ padding: "10px 16px" }}>
+                          <span style={{ fontSize: 11, fontWeight: 600, color: displayStatusColor(displayStatus) }}>
+                            {DISPLAY_STATUS_LABELS[displayStatus]}
+                          </span>
+                        </td>
+                        <td style={{ padding: "10px 16px" }}>
+                          <span style={{ fontSize: 12, color: "var(--t-text-primary)" }}>
+                            {job.scheduled_date ? fmtDate(job.scheduled_date) : "—"}
+                          </span>
+                        </td>
+                        <td style={{ padding: "10px 16px" }}>
+                          <span
+                            className="tabular-nums"
+                            style={{ fontSize: 12, fontWeight: 700, color: overdueColor }}
+                          >
+                            {daysOverdue}
+                          </span>
+                        </td>
+                        <td style={{ padding: "10px 16px" }}>
+                          <span style={{ fontSize: 12, color: "var(--t-text-primary)" }}>
+                            {customerName || <span style={{ color: "var(--t-text-tertiary)" }}>—</span>}
+                          </span>
+                        </td>
+                        <td style={{ padding: "10px 16px", maxWidth: 220 }}>
+                          <span style={{ fontSize: 12, color: "var(--t-text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>
+                            {address || "—"}
+                          </span>
+                        </td>
+                        <td style={{ padding: "10px 16px" }}>
+                          <span style={{ fontSize: 12, color: driverName ? "var(--t-text-primary)" : "var(--t-text-tertiary)" }}>
+                            {driverName || "—"}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )
       ) : filteredChains.length === 0 && standaloneJobs.length === 0 ? (
         <div className="surface-card py-16 flex flex-col items-center justify-center text-center">
           <Briefcase size={40} style={{ color: "var(--t-text-tertiary)" }} className="mb-3" />
@@ -1097,7 +1322,46 @@ function JobsPageContent() {
             {bulkProgress || `${selectedJobIds.size} selected`}
           </span>
           <div style={{ width: 1, height: 20, background: "var(--t-border)" }} />
-          {!bulkProgress && (
+          {!bulkProgress && statusFilter === "stale" && (
+            <button
+              onClick={async () => {
+                if (selectedJobIds.size > 25) { toast("error", "Select 25 or fewer jobs for bulk actions"); return; }
+                const ids = Array.from(selectedJobIds);
+                // Registry-driven confirmation copy — "{N}" token is
+                // replaced with the live selection count at render
+                // time. Native window.confirm matches the existing
+                // confirm pattern on this page (driver-assign prompt
+                // above) and provides count + availability warning.
+                const template =
+                  FEATURE_REGISTRY.stale_jobs_bulk_cancel_confirm?.label ??
+                  "Cancel {N} stale jobs? This will improve availability projections.";
+                const msg = template.replace("{N}", String(ids.length));
+                if (!window.confirm(msg)) return;
+                for (let i = 0; i < ids.length; i++) {
+                  setBulkProgress(`Cancelling ${i + 1} of ${ids.length}...`);
+                  // Reuses the existing lifecycle endpoint —
+                  // server-side validation, audit log, and
+                  // downstream asset state-machine all continue to
+                  // apply per-job.
+                  try { await api.patch(`/jobs/${ids[i]}/status`, { status: "cancelled" }); } catch { /* continue on individual failure */ }
+                }
+                setBulkProgress(null);
+                setSelectedJobIds(new Set());
+                toast("success", `Cancelled ${ids.length} job(s)`);
+                // Refresh both the list and the KPI badge.
+                fetchJobs();
+                api
+                  .get<JobsResponse>("/jobs?stale=true&limit=1")
+                  .then((r) => setStaleCount(r.meta.total))
+                  .catch(() => {});
+              }}
+              className="rounded-full px-4 py-1.5 text-xs font-semibold transition-all duration-150 active:scale-95"
+              style={{ background: "var(--t-error)", color: "var(--t-accent-on-accent)" }}
+            >
+              Cancel Selected
+            </button>
+          )}
+          {!bulkProgress && statusFilter !== "stale" && (
             <>
               <button
                 onClick={async () => {
