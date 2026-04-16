@@ -1568,41 +1568,73 @@ export class JobsService {
   private async updateAssetOnJobStatus(job: Job, newStatus: string): Promise<void> {
     if (!job.asset_id) return;
     const tenant_id = job.tenant_id;
+    const jobType = job.job_type;
 
-    switch (newStatus) {
-      case 'confirmed':
-      case 'dispatched':
-        await this.assetRepo.update({ id: job.asset_id, tenant_id } as any, {
-          status: 'reserved',
-          current_job_id: job.id,
-        } as any);
-        break;
+    // Asset state must reflect physical reality, not job intent.
+    // Only deliveries move the asset pre-completion (yard →
+    // reserved → in_transit → on_site). Pickups/removals/exchanges
+    // leave the asset at customer_site until the driver actually
+    // completes the pickup — confirming, dispatching, or failing a
+    // pickup never moves the physical dumpster.
+    if (jobType === 'delivery' || jobType === 'drop_off') {
+      switch (newStatus) {
+        case 'confirmed':
+        case 'dispatched':
+          await this.assetRepo.update({ id: job.asset_id, tenant_id } as any, {
+            status: 'reserved',
+            current_job_id: job.id,
+          } as any);
+          break;
 
-      case 'en_route':
-        await this.assetRepo.update({ id: job.asset_id, tenant_id } as any, {
-          status: 'in_transit',
-          current_job_id: job.id,
-          current_location_type: 'in_transit',
-        } as any);
-        break;
+        case 'en_route':
+          await this.assetRepo.update({ id: job.asset_id, tenant_id } as any, {
+            status: 'in_transit',
+            current_job_id: job.id,
+            current_location_type: 'in_transit',
+          } as any);
+          break;
 
-      case 'arrived':
-      case 'in_progress':
-        // Still in transit / work happening, no asset status change needed
-        break;
+        case 'arrived':
+        case 'in_progress':
+          // Still in transit / work happening, no asset status change needed
+          break;
 
-      case 'completed':
+        case 'completed':
+          await this.handleCompletedAsset(job);
+          break;
+
+        case 'cancelled':
+        case 'failed':
+          await this.assetRepo.update({ id: job.asset_id, tenant_id } as any, {
+            status: 'available',
+            current_job_id: null,
+            current_location_type: 'yard',
+          } as any);
+          break;
+      }
+      return;
+    }
+
+    // Pickup-style: only 'completed' moves the asset. For exchange,
+    // job.asset_id is the pickup side; drop_off_asset_id is handled
+    // exclusively by handleCompletedAsset and is out of scope here.
+    if (
+      jobType === 'pickup' ||
+      jobType === 'removal' ||
+      jobType === 'exchange'
+    ) {
+      if (newStatus === 'completed') {
         await this.handleCompletedAsset(job);
-        break;
+      }
+      return;
+    }
 
-      case 'cancelled':
-      case 'failed':
-        await this.assetRepo.update({ id: job.asset_id, tenant_id } as any, {
-          status: 'available',
-          current_job_id: null,
-          current_location_type: 'yard',
-        } as any);
-        break;
+    // Other job_types (dump_run, dump_and_return, etc.) — completion
+    // still routes through handleCompletedAsset so type-specific
+    // cleanup runs (needs_dump clearing, staged_* reset). All other
+    // transitions leave the asset untouched.
+    if (newStatus === 'completed') {
+      await this.handleCompletedAsset(job);
     }
   }
 
