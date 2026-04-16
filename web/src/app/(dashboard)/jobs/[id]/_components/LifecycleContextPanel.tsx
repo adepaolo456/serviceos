@@ -17,7 +17,7 @@
  * the panel never makes a parallel /alerts call.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   ArrowRight,
@@ -135,6 +135,27 @@ export default function LifecycleContextPanel({
   const [editingNode, setEditingNode] = useState<LifecycleNode | null>(null);
   const [refetchKey, setRefetchKey] = useState(0);
 
+  // Phase 2b G2 — latest non-cancelled exchange date in this
+  // chain, if any. Feeds the pickup-branch pre-submit guard on
+  // EditJobDateModal. Derived from the lifecycle-context response
+  // already loaded above; no extra fetch.
+  const latestExchangeDate = useMemo<string | null>(() => {
+    if (!data?.nodes || data.nodes.length === 0) return null;
+    const scheduled = data.nodes.filter(
+      (n) =>
+        n.task_type === "exchange" &&
+        n.status !== "cancelled" &&
+        n.link_status !== "cancelled" &&
+        !!n.scheduled_date,
+    );
+    if (scheduled.length === 0) return null;
+    return scheduled.reduce<string | null>((max, n) => {
+      const d = n.scheduled_date;
+      if (!d) return max;
+      return !max || d > max ? d : max;
+    }, null);
+  }, [data]);
+
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
@@ -249,6 +270,14 @@ export default function LifecycleContextPanel({
             expectedPickupDate={data.chain.expected_pickup_date}
             onClose={() => setEditingNode(null)}
             onSaved={() => setRefetchKey((k) => k + 1)}
+            // Phase 2b props — threading the parity gaps closed
+            // by this migration. Chain id drives the cross-tab
+            // lifecycle broadcast; latestExchangeDate drives the
+            // pickup exchange-aware guard; tenantRentalDays drives
+            // the auto-vs-override pickup preview.
+            chainId={data.chain.id}
+            latestExchangeDate={latestExchangeDate}
+            tenantRentalDays={data.chain.rental_days ?? null}
           />
         )}
     </div>
