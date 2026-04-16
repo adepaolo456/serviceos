@@ -706,42 +706,103 @@ export default function AssetsPage() {
       </div>
 
       {/* ─── KPI Row ─── */}
-      {!loading && (
-        <div className="grid grid-cols-4 gap-4 mb-8">
-          {[
-            { label: "AVAILABLE", value: quickStats.available, color: "var(--t-accent-text)", filter: "available" },
-            { label: "DEPLOYED", value: quickStats.deployed, color: "var(--t-warning)", filter: "on_site" },
-            { label: "STAGED", value: quickStats.staged, color: "var(--t-warning)", filter: "reserved" },
-            { label: "MAINTENANCE", value: quickStats.maintenanceCount, color: "var(--t-error)", filter: "maintenance" },
-          ].map((kpi) => {
-            const isActive = statusFilter === kpi.filter;
-            return (
-              <button
-                key={kpi.label}
-                onClick={() => setStatusFilter(isActive ? "all" : kpi.filter)}
-                style={{
-                  borderRadius: 14,
-                  border: isActive ? "2px solid var(--t-accent)" : "1px solid var(--t-border)",
-                  background: isActive ? "var(--t-bg-elevated)" : "var(--t-bg-card)",
-                  padding: "18px 16px",
-                  transition: "all 0.15s ease",
-                  textAlign: "left",
-                  cursor: "pointer",
-                }}
-                onMouseOver={(e) => { if (!isActive) e.currentTarget.style.background = "var(--t-bg-card-hover)"; }}
-                onMouseOut={(e) => { if (!isActive) e.currentTarget.style.background = "var(--t-bg-card)"; }}
-              >
-                <p style={{ fontSize: 13, fontWeight: 600, textTransform: "uppercase", color: isActive ? "var(--t-accent)" : "var(--t-text-muted)", letterSpacing: "0.05em" }}>
-                  {kpi.label}
-                </p>
-                <p style={{ fontSize: 24, fontWeight: 700, color: kpi.value > 0 ? kpi.color : "var(--t-text-primary)", marginTop: 4 }} className="tabular-nums">
-                  {kpi.value}
-                </p>
-              </button>
+      {!loading && (() => {
+        // Smart Availability tile — merges current + projected into
+        // one tile. Projected total is derived from the EXISTING
+        // `projectionData` state (no new fetch). Other 3 tiles are
+        // unchanged and rendered via the standard map.
+        const projectedTotal = projectionData
+          ? projectionData.reduce((sum, r) => sum + r.projected_available, 0)
+          : null;
+        const projDateLabel = (() => {
+          try {
+            return new Date(projectionDate + "T12:00:00").toLocaleDateString(
+              "en-US",
+              { month: "short", day: "numeric" },
             );
-          })}
-        </div>
-      )}
+          } catch {
+            return projectionDate;
+          }
+        })();
+        const availIsActive = statusFilter === "available";
+        const tileBase = {
+          borderRadius: 14,
+          padding: "18px 16px",
+          transition: "all 0.15s ease" as const,
+          textAlign: "left" as const,
+          cursor: "pointer" as const,
+        };
+        return (
+          <div className="grid grid-cols-4 gap-4 mb-8">
+            {/* Availability tile (merged current → projected) */}
+            <button
+              onClick={() => setStatusFilter(availIsActive ? "all" : "available")}
+              style={{
+                ...tileBase,
+                border: availIsActive ? "2px solid var(--t-accent)" : "1px solid var(--t-border)",
+                background: availIsActive ? "var(--t-bg-elevated)" : "var(--t-bg-card)",
+              }}
+              onMouseOver={(e) => { if (!availIsActive) e.currentTarget.style.background = "var(--t-bg-card-hover)"; }}
+              onMouseOut={(e) => { if (!availIsActive) e.currentTarget.style.background = "var(--t-bg-card)"; }}
+            >
+              <p style={{ fontSize: 13, fontWeight: 600, textTransform: "uppercase", color: availIsActive ? "var(--t-accent)" : "var(--t-text-muted)", letterSpacing: "0.05em" }}>
+                {FEATURE_REGISTRY.assets_availability_label?.label ?? "Availability"}
+              </p>
+              <div className="flex items-baseline gap-1.5" style={{ marginTop: 4 }}>
+                <span className="tabular-nums" style={{ fontSize: 24, fontWeight: 700, color: quickStats.available > 0 ? "var(--t-accent-text)" : "var(--t-text-primary)" }}>
+                  {quickStats.available}
+                </span>
+                <span style={{ fontSize: 16, fontWeight: 500, color: "var(--t-text-muted)" }}>→</span>
+                <span className="tabular-nums" style={{
+                  fontSize: 24,
+                  fontWeight: 700,
+                  color: projectedTotal === null
+                    ? "var(--t-text-muted)"
+                    : projectedTotal === 0
+                      ? "var(--t-error)"
+                      : projectedTotal <= 2
+                        ? "var(--t-warning)"
+                        : "var(--t-accent-text)",
+                }}>
+                  {projectedTotal ?? "—"}
+                </span>
+              </div>
+              <p style={{ fontSize: 10, color: "var(--t-text-muted)", marginTop: 2 }}>
+                Now → {projDateLabel}
+              </p>
+            </button>
+
+            {/* Remaining KPI tiles (unchanged) */}
+            {[
+              { label: "DEPLOYED", value: quickStats.deployed, color: "var(--t-warning)", filter: "on_site" },
+              { label: "STAGED", value: quickStats.staged, color: "var(--t-warning)", filter: "reserved" },
+              { label: "MAINTENANCE", value: quickStats.maintenanceCount, color: "var(--t-error)", filter: "maintenance" },
+            ].map((kpi) => {
+              const isActive = statusFilter === kpi.filter;
+              return (
+                <button
+                  key={kpi.label}
+                  onClick={() => setStatusFilter(isActive ? "all" : kpi.filter)}
+                  style={{
+                    ...tileBase,
+                    border: isActive ? "2px solid var(--t-accent)" : "1px solid var(--t-border)",
+                    background: isActive ? "var(--t-bg-elevated)" : "var(--t-bg-card)",
+                  }}
+                  onMouseOver={(e) => { if (!isActive) e.currentTarget.style.background = "var(--t-bg-card-hover)"; }}
+                  onMouseOut={(e) => { if (!isActive) e.currentTarget.style.background = "var(--t-bg-card)"; }}
+                >
+                  <p style={{ fontSize: 13, fontWeight: 600, textTransform: "uppercase", color: isActive ? "var(--t-accent)" : "var(--t-text-muted)", letterSpacing: "0.05em" }}>
+                    {kpi.label}
+                  </p>
+                  <p style={{ fontSize: 24, fontWeight: 700, color: kpi.value > 0 ? kpi.color : "var(--t-text-primary)", marginTop: 4 }} className="tabular-nums">
+                    {kpi.value}
+                  </p>
+                </button>
+              );
+            })}
+          </div>
+        );
+      })()}
 
       {/* Last updated + refresh */}
       {!loading && (
