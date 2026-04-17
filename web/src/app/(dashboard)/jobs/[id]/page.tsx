@@ -476,7 +476,10 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
   // fetch populated by resolveChainId — no additional network call.
   // The rentals page remains unchanged; this card is additive only.
   const [chainFinancials, setChainFinancials] = useState<{
-    financials: { revenue: number; cost: number; profit: number; margin: number } | null;
+    /** Field names mirror the backend RentalChainLifecycleFinancialsDto
+     *  (api/src/modules/rental-chains/dto/lifecycle-response.dto.ts).
+     *  marginPercent is in the 0–100 range (e.g. 70 = 70%), not 0–1. */
+    financials: { totalRevenue: number; totalCost: number; profit: number; marginPercent: number } | null;
     invoices: Array<{ id: string; invoiceNumber: number; total: number; status: string; balanceDue: number }>;
     payments: Array<{ id: string; amount: number; status: string; paymentMethod: string; appliedAt: string }>;
     dumpTickets: Array<{ id: string; ticketNumber: string | null; weightTons: number; totalCost: number; customerCharges: number; wasteType: string | null }>;
@@ -782,7 +785,8 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
           api.get<{
             rentalChain: { status: string; dropOffDate: string; expectedPickupDate: string | null; rentalDays: number };
             jobs: Array<{ taskType: string; status: string; scheduledDate: string }>;
-            financials?: { revenue: number; cost: number; profit: number; margin: number };
+            /** Mirrors backend RentalChainLifecycleFinancialsDto; marginPercent is 0–100. */
+            financials?: { totalRevenue: number; totalCost: number; profit: number; marginPercent: number };
             invoices?: Array<{ id: string; invoiceNumber: number; total: number; status: string; balanceDue: number }>;
             payments?: Array<{ id: string; amount: number; status: string; paymentMethod: string; appliedAt: string }>;
             dumpTickets?: Array<{ id: string; ticketNumber: string | null; weightTons: number; totalCost: number; customerCharges: number; wasteType: string | null }>;
@@ -2142,13 +2146,13 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
                   <div>
                     <p className="text-[10px] font-medium uppercase tracking-wider text-[var(--t-text-muted)]">Revenue</p>
                     <p className="text-sm font-bold text-[var(--t-text-primary)] tabular-nums">
-                      {formatCurrency(chainFinancials.financials.revenue)}
+                      {formatCurrency(chainFinancials.financials.totalRevenue)}
                     </p>
                   </div>
                   <div>
                     <p className="text-[10px] font-medium uppercase tracking-wider text-[var(--t-text-muted)]">Cost</p>
                     <p className="text-sm font-bold text-[var(--t-text-primary)] tabular-nums">
-                      {formatCurrency(chainFinancials.financials.cost)}
+                      {formatCurrency(chainFinancials.financials.totalCost)}
                     </p>
                   </div>
                   <div>
@@ -2168,7 +2172,7 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
                   <div>
                     <p className="text-[10px] font-medium uppercase tracking-wider text-[var(--t-text-muted)]">Margin</p>
                     <p className="text-sm font-bold text-[var(--t-text-primary)] tabular-nums">
-                      {(chainFinancials.financials.margin ?? 0).toFixed(1)}%
+                      {(chainFinancials.financials.marginPercent ?? 0).toFixed(1)}%
                     </p>
                   </div>
                 </div>
