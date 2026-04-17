@@ -8,6 +8,7 @@ import { AssetsResponseDto } from './dto/assets-response.dto';
 import { CustomersResponseDto } from './dto/customers-response.dto';
 import { RevenueSourceDetailResponseDto } from './dto/revenue-source-detail-response.dto';
 import { RevenueDailyDetailResponseDto } from './dto/revenue-daily-detail-response.dto';
+import { RevenueInvoicesResponseDto } from './dto/revenue-invoices-response.dto';
 
 @ApiTags('Reporting')
 @ApiBearerAuth()
@@ -42,7 +43,7 @@ export class ReportingController {
     @Query('filter') filter: string,
     @Query('startDate') s?: string,
     @Query('endDate') e?: string,
-  ) {
+  ): Promise<RevenueInvoicesResponseDto> {
     return this.service.getRevenueInvoices(tid, filter, s, e);
   }
 
