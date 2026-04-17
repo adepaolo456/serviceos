@@ -10,6 +10,7 @@ import { RevenueSourceDetailResponseDto } from './dto/revenue-source-detail-resp
 import { RevenueDailyDetailResponseDto } from './dto/revenue-daily-detail-response.dto';
 import { RevenueInvoicesResponseDto } from './dto/revenue-invoices-response.dto';
 import { RevenueResponseDto } from './dto/revenue-response.dto';
+import { DriversResponseDto } from './dto/drivers-response.dto';
 
 @ApiTags('Reporting')
 @ApiBearerAuth()
@@ -119,7 +120,11 @@ export class ReportingController {
 
   @Get('drivers')
   @ApiOperation({ summary: 'Driver productivity report' })
-  drivers(@TenantId() tid: string, @Query('startDate') s?: string, @Query('endDate') e?: string) {
+  drivers(
+    @TenantId() tid: string,
+    @Query('startDate') s?: string,
+    @Query('endDate') e?: string,
+  ): Promise<DriversResponseDto> {
     return this.service.getDriverProductivity(tid, s, e);
   }
 

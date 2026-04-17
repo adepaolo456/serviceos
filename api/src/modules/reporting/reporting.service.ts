@@ -17,6 +17,7 @@ import { RevenueSourceDetailResponseDto } from './dto/revenue-source-detail-resp
 import { RevenueDailyDetailResponseDto } from './dto/revenue-daily-detail-response.dto';
 import { RevenueInvoicesResponseDto } from './dto/revenue-invoices-response.dto';
 import { RevenueResponseDto } from './dto/revenue-response.dto';
+import { DriversResponseDto } from './dto/drivers-response.dto';
 
 const CORRECTION_CUTOFF = '2026-04-02T00:00:00Z';
 function classifyRecord(createdAt: string | Date): 'legacy' | 'post-correction' {
@@ -406,7 +407,7 @@ export class ReportingService {
     };
   }
 
-  async getDriverProductivity(tenantId: string, startDate?: string, endDate?: string) {
+  async getDriverProductivity(tenantId: string, startDate?: string, endDate?: string): Promise<DriversResponseDto> {
     const { start, end } = this.dateRange(startDate, endDate);
 
     const stats = await this.jobRepo.createQueryBuilder('j')
