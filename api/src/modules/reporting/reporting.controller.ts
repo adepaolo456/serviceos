@@ -4,6 +4,7 @@ import { ReportingService } from './reporting.service';
 import { TenantId, Roles } from '../../common/decorators';
 import { RolesGuard } from '../../common/guards';
 import { ProfitResponseDto } from './dto/profit-response.dto';
+import { AssetsResponseDto } from './dto/assets-response.dto';
 
 @ApiTags('Reporting')
 @ApiBearerAuth()
@@ -114,7 +115,7 @@ export class ReportingController {
 
   @Get('assets')
   @ApiOperation({ summary: 'Asset utilization report' })
-  assets(@TenantId() tid: string) {
+  assets(@TenantId() tid: string): Promise<AssetsResponseDto> {
     return this.service.getAssetUtilization(tid);
   }
 

@@ -11,6 +11,7 @@ import { User } from '../auth/entities/user.entity';
 import { RentalChain } from '../rental-chains/entities/rental-chain.entity';
 import { TaskChainLink } from '../rental-chains/entities/task-chain-link.entity';
 import { ProfitResponseDto } from './dto/profit-response.dto';
+import { AssetsResponseDto } from './dto/assets-response.dto';
 
 const CORRECTION_CUTOFF = '2026-04-02T00:00:00Z';
 function classifyRecord(createdAt: string | Date): 'legacy' | 'post-correction' {
@@ -439,7 +440,7 @@ export class ReportingService {
     };
   }
 
-  async getAssetUtilization(tenantId: string) {
+  async getAssetUtilization(tenantId: string): Promise<AssetsResponseDto> {
     const total = await this.assetRepo.count({ where: { tenant_id: tenantId } });
     const byStatus = await this.assetRepo.createQueryBuilder('a')
       .select('a.status', 'status')
