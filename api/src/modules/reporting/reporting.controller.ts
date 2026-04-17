@@ -13,6 +13,7 @@ import { RevenueResponseDto } from './dto/revenue-response.dto';
 import { DriversResponseDto } from './dto/drivers-response.dto';
 import { AccountsReceivableResponseDto } from './dto/accounts-receivable-response.dto';
 import { DumpCostsResponseDto } from './dto/dump-costs-response.dto';
+import { DumpSlipsResponseDto } from './dto/dump-slips-response.dto';
 
 @ApiTags('Reporting')
 @ApiBearerAuth()
@@ -110,7 +111,7 @@ export class ReportingController {
     @Query('dumpLocationId') loc?: string,
     @Query('search') search?: string,
     @Query('status') status?: string,
-  ) {
+  ): Promise<DumpSlipsResponseDto> {
     return this.service.getDumpSlips(tid, s, e, loc, search, status);
   }
 
