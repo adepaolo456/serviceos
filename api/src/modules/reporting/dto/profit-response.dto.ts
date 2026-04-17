@@ -23,20 +23,25 @@ import { PeriodDto } from './period.dto';
 export class ProfitResponseDto {
   /**
    * Revenue **collected** (payments applied) in the window.
+   * Sourced from `getRevenue(...).totalCollected` (pass-through).
    *
-   * ⚠ Semantic collision flagged in Phase 0 Risk #1:
-   * `GET /reporting/profit.totalRevenue` === `getRevenue(...).totalCollected`.
-   * This is NOT the same value as `GET /reporting/revenue.totalRevenue`
-   * (which represents invoiced revenue from `SUM(invoices.total)`).
-   * Do NOT cross-wire the two values in downstream code — they diverge
-   * whenever invoices are issued without matching completed payments
-   * in the same window.
+   * Naming note: this field was renamed from `totalRevenue` to
+   * `totalCollected` to align the wire name with the actual
+   * semantic (payments-applied, not invoiced). The wire name now
+   * matches `RevenueResponseDto.totalCollected` (Phase 5) — both
+   * represent the same collected-revenue semantic at the window
+   * level.
+   *
+   * Distinct from `RevenueResponseDto.totalRevenue` (Phase 5),
+   * which represents INVOICED revenue (`SUM(invoices.total)`).
+   * Collected and invoiced diverge whenever invoices are issued
+   * without matching completed payments in the same window.
    */
   @ApiProperty({
     description:
-      'Revenue collected (payments applied). Sourced from getRevenue(...).totalCollected — NOT .totalRevenue.',
+      'Revenue collected (payments applied). Sourced from getRevenue(...).totalCollected.',
   })
-  totalRevenue: number;
+  totalCollected: number;
 
   /** From `getDumpCosts(...).totalDumpCosts`. Plain currency. */
   @ApiProperty({
@@ -44,22 +49,22 @@ export class ProfitResponseDto {
   })
   totalDumpCosts: number;
 
-  /** `totalRevenue − totalDumpCosts`, computed in-memory (never stored). */
+  /** `totalCollected − totalDumpCosts`, computed in-memory (never stored). */
   @ApiProperty({
-    description: 'totalRevenue − totalDumpCosts, computed in-memory.',
+    description: 'totalCollected − totalDumpCosts, computed in-memory.',
   })
   grossProfit: number;
 
   /**
    * Gross margin percentage in the **0–100 range** (not 0–1).
-   * Formula: `(grossProfit / totalRevenue) * 100`, or `0` when `totalRevenue === 0`.
+   * Formula: `(grossProfit / totalCollected) * 100`, or `0` when `totalCollected === 0`.
    *
    * Module-wide convention: all `*Percent`-suffixed fields across the reporting
    * module use the 0–100 range (per Phase 0 Risk #3).
    */
   @ApiProperty({
     description:
-      'Gross margin percentage in 0–100 range (module convention). 0 when totalRevenue is 0.',
+      'Gross margin percentage in 0–100 range (module convention). 0 when totalCollected is 0.',
   })
   grossMarginPercent: number;
 

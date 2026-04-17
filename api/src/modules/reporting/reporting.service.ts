@@ -419,7 +419,7 @@ export class ReportingService {
     const gross = revenue.totalCollected - costs.totalDumpCosts;
 
     return {
-      totalRevenue: revenue.totalCollected,
+      totalCollected: revenue.totalCollected,
       totalDumpCosts: costs.totalDumpCosts,
       grossProfit: gross,
       grossMarginPercent: revenue.totalCollected > 0 ? (gross / revenue.totalCollected * 100) : 0,

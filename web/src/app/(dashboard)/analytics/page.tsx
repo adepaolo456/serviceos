@@ -90,7 +90,7 @@ interface DumpCostsData {
 }
 
 interface ProfitData {
-  totalRevenue: number;
+  totalCollected: number;
   totalDumpCosts: number;
   grossProfit: number;
   grossMarginPercent: number;
@@ -663,7 +663,7 @@ function ProfitTab({ data, loading }: { data: ProfitData | null; loading: boolea
   if (!data) return <EmptyState text="No profit data available" />;
   return (
     <KPIGrid>
-      <KPI label="Revenue (Collected)" value={formatCurrency(data.totalRevenue)} />
+      <KPI label="Revenue (Collected)" value={formatCurrency(data.totalCollected)} />
       <KPI label="Dump Costs" value={formatCurrency(data.totalDumpCosts)} color="text-[var(--t-error)]" />
       <KPI label="Gross Profit" value={formatCurrency(data.grossProfit)} color="text-[var(--t-accent)]" />
       <KPI label="Margin %" value={fmtPct(data.grossMarginPercent)} color="text-[var(--t-accent)]" />
