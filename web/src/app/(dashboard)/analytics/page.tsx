@@ -65,13 +65,28 @@ interface SourceDetailInvoice {
   jobNumber: string;
 }
 
+/**
+ * Field names mirror the backend `getDumpCosts` projection in
+ * `api/src/modules/reporting/reporting.service.ts:291–299`.
+ *
+ * Notes:
+ *  - `totalMargin` = `totalCustomerCharges − totalDumpCosts` (currency).
+ *  - `marginPercent` is in the 0–100 range.
+ *  - `costsByWasteType` does NOT carry a per-row count from the backend
+ *    (the projection groups by waste_type and selects totalCost +
+ *    totalWeight only). Per the Phase 2c Follow-Up #4.6 product call,
+ *    the Waste Type table reads `totalWeight` and labels its column
+ *    "Weight (tons)" instead of attempting to render a load count.
+ *    The Facility table is unaffected and continues to display
+ *    `tripCount` as "Loads".
+ */
 interface DumpCostsData {
   totalDumpCosts: number;
   totalCustomerCharges: number;
-  margin: number;
+  totalMargin: number;
   marginPercent: number;
-  costsByFacility: { facility: string; cost: number; loads: number }[];
-  costsByWasteType: { wasteType: string; cost: number; loads: number }[];
+  costsByFacility: { dumpLocationName: string; totalCost: number; tripCount: number }[];
+  costsByWasteType: { wasteType: string; totalCost: number; totalWeight: number }[];
 }
 
 interface ProfitData {
@@ -620,19 +635,23 @@ function DumpCostsTab({ data, loading }: { data: DumpCostsData | null; loading: 
       <KPIGrid>
         <KPI label="Dump Costs" value={formatCurrency(data.totalDumpCosts)} color="text-[var(--t-error)]" />
         <KPI label="Customer Charges" value={formatCurrency(data.totalCustomerCharges)} />
-        <KPI label="Margin" value={formatCurrency(data.margin)} color="text-[var(--t-accent)]" />
+        <KPI label="Margin" value={formatCurrency(data.totalMargin)} color="text-[var(--t-accent)]" />
         <KPI label="Margin %" value={fmtPct(data.marginPercent)} color="text-[var(--t-accent)]" />
       </KPIGrid>
       {data.costsByFacility?.length > 0 && (
         <div className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5">
           <h3 className="text-sm font-semibold text-[var(--t-text-primary)] mb-4">Costs by Facility</h3>
-          <DataTable headers={["Facility", "Loads", "Cost"]} rows={data.costsByFacility.map((r) => [r.facility, fmtNum(r.loads), formatCurrency(r.cost)])} />
+          <DataTable headers={["Facility", "Loads", "Cost"]} rows={data.costsByFacility.map((r) => [r.dumpLocationName, fmtNum(r.tripCount), formatCurrency(r.totalCost)])} />
         </div>
       )}
       {data.costsByWasteType?.length > 0 && (
         <div className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-5">
           <h3 className="text-sm font-semibold text-[var(--t-text-primary)] mb-4">Costs by Waste Type</h3>
-          <DataTable headers={["Waste Type", "Loads", "Cost"]} rows={data.costsByWasteType.map((r) => [r.wasteType, fmtNum(r.loads), formatCurrency(r.cost)])} />
+          {/* Phase 2c Follow-Up #4.6 — Waste Type column shifted from
+              Loads (no backend equivalent on this projection) to Weight
+              (tons), reading totalWeight. Facility table's Loads column
+              is unchanged (tripCount is a real per-facility count). */}
+          <DataTable headers={["Waste Type", "Weight (tons)", "Cost"]} rows={data.costsByWasteType.map((r) => [r.wasteType, r.totalWeight.toFixed(2), formatCurrency(r.totalCost)])} />
         </div>
       )}
     </div>
