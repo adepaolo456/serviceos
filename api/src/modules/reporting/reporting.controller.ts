@@ -3,6 +3,7 @@ import { ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
 import { ReportingService } from './reporting.service';
 import { TenantId, Roles } from '../../common/decorators';
 import { RolesGuard } from '../../common/guards';
+import { ProfitResponseDto } from './dto/profit-response.dto';
 
 @ApiTags('Reporting')
 @ApiBearerAuth()
@@ -97,7 +98,11 @@ export class ReportingController {
 
   @Get('profit')
   @ApiOperation({ summary: 'Profit report' })
-  profit(@TenantId() tid: string, @Query('startDate') s?: string, @Query('endDate') e?: string) {
+  profit(
+    @TenantId() tid: string,
+    @Query('startDate') s?: string,
+    @Query('endDate') e?: string,
+  ): Promise<ProfitResponseDto> {
     return this.service.getProfit(tid, s, e);
   }
 
