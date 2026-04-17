@@ -19,6 +19,7 @@ import { RevenueInvoicesResponseDto } from './dto/revenue-invoices-response.dto'
 import { RevenueResponseDto } from './dto/revenue-response.dto';
 import { DriversResponseDto } from './dto/drivers-response.dto';
 import { AccountsReceivableResponseDto } from './dto/accounts-receivable-response.dto';
+import { DumpCostsResponseDto } from './dto/dump-costs-response.dto';
 
 const CORRECTION_CUTOFF = '2026-04-02T00:00:00Z';
 function classifyRecord(createdAt: string | Date): 'legacy' | 'post-correction' {
@@ -260,7 +261,11 @@ export class ReportingService {
     return { filter, invoices: this.mapInvoiceRows(rows) };
   }
 
-  async getDumpCosts(tenantId: string, startDate?: string, endDate?: string) {
+  async getDumpCosts(
+    tenantId: string,
+    startDate?: string,
+    endDate?: string,
+  ): Promise<DumpCostsResponseDto> {
     const { start, end } = this.dateRange(startDate, endDate);
 
     const totals = await this.ticketRepo.createQueryBuilder('t')
