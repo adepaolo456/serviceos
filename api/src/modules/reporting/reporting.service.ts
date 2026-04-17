@@ -12,6 +12,7 @@ import { RentalChain } from '../rental-chains/entities/rental-chain.entity';
 import { TaskChainLink } from '../rental-chains/entities/task-chain-link.entity';
 import { ProfitResponseDto } from './dto/profit-response.dto';
 import { AssetsResponseDto } from './dto/assets-response.dto';
+import { CustomersResponseDto } from './dto/customers-response.dto';
 
 const CORRECTION_CUTOFF = '2026-04-02T00:00:00Z';
 function classifyRecord(createdAt: string | Date): 'legacy' | 'post-correction' {
@@ -466,7 +467,11 @@ export class ReportingService {
     };
   }
 
-  async getCustomerAnalytics(tenantId: string, startDate?: string, endDate?: string) {
+  async getCustomerAnalytics(
+    tenantId: string,
+    startDate?: string,
+    endDate?: string,
+  ): Promise<CustomersResponseDto> {
     const { start, end } = this.dateRange(startDate, endDate);
     const endTs = end + 'T23:59:59';
 
