@@ -15,6 +15,7 @@ import { AccountsReceivableResponseDto } from './dto/accounts-receivable-respons
 import { DumpCostsResponseDto } from './dto/dump-costs-response.dto';
 import { DumpSlipsResponseDto } from './dto/dump-slips-response.dto';
 import { LifecycleReportResponseDto } from './dto/lifecycle-response.dto';
+import { ReportingAlertsResponseDto } from './dto/alerts-response.dto';
 
 @ApiTags('Reporting')
 @ApiBearerAuth()
@@ -172,7 +173,7 @@ export class ReportingController {
 
   @Get('alerts')
   @ApiOperation({ summary: 'Admin alerts from live data' })
-  getAlerts(@TenantId() tid: string) {
+  getAlerts(@TenantId() tid: string): Promise<ReportingAlertsResponseDto> {
     return this.service.getAlerts(tid);
   }
 

@@ -22,6 +22,7 @@ import { AccountsReceivableResponseDto } from './dto/accounts-receivable-respons
 import { DumpCostsResponseDto } from './dto/dump-costs-response.dto';
 import { DumpSlipsResponseDto } from './dto/dump-slips-response.dto';
 import { LifecycleReportResponseDto } from './dto/lifecycle-response.dto';
+import { ReportingAlertsResponseDto, ReportingAlertRowDto } from './dto/alerts-response.dto';
 
 const CORRECTION_CUTOFF = '2026-04-02T00:00:00Z';
 function classifyRecord(createdAt: string | Date): 'legacy' | 'post-correction' {
@@ -753,13 +754,9 @@ export class ReportingService {
     };
   }
 
-  async getAlerts(tenantId: string) {
+  async getAlerts(tenantId: string): Promise<ReportingAlertsResponseDto> {
     const integrity = await this.getIntegrityCheck(tenantId);
-    const alerts: Array<{
-      id: string; type: string; severity: string; classification: string;
-      title: string; message: string; entityType: string; href: string;
-      createdAt: string; read: boolean;
-    }> = [];
+    const alerts: ReportingAlertRowDto[] = [];
 
     const now = new Date().toISOString();
 
@@ -768,7 +765,7 @@ export class ReportingService {
         alerts.push({
           id: `${check.name}:post:${now.split('T')[0]}`,
           type: check.name,
-          severity: check.severity,
+          severity: check.severity as 'critical' | 'warning' | 'info',
           classification: 'post-correction',
           title: this.alertTitle(check.name),
           message: `${check.post_correction_count} post-correction ${check.description.toLowerCase()}`,
@@ -843,7 +840,9 @@ export class ReportingService {
     return titles[name] || name.replace(/_/g, ' ');
   }
 
-  private alertEntityType(name: string): string {
+  private alertEntityType(
+    name: string,
+  ): 'invoice' | 'dump_ticket' | 'job' | 'payment' | 'system' {
     if (name.includes('invoice') || name.includes('balance') || name.includes('paid')) return 'invoice';
     if (name.includes('dump') || name.includes('ticket')) return 'dump_ticket';
     if (name.includes('job')) return 'job';
