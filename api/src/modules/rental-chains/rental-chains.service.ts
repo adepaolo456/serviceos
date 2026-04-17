@@ -431,6 +431,32 @@ export class RentalChainsService {
       // ── Delivery reschedule (runs first so a later
       //     expected_pickup_date update in the same call wins) ──
       if (dto.drop_off_date !== undefined) {
+        // Post-Phase-2c Tier A #3 — fail fast when the chain has no
+        // currently-scheduled delivery link. Symmetric to the pickup
+        // guard on the sibling branch (Follow-Up #1, commit 5a658cc)
+        // and to createExchange's guard (Tier A #2, commit 4a3a9e7).
+        // Zero side effects on the failed path; any direct API caller
+        // attempting to set drop_off_date on a chain without a
+        // scheduled delivery lands here. Lookup is scheduled-filtered
+        // (the existing unfiltered lookup a few lines down stays
+        // untouched — it feeds the downstream-shift logic and the
+        // rental_end_date sync that reference the same link row).
+        const scheduledDeliveryLink = await linkRepo.findOne({
+          where: {
+            rental_chain_id: chain.id,
+            task_type: 'drop_off',
+            status: 'scheduled',
+          },
+          order: { sequence_number: 'ASC' },
+        });
+        if (!scheduledDeliveryLink) {
+          throw new ConflictException({
+            code: 'NO_SCHEDULED_DELIVERY',
+            message:
+              'Cannot update drop-off date: this rental chain has no scheduled delivery. The delivery may have been cancelled or completed; reopen it or cancel the chain first.',
+          });
+        }
+
         const oldDelivery = chain.drop_off_date;
         const newDelivery = dto.drop_off_date;
         const shiftDays =
