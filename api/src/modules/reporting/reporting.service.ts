@@ -23,6 +23,10 @@ import { DumpCostsResponseDto } from './dto/dump-costs-response.dto';
 import { DumpSlipsResponseDto } from './dto/dump-slips-response.dto';
 import { LifecycleReportResponseDto } from './dto/lifecycle-response.dto';
 import { ReportingAlertsResponseDto, ReportingAlertRowDto } from './dto/alerts-response.dto';
+import {
+  IntegrityCheckResponseDto,
+  IntegrityCheckRowDto,
+} from './dto/integrity-check-response.dto';
 
 const CORRECTION_CUTOFF = '2026-04-02T00:00:00Z';
 function classifyRecord(createdAt: string | Date): 'legacy' | 'post-correction' {
@@ -608,8 +612,8 @@ export class ReportingService {
     };
   }
 
-  async getIntegrityCheck(tenantId: string) {
-    const checks: Array<{ name: string; description: string; legacy_count: number; post_correction_count: number; severity: string; note: string }> = [];
+  async getIntegrityCheck(tenantId: string): Promise<IntegrityCheckResponseDto> {
+    const checks: IntegrityCheckRowDto[] = [];
     const cutoff = CORRECTION_CUTOFF;
 
     // 1. Balance mismatch: invoices where balance_due != total - amount_paid (within $0.01)
@@ -687,7 +691,7 @@ export class ReportingService {
 
     // Sort: critical → warning → info, then alphabetical
     const severityOrder = { critical: 0, warning: 1, info: 2 };
-    checks.sort((a, b) => (severityOrder[a.severity as keyof typeof severityOrder] ?? 3) - (severityOrder[b.severity as keyof typeof severityOrder] ?? 3) || a.name.localeCompare(b.name));
+    checks.sort((a, b) => (severityOrder[a.severity] ?? 3) - (severityOrder[b.severity] ?? 3) || a.name.localeCompare(b.name));
 
     return {
       timestamp: new Date().toISOString(),
@@ -765,7 +769,7 @@ export class ReportingService {
         alerts.push({
           id: `${check.name}:post:${now.split('T')[0]}`,
           type: check.name,
-          severity: check.severity as 'critical' | 'warning' | 'info',
+          severity: check.severity,
           classification: 'post-correction',
           title: this.alertTitle(check.name),
           message: `${check.post_correction_count} post-correction ${check.description.toLowerCase()}`,
