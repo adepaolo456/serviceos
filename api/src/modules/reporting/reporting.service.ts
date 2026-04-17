@@ -14,6 +14,7 @@ import { ProfitResponseDto } from './dto/profit-response.dto';
 import { AssetsResponseDto } from './dto/assets-response.dto';
 import { CustomersResponseDto } from './dto/customers-response.dto';
 import { RevenueSourceDetailResponseDto } from './dto/revenue-source-detail-response.dto';
+import { RevenueDailyDetailResponseDto } from './dto/revenue-daily-detail-response.dto';
 
 const CORRECTION_CUTOFF = '2026-04-02T00:00:00Z';
 function classifyRecord(createdAt: string | Date): 'legacy' | 'post-correction' {
@@ -187,7 +188,7 @@ export class ReportingService {
     return { source, invoices: this.mapInvoiceRows(rows) };
   }
 
-  async getRevenueByDailyDetail(tenantId: string, date: string) {
+  async getRevenueByDailyDetail(tenantId: string, date: string): Promise<RevenueDailyDetailResponseDto> {
     const rows = await this.dataSource.query(
       `${this.invoiceDetailSelect}
        WHERE i.tenant_id = $1
