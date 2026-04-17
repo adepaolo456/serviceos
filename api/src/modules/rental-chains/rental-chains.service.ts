@@ -15,6 +15,7 @@ import { CreateRentalChainDto } from './dto/create-rental-chain.dto';
 import { UpdateRentalChainDto } from './dto/update-rental-chain.dto';
 import { CreateExchangeDto } from './dto/create-exchange.dto';
 import { RescheduleExchangeDto } from './dto/reschedule-exchange.dto';
+import { RentalChainLifecycleResponseDto } from './dto/lifecycle-response.dto';
 import { issueNextJobNumber } from '../../common/utils/job-number.util';
 // Path α — lifecycle exchanges reuse the existing pricing engine +
 // canonical billing path so they price/invoice identically to
@@ -997,7 +998,10 @@ export class RentalChainsService {
     return this.linkRepo.save(link);
   }
 
-  async getLifecycle(tenantId: string, chainId: string) {
+  async getLifecycle(
+    tenantId: string,
+    chainId: string,
+  ): Promise<RentalChainLifecycleResponseDto> {
     const chain = await this.chainRepo.findOne({
       where: { id: chainId, tenant_id: tenantId },
       relations: ['customer'],

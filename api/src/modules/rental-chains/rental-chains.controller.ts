@@ -16,6 +16,7 @@ import { CreateRentalChainDto } from './dto/create-rental-chain.dto';
 import { UpdateRentalChainDto } from './dto/update-rental-chain.dto';
 import { CreateExchangeDto } from './dto/create-exchange.dto';
 import { RescheduleExchangeDto } from './dto/reschedule-exchange.dto';
+import { RentalChainLifecycleResponseDto } from './dto/lifecycle-response.dto';
 
 @ApiTags('Rental Chains')
 @ApiBearerAuth()
@@ -34,7 +35,10 @@ export class RentalChainsController {
 
   @Get(':id/lifecycle')
   @ApiOperation({ summary: 'Get lifecycle drill-down for a rental chain' })
-  getLifecycle(@TenantId() tenantId: string, @Param('id', ParseUUIDPipe) id: string) {
+  getLifecycle(
+    @TenantId() tenantId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<RentalChainLifecycleResponseDto> {
     return this.service.getLifecycle(tenantId, id);
   }
 
