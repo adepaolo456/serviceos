@@ -726,33 +726,27 @@ export class RentalChainsService {
       let previousLinkId: string | null = null;
       let previousSeq = 0;
 
-      if (currentPickupLink) {
-        currentPickupLink.status = 'cancelled';
-        await linkRepo.save(currentPickupLink);
-        // Phase 10A: stamp the cancellation reason so the job detail
-        // page can show "Cancelled due to exchange replacement" and
-        // derive replacement tasks from the chain.
-        await jobRepo.update(
-          { id: currentPickupLink.job_id, tenant_id: tenantId },
-          {
-            status: 'cancelled',
-            cancelled_at: new Date(),
-            cancellation_reason: 'exchange_replacement',
-          },
-        );
-        // The exchange must slot in AFTER whatever came before the old pickup
-        previousLinkId = currentPickupLink.previous_link_id ?? null;
-        previousSeq = currentPickupLink.sequence_number - 1;
-      } else {
-        // No scheduled pickup — append to the tail
-        const tail = await linkRepo
-          .createQueryBuilder('l')
-          .where('l.rental_chain_id = :id', { id: chain.id })
-          .orderBy('l.sequence_number', 'DESC')
-          .getOne();
-        previousLinkId = tail?.id ?? null;
-        previousSeq = tail?.sequence_number ?? 0;
-      }
+      // Tier A #2 guard above (commit 4a3a9e7) has proven
+      // `currentPickupLink` is non-null. The former
+      // `else { /* append to tail */ }` branch was unreachable and
+      // has been removed. The body below was previously inside
+      // `if (currentPickupLink) { ... }`; unconditional now.
+      currentPickupLink.status = 'cancelled';
+      await linkRepo.save(currentPickupLink);
+      // Phase 10A: stamp the cancellation reason so the job detail
+      // page can show "Cancelled due to exchange replacement" and
+      // derive replacement tasks from the chain.
+      await jobRepo.update(
+        { id: currentPickupLink.job_id, tenant_id: tenantId },
+        {
+          status: 'cancelled',
+          cancelled_at: new Date(),
+          cancellation_reason: 'exchange_replacement',
+        },
+      );
+      // The exchange must slot in AFTER whatever came before the old pickup
+      previousLinkId = currentPickupLink.previous_link_id ?? null;
+      previousSeq = currentPickupLink.sequence_number - 1;
 
       // 2. Create the exchange job. Inside a transaction — pass `trx`
       // so the sequence increment joins the outer transaction and
