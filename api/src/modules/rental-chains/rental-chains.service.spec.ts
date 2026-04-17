@@ -142,7 +142,7 @@ async function buildHarness(): Promise<Harness> {
 
 // ── updateChain suite ──────────────────────────────────────────────
 
-describe('RentalChainsService.updateChain — expected_pickup_date fail-fast', () => {
+describe('RentalChainsService.updateChain — date fail-fast guards', () => {
   const tenantId = 'tenant-1';
   const chainId = 'chain-1';
   const baseChain = {
@@ -239,6 +239,88 @@ describe('RentalChainsService.updateChain — expected_pickup_date fail-fast', (
       expect.objectContaining({
         id: chainId,
         expected_pickup_date: '2026-05-01',
+      }),
+    );
+  });
+
+  // ── Tier A #3: drop_off_date branch ──────────────────────────────
+
+  it('throws ConflictException with NO_SCHEDULED_DELIVERY code AND leaves the chain row unchanged when no scheduled delivery link exists', async () => {
+    h.chainRepo.findOne.mockResolvedValue({ ...baseChain });
+    // Tier A #3 guard's scheduled-filtered lookup returns null → throw.
+    h.trxLinkRepo.findOne.mockResolvedValueOnce(null);
+
+    let captured: ConflictException | null = null;
+    try {
+      await h.service.updateChain(tenantId, chainId, {
+        drop_off_date: '2026-04-05',
+      });
+    } catch (e) {
+      captured = e as ConflictException;
+    }
+    expect(captured).not.toBeNull();
+    expect(captured).toBeInstanceOf(ConflictException);
+    expect(captured.getStatus()).toBe(409);
+    expect(captured.getResponse()).toEqual({
+      code: 'NO_SCHEDULED_DELIVERY',
+      message:
+        'Cannot update drop-off date: this rental chain has no scheduled delivery. The delivery may have been cancelled or completed; reopen it or cancel the chain first.',
+    });
+
+    // Write-ordering guard: zero side effects on the failed path.
+    expect(h.trxChainRepo.save).not.toHaveBeenCalled();
+    expect(h.trxLinkRepo.save).not.toHaveBeenCalled();
+    expect(h.trxLinkRepo.update).not.toHaveBeenCalled();
+    expect(h.trxJobRepo.update).not.toHaveBeenCalled();
+    expect(h.trxJobRepo.save).not.toHaveBeenCalled();
+  });
+
+  it('happy path: updates chain drop_off_date AND linked delivery job scheduled_date when a scheduled delivery link exists', async () => {
+    h.chainRepo.findOne.mockResolvedValue({ ...baseChain });
+
+    const deliveryLink = {
+      id: 'link-delivery',
+      job_id: 'job-delivery',
+      rental_chain_id: chainId,
+      task_type: 'drop_off',
+      status: 'scheduled',
+      scheduled_date: '2026-04-01',
+      sequence_number: 1,
+    };
+    // Two findOne calls inside the transaction on the drop-off path:
+    //   1. Tier A #3 guard's scheduled-filtered lookup
+    //   2. Existing unfiltered lookup (line ~443) that feeds the
+    //      downstream-shift / rental_end_date logic
+    // Both return the same scheduled delivery link in this happy path.
+    h.trxLinkRepo.findOne
+      .mockResolvedValueOnce(deliveryLink)
+      .mockResolvedValueOnce(deliveryLink);
+    // No downstream links to shift — the find() call at line ~460
+    // returns empty so the downstream walk is a no-op.
+    h.trxLinkRepo.find.mockResolvedValue([]);
+
+    await h.service.updateChain(tenantId, chainId, {
+      drop_off_date: '2026-04-05',
+      shift_downstream: false,
+    });
+
+    // (1) Delivery link saved with new date.
+    expect(h.trxLinkRepo.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'link-delivery',
+        scheduled_date: '2026-04-05',
+      }),
+    );
+    // (2) Delivery job scheduled_date + rental_start_date synced.
+    expect(h.trxJobRepo.update).toHaveBeenCalledWith(
+      { id: 'job-delivery', tenant_id: tenantId },
+      { scheduled_date: '2026-04-05', rental_start_date: '2026-04-05' },
+    );
+    // (3) Chain row persisted with new drop_off_date.
+    expect(h.trxChainRepo.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: chainId,
+        drop_off_date: '2026-04-05',
       }),
     );
   });
