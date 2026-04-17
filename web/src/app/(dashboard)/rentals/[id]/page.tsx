@@ -475,23 +475,25 @@ export default function RentalLifecyclePage({ params }: { params: Promise<{ id: 
       </div>
 
       {/* Actions */}
-      {isActive && (
+      {/* Phase 2c Follow-Up #2 — gated on pickupJob to match
+          LifecycleContextPanel's canScheduleExchange visibility rule.
+          Both actions in this row depend on an active pickup node, so
+          the row itself is gated rather than each button individually
+          (avoids an empty flex container when pickupJob === null). */}
+      {isActive && pickupJob && (
         <div className="flex gap-2">
           {/* Phase 2c — pickup-date editing has moved to Job Detail
               (Connected Job Lifecycle panel). This is an explicit,
               user-initiated deep link to the active pickup job; no
-              auto-redirect. CTA only renders when an active pickup
-              node exists so we never leave a dead button. */}
-          {pickupJob && (
-            <Link
-              href={`/jobs/${pickupJob.id}`}
-              className="inline-flex items-center gap-1.5 rounded-full border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-2 text-xs font-medium text-[var(--t-text-primary)] hover:bg-[var(--t-bg-card-hover)] transition-colors no-underline"
-            >
-              <Pencil className="h-3 w-3" />
-              {getFeatureLabel("job_detail_edit_pickup_date_cta")}
-              <ArrowRight className="h-3 w-3" />
-            </Link>
-          )}
+              auto-redirect. */}
+          <Link
+            href={`/jobs/${pickupJob.id}`}
+            className="inline-flex items-center gap-1.5 rounded-full border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-2 text-xs font-medium text-[var(--t-text-primary)] hover:bg-[var(--t-bg-card-hover)] transition-colors no-underline"
+          >
+            <Pencil className="h-3 w-3" />
+            {getFeatureLabel("job_detail_edit_pickup_date_cta")}
+            <ArrowRight className="h-3 w-3" />
+          </Link>
           <button onClick={() => setCreateExchangeOpen(true)}
             className="inline-flex items-center gap-1.5 rounded-full border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-2 text-xs font-medium text-[var(--t-text-primary)] hover:bg-[var(--t-bg-card-hover)] transition-colors">
             <Repeat className="h-3 w-3" /> {FEATURE_REGISTRY.schedule_exchange?.label ?? "Schedule Exchange"}
