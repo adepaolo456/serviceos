@@ -16,6 +16,7 @@ import { CustomersResponseDto } from './dto/customers-response.dto';
 import { RevenueSourceDetailResponseDto } from './dto/revenue-source-detail-response.dto';
 import { RevenueDailyDetailResponseDto } from './dto/revenue-daily-detail-response.dto';
 import { RevenueInvoicesResponseDto } from './dto/revenue-invoices-response.dto';
+import { RevenueResponseDto } from './dto/revenue-response.dto';
 
 const CORRECTION_CUTOFF = '2026-04-02T00:00:00Z';
 function classifyRecord(createdAt: string | Date): 'legacy' | 'post-correction' {
@@ -49,7 +50,7 @@ export class ReportingService {
     return { start, end };
   }
 
-  async getRevenue(tenantId: string, startDate?: string, endDate?: string, grouping?: string) {
+  async getRevenue(tenantId: string, startDate?: string, endDate?: string, grouping?: string): Promise<RevenueResponseDto> {
     const { start, end } = this.dateRange(startDate, endDate);
 
     const endTs = end + 'T23:59:59';
