@@ -83,7 +83,10 @@ interface LifecycleData {
   payments: LifecyclePayment[];
   /** Phase 11B: disposal rollup surfaced from backend getLifecycle. */
   dumpTickets?: LifecycleDumpTicket[];
-  financials: { revenue: number; cost: number; profit: number; margin: number };
+  /** Field names mirror the backend RentalChainLifecycleFinancialsDto
+   *  (api/src/modules/rental-chains/dto/lifecycle-response.dto.ts).
+   *  marginPercent is in the 0–100 range (e.g. 70 = 70%), not 0–1. */
+  financials: { totalRevenue: number; totalCost: number; profit: number; marginPercent: number };
 }
 
 /* ── Helpers ── */
@@ -326,7 +329,7 @@ export default function RentalLifecyclePage({ params }: { params: Promise<{ id: 
   const jobs = data.jobs?.filter(j => j?.id) ?? [];
   const invoices = data.invoices ?? [];
   const payments = data.payments ?? [];
-  const financials = data.financials ?? { revenue: 0, cost: 0, profit: 0, margin: 0 };
+  const financials = data.financials ?? { totalRevenue: 0, totalCost: 0, profit: 0, marginPercent: 0 };
   const dumpTickets = data.dumpTickets ?? [];
   const totalDisposalCost = dumpTickets.reduce((sum, t) => sum + (Number(t.totalCost) || 0), 0);
   const totalDisposalCustomerCharges = dumpTickets.reduce((sum, t) => sum + (Number(t.customerCharges) || 0), 0);
@@ -575,7 +578,7 @@ export default function RentalLifecyclePage({ params }: { params: Promise<{ id: 
       </div>
 
       {/* Financials */}
-      {(invoices.length > 0 || financials.revenue > 0 || dumpTickets.length > 0) && (
+      {(invoices.length > 0 || financials.totalRevenue > 0 || dumpTickets.length > 0) && (
         <div className="rounded-[20px] bg-[var(--t-bg-card)] border border-[var(--t-border)] p-5">
           <div className="flex items-center gap-2 mb-4">
             <DollarSign className="h-4 w-4 text-[var(--t-text-muted)]" />
@@ -588,11 +591,11 @@ export default function RentalLifecyclePage({ params }: { params: Promise<{ id: 
           <div className="grid grid-cols-4 gap-4 mb-4">
             <div>
               <p className="text-[10px] font-medium uppercase tracking-wider text-[var(--t-text-muted)]">Revenue</p>
-              <p className="text-sm font-bold text-[var(--t-text-primary)] tabular-nums">{formatCurrency(financials.revenue)}</p>
+              <p className="text-sm font-bold text-[var(--t-text-primary)] tabular-nums">{formatCurrency(financials.totalRevenue)}</p>
             </div>
             <div>
               <p className="text-[10px] font-medium uppercase tracking-wider text-[var(--t-text-muted)]">Cost</p>
-              <p className="text-sm font-bold text-[var(--t-text-primary)] tabular-nums">{formatCurrency(financials.cost)}</p>
+              <p className="text-sm font-bold text-[var(--t-text-primary)] tabular-nums">{formatCurrency(financials.totalCost)}</p>
             </div>
             <div>
               <p className="text-[10px] font-medium uppercase tracking-wider text-[var(--t-text-muted)]">Profit</p>
@@ -600,7 +603,7 @@ export default function RentalLifecyclePage({ params }: { params: Promise<{ id: 
             </div>
             <div>
               <p className="text-[10px] font-medium uppercase tracking-wider text-[var(--t-text-muted)]">Margin</p>
-              <p className="text-sm font-bold text-[var(--t-text-primary)] tabular-nums">{(financials.margin ?? 0).toFixed(1)}%</p>
+              <p className="text-sm font-bold text-[var(--t-text-primary)] tabular-nums">{(financials.marginPercent ?? 0).toFixed(1)}%</p>
             </div>
           </div>
 
