@@ -7,6 +7,7 @@ import { ProfitResponseDto } from './dto/profit-response.dto';
 import { AssetsResponseDto } from './dto/assets-response.dto';
 import { CustomersResponseDto } from './dto/customers-response.dto';
 import { RevenueSourceDetailResponseDto } from './dto/revenue-source-detail-response.dto';
+import { RevenueDailyDetailResponseDto } from './dto/revenue-daily-detail-response.dto';
 
 @ApiTags('Reporting')
 @ApiBearerAuth()
@@ -30,7 +31,7 @@ export class ReportingController {
   revenueDailyDetail(
     @TenantId() tid: string,
     @Query('date') date: string,
-  ) {
+  ): Promise<RevenueDailyDetailResponseDto> {
     return this.service.getRevenueByDailyDetail(tid, date);
   }
 
