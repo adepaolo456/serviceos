@@ -12,6 +12,7 @@ import { RevenueInvoicesResponseDto } from './dto/revenue-invoices-response.dto'
 import { RevenueResponseDto } from './dto/revenue-response.dto';
 import { DriversResponseDto } from './dto/drivers-response.dto';
 import { AccountsReceivableResponseDto } from './dto/accounts-receivable-response.dto';
+import { DumpCostsResponseDto } from './dto/dump-costs-response.dto';
 
 @ApiTags('Reporting')
 @ApiBearerAuth()
@@ -92,7 +93,11 @@ export class ReportingController {
 
   @Get('dump-costs')
   @ApiOperation({ summary: 'Dump costs report' })
-  dumpCosts(@TenantId() tid: string, @Query('startDate') s?: string, @Query('endDate') e?: string) {
+  dumpCosts(
+    @TenantId() tid: string,
+    @Query('startDate') s?: string,
+    @Query('endDate') e?: string,
+  ): Promise<DumpCostsResponseDto> {
     return this.service.getDumpCosts(tid, s, e);
   }
 
