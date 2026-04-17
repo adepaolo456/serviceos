@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ConflictException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
@@ -503,11 +504,17 @@ export class RentalChainsService {
       }
 
       if (dto.expected_pickup_date !== undefined) {
-        chain.expected_pickup_date = dto.expected_pickup_date;
-
-        // Find the currently-scheduled terminal pickup link for this chain
-        // and keep its job date in sync. A chain with an exchange in flight
-        // has multiple pickup links — we only sync the non-cancelled one.
+        // Phase 2c Follow-Up — fail fast when the chain has no
+        // currently-scheduled pickup link to sync. Previously the
+        // chain row was mutated in-memory before this lookup and
+        // persisted at the trailing chainRepo.save, so a missing
+        // pickup link silently diverged chain.expected_pickup_date
+        // from any job.scheduled_date — dispatch/reporting read the
+        // job, the operator saw a 200 OK, and the date "moved" only
+        // on the chain row. Lookup BEFORE any chain mutation; throw
+        // 409 with a stable code/message; the surrounding
+        // dataSource.transaction rolls back any earlier drop-off
+        // changes from this same call.
         const pickupLink = await linkRepo.findOne({
           where: {
             rental_chain_id: chain.id,
@@ -517,16 +524,28 @@ export class RentalChainsService {
           order: { sequence_number: 'DESC' },
         });
 
-        if (pickupLink) {
-          pickupLink.scheduled_date = dto.expected_pickup_date;
-          await linkRepo.save(pickupLink);
-
-          // Update the linked job's scheduled_date — tenant-scoped update
-          await jobRepo.update(
-            { id: pickupLink.job_id, tenant_id: tenantId },
-            { scheduled_date: dto.expected_pickup_date },
-          );
+        if (!pickupLink) {
+          throw new ConflictException({
+            code: 'NO_SCHEDULED_PICKUP',
+            message:
+              'Cannot update pickup date: this rental chain has no scheduled pickup. Schedule an exchange or reopen the cancelled pickup first.',
+          });
         }
+
+        // Lookup confirmed → safe to mutate. Order:
+        // (1) chain in-memory, (2) pickup link, (3) pickup job,
+        // (4) delivery job rental_end_date. The chain.save fires at
+        // the trailing chainRepo.save below.
+        chain.expected_pickup_date = dto.expected_pickup_date;
+
+        pickupLink.scheduled_date = dto.expected_pickup_date;
+        await linkRepo.save(pickupLink);
+
+        // Update the linked job's scheduled_date — tenant-scoped update
+        await jobRepo.update(
+          { id: pickupLink.job_id, tenant_id: tenantId },
+          { scheduled_date: dto.expected_pickup_date },
+        );
 
         // Keep the delivery job's rental_end_date in sync so the job
         // detail view doesn't show a stale end date.
