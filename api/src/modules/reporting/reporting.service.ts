@@ -13,6 +13,7 @@ import { TaskChainLink } from '../rental-chains/entities/task-chain-link.entity'
 import { ProfitResponseDto } from './dto/profit-response.dto';
 import { AssetsResponseDto } from './dto/assets-response.dto';
 import { CustomersResponseDto } from './dto/customers-response.dto';
+import { RevenueSourceDetailResponseDto } from './dto/revenue-source-detail-response.dto';
 
 const CORRECTION_CUTOFF = '2026-04-02T00:00:00Z';
 function classifyRecord(createdAt: string | Date): 'legacy' | 'post-correction' {
@@ -171,7 +172,7 @@ export class ReportingService {
     }));
   }
 
-  async getRevenueBySourceDetail(tenantId: string, source: string, startDate?: string, endDate?: string) {
+  async getRevenueBySourceDetail(tenantId: string, source: string, startDate?: string, endDate?: string): Promise<RevenueSourceDetailResponseDto> {
     const { start, end } = this.dateRange(startDate, endDate);
     const rows = await this.dataSource.query(
       `${this.invoiceDetailSelect}

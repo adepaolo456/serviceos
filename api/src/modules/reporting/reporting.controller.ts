@@ -6,6 +6,7 @@ import { RolesGuard } from '../../common/guards';
 import { ProfitResponseDto } from './dto/profit-response.dto';
 import { AssetsResponseDto } from './dto/assets-response.dto';
 import { CustomersResponseDto } from './dto/customers-response.dto';
+import { RevenueSourceDetailResponseDto } from './dto/revenue-source-detail-response.dto';
 
 @ApiTags('Reporting')
 @ApiBearerAuth()
@@ -20,7 +21,7 @@ export class ReportingController {
     @Query('source') source: string,
     @Query('startDate') s?: string,
     @Query('endDate') e?: string,
-  ) {
+  ): Promise<RevenueSourceDetailResponseDto> {
     return this.service.getRevenueBySourceDetail(tid, source, s, e);
   }
 
