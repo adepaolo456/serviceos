@@ -23,7 +23,7 @@ import type { ProfitResponseDto } from './profit-response.dto';
 // ─────────────────────────────────────────────────────────────────────
 
 const _validFixture: ProfitResponseDto = {
-  totalRevenue: 125000,
+  totalCollected: 125000,
   totalDumpCosts: 42000,
   grossProfit: 83000,
   grossMarginPercent: 66.4,
