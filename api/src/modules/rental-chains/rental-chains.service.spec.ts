@@ -1,13 +1,24 @@
 /**
- * Phase 2c Follow-Up — minimal coverage of `updateChain`'s
- * `expected_pickup_date` fail-fast path.
+ * Phase 2c Follow-Up + Post-Phase-2c Tier A #2 — minimal coverage of
+ * the service's two fail-fast guards:
+ *   - updateChain's expected_pickup_date NO_SCHEDULED_PICKUP guard
+ *     (shipped in commit 5a658cc)
+ *   - createExchange's NO_SCHEDULED_PICKUP_FOR_EXCHANGE guard
+ *     (this prompt)
  *
- * Scope: only the fail-fast and the corresponding happy path. The
- * surrounding service has many other paths (createChain,
- * createExchange, handleTypeChange, getLifecycle, etc.) that are
- * intentionally NOT covered here — that's a follow-up audit, not
- * the bug fix this spec exists for.
+ * Scope: the two guards plus one happy-path sanity check per method.
+ * The surrounding service has many other paths (createChain,
+ * handleTypeChange, getLifecycle, etc.) that are intentionally NOT
+ * covered here — that's a follow-up audit, not the bug fix this spec
+ * exists for.
  */
+
+// Top-level mock for the non-DI job-number utility used inside
+// createExchange's transaction. updateChain doesn't call this util,
+// so the mock has no effect on the existing updateChain tests.
+jest.mock('../../common/utils/job-number.util', () => ({
+  issueNextJobNumber: jest.fn().mockResolvedValue('MOCK-JOB-NUM'),
+}));
 
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConflictException } from '@nestjs/common';
@@ -19,8 +30,117 @@ import { RentalChain } from './entities/rental-chain.entity';
 import { TaskChainLink } from './entities/task-chain-link.entity';
 import { Job } from '../jobs/entities/job.entity';
 import { TenantSettings } from '../tenant-settings/entities/tenant-settings.entity';
+import { Customer } from '../customers/entities/customer.entity';
 import { PricingService } from '../pricing/pricing.service';
 import { BillingService } from '../billing/billing.service';
+
+// ── Shared test harness ────────────────────────────────────────────
+// Both describe blocks (updateChain + createExchange) use identical
+// TestingModule + DataSource.transaction plumbing. Extracted into a
+// single factory so the two suites can't drift from one another.
+
+interface Harness {
+  service: RentalChainsService;
+  chainRepo: { findOne: jest.Mock; save: jest.Mock };
+  linkRepo: { findOne: jest.Mock; find: jest.Mock; save: jest.Mock };
+  customerRepo: { findOne: jest.Mock };
+  pricingService: { calculate: jest.Mock };
+  trxChainRepo: { save: jest.Mock };
+  trxLinkRepo: {
+    findOne: jest.Mock;
+    find: jest.Mock;
+    save: jest.Mock;
+    update: jest.Mock;
+    create: jest.Mock;
+    createQueryBuilder: jest.Mock;
+  };
+  trxJobRepo: {
+    update: jest.Mock;
+    create: jest.Mock;
+    save: jest.Mock;
+  };
+}
+
+async function buildHarness(): Promise<Harness> {
+  const chainRepo = { findOne: jest.fn(), save: jest.fn() };
+  const linkRepo = { findOne: jest.fn(), find: jest.fn(), save: jest.fn() };
+  const customerRepo = { findOne: jest.fn() };
+  const pricingService = { calculate: jest.fn() };
+  const trxChainRepo = { save: jest.fn() };
+  const trxLinkRepo = {
+    findOne: jest.fn(),
+    find: jest.fn(),
+    save: jest.fn((x: unknown) => Promise.resolve(x)),
+    update: jest.fn(),
+    create: jest.fn((x: unknown) => x),
+    createQueryBuilder: jest.fn(() => ({
+      where: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockReturnThis(),
+      getOne: jest.fn().mockResolvedValue(null),
+    })),
+  };
+  const trxJobRepo = {
+    update: jest.fn(),
+    create: jest.fn((x: Record<string, unknown>) => x),
+    save: jest.fn((x: Record<string, unknown>) =>
+      Promise.resolve({ ...x, id: `mock-${x.job_type as string}-id` }),
+    ),
+  };
+
+  const dataSource = {
+    transaction: jest.fn(async (cb: (trx: unknown) => Promise<unknown>) => {
+      const trx = {
+        getRepository: (entity: unknown) => {
+          if (entity === RentalChain) return trxChainRepo;
+          if (entity === TaskChainLink) return trxLinkRepo;
+          if (entity === Job) return trxJobRepo;
+          throw new Error(
+            `unmocked trx repo: ${(entity as { name?: string })?.name ?? '?'}`,
+          );
+        },
+      };
+      return cb(trx);
+    }),
+    // Non-transactional repos pulled via dataSource.getRepository(...)
+    // (createExchange fetches the customer this way at ~line 666).
+    getRepository: (entity: unknown) => {
+      if (entity === Customer) return customerRepo;
+      throw new Error(
+        `unmocked non-trx repo: ${(entity as { name?: string })?.name ?? '?'}`,
+      );
+    },
+  };
+
+  const module: TestingModule = await Test.createTestingModule({
+    providers: [
+      RentalChainsService,
+      { provide: getRepositoryToken(RentalChain), useValue: chainRepo },
+      { provide: getRepositoryToken(TaskChainLink), useValue: linkRepo },
+      { provide: getRepositoryToken(Job), useValue: { update: jest.fn() } },
+      {
+        provide: getRepositoryToken(TenantSettings),
+        useValue: { findOne: jest.fn() },
+      },
+      { provide: DataSource, useValue: dataSource },
+      { provide: PricingService, useValue: pricingService },
+      { provide: BillingService, useValue: {} },
+    ],
+  }).compile();
+
+  const service = module.get<RentalChainsService>(RentalChainsService);
+  return {
+    service,
+    chainRepo,
+    linkRepo,
+    customerRepo,
+    pricingService,
+    trxChainRepo,
+    trxLinkRepo,
+    trxJobRepo,
+  };
+}
+
+// ── updateChain suite ──────────────────────────────────────────────
 
 describe('RentalChainsService.updateChain — expected_pickup_date fail-fast', () => {
   const tenantId = 'tenant-1';
@@ -33,77 +153,26 @@ describe('RentalChainsService.updateChain — expected_pickup_date fail-fast', (
     status: 'active',
   };
 
-  let service: RentalChainsService;
-  let chainRepo: { findOne: jest.Mock; save: jest.Mock };
-  let trxChainRepo: { save: jest.Mock };
-  let trxLinkRepo: { findOne: jest.Mock; find: jest.Mock; save: jest.Mock };
-  let trxJobRepo: { update: jest.Mock };
-
+  let h: Harness;
   beforeEach(async () => {
-    chainRepo = { findOne: jest.fn(), save: jest.fn() };
-    trxChainRepo = { save: jest.fn() };
-    trxLinkRepo = { findOne: jest.fn(), find: jest.fn(), save: jest.fn() };
-    trxJobRepo = { update: jest.fn() };
-
-    const dataSource = {
-      transaction: jest.fn(async (cb: (trx: unknown) => Promise<unknown>) => {
-        const trx = {
-          getRepository: (entity: unknown) => {
-            if (entity === RentalChain) return trxChainRepo;
-            if (entity === TaskChainLink) return trxLinkRepo;
-            if (entity === Job) return trxJobRepo;
-            throw new Error(
-              `unmocked repo for entity: ${(entity as { name?: string })?.name ?? '?'}`,
-            );
-          },
-        };
-        return cb(trx);
-      }),
-    };
-
-    const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        RentalChainsService,
-        { provide: getRepositoryToken(RentalChain), useValue: chainRepo },
-        {
-          provide: getRepositoryToken(TaskChainLink),
-          useValue: { findOne: jest.fn(), find: jest.fn(), save: jest.fn() },
-        },
-        { provide: getRepositoryToken(Job), useValue: { update: jest.fn() } },
-        {
-          provide: getRepositoryToken(TenantSettings),
-          useValue: { findOne: jest.fn() },
-        },
-        { provide: DataSource, useValue: dataSource },
-        { provide: PricingService, useValue: {} },
-        { provide: BillingService, useValue: {} },
-      ],
-    }).compile();
-
-    service = module.get<RentalChainsService>(RentalChainsService);
+    h = await buildHarness();
   });
 
   it('throws ConflictException with NO_SCHEDULED_PICKUP code AND leaves the chain row unchanged when no scheduled pickup link exists', async () => {
-    // Pre-transaction chain lookup returns the chain.
-    chainRepo.findOne.mockResolvedValue({ ...baseChain });
-    // Inside the transaction, the pickup-link lookup returns null —
-    // this is the fail-fast condition.
-    trxLinkRepo.findOne.mockResolvedValue(null);
+    h.chainRepo.findOne.mockResolvedValue({ ...baseChain });
+    h.trxLinkRepo.findOne.mockResolvedValue(null);
 
     await expect(
-      service.updateChain(tenantId, chainId, {
+      h.service.updateChain(tenantId, chainId, {
         expected_pickup_date: '2026-05-01',
       }),
     ).rejects.toBeInstanceOf(ConflictException);
 
-    // Re-run to inspect the locked error body. (rejects.toMatchObject
-    // can't peek into ConflictException's response shape on the same
-    // assertion as toBeInstanceOf.)
-    chainRepo.findOne.mockResolvedValue({ ...baseChain });
-    trxLinkRepo.findOne.mockResolvedValue(null);
+    h.chainRepo.findOne.mockResolvedValue({ ...baseChain });
+    h.trxLinkRepo.findOne.mockResolvedValue(null);
     let captured: ConflictException | null = null;
     try {
-      await service.updateChain(tenantId, chainId, {
+      await h.service.updateChain(tenantId, chainId, {
         expected_pickup_date: '2026-05-01',
       });
     } catch (e) {
@@ -117,18 +186,14 @@ describe('RentalChainsService.updateChain — expected_pickup_date fail-fast', (
         'Cannot update pickup date: this rental chain has no scheduled pickup. Schedule an exchange or reopen the cancelled pickup first.',
     });
 
-    // CRITICAL — write-ordering guard. The chain row must NOT have
-    // been persisted (the bug being fixed was the chain row drifting
-    // out of sync with the job row when the pickup link was missing).
-    expect(trxChainRepo.save).not.toHaveBeenCalled();
-    // Same goes for the linked job's scheduled_date.
-    expect(trxJobRepo.update).not.toHaveBeenCalled();
-    // And the pickup link itself.
-    expect(trxLinkRepo.save).not.toHaveBeenCalled();
+    // Write-ordering guard: zero side effects on the failed path.
+    expect(h.trxChainRepo.save).not.toHaveBeenCalled();
+    expect(h.trxJobRepo.update).not.toHaveBeenCalled();
+    expect(h.trxLinkRepo.save).not.toHaveBeenCalled();
   });
 
   it('happy path: updates chain expected_pickup_date AND linked pickup job scheduled_date when a scheduled pickup link exists', async () => {
-    chainRepo.findOne.mockResolvedValue({ ...baseChain });
+    h.chainRepo.findOne.mockResolvedValue({ ...baseChain });
 
     const pickupLink = {
       id: 'link-pickup',
@@ -148,38 +213,152 @@ describe('RentalChainsService.updateChain — expected_pickup_date fail-fast', (
       scheduled_date: '2026-04-01',
       sequence_number: 1,
     };
-    // Inside the transaction the pickup-link lookup fires first,
-    // then the delivery-link lookup for the rental_end_date sync.
-    trxLinkRepo.findOne
+    h.trxLinkRepo.findOne
       .mockResolvedValueOnce(pickupLink)
       .mockResolvedValueOnce(deliveryLink);
 
-    await service.updateChain(tenantId, chainId, {
+    await h.service.updateChain(tenantId, chainId, {
       expected_pickup_date: '2026-05-01',
     });
 
-    // (1) Pickup link saved with new date.
-    expect(trxLinkRepo.save).toHaveBeenCalledWith(
+    expect(h.trxLinkRepo.save).toHaveBeenCalledWith(
       expect.objectContaining({
         id: 'link-pickup',
         scheduled_date: '2026-05-01',
       }),
     );
-    // (2) Pickup job scheduled_date synced — tenant-scoped.
-    expect(trxJobRepo.update).toHaveBeenCalledWith(
+    expect(h.trxJobRepo.update).toHaveBeenCalledWith(
       { id: 'job-pickup', tenant_id: tenantId },
       { scheduled_date: '2026-05-01' },
     );
-    // (3) Delivery job rental_end_date synced.
-    expect(trxJobRepo.update).toHaveBeenCalledWith(
+    expect(h.trxJobRepo.update).toHaveBeenCalledWith(
       { id: 'job-delivery', tenant_id: tenantId },
       { rental_end_date: '2026-05-01' },
     );
-    // (4) Chain row persisted with new expected_pickup_date.
-    expect(trxChainRepo.save).toHaveBeenCalledWith(
+    expect(h.trxChainRepo.save).toHaveBeenCalledWith(
       expect.objectContaining({
         id: chainId,
         expected_pickup_date: '2026-05-01',
+      }),
+    );
+  });
+});
+
+// ── createExchange suite ───────────────────────────────────────────
+
+describe('RentalChainsService.createExchange — NO_SCHEDULED_PICKUP_FOR_EXCHANGE fail-fast', () => {
+  const tenantId = 'tenant-1';
+  const chainId = 'chain-1';
+  const baseChain = {
+    id: chainId,
+    tenant_id: tenantId,
+    customer_id: 'cust-1',
+    asset_id: null,
+    drop_off_date: '2026-04-01',
+    expected_pickup_date: '2026-04-15',
+    dumpster_size: '20-yard',
+    status: 'active',
+  };
+  const dto = {
+    exchange_date: '2026-04-10',
+    override_pickup_date: '2026-04-24',
+    dumpster_size: '20-yard',
+  };
+
+  let h: Harness;
+  beforeEach(async () => {
+    h = await buildHarness();
+
+    // Pre-transaction plumbing shared by both tests in this suite.
+    h.chainRepo.findOne.mockResolvedValue({ ...baseChain });
+    // Non-trx delivery-link lookup for pricing inputs (coord extract).
+    h.linkRepo.findOne.mockResolvedValue({
+      id: 'link-delivery',
+      job: { service_address: null },
+    });
+    h.customerRepo.findOne.mockResolvedValue({
+      id: 'cust-1',
+      tenant_id: tenantId,
+      type: 'residential',
+    });
+    h.pricingService.calculate.mockResolvedValue({
+      breakdown: { total: 100, basePrice: 100 },
+    });
+  });
+
+  it('throws ConflictException with NO_SCHEDULED_PICKUP_FOR_EXCHANGE code AND leaves chain state unchanged when no scheduled pickup link exists', async () => {
+    // In-transaction pickup-link lookup returns null → guard fires.
+    h.trxLinkRepo.findOne.mockResolvedValue(null);
+
+    await expect(
+      h.service.createExchange(tenantId, chainId, dto),
+    ).rejects.toBeInstanceOf(ConflictException);
+
+    // Re-run to inspect the locked error body.
+    h.trxLinkRepo.findOne.mockResolvedValue(null);
+    let captured: ConflictException | null = null;
+    try {
+      await h.service.createExchange(tenantId, chainId, dto);
+    } catch (e) {
+      captured = e as ConflictException;
+    }
+    expect(captured).not.toBeNull();
+    expect(captured.getStatus()).toBe(409);
+    expect(captured.getResponse()).toEqual({
+      code: 'NO_SCHEDULED_PICKUP_FOR_EXCHANGE',
+      message:
+        'Cannot schedule exchange: this rental chain has no scheduled pickup to replace. Reopen the cancelled pickup or cancel the chain first.',
+    });
+
+    // CRITICAL — write-ordering guard. The guard fires before any
+    // write inside the transaction. Assert no chain/link/job writes
+    // were persisted on the failed path.
+    expect(h.trxChainRepo.save).not.toHaveBeenCalled();
+    expect(h.trxLinkRepo.save).not.toHaveBeenCalled();
+    expect(h.trxLinkRepo.update).not.toHaveBeenCalled();
+    expect(h.trxJobRepo.update).not.toHaveBeenCalled();
+    expect(h.trxJobRepo.save).not.toHaveBeenCalled();
+  });
+
+  it('happy path: guard passes and the transaction proceeds to cancel the current pickup when a scheduled pickup link exists', async () => {
+    // In-transaction pickup-link lookup returns a real link → guard
+    // passes and the cancel-old-pickup write fires at step 1 of the
+    // transaction. We assert that write (proves the guard did NOT
+    // short-circuit); we do not attempt to assert the full exchange-
+    // creation contract (out of scope per the prompt's guidance).
+    const currentPickupLink = {
+      id: 'link-pickup',
+      job_id: 'job-pickup',
+      rental_chain_id: chainId,
+      task_type: 'pick_up',
+      status: 'scheduled',
+      scheduled_date: '2026-04-15',
+      sequence_number: 2,
+      previous_link_id: null,
+    };
+    h.trxLinkRepo.findOne.mockResolvedValue(currentPickupLink);
+
+    // The downstream writes may or may not complete — extensive
+    // mocking of issueNextJobNumber + chain save etc. is out of scope.
+    // We only care that the guard was bypassed, proven by the cancel-
+    // old-pickup save firing.
+    await h.service.createExchange(tenantId, chainId, dto).catch(() => {
+      /* downstream write failures after the guard are not this test's concern */
+    });
+
+    // Step 1 of the transaction: cancel the old pickup.
+    expect(h.trxLinkRepo.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'link-pickup',
+        status: 'cancelled',
+      }),
+    );
+    // Step 1b: mark the old pickup job cancelled (tenant-scoped).
+    expect(h.trxJobRepo.update).toHaveBeenCalledWith(
+      { id: 'job-pickup', tenant_id: tenantId },
+      expect.objectContaining({
+        status: 'cancelled',
+        cancellation_reason: 'exchange_replacement',
       }),
     );
   });
