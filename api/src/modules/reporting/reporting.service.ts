@@ -18,6 +18,7 @@ import { RevenueDailyDetailResponseDto } from './dto/revenue-daily-detail-respon
 import { RevenueInvoicesResponseDto } from './dto/revenue-invoices-response.dto';
 import { RevenueResponseDto } from './dto/revenue-response.dto';
 import { DriversResponseDto } from './dto/drivers-response.dto';
+import { AccountsReceivableResponseDto } from './dto/accounts-receivable-response.dto';
 
 const CORRECTION_CUTOFF = '2026-04-02T00:00:00Z';
 function classifyRecord(createdAt: string | Date): 'legacy' | 'post-correction' {
@@ -531,7 +532,9 @@ export class ReportingService {
     };
   }
 
-  async getAccountsReceivable(tenantId: string) {
+  async getAccountsReceivable(
+    tenantId: string,
+  ): Promise<AccountsReceivableResponseDto> {
     const today = new Date().toISOString().split('T')[0];
 
     const totals = await this.invoiceRepo.createQueryBuilder('i')

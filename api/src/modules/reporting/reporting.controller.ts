@@ -11,6 +11,7 @@ import { RevenueDailyDetailResponseDto } from './dto/revenue-daily-detail-respon
 import { RevenueInvoicesResponseDto } from './dto/revenue-invoices-response.dto';
 import { RevenueResponseDto } from './dto/revenue-response.dto';
 import { DriversResponseDto } from './dto/drivers-response.dto';
+import { AccountsReceivableResponseDto } from './dto/accounts-receivable-response.dto';
 
 @ApiTags('Reporting')
 @ApiBearerAuth()
@@ -146,7 +147,7 @@ export class ReportingController {
 
   @Get('accounts-receivable')
   @ApiOperation({ summary: 'Accounts receivable aging report' })
-  receivables(@TenantId() tid: string) {
+  receivables(@TenantId() tid: string): Promise<AccountsReceivableResponseDto> {
     return this.service.getAccountsReceivable(tid);
   }
 
