@@ -14,6 +14,7 @@ import { DriversResponseDto } from './dto/drivers-response.dto';
 import { AccountsReceivableResponseDto } from './dto/accounts-receivable-response.dto';
 import { DumpCostsResponseDto } from './dto/dump-costs-response.dto';
 import { DumpSlipsResponseDto } from './dto/dump-slips-response.dto';
+import { LifecycleReportResponseDto } from './dto/lifecycle-response.dto';
 
 @ApiTags('Reporting')
 @ApiBearerAuth()
@@ -76,7 +77,7 @@ export class ReportingController {
     @Query('endDate') e?: string,
     @Query('status') status?: string,
     @Query('groupBy') groupBy?: string,
-  ) {
+  ): Promise<LifecycleReportResponseDto> {
     const normalizedStatus =
       status === 'active' || status === 'completed' ? status : 'all';
     const normalizedGroupBy =

@@ -21,6 +21,7 @@ import { DriversResponseDto } from './dto/drivers-response.dto';
 import { AccountsReceivableResponseDto } from './dto/accounts-receivable-response.dto';
 import { DumpCostsResponseDto } from './dto/dump-costs-response.dto';
 import { DumpSlipsResponseDto } from './dto/dump-slips-response.dto';
+import { LifecycleReportResponseDto } from './dto/lifecycle-response.dto';
 
 const CORRECTION_CUTOFF = '2026-04-02T00:00:00Z';
 function classifyRecord(createdAt: string | Date): 'legacy' | 'post-correction' {
@@ -1035,7 +1036,7 @@ export class ReportingService {
     endDate?: string,
     statusFilter: 'active' | 'completed' | 'all' = 'all',
     groupBy: 'day' | 'week' | 'month' = 'month',
-  ) {
+  ): Promise<LifecycleReportResponseDto> {
     const { start, end } = this.dateRange(startDate, endDate);
     const today = new Date().toISOString().split('T')[0];
 
