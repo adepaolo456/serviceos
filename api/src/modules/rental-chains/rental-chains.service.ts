@@ -1055,6 +1055,11 @@ export class RentalChainsService {
         linkStatus: l.status,
         jobNumber: l.job?.job_number,
         taskType: l.task_type,
+        // Phase 2c-Prereq-0 — link.sequence_number (operator-intent
+        // ordering within the chain) sourced from the link row, not the
+        // job row. Lets the frontend pickup-node selector use the same
+        // tiebreak rule LifecycleContextPanel already uses.
+        sequence_number: l.sequence_number,
         status: l.job?.status,
         scheduledDate: l.scheduled_date,
         completedAt: l.completed_at,
