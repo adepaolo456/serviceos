@@ -30,56 +30,218 @@
  *   `id?: string`).
  * - `Record<string, unknown>` is used for genuinely-dynamic JSON
  *   columns (e.g. `pricingSnapshot`).
+ *
+ * ─── Class-based DTO convention ───
+ * Converted from `export interface` to `export class` with
+ * `@ApiProperty` decorators (Follow-Up #3 backport). Classes declared
+ * bottom-up (leaf shapes first, parent `RentalChainLifecycleResponseDto`
+ * last) so direct class references suffice — no forward-reference
+ * closures required.
  */
+
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export type RentalChainLifecycleClassification = 'legacy' | 'post-correction';
 
-export interface RentalChainLifecycleChainDto {
-  id: string;
-  /** active | completed | cancelled */
-  status: string;
-  /** Nullable in DB (`rental_chains.dumpster_size` `nullable: true`). */
-  dumpsterSize: string | null;
-  /** Historical rental days at chain creation; default 14. */
-  rentalDays: number;
-  /** Live tenant default rental period (NOT the chain's snapshot). */
-  tenantRentalDays: number;
-  dropOffDate: string;
-  /** Nullable in DB (`rental_chains.expected_pickup_date` `nullable: true`). */
-  expectedPickupDate: string | null;
-  /** TypeORM @CreateDateColumn — Date instance on the server, ISO string over the wire. */
-  createdAt: Date;
-  classification: RentalChainLifecycleClassification;
-}
+const CLASSIFICATION_VALUES: RentalChainLifecycleClassification[] = [
+  'legacy',
+  'post-correction',
+];
 
-export interface RentalChainLifecycleCustomerDto {
+export class RentalChainLifecycleCustomerDto {
+  @ApiProperty()
   id: string;
+
   /** Concatenated `${first_name} ${last_name}`. */
+  @ApiProperty({ description: 'Concatenated ${first_name} ${last_name}' })
   name: string;
+
+  @ApiProperty()
   accountId: string;
 }
 
-export interface RentalChainLifecycleAssetDto {
+export class RentalChainLifecycleAssetDto {
+  @ApiProperty()
   subtype: string;
+
+  @ApiProperty()
   identifier: string;
 }
 
-export interface RentalChainLifecycleDriverDto {
+export class RentalChainLifecycleDriverDto {
   /** Concatenated `${first_name} ${last_name}`. */
+  @ApiProperty({ description: 'Concatenated ${first_name} ${last_name}' })
   name: string;
 }
 
-export interface RentalChainLifecycleJobDto {
+export class RentalChainLifecycleInvoiceLineItemDto {
+  @ApiProperty()
+  id: string;
+
+  @ApiProperty()
+  line_type: string;
+
+  @ApiProperty()
+  name: string;
+
+  /** From `li.net_amount`. Numeric in DB; raw query returns string-ish that JSON.stringifies as number. */
+  @ApiProperty()
+  amount: number;
+
+  @ApiProperty()
+  sort_order: number;
+}
+
+export class RentalChainLifecyclePaymentDto {
+  @ApiProperty()
+  id: string;
+
+  /** Coerced via `Number(p.amount)`. */
+  @ApiProperty()
+  amount: number;
+
+  @ApiProperty()
+  status: string;
+
+  @ApiProperty()
+  paymentMethod: string;
+
+  /** ISO timestamp string (raw query result). */
+  @ApiProperty({ description: 'ISO timestamp string (raw query result).' })
+  appliedAt: string;
+}
+
+export class RentalChainLifecycleDumpTicketDto {
+  @ApiProperty()
+  id: string;
+
+  @ApiProperty({ nullable: true })
+  ticketNumber: string | null;
+
+  /** Coerced via `Number(t.weight_tons)`. */
+  @ApiProperty()
+  weightTons: number;
+
+  /** Coerced via `Number(t.total_cost)`. */
+  @ApiProperty()
+  totalCost: number;
+
+  /** Coerced via `Number(t.customer_charges)`. */
+  @ApiProperty()
+  customerCharges: number;
+
+  @ApiProperty({ nullable: true })
+  wasteType: string | null;
+}
+
+export class RentalChainLifecycleJobCostDto {
+  @ApiProperty()
+  id: string;
+
+  @ApiProperty()
+  costType: string;
+
+  /** Coerced via `Number(jc.amount)`. */
+  @ApiProperty()
+  amount: number;
+
+  @ApiProperty({ nullable: true })
+  description: string | null;
+}
+
+export class RentalChainLifecycleFinancialsDto {
+  /** From `getFinancials` — coerced via `Number(...)`. */
+  @ApiProperty()
+  totalRevenue: number;
+
+  @ApiProperty()
+  totalCost: number;
+
+  /** Rounded to 2 decimal places: `Math.round((revenue - cost) * 100) / 100`. */
+  @ApiProperty()
+  profit: number;
+
+  /** Rounded to 2 decimal places. Zero when revenue is zero. */
+  @ApiProperty()
+  marginPercent: number;
+}
+
+export class RentalChainLifecycleChainDto {
+  @ApiProperty()
+  id: string;
+
+  /** active | completed | cancelled */
+  @ApiProperty({ description: 'active | completed | cancelled' })
+  status: string;
+
+  /** Nullable in DB (`rental_chains.dumpster_size` `nullable: true`). */
+  @ApiProperty({
+    nullable: true,
+    description: 'Nullable in DB (rental_chains.dumpster_size nullable: true).',
+  })
+  dumpsterSize: string | null;
+
+  /** Historical rental days at chain creation; default 14. */
+  @ApiProperty({
+    description: 'Historical rental days at chain creation; default 14.',
+  })
+  rentalDays: number;
+
+  /** Live tenant default rental period (NOT the chain's snapshot). */
+  @ApiProperty({
+    description:
+      "Live tenant default rental period (NOT the chain's snapshot).",
+  })
+  tenantRentalDays: number;
+
+  @ApiProperty()
+  dropOffDate: string;
+
+  /** Nullable in DB (`rental_chains.expected_pickup_date` `nullable: true`). */
+  @ApiProperty({
+    nullable: true,
+    description:
+      'Nullable in DB (rental_chains.expected_pickup_date nullable: true).',
+  })
+  expectedPickupDate: string | null;
+
+  /** TypeORM @CreateDateColumn — Date instance on the server, ISO string over the wire. */
+  @ApiProperty({
+    type: Date,
+    description:
+      'TypeORM @CreateDateColumn — Date instance on the server, ISO string over the wire.',
+  })
+  createdAt: Date;
+
+  @ApiProperty({ enum: CLASSIFICATION_VALUES })
+  classification: RentalChainLifecycleClassification;
+}
+
+export class RentalChainLifecycleJobDto {
   /** `l.job?.id` — undefined if the underlying job row is missing. */
+  @ApiPropertyOptional({
+    description: 'l.job?.id — undefined if the underlying job row is missing.',
+  })
   id?: string;
+
   /** TaskChainLink primary key. */
+  @ApiProperty({ description: 'TaskChainLink primary key.' })
   linkId: string;
+
   /** TaskChainLink.status. */
+  @ApiProperty({ description: 'TaskChainLink.status.' })
   linkStatus: string;
+
   /** `l.job?.job_number`. */
+  @ApiPropertyOptional({ description: 'l.job?.job_number.' })
   jobNumber?: string;
+
   /** TaskChainLink.task_type — drop_off | pick_up | exchange. */
+  @ApiProperty({
+    description: 'TaskChainLink.task_type — drop_off | pick_up | exchange.',
+  })
   taskType: string;
+
   /**
    * Phase 2c-Prereq-0 (commit `0b764ad`) — operator-intent ordering
    * within the chain, sourced from `task_chain_links.sequence_number`
@@ -90,89 +252,102 @@ export interface RentalChainLifecycleJobDto {
    * Snake_case is preserved verbatim — the projection literal uses
    * `sequence_number` mixed in with camelCase siblings.
    */
+  @ApiProperty({
+    description:
+      'Operator-intent ordering within the chain (task_chain_links.sequence_number). Snake_case preserved to match the projection literal. See Prereq-0 commit 0b764ad.',
+  })
   sequence_number: number;
+
   /** `l.job?.status`. */
+  @ApiPropertyOptional({ description: 'l.job?.status.' })
   status?: string;
+
   /** TaskChainLink.scheduled_date — date string YYYY-MM-DD. */
+  @ApiProperty({
+    description: 'TaskChainLink.scheduled_date — date string YYYY-MM-DD.',
+  })
   scheduledDate: string;
+
   /** TaskChainLink.completed_at — Date or null when not yet completed. */
+  @ApiProperty({
+    type: Date,
+    nullable: true,
+    description:
+      'TaskChainLink.completed_at — Date or null when not yet completed.',
+  })
   completedAt: Date | null;
+
+  @ApiProperty({ type: RentalChainLifecycleAssetDto, nullable: true })
   asset: RentalChainLifecycleAssetDto | null;
+
+  @ApiProperty({ type: RentalChainLifecycleDriverDto, nullable: true })
   driver: RentalChainLifecycleDriverDto | null;
+
+  @ApiProperty({ enum: CLASSIFICATION_VALUES, nullable: true })
   classification: RentalChainLifecycleClassification | null;
 }
 
-export interface RentalChainLifecycleInvoiceLineItemDto {
+export class RentalChainLifecycleInvoiceDto {
+  @ApiProperty()
   id: string;
-  line_type: string;
-  name: string;
-  /** From `li.net_amount`. Numeric in DB; raw query returns string-ish that JSON.stringifies as number. */
-  amount: number;
-  sort_order: number;
-}
 
-export interface RentalChainLifecycleInvoiceDto {
-  id: string;
+  @ApiProperty()
   invoiceNumber: number;
+
   /** Coerced via `Number(i.total)`. */
+  @ApiProperty()
   total: number;
+
+  @ApiProperty()
   status: string;
+
   /** Coerced via `Number(i.balance_due)`. */
+  @ApiProperty()
   balanceDue: number;
+
   /** Filtered to entries with truthy `id` (raw query json_agg can include nulls). */
+  @ApiProperty({
+    type: [RentalChainLifecycleInvoiceLineItemDto],
+    description:
+      'Filtered to entries with truthy id (raw query json_agg can include nulls).',
+  })
   lineItems: RentalChainLifecycleInvoiceLineItemDto[];
+
   /** `invoices.pricing_rule_snapshot` JSONB column. */
+  @ApiProperty({
+    type: 'object',
+    additionalProperties: true,
+    nullable: true,
+    description: 'invoices.pricing_rule_snapshot JSONB column.',
+  })
   pricingSnapshot: Record<string, unknown> | null;
+
+  @ApiProperty({ enum: CLASSIFICATION_VALUES })
   classification: RentalChainLifecycleClassification;
 }
 
-export interface RentalChainLifecyclePaymentDto {
-  id: string;
-  /** Coerced via `Number(p.amount)`. */
-  amount: number;
-  status: string;
-  paymentMethod: string;
-  /** ISO timestamp string (raw query result). */
-  appliedAt: string;
-}
-
-export interface RentalChainLifecycleDumpTicketDto {
-  id: string;
-  ticketNumber: string | null;
-  /** Coerced via `Number(t.weight_tons)`. */
-  weightTons: number;
-  /** Coerced via `Number(t.total_cost)`. */
-  totalCost: number;
-  /** Coerced via `Number(t.customer_charges)`. */
-  customerCharges: number;
-  wasteType: string | null;
-}
-
-export interface RentalChainLifecycleJobCostDto {
-  id: string;
-  costType: string;
-  /** Coerced via `Number(jc.amount)`. */
-  amount: number;
-  description: string | null;
-}
-
-export interface RentalChainLifecycleFinancialsDto {
-  /** From `getFinancials` — coerced via `Number(...)`. */
-  totalRevenue: number;
-  totalCost: number;
-  /** Rounded to 2 decimal places: `Math.round((revenue - cost) * 100) / 100`. */
-  profit: number;
-  /** Rounded to 2 decimal places. Zero when revenue is zero. */
-  marginPercent: number;
-}
-
-export interface RentalChainLifecycleResponseDto {
+export class RentalChainLifecycleResponseDto {
+  @ApiProperty({ type: RentalChainLifecycleChainDto })
   rentalChain: RentalChainLifecycleChainDto;
+
+  @ApiProperty({ type: RentalChainLifecycleCustomerDto, nullable: true })
   customer: RentalChainLifecycleCustomerDto | null;
+
+  @ApiProperty({ type: [RentalChainLifecycleJobDto] })
   jobs: RentalChainLifecycleJobDto[];
+
+  @ApiProperty({ type: [RentalChainLifecycleInvoiceDto] })
   invoices: RentalChainLifecycleInvoiceDto[];
+
+  @ApiProperty({ type: [RentalChainLifecyclePaymentDto] })
   payments: RentalChainLifecyclePaymentDto[];
+
+  @ApiProperty({ type: [RentalChainLifecycleDumpTicketDto] })
   dumpTickets: RentalChainLifecycleDumpTicketDto[];
+
+  @ApiProperty({ type: [RentalChainLifecycleJobCostDto] })
   jobCosts: RentalChainLifecycleJobCostDto[];
+
+  @ApiProperty({ type: RentalChainLifecycleFinancialsDto })
   financials: RentalChainLifecycleFinancialsDto;
 }
