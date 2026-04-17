@@ -7,9 +7,13 @@ import HelpTooltip from "@/components/ui/HelpTooltip";
 import { ArrowLeft, Truck, MapPin, Calendar, Package, DollarSign, CheckCircle2, Clock, ArrowRight, FileText, Pencil, Repeat } from "lucide-react";
 import { api } from "@/lib/api";
 import { formatCurrency } from "@/lib/utils";
-import { FEATURE_REGISTRY } from "@/lib/feature-registry";
+import { FEATURE_REGISTRY, getFeatureLabel } from "@/lib/feature-registry";
 import { deriveDisplayStatus, DISPLAY_STATUS_LABELS, displayStatusColor } from "@/lib/job-status";
 import { broadcastLifecycleChange } from "@/lib/lifecycle-sync";
+import {
+  selectActivePickupNode,
+  toCandidateFromCamelCaseJob,
+} from "@/lib/lifecycle-pickup";
 import { navigateBack } from "@/lib/navigation";
 import ScheduleExchangeModal from "@/components/schedule-exchange-modal";
 
@@ -26,6 +30,14 @@ interface LifecycleJob {
   completedAt: string | null;
   asset: { subtype: string; identifier: string } | null;
   driver: { name: string } | null;
+  /** Projected from `link.sequence_number` by the
+   *  `/rental-chains/:id/lifecycle` endpoint (see Prereq-0 commit 0b764ad).
+   *  Fed into the canonical pickup-node selector so this page's CTA
+   *  agrees with `LifecycleContextPanel` for back-dated exchange
+   *  scenarios (where the newer pickup has a higher sequence_number but
+   *  an earlier scheduled_date). Required and non-nullable — the
+   *  underlying DB column is INT NOT NULL. */
+  sequence_number: number;
 }
 
 interface LifecycleInvoice {
@@ -229,11 +241,10 @@ export default function RentalLifecyclePage({ params }: { params: Promise<{ id: 
   const router = useRouter();
   const [data, setData] = useState<LifecycleData | null>(null);
   const [loading, setLoading] = useState(true);
-  // Change pickup date modal state
-  const [pickupModalOpen, setPickupModalOpen] = useState(false);
-  const [pickupDate, setPickupDate] = useState("");
-  const [pickupSaving, setPickupSaving] = useState(false);
-  const [pickupError, setPickupError] = useState("");
+  // Phase 2c — pickup-date editing now lives only in the Job Detail
+  // Connected Job Lifecycle panel. The legacy modal/state on this
+  // page was removed in favor of an explicit CTA that navigates to
+  // the active pickup job (see actions row).
   // Phase 4b-extract — replaced inline exchange state with lightweight
   // open-state flags. The shared <ScheduleExchangeModal /> component
   // owns all form state, validation, pricing fetch, submit, and
@@ -261,39 +272,6 @@ export default function RentalLifecyclePage({ params }: { params: Promise<{ id: 
 
   // Phase 4b-extract — pricing fetch now lives inside
   // <ScheduleExchangeModal /> (create mode), removed from this page.
-
-  const handlePickupDateUpdate = async () => {
-    if (!data || !pickupDate) return;
-    // Validate: pickup must be after delivery, and after any
-    // scheduled exchange (no negative rental duration).
-    const deliveryDate = data.rentalChain.dropOffDate;
-    if (deliveryDate && pickupDate <= deliveryDate) {
-      setPickupError(FEATURE_REGISTRY.validation_pickup_before_delivery?.label ?? "Pickup date cannot be before delivery date");
-      return;
-    }
-    const lastExchange = getAutoBaseDate(data);
-    if (lastExchange && lastExchange !== deliveryDate && pickupDate <= lastExchange) {
-      setPickupError(FEATURE_REGISTRY.validation_pickup_before_exchange?.label ?? "Pickup date cannot be before exchange date");
-      return;
-    }
-    setPickupSaving(true);
-    setPickupError("");
-    try {
-      // Authoritative lifecycle update — the backend keeps the chain
-      // row and the linked pickup job's scheduled_date in sync inside
-      // a single transaction, so there is no more drift between
-      // `/jobs/:id` and `/rental-chains/:id`.
-      await api.patch(`/rental-chains/${id}`, { expected_pickup_date: pickupDate });
-      setPickupModalOpen(false);
-      setPickupDate("");
-      broadcastLifecycleChange(id);
-      await reload();
-    } catch (err: unknown) {
-      setPickupError(err instanceof Error ? err.message : (FEATURE_REGISTRY.lifecycle_action_error?.label ?? "Failed to update"));
-    } finally {
-      setPickupSaving(false);
-    }
-  };
 
   const handleDeliveryUpdate = async () => {
     if (!data || !deliveryDate) return;
@@ -354,6 +332,18 @@ export default function RentalLifecyclePage({ params }: { params: Promise<{ id: 
   const totalDisposalCustomerCharges = dumpTickets.reduce((sum, t) => sum + (Number(t.customerCharges) || 0), 0);
   const deliveryJob = jobs.find(j => j.taskType === "drop_off");
   const isActive = rentalChain.status === "active";
+
+  // Phase 2c — active pickup job for the deep-link CTA. Derivation
+  // is delegated to @/lib/lifecycle-pickup so this surface and
+  // LifecycleContextPanel are provably in agreement; see that
+  // module's contract header for the canonical filter + tiebreak
+  // rules.
+  const pickupCandidate = selectActivePickupNode(
+    jobs.map(toCandidateFromCamelCaseJob),
+  );
+  const pickupJob = pickupCandidate
+    ? jobs.find((j) => j.id === pickupCandidate.id) ?? null
+    : null;
 
   // Phase 10B — auto vs override derivation for the header pickup
   // badge. tenantRentalDays is the live setting (falls back to the
@@ -431,12 +421,9 @@ export default function RentalLifecyclePage({ params }: { params: Promise<{ id: 
             </div>
             <div className="flex items-center gap-2 mt-0.5">
               <p className="text-sm font-semibold text-[var(--t-text-primary)]">{fmtDate(rentalChain.expectedPickupDate)}</p>
-              {isActive && (
-                <button onClick={() => { setPickupModalOpen(true); setPickupDate(rentalChain.expectedPickupDate || ""); setPickupError(""); }}
-                  className="text-[var(--t-accent)] hover:opacity-70 transition-opacity" title={FEATURE_REGISTRY.lifecycle_action_edit_pickup?.label ?? "Edit Pickup Date"}>
-                  <Pencil className="h-3 w-3" />
-                </button>
-              )}
+              {/* Phase 2c — pencil removed; pickup-date editing now lives
+                  only on Job Detail. The deep-link CTA in the actions
+                  row is the single entry point. */}
             </div>
             {rentalChain.expectedPickupDate && (
               <p className="text-[10px] text-[var(--t-text-muted)] mt-0.5">
@@ -490,10 +477,21 @@ export default function RentalLifecyclePage({ params }: { params: Promise<{ id: 
       {/* Actions */}
       {isActive && (
         <div className="flex gap-2">
-          <button onClick={() => { setPickupModalOpen(true); setPickupDate(rentalChain.expectedPickupDate || ""); setPickupError(""); }}
-            className="inline-flex items-center gap-1.5 rounded-full border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-2 text-xs font-medium text-[var(--t-text-primary)] hover:bg-[var(--t-bg-card-hover)] transition-colors">
-            <Pencil className="h-3 w-3" /> {FEATURE_REGISTRY.lifecycle_action_edit_pickup?.label ?? "Change Pickup Date"}
-          </button>
+          {/* Phase 2c — pickup-date editing has moved to Job Detail
+              (Connected Job Lifecycle panel). This is an explicit,
+              user-initiated deep link to the active pickup job; no
+              auto-redirect. CTA only renders when an active pickup
+              node exists so we never leave a dead button. */}
+          {pickupJob && (
+            <Link
+              href={`/jobs/${pickupJob.id}`}
+              className="inline-flex items-center gap-1.5 rounded-full border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-2 text-xs font-medium text-[var(--t-text-primary)] hover:bg-[var(--t-bg-card-hover)] transition-colors no-underline"
+            >
+              <Pencil className="h-3 w-3" />
+              {getFeatureLabel("job_detail_edit_pickup_date_cta")}
+              <ArrowRight className="h-3 w-3" />
+            </Link>
+          )}
           <button onClick={() => setCreateExchangeOpen(true)}
             className="inline-flex items-center gap-1.5 rounded-full border border-[var(--t-border)] bg-[var(--t-bg-card)] px-4 py-2 text-xs font-medium text-[var(--t-text-primary)] hover:bg-[var(--t-bg-card-hover)] transition-colors">
             <Repeat className="h-3 w-3" /> {FEATURE_REGISTRY.schedule_exchange?.label ?? "Schedule Exchange"}
@@ -788,47 +786,6 @@ export default function RentalLifecyclePage({ params }: { params: Promise<{ id: 
         />
       )}
 
-      {/* Change Pickup Date Modal */}
-      {pickupModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4" onClick={() => setPickupModalOpen(false)}>
-          <div className="rounded-2xl border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6 w-full max-w-sm" onClick={e => e.stopPropagation()}>
-            <h3 className="text-sm font-semibold text-[var(--t-text-primary)] mb-1">
-              {FEATURE_REGISTRY.lifecycle_action_edit_pickup?.label ?? "Change Pickup Date"}
-            </h3>
-            <p className="text-xs text-[var(--t-text-muted)] mb-4">
-              {FEATURE_REGISTRY.lifecycle_action_pickup_description?.label ?? "Select a new pickup date for this rental."}
-            </p>
-            <label className="text-xs text-[var(--t-text-muted)] mb-1 block">
-              {FEATURE_REGISTRY.lifecycle_action_new_date?.label ?? "New pickup date"}
-            </label>
-            <LifecycleDateInput
-              value={pickupDate}
-              onChange={(v) => { setPickupDate(v); setPickupError(""); }}
-              min={rentalChain.dropOffDate ? new Date(new Date(rentalChain.dropOffDate).getTime() + 86400000).toISOString().split("T")[0] : undefined}
-              className="w-full rounded-[14px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-3 py-2 text-sm text-[var(--t-text-primary)] outline-none focus:border-[var(--t-accent)] mb-1"
-            />
-            {pickupDate && autoPickupDate && (
-              <PickupPreview
-                autoDate={autoPickupDate}
-                overrideDate={pickupDate === autoPickupDate ? undefined : pickupDate}
-                rentalDays={tenantRentalDays}
-              />
-            )}
-            {pickupError && (
-              <p className="text-xs text-[var(--t-error)] mb-3">{pickupError}</p>
-            )}
-            <div className="flex gap-2 justify-end">
-              <button onClick={() => setPickupModalOpen(false)} className="rounded-full px-4 py-2 text-xs font-medium text-[var(--t-text-muted)]">
-                Cancel
-              </button>
-              <button onClick={handlePickupDateUpdate} disabled={!pickupDate || pickupSaving}
-                className="rounded-full bg-[var(--t-accent)] px-4 py-2 text-xs font-semibold text-[var(--t-accent-on-accent)] disabled:opacity-40 hover:opacity-90 transition-opacity">
-                {pickupSaving ? (FEATURE_REGISTRY.lifecycle_action_saving?.label ?? "Saving...") : (FEATURE_REGISTRY.lifecycle_action_confirm?.label ?? "Confirm")}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
