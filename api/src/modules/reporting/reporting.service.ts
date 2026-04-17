@@ -10,6 +10,7 @@ import { Customer } from '../customers/entities/customer.entity';
 import { User } from '../auth/entities/user.entity';
 import { RentalChain } from '../rental-chains/entities/rental-chain.entity';
 import { TaskChainLink } from '../rental-chains/entities/task-chain-link.entity';
+import { ProfitResponseDto } from './dto/profit-response.dto';
 
 const CORRECTION_CUTOFF = '2026-04-02T00:00:00Z';
 function classifyRecord(createdAt: string | Date): 'legacy' | 'post-correction' {
@@ -381,7 +382,11 @@ export class ReportingService {
     };
   }
 
-  async getProfit(tenantId: string, startDate?: string, endDate?: string) {
+  async getProfit(
+    tenantId: string,
+    startDate?: string,
+    endDate?: string,
+  ): Promise<ProfitResponseDto> {
     const revenue = await this.getRevenue(tenantId, startDate, endDate);
     const costs = await this.getDumpCosts(tenantId, startDate, endDate);
     const gross = revenue.totalCollected - costs.totalDumpCosts;
