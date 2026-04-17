@@ -52,6 +52,10 @@ import type {
 } from "./lifecycle-context-types";
 import EditJobDateModal, { type EditableJobType } from "./EditJobDateModal";
 import ScheduleExchangeModal from "@/components/schedule-exchange-modal";
+import {
+  selectActivePickupNode,
+  toCandidateFromSnakeCaseNode,
+} from "@/lib/lifecycle-pickup";
 
 const EDITABLE_TASK_TYPES = new Set<EditableJobType>([
   "drop_off",
@@ -160,26 +164,18 @@ export default function LifecycleContextPanel({
 
   // Discoverability pass — current non-cancelled pickup node for
   // the chain (the node the header action opens for editing).
-  // When the chain has an exchange, the old pickup link is
-  // cancelled and a new one is inserted with a higher
-  // sequence_number, so "latest by sequence_number" is the right
-  // representative. Drives the header "Change Pickup Date"
-  // button; the button and the modal render guard share the
-  // same preconditions so the two can't disagree.
+  // Derivation now lives in @/lib/lifecycle-pickup so this surface
+  // and the rentals-page CTA are provably in agreement; see that
+  // module's contract header for the canonical filter + tiebreak
+  // rules. Drives the header "Change Pickup Date" button; the
+  // button and the modal render guard share the same preconditions
+  // so the two can't disagree.
   const pickupNode = useMemo<LifecycleNode | null>(() => {
     if (!data?.nodes || data.nodes.length === 0) return null;
-    const candidates = data.nodes.filter(
-      (n) =>
-        n.task_type === "pick_up" &&
-        n.status !== "cancelled" &&
-        n.link_status !== "cancelled" &&
-        !!n.scheduled_date,
+    const winner = selectActivePickupNode(
+      data.nodes.map(toCandidateFromSnakeCaseNode),
     );
-    if (candidates.length === 0) return null;
-    return candidates.reduce<LifecycleNode | null>(
-      (max, n) => (!max || n.sequence_number > max.sequence_number ? n : max),
-      null,
-    );
+    return winner ? data.nodes.find((n) => n.job_id === winner.id) ?? null : null;
   }, [data]);
 
   // All preconditions the modal render guard below checks —
