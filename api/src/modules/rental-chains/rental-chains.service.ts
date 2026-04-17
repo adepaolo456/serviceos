@@ -703,6 +703,26 @@ export class RentalChainsService {
         order: { sequence_number: 'DESC' },
       });
 
+      // Post-Phase-2c Tier A #2 — fail fast when the chain has no
+      // currently-scheduled pickup link. Mirrors Follow-Up #1's
+      // guard in updateChain (commit 5a658cc). Any direct API caller
+      // bypassing the UI's pickupJob gate (Follow-Up #2, commit c5b75c1)
+      // lands here; zero side effects on the failed path (the throw
+      // fires before any write inside this transaction, so TypeORM
+      // rolls back the no-op transaction cleanly).
+      //
+      // The former else-branch below (append-to-tail when no pickup
+      // exists) becomes unreachable after this guard. Leaving it in
+      // place per the prompt's "no refactor beyond the guard" rule;
+      // dead-code cleanup is tracked as a follow-up.
+      if (!currentPickupLink) {
+        throw new ConflictException({
+          code: 'NO_SCHEDULED_PICKUP_FOR_EXCHANGE',
+          message:
+            'Cannot schedule exchange: this rental chain has no scheduled pickup to replace. Reopen the cancelled pickup or cancel the chain first.',
+        });
+      }
+
       let previousLinkId: string | null = null;
       let previousSeq = 0;
 
