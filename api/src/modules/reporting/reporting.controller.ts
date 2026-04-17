@@ -5,6 +5,7 @@ import { TenantId, Roles } from '../../common/decorators';
 import { RolesGuard } from '../../common/guards';
 import { ProfitResponseDto } from './dto/profit-response.dto';
 import { AssetsResponseDto } from './dto/assets-response.dto';
+import { CustomersResponseDto } from './dto/customers-response.dto';
 
 @ApiTags('Reporting')
 @ApiBearerAuth()
@@ -121,7 +122,11 @@ export class ReportingController {
 
   @Get('customers')
   @ApiOperation({ summary: 'Customer analytics report' })
-  customers(@TenantId() tid: string, @Query('startDate') s?: string, @Query('endDate') e?: string) {
+  customers(
+    @TenantId() tid: string,
+    @Query('startDate') s?: string,
+    @Query('endDate') e?: string,
+  ): Promise<CustomersResponseDto> {
     return this.service.getCustomerAnalytics(tid, s, e);
   }
 
