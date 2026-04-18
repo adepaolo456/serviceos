@@ -366,24 +366,6 @@ function JobsPageContent() {
     }>;
   }>>([]);
   const [chainsLoading, setChainsLoading] = useState(true);
-  // Tenant-wide blocker counts for the top strip tiles. Sourced from the
-  // new /analytics/jobs-by-blocker endpoint, refreshed on mount.
-  const [blockerCounts, setBlockerCounts] = useState<{
-    payment_blocked: number;
-    billing_issue: number;
-    unassigned_active: number;
-  }>({ payment_blocked: 0, billing_issue: 0, unassigned_active: 0 });
-  // Jobs page top-strip counts — single source of truth for the 5 tiles.
-  // Tenant-scoped on the server via /analytics/jobs-summary. `blocked` is
-  // a computed UNION, not a stored status.
-  const [summary, setSummary] = useState<{
-    unassigned: number;
-    assigned: number;
-    enRoute: number;
-    completed: number;
-    blocked: number;
-  }>({ unassigned: 0, assigned: 0, enRoute: 0, completed: 0, blocked: 0 });
-
   // Multi-status KPI groups: tile filter value → actual stored API statuses
   const MULTI_STATUS: Record<string, string[]> = {
     unassigned: ["pending", "confirmed"],
@@ -496,24 +478,6 @@ function JobsPageContent() {
     api
       .get<JobsResponse>("/jobs?stale=true&limit=1")
       .then((r) => setStaleCount(r.meta.total))
-      .catch(() => {});
-    // Tenant-wide blocker counts for the new Payment Blocked tile.
-    api
-      .get<{ payment_blocked: number; billing_issue: number; unassigned_active: number }>(
-        "/analytics/jobs-by-blocker",
-      )
-      .then(setBlockerCounts)
-      .catch(() => {});
-    // Top-strip summary counts (unassigned / assigned / en route / completed / blocked).
-    api
-      .get<{
-        unassigned: number;
-        assigned: number;
-        enRoute: number;
-        completed: number;
-        blocked: number;
-      }>("/analytics/jobs-summary")
-      .then(setSummary)
       .catch(() => {});
     // Fetch rental chains for lifecycle view
     api.get<typeof chains>("/rental-chains")
