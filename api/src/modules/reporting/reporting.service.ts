@@ -876,14 +876,14 @@ export class ReportingService {
     const today = new Date().toISOString().split('T')[0];
 
     const revenue = await this.invoiceRepo.query(
-      `SELECT COALESCE(SUM(total), 0) as revenue FROM invoices
-       WHERE tenant_id = $1 AND created_at::date = $2 AND ${REVENUE_STATUS_SQL}`,
+      `SELECT COALESCE(SUM(i.total), 0) as revenue FROM invoices i
+       WHERE i.tenant_id = $1 AND i.created_at::date = $2 AND ${REVENUE_STATUS_SQL}`,
       [tenantId, today],
     );
     const ar = await this.invoiceRepo.query(
-      `SELECT COALESCE(SUM(CASE WHEN status IN ('open','partial') THEN balance_due ELSE 0 END), 0) as open_ar,
-              COALESCE(SUM(CASE WHEN status IN ('open','partial') AND sent_at < NOW() - INTERVAL '30 days' THEN balance_due ELSE 0 END), 0) as overdue_ar
-       FROM invoices WHERE tenant_id = $1 AND ${REVENUE_STATUS_SQL}`,
+      `SELECT COALESCE(SUM(CASE WHEN i.status IN ('open','partial') THEN i.balance_due ELSE 0 END), 0) as open_ar,
+              COALESCE(SUM(CASE WHEN i.status IN ('open','partial') AND i.sent_at < NOW() - INTERVAL '30 days' THEN i.balance_due ELSE 0 END), 0) as overdue_ar
+       FROM invoices i WHERE i.tenant_id = $1 AND ${REVENUE_STATUS_SQL}`,
       [tenantId],
     );
     const jobs = await this.jobRepo.query(
