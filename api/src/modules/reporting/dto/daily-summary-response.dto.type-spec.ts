@@ -21,8 +21,8 @@
  * Alternative sentinels rejected:
  *   - `revenue` drift: tagged scalar, but scalar-type drift is
  *     module-typical, not novel to Phase 15.
- *   - `overdueAR` drift: the δ-decided field, but δ-decision affects
- *     documentation, not type contract.
+ *   - `overdueAR` drift: scalar number — scalar-type drift is
+ *     module-typical, not novel to Phase 15.
  */
 
 import type { DailySummaryResponseDto } from './daily-summary-response.dto';
@@ -58,7 +58,7 @@ void _validFixture;
 //      15 at build time. Sentinel catches this class of drift.
 //   3. Alternatives considered and rejected:
 //      - revenue: 'not-a-number' — scalar drift is module-typical.
-//      - overdueAR: 'not-a-number' — δ-decision affects docs, not type.
+//      - overdueAR: 'not-a-number' — scalar drift is module-typical.
 //      - alerts.critical: 'not-a-number' — exercises sub-DTO field
 //        type, but the outer-shape invariant is more novel.
 // ─────────────────────────────────────────────────────────────────────

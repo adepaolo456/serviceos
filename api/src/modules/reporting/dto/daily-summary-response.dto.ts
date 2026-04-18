@@ -51,11 +51,11 @@
  *    defaulting to current month; Phase 15 is more restrictive —
  *    current day only, no caller choice).
  *
- * 5. `overdueAR` is the FOURTH variant in the overdue taxonomy —
- *    balance-aggregate + sent-aged + all-time. Intentionally untagged
- *    with disambiguation JSDoc per Path F Track 2 spec v1
- *    preservation (δ decision). See `overdueAR` per-field JSDoc for
- *    the four-variant inventory + filter-axis divergence.
+ * 5. `overdueAR` reuses the existing OVERDUE_ALL_TIME tag from Phase 7
+ *    `AccountsReceivableResponseDto.totalOverdue`. Originally shipped
+ *    in Phase 15 with a send-aged heuristic; corrected to contractual
+ *    `due_date < CURRENT_DATE` semantics in the overdueAR axis fix
+ *    commit. See `overdueAR` per-field JSDoc for historical context.
  *
  * 6. Revenue + openAR REUSE EXISTING TAGS from Phases 5 + 7 —
  *    `INVOICED_WINDOWED` and `OUTSTANDING_ALL_TIME`. No new
@@ -127,36 +127,25 @@ export class DailySummaryResponseDto {
   openAR: number;
 
   /**
-   * Total overdue accounts-receivable balance — aged by invoice send time.
+   * Semantic: OVERDUE_ALL_TIME (reuse from Phase 7
+   * `AccountsReceivableResponseDto.totalOverdue`).
+   *
+   * Total overdue accounts-receivable balance — aged by contractual due date.
    *
    * Formula: `COALESCE(SUM(CASE WHEN status IN ('open','partial') AND
-   * sent_at < NOW() - INTERVAL '30 days' THEN balance_due ELSE 0 END), 0)`.
+   * due_date < CURRENT_DATE THEN balance_due ELSE 0 END), 0)`.
    *
-   * ⚠ FILTER AXIS DIVERGENCE: This field uses `sent_at < NOW() - 30 days`
-   * (aging measured from invoice send time), NOT `due_date < today`
-   * (contractual payment deadline). Semantically distinct from:
-   *   - Phase 5 `RevenueResponseDto.totalOverdue` (Semantic:
-   *     OVERDUE_WINDOWED) — due-aged, created-at-windowed balance
-   *   - Phase 7 `AccountsReceivableResponseDto.totalOverdue`
-   *     (Semantic: OVERDUE_ALL_TIME) — due-aged, all-time balance
-   *   - Phase 14 `ExceptionsActionRequiredDto.overdueInvoices` —
-   *     row count with status='overdue' flag (all-time)
-   *
-   * Phase 15's overdueAR is the FOURTH variant in the overdue
-   * taxonomy: balance-aggregate + sent-aged + all-time. Intentionally
-   * UNTAGGED per Path F Track 2 spec v1 (Clarification A):
-   * single-field heuristic falling outside primary-aggregate
-   * vocabulary does not warrant vocabulary expansion. Precedent:
-   * Phase 14 `overdueInvoices` (also untagged with disambiguation
-   * JSDoc).
-   *
-   * Consumers that want "contractually overdue" should use Phase 5
-   * or Phase 7's `totalOverdue`. Consumers tracking "invoices going
-   * stale" should use this field.
+   * Historical note: Phase 15 originally shipped a send-aged heuristic
+   * (`sent_at < NOW() - INTERVAL '30 days'`) per inadvertent copy-paste
+   * from `getAlerts`. Corrected to `due_date < CURRENT_DATE` in the
+   * overdueAR axis fix commit to align with contractual overdue
+   * semantics used consistently across the codebase (11+ call sites).
+   * See git log for `fix(reporting): correct overdueAR semantics` for
+   * the product review evidence and decision rationale.
    */
   @ApiProperty({
     description:
-      'Sent-aged overdue AR balance (SUM(balance_due) WHERE open/partial AND sent_at < NOW() - 30 days). DIFFERENT filter axis from Phase 5/7 totalOverdue.',
+      "All-time overdue AR balance (SUM(balance_due) WHERE status IN ('open','partial') AND due_date < CURRENT_DATE).",
   })
   overdueAR: number;
 
