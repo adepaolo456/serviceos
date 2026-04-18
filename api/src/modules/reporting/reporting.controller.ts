@@ -19,6 +19,7 @@ import { ReportingAlertsResponseDto } from './dto/alerts-response.dto';
 import { IntegrityCheckResponseDto } from './dto/integrity-check-response.dto';
 import { RevenueBreakdownResponseDto } from './dto/revenue-breakdown-response.dto';
 import { ExceptionsResponseDto } from './dto/exceptions-response.dto';
+import { DailySummaryResponseDto } from './dto/daily-summary-response.dto';
 
 @ApiTags('Reporting')
 @ApiBearerAuth()
@@ -192,7 +193,7 @@ export class ReportingController {
 
   @Get('daily-summary')
   @ApiOperation({ summary: 'Daily operational summary' })
-  dailySummary(@TenantId() tid: string) {
+  dailySummary(@TenantId() tid: string): Promise<DailySummaryResponseDto> {
     return this.service.getDailySummary(tid);
   }
 

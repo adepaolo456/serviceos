@@ -32,6 +32,7 @@ import {
   ExceptionsResponseDto,
   ExceptionsBillingInconsistencyDto,
 } from './dto/exceptions-response.dto';
+import { DailySummaryResponseDto } from './dto/daily-summary-response.dto';
 
 const CORRECTION_CUTOFF = '2026-04-02T00:00:00Z';
 function classifyRecord(createdAt: string | Date): 'legacy' | 'post-correction' {
@@ -871,7 +872,7 @@ export class ReportingService {
     return '/analytics';
   }
 
-  async getDailySummary(tenantId: string) {
+  async getDailySummary(tenantId: string): Promise<DailySummaryResponseDto> {
     const today = new Date().toISOString().split('T')[0];
 
     const revenue = await this.invoiceRepo.query(
