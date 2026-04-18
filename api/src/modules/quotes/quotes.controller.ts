@@ -1,7 +1,7 @@
 import { Controller, Get, Post, Body, Param, Query, ParseUUIDPipe, Logger } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, DataSource } from 'typeorm';
 import { Quote } from './quote.entity';
 import { Tenant } from '../tenants/entities/tenant.entity';
 import { Customer } from '../customers/entities/customer.entity';
@@ -12,6 +12,7 @@ import { SmsService } from '../sms/sms.service';
 import { SmsOptOutService } from '../sms/sms-opt-out.service';
 import { TenantSettings } from '../tenant-settings/entities/tenant-settings.entity';
 import { normalizePhone, isValidPhone } from '../../common/utils/phone';
+import { getTenantRentalDays } from '../../common/utils/tenant-rental-days.util';
 import { getTemplate, renderTemplate } from './quote-templates';
 import { randomBytes } from 'crypto';
 
@@ -113,6 +114,7 @@ export class QuotesController {
     private settingsService: TenantSettingsService,
     private smsService: SmsService,
     private optOutService: SmsOptOutService,
+    private readonly dataSource: DataSource,
   ) {}
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -420,7 +422,12 @@ export class QuotesController {
       asset_subtype: body.assetSubtype,
       base_price: body.basePrice,
       included_tons: body.includedTons || 0,
-      rental_days: body.rentalDays || 14,
+      rental_days:
+        body.rentalDays ||
+        (await getTenantRentalDays(
+          this.dataSource.getRepository(TenantSettings),
+          tenantId,
+        )),
       overage_rate: body.overageRate || 0,
       extra_day_rate: body.extraDayRate || 0,
       distance_surcharge: body.distanceSurcharge || 0,

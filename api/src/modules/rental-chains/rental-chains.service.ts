@@ -71,7 +71,9 @@ export class RentalChainsService {
   // ─────────────────────────────────────────────────────────
 
   async createChain(tenantId: string, dto: CreateRentalChainDto) {
-    const rentalDays = dto.rental_days ?? 14;
+    const rentalDays =
+      dto.rental_days ??
+      (await getTenantRentalDays(this.tenantSettingsRepo, tenantId));
 
     // Calculate expected pickup date
     const dropOff = new Date(dto.drop_off_date);

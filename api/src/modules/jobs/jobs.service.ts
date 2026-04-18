@@ -24,6 +24,7 @@ import { DUMP_ELIGIBLE_JOB_TYPES } from '../billing/helpers/billing-issue-cleanu
 import { TenantSettings } from '../tenant-settings/entities/tenant-settings.entity';
 import { getTenantToday } from '../../common/utils/tenant-date.util';
 import { issueNextJobNumber } from '../../common/utils/job-number.util';
+import { getTenantRentalDays } from '../../common/utils/tenant-rental-days.util';
 import {
   RentalChainsService,
   daysBetween as rentalDaysBetween,
@@ -278,7 +279,13 @@ export class JobsService {
             basePrice = Number(override.base_price);
           }
         }
-        rentalDays = rentalDays ?? rule.rental_period_days ?? 14;
+        rentalDays =
+          rentalDays ??
+          rule.rental_period_days ??
+          (await getTenantRentalDays(
+            this.dataSource.getRepository(TenantSettings),
+            tenantId,
+          ));
 
         // Check customer discount
         if (dto.customerId) {
