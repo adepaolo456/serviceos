@@ -27,6 +27,7 @@ import {
   IntegrityCheckResponseDto,
   IntegrityCheckRowDto,
 } from './dto/integrity-check-response.dto';
+import { RevenueBreakdownResponseDto } from './dto/revenue-breakdown-response.dto';
 
 const CORRECTION_CUTOFF = '2026-04-02T00:00:00Z';
 function classifyRecord(createdAt: string | Date): 'legacy' | 'post-correction' {
@@ -705,7 +706,11 @@ export class ReportingService {
     };
   }
 
-  async getRevenueBreakdown(tenantId: string, period?: string, classification?: string) {
+  async getRevenueBreakdown(
+    tenantId: string,
+    period?: string,
+    classification?: string,
+  ): Promise<RevenueBreakdownResponseDto> {
     const date = period || new Date().toISOString().slice(0, 7); // YYYY-MM
     const startOfMonth = `${date}-01`;
     const endOfMonth = new Date(new Date(startOfMonth).getFullYear(), new Date(startOfMonth).getMonth() + 1, 0).toISOString().split('T')[0];
@@ -743,7 +748,7 @@ export class ReportingService {
       classification: classification || 'all',
       cutoffDate: CORRECTION_CUTOFF.split('T')[0],
       period: date,
-      totalRevenue,
+      totalInvoicedLineItem: totalRevenue,
       breakdown: {
         rental: Number(row.rental) || 0,
         distance: Number(row.distance) || 0,
