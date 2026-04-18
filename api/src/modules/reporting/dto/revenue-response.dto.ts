@@ -47,7 +47,13 @@ export class RevenueBySourceRowDto {
   })
   source: string;
 
-  /** Per-source **invoiced** revenue — `SUM(invoices.total)` for the source. */
+  /**
+   * Semantic: INVOICED_WINDOWED
+   * Source: SUM(invoices.total) GROUP BY COALESCE(j.source)
+   * Scope: Revenue-status; windowed by created_at
+   *
+   * Per-source **invoiced** revenue — `SUM(invoices.total)` for the source.
+   */
   @ApiProperty({
     description: 'Per-source invoiced revenue (SUM(invoices.total)).',
   })
@@ -93,7 +99,13 @@ export class RevenueDailyRowDto {
   })
   date: string | null;
 
-  /** Per-bucket **invoiced** revenue — `SUM(invoices.total)` in the bucket. */
+  /**
+   * Semantic: INVOICED_WINDOWED
+   * Source: SUM(invoices.total) per date bucket
+   * Scope: Revenue-status; windowed by created_at
+   *
+   * Per-bucket **invoiced** revenue — `SUM(invoices.total)` in the bucket.
+   */
   @ApiProperty({
     description: 'Per-bucket invoiced revenue (SUM(invoices.total)).',
   })
@@ -110,6 +122,10 @@ export class RevenueDailyRowDto {
 
 export class RevenueResponseDto {
   /**
+   * Semantic: INVOICED_WINDOWED
+   * Source: SUM(invoices.total)
+   * Scope: Revenue-status invoices; windowed by created_at
+   *
    * Revenue **invoiced** in the window — `SUM(invoices.total)` over
    * invoices with revenue status (`open`/`paid`/`partial`) and
    * `created_at` in the window.
@@ -134,6 +150,10 @@ export class RevenueResponseDto {
   totalRevenue: number;
 
   /**
+   * Semantic: COLLECTED
+   * Source: SUM(payments.amount − refunded_amount) for completed payments
+   * Scope: Windowed by applied_at
+   *
    * Revenue **collected** in the window — `SUM(payments.amount - refunded_amount)`
    * over completed payments (`payments.status = 'completed'`) with
    * `applied_at` in the window. Time axis is `payments.applied_at`
@@ -153,6 +173,10 @@ export class RevenueResponseDto {
   totalCollected: number;
 
   /**
+   * Semantic: OUTSTANDING_WINDOWED
+   * Source: SUM(CASE WHEN status IN (open,partial) THEN balance_due ELSE 0)
+   * Scope: Revenue-status invoices; windowed by created_at
+   *
    * Total outstanding balance from invoices with status in
    * (`open`, `partial`) and `created_at` in the window —
    * `SUM(CASE WHEN status IN ('open', 'partial') THEN balance_due ELSE 0 END)`.
@@ -164,6 +188,10 @@ export class RevenueResponseDto {
   totalOutstanding: number;
 
   /**
+   * Semantic: OVERDUE_WINDOWED
+   * Source: SUM(balance_due) WHERE open/partial AND due_date < today
+   * Scope: Windowed by created_at; due_date < today
+   *
    * Total overdue balance — `SUM(balance_due)` over invoices with
    * status in (`open`, `partial`) AND `due_date < today`. Evaluated
    * against server's current date, not the window end.
