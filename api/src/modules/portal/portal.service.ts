@@ -20,6 +20,7 @@ import { StripeService } from '../stripe/stripe.service';
 import { JobsService } from '../jobs/jobs.service';
 import { TenantSettings } from '../tenant-settings/entities/tenant-settings.entity';
 import { getTenantToday } from '../../common/utils/tenant-date.util';
+import { getTenantRentalDays } from '../../common/utils/tenant-rental-days.util';
 
 /**
  * Customer-safe projection of a Job for portal responses.
@@ -803,7 +804,12 @@ export class PortalService {
     // 4. Capture the current chain duration so we can preserve
     // it across the reschedule. Fall back to 14 only if the
     // chain row is missing the value (legacy data).
-    const originalRentalDays = chain.rental_days ?? 14;
+    const originalRentalDays =
+      chain.rental_days ??
+      (await getTenantRentalDays(
+        this.dataSource.getRepository(TenantSettings),
+        tenantId,
+      ));
 
     // 5. Compute the new pickup date as newDeliveryDate +
     // originalRentalDays. Inline UTC arithmetic — no new helper.
