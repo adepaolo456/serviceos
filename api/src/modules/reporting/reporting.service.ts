@@ -28,6 +28,10 @@ import {
   IntegrityCheckRowDto,
 } from './dto/integrity-check-response.dto';
 import { RevenueBreakdownResponseDto } from './dto/revenue-breakdown-response.dto';
+import {
+  ExceptionsResponseDto,
+  ExceptionsBillingInconsistencyDto,
+} from './dto/exceptions-response.dto';
 
 const CORRECTION_CUTOFF = '2026-04-02T00:00:00Z';
 function classifyRecord(createdAt: string | Date): 'legacy' | 'post-correction' {
@@ -960,9 +964,9 @@ export class ReportingService {
     return [header, ...csvRows].join('\n');
   }
 
-  async getExceptions(tenantId: string) {
+  async getExceptions(tenantId: string): Promise<ExceptionsResponseDto> {
     // Critical: billing inconsistencies (invoice total != sum of line items)
-    let inconsistencies: any[] = [];
+    let inconsistencies: ExceptionsBillingInconsistencyDto[] = [];
     try {
       inconsistencies = await this.dataSource.query(`
         SELECT i.id, i.invoice_number, i.total,
