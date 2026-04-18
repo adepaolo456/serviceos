@@ -1,5 +1,10 @@
 import { Controller, Get, Query, Res, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiTags,
+  ApiOperation,
+  ApiOkResponse,
+} from '@nestjs/swagger';
 import { ReportingService } from './reporting.service';
 import { TenantId, Roles } from '../../common/decorators';
 import { RolesGuard } from '../../common/guards';
@@ -29,6 +34,7 @@ export class ReportingController {
 
   @Get('revenue/source-detail')
   @ApiOperation({ summary: 'Invoice-level detail for a revenue source' })
+  @ApiOkResponse({ type: RevenueSourceDetailResponseDto })
   revenueSourceDetail(
     @TenantId() tid: string,
     @Query('source') source: string,
@@ -40,6 +46,7 @@ export class ReportingController {
 
   @Get('revenue/daily-detail')
   @ApiOperation({ summary: 'Invoice-level detail for a single day' })
+  @ApiOkResponse({ type: RevenueDailyDetailResponseDto })
   revenueDailyDetail(
     @TenantId() tid: string,
     @Query('date') date: string,
@@ -49,6 +56,7 @@ export class ReportingController {
 
   @Get('revenue/invoices')
   @ApiOperation({ summary: 'Filtered invoice list for revenue tiles' })
+  @ApiOkResponse({ type: RevenueInvoicesResponseDto })
   revenueInvoices(
     @TenantId() tid: string,
     @Query('filter') filter: string,
@@ -60,6 +68,7 @@ export class ReportingController {
 
   @Get('revenue')
   @ApiOperation({ summary: 'Revenue report' })
+  @ApiOkResponse({ type: RevenueResponseDto })
   revenue(
     @TenantId() tid: string,
     @Query('startDate') s?: string,
@@ -76,6 +85,7 @@ export class ReportingController {
     summary:
       'Phase 13 — lifecycle-aware KPI report. Returns summary, per-chain rows, and zero-filled trend series in a single call. Reuses the same financial truth (invoices.rental_chain_id + job_costs via task_chain_links) as the lifecycle detail endpoint.',
   })
+  @ApiOkResponse({ type: LifecycleReportResponseDto })
   lifecycleReport(
     @TenantId() tid: string,
     @Query('startDate') s?: string,
@@ -100,6 +110,7 @@ export class ReportingController {
 
   @Get('dump-costs')
   @ApiOperation({ summary: 'Dump costs report' })
+  @ApiOkResponse({ type: DumpCostsResponseDto })
   dumpCosts(
     @TenantId() tid: string,
     @Query('startDate') s?: string,
@@ -110,6 +121,7 @@ export class ReportingController {
 
   @Get('dump-slips')
   @ApiOperation({ summary: 'Dump slip ticket-level report' })
+  @ApiOkResponse({ type: DumpSlipsResponseDto })
   dumpSlips(
     @TenantId() tid: string,
     @Query('startDate') s?: string,
@@ -123,6 +135,7 @@ export class ReportingController {
 
   @Get('profit')
   @ApiOperation({ summary: 'Profit report' })
+  @ApiOkResponse({ type: ProfitResponseDto })
   profit(
     @TenantId() tid: string,
     @Query('startDate') s?: string,
@@ -133,6 +146,7 @@ export class ReportingController {
 
   @Get('drivers')
   @ApiOperation({ summary: 'Driver productivity report' })
+  @ApiOkResponse({ type: DriversResponseDto })
   drivers(
     @TenantId() tid: string,
     @Query('startDate') s?: string,
@@ -143,12 +157,14 @@ export class ReportingController {
 
   @Get('assets')
   @ApiOperation({ summary: 'Asset utilization report' })
+  @ApiOkResponse({ type: AssetsResponseDto })
   assets(@TenantId() tid: string): Promise<AssetsResponseDto> {
     return this.service.getAssetUtilization(tid);
   }
 
   @Get('customers')
   @ApiOperation({ summary: 'Customer analytics report' })
+  @ApiOkResponse({ type: CustomersResponseDto })
   customers(
     @TenantId() tid: string,
     @Query('startDate') s?: string,
@@ -159,18 +175,21 @@ export class ReportingController {
 
   @Get('accounts-receivable')
   @ApiOperation({ summary: 'Accounts receivable aging report' })
+  @ApiOkResponse({ type: AccountsReceivableResponseDto })
   receivables(@TenantId() tid: string): Promise<AccountsReceivableResponseDto> {
     return this.service.getAccountsReceivable(tid);
   }
 
   @Get('integrity-check')
   @ApiOperation({ summary: 'Data integrity check' })
+  @ApiOkResponse({ type: IntegrityCheckResponseDto })
   integrityCheck(@TenantId() tid: string): Promise<IntegrityCheckResponseDto> {
     return this.service.getIntegrityCheck(tid);
   }
 
   @Get('revenue-breakdown')
   @ApiOperation({ summary: 'Revenue breakdown by line type' })
+  @ApiOkResponse({ type: RevenueBreakdownResponseDto })
   revenueBreakdown(
     @TenantId() tid: string,
     @Query('period') period?: string,
@@ -181,18 +200,21 @@ export class ReportingController {
 
   @Get('alerts')
   @ApiOperation({ summary: 'Admin alerts from live data' })
+  @ApiOkResponse({ type: ReportingAlertsResponseDto })
   getAlerts(@TenantId() tid: string): Promise<ReportingAlertsResponseDto> {
     return this.service.getAlerts(tid);
   }
 
   @Get('exceptions')
   @ApiOperation({ summary: 'Operational and billing exceptions' })
+  @ApiOkResponse({ type: ExceptionsResponseDto })
   exceptions(@TenantId() tid: string): Promise<ExceptionsResponseDto> {
     return this.service.getExceptions(tid);
   }
 
   @Get('daily-summary')
   @ApiOperation({ summary: 'Daily operational summary' })
+  @ApiOkResponse({ type: DailySummaryResponseDto })
   dailySummary(@TenantId() tid: string): Promise<DailySummaryResponseDto> {
     return this.service.getDailySummary(tid);
   }
