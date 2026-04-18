@@ -809,7 +809,7 @@ export class ReportingService {
     const overdue = await this.invoiceRepo.query(
       `SELECT COUNT(*) as cnt, COALESCE(SUM(balance_due), 0) as total
        FROM invoices WHERE tenant_id = $1 AND status IN ('open', 'partial')
-       AND sent_at < NOW() - INTERVAL '30 days' AND voided_at IS NULL
+       AND due_date < CURRENT_DATE AND voided_at IS NULL
        AND created_at >= $2`,
       [tenantId, CORRECTION_CUTOFF],
     );
@@ -882,7 +882,7 @@ export class ReportingService {
     );
     const ar = await this.invoiceRepo.query(
       `SELECT COALESCE(SUM(CASE WHEN i.status IN ('open','partial') THEN i.balance_due ELSE 0 END), 0) as open_ar,
-              COALESCE(SUM(CASE WHEN i.status IN ('open','partial') AND i.sent_at < NOW() - INTERVAL '30 days' THEN i.balance_due ELSE 0 END), 0) as overdue_ar
+              COALESCE(SUM(CASE WHEN i.status IN ('open','partial') AND i.due_date < CURRENT_DATE THEN i.balance_due ELSE 0 END), 0) as overdue_ar
        FROM invoices i WHERE i.tenant_id = $1 AND ${REVENUE_STATUS_SQL}`,
       [tenantId],
     );
