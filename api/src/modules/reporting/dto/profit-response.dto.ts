@@ -22,6 +22,10 @@ import { PeriodDto } from './period.dto';
 
 export class ProfitResponseDto {
   /**
+   * Semantic: COLLECTED
+   * Source: getRevenue(...).totalCollected (pass-through)
+   * Scope: Revenue-status payments; windowed by applied_at (inherited from Phase 5 getRevenue)
+   *
    * Revenue **collected** (payments applied) in the window.
    * Sourced from `getRevenue(...).totalCollected` (pass-through).
    *

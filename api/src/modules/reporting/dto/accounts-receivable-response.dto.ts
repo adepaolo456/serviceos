@@ -38,6 +38,10 @@ export class AgingBucketDto {
   count: number;
 
   /**
+   * Semantic: OUTSTANDING_ALL_TIME
+   * Source: SUM(balance_due) per aging bucket
+   * Scope: All-time; bucketed by due_date gap
+   *
    * Sum of `balance_due` for invoices in the bucket (USD).
    * Always `Number()`-coerced server-side; always a real number,
    * never null (service substitutes `0` on empty buckets).
@@ -120,6 +124,10 @@ export class OverdueInvoiceRowDto {
   customerName: string;
 
   /**
+   * Semantic: OUTSTANDING_ALL_TIME
+   * Source: Number(invoices.balance_due) row-level
+   * Scope: All-time; per-invoice, status open/partial, due_date < today
+   *
    * Outstanding amount on the invoice — `Number(invoices.balance_due)`.
    * Projection rename: entity column `balance_due` → wire field
    * `amount`.
@@ -156,6 +164,10 @@ export class OverdueInvoiceRowDto {
 
 export class AccountsReceivableResponseDto {
   /**
+   * Semantic: OUTSTANDING_ALL_TIME
+   * Source: SUM(balance_due) WHERE status IN (open, partial)
+   * Scope: All-time; no window
+   *
    * Total outstanding balance across ALL open/partial invoices for
    * the tenant, regardless of creation date.
    * Formula: `SUM(balance_due) WHERE status IN ('open', 'partial')`.
@@ -175,6 +187,10 @@ export class AccountsReceivableResponseDto {
   totalOutstanding: number;
 
   /**
+   * Semantic: OVERDUE_ALL_TIME
+   * Source: SUM(balance_due) WHERE open/partial AND due_date < today
+   * Scope: All-time; due_date < today
+   *
    * Total overdue balance across ALL open/partial invoices with
    * `due_date < today`, regardless of creation date.
    * Formula: `SUM(balance_due) WHERE status IN ('open', 'partial')
