@@ -303,7 +303,13 @@ export class ReportingService {
       .andWhere('t.created_at <= :end', { end: end + 'T23:59:59' })
       .groupBy('t.dump_location_id')
       .addGroupBy('t.dump_location_name')
-      .getRawMany();
+      .getRawMany<{
+        dumpLocationId: string | null;
+        dumpLocationName: string | null;
+        totalCost: string | null;
+        tripCount: string;
+        averageCostPerTrip: string | null;
+      }>();
 
     const byWasteType = await this.ticketRepo.createQueryBuilder('t')
       .select('t.waste_type', 'wasteType')
@@ -313,15 +319,29 @@ export class ReportingService {
       .andWhere('t.created_at >= :start', { start })
       .andWhere('t.created_at <= :end', { end: end + 'T23:59:59' })
       .groupBy('t.waste_type')
-      .getRawMany();
+      .getRawMany<{
+        wasteType: string | null;
+        totalCost: string | null;
+        totalWeight: string | null;
+      }>();
 
     return {
       totalDumpCosts: dumpCosts,
       totalCustomerCharges: custCharges,
       totalMargin: custCharges - dumpCosts,
       marginPercent: dumpCosts > 0 ? ((custCharges - dumpCosts) / dumpCosts * 100) : 0,
-      costsByFacility: byFacility.map(f => ({ ...f, totalCost: Number(f.totalCost), tripCount: Number(f.tripCount), averageCostPerTrip: Number(f.averageCostPerTrip) })),
-      costsByWasteType: byWasteType.map(w => ({ ...w, totalCost: Number(w.totalCost), totalWeight: Number(w.totalWeight) })),
+      costsByFacility: byFacility.map((f) => ({
+        dumpLocationId: f.dumpLocationId,
+        dumpLocationName: f.dumpLocationName,
+        totalCost: Number(f.totalCost),
+        tripCount: Number(f.tripCount),
+        averageCostPerTrip: Number(f.averageCostPerTrip),
+      })),
+      costsByWasteType: byWasteType.map((w) => ({
+        wasteType: w.wasteType,
+        totalCost: Number(w.totalCost),
+        totalWeight: Number(w.totalWeight),
+      })),
       period: { start, end },
     };
   }
