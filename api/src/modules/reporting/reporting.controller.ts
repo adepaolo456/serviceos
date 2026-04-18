@@ -17,6 +17,7 @@ import { DumpSlipsResponseDto } from './dto/dump-slips-response.dto';
 import { LifecycleReportResponseDto } from './dto/lifecycle-response.dto';
 import { ReportingAlertsResponseDto } from './dto/alerts-response.dto';
 import { IntegrityCheckResponseDto } from './dto/integrity-check-response.dto';
+import { RevenueBreakdownResponseDto } from './dto/revenue-breakdown-response.dto';
 
 @ApiTags('Reporting')
 @ApiBearerAuth()
@@ -168,7 +169,11 @@ export class ReportingController {
 
   @Get('revenue-breakdown')
   @ApiOperation({ summary: 'Revenue breakdown by line type' })
-  revenueBreakdown(@TenantId() tid: string, @Query('period') period?: string, @Query('classification') classification?: string) {
+  revenueBreakdown(
+    @TenantId() tid: string,
+    @Query('period') period?: string,
+    @Query('classification') classification?: string,
+  ): Promise<RevenueBreakdownResponseDto> {
     return this.service.getRevenueBreakdown(tid, period, classification);
   }
 
