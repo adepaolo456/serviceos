@@ -17,6 +17,7 @@ import { CreateExchangeDto } from './dto/create-exchange.dto';
 import { RescheduleExchangeDto } from './dto/reschedule-exchange.dto';
 import { RentalChainLifecycleResponseDto } from './dto/lifecycle-response.dto';
 import { issueNextJobNumber } from '../../common/utils/job-number.util';
+import { getTenantRentalDays } from '../../common/utils/tenant-rental-days.util';
 // Path α — lifecycle exchanges reuse the existing pricing engine +
 // canonical billing path so they price/invoice identically to
 // booking-wizard exchanges.
@@ -64,24 +65,6 @@ export class RentalChainsService {
     private pricingService: PricingService,
     private billingService: BillingService,
   ) {}
-
-  // ─────────────────────────────────────────────────────────
-  // TENANT RENTAL RULES
-  // ─────────────────────────────────────────────────────────
-
-  /**
-   * Resolve the tenant's default rental duration. This is the single
-   * source of truth for exchange pickup recalculation — never hardcode
-   * 14 days. Falls back to 14 only when the row is absent entirely so
-   * new tenants don't 500 before onboarding runs.
-   */
-  private async getTenantRentalDays(tenantId: string): Promise<number> {
-    const settings = await this.tenantSettingsRepo.findOne({
-      where: { tenant_id: tenantId },
-    });
-    const days = settings?.default_rental_period_days;
-    return typeof days === 'number' && days > 0 ? days : 14;
-  }
 
   // ─────────────────────────────────────────────────────────
   // CREATE CHAIN
@@ -630,7 +613,10 @@ export class RentalChainsService {
     if (dto.override_pickup_date) {
       newPickupDateStr = dto.override_pickup_date;
     } else {
-      const rentalDays = await this.getTenantRentalDays(tenantId);
+      const rentalDays = await getTenantRentalDays(
+        this.tenantSettingsRepo,
+        tenantId,
+      );
       const d = new Date(dto.exchange_date);
       d.setUTCDate(d.getUTCDate() + rentalDays);
       newPickupDateStr = d.toISOString().split('T')[0];
@@ -972,7 +958,10 @@ export class RentalChainsService {
     if (dto.override_pickup_date) {
       newPickupDateStr = dto.override_pickup_date;
     } else {
-      const rentalDays = await this.getTenantRentalDays(tenantId);
+      const rentalDays = await getTenantRentalDays(
+        this.tenantSettingsRepo,
+        tenantId,
+      );
       newPickupDateStr = shiftDateStr(dto.exchange_date, rentalDays);
     }
     if (newPickupDateStr <= dto.exchange_date) {
@@ -1093,7 +1082,10 @@ export class RentalChainsService {
     // which is a historical snapshot at creation). The frontend uses
     // this to compute auto-vs-override previews that match what the
     // backend will actually enforce on the next mutation.
-    const tenantRentalDays = await this.getTenantRentalDays(tenantId);
+    const tenantRentalDays = await getTenantRentalDays(
+      this.tenantSettingsRepo,
+      tenantId,
+    );
 
     return {
       rentalChain: {
