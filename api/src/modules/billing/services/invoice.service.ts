@@ -912,6 +912,36 @@ export class InvoiceService {
         summary = `Service scheduled for ${serviceDate}.`;
       } else {
         const size = job.asset_subtype || 'dumpster';
+        /**
+         * Deliberate carve-out from the `|| 14` fallback cleanup arc.
+         *
+         * This `|| 14` fallback is intentionally preserved. The computed
+         * `rentalDays` is used exclusively for display-only email summary text
+         * (rendered at lines ~924-926 as "This rental includes a ${rentalDays}
+         * day rental period"). It does NOT drive billing math, extra-day
+         * calculation, overdue determination, or any persisted state — the
+         * actual billing path reads `pricing_rules.rental_period_days` via the
+         * pricing services upstream.
+         *
+         * Replacing this fallback with the shared `getTenantRentalDays` helper
+         * would add an async DB call to the email-send path with zero
+         * correctness benefit. The helper is canonical for rental duration
+         * resolution in billing/lifecycle/pricing contexts; this site's use is
+         * cosmetic.
+         *
+         * Arc lineage:
+         * - Phase 1 (95c85ca): extracted `getTenantRentalDays` to shared util
+         * - Phase 2 (74991d5): applied helper at 3 HIGH + 1 MEDIUM sites
+         *   using pattern-aware injection (Option β — honoring each file's
+         *   documented TenantSettings access convention)
+         * - Phase 3 (this commit): documents this site's deliberate exemption
+         *
+         * Source-of-truth note: the 14-day default aligned to by the
+         * rest of the arc lives at `tenant_settings.default_rental_period_days`
+         * (not `pricing_rules.rental_period_days`, which defaults to 7 and is
+         * semantically distinct). This site's `|| 14` is unrelated to either
+         * canonical source — it is purely a display safety net.
+         */
         const rentalDays = pricingData?.rental_days || job.rental_days || 14;
         const weight = pricingData?.weight_allowance_tons || 0;
         const overagePerTon = pricingData?.overage_per_ton || 0;
