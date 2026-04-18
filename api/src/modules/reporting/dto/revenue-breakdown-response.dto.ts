@@ -152,6 +152,34 @@ export class RevenueBreakdownByTypeDto {
   failedTripRevenue: number;
 }
 
+/**
+ * Note on revenue classification axes.
+ *
+ * Revenue fields in this DTO are primarily grouped by source-type
+ * (rental, distance, overage, surcharges, extraDayRevenue).
+ * `failedTripRevenue` represents an event-type charge — flat fees
+ * billed when a driver attempts service and the job fails (failed
+ * pickup / delivery / exchange).
+ *
+ * This introduces a minor axis asymmetry: source-type fields aggregate
+ * by service category, while `failedTripRevenue` aggregates by service
+ * outcome. Both axes answer the same business question — "where did
+ * the revenue come from?" — so the asymmetry is intentionally accepted.
+ *
+ * If additional event-type revenue fields are introduced in the future
+ * (e.g., separate aggregates for failed-pickup vs. failed-delivery vs.
+ * failed-exchange), consider restructuring into separate axes
+ * (`bySource` / `byEvent`). Single-instance asymmetry does not warrant
+ * restructure cost; second-occurrence evidence does.
+ *
+ * Lineage: Phase 13 (29f1f8d) raised the classification concern during
+ * lifecycle reporting KPI work. Phase 14 closed the engineering side as
+ * binary — data-integrity YES (SQL math is correct, no double-counting),
+ * classification NO (axis modeling is a product decision, not engineering
+ * correctness). Phase 15 (12e26a3) enforced retirement during arc
+ * closure. This JSDoc closes the product side: the asymmetry is
+ * formally accepted; the backlog item is permanently closed.
+ */
 export class RevenueBreakdownResponseDto {
   /**
    * Classification filter echo — echoes the `classification` query
