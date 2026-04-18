@@ -18,6 +18,7 @@ import { LifecycleReportResponseDto } from './dto/lifecycle-response.dto';
 import { ReportingAlertsResponseDto } from './dto/alerts-response.dto';
 import { IntegrityCheckResponseDto } from './dto/integrity-check-response.dto';
 import { RevenueBreakdownResponseDto } from './dto/revenue-breakdown-response.dto';
+import { ExceptionsResponseDto } from './dto/exceptions-response.dto';
 
 @ApiTags('Reporting')
 @ApiBearerAuth()
@@ -185,7 +186,7 @@ export class ReportingController {
 
   @Get('exceptions')
   @ApiOperation({ summary: 'Operational and billing exceptions' })
-  exceptions(@TenantId() tid: string) {
+  exceptions(@TenantId() tid: string): Promise<ExceptionsResponseDto> {
     return this.service.getExceptions(tid);
   }
 
