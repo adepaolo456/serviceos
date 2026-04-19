@@ -73,7 +73,7 @@ export default function PortalRequestPage() {
         setSizeOptions(opts);
         if (opts.length > 0 && !size) {
           setSize(opts[0].asset_subtype);
-          setRentalDays(opts[0].rental_period_days || 14);
+          setRentalDays(opts[0].rental_period_days);
         }
       })
       .catch(() => {});
