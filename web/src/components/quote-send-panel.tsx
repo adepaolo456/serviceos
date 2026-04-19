@@ -95,6 +95,8 @@ export default function QuoteSendPanel(props: QuoteSendPanelProps) {
   const [showSuggestions, setShowSuggestions] = useState<boolean>(false);
   const [searchLoading, setSearchLoading] = useState<boolean>(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (debounceRef.current) {
@@ -115,7 +117,13 @@ export default function QuoteSendPanel(props: QuoteSendPanelProps) {
           `/customers/search?q=${encodeURIComponent(nameQuery.trim())}&limit=5`,
         );
         setSearchResults(results);
-        setShowSuggestions(true);
+        // Focus guard: skip opening the dropdown if the user has moved
+        // focus away (e.g., clicked Email) while this fetch was in
+        // flight. Prevents the race where click-outside closes the
+        // dropdown and the resolving fetch then re-opens it.
+        if (document.activeElement === inputRef.current) {
+          setShowSuggestions(true);
+        }
       } catch {
         setSearchResults([]);
         setShowSuggestions(false);
@@ -130,6 +138,21 @@ export default function QuoteSendPanel(props: QuoteSendPanelProps) {
       }
     };
   }, [nameQuery]);
+
+  // Click-outside close — canonical pattern mirroring
+  // booking-wizard.tsx:332-339 and new-customer-form.tsx:246-252.
+  // Gated on showSuggestions so the document listener only attaches
+  // while the dropdown is open.
+  useEffect(() => {
+    if (!showSuggestions) return;
+    const handler = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setShowSuggestions(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [showSuggestions]);
 
   const handleNameInputChange = useCallback(
     (value: string) => {
@@ -150,17 +173,6 @@ export default function QuoteSendPanel(props: QuoteSendPanelProps) {
     },
     [onCustomerNameChange, onCustomerEmailChange, onCustomerPhoneChange],
   );
-
-  const handleNameInputBlur = useCallback(() => {
-    // 150ms delay so click-on-suggestion fires before the dropdown hides
-    setTimeout(() => setShowSuggestions(false), 150);
-  }, []);
-
-  const handleNameInputFocus = useCallback(() => {
-    if (searchResults.length > 0 && nameQuery.trim().length >= 2) {
-      setShowSuggestions(true);
-    }
-  }, [searchResults.length, nameQuery]);
 
   const wantEmail = deliveryMethod === "email" || deliveryMethod === "both";
   const wantSms = deliveryMethod === "sms" || deliveryMethod === "both";
@@ -242,12 +254,11 @@ export default function QuoteSendPanel(props: QuoteSendPanelProps) {
       {/* Customer fields */}
       {!hideCustomerFields && (
         <div className="space-y-2">
-          <div className="relative">
+          <div ref={containerRef} className="relative">
             <input
+              ref={inputRef}
               value={customerName}
               onChange={(e) => handleNameInputChange(e.target.value)}
-              onFocus={handleNameInputFocus}
-              onBlur={handleNameInputBlur}
               placeholder="Name *"
               className="w-full rounded-[10px] border px-3 py-1.5 text-sm outline-none focus:border-[var(--t-accent)]"
               style={{ background: "var(--t-bg-secondary)", borderColor: "var(--t-border)", color: "var(--t-text-primary)" }}
