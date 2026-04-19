@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import QuickQuoteDrawer from "@/components/quick-quote-drawer";
 import SlideOver from "@/components/slide-over";
 import NewCustomerForm, { type OrchestrationResult, NEW_CUSTOMER_LABELS } from "@/components/new-customer-form";
+import CustomerPickerDrawer from "@/components/customer-picker-drawer";
+import BookingWizard from "@/components/booking-wizard";
 import { useToast } from "@/components/toast";
 import type { InitialSchedule } from "@/components/booking-wizard";
 
@@ -32,9 +34,15 @@ export function QuickQuoteProvider({ children }: { children: ReactNode }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [resetKey, setResetKey] = useState(0);
 
-  // New Customer form state — lives here so it survives QuickQuoteDrawer remount
-  const [customerFormOpen, setCustomerFormOpen] = useState(false);
+  // Book Now post-quote flow state — lives here so it survives
+  // QuickQuoteDrawer remount. Three modes:
+  //   'picker'      → CustomerPickerDrawer open (search existing or "Continue as New")
+  //   'wizard'      → BookingWizard open (after picker selected an existing customer)
+  //   'newCustomer' → NewCustomerForm open (after picker's "Continue as New" fallback)
+  type Mode = 'picker' | 'newCustomer' | 'wizard' | null;
+  const [mode, setMode] = useState<Mode>(null);
   const [pendingSchedule, setPendingSchedule] = useState<InitialSchedule | undefined>();
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
 
   const openQuickQuote = useCallback(() => {
     setDrawerOpen(true);
@@ -47,11 +55,28 @@ export function QuickQuoteProvider({ children }: { children: ReactNode }) {
 
   const openCustomerPicker = useCallback((schedule: InitialSchedule) => {
     setPendingSchedule(schedule);
-    setCustomerFormOpen(true);
+    setSelectedCustomerId(null);
+    setMode('picker');
   }, []);
 
+  // Picker callback — routes to BookingWizard (existing customer)
+  // or NewCustomerForm (Continue as New). Picker fires onSelect with
+  // `{ customerId?, initialSchedule? }` per its prop interface.
+  const handlePickerSelect = useCallback(
+    (opts: { customerId?: string; initialSchedule?: InitialSchedule }) => {
+      if (opts.initialSchedule) setPendingSchedule(opts.initialSchedule);
+      if (opts.customerId) {
+        setSelectedCustomerId(opts.customerId);
+        setMode('wizard');
+      } else {
+        setMode('newCustomer');
+      }
+    },
+    [],
+  );
+
   const handleFormResult = useCallback((result: OrchestrationResult) => {
-    setCustomerFormOpen(false);
+    setMode(null);
     // Atomic create completed — navigate to created job or customer
     switch (result.status) {
       case "booking_created":
@@ -84,9 +109,15 @@ export function QuickQuoteProvider({ children }: { children: ReactNode }) {
     <QuickQuoteContext.Provider value={{ drawerOpen, openQuickQuote, closeQuickQuote, openCustomerPicker }}>
       {children}
       <QuickQuoteDrawer key={resetKey} />
+      <CustomerPickerDrawer
+        open={mode === 'picker'}
+        onClose={() => setMode(null)}
+        onSelect={handlePickerSelect}
+        initialSchedule={pendingSchedule}
+      />
       <SlideOver
-        open={customerFormOpen}
-        onClose={() => setCustomerFormOpen(false)}
+        open={mode === 'newCustomer'}
+        onClose={() => setMode(null)}
         title="New Customer"
         side="left"
         wide
@@ -94,9 +125,19 @@ export function QuickQuoteProvider({ children }: { children: ReactNode }) {
         <NewCustomerForm
           initialSchedule={pendingSchedule}
           onOrchestrated={handleFormResult}
-          onClose={() => setCustomerFormOpen(false)}
+          onClose={() => setMode(null)}
         />
       </SlideOver>
+      <BookingWizard
+        open={mode === 'wizard'}
+        onClose={() => setMode(null)}
+        prefillCustomerId={selectedCustomerId ?? undefined}
+        initialSchedule={pendingSchedule}
+        onComplete={(createdJobId) => {
+          setMode(null);
+          if (createdJobId) router.push(`/jobs/${createdJobId}?postCreate=1`);
+        }}
+      />
     </QuickQuoteContext.Provider>
   );
 }
