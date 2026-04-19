@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { DollarSign, Mail, MessageSquare, Loader2, AlertTriangle } from "lucide-react";
 import { api } from "@/lib/api";
 import { useToast } from "@/components/toast";
-import { useQuickQuote } from "@/components/quick-quote-provider";
+import { useQuickQuote, type QuoteSnapshot } from "@/components/quick-quote-provider";
 import SlideOver from "@/components/slide-over";
 import AddressAutocomplete, { type AddressValue } from "@/components/address-autocomplete";
 import { getFeatureLabel, FEATURE_REGISTRY } from "@/lib/feature-registry";
@@ -83,7 +83,7 @@ interface PricingResult {
 }
 
 export default function QuickQuoteDrawer() {
-  const { drawerOpen, closeQuickQuote, openBookingFlow } = useQuickQuote();
+  const { drawerOpen, closeQuickQuote, openBookingFlow, pendingQuoteSnapshot } = useQuickQuote();
   const { toast } = useToast();
 
   // Form state
@@ -216,6 +216,26 @@ export default function QuickQuoteDrawer() {
 
   // No reset-on-open effect needed — provider remounts this component via key on close
 
+  // Restore drawer state when the provider hands back a pending snapshot
+  // (e.g., user clicked "← Edit Quote" from the CustomerPicker). The
+  // pricing recalc effect below auto-fires once selectedSize + address
+  // are seeded, so pricingResult is intentionally NOT in the snapshot —
+  // avoids staleness if tenant pricing rules changed during the excursion.
+  // Snapshot is NOT cleared here; provider clears it on forward picker
+  // exit (handlePickerSelect) or picker cancel (onClose) to support
+  // multi-round-trip Edit Quote ↔ picker.
+  useEffect(() => {
+    if (!drawerOpen || !pendingQuoteSnapshot) return;
+    setSelectedSize(pendingQuoteSnapshot.selectedSize);
+    setAddress(pendingQuoteSnapshot.address);
+    setAddressDisplay(pendingQuoteSnapshot.addressDisplay);
+    setCustomerName(pendingQuoteSnapshot.customerName);
+    setCustomerEmail(pendingQuoteSnapshot.customerEmail);
+    setCustomerPhone(pendingQuoteSnapshot.customerPhone);
+    setDeliveryMethod(pendingQuoteSnapshot.deliveryMethod);
+    setShowSendFields(pendingQuoteSnapshot.showSendFields);
+  }, [drawerOpen, pendingQuoteSnapshot]);
+
   // Calculate full quote via POST /pricing/calculate when size + address are set
   useEffect(() => {
     if (!selectedSize || !address?.lat || !address?.lng) {
@@ -246,7 +266,10 @@ export default function QuickQuoteDrawer() {
     setAddressDisplay(addr.formatted || [addr.street, addr.city, addr.state, addr.zip].filter(Boolean).join(", "));
   }, []);
 
-  // Book Now — build schedule, then open customer picker via provider (survives drawer remount)
+  // Book Now — build schedule + full form snapshot, then open customer
+  // picker via provider (survives drawer remount). Snapshot lets the
+  // user click "← Edit Quote" from the picker to reopen this drawer
+  // with all prior state restored.
   const handleBookNow = useCallback(() => {
     const schedule: InitialSchedule = {
       dumpsterSize: selectedSize,
@@ -262,10 +285,31 @@ export default function QuickQuoteDrawer() {
         },
       } : {}),
     };
+    const snapshot: QuoteSnapshot = {
+      selectedSize,
+      address,
+      addressDisplay,
+      customerName,
+      customerEmail,
+      customerPhone,
+      deliveryMethod,
+      showSendFields,
+    };
     // Open booking flow BEFORE closing quote drawer — state lives in provider
-    openBookingFlow(schedule);
+    openBookingFlow(schedule, snapshot);
     closeQuickQuote();
-  }, [closeQuickQuote, openBookingFlow, selectedSize, address]);
+  }, [
+    closeQuickQuote,
+    openBookingFlow,
+    selectedSize,
+    address,
+    addressDisplay,
+    customerName,
+    customerEmail,
+    customerPhone,
+    deliveryMethod,
+    showSendFields,
+  ]);
 
   // Live SMS preview when SMS or Both is selected — re-renders against the
   // tenant's real template + the in-progress quote payload.
