@@ -24,7 +24,6 @@ import {
   FileText,
   ChevronRight,
   ChevronDown,
-  GitBranch,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import SlideOver from "@/components/slide-over";
@@ -1238,12 +1237,7 @@ function JobsPageContent() {
                             </td>
                             <td style={{ padding: "10px 16px" }}>
                               <p style={{ fontWeight: 600, fontSize: 12, color: "var(--t-text-primary)" }}>{customerName || <span style={{ color: "var(--t-text-tertiary)" }}>—</span>}</p>
-                              <p style={{ fontSize: 10, color: "var(--t-text-muted)", marginTop: 1, display: "flex", alignItems: "center", gap: 4 }}>
-                                {formatJobNumber(job.job_number)}
-                                {chainedJobIds.has(job.id) && (
-                                  <GitBranch size={10} style={{ color: "var(--t-text-muted)", flexShrink: 0 }} aria-label="Part of rental chain" />
-                                )}
-                              </p>
+                              <p style={{ fontSize: 10, color: "var(--t-text-muted)", marginTop: 1 }}>{formatJobNumber(job.job_number)}</p>
                             </td>
                             <td style={{ padding: "10px 16px", maxWidth: 200 }}>
                               <span style={{ fontSize: 12, color: "var(--t-text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>{address || "—"}</span>
