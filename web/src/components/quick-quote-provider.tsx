@@ -14,14 +14,14 @@ interface QuickQuoteContextValue {
   drawerOpen: boolean;
   openQuickQuote: () => void;
   closeQuickQuote: () => void;
-  openCustomerPicker: (schedule: InitialSchedule) => void;
+  openBookingFlow: (schedule: InitialSchedule) => void;
 }
 
 const QuickQuoteContext = createContext<QuickQuoteContextValue>({
   drawerOpen: false,
   openQuickQuote: () => {},
   closeQuickQuote: () => {},
-  openCustomerPicker: () => {},
+  openBookingFlow: () => {},
 });
 
 export function useQuickQuote() {
@@ -53,7 +53,7 @@ export function QuickQuoteProvider({ children }: { children: ReactNode }) {
     setResetKey((k) => k + 1);
   }, []);
 
-  const openCustomerPicker = useCallback((schedule: InitialSchedule) => {
+  const openBookingFlow = useCallback((schedule: InitialSchedule) => {
     setPendingSchedule(schedule);
     setSelectedCustomerId(null);
     setMode('picker');
@@ -106,7 +106,7 @@ export function QuickQuoteProvider({ children }: { children: ReactNode }) {
   }, [router, toast]);
 
   return (
-    <QuickQuoteContext.Provider value={{ drawerOpen, openQuickQuote, closeQuickQuote, openCustomerPicker }}>
+    <QuickQuoteContext.Provider value={{ drawerOpen, openQuickQuote, closeQuickQuote, openBookingFlow }}>
       {children}
       <QuickQuoteDrawer key={resetKey} />
       <CustomerPickerDrawer

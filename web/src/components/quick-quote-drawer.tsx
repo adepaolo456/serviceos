@@ -83,7 +83,7 @@ interface PricingResult {
 }
 
 export default function QuickQuoteDrawer() {
-  const { drawerOpen, closeQuickQuote, openCustomerPicker } = useQuickQuote();
+  const { drawerOpen, closeQuickQuote, openBookingFlow } = useQuickQuote();
   const { toast } = useToast();
 
   // Form state
@@ -263,9 +263,9 @@ export default function QuickQuoteDrawer() {
       } : {}),
     };
     // Open customer picker BEFORE closing quote drawer — state lives in provider
-    openCustomerPicker(schedule);
+    openBookingFlow(schedule);
     closeQuickQuote();
-  }, [closeQuickQuote, openCustomerPicker, selectedSize, address]);
+  }, [closeQuickQuote, openBookingFlow, selectedSize, address]);
 
   // Live SMS preview when SMS or Both is selected — re-renders against the
   // tenant's real template + the in-progress quote payload.
