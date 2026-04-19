@@ -262,7 +262,7 @@ export default function QuickQuoteDrawer() {
         },
       } : {}),
     };
-    // Open customer picker BEFORE closing quote drawer — state lives in provider
+    // Open booking flow BEFORE closing quote drawer — state lives in provider
     openBookingFlow(schedule);
     closeQuickQuote();
   }, [closeQuickQuote, openBookingFlow, selectedSize, address]);

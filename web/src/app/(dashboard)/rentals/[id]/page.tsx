@@ -350,7 +350,7 @@ export default function RentalLifecyclePage({ params }: { params: Promise<{ id: 
 
   // Phase 10B — auto vs override derivation for the header pickup
   // badge. tenantRentalDays is the live setting (falls back to the
-  // chain's historical snapshot, then to 14 only as a last resort).
+  // chain's historical snapshot if the live setting is absent).
   const tenantRentalDays =
     rentalChain.tenantRentalDays ?? rentalChain.rentalDays;
   const autoBaseDate = getAutoBaseDate(data);
