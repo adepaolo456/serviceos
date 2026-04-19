@@ -1085,7 +1085,7 @@ export class JobsService {
         }
         if (!job.rental_end_date && job.rental_days) {
           const end = new Date(job.rental_start_date);
-          end.setDate(end.getDate() + (job.rental_days || 7));
+          end.setDate(end.getDate() + job.rental_days);
           job.rental_end_date = end.toISOString().split('T')[0];
         }
         break;
