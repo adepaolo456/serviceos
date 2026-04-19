@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { DollarSign, Mail, MessageSquare, Loader2, AlertTriangle } from "lucide-react";
 import { api } from "@/lib/api";
 import { useToast } from "@/components/toast";
@@ -108,6 +108,11 @@ export default function QuickQuoteDrawer() {
 
   // Send-quote progressive disclosure
   const [showSendFields, setShowSendFields] = useState(false);
+  // Ref on the expanded Send Quote section so we can auto-scroll it
+  // into view when the operator opens it. Without this, the form lands
+  // near the viewport bottom edge inside the SlideOver's scroll
+  // container and feels cramped.
+  const sendQuoteFormRef = useRef<HTMLDivElement>(null);
   const [customerName, setCustomerName] = useState("");
   const [customerEmail, setCustomerEmail] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
@@ -306,6 +311,20 @@ export default function QuickQuoteDrawer() {
     address,
     selectedSize,
   ]);
+
+  // Auto-scroll the expanded Send Quote section into center view when
+  // the operator opens it. Effect fires after React has rendered the
+  // panel, so the ref is populated by the time scrollIntoView runs.
+  // The SlideOver's overflow-y-auto container is the nearest scrollable
+  // ancestor and handles the scroll natively.
+  useEffect(() => {
+    if (showSendFields) {
+      sendQuoteFormRef.current?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center',
+      });
+    }
+  }, [showSendFields]);
 
   // Atomic create + send via the selected delivery method.
   const handleSendQuote = useCallback(async () => {
@@ -628,24 +647,26 @@ export default function QuickQuoteDrawer() {
                 <Mail className="h-4 w-4" /> {getFeatureLabel("quick_quote_email")}
               </button>
             ) : (
-              <QuoteSendPanel
-                customerName={customerName}
-                customerEmail={customerEmail}
-                customerPhone={customerPhone}
-                onCustomerNameChange={setCustomerName}
-                onCustomerEmailChange={setCustomerEmail}
-                onCustomerPhoneChange={setCustomerPhone}
-                deliveryMethod={deliveryMethod}
-                onDeliveryMethodChange={setDeliveryMethod}
-                emailChannelAvailable={emailChannelAvailable}
-                smsChannelAvailable={smsChannelAvailable}
-                tenantSmsNumber={tenantQuoteSettings.sms_phone_number || null}
-                smsPreview={smsPreview}
-                smsPreviewLoading={smsPreviewLoading}
-                onSend={handleSendQuote}
-                onCancel={() => setShowSendFields(false)}
-                sending={sending}
-              />
+              <div ref={sendQuoteFormRef}>
+                <QuoteSendPanel
+                  customerName={customerName}
+                  customerEmail={customerEmail}
+                  customerPhone={customerPhone}
+                  onCustomerNameChange={setCustomerName}
+                  onCustomerEmailChange={setCustomerEmail}
+                  onCustomerPhoneChange={setCustomerPhone}
+                  deliveryMethod={deliveryMethod}
+                  onDeliveryMethodChange={setDeliveryMethod}
+                  emailChannelAvailable={emailChannelAvailable}
+                  smsChannelAvailable={smsChannelAvailable}
+                  tenantSmsNumber={tenantQuoteSettings.sms_phone_number || null}
+                  smsPreview={smsPreview}
+                  smsPreviewLoading={smsPreviewLoading}
+                  onSend={handleSendQuote}
+                  onCancel={() => setShowSendFields(false)}
+                  sending={sending}
+                />
+              </div>
             )}
           </div>
         )}
