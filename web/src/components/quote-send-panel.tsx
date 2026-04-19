@@ -263,7 +263,7 @@ export default function QuoteSendPanel(props: QuoteSendPanelProps) {
               className="w-full rounded-[10px] border px-3 py-1.5 text-sm outline-none focus:border-[var(--t-accent)]"
               style={{ background: "var(--t-bg-secondary)", borderColor: "var(--t-border)", color: "var(--t-text-primary)" }}
             />
-            {showSuggestions && (
+            {showSuggestions && (searchLoading || searchResults.length > 0) && (
               <div
                 className="absolute left-0 right-0 top-full mt-1 z-10 rounded-md shadow-lg max-h-64 overflow-y-auto pointer-events-none"
                 style={{ backgroundColor: "var(--t-bg-secondary)", border: "1px solid var(--t-border)" }}
@@ -275,14 +275,6 @@ export default function QuoteSendPanel(props: QuoteSendPanelProps) {
                   >
                     <Loader2 className="h-4 w-4 animate-spin" />
                     Searching...
-                  </div>
-                )}
-                {!searchLoading && searchResults.length === 0 && nameQuery.trim().length >= 2 && (
-                  <div
-                    className="px-3 py-2 text-sm"
-                    style={{ color: "var(--t-text-muted)" }}
-                  >
-                    No customers found
                   </div>
                 )}
                 {!searchLoading && searchResults.length > 0 && (
