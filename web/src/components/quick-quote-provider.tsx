@@ -9,12 +9,31 @@ import CustomerPickerDrawer from "@/components/customer-picker-drawer";
 import BookingWizard from "@/components/booking-wizard";
 import { useToast } from "@/components/toast";
 import type { InitialSchedule } from "@/components/booking-wizard";
+import type { AddressValue } from "@/components/address-autocomplete";
+
+// Full form-state mirror for the QuickQuoteDrawer, captured at Book Now
+// time so the user can hit "← Edit Quote" from the CustomerPicker and
+// reopen the drawer with prior state restored. pricingResult is
+// deliberately NOT included — drawer's pricing recalc effect auto-fires
+// from restored size+address, avoiding staleness if tenant rules changed.
+export type QuoteSnapshot = {
+  selectedSize: string;
+  address: AddressValue | null;
+  addressDisplay: string;
+  customerName: string;
+  customerEmail: string;
+  customerPhone: string;
+  deliveryMethod: "email" | "sms" | "both";
+  showSendFields: boolean;
+};
 
 interface QuickQuoteContextValue {
   drawerOpen: boolean;
   openQuickQuote: () => void;
   closeQuickQuote: () => void;
-  openBookingFlow: (schedule: InitialSchedule) => void;
+  openBookingFlow: (schedule: InitialSchedule, snapshot?: QuoteSnapshot) => void;
+  pendingQuoteSnapshot: QuoteSnapshot | null;
+  reopenQuoteWithSnapshot: () => void;
 }
 
 const QuickQuoteContext = createContext<QuickQuoteContextValue>({
@@ -22,6 +41,8 @@ const QuickQuoteContext = createContext<QuickQuoteContextValue>({
   openQuickQuote: () => {},
   closeQuickQuote: () => {},
   openBookingFlow: () => {},
+  pendingQuoteSnapshot: null,
+  reopenQuoteWithSnapshot: () => {},
 });
 
 export function useQuickQuote() {
@@ -43,6 +64,7 @@ export function QuickQuoteProvider({ children }: { children: ReactNode }) {
   const [mode, setMode] = useState<Mode>(null);
   const [pendingSchedule, setPendingSchedule] = useState<InitialSchedule | undefined>();
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
+  const [pendingQuoteSnapshot, setPendingQuoteSnapshot] = useState<QuoteSnapshot | null>(null);
 
   const openQuickQuote = useCallback(() => {
     setDrawerOpen(true);
@@ -53,10 +75,19 @@ export function QuickQuoteProvider({ children }: { children: ReactNode }) {
     setResetKey((k) => k + 1);
   }, []);
 
-  const openBookingFlow = useCallback((schedule: InitialSchedule) => {
+  const openBookingFlow = useCallback((schedule: InitialSchedule, snapshot?: QuoteSnapshot) => {
     setPendingSchedule(schedule);
     setSelectedCustomerId(null);
+    setPendingQuoteSnapshot(snapshot ?? null);
     setMode('picker');
+  }, []);
+
+  // Called by CustomerPicker's "← Edit Quote" button. Snapshot was set
+  // in state at Book Now time (via openBookingFlow); we just close the
+  // picker and reopen the drawer so its init effect sees the snapshot.
+  const reopenQuoteWithSnapshot = useCallback(() => {
+    setMode(null);
+    setDrawerOpen(true);
   }, []);
 
   // Picker callback — routes to BookingWizard (existing customer)
@@ -65,6 +96,7 @@ export function QuickQuoteProvider({ children }: { children: ReactNode }) {
   const handlePickerSelect = useCallback(
     (opts: { customerId?: string; initialSchedule?: InitialSchedule }) => {
       if (opts.initialSchedule) setPendingSchedule(opts.initialSchedule);
+      setPendingQuoteSnapshot(null);
       if (opts.customerId) {
         setSelectedCustomerId(opts.customerId);
         setMode('wizard');
@@ -106,12 +138,12 @@ export function QuickQuoteProvider({ children }: { children: ReactNode }) {
   }, [router, toast]);
 
   return (
-    <QuickQuoteContext.Provider value={{ drawerOpen, openQuickQuote, closeQuickQuote, openBookingFlow }}>
+    <QuickQuoteContext.Provider value={{ drawerOpen, openQuickQuote, closeQuickQuote, openBookingFlow, pendingQuoteSnapshot, reopenQuoteWithSnapshot }}>
       {children}
       <QuickQuoteDrawer key={resetKey} />
       <CustomerPickerDrawer
         open={mode === 'picker'}
-        onClose={() => setMode(null)}
+        onClose={() => { setMode(null); setPendingQuoteSnapshot(null); }}
         onSelect={handlePickerSelect}
         initialSchedule={pendingSchedule}
       />

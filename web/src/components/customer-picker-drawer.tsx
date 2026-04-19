@@ -6,6 +6,7 @@ import { api } from "@/lib/api";
 import SlideOver from "@/components/slide-over";
 import { getFeatureLabel } from "@/lib/feature-registry";
 import type { InitialSchedule } from "@/components/booking-wizard";
+import { useQuickQuote } from "@/components/quick-quote-provider";
 
 interface CustomerResult {
   id: string;
@@ -36,6 +37,7 @@ export default function CustomerPickerDrawer({
   onSelect,
   initialSchedule,
 }: CustomerPickerDrawerProps) {
+  const { reopenQuoteWithSnapshot } = useQuickQuote();
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<CustomerResult[]>([]);
   const [searching, setSearching] = useState(false);
@@ -114,6 +116,14 @@ export default function CustomerPickerDrawer({
                 {addrLine}
               </p>
             )}
+            <button
+              type="button"
+              onClick={reopenQuoteWithSnapshot}
+              className="mt-2 text-xs font-semibold transition-opacity hover:opacity-70"
+              style={{ color: "var(--t-accent)" }}
+            >
+              ← Edit Quote
+            </button>
           </div>
         )}
 
