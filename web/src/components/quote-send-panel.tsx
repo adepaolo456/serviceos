@@ -1,12 +1,23 @@
 "use client";
 
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Mail, MessageSquare, Loader2, AlertTriangle } from "lucide-react";
+import { api } from "@/lib/api";
 import {
   QUOTE_SEND_LABELS,
   deliveryButtonLabel,
   deliveryMethodLabel,
   type DeliveryMethod,
 } from "@/lib/quote-send-labels";
+
+interface CustomerSearchResult {
+  id: string;
+  first_name: string;
+  last_name: string;
+  company_name?: string;
+  email: string;
+  phone?: string;
+}
 
 export interface SmsPreviewState {
   valid: boolean;
@@ -72,6 +83,84 @@ export default function QuoteSendPanel(props: QuoteSendPanelProps) {
     sending,
     hideCustomerFields = false,
   } = props;
+
+  // Type-ahead autocomplete on the Name input. Pattern matches the
+  // canonical inline-search shape used by BookingWizard
+  // (booking-wizard.tsx:234,507-530): inline useRef debounce primitive,
+  // 300ms, try/catch swallow, dual-state (results + showSuggestions),
+  // q.length<2 early-out. All prefill data flows through the existing
+  // onCustomer*Change props — no new panel callbacks added.
+  const [nameQuery, setNameQuery] = useState<string>('');
+  const [searchResults, setSearchResults] = useState<CustomerSearchResult[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState<boolean>(false);
+  const [searchLoading, setSearchLoading] = useState<boolean>(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+    }
+
+    if (nameQuery.trim().length < 2) {
+      setSearchResults([]);
+      setShowSuggestions(false);
+      setSearchLoading(false);
+      return;
+    }
+
+    setSearchLoading(true);
+    debounceRef.current = setTimeout(async () => {
+      try {
+        const results = await api.get<CustomerSearchResult[]>(
+          `/customers/search?q=${encodeURIComponent(nameQuery.trim())}&limit=5`,
+        );
+        setSearchResults(results);
+        setShowSuggestions(true);
+      } catch {
+        setSearchResults([]);
+        setShowSuggestions(false);
+      } finally {
+        setSearchLoading(false);
+      }
+    }, 300);
+
+    return () => {
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
+      }
+    };
+  }, [nameQuery]);
+
+  const handleNameInputChange = useCallback(
+    (value: string) => {
+      onCustomerNameChange(value);
+      setNameQuery(value);
+    },
+    [onCustomerNameChange],
+  );
+
+  const handleSelectSuggestion = useCallback(
+    (customer: CustomerSearchResult) => {
+      onCustomerNameChange(`${customer.first_name} ${customer.last_name}`.trim());
+      onCustomerEmailChange(customer.email ?? '');
+      onCustomerPhoneChange(customer.phone ?? '');
+      setShowSuggestions(false);
+      setNameQuery('');
+      setSearchResults([]);
+    },
+    [onCustomerNameChange, onCustomerEmailChange, onCustomerPhoneChange],
+  );
+
+  const handleNameInputBlur = useCallback(() => {
+    // 150ms delay so click-on-suggestion fires before the dropdown hides
+    setTimeout(() => setShowSuggestions(false), 150);
+  }, []);
+
+  const handleNameInputFocus = useCallback(() => {
+    if (searchResults.length > 0 && nameQuery.trim().length >= 2) {
+      setShowSuggestions(true);
+    }
+  }, [searchResults.length, nameQuery]);
 
   const wantEmail = deliveryMethod === "email" || deliveryMethod === "both";
   const wantSms = deliveryMethod === "sms" || deliveryMethod === "both";
@@ -153,13 +242,62 @@ export default function QuoteSendPanel(props: QuoteSendPanelProps) {
       {/* Customer fields */}
       {!hideCustomerFields && (
         <div className="space-y-2">
-          <input
-            value={customerName}
-            onChange={(e) => onCustomerNameChange(e.target.value)}
-            placeholder="Name *"
-            className="w-full rounded-[10px] border px-3 py-1.5 text-sm outline-none focus:border-[var(--t-accent)]"
-            style={{ background: "var(--t-bg-secondary)", borderColor: "var(--t-border)", color: "var(--t-text-primary)" }}
-          />
+          <div className="relative">
+            <input
+              value={customerName}
+              onChange={(e) => handleNameInputChange(e.target.value)}
+              onFocus={handleNameInputFocus}
+              onBlur={handleNameInputBlur}
+              placeholder="Name *"
+              className="w-full rounded-[10px] border px-3 py-1.5 text-sm outline-none focus:border-[var(--t-accent)]"
+              style={{ background: "var(--t-bg-secondary)", borderColor: "var(--t-border)", color: "var(--t-text-primary)" }}
+            />
+            {showSuggestions && (
+              <div
+                className="absolute left-0 right-0 top-full mt-1 z-10 rounded-md shadow-lg max-h-64 overflow-y-auto"
+                style={{ backgroundColor: "var(--t-bg-secondary)", border: "1px solid var(--t-border)" }}
+              >
+                {searchLoading && (
+                  <div
+                    className="px-3 py-2 flex items-center gap-2 text-sm"
+                    style={{ color: "var(--t-text-muted)" }}
+                  >
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Searching...
+                  </div>
+                )}
+                {!searchLoading && searchResults.length === 0 && nameQuery.trim().length >= 2 && (
+                  <div
+                    className="px-3 py-2 text-sm"
+                    style={{ color: "var(--t-text-muted)" }}
+                  >
+                    No customers found
+                  </div>
+                )}
+                {!searchLoading && searchResults.length > 0 && (
+                  <ul>
+                    {searchResults.map((c) => (
+                      <li key={c.id}>
+                        <button
+                          type="button"
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() => handleSelectSuggestion(c)}
+                          className="w-full text-left px-3 py-2 text-sm hover:bg-[var(--t-bg-card-hover)]"
+                        >
+                          <div style={{ color: "var(--t-text-primary)" }}>
+                            {`${c.first_name} ${c.last_name}`.trim()}
+                          </div>
+                          <div className="text-xs" style={{ color: "var(--t-text-muted)" }}>
+                            {c.email}
+                          </div>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+          </div>
           {wantEmail && (
             <input
               value={customerEmail}
