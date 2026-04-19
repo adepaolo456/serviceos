@@ -73,6 +73,11 @@ export function QuickQuoteProvider({ children }: { children: ReactNode }) {
   const closeQuickQuote = useCallback(() => {
     setDrawerOpen(false);
     setResetKey((k) => k + 1);
+    // Clear snapshot on every drawer-close path (X-button, Send Quote
+    // success, ESC, click-outside). handleBookNow reorders to call
+    // this BEFORE openBookingFlow so React batching preserves the new
+    // snapshot — last setPendingQuoteSnapshot in the handler wins.
+    setPendingQuoteSnapshot(null);
   }, []);
 
   const openBookingFlow = useCallback((schedule: InitialSchedule, snapshot?: QuoteSnapshot) => {

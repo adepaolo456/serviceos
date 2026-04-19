@@ -295,9 +295,12 @@ export default function QuickQuoteDrawer() {
       deliveryMethod,
       showSendFields,
     };
-    // Open booking flow BEFORE closing quote drawer — state lives in provider
-    openBookingFlow(schedule, snapshot);
+    // Order matters: closeQuickQuote clears pendingQuoteSnapshot, then
+    // openBookingFlow sets the new one. React batches setState in this
+    // handler; the LAST setPendingQuoteSnapshot wins. Reverse order
+    // would clobber the new snapshot with null and break Edit Quote.
     closeQuickQuote();
+    openBookingFlow(schedule, snapshot);
   }, [
     closeQuickQuote,
     openBookingFlow,
