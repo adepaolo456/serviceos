@@ -265,7 +265,7 @@ export default function QuoteSendPanel(props: QuoteSendPanelProps) {
             />
             {showSuggestions && (
               <div
-                className="absolute left-0 right-0 top-full mt-1 z-10 rounded-md shadow-lg max-h-64 overflow-y-auto"
+                className="absolute left-0 right-0 top-full mt-1 z-10 rounded-md shadow-lg max-h-64 overflow-y-auto pointer-events-none"
                 style={{ backgroundColor: "var(--t-bg-secondary)", border: "1px solid var(--t-border)" }}
               >
                 {searchLoading && (
@@ -293,7 +293,7 @@ export default function QuoteSendPanel(props: QuoteSendPanelProps) {
                           type="button"
                           onMouseDown={(e) => e.preventDefault()}
                           onClick={() => handleSelectSuggestion(c)}
-                          className="w-full text-left px-3 py-2 text-sm hover:bg-[var(--t-bg-card-hover)]"
+                          className="w-full text-left px-3 py-2 text-sm hover:bg-[var(--t-bg-card-hover)] pointer-events-auto"
                         >
                           <div style={{ color: "var(--t-text-primary)" }}>
                             {`${c.first_name} ${c.last_name}`.trim()}
