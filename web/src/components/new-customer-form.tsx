@@ -273,7 +273,7 @@ export default function NewCustomerForm({ onOrchestrated, onClose, forceCustomer
   useEffect(() => {
     if (pickupManuallySet || schedPickupTBD || !schedDeliveryDate || !schedDumpsterSize) return;
     const sizeOpt = sizeOptions.find(o => o.asset_subtype === schedDumpsterSize);
-    const days = sizeOpt?.rental_period_days || 14;
+    const days = sizeOpt?.rental_period_days ?? 14;
     const d = new Date(schedDeliveryDate);
     d.setDate(d.getDate() + days);
     setSchedPickupDate(d.toISOString().split("T")[0]);

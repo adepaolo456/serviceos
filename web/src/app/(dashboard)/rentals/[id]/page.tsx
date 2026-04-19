@@ -352,7 +352,7 @@ export default function RentalLifecyclePage({ params }: { params: Promise<{ id: 
   // badge. tenantRentalDays is the live setting (falls back to the
   // chain's historical snapshot, then to 14 only as a last resort).
   const tenantRentalDays =
-    rentalChain.tenantRentalDays ?? rentalChain.rentalDays ?? 14;
+    rentalChain.tenantRentalDays ?? rentalChain.rentalDays;
   const autoBaseDate = getAutoBaseDate(data);
   const autoPickupDate = autoBaseDate ? shiftDays(autoBaseDate, tenantRentalDays) : null;
   const isPickupAuto =
