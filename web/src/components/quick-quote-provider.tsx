@@ -133,6 +133,7 @@ export function QuickQuoteProvider({ children }: { children: ReactNode }) {
         onClose={() => setMode(null)}
         prefillCustomerId={selectedCustomerId ?? undefined}
         initialSchedule={pendingSchedule}
+        side="left"
         onComplete={(createdJobId) => {
           setMode(null);
           if (createdJobId) router.push(`/jobs/${createdJobId}?postCreate=1`);

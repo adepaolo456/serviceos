@@ -87,7 +87,7 @@ export default function CustomerPickerDrawer({
     : null;
 
   return (
-    <SlideOver open={open} onClose={onClose} title={getFeatureLabel("quick_quote_book_now")}>
+    <SlideOver open={open} onClose={onClose} title={getFeatureLabel("quick_quote_book_now")} side="left">
       <div className="space-y-4">
         {/* Quote context summary */}
         {(initialSchedule?.dumpsterSize || addrLine) && (

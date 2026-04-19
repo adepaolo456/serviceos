@@ -32,6 +32,12 @@ interface BookingWizardProps {
   prefillCustomerId?: string;
   prefillDate?: string;
   initialSchedule?: InitialSchedule;
+  /** Slide-over origin side. Default 'right' preserves established UX
+   *  for the 4 BookingProvider consumers (jobs page, customers list,
+   *  customer detail, dashboard hotkey). Quick Quote → Book Now passes
+   *  'left' to keep its flow continuous with the left-anchored quote
+   *  drawer. */
+  side?: 'left' | 'right';
 }
 
 interface CustomerSearchResult {
@@ -204,6 +210,7 @@ export default function BookingWizard({
   prefillCustomerId,
   prefillDate,
   initialSchedule,
+  side = 'right',
 }: BookingWizardProps) {
   const { toast } = useToast();
   const [step, setStep] = useState(1);
@@ -682,14 +689,14 @@ export default function BookingWizard({
   /* ================================================================ */
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end">
+    <div className={`fixed inset-0 z-50 flex ${side === 'left' ? 'justify-start' : 'justify-end'}`}>
       {/* Backdrop */}
       <div className="fixed inset-0 bg-black/60 backdrop-blur-sm animate-fade-in" onClick={onClose} />
 
       {/* Panel */}
       <div
-        className="relative w-full max-w-2xl shadow-2xl animate-slide-in-right rounded-l-[20px] flex flex-col"
-        style={{ backgroundColor: "var(--t-bg-secondary)", borderLeft: "1px solid var(--t-border)" }}
+        className={`relative w-full max-w-2xl shadow-2xl ${side === 'left' ? 'animate-slide-in-left rounded-r-[20px]' : 'animate-slide-in-right rounded-l-[20px]'} flex flex-col`}
+        style={{ backgroundColor: "var(--t-bg-secondary)", ...(side === 'left' ? { borderRight: "1px solid var(--t-border)" } : { borderLeft: "1px solid var(--t-border)" }) }}
       >
         {/* Header */}
         <div
