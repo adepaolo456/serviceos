@@ -308,7 +308,7 @@ export class BillingService {
 
     const newBasePrice = Number(rule.base_price);
     const newDeliveryFee = Number(rule.delivery_fee) || 0;
-    const rentalDays = Number(rule.rental_period_days) || 7;
+    const rentalDays = Number(rule.rental_period_days);
     const newTotal = newBasePrice + newDeliveryFee;
     const difference = newTotal - oldTotal;
 

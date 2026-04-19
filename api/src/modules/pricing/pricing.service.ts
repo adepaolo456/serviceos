@@ -47,6 +47,41 @@ export class PricingService {
       asset_subtype: dto.assetSubtype,
       customer_type: dto.customerType,
       base_price: dto.basePrice,
+      /**
+       * Column-default mirror carve-out — `|| 7` fallback cleanup arc.
+       *
+       * This `?? 7` fallback is intentionally preserved. It mirrors the DB
+       * column default (`pricing_rules.rental_period_days int NOT NULL DEFAULT 7`)
+       * at the application layer, making INSERT behavior deterministic and
+       * independent of TypeORM INSERT semantics around `undefined` vs. omitted
+       * fields.
+       *
+       * Removing this fallback would shift behavior to rely on the DB-level
+       * default firing when the field is omitted from the INSERT statement.
+       * That path is subtle and brittle:
+       * - TypeORM may include `undefined` fields as explicit NULL in INSERTs
+       * - TypeORM may omit fields whose value is `undefined` (depending on
+       *   config)
+       * - The DB-level default fires only if the field is truly omitted, not
+       *   if it's present with value `undefined` or `null`
+       *
+       * Application-layer default is explicit, always deterministic, and
+       * independent of ORM quirks. Keep.
+       *
+       * Arc lineage:
+       * - `|| 7` cleanup arc established this site as a Path D carve-out
+       *   alongside 3 Path A removals at public.service.ts:167,
+       *   orchestration.service.ts:142, and billing.service.ts:311
+       * - Prior precedent: invoice.service.ts:915 (`|| 14` arc Phase 3,
+       *   commit 0dc2c1e) established the same "Column Default Mirror Rule"
+       *   carve-out pattern for display-only text
+       *
+       * Column Default Mirror Rule (now a recognized pattern):
+       * When a DB column is NOT NULL DEFAULT X and the application sets the
+       * value `?? X` during creation, that fallback is intentional and
+       * should be preserved with documentation. It is NOT defensive
+       * scaffolding.
+       */
       rental_period_days: dto.rentalPeriodDays ?? 7,
       extra_day_rate: dto.extraDayRate ?? 0,
       included_miles: dto.includedMiles ?? 0,

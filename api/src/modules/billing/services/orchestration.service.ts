@@ -139,7 +139,7 @@ export class OrchestrationService {
     const pricingRule = await this.dataSource.getRepository('PricingRule').findOne({
       where: { tenant_id: tenantId, asset_subtype: dto.dumpsterSize, is_active: true },
     }) as { rental_period_days?: number } | null;
-    const tenantDefaultDays = pricingRule?.rental_period_days || 7;
+    const tenantDefaultDays = pricingRule?.rental_period_days ?? 7;
     const rentalDays = dto.rentalDays || tenantDefaultDays;
     const pickupDate = dto.pickupTBD
       ? this.addDays(dto.deliveryDate, rentalDays)

@@ -164,7 +164,7 @@ export class PublicService {
       );
     }
 
-    const rentalDays = body.rentalDays || rule.rental_period_days || 7;
+    const rentalDays = body.rentalDays || rule.rental_period_days;
     const basePrice = Number(rule.base_price);
     const deliveryFee = Number(rule.delivery_fee);
     const extraDays = Math.max(0, rentalDays - rule.rental_period_days);
