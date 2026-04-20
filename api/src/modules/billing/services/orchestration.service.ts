@@ -1,6 +1,11 @@
-import { Injectable, Logger, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  BadRequestException,
+  ConflictException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource } from 'typeorm';
+import { Repository, DataSource, QueryFailedError } from 'typeorm';
 import { Customer } from '../../customers/entities/customer.entity';
 import { Job } from '../../jobs/entities/job.entity';
 import { RentalChain } from '../../rental-chains/entities/rental-chain.entity';
@@ -309,6 +314,10 @@ export class OrchestrationService {
       await queryRunner.commitTransaction();
     } catch (err) {
       await queryRunner.rollbackTransaction();
+      // Translate duplicate-email 23505 into structured 409 BEFORE re-throw.
+      // Rollback must run first so the helper's existing-customer lookup
+      // queries committed DB state (uses this.customersRepo, not queryRunner).
+      await this.throwIfDuplicateEmailConflict(err, tenantId, dto.email);
       throw err;
     } finally {
       await queryRunner.release();
@@ -369,7 +378,14 @@ export class OrchestrationService {
       tags: dto.tags,
       lead_source: dto.leadSource,
     });
-    return this.customersRepo.save(customer);
+    try {
+      return await this.customersRepo.save(customer);
+    } catch (err) {
+      // Non-transactional path (customer_only intent) — no rollback needed.
+      // Same 23505 → 409 translation as the transactional path above.
+      await this.throwIfDuplicateEmailConflict(err, tenantId, dto.email);
+      throw err;
+    }
   }
 
   private async reconcileInvoice(invoiceId: string, total: number): Promise<void> {
@@ -387,6 +403,91 @@ export class OrchestrationService {
       status,
       paid_at: status === 'paid' ? new Date() : null,
     });
+  }
+
+  // Translate Postgres 23505 on idx_customers_tenant_email_unique into a
+  // structured 409 ConflictException. Invariant 8: existing-customer
+  // lookup scopes on the tenantId parameter (JWT-derived upstream).
+  // Partial-index detection: node-postgres may report the index name via
+  // driverError.constraint OR embed it in detail/message — check all
+  // three. Other 23505s (e.g., account_id unique) fall through unchanged.
+  // Returns void on no-match; caller re-throws. Throws on match.
+  private async throwIfDuplicateEmailConflict(
+    err: unknown,
+    tenantId: string,
+    email: string | null | undefined,
+  ): Promise<void> {
+    if (!(err instanceof QueryFailedError)) return;
+    const driverError = (
+      err as QueryFailedError & {
+        driverError?: {
+          code?: string;
+          constraint?: string;
+          detail?: string;
+          message?: string;
+        };
+      }
+    ).driverError;
+    if (driverError?.code !== '23505') return;
+
+    const targetConstraint = 'idx_customers_tenant_email_unique';
+    const matchesConstraint =
+      driverError?.constraint === targetConstraint ||
+      !!driverError?.detail?.includes(targetConstraint) ||
+      !!driverError?.message?.includes(targetConstraint);
+    if (!matchesConstraint) return;
+
+    if (!email) return;
+
+    // Index normalizes via LOWER(email::text); app convention adds TRIM
+    // (matches L78-94 pre-submit check). TRIM is defensive against
+    // whitespace-padded input.
+    const normalizedEmail = email.trim().toLowerCase();
+    const existing = await this.customersRepo
+      .createQueryBuilder('c')
+      .where('c.tenant_id = :tenantId', { tenantId })
+      .andWhere('LOWER(TRIM(c.email)) = :email', { email: normalizedEmail })
+      .getOne();
+
+    // Constraint fired but row not found — re-throw original.
+    if (!existing) return;
+
+    const displayName =
+      [existing.first_name, existing.last_name]
+        .filter(Boolean)
+        .join(' ')
+        .trim() ||
+      existing.company_name ||
+      existing.email ||
+      'Unknown';
+
+    throw new ConflictException({
+      code: 'duplicate_email',
+      existing_customer_id: existing.id,
+      existing_customer_name: displayName,
+      existing_customer: {
+        id: existing.id,
+        first_name: existing.first_name,
+        last_name: existing.last_name,
+        company_name: existing.company_name,
+        email: existing.email,
+        phone: existing.phone,
+        type: existing.type,
+        billing_address: existing.billing_address,
+        service_addresses: existing.service_addresses,
+      },
+      message: 'A customer with this email already exists',
+    });
+  }
+
+  // Public pass-through for BookingsController's /bookings/complete path.
+  // Same semantics as the private helper — keeps the logic centralized.
+  async translateDuplicateEmailError(
+    err: unknown,
+    tenantId: string,
+    email: string | null | undefined,
+  ): Promise<void> {
+    return this.throwIfDuplicateEmailConflict(err, tenantId, email);
   }
 
   private async storeIdempotencyResult(tenantId: string, key: string | undefined, result: OrchestrationResult): Promise<void> {
