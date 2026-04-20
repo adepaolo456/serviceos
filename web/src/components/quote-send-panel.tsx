@@ -9,6 +9,7 @@ import {
   deliveryMethodLabel,
   type DeliveryMethod,
 } from "@/lib/quote-send-labels";
+import { getFeatureLabel } from "@/lib/feature-registry";
 
 interface CustomerSearchResult {
   id: string;
@@ -400,7 +401,7 @@ export default function QuoteSendPanel(props: QuoteSendPanelProps) {
           className="rounded-full px-3 py-2 text-[12px] font-medium transition-colors hover:bg-[var(--t-bg-card-hover)] disabled:opacity-50"
           style={{ color: "var(--t-text-muted)", background: "transparent", border: "none" }}
         >
-          Cancel
+          {getFeatureLabel("quote_send_panel_close_form")}
         </button>
       </div>
     </div>
