@@ -285,6 +285,21 @@ export default function QuickQuoteDrawer() {
         },
       } : {}),
     };
+    // Strategy B Commit 1 — pre-split name on first whitespace for
+    // downstream BW/NewCustomerForm seeding (Commits 2/3). "Anthony
+    // DePaolo" → firstName="Anthony", lastName="DePaolo". Single-word
+    // names leave lastName undefined. Empty/whitespace-only fields are
+    // omitted from the forward-propagation object. The whole
+    // customerFields object is omitted if the user has not typed
+    // anything — default deliveryMethod alone is not user-entered signal.
+    const trimmedName = customerName.trim();
+    const firstSpace = trimmedName.indexOf(" ");
+    const parsedFirstName = firstSpace === -1 ? trimmedName : trimmedName.slice(0, firstSpace);
+    const parsedLastName = firstSpace === -1 ? "" : trimmedName.slice(firstSpace + 1).trim();
+    const trimmedEmail = customerEmail.trim();
+    const trimmedPhone = customerPhone.trim();
+    const hasCustomerData = !!(parsedFirstName || parsedLastName || trimmedEmail || trimmedPhone);
+
     const snapshot: QuoteSnapshot = {
       selectedSize,
       address,
@@ -294,6 +309,17 @@ export default function QuickQuoteDrawer() {
       customerPhone,
       deliveryMethod,
       showSendFields,
+      ...(hasCustomerData
+        ? {
+            customerFields: {
+              ...(parsedFirstName ? { firstName: parsedFirstName } : {}),
+              ...(parsedLastName ? { lastName: parsedLastName } : {}),
+              ...(trimmedEmail ? { email: trimmedEmail } : {}),
+              ...(trimmedPhone ? { phone: trimmedPhone } : {}),
+              deliveryMethod,
+            },
+          }
+        : {}),
     };
     // Order matters: closeQuickQuote clears pendingQuoteSnapshot, then
     // openBookingFlow sets the new one. React batches setState in this
