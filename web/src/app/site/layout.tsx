@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { Phone, Menu, X } from "lucide-react";
 import { TenantProvider, useTenant } from "./tenant-context";
 import { formatPhone } from "@/lib/utils";
+import { extractSlugFromHost } from "@/lib/tenant/extractSlugFromHost";
 import { Suspense } from "react";
 
 function SiteLayoutInner({ children }: { children: React.ReactNode }) {
@@ -88,9 +89,33 @@ function SiteLayoutInner({ children }: { children: React.ReactNode }) {
   );
 }
 
+/**
+ * Resolution priority:
+ *   1. Explicit `?slug=` query param (dev workflow + any internal use case)
+ *   2. `extractSlugFromHost(window.location.hostname)` (production tenant subdomain)
+ *   3. "demo" fallback (unrecognized host / localhost without subdomain)
+ *
+ * The middleware rewrites tenant subdomains to /site?slug=X server-side, but
+ * useSearchParams() reads window.location.search (original browser URL), not
+ * the rewritten internal URL. We derive the slug client-side from hostname
+ * so the browser URL — which still shows the tenant subdomain — is the
+ * source of truth.
+ */
+function useResolveSlug(params: URLSearchParams): string {
+  const fromParam = params.get("slug");
+  if (fromParam) return fromParam;
+
+  if (typeof window !== "undefined") {
+    const fromHost = extractSlugFromHost(window.location.hostname);
+    if (fromHost) return fromHost;
+  }
+
+  return "demo";
+}
+
 function LayoutWithSlug({ children }: { children: React.ReactNode }) {
   const params = useSearchParams();
-  const slug = params.get("slug") || "demo";
+  const slug = useResolveSlug(params);
   return <TenantProvider slug={slug}><SiteLayoutInner>{children}</SiteLayoutInner></TenantProvider>;
 }
 
