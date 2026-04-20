@@ -211,7 +211,7 @@ export class AuthController {
       const clientId = this.configService.get<string>('GOOGLE_CLIENT_ID') || '';
       const frontendUrl =
         this.configService.get<string>('APP_URL') ||
-        'https://serviceos-web-zeta.vercel.app';
+        'https://app.rentthisapp.com';
 
       if (!clientId || clientId === 'not-configured') {
         return res.redirect(
@@ -240,8 +240,11 @@ export class AuthController {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error('Google OAuth init error:', msg);
+      const fallbackFrontend =
+        this.configService.get<string>('APP_URL') ||
+        'https://app.rentthisapp.com';
       return res.redirect(
-        `https://serviceos-web-zeta.vercel.app/login?error=${encodeURIComponent(msg)}`,
+        `${fallbackFrontend}/login?error=${encodeURIComponent(msg)}`,
       );
     }
   }
@@ -300,31 +303,63 @@ export class AuthController {
         return res.redirect(`${frontendUrl}/login?error=no_email`);
       }
 
-      // Extract tenant_id from OAuth state
-      let oauthTenantId = '';
-      const stateParam = (req.query as Record<string, string>).state;
-      if (stateParam) {
-        try {
-          const decoded = JSON.parse(Buffer.from(stateParam, 'base64').toString());
-          oauthTenantId = decoded.tenantId || '';
-        } catch { /* ignore invalid state */ }
+      // OIDC security: Google confirms email ownership via verified_email.
+      // Without this check, users can sign in with an unverified secondary
+      // email on their Google account (impersonation vector). The
+      // /oauth2/v2/userinfo endpoint returns this flag even without the
+      // openid scope.
+      const verifiedEmail =
+        (profile as Record<string, unknown>).verified_email;
+      if (verifiedEmail !== true && verifiedEmail !== 'true') {
+        return res.redirect(`${frontendUrl}/login?error=email_not_verified`);
       }
 
+      // Under Option A (email unique per platform) tenant is derived from
+      // the user record server-side; the state-embedded tenantId is no
+      // longer passed through.
       const result = await this.authService.googleLogin({
         googleId: profile.id || '',
         email: profile.email,
         firstName: profile.given_name || profile.name || '',
         lastName: profile.family_name || '',
-        tenantId: oauthTenantId,
       });
 
       return res.redirect(
         `${frontendUrl}/auth/callback?token=${result.accessToken}&refresh=${result.refreshToken}&new=${result.isNew ? '1' : '0'}`,
       );
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.error('Google OAuth callback error:', msg, err);
-      return res.redirect(`${frontendUrl}/login?error=${encodeURIComponent(msg.slice(0, 100))}`);
+      // Defensively extract the error code from whatever shape NestJS
+      // exception filters leave on the thrown value. UnauthorizedException
+      // ({ error: 'X' }) surfaces as err.response.error in raw form or as
+      // err.response.message after filter transform. Fall back through
+      // the plausible locations.
+      const e = err as {
+        response?: { error?: unknown; message?: unknown };
+        error?: unknown;
+        message?: unknown;
+      };
+      const rawCode =
+        (typeof e?.response?.error === 'string' ? e.response.error : undefined) ??
+        (typeof e?.response?.message === 'string' ? e.response.message : undefined) ??
+        (typeof e?.error === 'string' ? e.error : undefined) ??
+        (typeof e?.message === 'string' ? e.message : undefined);
+
+      // Whitelist known codes — arbitrary error strings in the URL would
+      // pollute analytics/referrers and may open an XSS vector if the
+      // frontend ever rendered the raw param. Unknown → generic code.
+      const KNOWN_CODES = new Set([
+        'no_account_found',
+        'account_deactivated',
+        'email_not_verified',
+        'no_email',
+        'token_exchange_failed',
+        'userinfo_failed',
+      ]);
+      const errorCode = rawCode && KNOWN_CODES.has(rawCode) ? rawCode : 'oauth_failed';
+
+      console.error('[OAuth callback error]', { rawCode, err });
+
+      return res.redirect(`${frontendUrl}/login?error=${errorCode}`);
     }
   }
 }

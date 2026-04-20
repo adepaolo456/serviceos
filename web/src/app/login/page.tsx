@@ -1,7 +1,29 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useState, useEffect, Suspense, type FormEvent } from "react";
+import { useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
+
+// Map OAuth callback error codes (arrive via ?error=X in URL after the
+// Google flow) to operator-friendly messages. Unrecognized codes fall back
+// to a generic message. Whitelist-first — matches the backend's
+// KNOWN_CODES set in auth.controller.ts.
+const OAUTH_ERROR_MESSAGES: Record<string, string> = {
+  no_account_found:
+    "No account found for this email. Contact your administrator to request access.",
+  account_deactivated:
+    "Your account has been deactivated. Contact your administrator.",
+  email_not_verified:
+    "Your Google account email isn't verified. Please verify it with Google and try again.",
+  no_email: "We couldn't read your email from Google. Please try again.",
+  token_exchange_failed:
+    "Google sign-in couldn't complete. Please try again.",
+  userinfo_failed:
+    "We couldn't fetch your Google profile. Please try again.",
+  google_not_configured:
+    "Google sign-in isn't available right now. Please use email and password.",
+  oauth_failed: "Google sign-in failed. Please try again.",
+};
 
 interface TenantOption {
   id: string;
@@ -23,7 +45,8 @@ interface LoginResponse {
 
 type Step = "email" | "tenant" | "password";
 
-export default function LoginPage() {
+function LoginPageInner() {
+  const searchParams = useSearchParams();
   const [step, setStep] = useState<Step>("email");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -31,6 +54,14 @@ export default function LoginPage() {
   const [selectedTenant, setSelectedTenant] = useState<TenantOption | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  // Surface OAuth callback errors arriving via ?error=X. Whitelist-first
+  // (matches backend auth.controller KNOWN_CODES); unknown → generic.
+  useEffect(() => {
+    const code = searchParams.get("error");
+    if (!code) return;
+    setError(OAUTH_ERROR_MESSAGES[code] || OAUTH_ERROR_MESSAGES.oauth_failed);
+  }, [searchParams]);
 
   const handleEmailContinue = async (e: FormEvent) => {
     e.preventDefault();
@@ -242,5 +273,17 @@ export default function LoginPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+// Suspense boundary required because LoginPageInner calls useSearchParams()
+// to read the OAuth callback ?error=X query param on mount. Next.js App
+// Router disallows useSearchParams outside a Suspense boundary on a default
+// export (same pattern used by site/layout.tsx).
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen" style={{ backgroundColor: "var(--t-bg-primary)" }} />}>
+      <LoginPageInner />
+    </Suspense>
   );
 }
