@@ -29,6 +29,7 @@ import { TimeEntry } from './modules/team/time-entry.entity';
 import { JwtAuthGuard } from './common/guards';
 import { Tenant } from './modules/tenants/entities/tenant.entity';
 import { User } from './modules/auth/entities/user.entity';
+import { PasswordResetToken } from './modules/auth/entities/password-reset-token.entity';
 import { Customer } from './modules/customers/entities/customer.entity';
 import { Asset } from './modules/assets/entities/asset.entity';
 import { Job } from './modules/jobs/entities/job.entity';
@@ -112,6 +113,7 @@ import { Alert } from './modules/alerts/entities/alert.entity';
           entities: [
             Tenant,
             User,
+            PasswordResetToken,
             Customer,
             Asset,
             Job,
