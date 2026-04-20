@@ -223,6 +223,7 @@ export class OrchestrationService {
         customerLat,
         customerLng,
         rentalDays: rentalDays,
+        customerId,
       } as any);
       const basePrice = priceResult.breakdown.basePrice;
       const distanceSurcharge = priceResult.breakdown.distanceSurcharge || 0;

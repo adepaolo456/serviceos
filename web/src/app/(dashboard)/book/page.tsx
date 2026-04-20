@@ -138,7 +138,7 @@ export default function BookingPage() {
     if (!address.lat || !address.lng) return;
     setQuoting(true);
     Promise.all([
-      api.post<PriceQuote>("/pricing/calculate", { serviceType, assetSubtype, jobType, customerLat: address.lat, customerLng: address.lng, rentalDays }),
+      api.post<PriceQuote>("/pricing/calculate", { serviceType, assetSubtype, jobType, customerLat: address.lat, customerLng: address.lng, rentalDays, ...(customerId ? { customerId } : {}) }),
       api.get<{ availableOnDate: number; availableNow: number; pickupsBeforeDate: number; total: number }>(`/assets/availability?subtype=${assetSubtype}&date=${deliveryDate}`),
     ]).then(([q, avail]) => { setQuote(q); setAvailability(avail); if (q.breakdown.includedDays) setRentalDays(q.breakdown.includedDays); })
     .catch(() => { setQuote(null); setAvailability(null); }).finally(() => setQuoting(false));
@@ -146,7 +146,7 @@ export default function BookingPage() {
 
   useEffect(() => {
     if (!address.lat || !quote) return;
-    api.post<PriceQuote>("/pricing/calculate", { serviceType, assetSubtype, jobType, customerLat: address.lat, customerLng: address.lng, rentalDays }).then(setQuote).catch(() => {});
+    api.post<PriceQuote>("/pricing/calculate", { serviceType, assetSubtype, jobType, customerLat: address.lat, customerLng: address.lng, rentalDays, ...(customerId ? { customerId } : {}) }).then(setQuote).catch(() => {});
   }, [rentalDays]);
 
   useEffect(() => { setPickupDate(addDays(deliveryDate, rentalDays)); }, [deliveryDate, rentalDays]);

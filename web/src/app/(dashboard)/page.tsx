@@ -724,6 +724,7 @@ function QuickJobForm({ onSuccess, timezone }: { onSuccess: () => void; timezone
     api.post<PriceQuote>("/pricing/calculate", {
       serviceType: "dumpster_rental", assetSubtype, jobType,
       customerLat: address.lat || 42.0834, customerLng: address.lng || -71.0184,
+      ...(customerId ? { customerId } : {}),
     }).then(setPriceQuote).catch(() => {});
   }, [step, assetSubtype, jobType, address.lat, address.lng]);
 
