@@ -64,6 +64,11 @@ export class CustomersService {
 
     const qb = this.customersRepository
       .createQueryBuilder('c')
+      // Layer 3 — load portal_password_hash (select:false on the entity)
+      // solely to compute the derived has_portal_access boolean below.
+      // The hash itself is stripped from the response via destructure-
+      // and-omit before returning — never emitted over the wire.
+      .addSelect('c.portal_password_hash')
       .where('c.tenant_id = :tenantId', { tenantId });
 
     if (query.type) {
@@ -85,7 +90,19 @@ export class CustomersService {
 
     qb.orderBy('c.created_at', 'DESC').skip(skip).take(limit);
 
-    const [data, total] = await qb.getManyAndCount();
+    const [rows, total] = await qb.getManyAndCount();
+
+    // Destructure-and-omit: pulls portal_password_hash out of each row
+    // so it cannot accidentally leak via spread, and replaces it with
+    // the derived has_portal_access boolean. Consumers that don't know
+    // about the new field simply ignore it (additive change).
+    const data = rows.map((row) => {
+      const { portal_password_hash, ...rest } = row;
+      return {
+        ...rest,
+        has_portal_access: !!portal_password_hash,
+      };
+    });
 
     return {
       data,
