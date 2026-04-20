@@ -1453,6 +1453,7 @@ function NewJobForm({ onSuccess }: { onSuccess: () => void }) {
     api.post<PriceQuote>("/pricing/calculate", {
       serviceType, assetSubtype, jobType,
       customerLat: 30.27, customerLng: -97.74, yardLat: 30.35, yardLng: -97.7,
+      ...(customerId ? { customerId } : {}),
     }).then(setPriceQuote).catch(() => setPriceQuote(null));
   }, [serviceType, assetSubtype, jobType]);
 

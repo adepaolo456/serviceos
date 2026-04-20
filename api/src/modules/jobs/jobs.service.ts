@@ -872,6 +872,7 @@ export class JobsService {
           } : undefined,
           persist_snapshot: true,
           jobId: job.id,
+          customerId: job.customer_id,
         });
 
         const breakdown = (calcResult as Record<string, unknown>).breakdown as Record<string, unknown>;
