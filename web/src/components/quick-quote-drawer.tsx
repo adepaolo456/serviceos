@@ -321,10 +321,12 @@ export default function QuickQuoteDrawer() {
           }
         : {}),
     };
-    // Order matters: closeQuickQuote clears pendingQuoteSnapshot, then
-    // openBookingFlow sets the new one. React batches setState in this
-    // handler; the LAST setPendingQuoteSnapshot wins. Reverse order
-    // would clobber the new snapshot with null and break Edit Quote.
+    // closeQuickQuote bumps resetKey so this drawer remounts fresh on
+    // next open. openBookingFlow then sets the new snapshot, which
+    // BW / NewCustomerForm will seed from. Snapshot lifecycle
+    // (Commit 2.5): preserved across all navigation + drawer closes;
+    // cleared only on successful booking completion in provider's
+    // onComplete / handleFormResult.
     closeQuickQuote();
     openBookingFlow(schedule, snapshot);
   }, [

@@ -87,11 +87,12 @@ export function QuickQuoteProvider({ children }: { children: ReactNode }) {
   const closeQuickQuote = useCallback(() => {
     setDrawerOpen(false);
     setResetKey((k) => k + 1);
-    // Clear snapshot on every drawer-close path (X-button, Send Quote
-    // success, ESC, click-outside). handleBookNow reorders to call
-    // this BEFORE openBookingFlow so React batching preserves the new
-    // snapshot — last setPendingQuoteSnapshot in the handler wins.
-    setPendingQuoteSnapshot(null);
+    // Strategy B Commit 2.5 — snapshot is session state, not
+    // navigation state. Preserved across all drawer closes; cleared
+    // only on successful booking completion (handleFormResult and BW
+    // onComplete below). resetKey bump ensures QQD remounts fresh on
+    // next open so the init effect reads the preserved snapshot
+    // cleanly.
   }, []);
 
   const openBookingFlow = useCallback((schedule: InitialSchedule, snapshot?: QuoteSnapshot) => {
@@ -115,7 +116,10 @@ export function QuickQuoteProvider({ children }: { children: ReactNode }) {
   const handlePickerSelect = useCallback(
     (opts: { customerId?: string; initialSchedule?: InitialSchedule }) => {
       if (opts.initialSchedule) setPendingSchedule(opts.initialSchedule);
-      setPendingQuoteSnapshot(null);
+      // Strategy B Commit 2.5 — forward picker exit preserves the
+      // snapshot so downstream BW / NewCustomerForm seeds can read
+      // customerFields. Snapshot clears only on successful booking
+      // completion (handleFormResult / BW onComplete below).
       if (opts.customerId) {
         setSelectedCustomerId(opts.customerId);
         setMode('wizard');
@@ -128,6 +132,9 @@ export function QuickQuoteProvider({ children }: { children: ReactNode }) {
 
   const handleFormResult = useCallback((result: OrchestrationResult) => {
     setMode(null);
+    // Strategy B Commit 2.5 — booking completion clears the snapshot.
+    // Next sidebar → Quick Quote opens fresh.
+    setPendingQuoteSnapshot(null);
     // Atomic create completed — navigate to created job or customer
     switch (result.status) {
       case "booking_created":
@@ -162,7 +169,7 @@ export function QuickQuoteProvider({ children }: { children: ReactNode }) {
       <QuickQuoteDrawer key={resetKey} />
       <CustomerPickerDrawer
         open={mode === 'picker'}
-        onClose={() => { setMode(null); setPendingQuoteSnapshot(null); }}
+        onClose={() => setMode(null)}
         onSelect={handlePickerSelect}
         initialSchedule={pendingSchedule}
       />
@@ -187,6 +194,8 @@ export function QuickQuoteProvider({ children }: { children: ReactNode }) {
         side="left"
         onComplete={(createdJobId) => {
           setMode(null);
+          // Strategy B Commit 2.5 — BW completion clears the snapshot.
+          setPendingQuoteSnapshot(null);
           if (createdJobId) router.push(`/jobs/${createdJobId}?postCreate=1`);
         }}
       />
