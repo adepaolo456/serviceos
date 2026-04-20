@@ -8,6 +8,7 @@ import AddressAutocomplete, { type AddressValue } from "@/components/address-aut
 import { useActiveOnsiteDumpsters, type OnsiteDumpster } from "@/lib/use-active-onsite-dumpsters";
 import { useCreditEnforcement } from "@/lib/use-credit-enforcement";
 import { CreditEnforcementBanner } from "@/components/credit-enforcement-banner";
+import { useQuickQuote } from "@/components/quick-quote-provider";
 
 /* ── Types ── */
 
@@ -98,12 +99,33 @@ interface NewCustomerFormProps {
 
 export default function NewCustomerForm({ onOrchestrated, onClose, forceCustomerOnly, initialSchedule }: NewCustomerFormProps) {
   const router = useRouter();
+  // Strategy B Commit 3 — seed firstName/lastName/email/phone from the
+  // Quick Quote pendingQuoteSnapshot on mount. Gated on !!initialSchedule
+  // to prevent cross-surface leakage: NCF is also mounted from
+  // (dashboard)/customers/page.tsx for "Add Customer" with no
+  // initialSchedule prop, and under Position 2 (Commit 2.5 d61923c) the
+  // snapshot can survive an abandoned QQ flow. Without this gate the
+  // customers-page form would prefill from stale QQ state.
+  // hasQuoteContext is true only in the QQ-flow mount (provider.tsx
+  // passes initialSchedule={pendingSchedule}); customers-page omits the
+  // prop, so the gate resolves false and the seed no-ops. Hook must run
+  // BEFORE useState so lazy initializers can read pendingQuoteSnapshot.
+  const { pendingQuoteSnapshot } = useQuickQuote();
+  const hasQuoteContext = !!initialSchedule;
   const [idempotencyKey] = useState(() => crypto.randomUUID());
   const [type, setType] = useState<"residential" | "commercial">("residential");
-  const [firstName, setFirstName] = useState("");
-  const [lastName, setLastName] = useState("");
-  const [email, setEmail] = useState("");
-  const [phone, setPhone] = useState("");
+  const [firstName, setFirstName] = useState(() =>
+    hasQuoteContext ? (pendingQuoteSnapshot?.customerFields?.firstName ?? "") : "",
+  );
+  const [lastName, setLastName] = useState(() =>
+    hasQuoteContext ? (pendingQuoteSnapshot?.customerFields?.lastName ?? "") : "",
+  );
+  const [email, setEmail] = useState(() =>
+    hasQuoteContext ? (pendingQuoteSnapshot?.customerFields?.email ?? "") : "",
+  );
+  const [phone, setPhone] = useState(() =>
+    hasQuoteContext ? (pendingQuoteSnapshot?.customerFields?.phone ?? "") : "",
+  );
   const [companyName, setCompanyName] = useState("");
   const [billingAddress, setBillingAddress] = useState<AddressValue>({ street: "", city: "", state: "", zip: "", lat: null, lng: null });
   const [notes, setNotes] = useState("");
