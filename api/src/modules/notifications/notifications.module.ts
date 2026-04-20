@@ -24,6 +24,6 @@ import { SmsModule } from '../sms/sms.module';
   ],
   controllers: [NotificationsController],
   providers: [NotificationsService, TwilioService, ResendEmailService],
-  exports: [NotificationsService],
+  exports: [NotificationsService, ResendEmailService],
 })
 export class NotificationsModule {}

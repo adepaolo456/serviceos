@@ -77,6 +77,29 @@ export default function EmployeeDetailPage({ params }: { params: Promise<{ id: s
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<Tab>("profile");
   const [editOpen, setEditOpen] = useState(false);
+  const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
+  const [resetSending, setResetSending] = useState(false);
+
+  const handleTriggerReset = async () => {
+    if (!emp) return;
+    setResetSending(true);
+    try {
+      await api.post(`/team/${emp.id}/trigger-password-reset`);
+      toast("success", `Reset email sent to ${emp.email}`);
+      setResetConfirmOpen(false);
+    } catch (err) {
+      const body = (err as { body?: { error?: string } })?.body;
+      if (body?.error === "user_deactivated") {
+        toast("error", "Cannot reset a deactivated user's password");
+      } else if (body?.error === "rate_limited") {
+        toast("error", "Too many reset emails sent recently. Try again later.");
+      } else {
+        toast("error", "Failed to send reset email");
+      }
+    } finally {
+      setResetSending(false);
+    }
+  };
 
   useEffect(() => {
     async function load() {
@@ -130,10 +153,55 @@ export default function EmployeeDetailPage({ params }: { params: Promise<{ id: s
           </div>
           <div className="flex gap-2">
             <button onClick={() => setEditOpen(true)} className="rounded-full border border-[var(--t-border)] px-4 py-2 text-[13px] font-medium text-[var(--t-text-primary)] hover:bg-[var(--t-bg-card-hover)] transition-colors flex items-center gap-1.5"><Pencil className="h-3.5 w-3.5" /> Edit</button>
+            <button
+              onClick={() => setResetConfirmOpen(true)}
+              disabled={!emp.isActive}
+              title={emp.isActive ? "Send a password reset email to this user" : "User is deactivated"}
+              className="rounded-full border border-[var(--t-border)] px-4 py-2 text-[13px] font-medium text-[var(--t-text-primary)] hover:bg-[var(--t-bg-card-hover)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Reset password
+            </button>
             <button className="rounded-full border border-[var(--t-error)] px-4 py-2 text-[13px] font-medium text-[var(--t-error)] hover:opacity-80 transition-opacity">Deactivate</button>
           </div>
         </div>
       </div>
+
+      {resetConfirmOpen && emp && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" onClick={() => !resetSending && setResetConfirmOpen(false)} />
+          <div className="relative w-full max-w-md rounded-[20px] shadow-2xl p-6" style={{ backgroundColor: "var(--t-bg-secondary)", border: "1px solid var(--t-border)" }}>
+            <h2 className="text-base font-semibold text-center" style={{ color: "var(--t-text-primary)" }}>
+              Send password reset email?
+            </h2>
+            <p className="text-sm mt-2 text-center" style={{ color: "var(--t-text-muted)" }}>
+              {emp.firstName} will receive an email at <strong style={{ color: "var(--t-text-primary)" }}>{emp.email}</strong> with a link to set a new password. The link expires in 60 minutes.
+            </p>
+            <p className="text-xs mt-3 text-center" style={{ color: "var(--t-text-muted)" }}>
+              You won&apos;t see or set the password — the user sets it themselves.
+            </p>
+            <div className="flex gap-3 mt-6">
+              <button
+                type="button"
+                onClick={() => setResetConfirmOpen(false)}
+                disabled={resetSending}
+                className="flex-1 rounded-full py-3 text-sm font-semibold border"
+                style={{ borderColor: "var(--t-border)", color: "var(--t-text-primary)" }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleTriggerReset}
+                disabled={resetSending}
+                className="flex-1 rounded-full py-3 text-sm font-semibold transition-opacity disabled:opacity-40"
+                style={{ backgroundColor: "var(--t-accent)", color: "var(--t-accent-on-accent)" }}
+              >
+                {resetSending ? "Sending..." : "Send reset email"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="flex gap-1 mb-5 overflow-x-auto pb-1">

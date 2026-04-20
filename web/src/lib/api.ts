@@ -16,6 +16,13 @@ class ApiClient {
     localStorage.setItem("accessToken", token);
   }
 
+  // Store both tokens from a login-equivalent response (login, password
+  // reset auto-login, etc.). Centralizes the two-key localStorage pattern.
+  setAuthTokens({ accessToken, refreshToken }: { accessToken: string; refreshToken: string }) {
+    localStorage.setItem("accessToken", accessToken);
+    localStorage.setItem("refreshToken", refreshToken);
+  }
+
   clearToken() {
     localStorage.removeItem("accessToken");
     localStorage.removeItem("refreshToken");

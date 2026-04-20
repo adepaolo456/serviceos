@@ -36,9 +36,50 @@ export class AuthService {
    * lowercase. Real-world email providers treat local-part case-insensitively
    * despite RFC 5321 technically allowing case sensitivity; aligning with that
    * norm prevents case-variant duplicates and silent OAuth lookup failures.
+   *
+   * Public so the forgot-password controller path can normalize before using
+   * the email as a rate-limit key (must match the storage normalization to
+   * rate-limit case-variant spam consistently).
    */
-  private normalizeEmail(email: string): string {
+  normalizeEmail(email: string): string {
     return email.trim().toLowerCase();
+  }
+
+  /**
+   * Lookup used by the forgot-password flow. Returns a minimal projection
+   * suitable for the controller to decide (active-and-send vs silent-drop).
+   * Normalization happens here so callers can't accidentally miss it.
+   */
+  async findUserByEmailForPasswordReset(email: string) {
+    const normalizedEmail = this.normalizeEmail(email);
+    return this.usersRepository.findOne({
+      where: { email: normalizedEmail },
+      select: ['id', 'tenant_id', 'email', 'first_name', 'is_active'],
+    });
+  }
+
+  /**
+   * Issue a fresh access+refresh token pair for a user that has already
+   * been authenticated by an out-of-band mechanism (password reset
+   * redemption). Loads the user, mints tokens, rotates the stored
+   * refresh_token_hash. Mirrors the end of the login() flow but without
+   * the credential-check step.
+   *
+   * The caller is responsible for having already proven the user's
+   * identity (e.g. a valid unused unexpired reset token). Never expose
+   * this to a public endpoint without a gate.
+   */
+  async generateTokensForUser(userId: string) {
+    const user = await this.usersRepository.findOne({
+      where: { id: userId },
+      select: ['id', 'email', 'role', 'tenant_id'],
+    });
+    if (!user) {
+      throw new UnauthorizedException('User not found');
+    }
+    const tokens = await this.generateTokens(user, user.tenant_id);
+    await this.updateRefreshTokenHash(user.id, tokens.refreshToken);
+    return tokens;
   }
 
   async register(dto: RegisterDto) {
@@ -314,8 +355,12 @@ export class AuthService {
         websiteHeroImageUrl: user.tenant.website_hero_image_url,
         widgetEnabled: user.tenant.widget_enabled,
         allowedWidgetDomains: user.tenant.allowed_widget_domains,
-        yardLatitude: user.tenant.yard_latitude ? Number(user.tenant.yard_latitude) : null,
-        yardLongitude: user.tenant.yard_longitude ? Number(user.tenant.yard_longitude) : null,
+        yardLatitude: user.tenant.yard_latitude
+          ? Number(user.tenant.yard_latitude)
+          : null,
+        yardLongitude: user.tenant.yard_longitude
+          ? Number(user.tenant.yard_longitude)
+          : null,
         yardAddress: user.tenant.yard_address,
         // Phase B3 — tenant-wide timezone. Always present in the
         // response; falls back to 'America/New_York' when the
@@ -357,33 +402,56 @@ export class AuthService {
   ) {
     const update: Record<string, unknown> = {};
     if (data.companyName !== undefined) update.name = data.companyName;
-    if (data.yardLatitude !== undefined) update.yard_latitude = data.yardLatitude;
-    if (data.yardLongitude !== undefined) update.yard_longitude = data.yardLongitude;
+    if (data.yardLatitude !== undefined)
+      update.yard_latitude = data.yardLatitude;
+    if (data.yardLongitude !== undefined)
+      update.yard_longitude = data.yardLongitude;
     if (data.yardAddress !== undefined) update.yard_address = data.yardAddress;
-    if (data.businessType !== undefined) update.business_type = data.businessType;
+    if (data.businessType !== undefined)
+      update.business_type = data.businessType;
     if (data.address !== undefined) update.address = data.address;
-    if (data.serviceRadius !== undefined) update.service_radius_miles = data.serviceRadius;
-    if (data.websiteEnabled !== undefined) update.website_enabled = data.websiteEnabled;
-    if (data.websiteHeadline !== undefined) update.website_headline = data.websiteHeadline;
-    if (data.websiteDescription !== undefined) update.website_description = data.websiteDescription;
-    if (data.websiteHeroImageUrl !== undefined) update.website_hero_image_url = data.websiteHeroImageUrl;
-    if (data.websiteLogoUrl !== undefined) update.website_logo_url = data.websiteLogoUrl;
-    if (data.websitePrimaryColor !== undefined) update.website_primary_color = data.websitePrimaryColor;
-    if (data.websitePhone !== undefined) update.website_phone = data.websitePhone;
-    if (data.websiteEmail !== undefined) update.website_email = data.websiteEmail;
-    if (data.websiteServiceArea !== undefined) update.website_service_area = data.websiteServiceArea;
-    if (data.websiteAbout !== undefined) update.website_about = data.websiteAbout;
-    if (data.widgetEnabled !== undefined) update.widget_enabled = data.widgetEnabled;
-    if (data.allowedWidgetDomains !== undefined) update.allowed_widget_domains = data.allowedWidgetDomains;
-    if (data.businessTypeLabel !== undefined) update.business_type_label = data.businessTypeLabel;
-    if (data.enabledModules !== undefined) update.enabled_modules = data.enabledModules;
-    if (data.subscriptionTier !== undefined) update.subscription_tier = data.subscriptionTier;
-    if (data.subscriptionStatus !== undefined) update.subscription_status = data.subscriptionStatus;
-    if (data.customerOverageRates !== undefined) update.customer_overage_rates = data.customerOverageRates;
+    if (data.serviceRadius !== undefined)
+      update.service_radius_miles = data.serviceRadius;
+    if (data.websiteEnabled !== undefined)
+      update.website_enabled = data.websiteEnabled;
+    if (data.websiteHeadline !== undefined)
+      update.website_headline = data.websiteHeadline;
+    if (data.websiteDescription !== undefined)
+      update.website_description = data.websiteDescription;
+    if (data.websiteHeroImageUrl !== undefined)
+      update.website_hero_image_url = data.websiteHeroImageUrl;
+    if (data.websiteLogoUrl !== undefined)
+      update.website_logo_url = data.websiteLogoUrl;
+    if (data.websitePrimaryColor !== undefined)
+      update.website_primary_color = data.websitePrimaryColor;
+    if (data.websitePhone !== undefined)
+      update.website_phone = data.websitePhone;
+    if (data.websiteEmail !== undefined)
+      update.website_email = data.websiteEmail;
+    if (data.websiteServiceArea !== undefined)
+      update.website_service_area = data.websiteServiceArea;
+    if (data.websiteAbout !== undefined)
+      update.website_about = data.websiteAbout;
+    if (data.widgetEnabled !== undefined)
+      update.widget_enabled = data.widgetEnabled;
+    if (data.allowedWidgetDomains !== undefined)
+      update.allowed_widget_domains = data.allowedWidgetDomains;
+    if (data.businessTypeLabel !== undefined)
+      update.business_type_label = data.businessTypeLabel;
+    if (data.enabledModules !== undefined)
+      update.enabled_modules = data.enabledModules;
+    if (data.subscriptionTier !== undefined)
+      update.subscription_tier = data.subscriptionTier;
+    if (data.subscriptionStatus !== undefined)
+      update.subscription_status = data.subscriptionStatus;
+    if (data.customerOverageRates !== undefined)
+      update.customer_overage_rates = data.customerOverageRates;
 
     await this.tenantsRepository.update(tenantId, update);
 
-    const tenant = await this.tenantsRepository.findOne({ where: { id: tenantId } });
+    const tenant = await this.tenantsRepository.findOne({
+      where: { id: tenantId },
+    });
     return {
       name: tenant?.name,
       businessType: tenant?.business_type,
@@ -399,7 +467,7 @@ export class AuthService {
 
   async updatePreferences(userId: string, data: Record<string, unknown>) {
     const user = await this.usersRepository.findOne({ where: { id: userId } });
-    const current = (user?.permissions || {}) as Record<string, unknown>;
+    const current = user?.permissions || {};
     const merged = { ...current, ...data };
     await this.usersRepository.update(userId, { permissions: merged } as any);
     return merged;
@@ -423,7 +491,10 @@ export class AuthService {
     } as any);
   }
 
-  async updateLocation(userId: string, data: { latitude: number; longitude: number; statusText?: string }) {
+  async updateLocation(
+    userId: string,
+    data: { latitude: number; longitude: number; statusText?: string },
+  ) {
     await this.usersRepository.update(userId, {
       current_latitude: data.latitude,
       current_longitude: data.longitude,
@@ -490,7 +561,15 @@ export class AuthService {
 
     const user = await this.usersRepository.findOne({
       where: { email: normalizedEmail },
-      select: ['id', 'email', 'first_name', 'last_name', 'role', 'tenant_id', 'is_active'],
+      select: [
+        'id',
+        'email',
+        'first_name',
+        'last_name',
+        'role',
+        'tenant_id',
+        'is_active',
+      ],
     });
 
     if (!user) {
