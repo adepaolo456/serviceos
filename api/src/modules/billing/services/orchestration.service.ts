@@ -443,8 +443,12 @@ export class OrchestrationService {
     // (matches L78-94 pre-submit check). TRIM is defensive against
     // whitespace-padded input.
     const normalizedEmail = email.trim().toLowerCase();
+    // Layer 3 — load portal_password_hash (select:false on the entity)
+    // only to compute the derived has_portal_access boolean below. The
+    // hash itself is never written to the payload.
     const existing = await this.customersRepo
       .createQueryBuilder('c')
+      .addSelect('c.portal_password_hash')
       .where('c.tenant_id = :tenantId', { tenantId })
       .andWhere('LOWER(TRIM(c.email)) = :email', { email: normalizedEmail })
       .getOne();
@@ -475,6 +479,10 @@ export class OrchestrationService {
         type: existing.type,
         billing_address: existing.billing_address,
         service_addresses: existing.service_addresses,
+        // Layer 3 — derived capability flag. The hash itself is NEVER
+        // emitted; only the boolean that tells the frontend whether to
+        // render "Log in to customer portal" vs "View Existing Customer".
+        has_portal_access: !!existing.portal_password_hash,
       },
       message: 'A customer with this email already exists',
     });
