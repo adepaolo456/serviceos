@@ -25,6 +25,20 @@ export type QuoteSnapshot = {
   customerPhone: string;
   deliveryMethod: "email" | "sms" | "both";
   showSendFields: boolean;
+  // Strategy B Commit 1 — optional forward-propagation of customer
+  // fields to BookingWizard / NewCustomerForm seed effects (landing in
+  // Commits 2 and 3; no consumers yet). Populated by QQD handleBookNow
+  // only when the user has typed at least one of name/email/phone in
+  // the send panel. Name is pre-split on the first whitespace into
+  // firstName + lastName so downstream consumers get the shape they
+  // already use internally.
+  customerFields?: {
+    firstName?: string;
+    lastName?: string;
+    email?: string;
+    phone?: string;
+    deliveryMethod?: "email" | "sms" | "both";
+  };
 };
 
 interface QuickQuoteContextValue {
