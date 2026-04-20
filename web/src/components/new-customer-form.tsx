@@ -22,7 +22,22 @@ export interface OrchestrationResult {
   nextAction: string;
 }
 
-interface DuplicateMatch { id: string; first_name: string; last_name: string; email: string; phone: string; matchField: "email" | "phone" }
+// Extended with optional row fields carried from the /customers?search
+// spread in the 400 branch AND from the 409 existing_customer payload
+// (Commit A). These let "Use this customer" call selectExistingCustomer
+// with billing_address + service_addresses so the form prefills fully.
+interface DuplicateMatch {
+  id: string;
+  first_name: string;
+  last_name: string;
+  email: string;
+  phone: string;
+  matchField: "email" | "phone";
+  company_name?: string | null;
+  type?: "residential" | "commercial";
+  billing_address?: Record<string, unknown> | null;
+  service_addresses?: Record<string, unknown>[] | null;
+}
 
 /* ── Labels ── */
 
@@ -415,16 +430,89 @@ export default function NewCustomerForm({ onOrchestrated, onClose, forceCustomer
 
       onOrchestrated(result);
     } catch (err: unknown) {
-      const errData = (err as { response?: { data?: { code?: string; existingCustomerId?: string } } })?.response?.data;
-      if (errData?.code === "DUPLICATE_CUSTOMER" && errData.existingCustomerId) {
+      // api.ts attaches parsed body as err.body and HTTP status as err.status
+      // (api.ts:51-64). Prior code read err.response?.data (axios shape) — dead
+      // code that never matched. This rewrite fixes the 400 pre-submit branch
+      // AND adds 409 duplicate_email handling (backend Commit A f46cab2).
+      const typedErr = err as Error & { status?: number; body?: unknown };
+      const body = typedErr.body as
+        | {
+            code?: string;
+            existingCustomerId?: string;
+            existing_customer_id?: string;
+            existing_customer_name?: string;
+            existing_customer?: {
+              id: string;
+              first_name: string | null;
+              last_name: string | null;
+              company_name: string | null;
+              email: string | null;
+              phone: string | null;
+              type?: "residential" | "commercial";
+              billing_address?: Record<string, unknown> | null;
+              service_addresses?: Record<string, unknown>[] | null;
+            };
+          }
+        | undefined;
+
+      // Case 1: Backend 409 duplicate_email — full customer row attached.
+      // Populate duplicateMatch directly, no round-trip needed.
+      if (
+        typedErr.status === 409 &&
+        body?.code === "duplicate_email" &&
+        body.existing_customer
+      ) {
+        const ec = body.existing_customer;
+        setDuplicateMatch({
+          id: ec.id,
+          first_name: ec.first_name || "",
+          last_name: ec.last_name || "",
+          email: ec.email || "",
+          phone: ec.phone || "",
+          matchField: "email",
+          company_name: ec.company_name,
+          type: ec.type,
+          billing_address: ec.billing_address,
+          service_addresses: ec.service_addresses,
+        });
+        return;
+      }
+
+      // Case 2: Backend 400 DUPLICATE_CUSTOMER (pre-submit guardrail).
+      // Fetch full row via /customers?search= to populate the warning card.
+      // This path was broken before — prior code read err.response?.data which
+      // never matched; the card only appeared via NCF's independent pre-submit
+      // check at L321-346. Now this branch also works as originally intended.
+      if (
+        typedErr.status === 400 &&
+        body?.code === "DUPLICATE_CUSTOMER" &&
+        body.existingCustomerId
+      ) {
         try {
-          const res = await api.get<{ data: { id: string; first_name: string; last_name: string; email: string; phone: string }[]; meta: { total: number } }>(`/customers?search=${encodeURIComponent(email || phone)}&limit=1`);
+          const res = await api.get<{
+            data: {
+              id: string;
+              first_name: string;
+              last_name: string;
+              email: string;
+              phone: string;
+              billing_address?: Record<string, unknown>;
+              service_addresses?: Record<string, unknown>[];
+            }[];
+            meta: { total: number };
+          }>(`/customers?search=${encodeURIComponent(email || phone)}&limit=1`);
           if (res.data.length > 0) {
-            setDuplicateMatch({ ...res.data[0], matchField: email ? "email" : "phone" });
+            setDuplicateMatch({
+              ...res.data[0],
+              matchField: email ? "email" : "phone",
+            });
             return;
           }
-        } catch { /* fall through */ }
+        } catch {
+          /* fall through to generic error */
+        }
       }
+
       setError(err instanceof Error ? err.message : "Failed to create");
     } finally { setSaving(false); }
   };
@@ -731,8 +819,23 @@ export default function NewCustomerForm({ onOrchestrated, onClose, forceCustomer
             {duplicateMatch.matchField === "email" ? NEW_CUSTOMER_LABELS.matchingEmail : NEW_CUSTOMER_LABELS.matchingPhone}: {duplicateMatch.matchField === "email" ? duplicateMatch.email : duplicateMatch.phone}
           </p>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <button type="button" onClick={() => { setDuplicateMatch(null); setDuplicateChecked(true); }}
+            <button type="button" onClick={() => {
+              selectExistingCustomer({
+                id: duplicateMatch.id,
+                first_name: duplicateMatch.first_name,
+                last_name: duplicateMatch.last_name,
+                email: duplicateMatch.email,
+                phone: duplicateMatch.phone,
+                billing_address: duplicateMatch.billing_address ?? undefined,
+                service_addresses: duplicateMatch.service_addresses ?? undefined,
+              });
+              setDuplicateMatch(null);
+            }}
               style={{ width: "100%", padding: "10px 0", borderRadius: 24, fontSize: 13, fontWeight: 600, backgroundColor: "var(--t-accent)", color: "var(--t-accent-on-accent)", border: "none", cursor: "pointer" }}>
+              Use this customer
+            </button>
+            <button type="button" onClick={() => { setDuplicateMatch(null); setDuplicateChecked(true); }}
+              style={{ width: "100%", padding: "10px 0", borderRadius: 24, fontSize: 13, fontWeight: 600, backgroundColor: "transparent", color: "var(--t-text-primary)", border: "1px solid var(--t-border)", cursor: "pointer" }}>
               {NEW_CUSTOMER_LABELS.continueCreatingCustomer}
             </button>
             <button type="button" onClick={() => { onClose(); router.push(`/customers/${duplicateMatch.id}`); }}
