@@ -9,6 +9,7 @@ import { useActiveOnsiteDumpsters, type OnsiteDumpster } from "@/lib/use-active-
 import { useCreditEnforcement } from "@/lib/use-credit-enforcement";
 import { CreditEnforcementBanner } from "@/components/credit-enforcement-banner";
 import { useQuickQuote } from "@/components/quick-quote-provider";
+import { useToast } from "@/components/toast";
 
 /* ── Types ── */
 
@@ -37,6 +38,11 @@ interface DuplicateMatch {
   type?: "residential" | "commercial";
   billing_address?: Record<string, unknown> | null;
   service_addresses?: Record<string, unknown>[] | null;
+  // Layer 3 — true when existing customer has portal_password_hash set.
+  // Drives the "Log in to customer portal" vs "View Existing Customer"
+  // label swap in the duplicate warning card. Optional for graceful
+  // degradation if Commit C (backend) ever rolls back.
+  has_portal_access?: boolean;
 }
 
 /* ── Labels ── */
@@ -73,6 +79,8 @@ export const NEW_CUSTOMER_LABELS = {
   matchingPhone: "Matching phone",
   continueCreatingCustomer: "Create new customer anyway",
   viewExistingCustomer: "View Existing Customer",
+  loginToCustomerPortal: "Log in to customer portal",
+  loginToCustomerPortalToast: "This customer has portal access — they can log in to manage their rental",
   cancelCreateCustomer: "Keep reviewing",
   checkingDuplicate: "Checking for existing customers...",
   bookingCreatedSuccess: "Customer created and job scheduled",
@@ -126,6 +134,7 @@ export default function NewCustomerForm({ onOrchestrated, onClose, forceCustomer
   // prop, so the gate resolves false and the seed no-ops. Hook must run
   // BEFORE useState so lazy initializers can read pendingQuoteSnapshot.
   const { pendingQuoteSnapshot } = useQuickQuote();
+  const { toast } = useToast();
   const hasQuoteContext = !!initialSchedule;
   const [idempotencyKey] = useState(() => crypto.randomUUID());
   const [type, setType] = useState<"residential" | "commercial">("residential");
@@ -364,7 +373,7 @@ export default function NewCustomerForm({ onOrchestrated, onClose, forceCustomer
         try {
           for (const [field, val] of [["phone", normalizedPhone], ["email", normalizedEmail]] as const) {
             if (!val) continue;
-            const res = await api.get<{ data: { id: string; first_name: string; last_name: string; email: string; phone: string }[]; meta: { total: number } }>(`/customers?search=${encodeURIComponent(val)}&limit=1`);
+            const res = await api.get<{ data: { id: string; first_name: string; last_name: string; email: string; phone: string; has_portal_access?: boolean }[]; meta: { total: number } }>(`/customers?search=${encodeURIComponent(val)}&limit=1`);
             if (res.meta.total > 0) {
               const match = res.data[0];
               const matchedPhone = field === "phone" && match.phone?.replace(/\D/g, "") === normalizedPhone;
@@ -451,6 +460,7 @@ export default function NewCustomerForm({ onOrchestrated, onClose, forceCustomer
               type?: "residential" | "commercial";
               billing_address?: Record<string, unknown> | null;
               service_addresses?: Record<string, unknown>[] | null;
+              has_portal_access?: boolean;
             };
           }
         | undefined;
@@ -474,6 +484,7 @@ export default function NewCustomerForm({ onOrchestrated, onClose, forceCustomer
           type: ec.type,
           billing_address: ec.billing_address,
           service_addresses: ec.service_addresses,
+          has_portal_access: ec.has_portal_access,
         });
         return;
       }
@@ -498,6 +509,7 @@ export default function NewCustomerForm({ onOrchestrated, onClose, forceCustomer
               phone: string;
               billing_address?: Record<string, unknown>;
               service_addresses?: Record<string, unknown>[];
+              has_portal_access?: boolean;
             }[];
             meta: { total: number };
           }>(`/customers?search=${encodeURIComponent(email || phone)}&limit=1`);
@@ -838,9 +850,21 @@ export default function NewCustomerForm({ onOrchestrated, onClose, forceCustomer
               style={{ width: "100%", padding: "10px 0", borderRadius: 24, fontSize: 13, fontWeight: 600, backgroundColor: "transparent", color: "var(--t-text-primary)", border: "1px solid var(--t-border)", cursor: "pointer" }}>
               {NEW_CUSTOMER_LABELS.continueCreatingCustomer}
             </button>
-            <button type="button" onClick={() => { onClose(); router.push(`/customers/${duplicateMatch.id}`); }}
+            <button type="button" onClick={() => {
+              // Layer 3 — fire portal-framing toast BEFORE navigation so
+              // route-level state cleanup can't kill it. Toast only when
+              // the customer has portal access; non-portal path stays
+              // identical to pre-Commit-D behavior.
+              if (duplicateMatch.has_portal_access) {
+                toast("success", NEW_CUSTOMER_LABELS.loginToCustomerPortalToast);
+              }
+              onClose();
+              router.push(`/customers/${duplicateMatch.id}`);
+            }}
               style={{ width: "100%", padding: "10px 0", borderRadius: 24, fontSize: 13, fontWeight: 600, backgroundColor: "transparent", color: "var(--t-text-primary)", border: "1px solid var(--t-border)", cursor: "pointer" }}>
-              {NEW_CUSTOMER_LABELS.viewExistingCustomer}
+              {duplicateMatch.has_portal_access
+                ? NEW_CUSTOMER_LABELS.loginToCustomerPortal
+                : NEW_CUSTOMER_LABELS.viewExistingCustomer}
             </button>
             <button type="button" onClick={() => setDuplicateMatch(null)}
               style={{ fontSize: 12, color: "var(--t-text-muted)", backgroundColor: "transparent", border: "none", cursor: "pointer" }}>
