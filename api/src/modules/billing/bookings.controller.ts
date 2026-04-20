@@ -133,7 +133,21 @@ export class BookingsController {
         service_addresses: serviceAddresses as Record<string, any>[],
         customer_preferences: customerPreferences,
       });
-      const saved = await this.customersRepo.save(c);
+      let saved: Customer;
+      try {
+        saved = await this.customersRepo.save(c);
+      } catch (err) {
+        // Translate duplicate-email 23505 into structured 409. Customer
+        // create happens before any downstream writes, so no cleanup
+        // needed on 23505. Uses orchestrationService's public helper to
+        // keep the 409 translation centralized.
+        await this.orchestrationService.translateDuplicateEmailError(
+          err,
+          tenantId,
+          body.customer.email,
+        );
+        throw err;
+      }
       customerId = saved.id;
     } else if (customerId) {
       // Existing customer — store additional contacts and service address
