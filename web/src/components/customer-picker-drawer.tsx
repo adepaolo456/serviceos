@@ -202,7 +202,7 @@ export default function CustomerPickerDrawer({
             className="w-full flex items-center justify-center gap-2 rounded-full py-2.5 text-sm font-semibold border transition-colors hover:bg-[var(--t-bg-card-hover)]"
             style={{ borderColor: "var(--t-border)", color: "var(--t-text-primary)" }}
           >
-            <Plus className="h-4 w-4" /> Continue as New Customer
+            <Plus className="h-4 w-4" /> {getFeatureLabel("customer_picker_continue_as_new")}
           </button>
         </div>
       </div>

@@ -7,7 +7,7 @@ import { useToast } from "@/components/toast";
 import { formatCurrency } from "@/lib/utils";
 import AddressAutocomplete, { type AddressValue } from "@/components/address-autocomplete";
 import { useActiveOnsiteDumpsters } from "@/lib/use-active-onsite-dumpsters";
-import { getFeatureTooltip } from "@/lib/feature-registry";
+import { getFeatureLabel, getFeatureTooltip } from "@/lib/feature-registry";
 import { useCreditEnforcement } from "@/lib/use-credit-enforcement";
 import { CreditEnforcementBanner } from "@/components/credit-enforcement-banner";
 import { useQuickQuote } from "@/components/quick-quote-provider";
@@ -846,7 +846,7 @@ export default function BookingWizard({
                       setExchangeAutoDetected(false);
                     }}
                   >
-                    Clear
+                    {getFeatureLabel("booking_wizard_step1_change_customer")}
                   </button>
                 </div>
               ) : (firstName.trim() || lastName.trim()) ? (
@@ -1094,7 +1094,7 @@ export default function BookingWizard({
                   className="w-full rounded-full py-3 text-sm font-semibold transition-opacity disabled:opacity-40"
                   style={{ backgroundColor: "var(--t-accent)", color: "#fff" }}
                 >
-                  Continue
+                  {getFeatureLabel("booking_wizard_step1_continue_to_billing")}
                 </button>
               </div>
             </div>
@@ -1208,7 +1208,7 @@ export default function BookingWizard({
                   className="flex-1 rounded-full py-3 text-sm font-semibold transition-opacity disabled:opacity-40"
                   style={{ backgroundColor: "var(--t-accent)", color: "#fff" }}
                 >
-                  Continue
+                  {getFeatureLabel("booking_wizard_step2_continue_to_schedule")}
                 </button>
               </div>
             </div>
