@@ -10,6 +10,7 @@ import {
   HttpCode,
   HttpStatus,
   HttpException,
+  Logger,
 } from '@nestjs/common';
 // Manual OAuth flow — no passport AuthGuard needed for Google
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
@@ -17,6 +18,7 @@ import type { Request, Response } from 'express';
 import { ConfigService } from '@nestjs/config';
 import { DataSource } from 'typeorm';
 import { AuthService } from './auth.service';
+import { PasswordResetService } from './services/password-reset.service';
 import {
   RegisterDto,
   LoginDto,
@@ -24,6 +26,7 @@ import {
   InviteUserDto,
   LookupTenantsDto,
 } from './dto/auth.dto';
+import { ForgotPasswordDto, ResetPasswordDto } from './dto/password-reset.dto';
 import { Public, CurrentUser, TenantId, Roles } from '../../common/decorators';
 import { RolesGuard } from '../../common/guards';
 import { checkRateLimit } from '../../common/rate-limiter';
@@ -31,8 +34,11 @@ import { checkRateLimit } from '../../common/rate-limiter';
 @ApiTags('Auth')
 @Controller('auth')
 export class AuthController {
+  private readonly logger = new Logger(AuthController.name);
+
   constructor(
     private readonly authService: AuthService,
+    private readonly passwordResetService: PasswordResetService,
     private readonly configService: ConfigService,
     private readonly dataSource: DataSource,
   ) {}
@@ -62,7 +68,11 @@ export class AuthController {
     );
     if (!rateResult.allowed) {
       throw new HttpException(
-        { statusCode: 429, message: 'Too many requests. Try again later.', retryAfter: rateResult.retryAfterSeconds },
+        {
+          statusCode: 429,
+          message: 'Too many requests. Try again later.',
+          retryAfter: rateResult.retryAfterSeconds,
+        },
         HttpStatus.TOO_MANY_REQUESTS,
       );
     }
@@ -114,7 +124,10 @@ export class AuthController {
   @Patch('preferences')
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Update user preferences' })
-  async updatePreferences(@CurrentUser('id') userId: string, @Body() body: Record<string, unknown>) {
+  async updatePreferences(
+    @CurrentUser('id') userId: string,
+    @Body() body: Record<string, unknown>,
+  ) {
     return this.authService.updatePreferences(userId, body);
   }
 
@@ -154,9 +167,161 @@ export class AuthController {
     return this.authService.inviteUser(dto, tenantId);
   }
 
+  /**
+   * Self-serve forgot-password. Always responds 200 { ok: true } regardless
+   * of whether the email exists, whether the account is active, or whether
+   * a rate limit was hit — prevents account enumeration. Structured audit
+   * events log the differentiating outcome for ops visibility.
+   *
+   * Response latency is floored at 200ms (matches lookupTenants pattern at
+   * L225) so attackers can't distinguish outcomes via timing.
+   */
+  @Public()
+  @Post('forgot-password')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Request a password reset email' })
+  async forgotPassword(
+    @Body() dto: ForgotPasswordDto,
+    @Req() req: Request,
+    @Res() res: Response,
+  ) {
+    const start = Date.now();
+    const floor = 200;
+
+    const normalizedEmail = this.authService.normalizeEmail(dto.email);
+    const ip = this.extractClientIp(req);
+
+    const emailCheck = await checkRateLimit(
+      this.dataSource,
+      normalizedEmail,
+      '/auth/forgot-password',
+      3,
+      60,
+      'email',
+    );
+    const ipCheck = await checkRateLimit(
+      this.dataSource,
+      ip,
+      '/auth/forgot-password',
+      10,
+      60,
+      'ip',
+    );
+
+    if (!emailCheck.allowed || !ipCheck.allowed) {
+      this.logger.log(
+        JSON.stringify({
+          event: 'audit.password_reset.request_rate_limited',
+          email: normalizedEmail,
+          ip,
+          email_limit_hit: !emailCheck.allowed,
+          ip_limit_hit: !ipCheck.allowed,
+        }),
+      );
+      await this.sleepUntil(start + floor);
+      return res.json({ ok: true });
+    }
+
+    try {
+      const user =
+        await this.authService.findUserByEmailForPasswordReset(normalizedEmail);
+
+      if (user && user.is_active) {
+        const rawToken = await this.passwordResetService.createToken(
+          user,
+          'self-serve',
+          ip,
+        );
+        await this.passwordResetService.sendResetEmail(user, rawToken);
+      } else if (user && !user.is_active) {
+        this.logger.log(
+          JSON.stringify({
+            event: 'audit.password_reset.request_blocked_inactive',
+            user_id: user.id,
+            tenant_id: user.tenant_id,
+          }),
+        );
+      } else {
+        this.logger.log(
+          JSON.stringify({
+            event: 'audit.password_reset.request_no_account',
+            email: normalizedEmail,
+            ip,
+          }),
+        );
+      }
+    } catch (err) {
+      this.logger.error(
+        JSON.stringify({
+          event: 'audit.password_reset.request_error',
+          email: normalizedEmail,
+          error: err instanceof Error ? err.message : String(err),
+        }),
+      );
+      // Still silent success — don't leak error shape to attackers.
+    }
+
+    await this.sleepUntil(start + floor);
+    return res.json({ ok: true });
+  }
+
+  /**
+   * Redeem a reset token and set a new password. Wrapped service-side in
+   * a DB transaction (token burn + password update + refresh_token_hash
+   * nulling — all-or-nothing). On success, issues fresh access+refresh
+   * tokens for auto-login (operator Lock 11).
+   */
+  @Public()
+  @Post('reset-password')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Redeem a password reset token' })
+  async resetPassword(@Body() dto: ResetPasswordDto, @Req() req: Request) {
+    const ip = this.extractClientIp(req);
+
+    const ipCheck = await checkRateLimit(
+      this.dataSource,
+      ip,
+      '/auth/reset-password',
+      10,
+      60,
+      'ip',
+    );
+    if (!ipCheck.allowed) {
+      throw new HttpException(
+        {
+          statusCode: 429,
+          error: 'rate_limited',
+          retryAfter: ipCheck.retryAfterSeconds,
+        },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+
+    const user = await this.passwordResetService.redeemAndApply(
+      dto.token,
+      dto.newPassword,
+    );
+    return this.authService.generateTokensForUser(user.id);
+  }
+
+  private extractClientIp(req: Request): string {
+    return (
+      (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ||
+      req.ip ||
+      'unknown'
+    );
+  }
+
+  private async sleepUntil(targetMs: number) {
+    const delay = targetMs - Date.now();
+    if (delay > 0) await new Promise((r) => setTimeout(r, delay));
+  }
+
   @Public()
   @Post('lookup-tenants')
-  @ApiOperation({ summary: 'Look up tenants for an email (timing-safe, rate-limited)' })
+  @ApiOperation({
+    summary: 'Look up tenants for an email (timing-safe, rate-limited)',
+  })
   async lookupTenants(
     @Body() dto: LookupTenantsDto,
     @Req() req: Request,
@@ -184,14 +349,11 @@ export class AuthController {
       if (elapsed < floor) {
         await new Promise((r) => setTimeout(r, floor - elapsed));
       }
-      return res
-        .status(429)
-        .set('X-RateLimit-Remaining', '0')
-        .json({
-          statusCode: 429,
-          message: 'Too many requests. Try again later.',
-          retryAfter: rateResult.retryAfterSeconds,
-        });
+      return res.status(429).set('X-RateLimit-Remaining', '0').json({
+        statusCode: 429,
+        message: 'Too many requests. Try again later.',
+        retryAfter: rateResult.retryAfterSeconds,
+      });
     }
 
     const result = await this.authService.lookupTenants(dto.email);
@@ -214,9 +376,7 @@ export class AuthController {
         'https://app.rentthisapp.com';
 
       if (!clientId || clientId === 'not-configured') {
-        return res.redirect(
-          `${frontendUrl}/login?error=google_not_configured`,
-        );
+        return res.redirect(`${frontendUrl}/login?error=google_not_configured`);
       }
 
       // Pass tenant_id through OAuth state parameter
@@ -236,7 +396,9 @@ export class AuthController {
         prompt: 'consent',
         state,
       });
-      return res.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`);
+      return res.redirect(
+        `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`,
+      );
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error('Google OAuth init error:', msg);
@@ -253,9 +415,10 @@ export class AuthController {
   @Get('google/callback')
   @ApiOperation({ summary: 'Google OAuth callback' })
   async googleCallback(@Req() req: Request, @Res() res: Response) {
-    const frontendUrl =
-      (this.configService.get<string>('APP_URL') ||
-      'https://serviceos-web-zeta.vercel.app').trim();
+    const frontendUrl = (
+      this.configService.get<string>('APP_URL') ||
+      'https://serviceos-web-zeta.vercel.app'
+    ).trim();
 
     try {
       const code = (req.query as Record<string, string>).code;
@@ -263,8 +426,12 @@ export class AuthController {
         return res.redirect(`${frontendUrl}/login?error=no_code`);
       }
 
-      const clientId = (this.configService.get<string>('GOOGLE_CLIENT_ID') || '').trim();
-      const clientSecret = (this.configService.get<string>('GOOGLE_CLIENT_SECRET') || '').trim();
+      const clientId = (
+        this.configService.get<string>('GOOGLE_CLIENT_ID') || ''
+      ).trim();
+      const clientSecret = (
+        this.configService.get<string>('GOOGLE_CLIENT_SECRET') || ''
+      ).trim();
       const callbackUrl = (
         this.configService.get<string>('GOOGLE_CALLBACK_URL') ||
         'https://serviceos-api.vercel.app/auth/google/callback'
@@ -294,9 +461,12 @@ export class AuthController {
       }
 
       // Get user info
-      const userRes = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
-        headers: { Authorization: `Bearer ${tokens.access_token}` },
-      });
+      const userRes = await fetch(
+        'https://www.googleapis.com/oauth2/v2/userinfo',
+        {
+          headers: { Authorization: `Bearer ${tokens.access_token}` },
+        },
+      );
       const profile = (await userRes.json()) as Record<string, string>;
 
       if (!profile.email) {
@@ -308,8 +478,7 @@ export class AuthController {
       // email on their Google account (impersonation vector). The
       // /oauth2/v2/userinfo endpoint returns this flag even without the
       // openid scope.
-      const verifiedEmail =
-        (profile as Record<string, unknown>).verified_email;
+      const verifiedEmail = (profile as Record<string, unknown>).verified_email;
       if (verifiedEmail !== true && verifiedEmail !== 'true') {
         return res.redirect(`${frontendUrl}/login?error=email_not_verified`);
       }
@@ -339,8 +508,12 @@ export class AuthController {
         message?: unknown;
       };
       const rawCode =
-        (typeof e?.response?.error === 'string' ? e.response.error : undefined) ??
-        (typeof e?.response?.message === 'string' ? e.response.message : undefined) ??
+        (typeof e?.response?.error === 'string'
+          ? e.response.error
+          : undefined) ??
+        (typeof e?.response?.message === 'string'
+          ? e.response.message
+          : undefined) ??
         (typeof e?.error === 'string' ? e.error : undefined) ??
         (typeof e?.message === 'string' ? e.message : undefined);
 
@@ -355,7 +528,8 @@ export class AuthController {
         'token_exchange_failed',
         'userinfo_failed',
       ]);
-      const errorCode = rawCode && KNOWN_CODES.has(rawCode) ? rawCode : 'oauth_failed';
+      const errorCode =
+        rawCode && KNOWN_CODES.has(rawCode) ? rawCode : 'oauth_failed';
 
       console.error('[OAuth callback error]', { rawCode, err });
 
