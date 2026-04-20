@@ -31,9 +31,20 @@ export class AuthService {
     private jwtService: JwtService,
   ) {}
 
+  /**
+   * Normalize an email for consistent storage and lookup. Trim whitespace +
+   * lowercase. Real-world email providers treat local-part case-insensitively
+   * despite RFC 5321 technically allowing case sensitivity; aligning with that
+   * norm prevents case-variant duplicates and silent OAuth lookup failures.
+   */
+  private normalizeEmail(email: string): string {
+    return email.trim().toLowerCase();
+  }
+
   async register(dto: RegisterDto) {
+    const normalizedEmail = this.normalizeEmail(dto.email);
     const existingUser = await this.usersRepository.findOne({
-      where: { email: dto.email },
+      where: { email: normalizedEmail },
     });
     if (existingUser) {
       throw new ConflictException('Email already registered');
@@ -62,7 +73,7 @@ export class AuthService {
     const passwordHash = await bcrypt.hash(dto.password, 12);
     const user = this.usersRepository.create({
       tenant_id: savedTenant.id,
-      email: dto.email,
+      email: normalizedEmail,
       password_hash: passwordHash,
       first_name: dto.firstName,
       last_name: dto.lastName,
@@ -102,11 +113,12 @@ export class AuthService {
 
   async login(dto: LoginDto) {
     let tenantId = dto.tenantId;
+    const normalizedEmail = this.normalizeEmail(dto.email);
 
     // If no tenantId provided, look up tenants for this email
     if (!tenantId) {
       const users = await this.usersRepository.find({
-        where: { email: dto.email },
+        where: { email: normalizedEmail },
         select: ['id', 'tenant_id'],
       });
 
@@ -137,7 +149,7 @@ export class AuthService {
     }
 
     const user = await this.usersRepository.findOne({
-      where: { email: dto.email, tenant_id: tenantId },
+      where: { email: normalizedEmail, tenant_id: tenantId },
       select: [
         'id',
         'email',
@@ -185,9 +197,10 @@ export class AuthService {
 
   async lookupTenants(email: string) {
     const start = Date.now();
+    const normalizedEmail = this.normalizeEmail(email);
 
     const users = await this.usersRepository.find({
-      where: { email },
+      where: { email: normalizedEmail },
       select: ['id', 'tenant_id'],
     });
 
@@ -420,8 +433,9 @@ export class AuthService {
   }
 
   async inviteUser(dto: InviteUserDto, tenantId: string) {
+    const normalizedEmail = this.normalizeEmail(dto.email);
     const existingUser = await this.usersRepository.findOne({
-      where: { email: dto.email, tenant_id: tenantId },
+      where: { email: normalizedEmail, tenant_id: tenantId },
     });
     if (existingUser) {
       throw new ConflictException('Email already registered');
@@ -432,7 +446,7 @@ export class AuthService {
 
     const user = this.usersRepository.create({
       tenant_id: tenantId,
-      email: dto.email,
+      email: normalizedEmail,
       password_hash: passwordHash,
       first_name: dto.firstName,
       last_name: dto.lastName,
@@ -451,94 +465,47 @@ export class AuthService {
     };
   }
 
+  /**
+   * Google OAuth login under Option A (email unique per platform).
+   *
+   * - Unknown email → reject. No auto-create. Platform admins provision
+   *   accounts explicitly via register/invite; OAuth only logs existing
+   *   users in.
+   * - Deactivated user → reject (parallel to password login at L163-165).
+   *   Deactivation must apply uniformly across auth methods.
+   * - Email is normalized before lookup to avoid case-variant misses against
+   *   the globally-unique email constraint.
+   *
+   * Tenant is derived from the user record, never client-supplied. The state
+   * parameter from OAuth init is no longer passed through because tenant
+   * selection is implicit under Option A.
+   */
   async googleLogin(googleUser: {
     googleId: string;
     email: string;
-    firstName: string;
-    lastName: string;
-    tenantId?: string;
+    firstName?: string;
+    lastName?: string;
   }) {
-    // Find all users with this email
-    const existingUsers = await this.usersRepository.find({
-      where: { email: googleUser.email },
-      select: ['id', 'email', 'first_name', 'last_name', 'role', 'tenant_id'],
+    const normalizedEmail = this.normalizeEmail(googleUser.email);
+
+    const user = await this.usersRepository.findOne({
+      where: { email: normalizedEmail },
+      select: ['id', 'email', 'first_name', 'last_name', 'role', 'tenant_id', 'is_active'],
     });
 
-    if (existingUsers.length > 0) {
-      let user: User | undefined;
-
-      if (googleUser.tenantId) {
-        // Tenant was selected before OAuth — use it
-        user = existingUsers.find((u) => u.tenant_id === googleUser.tenantId);
-        if (!user) {
-          throw new UnauthorizedException('User does not belong to the selected tenant');
-        }
-      } else if (existingUsers.length === 1) {
-        // Single tenant — auto-select
-        user = existingUsers[0];
-      } else {
-        // Multiple tenants, no selection — return tenants for picker
-        const tenantIds = existingUsers.map((u) => u.tenant_id);
-        const tenants = await this.tenantsRepository
-          .createQueryBuilder('t')
-          .select(['t.id', 't.name', 't.website_logo_url'])
-          .where('t.id IN (:...ids)', { ids: tenantIds })
-          .getMany();
-
-        // For OAuth callback, redirect with tenant_required flag
-        throw new UnauthorizedException({
-          statusCode: 400,
-          error: 'tenant_selection_required',
-          tenants: tenants.map((t) => ({
-            id: t.id,
-            name: t.name,
-            logo_url: t.website_logo_url || null,
-          })),
-        });
-      }
-
-      const tokens = await this.generateTokens(user, user.tenant_id);
-      await this.updateRefreshTokenHash(user.id, tokens.refreshToken);
-      return { ...tokens, isNew: false };
+    if (!user) {
+      throw new UnauthorizedException({ error: 'no_account_found' });
     }
 
-    // New user — create tenant + user
-    const companyName = `${googleUser.firstName}'s Company`;
-    const slug = companyName
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-|-$/g, '') + '-' + Date.now().toString(36);
+    if (!user.is_active) {
+      throw new UnauthorizedException({ error: 'account_deactivated' });
+    }
 
-    const tenant = this.tenantsRepository.create({
-      name: companyName,
-      slug,
-      trial_ends_at: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
-    });
-    const savedTenant = await this.tenantsRepository.save(tenant);
+    await this.usersRepository.update(user.id, { last_login_at: new Date() });
 
-    const randomPass = await bcrypt.hash(Math.random().toString(36), 12);
-    const user = this.usersRepository.create({
-      tenant_id: savedTenant.id,
-      email: googleUser.email,
-      password_hash: randomPass,
-      first_name: googleUser.firstName,
-      last_name: googleUser.lastName,
-      role: 'owner',
-    });
-    const savedUser = await this.usersRepository.save(user);
-
-    // Pre-create tenant_settings row for Google OAuth signup (parity with
-    // email/password register path). Lazy fallback in TenantSettingsService
-    // remains as a safety net.
-    const tenantSettings = this.tenantSettingsRepository.create({
-      tenant_id: savedTenant.id,
-    });
-    await this.tenantSettingsRepository.save(tenantSettings);
-
-    const tokens = await this.generateTokens(savedUser, savedTenant.id);
-    await this.updateRefreshTokenHash(savedUser.id, tokens.refreshToken);
-
-    return { ...tokens, isNew: true };
+    const tokens = await this.generateTokens(user, user.tenant_id);
+    await this.updateRefreshTokenHash(user.id, tokens.refreshToken);
+    return { ...tokens, isNew: false };
   }
 
   private async generateTokens(user: User, tenantId: string) {
