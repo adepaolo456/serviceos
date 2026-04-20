@@ -10,6 +10,7 @@ import { useActiveOnsiteDumpsters } from "@/lib/use-active-onsite-dumpsters";
 import { getFeatureTooltip } from "@/lib/feature-registry";
 import { useCreditEnforcement } from "@/lib/use-credit-enforcement";
 import { CreditEnforcementBanner } from "@/components/credit-enforcement-banner";
+import { useQuickQuote } from "@/components/quick-quote-provider";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -213,6 +214,11 @@ export default function BookingWizard({
   side = 'right',
 }: BookingWizardProps) {
   const { toast } = useToast();
+  // Strategy B Commit 2 — read pendingQuoteSnapshot via context (not a
+  // prop) so the 4+ non-QQD BW entry points compile and no-op safely.
+  // When BW is mounted outside QuickQuoteProvider, context default has
+  // pendingQuoteSnapshot: null and the seed block below skips entirely.
+  const { pendingQuoteSnapshot } = useQuickQuote();
   const [step, setStep] = useState(1);
 
   // Step 1 — Customer
@@ -387,7 +393,34 @@ export default function BookingWizard({
           lng: initialSchedule.siteAddress.lng,
         });
       }
+      // Strategy B Commit 2 — seed Step 1 customer fields from
+      // pendingQuoteSnapshot.customerFields when user typed Name/Email/
+      // Phone in the QQD Send Quote panel before Book Now. Existing-
+      // customer path wins: when prefillCustomerId is set, the effect
+      // at L407-414 loads server data via selectCustomer() and we
+      // skip the snapshot seed entirely. Snapshot data is NEVER set
+      // as selectedCustomer — it represents typed-but-not-selected
+      // input, and the inline customer-search dropdown remains active
+      // on subsequent typing. Placement (end of the reset block,
+      // after clearing setters) means React batches the seed values
+      // last — the seeded values win over the preceding empty-string
+      // resets. Step Back does not re-seed (step is not in this
+      // effect's deps). "Clear" does not re-seed (Clear calls setters
+      // directly; no dep of this effect changes).
+      const snapshotFields = pendingQuoteSnapshot?.customerFields;
+      if (!prefillCustomerId && snapshotFields) {
+        if (snapshotFields.firstName) setFirstName(snapshotFields.firstName);
+        if (snapshotFields.lastName) setLastName(snapshotFields.lastName);
+        if (snapshotFields.email) setEmail(snapshotFields.email);
+        if (snapshotFields.phone) setPhone(snapshotFields.phone);
+      }
     }
+    // pendingQuoteSnapshot and prefillCustomerId intentionally omitted
+    // from deps: adding them would re-fire this effect on snapshot
+    // changes or prefillCustomerId resolution, which would wipe user
+    // edits on Step 1. Snapshot is read as initial state at open→true
+    // (mount-equivalent). prefillCustomerId has its own effect below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, prefillDate, initialSchedule]);
 
   // Prefill customer
