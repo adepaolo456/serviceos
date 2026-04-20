@@ -14,10 +14,13 @@ export async function createApp() {
     'https://serviceos.vercel.app',
     'https://www.serviceos.vercel.app',
     'https://serviceos-web-zeta.vercel.app',
+    'https://app.rentthisapp.com',
+    'https://rentthisapp.com',
+    'https://www.rentthisapp.com',
     'http://localhost:3000',
     'http://localhost:3001',
   ];
-  const tenantSubdomainRegex = /^https:\/\/[a-z0-9-]+\.serviceos\.app$/;
+  const tenantSubdomainRegex = /^https:\/\/[a-z0-9-]+\.rentthisapp\.com$/;
 
   app.enableCors((req, cb) => {
     const url = (req as { url?: string }).url || '';
