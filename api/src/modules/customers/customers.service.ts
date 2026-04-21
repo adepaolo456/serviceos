@@ -236,7 +236,101 @@ export class CustomersService {
 
   async remove(tenantId: string, id: string): Promise<void> {
     const customer = await this.findOne(tenantId, id);
-    await this.customersRepository.remove(customer);
+
+    try {
+      await this.customersRepository.remove(customer);
+    } catch (err) {
+      if (err instanceof QueryFailedError) {
+        const driverError = (err as any).driverError;
+        const code = driverError?.code;
+        const constraint = driverError?.constraint || '';
+        const detail = driverError?.detail || '';
+        const message = err.message || '';
+
+        if (code === '23503') {
+          // associated jobs
+          if (
+            constraint === 'FK_61855f3e378cc40ce4144d045b5' ||
+            detail.includes('FK_61855f3e378cc40ce4144d045b5') ||
+            message.includes('FK_61855f3e378cc40ce4144d045b5')
+          ) {
+            throw new ConflictException(
+              'Cannot delete this customer — they have associated jobs. Resolve or reassign them first.'
+            );
+          }
+
+          // associated invoices
+          if (
+            constraint === 'FK_65e3145f317bd655481d3f96c74' ||
+            detail.includes('FK_65e3145f317bd655481d3f96c74') ||
+            message.includes('FK_65e3145f317bd655481d3f96c74')
+          ) {
+            throw new ConflictException(
+              'Cannot delete this customer — they have associated invoices. Resolve or reassign them first.'
+            );
+          }
+
+          // associated credit memos
+          if (
+            constraint === 'FK_36ecace98d90a4d3eadc11b00bc' ||
+            detail.includes('FK_36ecace98d90a4d3eadc11b00bc') ||
+            message.includes('FK_36ecace98d90a4d3eadc11b00bc')
+          ) {
+            throw new ConflictException(
+              'Cannot delete this customer — they have associated credit memos. Resolve them first.'
+            );
+          }
+
+          // associated rental chains
+          if (
+            constraint === 'FK_4bb01524546f83a6f47ac24a775' ||
+            detail.includes('FK_4bb01524546f83a6f47ac24a775') ||
+            message.includes('FK_4bb01524546f83a6f47ac24a775')
+          ) {
+            throw new ConflictException(
+              'Cannot delete this customer — they have associated rental chains. Resolve or reassign them first.'
+            );
+          }
+
+          // notification history (two FKs grouped)
+          if (
+            constraint === 'FK_b55350bc786b052e8523f313b9a' ||
+            constraint === 'FK_81f3d5b9d93fa0823bbddaa8b9c' ||
+            detail.includes('FK_b55350bc786b052e8523f313b9a') ||
+            detail.includes('FK_81f3d5b9d93fa0823bbddaa8b9c') ||
+            message.includes('FK_b55350bc786b052e8523f313b9a') ||
+            message.includes('FK_81f3d5b9d93fa0823bbddaa8b9c')
+          ) {
+            throw new ConflictException(
+              'Cannot delete this customer — they have notification history on record.'
+            );
+          }
+
+          // configured overrides (three FKs grouped)
+          if (
+            constraint === 'FK_5885eeae184b2a384c06a1c022e' ||
+            constraint === 'FK_1356177a6ba6f83b6d48f30c18f' ||
+            constraint === 'FK_31330554bb861090485fd2672fc' ||
+            detail.includes('FK_5885eeae184b2a384c06a1c022e') ||
+            detail.includes('FK_1356177a6ba6f83b6d48f30c18f') ||
+            detail.includes('FK_31330554bb861090485fd2672fc') ||
+            message.includes('FK_5885eeae184b2a384c06a1c022e') ||
+            message.includes('FK_1356177a6ba6f83b6d48f30c18f') ||
+            message.includes('FK_31330554bb861090485fd2672fc')
+          ) {
+            throw new ConflictException(
+              'Cannot delete this customer — they have configured pricing or notification overrides. Remove those first.'
+            );
+          }
+
+          // Fallback for any unknown FK constraint on customers
+          throw new ConflictException(
+            'Cannot delete this customer — they have related records. Resolve them first.'
+          );
+        }
+      }
+      throw err;
+    }
   }
 
   async getCustomerBalance(tenantId: string, customerId: string) {

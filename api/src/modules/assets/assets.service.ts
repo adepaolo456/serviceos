@@ -1,6 +1,6 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In, DataSource } from 'typeorm';
+import { QueryFailedError, Repository, In, DataSource } from 'typeorm';
 import { Asset } from './entities/asset.entity';
 import { Job } from '../jobs/entities/job.entity';
 import { TenantSettings } from '../tenant-settings/entities/tenant-settings.entity';
@@ -142,7 +142,48 @@ export class AssetsService {
 
   async remove(tenantId: string, id: string): Promise<void> {
     const asset = await this.findOne(tenantId, id);
-    await this.assetsRepository.remove(asset);
+
+    try {
+      await this.assetsRepository.remove(asset);
+    } catch (err) {
+      if (err instanceof QueryFailedError) {
+        const driverError = (err as any).driverError;
+        const code = driverError?.code;
+        const constraint = driverError?.constraint || '';
+        const detail = driverError?.detail || '';
+        const message = err.message || '';
+
+        if (code === '23503') {
+          // assigned to jobs
+          if (
+            constraint === 'FK_8d31aa61b1949bfb81bd846e101' ||
+            detail.includes('FK_8d31aa61b1949bfb81bd846e101') ||
+            message.includes('FK_8d31aa61b1949bfb81bd846e101')
+          ) {
+            throw new ConflictException(
+              'Cannot delete this asset — it is assigned to one or more jobs. Reassign or complete those jobs first.'
+            );
+          }
+
+          // part of rental chains
+          if (
+            constraint === 'FK_9e43ca6dfec21fa9362e13ac189' ||
+            detail.includes('FK_9e43ca6dfec21fa9362e13ac189') ||
+            message.includes('FK_9e43ca6dfec21fa9362e13ac189')
+          ) {
+            throw new ConflictException(
+              'Cannot delete this asset — it is part of an active rental chain.'
+            );
+          }
+
+          // Fallback for any unknown FK constraint on assets
+          throw new ConflictException(
+            'Cannot delete this asset — it is still referenced by other records.'
+          );
+        }
+      }
+      throw err;
+    }
   }
 
   async findAvailable(tenantId: string, assetType: string): Promise<Asset[]> {
