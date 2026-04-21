@@ -551,7 +551,34 @@ export class AuthService {
       phone: dto.phone,
       role: dto.role,
     });
-    const savedUser = await this.usersRepository.save(user);
+    let savedUser: User;
+    try {
+      savedUser = await this.usersRepository.save(user);
+    } catch (err) {
+      if (err instanceof QueryFailedError) {
+        const driverError = (err as any).driverError;
+        const code = driverError?.code;
+        const constraint = driverError?.constraint || '';
+        const detail = driverError?.detail || '';
+        const message = err.message || '';
+
+        if (code === '23505') {
+          if (
+            constraint === 'users_email_lower_unique' ||
+            constraint === 'UQ_97672ac88f789774dd47f7c8be3' ||
+            detail.includes('users_email_lower_unique') ||
+            detail.includes('UQ_97672') ||
+            message.includes('users_email_lower_unique') ||
+            message.includes('UQ_97672')
+          ) {
+            throw new ConflictException(
+              'An account with this email already exists.'
+            );
+          }
+        }
+      }
+      throw err;
+    }
 
     return {
       id: savedUser.id,
