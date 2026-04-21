@@ -1,17 +1,31 @@
 import {
   Entity, PrimaryGeneratedColumn, Column, CreateDateColumn,
+  ManyToOne, JoinColumn, Index,
 } from 'typeorm';
+import { Customer } from '../customers/entities/customer.entity';
+import { Tenant } from '../tenants/entities/tenant.entity';
+import { User } from '../auth/entities/user.entity';
 
+@Index('idx_customer_notes_tenant_customer_created',
+  ['tenant_id', 'customer_id', 'created_at'])
 @Entity('customer_notes')
 export class CustomerNote {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
-  @Column({ name: 'tenant_id' })
+  @Column({ name: 'tenant_id', type: 'uuid' })
   tenant_id!: string;
 
-  @Column({ name: 'customer_id' })
+  @ManyToOne(() => Tenant)
+  @JoinColumn({ name: 'tenant_id' })
+  tenant?: Tenant;
+
+  @Column({ name: 'customer_id', type: 'uuid' })
   customer_id!: string;
+
+  @ManyToOne(() => Customer)
+  @JoinColumn({ name: 'customer_id' })
+  customer?: Customer;
 
   @Column({ type: 'text' })
   content!: string;
@@ -22,8 +36,12 @@ export class CustomerNote {
   @Column({ name: 'author_name', nullable: true })
   author_name!: string;
 
-  @Column({ name: 'author_id', nullable: true })
+  @Column({ name: 'author_id', type: 'uuid', nullable: true })
   author_id!: string;
+
+  @ManyToOne(() => User, { nullable: true })
+  @JoinColumn({ name: 'author_id' })
+  author?: User;
 
   @CreateDateColumn({ name: 'created_at' })
   created_at!: Date;
