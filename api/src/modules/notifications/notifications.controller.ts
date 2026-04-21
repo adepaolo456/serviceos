@@ -7,6 +7,7 @@ import {
   ListNotificationsQueryDto,
 } from './dto/notifications.dto';
 import { TestNotificationDto } from './dto/test-notification.dto';
+import { DispatchNotificationDto } from './dto/dispatch-notification.dto';
 import { TenantId, CurrentUser, Roles } from '../../common/decorators';
 import { RolesGuard } from '../../common/guards';
 import { checkRateLimit } from '../../common/rate-limiter';
@@ -74,10 +75,32 @@ export class NotificationsController {
   }
 
   @Post('dispatch')
-  dispatch(
+  async dispatch(
     @TenantId() tenantId: string,
-    @Body() body: { customerId: string; notificationType: string; subject?: string; emailBody?: string; smsBody?: string; jobId?: string; invoiceId?: string },
+    @CurrentUser('id') userId: string,
+    @Body() body: DispatchNotificationDto,
   ) {
+    const limitCheck = await checkRateLimit(
+      this.dataSource,
+      `${tenantId}:${userId}:notifications-dispatch`,
+      '/notifications/dispatch',
+      10,
+      60,
+      'email',
+    );
+    if (!limitCheck.allowed) {
+      throw new HttpException(
+        { error: 'Rate limit exceeded for /notifications/dispatch (10/hour)' },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+
+    if (!body.emailBody && !body.smsBody) {
+      throw new BadRequestException('Must provide emailBody or smsBody');
+    }
+
+    this.logger.log(`Dispatch notification by user=${userId} type=${body.notificationType} customer=${body.customerId}`);
+
     return this.notificationsService.dispatch({
       tenantId,
       customerId: body.customerId,
