@@ -481,10 +481,10 @@ export default function BookingWizard({
 
   // Re-quote when options change
   const fetchQuote = useCallback(async () => {
-    if (!dumpsterSize || !deliveryDate) return;
+    const svcAddr = resolvedServiceAddress();
+    if (!dumpsterSize || !deliveryDate || !svcAddr.lat || !svcAddr.lng) return;
     setQuoteLoading(true);
     try {
-      const svcAddr = resolvedServiceAddress();
       const isExchange = taskType === "exchange" && selectedRentalForExchange;
       const exchangeRental = isExchange ? activeRentals.find((r) => r.id === selectedRentalForExchange) : null;
       const calcSize = isExchange ? (exchangeReplacementSize || dumpsterSize) : dumpsterSize;
@@ -492,8 +492,8 @@ export default function BookingWizard({
         serviceType: "dumpster_rental",
         assetSubtype: calcSize,
         jobType: isExchange ? "exchange" : "delivery",
-        customerLat: svcAddr.lat || 42.0834,
-        customerLng: svcAddr.lng || -71.0184,
+        customerLat: svcAddr.lat,
+        customerLng: svcAddr.lng,
         rentalDays: rentalLength,
         // Include customerId when a customer is selected so the backend
         // applies any matching client_pricing_overrides (base_price only
@@ -521,7 +521,7 @@ export default function BookingWizard({
     } finally {
       setQuoteLoading(false);
     }
-  }, [dumpsterSize, rentalLength, deliveryDate]);
+  }, [dumpsterSize, rentalLength, deliveryDate, newServiceAddress.lat, newServiceAddress.lng, billingAddress.lat, billingAddress.lng, serviceAddressMode, selectedCustomer, selectedAddressIdx]);
 
   useEffect(() => {
     if (step === 3 && dumpsterSize) fetchQuote();
