@@ -54,7 +54,31 @@ export class CustomersService {
       tags: dto.tags,
       lead_source: dto.leadSource,
     });
-    return this.customersRepository.save(customer);
+    try {
+      return await this.customersRepository.save(customer);
+    } catch (err) {
+      if (err instanceof QueryFailedError) {
+        const driverError = (err as any).driverError;
+        const code = driverError?.code;
+        const constraint = driverError?.constraint || '';
+        const detail = driverError?.detail || '';
+        const message = err.message || '';
+
+        if (
+          code === '23505' &&
+          (
+            constraint === 'idx_customers_tenant_email_unique' ||
+            detail.includes('idx_customers_tenant_email_unique') ||
+            message.includes('idx_customers_tenant_email_unique')
+          )
+        ) {
+          throw new ConflictException(
+            'A customer with this email already exists for this tenant.'
+          );
+        }
+      }
+      throw err;
+    }
   }
 
   async findAll(tenantId: string, query: ListCustomersQueryDto) {

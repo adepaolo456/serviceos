@@ -5,7 +5,7 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { QueryFailedError, Repository } from 'typeorm';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { User } from './entities/user.entity';
@@ -121,7 +121,34 @@ export class AuthService {
       phone: dto.phone,
       role: 'owner',
     });
-    const savedUser = await this.usersRepository.save(user);
+    let savedUser: User;
+    try {
+      savedUser = await this.usersRepository.save(user);
+    } catch (err) {
+      if (err instanceof QueryFailedError) {
+        const driverError = (err as any).driverError;
+        const code = driverError?.code;
+        const constraint = driverError?.constraint || '';
+        const detail = driverError?.detail || '';
+        const message = err.message || '';
+
+        if (code === '23505') {
+          if (
+            constraint === 'users_email_lower_unique' ||
+            constraint === 'UQ_97672ac88f789774dd47f7c8be3' ||
+            detail.includes('users_email_lower_unique') ||
+            detail.includes('UQ_97672') ||
+            message.includes('users_email_lower_unique') ||
+            message.includes('UQ_97672')
+          ) {
+            throw new ConflictException(
+              'An account with this email already exists.'
+            );
+          }
+        }
+      }
+      throw err;
+    }
 
     // Pre-create tenant_settings row so the new tenant starts with an
     // explicit row (entity defaults applied) rather than relying on the
