@@ -1,6 +1,6 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { QueryFailedError, Repository } from 'typeorm';
 import { Customer } from './entities/customer.entity';
 import { Invoice } from '../billing/entities/invoice.entity';
 import { MapboxService } from '../mapbox/mapbox.service';
@@ -188,7 +188,26 @@ export class CustomersService {
     if (dto.customPricing !== undefined) customer.custom_pricing = dto.customPricing;
     if (dto.pricingNotes !== undefined) customer.pricing_notes = dto.pricingNotes;
 
-    return this.customersRepository.save(customer);
+    try {
+      return await this.customersRepository.save(customer);
+    } catch (err) {
+      if (err instanceof QueryFailedError) {
+        const driverError = (err as QueryFailedError & {
+          driverError?: { code?: string; constraint?: string; detail?: string; message?: string };
+        }).driverError;
+        const targetConstraint = 'idx_customers_tenant_email_unique';
+        const matchesConstraint =
+          driverError?.constraint === targetConstraint ||
+          !!driverError?.detail?.includes(targetConstraint) ||
+          !!driverError?.message?.includes(targetConstraint);
+        if (driverError?.code === '23505' && matchesConstraint) {
+          throw new ConflictException(
+            'This email is already in use by another customer in your account. Please use a different email.',
+          );
+        }
+      }
+      throw err;
+    }
   }
 
   async remove(tenantId: string, id: string): Promise<void> {
