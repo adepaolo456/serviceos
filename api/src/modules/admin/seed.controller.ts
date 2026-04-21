@@ -1,8 +1,10 @@
-import { Controller, Post, Query } from '@nestjs/common';
+import { Controller, HttpException, HttpStatus, Logger, Post, Query, UseGuards } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import * as crypto from 'crypto';
-import { Public } from '../../common/decorators';
+import { CurrentUser, Roles, TenantId } from '../../common/decorators';
+import { RolesGuard } from '../../common/guards';
+import { checkRateLimit } from '../../common/rate-limiter';
 import { Tenant } from '../tenants/entities/tenant.entity';
 import { Customer } from '../customers/entities/customer.entity';
 import { Asset } from '../assets/entities/asset.entity';
@@ -17,8 +19,13 @@ import { MapboxService } from '../mapbox/mapbox.service';
 import * as bcrypt from 'bcrypt';
 
 @Controller('admin/seed')
+@UseGuards(RolesGuard)
+@Roles('owner')
 export class SeedController {
+  private readonly logger = new Logger(SeedController.name);
+
   constructor(
+    private dataSource: DataSource,
     private mapbox: MapboxService,
     @InjectRepository(Tenant) private tenantRepo: Repository<Tenant>,
     @InjectRepository(Customer) private customerRepo: Repository<Customer>,
@@ -34,9 +41,12 @@ export class SeedController {
     @InjectRepository(DeliveryZone) private zoneRepo: Repository<DeliveryZone>,
   ) {}
 
-  @Public()
   @Post()
-  async seed(@Query('secret') secret: string) {
+  async seed(
+    @Query('secret') secret: string,
+    @TenantId() tenantId: string,
+    @CurrentUser('id') userId: string,
+  ) {
     // Disable in production
     if (process.env.NODE_ENV === 'production' && !process.env.SEED_ENABLED) {
       return { error: 'Seed is disabled in production' };
@@ -54,6 +64,23 @@ export class SeedController {
     } catch {
       return { error: 'Invalid secret' };
     }
+
+    const limitCheck = await checkRateLimit(
+      this.dataSource,
+      `${tenantId}:${userId}:admin-seed`,
+      '/admin/seed',
+      3,
+      60,
+      'email',
+    );
+    if (!limitCheck.allowed) {
+      throw new HttpException(
+        { error: 'Rate limit exceeded for /admin/seed (3/hour)' },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+
+    this.logger.log(`Seed invoked by user=${userId} tenant=${tenantId}`);
 
     const tenant = await this.tenantRepo.findOne({ where: { slug: 'rent-this-dumpster-mnbxs4jm' } });
     if (!tenant) return { error: 'Tenant not found' };
@@ -254,7 +281,6 @@ export class SeedController {
     };
   }
 
-  @Public()
   @Post('jobs')
   async seedJobs(@Query('secret') secret: string) {
     if (secret !== 'SEED_2026') return { error: 'Invalid secret' };
@@ -570,7 +596,6 @@ export class SeedController {
   }
 
   @Post('geocode-backfill')
-  @Public()
   async geocodeBackfill(@Query('tenantId') tenantId: string) {
     if (!tenantId) return { error: 'tenantId required' };
     let processed = 0, geocoded = 0, failed = 0;

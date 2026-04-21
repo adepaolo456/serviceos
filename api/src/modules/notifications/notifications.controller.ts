@@ -1,12 +1,16 @@
-import { Controller, Get, Post, Put, Body, Query, Param, ParseUUIDPipe, UseGuards, ForbiddenException } from '@nestjs/common';
+import { BadRequestException, Body, Controller, ForbiddenException, Get, HttpException, HttpStatus, Logger, Param, ParseUUIDPipe, Post, Put, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { DataSource } from 'typeorm';
 import { NotificationsService } from './notifications.service';
 import {
   SendNotificationDto,
   ListNotificationsQueryDto,
 } from './dto/notifications.dto';
+import { TestNotificationDto } from './dto/test-notification.dto';
 import { TenantId, CurrentUser, Roles } from '../../common/decorators';
 import { RolesGuard } from '../../common/guards';
+import { checkRateLimit } from '../../common/rate-limiter';
+import { normalizePhone } from '../../common/utils/phone';
 
 @ApiTags('Notifications')
 @ApiBearerAuth()
@@ -14,7 +18,12 @@ import { RolesGuard } from '../../common/guards';
 @UseGuards(RolesGuard)
 @Roles('admin', 'owner')
 export class NotificationsController {
-  constructor(private readonly notificationsService: NotificationsService) {}
+  private readonly logger = new Logger(NotificationsController.name);
+
+  constructor(
+    private readonly notificationsService: NotificationsService,
+    private readonly dataSource: DataSource,
+  ) {}
 
   @Post('send')
   send(@TenantId() tenantId: string, @Body() dto: SendNotificationDto) {
@@ -85,18 +94,39 @@ export class NotificationsController {
   @Post('test')
   async testNotification(
     @TenantId() tenantId: string,
+    @CurrentUser('id') userId: string,
     @CurrentUser('role') userRole: string,
-    @Body() body: { email?: string; phone?: string; type?: string },
+    @Body() body: TestNotificationDto,
   ) {
     // Field-level gating: only owner may send test SMS
     if (body.phone && userRole !== 'owner') {
       throw new ForbiddenException('Only the account owner can send test SMS messages');
     }
+
+    const limitCheck = await checkRateLimit(
+      this.dataSource,
+      `${tenantId}:${userId}:notifications-test`,
+      '/notifications/test',
+      10,
+      60,
+      'email',
+    );
+    if (!limitCheck.allowed) {
+      throw new HttpException(
+        { error: 'Rate limit exceeded for /notifications/test (10/hour)' },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+
+    if (!body.email && !body.phone) {
+      throw new BadRequestException('Must provide email or phone');
+    }
+
     const results: any = {};
     if (body.email) {
       const notif = await this.notificationsService.send(tenantId, {
         channel: 'email',
-        type: body.type || 'test',
+        type: 'test',
         recipient: body.email,
         subject: 'ServiceOS Test Notification',
         body: '<h2>Test Email</h2><p>This is a test notification from ServiceOS. If you received this, email notifications are working correctly.</p>',
@@ -104,14 +134,20 @@ export class NotificationsController {
       results.email = { status: notif.status, id: notif.external_id };
     }
     if (body.phone) {
+      const normalized = normalizePhone(body.phone);
+      if (!normalized) {
+        throw new BadRequestException('Invalid phone number format');
+      }
       const notif = await this.notificationsService.send(tenantId, {
         channel: 'sms',
-        type: body.type || 'test',
-        recipient: body.phone,
+        type: 'test',
+        recipient: normalized,
         body: 'ServiceOS Test: SMS notifications are working correctly.',
       });
       results.sms = { status: notif.status, id: notif.external_id };
     }
+
+    this.logger.log(`Test notification by user=${userId} recipient=${body.email || body.phone}`);
     return results;
   }
 }
