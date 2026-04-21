@@ -9,6 +9,7 @@ import { Repository, DataSource, QueryFailedError } from 'typeorm';
 import { Customer } from '../../customers/entities/customer.entity';
 import { Job } from '../../jobs/entities/job.entity';
 import { RentalChain } from '../../rental-chains/entities/rental-chain.entity';
+import { PricingRule } from '../../pricing/entities/pricing-rule.entity';
 import { Invoice } from '../entities/invoice.entity';
 import { Payment } from '../entities/payment.entity';
 import { NotificationsService } from '../../notifications/notifications.service';
@@ -46,6 +47,7 @@ export class OrchestrationService {
   constructor(
     @InjectRepository(Customer) private customersRepo: Repository<Customer>,
     @InjectRepository(Invoice) private invoicesRepo: Repository<Invoice>,
+    @InjectRepository(PricingRule) private pricingRuleRepo: Repository<PricingRule>,
     private dataSource: DataSource,
     private notificationsService: NotificationsService,
     private pricingService: PricingService,
@@ -141,9 +143,9 @@ export class OrchestrationService {
     });
 
     // Resolve tenant-scoped default rental period from pricing rule (no hardcoded fallback)
-    const pricingRule = await this.dataSource.getRepository('PricingRule').findOne({
+    const pricingRule = await this.pricingRuleRepo.findOne({
       where: { tenant_id: tenantId, asset_subtype: dto.dumpsterSize, is_active: true },
-    }) as { rental_period_days?: number } | null;
+    });
     const tenantDefaultDays = pricingRule?.rental_period_days ?? 7;
     const rentalDays = dto.rentalDays || tenantDefaultDays;
     const pickupDate = dto.pickupTBD

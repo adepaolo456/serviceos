@@ -13,6 +13,7 @@ import { CreditMemo } from '../entities/credit-memo.entity';
 import { JobCost } from '../entities/job-cost.entity';
 import { Job } from '../../jobs/entities/job.entity';
 import { Customer } from '../../customers/entities/customer.entity';
+import { TaskChainLink } from '../../rental-chains/entities/task-chain-link.entity';
 import { PriceResolutionService, ResolvedPrice } from '../../pricing/services/price-resolution.service';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { CreateInvoiceDto } from '../dto/create-invoice.dto';
@@ -43,6 +44,8 @@ export class InvoiceService {
     private jobRepo: Repository<Job>,
     @InjectRepository(Customer)
     private customerRepo: Repository<Customer>,
+    @InjectRepository(TaskChainLink)
+    private taskChainLinkRepo: Repository<TaskChainLink>,
     private priceResolution: PriceResolutionService,
     private notificationsService: NotificationsService,
     private dataSource: DataSource,
@@ -884,10 +887,10 @@ export class InvoiceService {
 
   private async resolveRentalChainId(jobId: string | null): Promise<string | null> {
     if (!jobId) return null;
-    const link = await this.dataSource.getRepository('task_chain_links').findOne({
+    const link = await this.taskChainLinkRepo.findOne({
       where: { job_id: jobId },
     });
-    return link ? (link as any).rental_chain_id : null;
+    return link ? link.rental_chain_id : null;
   }
 
   // ─────────────────────────────────────────────────────────
