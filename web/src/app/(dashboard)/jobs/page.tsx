@@ -36,6 +36,7 @@ import { resolveRepresentativeJobId } from "@/lib/lifecycle-job-resolver";
 import { getBlockedReason, isJobBlocked } from "@/lib/blocked-job";
 import { useTenantTimezone } from "@/lib/use-modules";
 import { getTenantToday, getTenantNowParts } from "@/lib/utils/tenantDate";
+import AddressAutocomplete, { type AddressValue } from "@/components/address-autocomplete";
 
 /* ─── Types ─── */
 
@@ -1413,10 +1414,7 @@ function NewJobForm({ onSuccess }: { onSuccess: () => void }) {
   const [scheduledDate, setScheduledDate] = useState("");
   const [windowStart, setWindowStart] = useState("");
   const [windowEnd, setWindowEnd] = useState("");
-  const [street, setStreet] = useState("");
-  const [city, setCity] = useState("");
-  const [addrState, setAddrState] = useState("");
-  const [zip, setZip] = useState("");
+  const [address, setAddress] = useState<AddressValue>({ street: "", city: "", state: "", zip: "", lat: null, lng: null });
   const [placementNotes, setPlacementNotes] = useState("");
   const [assetId, setAssetId] = useState("");
   const [driverId, setDriverId] = useState("");
@@ -1449,13 +1447,13 @@ function NewJobForm({ onSuccess }: { onSuccess: () => void }) {
   }, [customerSearch]);
 
   useEffect(() => {
-    if (!serviceType || !assetSubtype) return;
+    if (!serviceType || !assetSubtype || !address.lat || !address.lng) return;
     api.post<PriceQuote>("/pricing/calculate", {
       serviceType, assetSubtype, jobType,
-      customerLat: 30.27, customerLng: -97.74, yardLat: 30.35, yardLng: -97.7,
+      customerLat: address.lat, customerLng: address.lng,
       ...(customerId ? { customerId } : {}),
     }).then(setPriceQuote).catch(() => setPriceQuote(null));
-  }, [serviceType, assetSubtype, jobType]);
+  }, [serviceType, assetSubtype, jobType, address.lat, address.lng]);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -1463,7 +1461,9 @@ function NewJobForm({ onSuccess }: { onSuccess: () => void }) {
     setError("");
     setSaving(true);
     try {
-      const serviceAddress = street || city || addrState || zip ? { street, city, state: addrState, zip } : undefined;
+      const serviceAddress = address.street || address.city || address.state || address.zip
+        ? { street: address.street, city: address.city, state: address.state, zip: address.zip, lat: address.lat, lng: address.lng }
+        : undefined;
       await api.post("/jobs", {
         customerId, jobType, serviceType,
         scheduledDate: scheduledDate || undefined,
@@ -1579,17 +1579,7 @@ function NewJobForm({ onSuccess }: { onSuccess: () => void }) {
         <div><label style={lbl}>Window End</label><input type="time" value={windowEnd} onChange={(e) => setWindowEnd(e.target.value)} style={inp} /></div>
       </div>
 
-      <fieldset style={{ border: "none", padding: 0, margin: 0 }}>
-        <legend style={{ fontSize: 14, fontWeight: 500, color: "var(--t-text-primary)", marginBottom: 12 }}>Service Address</legend>
-        <div className="space-y-3">
-          <input value={street} onChange={(e) => setStreet(e.target.value)} style={inp} placeholder="Street address" />
-          <div className="grid grid-cols-3 gap-3">
-            <input value={city} onChange={(e) => setCity(e.target.value)} style={inp} placeholder="City" />
-            <input value={addrState} onChange={(e) => setAddrState(e.target.value)} style={inp} placeholder="State" />
-            <input value={zip} onChange={(e) => setZip(e.target.value)} style={inp} placeholder="ZIP" />
-          </div>
-        </div>
-      </fieldset>
+      <AddressAutocomplete value={address} onChange={setAddress} label="Service Address" placeholder="Customer address or zip code..." />
 
       <div>
         <label style={lbl}>Placement Notes</label>
