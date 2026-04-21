@@ -293,7 +293,7 @@ export class AdminService {
       where: { email: data.admin_email },
     });
     if (existing) {
-      throw new BadRequestException('Email already registered');
+      throw new BadRequestException('An account with this email already exists.');
     }
 
     // Create tenant

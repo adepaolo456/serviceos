@@ -88,7 +88,7 @@ export class AuthService {
       where: { email: normalizedEmail },
     });
     if (existingUser) {
-      throw new ConflictException('Email already registered');
+      throw new ConflictException('An account with this email already exists.');
     }
 
     let slug = dto.companyName
@@ -536,7 +536,7 @@ export class AuthService {
       where: { email: normalizedEmail, tenant_id: tenantId },
     });
     if (existingUser) {
-      throw new ConflictException('Email already registered');
+      throw new ConflictException('An account with this email already exists.');
     }
 
     const tempPassword = Math.random().toString(36).slice(-12);
