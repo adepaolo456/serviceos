@@ -10,6 +10,7 @@ import {
 import { api } from "@/lib/api";
 import { useToast } from "@/components/toast";
 import { formatCurrency } from "@/lib/utils";
+import { formatDateOnly } from "@/lib/utils/format-date";
 import SlideOver from "@/components/slide-over";
 import { FEATURE_REGISTRY } from "@/lib/feature-registry";
 import { formatJobNumber } from "@/lib/job-status";
@@ -373,7 +374,23 @@ function BillingIssuesPageContent() {
   const [pricingRules, setPricingRules] = useState<{ asset_subtype: string; base_price: number; rental_period_days: number; included_tons: number; delivery_fee: number; customer_type?: string; service_type?: string }[]>([]);
   const [invoiceDetail, setInvoiceDetail] = useState<InvoiceDetail | null>(null);
   const [creditContext, setCreditContext] = useState<CustomerCreditContext | null>(null);
+  const [businessName, setBusinessName] = useState<string>("");
   const { toast } = useToast();
+
+  useEffect(() => {
+    let cancelled = false;
+    api.get<{ tenant?: { name?: string } }>("/auth/profile")
+      .then((profile) => {
+        if (!cancelled && profile?.tenant?.name) {
+          setBusinessName(profile.tenant.name);
+        }
+      })
+      .catch(() => {
+        // Silent fallback — if profile fetch fails, the reminder email
+        // omits the signature line. Non-blocking.
+      });
+    return () => { cancelled = true; };
+  }, []);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -585,11 +602,38 @@ function BillingIssuesPageContent() {
       }
 
       if (action?.key === "send_reminder" && invoiceDetail) {
-        // Send payment reminder via notification dispatch — does NOT resolve the issue
+        // Customer must exist — DispatchNotificationDto requires UUID (aa4ac4d)
+        if (!invoiceDetail.customer?.id) {
+          toast("error", "Customer record missing — cannot send reminder");
+          setResolving(false);
+          return;
+        }
+
+        const customerName = invoiceDetail.customer.first_name || "there";
+        const invoiceLabel = `#${invoiceDetail.invoice_number}`;
+        const amount = fmt(invoiceDetail.balance_due);
+        const dueDateLine = invoiceDetail.due_date
+          ? `<p>This invoice was due on ${formatDateOnly(invoiceDetail.due_date)}.</p>`
+          : "";
+        const signatureLine = businessName
+          ? `<p>Thank you,<br/>${businessName}</p>`
+          : `<p>Thank you.</p>`;
+
+        const subject = `Invoice ${invoiceLabel} is past due`;
+        const emailBody = [
+          `<p>Hi ${customerName},</p>`,
+          `<p>This is a reminder that invoice <strong>${invoiceLabel}</strong> has a balance of <strong>${amount}</strong>.</p>`,
+          dueDateLine,
+          `<p>Please contact us at your earliest convenience to arrange payment.</p>`,
+          signatureLine,
+        ].filter(Boolean).join("");
+
         await api.post("/notifications/dispatch", {
-          customerId: invoiceDetail.customer?.id,
+          customerId: invoiceDetail.customer.id,
           notificationType: "invoice_reminder",
           invoiceId: invoiceDetail.id,
+          subject,
+          emailBody,
         });
         toast("success", UI_LABELS.pastDueReminderSent);
         setResolving(false);
