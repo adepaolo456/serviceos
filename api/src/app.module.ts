@@ -67,6 +67,7 @@ import { QuotesModule } from './modules/quotes/quotes.module';
 import { Quote } from './modules/quotes/quote.entity';
 import { SmsModule } from './modules/sms/sms.module';
 import { SmsMessage } from './modules/sms/sms-message.entity';
+import { SmsOptOut } from './modules/sms/sms-opt-out.entity';
 import { SmsReleaseModule } from './modules/sms-release/sms-release.module';
 import { SmsNumberReleaseRequest } from './modules/sms-release/entities/sms-number-release-request.entity';
 import { DeliveryZone } from './modules/pricing/entities/delivery-zone.entity';
@@ -150,6 +151,7 @@ import { Alert } from './modules/alerts/entities/alert.entity';
             SubscriptionPlan,
             Quote,
             SmsMessage,
+            SmsOptOut,
             SmsNumberReleaseRequest,
             DeliveryZone,
             TenantFee,
