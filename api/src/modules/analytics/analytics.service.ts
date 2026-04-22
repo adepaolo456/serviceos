@@ -10,6 +10,10 @@ import {
   BLOCKED_JOBS_WHERE_CLAUSE,
   BLOCKED_JOBS_WHERE_PARAMS,
 } from '../../common/helpers/blocked-jobs-predicate';
+import {
+  excludeDemoByCustomerIdNamed,
+  excludeDemoCustomers,
+} from '../../common/helpers/demo-customers-predicate';
 
 @Injectable()
 export class AnalyticsService {
@@ -116,6 +120,7 @@ export class AnalyticsService {
       .andWhere('i.status = :status', { status: 'paid' })
       .andWhere('i.paid_at >= :startDate', { startDate })
       .andWhere('i.paid_at <= :endDate', { endDate: `${endDate} 23:59:59` })
+      .andWhere(excludeDemoByCustomerIdNamed('i.customer_id', 'tenantId'))
       .groupBy('DATE(i.paid_at)')
       .orderBy('DATE(i.paid_at)', 'ASC')
       .getRawMany<{ date: string; revenue: string }>();
@@ -132,6 +137,7 @@ export class AnalyticsService {
       .select('j.status', 'status')
       .addSelect('COUNT(*)::int', 'count')
       .where('j.tenant_id = :tenantId', { tenantId })
+      .andWhere(excludeDemoByCustomerIdNamed('j.customer_id', 'tenantId'))
       .groupBy('j.status')
       .orderBy('count', 'DESC')
       .getRawMany<{ status: string; count: number }>();
@@ -313,6 +319,7 @@ export class AnalyticsService {
       .select('COALESCE(SUM(i.total), 0)', 'total')
       .where('i.tenant_id = :tenantId', { tenantId })
       .andWhere('i.status = :status', { status: 'paid' })
+      .andWhere(excludeDemoByCustomerIdNamed('i.customer_id', 'tenantId'))
       .getRawOne<{ total: string }>();
     return Number(result?.total ?? 0);
   }
@@ -327,14 +334,17 @@ export class AnalyticsService {
       .where('i.tenant_id = :tenantId', { tenantId })
       .andWhere('i.status = :status', { status: 'paid' })
       .andWhere('i.paid_at >= :after', { after })
+      .andWhere(excludeDemoByCustomerIdNamed('i.customer_id', 'tenantId'))
       .getRawOne<{ total: string }>();
     return Number(result?.total ?? 0);
   }
 
   private async getJobCount(tenantId: string): Promise<number> {
-    return this.jobsRepository.count({
-      where: { tenant_id: tenantId },
-    });
+    return this.jobsRepository
+      .createQueryBuilder('j')
+      .where('j.tenant_id = :tenantId', { tenantId })
+      .andWhere(excludeDemoByCustomerIdNamed('j.customer_id', 'tenantId'))
+      .getCount();
   }
 
   private async getJobCountAfter(
@@ -345,6 +355,7 @@ export class AnalyticsService {
       .createQueryBuilder('j')
       .where('j.tenant_id = :tenantId', { tenantId })
       .andWhere('j.created_at >= :after', { after })
+      .andWhere(excludeDemoByCustomerIdNamed('j.customer_id', 'tenantId'))
       .getCount();
   }
 
@@ -352,9 +363,12 @@ export class AnalyticsService {
     tenantId: string,
     status: string,
   ): Promise<number> {
-    return this.jobsRepository.count({
-      where: { tenant_id: tenantId, status },
-    });
+    return this.jobsRepository
+      .createQueryBuilder('j')
+      .where('j.tenant_id = :tenantId', { tenantId })
+      .andWhere('j.status = :status', { status })
+      .andWhere(excludeDemoByCustomerIdNamed('j.customer_id', 'tenantId'))
+      .getCount();
   }
 
   private async getAverageJobValue(tenantId: string): Promise<number> {
@@ -364,14 +378,18 @@ export class AnalyticsService {
       .where('j.tenant_id = :tenantId', { tenantId })
       .andWhere('j.total_price IS NOT NULL')
       .andWhere('j.total_price > 0')
+      .andWhere(excludeDemoByCustomerIdNamed('j.customer_id', 'tenantId'))
       .getRawOne<{ avg: string }>();
     return Math.round(Number(result?.avg ?? 0) * 100) / 100;
   }
 
   private async getCustomerCount(tenantId: string): Promise<number> {
-    return this.customersRepository.count({
-      where: { tenant_id: tenantId, is_active: true },
-    });
+    return this.customersRepository
+      .createQueryBuilder('c')
+      .where('c.tenant_id = :tenantId', { tenantId })
+      .andWhere('c.is_active = true')
+      .andWhere(excludeDemoCustomers('c'))
+      .getCount();
   }
 
   private async getCustomerCountAfter(
@@ -382,6 +400,7 @@ export class AnalyticsService {
       .createQueryBuilder('c')
       .where('c.tenant_id = :tenantId', { tenantId })
       .andWhere('c.created_at >= :after', { after })
+      .andWhere(excludeDemoCustomers('c'))
       .getCount();
   }
 

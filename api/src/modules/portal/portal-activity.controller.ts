@@ -6,6 +6,7 @@ import { TenantId, Roles } from '../../common/decorators';
 import { RolesGuard } from '../../common/guards';
 import { Job } from '../jobs/entities/job.entity';
 import { Invoice } from '../billing/entities/invoice.entity';
+import { excludeDemoByCustomerIdDollar } from '../../common/helpers/demo-customers-predicate';
 
 @ApiTags('Portal Activity')
 @ApiBearerAuth()
@@ -34,7 +35,8 @@ export class PortalActivityController {
       LEFT JOIN invoices inv ON inv.job_id = j.id AND inv.tenant_id = j.tenant_id
       WHERE j.tenant_id = $1
         AND j.source = 'portal'
-        AND j.status NOT IN ('completed', 'cancelled', 'voided')`,
+        AND j.status NOT IN ('completed', 'cancelled', 'voided')
+        AND ${excludeDemoByCustomerIdDollar('j.customer_id', 1)}`,
       [tenantId, today],
     );
 

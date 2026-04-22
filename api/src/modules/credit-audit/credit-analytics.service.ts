@@ -3,6 +3,10 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { CreditAuditEvent } from './credit-audit-event.entity';
 import { Customer } from '../customers/entities/customer.entity';
+import {
+  excludeDemoByCustomerIdNamed,
+  excludeDemoCustomers,
+} from '../../common/helpers/demo-customers-predicate';
 
 /**
  * Phase 8 — Credit Control Analytics.
@@ -39,6 +43,7 @@ export class CreditAnalyticsService {
         )
         .where('c.tenant_id = :tenantId', { tenantId })
         .andWhere('c.credit_hold = true')
+        .andWhere(excludeDemoCustomers('c'))
         .getRawOne<{ total_holds: number; manual_holds: number }>(),
 
       // Last 30 days event counts from audit table
@@ -125,6 +130,7 @@ export class CreditAnalyticsService {
       .addSelect('MAX(e.created_at)', 'last_event')
       .where('e.tenant_id = :tenantId', { tenantId })
       .andWhere('e.customer_id IS NOT NULL')
+      .andWhere(excludeDemoByCustomerIdNamed('e.customer_id', 'tenantId'))
       .groupBy('e.customer_id')
       .orderBy('event_count', 'DESC')
       .limit(10)
