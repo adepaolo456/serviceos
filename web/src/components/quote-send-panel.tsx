@@ -1,8 +1,7 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback } from "react";
 import { Mail, MessageSquare, Loader2, AlertTriangle } from "lucide-react";
-import { api } from "@/lib/api";
 import {
   QUOTE_SEND_LABELS,
   deliveryButtonLabel,
@@ -10,15 +9,11 @@ import {
   type DeliveryMethod,
 } from "@/lib/quote-send-labels";
 import { getFeatureLabel } from "@/lib/feature-registry";
-
-interface CustomerSearchResult {
-  id: string;
-  first_name: string;
-  last_name: string;
-  company_name?: string;
-  email: string;
-  phone?: string;
-}
+import {
+  useCustomerAutocomplete,
+  type CustomerSearchResult,
+} from "@/lib/use-customer-autocomplete";
+import CustomerAutocompleteDropdown from "@/components/customer-autocomplete-dropdown";
 
 export interface SmsPreviewState {
   valid: boolean;
@@ -85,82 +80,43 @@ export default function QuoteSendPanel(props: QuoteSendPanelProps) {
     hideCustomerFields = false,
   } = props;
 
-  // Type-ahead autocomplete on the Name input. Pattern matches the
-  // canonical inline-search shape used by BookingWizard
-  // (booking-wizard.tsx:234,507-530): inline useRef debounce primitive,
-  // 300ms, try/catch swallow, dual-state (results + showSuggestions),
-  // q.length<2 early-out. All prefill data flows through the existing
-  // onCustomer*Change props — no new panel callbacks added.
-  const [nameQuery, setNameQuery] = useState<string>('');
-  const [searchResults, setSearchResults] = useState<CustomerSearchResult[]>([]);
-  const [showSuggestions, setShowSuggestions] = useState<boolean>(false);
-  const [searchLoading, setSearchLoading] = useState<boolean>(false);
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
+  // Type-ahead autocomplete on the Name input — migrated to the shared
+  // useCustomerAutocomplete hook. The QSP-specific focus-guard (wraps
+  // openDropdown only; closeDropdown is always unguarded so reset/drain
+  // still close correctly) lives in the results-sync useEffect below.
+  const {
+    setQuery: setCustomerQuery,
+    results: searchResults,
+    isLoading: searchLoading,
+    isOpen: showSuggestions,
+    open: openDropdown,
+    close: closeDropdown,
+    containerRef,
+    reset: resetCustomerSearch,
+  } = useCustomerAutocomplete();
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Mirror pre-migration visibility: dropdown opens when results arrive,
+  // closes when results drain. The focus-guard (document.activeElement
+  // === inputRef.current) wraps openDropdown ONLY — closeDropdown must
+  // always fire on drain so reset(), explicit close, and no-match
+  // searches all hide the dropdown regardless of focus state.
   useEffect(() => {
-    if (debounceRef.current) {
-      clearTimeout(debounceRef.current);
+    if (searchResults.length > 0) {
+      if (document.activeElement === inputRef.current) {
+        openDropdown();
+      }
+    } else {
+      closeDropdown();
     }
-
-    if (nameQuery.trim().length < 2) {
-      setSearchResults([]);
-      setShowSuggestions(false);
-      setSearchLoading(false);
-      return;
-    }
-
-    setSearchLoading(true);
-    debounceRef.current = setTimeout(async () => {
-      try {
-        const results = await api.get<CustomerSearchResult[]>(
-          `/customers/search?q=${encodeURIComponent(nameQuery.trim())}&limit=5`,
-        );
-        setSearchResults(results);
-        // Focus guard: skip opening the dropdown if the user has moved
-        // focus away (e.g., clicked Email) while this fetch was in
-        // flight. Prevents the race where click-outside closes the
-        // dropdown and the resolving fetch then re-opens it.
-        if (document.activeElement === inputRef.current) {
-          setShowSuggestions(true);
-        }
-      } catch {
-        setSearchResults([]);
-        setShowSuggestions(false);
-      } finally {
-        setSearchLoading(false);
-      }
-    }, 300);
-
-    return () => {
-      if (debounceRef.current) {
-        clearTimeout(debounceRef.current);
-      }
-    };
-  }, [nameQuery]);
-
-  // Click-outside close — canonical pattern mirroring
-  // booking-wizard.tsx:332-339 and new-customer-form.tsx:246-252.
-  // Gated on showSuggestions so the document listener only attaches
-  // while the dropdown is open.
-  useEffect(() => {
-    if (!showSuggestions) return;
-    const handler = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setShowSuggestions(false);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [showSuggestions]);
+  }, [searchResults, openDropdown, closeDropdown]);
 
   const handleNameInputChange = useCallback(
     (value: string) => {
       onCustomerNameChange(value);
-      setNameQuery(value);
+      setCustomerQuery(value);
     },
-    [onCustomerNameChange],
+    [onCustomerNameChange, setCustomerQuery],
   );
 
   const handleSelectSuggestion = useCallback(
@@ -168,11 +124,11 @@ export default function QuoteSendPanel(props: QuoteSendPanelProps) {
       onCustomerNameChange(`${customer.first_name} ${customer.last_name}`.trim());
       onCustomerEmailChange(customer.email ?? '');
       onCustomerPhoneChange(customer.phone ?? '');
-      setShowSuggestions(false);
-      setNameQuery('');
-      setSearchResults([]);
+      // Reset clears query + results + isOpen and aborts any in-flight
+      // fetch, matching the pre-migration triple-clear.
+      resetCustomerSearch();
     },
-    [onCustomerNameChange, onCustomerEmailChange, onCustomerPhoneChange],
+    [onCustomerNameChange, onCustomerEmailChange, onCustomerPhoneChange, resetCustomerSearch],
   );
 
   const wantEmail = deliveryMethod === "email" || deliveryMethod === "both";
@@ -264,43 +220,20 @@ export default function QuoteSendPanel(props: QuoteSendPanelProps) {
               className="w-full rounded-[10px] border px-3 py-1.5 text-sm outline-none focus:border-[var(--t-accent)]"
               style={{ background: "var(--t-bg-secondary)", borderColor: "var(--t-border)", color: "var(--t-text-primary)" }}
             />
-            {showSuggestions && (searchLoading || searchResults.length > 0) && (
-              <div
-                className="absolute left-0 right-0 top-full mt-1 z-10 rounded-md shadow-lg max-h-64 overflow-y-auto pointer-events-none"
-                style={{ backgroundColor: "var(--t-bg-secondary)", border: "1px solid var(--t-border)" }}
-              >
-                {searchLoading && (
-                  <div
-                    className="px-3 py-2 flex items-center gap-2 text-sm"
-                    style={{ color: "var(--t-text-muted)" }}
-                  >
+            <CustomerAutocompleteDropdown
+              results={searchResults}
+              isLoading={searchLoading}
+              isOpen={showSuggestions}
+              onSelect={handleSelectSuggestion}
+              labels={{
+                loading: (
+                  <>
                     <Loader2 className="h-4 w-4 animate-spin" />
                     Searching...
-                  </div>
-                )}
-                {!searchLoading && searchResults.length > 0 && (
-                  <ul>
-                    {searchResults.map((c) => (
-                      <li key={c.id}>
-                        <button
-                          type="button"
-                          onMouseDown={(e) => e.preventDefault()}
-                          onClick={() => handleSelectSuggestion(c)}
-                          className="w-full text-left px-3 py-2 text-sm hover:bg-[var(--t-bg-card-hover)] pointer-events-auto"
-                        >
-                          <div style={{ color: "var(--t-text-primary)" }}>
-                            {`${c.first_name} ${c.last_name}`.trim()}
-                          </div>
-                          <div className="text-xs" style={{ color: "var(--t-text-muted)" }}>
-                            {c.email}
-                          </div>
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            )}
+                  </>
+                ),
+              }}
+            />
           </div>
           {wantEmail && (
             <input
