@@ -1,8 +1,10 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef, type FormEvent } from "react";
+import { useState, useEffect, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
+import { useCustomerAutocomplete, type CustomerSearchAddress } from "@/lib/use-customer-autocomplete";
+import CustomerAutocompleteDropdown from "@/components/customer-autocomplete-dropdown";
 import { formatCurrency, formatDumpsterSize } from "@/lib/utils";
 import AddressAutocomplete, { type AddressValue } from "@/components/address-autocomplete";
 import { useActiveOnsiteDumpsters, type OnsiteDumpster } from "@/lib/use-active-onsite-dumpsters";
@@ -168,11 +170,16 @@ export default function NewCustomerForm({ onOrchestrated, onClose, forceCustomer
   // form is in scheduling mode. New customers (no selectedCustomerId)
   // get state === 'unknown' from the hook so no enforcement triggers.
   const creditEnforcement = useCreditEnforcement(selectedCustomerId);
-  const [searchResults, setSearchResults] = useState<{ id: string; first_name: string; last_name: string; email: string; phone: string; billing_address?: Record<string, any>; service_addresses?: Record<string, any>[] }[]>([]);
-  const [showDropdown, setShowDropdown] = useState(false);
+  const {
+    setQuery: setCustomerQuery,
+    results: searchResults,
+    isOpen: showDropdown,
+    open: openDropdown,
+    close: closeDropdown,
+    containerRef: dropdownRef,
+    reset: resetCustomerSearch,
+  } = useCustomerAutocomplete();
   const [customerServiceSites, setCustomerServiceSites] = useState<AddressValue[]>([]);
-  const searchDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const dropdownRef = useRef<HTMLDivElement>(null);
 
   // Duplicate detection (fallback safety)
   const [duplicateMatch, setDuplicateMatch] = useState<DuplicateMatch | null>(null);
@@ -242,17 +249,13 @@ export default function NewCustomerForm({ onOrchestrated, onClose, forceCustomer
     }
   }, [dumpsterCheckLoading, hasActiveOnsite, activeDumpsters, workflowDecision]);
 
-  // Customer autocomplete search
-  const handleNameSearch = useCallback((first: string, last: string) => {
-    const q = `${first} ${last}`.trim();
-    if (q.length < 2) { setSearchResults([]); setShowDropdown(false); return; }
-    if (searchDebounce.current) clearTimeout(searchDebounce.current);
-    searchDebounce.current = setTimeout(() => {
-      api.get<{ id: string; first_name: string; last_name: string; email: string; phone: string; billing_address?: Record<string, any>; service_addresses?: Record<string, any>[] }[]>(`/customers/search?q=${encodeURIComponent(q)}&limit=5`)
-        .then(results => { setSearchResults(results); setShowDropdown(results.length > 0); })
-        .catch(() => { setSearchResults([]); setShowDropdown(false); });
-    }, 250);
-  }, []);
+  // Mirror the pre-migration behavior: the dropdown appears whenever a
+  // fetch returns results, and hides when results drain. The call site —
+  // not the hook — owns this decision, per the extraction contract.
+  useEffect(() => {
+    if (searchResults.length > 0) openDropdown();
+    else closeDropdown();
+  }, [searchResults, openDropdown, closeDropdown]);
 
   const selectExistingCustomer = (c: typeof searchResults[0]) => {
     setSelectedCustomerId(c.id);
@@ -280,7 +283,11 @@ export default function NewCustomerForm({ onOrchestrated, onClose, forceCustomer
     } else {
       setCustomerServiceSites([]);
     }
-    setShowDropdown(false);
+    // Reset the hook: clears query + results + isOpen and aborts any
+    // in-flight fetch. Keeps the input fields populated via setFirstName/
+    // setLastName above. If the user later edits the name, the onChange
+    // pipes through setCustomerQuery and a fresh fetch cycle runs.
+    resetCustomerSearch();
     setDuplicateChecked(true);
     setCustomerCollapsed(true);
   };
@@ -288,14 +295,6 @@ export default function NewCustomerForm({ onOrchestrated, onClose, forceCustomer
   const clearSelectedCustomer = () => {
     if (selectedCustomerId) { setSelectedCustomerId(null); setDuplicateChecked(false); setCustomerServiceSites([]); setCustomerCollapsed(false); }
   };
-
-  // Close dropdown on click outside
-  useEffect(() => {
-    if (!showDropdown) return;
-    const handler = (e: MouseEvent) => { if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) setShowDropdown(false); };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [showDropdown]);
 
   // Fetch tenant-scoped size options when scheduling is selected
   useEffect(() => {
@@ -604,34 +603,21 @@ export default function NewCustomerForm({ onOrchestrated, onClose, forceCustomer
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
               <div>
                 <label style={labelStyle}>First Name</label>
-                <input value={firstName} onChange={e => { setFirstName(e.target.value); clearSelectedCustomer(); handleNameSearch(e.target.value, lastName); }} required style={inputStyle} placeholder="Jane" autoComplete="off" />
+                <input value={firstName} onChange={e => { setFirstName(e.target.value); clearSelectedCustomer(); setCustomerQuery(`${e.target.value} ${lastName}`.trim()); }} required style={inputStyle} placeholder="Jane" autoComplete="off" />
               </div>
               <div>
                 <label style={labelStyle}>Last Name</label>
-                <input value={lastName} onChange={e => { setLastName(e.target.value); clearSelectedCustomer(); handleNameSearch(firstName, e.target.value); }} required style={inputStyle} placeholder="Smith" autoComplete="off" />
+                <input value={lastName} onChange={e => { setLastName(e.target.value); clearSelectedCustomer(); setCustomerQuery(`${firstName} ${e.target.value}`.trim()); }} required style={inputStyle} placeholder="Smith" autoComplete="off" />
               </div>
             </div>
-            {showDropdown && searchResults.length > 0 && (
-              <div style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 50, backgroundColor: "var(--t-bg-card)", border: "1px solid var(--t-border)", borderRadius: 10, marginTop: 4, boxShadow: "0 4px 12px rgba(0,0,0,0.15)", maxHeight: 220, overflowY: "auto" }}>
-                {searchResults.map(c => (
-                  <button key={c.id} type="button" onClick={() => selectExistingCustomer(c)}
-                    style={{ display: "block", width: "100%", textAlign: "left", padding: "10px 14px", border: "none", borderBottom: "1px solid var(--t-border)", backgroundColor: "transparent", cursor: "pointer", fontSize: 13 }}
-                    onMouseEnter={e => (e.currentTarget.style.backgroundColor = "var(--t-frame-hover)")}
-                    onMouseLeave={e => (e.currentTarget.style.backgroundColor = "transparent")}>
-                    <div style={{ fontWeight: 600, color: "var(--t-text-primary)" }}>{c.first_name} {c.last_name}</div>
-                    {(c.phone || c.email) && (
-                      <div style={{ fontSize: 11, color: "var(--t-text-muted)", marginTop: 2 }}>
-                        {c.phone}{c.phone && c.email ? " · " : ""}{c.email}
-                      </div>
-                    )}
-                  </button>
-                ))}
-                <button type="button" onClick={() => setShowDropdown(false)}
-                  style={{ display: "block", width: "100%", textAlign: "left", padding: "10px 14px", border: "none", backgroundColor: "transparent", cursor: "pointer", fontSize: 13, color: "var(--t-accent)", fontWeight: 600 }}>
-                  {NEW_CUSTOMER_LABELS.continueAsNewCustomer}
-                </button>
-              </div>
-            )}
+            <CustomerAutocompleteDropdown
+              results={searchResults}
+              isLoading={false}
+              isOpen={showDropdown}
+              onSelect={selectExistingCustomer}
+              onContinueAsNew={closeDropdown}
+              labels={{ continueAsNew: NEW_CUSTOMER_LABELS.continueAsNewCustomer }}
+            />
           </div>
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
@@ -834,12 +820,20 @@ export default function NewCustomerForm({ onOrchestrated, onClose, forceCustomer
             <button type="button" onClick={() => {
               selectExistingCustomer({
                 id: duplicateMatch.id,
+                // account_id is not available in the DuplicateMatch shape
+                // (the /customers?search endpoint that produces it doesn't
+                // return it). NCF does not render account_id — it only
+                // prefills fields and submits with customerId. Empty-string
+                // placeholder satisfies the CustomerSearchResult contract
+                // used by the shared autocomplete without adding a new
+                // backend field or widening DuplicateMatch.
+                account_id: "",
                 first_name: duplicateMatch.first_name,
                 last_name: duplicateMatch.last_name,
                 email: duplicateMatch.email,
                 phone: duplicateMatch.phone,
-                billing_address: duplicateMatch.billing_address ?? undefined,
-                service_addresses: duplicateMatch.service_addresses ?? undefined,
+                billing_address: (duplicateMatch.billing_address ?? null) as CustomerSearchAddress | null,
+                service_addresses: (duplicateMatch.service_addresses ?? null) as CustomerSearchAddress[] | null,
               });
               setDuplicateMatch(null);
             }}

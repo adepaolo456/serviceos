@@ -1,8 +1,14 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { X, Plus, Loader2, MapPin, Check, ToggleLeft, ToggleRight } from "lucide-react";
 import { api } from "@/lib/api";
+import {
+  useCustomerAutocomplete,
+  type CustomerSearchResult,
+  type CustomerSearchAddress,
+} from "@/lib/use-customer-autocomplete";
+import CustomerAutocompleteDropdown from "@/components/customer-autocomplete-dropdown";
 import { useToast } from "@/components/toast";
 import { formatCurrency } from "@/lib/utils";
 import AddressAutocomplete, { type AddressValue } from "@/components/address-autocomplete";
@@ -39,20 +45,6 @@ interface BookingWizardProps {
    *  'left' to keep its flow continuous with the left-anchored quote
    *  drawer. */
   side?: 'left' | 'right';
-}
-
-interface CustomerSearchResult {
-  id: string;
-  account_id: string;
-  first_name: string;
-  last_name: string;
-  company_name?: string;
-  email: string;
-  phone: string;
-  type?: string;
-  billing_address?: AddressFields;
-  service_addresses?: AddressFields[];
-  customer_preferences?: { additionalContacts?: ContactRow[] };
 }
 
 interface AddressFields {
@@ -230,14 +222,19 @@ export default function BookingWizard({
   const [phone, setPhone] = useState("");
   const [additionalContacts, setAdditionalContacts] = useState<ContactRow[]>([]);
   const [selectedCustomer, setSelectedCustomer] = useState<CustomerSearchResult | null>(null);
-  const [searchResults, setSearchResults] = useState<CustomerSearchResult[]>([]);
-  const [showDropdown, setShowDropdown] = useState(false);
+  const {
+    setQuery: setCustomerQuery,
+    results: searchResults,
+    isOpen: showDropdown,
+    open: openDropdown,
+    close: closeDropdown,
+    containerRef: searchRef,
+    reset: resetCustomerSearch,
+  } = useCustomerAutocomplete({ enabled: !selectedCustomer });
   const [serviceAddressMode, setServiceAddressMode] = useState<"same" | "different" | "existing">("same");
   const [selectedAddressIdx, setSelectedAddressIdx] = useState(0);
   const [newServiceAddress, setNewServiceAddress] = useState<AddressFields>({ street: "", city: "", state: "", zip: "" });
   const [siteAddressLocked, setSiteAddressLocked] = useState(false);
-  const searchRef = useRef<HTMLDivElement>(null);
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Step 2 — Billing address
   const [billingAddress, setBillingAddress] = useState<AddressFields>({ street: "", street2: "", city: "", state: "", zip: "", county: "" });
@@ -276,9 +273,14 @@ export default function BookingWizard({
   const [jobTypeManuallySet, setJobTypeManuallySet] = useState(false);
   const [exchangeAutoDetected, setExchangeAutoDetected] = useState(false);
 
-  // Derive structured site address for detection hook
+  // Derive structured site address for detection hook.
+  // `addr` unions AddressFields (from local form state) with
+  // CustomerSearchAddress (from selectedCustomer.service_addresses, whose
+  // fields are all optional/nullable) so the three assignment branches
+  // all type-check. The nullability check below normalizes both shapes
+  // into a strict { street, city, state, zip } return.
   const detectionAddress = (() => {
-    let addr: AddressFields | undefined;
+    let addr: AddressFields | CustomerSearchAddress | undefined;
     if (serviceAddressMode === "different" && newServiceAddress.street) {
       addr = newServiceAddress;
     } else if (serviceAddressMode === "existing" && selectedCustomer?.service_addresses?.length) {
@@ -334,15 +336,14 @@ export default function BookingWizard({
     return () => window.removeEventListener("keydown", handleEsc);
   }, [open, onClose]);
 
-  // Click outside search dropdown
+  // Mirror pre-migration visibility: dropdown appears whenever a fetch
+  // returns results, hides when results drain. The call site — not the
+  // hook — owns this decision per the extraction contract. Click-outside
+  // close is handled inside the hook via containerRef.
   useEffect(() => {
-    if (!showDropdown) return;
-    const handler = (e: MouseEvent) => {
-      if (searchRef.current && !searchRef.current.contains(e.target as Node)) setShowDropdown(false);
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [showDropdown]);
+    if (searchResults.length > 0) openDropdown();
+    else closeDropdown();
+  }, [searchResults, openDropdown, closeDropdown]);
 
   // Reset on open
   useEffect(() => {
@@ -356,8 +357,7 @@ export default function BookingWizard({
       setPhone("");
       setAdditionalContacts([]);
       setSelectedCustomer(null);
-      setSearchResults([]);
-      setShowDropdown(false);
+      resetCustomerSearch();
       setServiceAddressMode("same");
       setSelectedAddressIdx(0);
       setNewServiceAddress({ street: "", city: "", state: "", zip: "" });
@@ -537,22 +537,6 @@ export default function BookingWizard({
     }
   }, [step, availabilitySize, deliveryDate]);
 
-  /* ---- Customer search ---- */
-  const searchCustomers = useCallback((fn: string, ln: string) => {
-    const q = `${fn} ${ln}`.trim();
-    if (q.length < 2) { setSearchResults([]); setShowDropdown(false); return; }
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(async () => {
-      try {
-        const res = await api.get<CustomerSearchResult[]>(`/customers/search?q=${encodeURIComponent(q)}&limit=5`);
-        setSearchResults(Array.isArray(res) ? res : []);
-        setShowDropdown(true);
-      } catch {
-        setSearchResults([]);
-      }
-    }, 300);
-  }, []);
-
   const selectCustomer = (c: CustomerSearchResult) => {
     setSelectedCustomer(c);
     setFirstName(c.first_name);
@@ -561,7 +545,12 @@ export default function BookingWizard({
     setClientType((c.type as "residential" | "commercial") || "");
     setEmail(c.email || "");
     setPhone(c.phone || "");
-    setAdditionalContacts(c.customer_preferences?.additionalContacts || []);
+    // Note: c.customer_preferences was read here historically. The
+    // /customers/search endpoint does not select that column (see
+    // api/src/modules/customers/customers.service.ts#search), so the
+    // expression was always undefined and the branch always produced
+    // an empty array. Dead code since endpoint inception; removed as
+    // part of the customer-autocomplete extraction.
     const b = c.billing_address;
     setBillingAddress({
       street: b?.street ?? "",
@@ -581,7 +570,11 @@ export default function BookingWizard({
       setServiceAddressMode("existing");
       setSelectedAddressIdx(0);
     }
-    setShowDropdown(false);
+    // Reset the hook: clears query + results + isOpen and aborts any
+    // in-flight fetch. `enabled` flips to false on the next render
+    // (selectedCustomer is truthy), suppressing any further fetches
+    // until the user clears the selection via the × button.
+    resetCustomerSearch();
   };
 
   /* ---- Validation ---- */
@@ -596,13 +589,28 @@ export default function BookingWizard({
   /* ---- Resolve service address for step 3 display ---- */
   const resolvedServiceAddress = (): AddressFields => {
     if (selectedCustomer && serviceAddressMode === "existing" && selectedCustomer.service_addresses?.length) {
-      return selectedCustomer.service_addresses[selectedAddressIdx];
+      // Normalize CustomerSearchAddress (all fields optional/nullable) into
+      // AddressFields (street/city/state/zip required) at this boundary.
+      const a = selectedCustomer.service_addresses[selectedAddressIdx];
+      return {
+        street: a.street ?? "",
+        street2: a.street2 ?? undefined,
+        city: a.city ?? "",
+        state: a.state ?? "",
+        zip: a.zip ?? "",
+        county: a.county ?? undefined,
+        lat: a.lat ?? null,
+        lng: a.lng ?? null,
+      };
     }
     if (serviceAddressMode === "different") return newServiceAddress;
     return billingAddress;
   };
 
-  const formatAddr = (a: AddressFields) =>
+  // Accepts either an AddressFields or a CustomerSearchAddress. Both shapes
+  // expose street/city/state/zip (required in AddressFields, optional in
+  // CustomerSearchAddress); `filter(Boolean)` tolerates null/undefined.
+  const formatAddr = (a: AddressFields | CustomerSearchAddress) =>
     [a.street, a.city, a.state, a.zip].filter(Boolean).join(", ");
 
   /* ---- Submit ---- */
@@ -768,7 +776,7 @@ export default function BookingWizard({
                     value={firstName}
                     onChange={(e) => {
                       setFirstName(e.target.value);
-                      if (!selectedCustomer) searchCustomers(e.target.value, lastName);
+                      if (!selectedCustomer) setCustomerQuery(`${e.target.value} ${lastName}`.trim());
                     }}
                     className={INPUT_CLASS}
                     style={{ color: "var(--t-text-primary)" }}
@@ -779,44 +787,22 @@ export default function BookingWizard({
                     value={lastName}
                     onChange={(e) => {
                       setLastName(e.target.value);
-                      if (!selectedCustomer) searchCustomers(firstName, e.target.value);
+                      if (!selectedCustomer) setCustomerQuery(`${firstName} ${e.target.value}`.trim());
                     }}
                     className={INPUT_CLASS}
                     style={{ color: "var(--t-text-primary)" }}
                   />
                 </div>
 
-                {/* Search dropdown */}
-                {showDropdown && searchResults.length > 0 && (
-                  <div
-                    className="absolute left-0 right-0 z-[9999] mt-1 overflow-hidden rounded-[14px] border shadow-xl"
-                    style={{ background: "var(--t-bg-secondary)", borderColor: "var(--t-border)" }}
-                  >
-                    {searchResults.map((c) => (
-                      <button
-                        key={c.id}
-                        type="button"
-                        onClick={() => selectCustomer(c)}
-                        className="flex w-full flex-col px-4 py-2.5 text-left transition-colors"
-                        style={{ borderBottom: "1px solid var(--t-border)" }}
-                        onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--t-bg-card-hover)"; }}
-                        onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; }}
-                      >
-                        <span className="text-sm font-semibold" style={{ color: "var(--t-text-primary)" }}>
-                          {c.first_name} {c.last_name}
-                        </span>
-                        {c.company_name && (
-                          <span className="text-xs" style={{ color: "var(--t-text-muted)" }}>{c.company_name}</span>
-                        )}
-                        {c.billing_address && (
-                          <span className="text-xs" style={{ color: "var(--t-text-muted)" }}>
-                            {formatAddr(c.billing_address)}
-                          </span>
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                )}
+                {/* Shared customer-autocomplete dropdown. BW has no
+                    "Continue as new" affordance and no loading label,
+                    so only onSelect is wired. */}
+                <CustomerAutocompleteDropdown
+                  results={searchResults}
+                  isLoading={false}
+                  isOpen={showDropdown}
+                  onSelect={selectCustomer}
+                />
               </div>
 
               {/* Existing / New badge */}
@@ -844,6 +830,11 @@ export default function BookingWizard({
                       setServiceAddressMode("same");
                       setJobTypeManuallySet(false);
                       setExchangeAutoDetected(false);
+                      // Clear the hook's query/results so the flip of
+                      // `enabled` back to true on the next render does
+                      // not resurrect a stale fetch for the pre-selection
+                      // query that was still in hook state.
+                      resetCustomerSearch();
                     }}
                   >
                     {getFeatureLabel("booking_wizard_step1_change_customer")}
