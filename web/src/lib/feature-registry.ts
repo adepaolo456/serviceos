@@ -443,6 +443,14 @@ export const FEATURE_REGISTRY: Record<string, FeatureDescription> = {
     isUserFacing: true, isGuideEligible: true,
     keywords: ["help", "guide", "documentation", "learn", "how to", "support"],
   },
+  demo_customer_flagging: {
+    id: "demo_customer_flagging", label: "Demo customer flagging", category: "admin",
+    shortDescription: "Tag customers as demo to exclude them from analytics while keeping them operational.",
+    guideDescription: "Customers tagged `demo` are excluded from analytics dashboards and reports (revenue, AR, credit analytics, utilization, and related KPIs). They remain fully searchable, editable, and operable everywhere else — in the customer list, on detail pages, in dispatch, and in the driver app. Admins can add or remove the `demo` tag from the customer detail page. Removing the tag immediately restores the customer's contributions to all analytics surfaces. Driver productivity, standalone-job counts, and raw invoice exports intentionally continue to include demo customers — those surfaces are operational or audit-tier, not business KPIs.",
+    routeOrSurface: "/customers", tenantOverrideKey: "demo_customer_flagging",
+    isUserFacing: true, isGuideEligible: true,
+    keywords: ["demo", "tag", "analytics", "exclude", "hide", "reference", "scenario", "data hygiene", "seed", "test data"],
+  },
 
   // ── Quick Quote ──
   quick_quote: {

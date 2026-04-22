@@ -33,6 +33,11 @@ import {
   ExceptionsBillingInconsistencyDto,
 } from './dto/exceptions-response.dto';
 import { DailySummaryResponseDto } from './dto/daily-summary-response.dto';
+import {
+  excludeDemoByCustomerIdDollar,
+  excludeDemoByCustomerIdNamed,
+  excludeDemoCustomers,
+} from '../../common/helpers/demo-customers-predicate';
 
 const CORRECTION_CUTOFF = '2026-04-02T00:00:00Z';
 function classifyRecord(createdAt: string | Date): 'legacy' | 'post-correction' {
@@ -78,17 +83,33 @@ export class ReportingService {
       .andWhere('i.status IN (:...rstats)', { rstats: [...REVENUE_STATUSES] })
       .andWhere('i.created_at >= :start', { start })
       .andWhere('i.created_at <= :end', { end: endTs })
+      .andWhere(excludeDemoByCustomerIdNamed('i.customer_id', 'tid'))
       .getRawOne();
 
     // Collected: sum of actual completed payments, net of refunds,
     // filtered by payment applied_at within the date range.
+    // payments has no customer_id column — route through invoices via
+    // nested NOT EXISTS (two-hop Shape A applied to payments → invoices →
+    // customers). Each hop carries its own tenant_id filter.
     const collected = await this.dataSource.query(
       `SELECT COALESCE(SUM(p.amount - p.refunded_amount), 0) as "totalCollected"
        FROM payments p
        WHERE p.tenant_id = $1
          AND p.status = 'completed'
          AND p.applied_at >= $2
-         AND p.applied_at <= $3`,
+         AND p.applied_at <= $3
+         AND NOT EXISTS (
+           SELECT 1
+           FROM invoices demo_inv
+           WHERE demo_inv.id = p.invoice_id
+             AND demo_inv.tenant_id = $1
+             AND EXISTS (
+               SELECT 1 FROM customers demo_c
+               WHERE demo_c.id = demo_inv.customer_id
+                 AND demo_c.tenant_id = $1
+                 AND demo_c.tags @> '["demo"]'::jsonb
+             )
+         )`,
       [tenantId, start, endTs],
     );
 
@@ -99,6 +120,7 @@ export class ReportingService {
       .andWhere('i.created_at >= :start', { start })
       .andWhere('i.created_at <= :end', { end: endTs })
       .andWhere('i.due_date < :today', { today: new Date().toISOString().split('T')[0] })
+      .andWhere(excludeDemoByCustomerIdNamed('i.customer_id', 'tid'))
       .getRawOne();
 
     // Revenue by source: JOIN through jobs to get source with counts.
@@ -114,6 +136,7 @@ export class ReportingService {
          AND ${REVENUE_STATUS_SQL}
          AND i.created_at >= $2
          AND i.created_at <= $3
+         AND ${excludeDemoByCustomerIdDollar('i.customer_id', 1)}
        GROUP BY COALESCE(j.source, 'other')
        ORDER BY SUM(i.total) DESC`,
       [tenantId, start, endTs],
@@ -137,6 +160,7 @@ export class ReportingService {
          AND i.created_at >= $2
          AND i.created_at <= $3
          AND i.created_at IS NOT NULL
+         AND ${excludeDemoByCustomerIdDollar('i.customer_id', 1)}
        GROUP BY ${groupExpr}
        ORDER BY ${groupExpr} DESC`,
       [tenantId, start, endTs],
@@ -200,6 +224,7 @@ export class ReportingService {
          AND i.created_at >= $2
          AND i.created_at <= $3
          AND COALESCE(j.source, 'other') = $4
+         AND ${excludeDemoCustomers('c')}
        ORDER BY i.created_at DESC`,
       [tenantId, start, end + 'T23:59:59', source],
     );
@@ -212,6 +237,7 @@ export class ReportingService {
        WHERE i.tenant_id = $1
          AND ${REVENUE_STATUS_SQL}
          AND DATE(i.created_at) = $2
+         AND ${excludeDemoCustomers('c')}
        ORDER BY i.created_at DESC`,
       [tenantId, date],
     );
@@ -242,6 +268,7 @@ export class ReportingService {
            AND p.status = 'completed'
            AND p.applied_at >= $2
            AND p.applied_at <= $3
+           AND ${excludeDemoCustomers('c')}
          ORDER BY i.id, i.created_at DESC`,
         [tenantId, start, endTs],
       );
@@ -268,6 +295,7 @@ export class ReportingService {
          AND i.created_at >= $2
          AND i.created_at <= $3
          ${whereExtra}
+         AND ${excludeDemoCustomers('c')}
        ORDER BY i.created_at DESC`,
       params,
     );
@@ -281,12 +309,28 @@ export class ReportingService {
   ): Promise<DumpCostsResponseDto> {
     const { start, end } = this.dateRange(startDate, endDate);
 
+    // Two-hop Shape A: exclude tickets whose job belongs to a demo customer.
+    // Outer NOT EXISTS selects jobs; inner EXISTS identifies demo-customer jobs.
+    const twoHopDemoExclusion = `NOT EXISTS (
+      SELECT 1
+      FROM jobs j
+      WHERE j.id = t.job_id
+        AND j.tenant_id = :tid
+        AND EXISTS (
+          SELECT 1 FROM customers demo_c
+          WHERE demo_c.id = j.customer_id
+            AND demo_c.tenant_id = :tid
+            AND demo_c.tags @> '["demo"]'::jsonb
+        )
+    )`;
+
     const totals = await this.ticketRepo.createQueryBuilder('t')
       .select('SUM(t.total_cost)', 'totalDumpCosts')
       .addSelect('SUM(t.customer_charges)', 'totalCustomerCharges')
       .where('t.tenant_id = :tid', { tid: tenantId })
       .andWhere('t.created_at >= :start', { start })
       .andWhere('t.created_at <= :end', { end: end + 'T23:59:59' })
+      .andWhere(twoHopDemoExclusion)
       .getRawOne();
 
     const dumpCosts = Number(totals?.totalDumpCosts) || 0;
@@ -301,6 +345,7 @@ export class ReportingService {
       .where('t.tenant_id = :tid', { tid: tenantId })
       .andWhere('t.created_at >= :start', { start })
       .andWhere('t.created_at <= :end', { end: end + 'T23:59:59' })
+      .andWhere(twoHopDemoExclusion)
       .groupBy('t.dump_location_id')
       .addGroupBy('t.dump_location_name')
       .getRawMany<{
@@ -318,6 +363,7 @@ export class ReportingService {
       .where('t.tenant_id = :tid', { tid: tenantId })
       .andWhere('t.created_at >= :start', { start })
       .andWhere('t.created_at <= :end', { end: end + 'T23:59:59' })
+      .andWhere(twoHopDemoExclusion)
       .groupBy('t.waste_type')
       .getRawMany<{
         wasteType: string | null;
@@ -362,7 +408,24 @@ export class ReportingService {
     const start = startDate || monday.toISOString().split('T')[0];
     const end = endDate || now.toISOString().split('T')[0];
 
-    const baseWhere = `t.tenant_id = $1 AND t.submitted_at >= $2 AND t.submitted_at <= $3`;
+    // Two-hop Shape A (dump_tickets → jobs → customers). Applied via
+    // baseWhere so summary, byFacility, and tickets queries all inherit
+    // the same demo-exclusion semantics. LEFT JOIN on customers is
+    // preserved for search / display, but exclusion is driven by the
+    // ticket's underlying job-customer, not by the LEFT JOIN row — so
+    // tickets whose job has no customer are NOT accidentally dropped.
+    const demoExclusion = `AND NOT EXISTS (
+      SELECT 1 FROM jobs demo_j
+      WHERE demo_j.id = t.job_id
+        AND demo_j.tenant_id = $1
+        AND EXISTS (
+          SELECT 1 FROM customers demo_c
+          WHERE demo_c.id = demo_j.customer_id
+            AND demo_c.tenant_id = $1
+            AND demo_c.tags @> '["demo"]'::jsonb
+        )
+    )`;
+    const baseWhere = `t.tenant_id = $1 AND t.submitted_at >= $2 AND t.submitted_at <= $3 ${demoExclusion}`;
     const params: any[] = [tenantId, start, end + 'T23:59:59'];
     let extraWhere = '';
     let paramIdx = 4;
@@ -526,11 +589,17 @@ export class ReportingService {
     const { start, end } = this.dateRange(startDate, endDate);
     const endTs = end + 'T23:59:59';
 
-    const total = await this.customerRepo.count({ where: { tenant_id: tenantId, is_active: true } });
+    const total = await this.customerRepo
+      .createQueryBuilder('c')
+      .where('c.tenant_id = :tid', { tid: tenantId })
+      .andWhere('c.is_active = true')
+      .andWhere(excludeDemoCustomers('c'))
+      .getCount();
     const newInPeriod = await this.customerRepo.createQueryBuilder('c')
       .where('c.tenant_id = :tid', { tid: tenantId })
       .andWhere('c.created_at >= :start', { start })
       .andWhere('c.created_at <= :end', { end: endTs })
+      .andWhere(excludeDemoCustomers('c'))
       .getCount();
 
     const byType = await this.customerRepo.createQueryBuilder('c')
@@ -538,6 +607,7 @@ export class ReportingService {
       .addSelect('COUNT(*)', 'count')
       .where('c.tenant_id = :tid', { tid: tenantId })
       .andWhere('c.is_active = true')
+      .andWhere(excludeDemoCustomers('c'))
       .groupBy('c.type')
       .getRawMany();
 
@@ -555,6 +625,7 @@ export class ReportingService {
        LEFT JOIN invoices i ON i.customer_id = c.id AND i.tenant_id = c.tenant_id
          AND ${REVENUE_STATUS_SQL} AND i.created_at >= $2 AND i.created_at <= $4
        WHERE c.tenant_id = $1 AND c.is_active = true
+         AND ${excludeDemoCustomers('c')}
        GROUP BY c.id, c.first_name, c.last_name, c.type
        HAVING COALESCE(SUM(i.total), 0) > 0 OR COUNT(DISTINCT j.id) > 0
        ORDER BY COALESCE(SUM(i.total), 0) DESC
@@ -586,6 +657,7 @@ export class ReportingService {
       .select(`SUM(CASE WHEN i.status IN ('open', 'partial') THEN i.balance_due ELSE 0 END)`, 'totalOutstanding')
       .addSelect(`SUM(CASE WHEN i.status IN ('open', 'partial') AND i.due_date < '${today}' THEN i.balance_due ELSE 0 END)`, 'totalOverdue')
       .where('i.tenant_id = :tid', { tid: tenantId })
+      .andWhere(excludeDemoByCustomerIdNamed('i.customer_id', 'tid'))
       .getRawOne();
 
     // Aging buckets
@@ -605,6 +677,7 @@ export class ReportingService {
       .where('i.tenant_id = :tid', { tid: tenantId })
       .andWhere('i.status IN (:...statuses)', { statuses: ['open', 'partial'] })
       .andWhere('i.balance_due > 0')
+      .andWhere(excludeDemoByCustomerIdNamed('i.customer_id', 'tid'))
       .getRawOne();
 
     const overdueList = await this.invoiceRepo.createQueryBuilder('i')
@@ -613,6 +686,7 @@ export class ReportingService {
       .andWhere('i.status IN (:...statuses)', { statuses: ['open', 'partial'] })
       .andWhere('i.due_date < :today', { today })
       .andWhere('i.balance_due > 0')
+      .andWhere(excludeDemoCustomers('c'))
       .orderBy('i.due_date', 'ASC')
       .take(50)
       .getMany();
@@ -760,7 +834,8 @@ export class ReportingService {
          COUNT(DISTINCT i.id) FILTER (WHERE i.status = 'paid') as paid_count
        FROM invoices i
        LEFT JOIN invoice_line_items li ON li.invoice_id = i.id
-       WHERE i.tenant_id = $1 AND ${REVENUE_STATUS_SQL} AND ${dateFilter}`,
+       WHERE i.tenant_id = $1 AND ${REVENUE_STATUS_SQL} AND ${dateFilter}
+         AND ${excludeDemoByCustomerIdDollar('i.customer_id', 1)}`,
       [tenantId],
     );
 
@@ -830,7 +905,8 @@ export class ReportingService {
       `SELECT COUNT(*) as cnt, COALESCE(SUM(balance_due), 0) as total
        FROM invoices WHERE tenant_id = $1 AND status IN ('open', 'partial')
        AND due_date < CURRENT_DATE AND voided_at IS NULL
-       AND created_at >= $2`,
+       AND created_at >= $2
+       AND ${excludeDemoByCustomerIdDollar('invoices.customer_id', 1)}`,
       [tenantId, CORRECTION_CUTOFF],
     );
     if (Number(overdue[0]?.cnt) > 0) {
@@ -897,19 +973,22 @@ export class ReportingService {
 
     const revenue = await this.invoiceRepo.query(
       `SELECT COALESCE(SUM(i.total), 0) as revenue FROM invoices i
-       WHERE i.tenant_id = $1 AND i.created_at::date = $2 AND ${REVENUE_STATUS_SQL}`,
+       WHERE i.tenant_id = $1 AND i.created_at::date = $2 AND ${REVENUE_STATUS_SQL}
+         AND ${excludeDemoByCustomerIdDollar('i.customer_id', 1)}`,
       [tenantId, today],
     );
     const ar = await this.invoiceRepo.query(
       `SELECT COALESCE(SUM(CASE WHEN i.status IN ('open','partial') THEN i.balance_due ELSE 0 END), 0) as open_ar,
               COALESCE(SUM(CASE WHEN i.status IN ('open','partial') AND i.due_date < CURRENT_DATE THEN i.balance_due ELSE 0 END), 0) as overdue_ar
-       FROM invoices i WHERE i.tenant_id = $1 AND ${REVENUE_STATUS_SQL}`,
+       FROM invoices i WHERE i.tenant_id = $1 AND ${REVENUE_STATUS_SQL}
+         AND ${excludeDemoByCustomerIdDollar('i.customer_id', 1)}`,
       [tenantId],
     );
     const jobs = await this.jobRepo.query(
       `SELECT COUNT(*) FILTER (WHERE created_at::date = $2) as created,
               COUNT(*) FILTER (WHERE status = 'completed' AND completed_at::date = $2) as completed
-       FROM jobs WHERE tenant_id = $1`,
+       FROM jobs WHERE tenant_id = $1
+         AND ${excludeDemoByCustomerIdDollar('jobs.customer_id', 1)}`,
       [tenantId, today],
     );
     const integrity = await this.getIntegrityCheck(tenantId);
@@ -1079,7 +1158,8 @@ export class ReportingService {
       .leftJoinAndSelect('c.customer', 'customer')
       .where('c.tenant_id = :tenantId', { tenantId })
       .andWhere('c.drop_off_date >= :start', { start })
-      .andWhere('c.drop_off_date <= :end', { end });
+      .andWhere('c.drop_off_date <= :end', { end })
+      .andWhere(excludeDemoCustomers('customer'));
     if (statusFilter === 'active') {
       chainQb.andWhere('c.status = :st', { st: 'active' });
     } else if (statusFilter === 'completed') {
