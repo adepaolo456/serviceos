@@ -1,23 +1,15 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useEffect } from "react";
 import { Check, Loader2, Plus, Search } from "lucide-react";
-import { api } from "@/lib/api";
 import SlideOver from "@/components/slide-over";
 import { getFeatureLabel } from "@/lib/feature-registry";
 import type { InitialSchedule } from "@/components/booking-wizard";
 import { useQuickQuote } from "@/components/quick-quote-provider";
-
-interface CustomerResult {
-  id: string;
-  account_id: string;
-  first_name: string;
-  last_name: string;
-  company_name?: string;
-  email: string;
-  phone: string;
-  billing_address?: { street: string; city: string; state: string; zip: string };
-}
+import {
+  useCustomerAutocomplete,
+  type CustomerSearchResult,
+} from "@/lib/use-customer-autocomplete";
 
 interface CustomerPickerDrawerProps {
   open: boolean;
@@ -38,43 +30,23 @@ export default function CustomerPickerDrawer({
   initialSchedule,
 }: CustomerPickerDrawerProps) {
   const { reopenQuoteWithSnapshot } = useQuickQuote();
-  const [query, setQuery] = useState("");
-  const [results, setResults] = useState<CustomerResult[]>([]);
-  const [searching, setSearching] = useState(false);
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const {
+    query,
+    setQuery,
+    results,
+    isLoading: searching,
+    reset,
+    clearResults,
+  } = useCustomerAutocomplete({ maxResults: 8 });
 
-  // Reset on open
+  // Reset on drawer open (conditional — must not fight user typing).
+  // `reset` is memoized with empty deps in the hook, so including it in
+  // the dep array causes no extra re-runs while satisfying exhaustive-deps.
   useEffect(() => {
-    if (open) {
-      setQuery("");
-      setResults([]);
-      setSearching(false);
-    }
-  }, [open]);
+    if (open) reset();
+  }, [open, reset]);
 
-  const handleSearch = useCallback((q: string) => {
-    setQuery(q);
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    if (q.trim().length < 2) {
-      setResults([]);
-      return;
-    }
-    setSearching(true);
-    debounceRef.current = setTimeout(async () => {
-      try {
-        const res = await api.get<CustomerResult[]>(
-          `/customers/search?q=${encodeURIComponent(q.trim())}&limit=8`,
-        );
-        setResults(Array.isArray(res) ? res : []);
-      } catch {
-        setResults([]);
-      } finally {
-        setSearching(false);
-      }
-    }, 250);
-  }, []);
-
-  const selectCustomer = (c: CustomerResult) => {
+  const selectCustomer = (c: CustomerSearchResult) => {
     onClose();
     onSelect({ customerId: c.id, initialSchedule });
   };
@@ -140,7 +112,17 @@ export default function CustomerPickerDrawer({
             <input
               type="text"
               value={query}
-              onChange={(e) => handleSearch(e.target.value)}
+              onChange={(e) => {
+                const v = e.target.value;
+                setQuery(v);
+                // Preserve pre-migration behavior: when the user
+                // backspaces below the hook's min query length, clear
+                // stale results immediately so the "last search"
+                // results don't remain visible while the input is too
+                // short to search. clearResults preserves `query` so
+                // the input keeps showing what the user typed.
+                if (v.trim().length < 2) clearResults();
+              }}
               placeholder="Search by name, email, or phone..."
               className="w-full rounded-[14px] border bg-[var(--t-bg-card)] pl-10 pr-4 py-2.5 text-sm outline-none transition-colors focus:border-[var(--t-accent)]"
               style={{ borderColor: "var(--t-border)", color: "var(--t-text-primary)" }}
