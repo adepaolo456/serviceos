@@ -1,0 +1,82 @@
+# Customer Autocomplete Bypass Check
+#
+# Enforces the single-source-of-truth rule for /customers/search:
+# all customer search must go through useCustomerAutocomplete().
+# Direct fetch calls or local debounce/cancellation logic in consumer
+# files are bypass and must be rejected.
+#
+# Rule: any non-comment reference to "customers/search" outside the
+# allowed files fails CI.
+#
+# Allowed files:
+#   - web/src/lib/use-customer-autocomplete.ts (the hook itself)
+#
+# Rationale + extension protocol: docs/systems/customer-autocomplete.md
+# Refactor history: see commits aa0a767, 56111aa, db52400, f48761e
+
+name: Autocomplete bypass check
+
+on:
+  pull_request:
+    paths:
+      - 'web/src/**'
+      - '.github/workflows/autocomplete-bypass-check.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'web/src/**'
+      - '.github/workflows/autocomplete-bypass-check.yml'
+
+jobs:
+  check:
+    name: Reject /customers/search outside the hook
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Find non-comment references to /customers/search
+        run: |
+          set -euo pipefail
+
+          # Grep for the pattern, then strip comment-only lines via awk.
+          # A line is considered a comment if its first non-whitespace
+          # characters are "//" or "*" (covers // line comments and
+          # * continuation lines inside /** ... */ blocks).
+          OFFENDERS=$(grep -rn "customers/search" web/src/ \
+            --include="*.ts" --include="*.tsx" \
+            --exclude-dir=node_modules \
+            2>/dev/null | awk -F: '
+              {
+                file = $1
+                line = $2
+                # Reconstruct content (everything after the second colon)
+                content = $0
+                sub(/^[^:]*:[^:]*:/, "", content)
+                # Strip leading whitespace for the comment test
+                stripped = content
+                sub(/^[ \t]+/, "", stripped)
+                # Skip comment-only lines
+                if (stripped ~ /^\/\//) next
+                if (stripped ~ /^\*/)  next
+                # Allowlist: the hook itself
+                if (file == "web/src/lib/use-customer-autocomplete.ts") next
+                print file ":" line ":" content
+              }
+            ')
+
+          if [ -n "$OFFENDERS" ]; then
+            echo "::error::Direct /customers/search usage found outside the autocomplete hook"
+            echo ""
+            echo "Offenders:"
+            echo "$OFFENDERS"
+            echo ""
+            echo "All customer search must go through useCustomerAutocomplete()."
+            echo "If your need isn't covered by the hook's contract, that's a"
+            echo "contract amendment discussion -- not a local workaround."
+            echo ""
+            echo "See: docs/systems/customer-autocomplete.md (section 6: Extension guidance)"
+            exit 1
+          fi
+
+          echo "No bypass found. /customers/search is properly encapsulated in the hook."
