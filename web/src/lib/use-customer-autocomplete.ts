@@ -3,6 +3,9 @@
 /**
  * Customer autocomplete — React hook.
  *
+ * Full system doc: docs/systems/customer-autocomplete.md
+ *   (usage patterns, contract, anti-patterns, extension guidance)
+ *
  * Shared data / debounce / open-close layer for new-customer-form,
  * booking-wizard, quote-send-panel, and customer-picker-drawer.
  * All correctness-critical logic lives in `./customer-autocomplete-core.ts`
@@ -26,6 +29,10 @@
  *     Call sites may also invoke `close()` directly.
  *   - Fetching is independent of `isOpen`. The fetch useEffect does not
  *     depend on isOpen, does not read isOpen, and does not dispatch OPEN.
+ *   - Single source of truth for /customers/search. Direct fetches or local
+ *     debounce/cancellation logic in consumer files are bypass and must be
+ *     rejected at review time. Contract gaps go through amendment, not
+ *     workaround. See system doc for the amendment protocol.
  *
  * Cancellation invariant: any primitive that terminates user-facing work
  * (`reset`, `clearResults`) MUST cancel all pending work — abort in-flight
@@ -40,6 +47,9 @@
  *     - MUST abort in-flight fetches (controller.abort())
  *     - MUST invalidate late responses (requestId++)
  *     - MUST cancel scheduled timers (clearTimeout + null ref)
+ *     - Bodies are byte-identical except for the dispatched action;
+ *       diffing reset() and clearResults() should show one line of
+ *       difference, more is a bug
  *     - Differ only in which reducer action they dispatch
  *
  *   Non-termination primitives (setQuery, open, close):
