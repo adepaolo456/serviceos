@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Customer } from '../customers/entities/customer.entity';
 import { CreditAuditEvent } from './credit-audit-event.entity';
+import { excludeDemoCustomers } from '../../common/helpers/demo-customers-predicate';
 
 /**
  * Phase 9 — Credit Workflow / Review Queue.
@@ -82,6 +83,7 @@ export class CreditWorkflowService {
         GROUP BY e.customer_id
       ) agg ON agg.customer_id = c.id
       WHERE c.tenant_id = $1
+        AND ${excludeDemoCustomers('c')}
         AND (
           c.credit_hold = true
           OR COALESCE(agg.override_count, 0) > 0
@@ -106,6 +108,7 @@ export class CreditWorkflowService {
         GROUP BY e.customer_id
       ) agg ON agg.customer_id = c.id
       WHERE c.tenant_id = $1
+        AND ${excludeDemoCustomers('c')}
         AND (
           c.credit_hold = true
           OR COALESCE(agg.override_count, 0) > 0
