@@ -77,8 +77,8 @@ class ApiClient {
     return JSON.parse(text) as T;
   }
 
-  get<T>(endpoint: string) {
-    return this.request<T>(endpoint);
+  get<T>(endpoint: string, init?: RequestInit) {
+    return this.request<T>(endpoint, init);
   }
 
   post<T>(endpoint: string, data?: unknown) {
