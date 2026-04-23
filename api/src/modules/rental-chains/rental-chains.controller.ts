@@ -79,12 +79,19 @@ export class RentalChainsController {
     summary:
       'Schedule an exchange on a rental chain — inserts exchange link, resequences pickup, recalculates pickup date from tenant_settings.default_rental_period_days',
   })
-  createExchange(
+  async createExchange(
     @TenantId() tenantId: string,
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: CreateExchangeDto,
   ) {
-    return this.service.createExchange(tenantId, id, dto);
+    // Discipline boundary — the service now returns { chain, createdJobs }
+    // so JobsService delegation callers (Path B / Path γ) can read the
+    // newly-created jobs without DB heuristics. The HTTP response contract
+    // for this endpoint is unchanged — consumers still receive only the
+    // RentalChain, preserving wire-compatibility with the Exchange Modal
+    // (schedule-exchange-modal.tsx).
+    const { chain } = await this.service.createExchange(tenantId, id, dto);
+    return chain;
   }
 
   @Patch(':id/exchanges/:linkId')
