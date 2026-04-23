@@ -170,6 +170,18 @@ function compareIdentifiers(a: string, b: string): number {
   return pa.raw.localeCompare(pb.raw);
 }
 
+// Awaiting-dump predicate — canonical on the FRONTEND. Mirrors the
+// backend AssetsService.getAwaitingDump WHERE clause:
+//   status != 'retired' AND (status = 'full_staged' OR needs_dump = true)
+// Referenced by THREE sites on this page: the tile count (quickStats),
+// the filteredAssets status-filter special case, and the section
+// builder. Keep those sites pointed at this helper so frontend/
+// backend predicates can't silently drift — same bug class Item 5
+// eliminated for current_job_id.
+function isAwaitingDump(a: Pick<Asset, "status" | "needs_dump">): boolean {
+  return a.status !== "retired" && (a.status === "full_staged" || a.needs_dump);
+}
+
 /* ─── Status color text (no badge backgrounds) ─── */
 
 function statusColor(s: string): string {
@@ -533,7 +545,10 @@ export default function AssetsPage() {
     if (selectedSize) result = result.filter((a) => a.subtype === selectedSize);
     if (statusFilter !== "all") {
       result = result.filter((a) => {
+        // Synthetic filter keys — not raw status values. Each maps to
+        // a predicate that spans multiple statuses / flags.
         if (statusFilter === "on_site") return a.status === "on_site" || a.status === "deployed";
+        if (statusFilter === "awaiting_dump") return isAwaitingDump(a);
         return a.status === statusFilter;
       });
     }
@@ -576,12 +591,7 @@ export default function AssetsPage() {
       {
         key: "awaiting_dump",
         label: getFeatureLabel("asset_section_awaiting_dump"),
-        // Mirrors backend AssetsService.getAwaitingDump exactly:
-        //   (status = 'full_staged' OR needs_dump = true) AND status != 'retired'
-        // Keep these two predicates in sync if either side changes.
-        assets: filteredAssets.filter(
-          (a) => a.status !== "retired" && (a.status === "full_staged" || a.needs_dump),
-        ),
+        assets: filteredAssets.filter(isAwaitingDump),
       },
       {
         key: "maintenance",
@@ -610,13 +620,7 @@ export default function AssetsPage() {
   const quickStats = useMemo(() => {
     const available = assets.filter((a) => a.status === "available").length;
     const deployed = assets.filter((a) => a.status === "on_site" || a.status === "deployed");
-    // Mirrors backend AssetsService.getAwaitingDump exactly. If the predicate
-    // diverges between frontend and backend, tile counts and the yard's
-    // dump-run list stop agreeing — same class of bug Item 5 eliminated for
-    // current_job_id.
-    const awaitingDump = assets.filter(
-      (a) => a.status !== "retired" && (a.status === "full_staged" || a.needs_dump),
-    ).length;
+    const awaitingDump = assets.filter(isAwaitingDump).length;
     const maintenanceCount = assets.filter((a) => a.status === "maintenance").length;
     return { available, deployed: deployed.length, awaitingDump, maintenanceCount };
   }, [assets]);
