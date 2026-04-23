@@ -23,8 +23,9 @@ import {
   UpdateAssetDto,
   ListAssetsQueryDto,
   NextAssetNumberQueryDto,
+  RetireAssetDto,
 } from './dto/asset.dto';
-import { TenantId, Roles } from '../../common/decorators';
+import { TenantId, Roles, CurrentUser } from '../../common/decorators';
 import { RolesGuard } from '../../common/guards';
 import { checkRateLimit } from '../../common/rate-limiter';
 
@@ -174,12 +175,34 @@ export class AssetsController {
     return this.assetsService.update(tenantId, id, dto);
   }
 
+  @Post(':id/retire')
+  @UseGuards(RolesGuard)
+  @Roles('owner', 'admin')
+  @ApiOperation({
+    summary:
+      'Retire an asset (soft) — sets status=retired and captures reason + actor + timestamp',
+  })
+  retire(
+    @TenantId() tenantId: string,
+    @CurrentUser('id') userId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: RetireAssetDto,
+  ) {
+    return this.assetsService.retire(tenantId, id, userId, dto);
+  }
+
   @Delete(':id')
   @UseGuards(RolesGuard)
-  @Roles('admin', 'owner')
+  @Roles('owner')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @ApiOperation({ summary: 'Delete an asset' })
-  remove(@TenantId() tenantId: string, @Param('id', ParseUUIDPipe) id: string) {
-    return this.assetsService.remove(tenantId, id);
+  @ApiOperation({
+    summary:
+      'Permanently delete an asset (owner only, only if zero references exist)',
+  })
+  hardDelete(
+    @TenantId() tenantId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.assetsService.hardDelete(tenantId, id);
   }
 }

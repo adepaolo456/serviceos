@@ -31,13 +31,18 @@ export class CreateAssetDto {
   identifier: string;
 
   @ApiPropertyOptional({
-    enum: ['available', 'on_site', 'in_transit', 'maintenance', 'retired'],
+    enum: ['available', 'on_site', 'in_transit', 'maintenance'],
     default: 'available',
     example: 'available',
   })
   @IsOptional()
   @IsString()
-  @IsIn(['available', 'on_site', 'in_transit', 'maintenance', 'retired', 'reserved', 'deployed', 'full_staged'])
+  // 'retired' deliberately excluded — the dedicated /assets/:id/retire
+  // endpoint is the only legal path to status='retired' because it
+  // captures the required reason + actor + timestamp. Letting POST /assets
+  // or PATCH /assets/:id set status='retired' would be a metadata-less
+  // backdoor. See AssetsService.retire() and .update() retired-guard.
+  @IsIn(['available', 'on_site', 'in_transit', 'maintenance', 'reserved', 'deployed', 'full_staged'])
   status?: string;
 
   @ApiPropertyOptional({ example: 'good' })
@@ -72,6 +77,22 @@ export class CreateAssetDto {
 }
 
 export class UpdateAssetDto extends PartialType(CreateAssetDto) {}
+
+export class RetireAssetDto {
+  @ApiProperty({
+    enum: ['sold', 'damaged', 'scrapped', 'other'],
+    example: 'sold',
+  })
+  @IsString()
+  @IsNotEmpty()
+  @IsIn(['sold', 'damaged', 'scrapped', 'other'])
+  reason: string;
+
+  @ApiPropertyOptional({ example: 'Sold to Acme Hauling 2026-04-20' })
+  @IsOptional()
+  @IsString()
+  notes?: string;
+}
 
 export class ListAssetsQueryDto {
   @ApiPropertyOptional({
@@ -110,6 +131,15 @@ export class ListAssetsQueryDto {
   @IsInt()
   @Min(1)
   limit?: number;
+
+  // Default false — retired assets are hidden from active inventory views.
+  // Set to true to include retired rows in the response (used by the
+  // Assets page "Include retired" toggle). An explicit status=retired
+  // filter also returns retired rows regardless of this flag.
+  @ApiPropertyOptional({ default: false })
+  @IsOptional()
+  @Type(() => Boolean)
+  includeRetired?: boolean;
 }
 
 export class NextAssetNumberQueryDto {

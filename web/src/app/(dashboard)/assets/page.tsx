@@ -70,6 +70,10 @@ interface Asset {
   current_job_id: string | null;
   notes: string;
   metadata: Record<string, unknown>;
+  retired_at: string | null;
+  retired_by: string | null;
+  retired_reason: string | null;
+  retired_notes: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -267,6 +271,14 @@ export default function AssetsPage() {
   const [bulkMode, setBulkMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkEditOpen, setBulkEditOpen] = useState(false);
+  // Item 4 — retire / delete lifecycle. includeRetired is OFF by default;
+  // toggle sends includeRetired=true to the backend list endpoint, which
+  // widens the response to include status='retired' rows. Retired assets
+  // render with muted styling and the `Retired` badge, and expose only a
+  // View action.
+  const [includeRetired, setIncludeRetired] = useState(false);
+  const [retireAsset, setRetireAsset] = useState<Asset | null>(null);
+  const [deleteAssetTarget, setDeleteAssetTarget] = useState<Asset | null>(null);
   // Phase C — Projected Availability panel state. Collapse state is
   // persisted via `PROJECTION_LS_KEY`; target date + confirmedOnly
   // reset on each visit. Default collapsed=open per the Phase C spec
@@ -297,14 +309,15 @@ export default function AssetsPage() {
     if (!silent) setLoading(true);
     if (silent) setRefreshing(true);
     try {
-      const res = await api.get<AssetsResponse>("/assets?limit=200");
+      const qs = `/assets?limit=200${includeRetired ? "&includeRetired=true" : ""}`;
+      const res = await api.get<AssetsResponse>(qs);
       setAssets(res.data);
       setLastUpdated(new Date());
     } catch { /* silent */ } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [includeRetired]);
 
   useEffect(() => { fetchAssets(); }, [fetchAssets]);
 
@@ -607,14 +620,15 @@ export default function AssetsPage() {
     }
   };
 
-  const deleteAsset = async (asset: Asset) => {
-    if (!confirm(`Are you sure you want to delete asset ${asset.identifier}? This cannot be undone.`)) return;
-    try {
-      await api.delete(`/assets/${asset.id}`);
-      toast("success", `${asset.identifier} deleted`);
-      setDetailAsset(null);
-      fetchAssets();
-    } catch { toast("error", "Failed to delete asset"); }
+  // Opens the destructive-styled hard-delete modal. The actual DELETE
+  // request + 409 handling lives in DeleteAssetModal below. The old
+  // inline window.confirm path was replaced because (a) it offered no
+  // structured 409 copy — the backend now returns
+  // `asset_has_references` with a "Retire instead" hint — and (b)
+  // destructive confirmation dialogs should match the app's modal
+  // styling conventions.
+  const deleteAsset = (asset: Asset) => {
+    setDeleteAssetTarget(asset);
   };
 
   const toggleSelect = (id: string) => {
@@ -1291,6 +1305,24 @@ export default function AssetsPage() {
               <LayoutGrid className="h-4 w-4" />
             </button>
           </div>
+          <label
+            style={{
+              display: "inline-flex", alignItems: "center", gap: 8,
+              padding: "8px 14px", borderRadius: 14,
+              border: "1px solid var(--t-border)",
+              background: includeRetired ? "var(--t-accent-soft)" : "var(--t-bg-card)",
+              cursor: "pointer", fontSize: 13,
+              color: includeRetired ? "var(--t-accent-text)" : "var(--t-text-muted)",
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={includeRetired}
+              onChange={(e) => setIncludeRetired(e.target.checked)}
+              style={{ margin: 0 }}
+            />
+            {getFeatureLabel("asset_include_retired_toggle")}
+          </label>
           {!selectedSize && (
             <>
               <button
@@ -1420,6 +1452,7 @@ export default function AssetsPage() {
                       onQuickStatus={quickStatus}
                       onEdit={setEditAsset}
                       onDelete={deleteAsset}
+                      onRetire={setRetireAsset}
                       bulkMode={bulkMode}
                       selectedIds={selectedIds}
                       onToggleSelect={toggleSelect}
@@ -1572,14 +1605,32 @@ export default function AssetsPage() {
           onSaved={() => { setEditAsset(null); setDetailAsset(null); fetchAssets(); toast("success", "Asset updated"); }}
         />
       )}
+
+      {/* Retire Asset Modal */}
+      {retireAsset && (
+        <RetireAssetModal
+          asset={retireAsset}
+          onClose={() => setRetireAsset(null)}
+          onDone={() => { setRetireAsset(null); setDetailAsset(null); fetchAssets(); }}
+        />
+      )}
+
+      {/* Hard Delete Asset Modal */}
+      {deleteAssetTarget && (
+        <DeleteAssetModal
+          asset={deleteAssetTarget}
+          onClose={() => setDeleteAssetTarget(null)}
+          onDone={() => { setDeleteAssetTarget(null); setDetailAsset(null); fetchAssets(); }}
+        />
+      )}
     </div>
   );
 }
 
 /* ─── List View ─── */
 
-function ListView({ assets, onSelect, onQuickStatus, onEdit, onDelete, bulkMode, selectedIds, onToggleSelect, onToggleSelectAll }: {
-  assets: Asset[]; onSelect: (a: Asset) => void; onQuickStatus: (id: string, status: string) => void; onEdit: (a: Asset) => void; onDelete: (a: Asset) => void;
+function ListView({ assets, onSelect, onQuickStatus, onEdit, onDelete, onRetire, bulkMode, selectedIds, onToggleSelect, onToggleSelectAll }: {
+  assets: Asset[]; onSelect: (a: Asset) => void; onQuickStatus: (id: string, status: string) => void; onEdit: (a: Asset) => void; onDelete: (a: Asset) => void; onRetire: (a: Asset) => void;
   bulkMode?: boolean; selectedIds?: Set<string>; onToggleSelect?: (id: string) => void; onToggleSelectAll?: () => void;
 }) {
   return (
@@ -1612,7 +1663,11 @@ function ListView({ assets, onSelect, onQuickStatus, onEdit, onDelete, bulkMode,
                   key={asset.id}
                   onClick={() => onSelect(asset)}
                   className="cursor-pointer"
-                  style={{ borderBottom: "1px solid var(--t-border)", transition: "background 0.15s ease" }}
+                  style={{
+                    borderBottom: "1px solid var(--t-border)",
+                    transition: "background 0.15s ease",
+                    opacity: asset.status === "retired" ? 0.55 : 1,
+                  }}
                   onMouseOver={(e) => (e.currentTarget.style.background = "var(--t-bg-card-hover)")}
                   onMouseOut={(e) => (e.currentTarget.style.background = "transparent")}
                 >
@@ -1622,7 +1677,17 @@ function ListView({ assets, onSelect, onQuickStatus, onEdit, onDelete, bulkMode,
                         className="h-4 w-4 rounded accent-[var(--t-accent)]" />
                     </td>
                   )}
-                  <td style={{ padding: "12px 16px", fontWeight: 600, color: "var(--t-text-primary)" }}>{asset.identifier}</td>
+                  <td style={{ padding: "12px 16px", fontWeight: 600, color: "var(--t-text-primary)" }}>
+                    {asset.identifier}
+                    {asset.status === "retired" && (
+                      <span
+                        title={asset.retired_reason ? `${asset.retired_reason}${asset.retired_at ? ` — ${new Date(asset.retired_at).toLocaleDateString()}` : ""}` : undefined}
+                        style={{ marginLeft: 8, fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", padding: "2px 8px", borderRadius: 10, background: "var(--t-bg-card-hover)", color: "var(--t-text-muted)", border: "1px solid var(--t-border)" }}
+                      >
+                        {getFeatureLabel("asset_retired_badge")}
+                      </span>
+                    )}
+                  </td>
                   <td style={{ padding: "12px 16px", fontSize: 13, color: "var(--t-text-muted)" }}>{asset.subtype}</td>
                   <td style={{ padding: "12px 16px" }}>
                     <span className={statusTextClass(asset.status)} style={{ fontSize: 11, fontWeight: 600 }}>
@@ -1661,31 +1726,46 @@ function ListView({ assets, onSelect, onQuickStatus, onEdit, onDelete, bulkMode,
                       }
                       align="right"
                     >
-                      <button onClick={() => onEdit(asset)} className="flex w-full items-center gap-2 px-4 py-2 text-sm transition-colors" style={{ color: "var(--t-text-primary)" }}>
-                        <Pencil className="h-3.5 w-3.5" /> Edit
-                      </button>
-                      <button onClick={() => onSelect(asset)} className="flex w-full items-center gap-2 px-4 py-2 text-sm transition-colors" style={{ color: "var(--t-text-primary)" }}>
-                        <Eye className="h-3.5 w-3.5" /> View Details
-                      </button>
-                      {asset.status !== "available" && (
-                        <button onClick={() => onQuickStatus(asset.id, "available")} className="flex w-full items-center gap-2 px-4 py-2 text-sm transition-colors" style={{ color: "var(--t-accent-text)" }}>
-                          <CheckCircle2 className="h-3.5 w-3.5" /> Mark Available
+                      {asset.status === "retired" ? (
+                        // Retired rows are terminal in the UI — only View
+                        // is exposed. Edit is blocked by the backend 409
+                        // asset_retired guard anyway, so hiding it avoids
+                        // dead paths.
+                        <button onClick={() => onSelect(asset)} className="flex w-full items-center gap-2 px-4 py-2 text-sm transition-colors" style={{ color: "var(--t-text-primary)" }}>
+                          <Eye className="h-3.5 w-3.5" /> {getFeatureLabel("asset_view_action")}
                         </button>
-                      )}
-                      {asset.status !== "on_site" && (
-                        <button onClick={() => onQuickStatus(asset.id, "on_site")} className="flex w-full items-center gap-2 px-4 py-2 text-sm transition-colors" style={{ color: "var(--t-warning)" }}>
-                          <Truck className="h-3.5 w-3.5" /> Mark Deployed
-                        </button>
-                      )}
-                      {asset.status !== "maintenance" && (
-                        <button onClick={() => onQuickStatus(asset.id, "maintenance")} className="flex w-full items-center gap-2 px-4 py-2 text-sm transition-colors" style={{ color: "var(--t-error)" }}>
-                          <Wrench className="h-3.5 w-3.5" /> Schedule Maintenance
-                        </button>
-                      )}
-                      {(asset.status === "available" || asset.status === "maintenance") && (
-                        <button onClick={() => onDelete(asset)} className="flex w-full items-center gap-2 px-4 py-2 text-sm transition-colors" style={{ color: "var(--t-error)" }}>
-                          <Trash2 className="h-3.5 w-3.5" /> Delete
-                        </button>
+                      ) : (
+                        <>
+                          <button onClick={() => onEdit(asset)} className="flex w-full items-center gap-2 px-4 py-2 text-sm transition-colors" style={{ color: "var(--t-text-primary)" }}>
+                            <Pencil className="h-3.5 w-3.5" /> Edit
+                          </button>
+                          <button onClick={() => onSelect(asset)} className="flex w-full items-center gap-2 px-4 py-2 text-sm transition-colors" style={{ color: "var(--t-text-primary)" }}>
+                            <Eye className="h-3.5 w-3.5" /> View Details
+                          </button>
+                          {asset.status !== "available" && (
+                            <button onClick={() => onQuickStatus(asset.id, "available")} className="flex w-full items-center gap-2 px-4 py-2 text-sm transition-colors" style={{ color: "var(--t-accent-text)" }}>
+                              <CheckCircle2 className="h-3.5 w-3.5" /> Mark Available
+                            </button>
+                          )}
+                          {asset.status !== "on_site" && (
+                            <button onClick={() => onQuickStatus(asset.id, "on_site")} className="flex w-full items-center gap-2 px-4 py-2 text-sm transition-colors" style={{ color: "var(--t-warning)" }}>
+                              <Truck className="h-3.5 w-3.5" /> Mark Deployed
+                            </button>
+                          )}
+                          {asset.status !== "maintenance" && (
+                            <button onClick={() => onQuickStatus(asset.id, "maintenance")} className="flex w-full items-center gap-2 px-4 py-2 text-sm transition-colors" style={{ color: "var(--t-error)" }}>
+                              <Wrench className="h-3.5 w-3.5" /> Schedule Maintenance
+                            </button>
+                          )}
+                          <button onClick={() => onRetire(asset)} className="flex w-full items-center gap-2 px-4 py-2 text-sm transition-colors" style={{ color: "var(--t-text-muted)" }}>
+                            <Shield className="h-3.5 w-3.5" /> {getFeatureLabel("asset_retire_action")}
+                          </button>
+                          {(asset.status === "available" || asset.status === "maintenance") && (
+                            <button onClick={() => onDelete(asset)} className="flex w-full items-center gap-2 px-4 py-2 text-sm transition-colors" style={{ color: "var(--t-error)" }}>
+                              <Trash2 className="h-3.5 w-3.5" /> {getFeatureLabel("asset_delete_action")}
+                            </button>
+                          )}
+                        </>
                       )}
                     </Dropdown>
                   </td>
@@ -2141,7 +2221,7 @@ function BulkEditModal({ count, onClose, onSaved }: { count: number; onClose: ()
               <option value="">— No change —</option>
               <option value="available">Available</option>
               <option value="maintenance">Maintenance</option>
-              <option value="retired">Retired</option>
+              {/* `retired` intentionally removed — use the Retire action (reason + actor captured). */}
             </select>
           </div>
           <div>
@@ -2214,7 +2294,7 @@ function EditAssetModal({ asset, onClose, onSaved }: { asset: Asset; onClose: ()
       if (e?.status === 409 && e?.body?.error === "duplicate_asset_number") {
         setDuplicateError(true);
       } else {
-        toast("error", "Save failed");
+        toast("error", getFeatureLabel("asset_edit_generic_error"));
       }
       setSaving(false);
     }
@@ -2271,7 +2351,7 @@ function EditAssetModal({ asset, onClose, onSaved }: { asset: Asset; onClose: ()
             <select value={status} onChange={e => setStatus(e.target.value)} style={{ ...inp, appearance: "none" as const }}>
               <option value="available">Available</option>
               <option value="maintenance">Maintenance</option>
-              <option value="retired">Retired</option>
+              {/* `retired` intentionally removed — use the Retire action (reason + actor captured). */}
             </select>
           </div>
           <div>
@@ -2295,6 +2375,154 @@ function EditAssetModal({ asset, onClose, onSaved }: { asset: Asset; onClose: ()
             </button>
           </div>
         </form>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Retire Asset Modal ─── */
+
+// Item 4 — Retire flow. Required reason + optional notes. On 409 from
+// the backend (already_retired / asset_in_use), surface the structured
+// error via inline banner — the backend-only path (/assets/:id/retire)
+// enforces the "in active use" gate using live joins against jobs and
+// rental_chains, so any block here reflects a real conflict, not a
+// client-side heuristic.
+function RetireAssetModal({ asset, onClose, onDone }: { asset: Asset; onClose: () => void; onDone: () => void }) {
+  const [reason, setReason] = useState("");
+  const [notes, setNotes] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const { toast } = useToast();
+
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    setErrorMsg(null);
+    if (!reason) return;
+    setSaving(true);
+    try {
+      await api.post(`/assets/${asset.id}/retire`, { reason, notes: notes || undefined });
+      toast("success", getFeatureLabel("asset_retire_success"));
+      onDone();
+    } catch (err) {
+      const e = err as { status?: number; body?: { error?: string } } | null;
+      if (e?.status === 409 && e.body?.error === "asset_in_use") {
+        setErrorMsg(getFeatureLabel("asset_retire_error_in_use"));
+      } else if (e?.status === 409 && e.body?.error === "already_retired") {
+        setErrorMsg(getFeatureLabel("asset_retire_error_already_retired"));
+      } else {
+        toast("error", getFeatureLabel("asset_retire_generic_error"));
+      }
+      setSaving(false);
+    }
+  };
+
+  const inp: React.CSSProperties = {
+    width: "100%", borderRadius: 14, border: "1px solid var(--t-border)",
+    background: "var(--t-bg-card)", padding: "10px 16px",
+    fontSize: 14, color: "var(--t-text-primary)", outline: "none",
+  };
+  const lbl: React.CSSProperties = { display: "block", fontSize: 13, fontWeight: 500, color: "var(--t-text-muted)", marginBottom: 6 };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative w-full max-w-md animate-fade-in" style={{ borderRadius: 14, border: "1px solid var(--t-border)", background: "var(--t-bg-primary)", padding: 24, boxShadow: "0 25px 50px -12px rgba(0,0,0,0.5)" }}>
+        <h3 style={{ fontSize: 18, fontWeight: 600, color: "var(--t-text-primary)" }} className="mb-1">
+          {getFeatureLabel("asset_retire_title")}
+        </h3>
+        <p style={{ fontSize: 14, color: "var(--t-text-muted)" }} className="mb-1">{asset.identifier}</p>
+        <p style={{ fontSize: 13, color: "var(--t-text-muted)" }} className="mb-4">
+          {getFeatureLabel("asset_retire_body")}
+        </p>
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <div>
+            <label style={lbl}>{getFeatureLabel("asset_retire_reason_label")}</label>
+            <select value={reason} onChange={(e) => setReason(e.target.value)} required style={{ ...inp, appearance: "none" as const }}>
+              <option value="">—</option>
+              <option value="sold">{getFeatureLabel("asset_retire_reason_sold")}</option>
+              <option value="damaged">{getFeatureLabel("asset_retire_reason_damaged")}</option>
+              <option value="scrapped">{getFeatureLabel("asset_retire_reason_scrapped")}</option>
+              <option value="other">{getFeatureLabel("asset_retire_reason_other")}</option>
+            </select>
+          </div>
+          <div>
+            <label style={lbl}>{getFeatureLabel("asset_retire_notes_label")}</label>
+            <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} style={{ ...inp, resize: "none" as const }} placeholder={getFeatureLabel("asset_retire_notes_placeholder")} />
+          </div>
+          {errorMsg && (
+            <div style={{ borderRadius: 14, background: "var(--t-error-soft)", border: "1px solid var(--t-error)", padding: "10px 14px", fontSize: 13, color: "var(--t-error)" }}>
+              {errorMsg}
+            </div>
+          )}
+          <div className="flex gap-2 pt-2">
+            <button type="submit" disabled={saving || !reason} style={{ flex: 1, background: "var(--t-accent)", color: "var(--t-accent-on-accent)", fontWeight: 600, fontSize: 14, padding: "10px 20px", borderRadius: 24, border: "none", cursor: "pointer", transition: "opacity 0.15s ease", opacity: saving || !reason ? 0.5 : 1 }}>
+              {saving ? "…" : getFeatureLabel("asset_retire_confirm")}
+            </button>
+            <button type="button" onClick={onClose} style={{ padding: "10px 20px", borderRadius: 24, fontSize: 14, border: "1px solid var(--t-border)", background: "transparent", color: "var(--t-text-muted)", cursor: "pointer" }}>
+              {getFeatureLabel("asset_retire_cancel")}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Delete Asset Modal (destructive) ─── */
+
+// Item 4 — Hard delete. Destructive-styled confirmation. Backend enforces
+// "zero references" across 4 columns (jobs.asset_id, drop_off_asset_id,
+// pick_up_asset_id, rental_chains.asset_id). Defensive 409 handling lives
+// below — race condition between the list-fetch and this DELETE is the
+// realistic failure mode.
+function DeleteAssetModal({ asset, onClose, onDone }: { asset: Asset; onClose: () => void; onDone: () => void }) {
+  const [saving, setSaving] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const { toast } = useToast();
+
+  const handleConfirm = async () => {
+    setErrorMsg(null);
+    setSaving(true);
+    try {
+      await api.delete(`/assets/${asset.id}`);
+      toast("success", getFeatureLabel("asset_delete_success"));
+      onDone();
+    } catch (err) {
+      const e = err as { status?: number; body?: { error?: string } } | null;
+      if (e?.status === 409 && e.body?.error === "asset_has_references") {
+        setErrorMsg(getFeatureLabel("asset_delete_error_has_references"));
+      } else {
+        toast("error", getFeatureLabel("asset_delete_generic_error"));
+      }
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative w-full max-w-md animate-fade-in" style={{ borderRadius: 14, border: "1px solid var(--t-error)", background: "var(--t-bg-primary)", padding: 24, boxShadow: "0 25px 50px -12px rgba(0,0,0,0.5)" }}>
+        <h3 style={{ fontSize: 18, fontWeight: 600, color: "var(--t-error)" }} className="mb-1">
+          {getFeatureLabel("asset_delete_title")}
+        </h3>
+        <p style={{ fontSize: 14, color: "var(--t-text-muted)" }} className="mb-1">{asset.identifier}</p>
+        <p style={{ fontSize: 13, color: "var(--t-text-primary)" }} className="mb-4">
+          {getFeatureLabel("asset_delete_body")}
+        </p>
+        {errorMsg && (
+          <div style={{ borderRadius: 14, background: "var(--t-error-soft)", border: "1px solid var(--t-error)", padding: "10px 14px", fontSize: 13, color: "var(--t-error)", marginBottom: 12 }}>
+            {errorMsg}
+          </div>
+        )}
+        <div className="flex gap-2">
+          <button onClick={handleConfirm} disabled={saving} style={{ flex: 1, background: "var(--t-error)", color: "white", fontWeight: 600, fontSize: 14, padding: "10px 20px", borderRadius: 24, border: "none", cursor: "pointer", transition: "opacity 0.15s ease", opacity: saving ? 0.5 : 1 }}>
+            {saving ? "…" : getFeatureLabel("asset_delete_confirm")}
+          </button>
+          <button type="button" onClick={onClose} style={{ padding: "10px 20px", borderRadius: 24, fontSize: 14, border: "1px solid var(--t-border)", background: "transparent", color: "var(--t-text-muted)", cursor: "pointer" }}>
+            {getFeatureLabel("asset_delete_cancel")}
+          </button>
+        </div>
       </div>
     </div>
   );
