@@ -13,6 +13,7 @@ import SlideOver from "@/components/slide-over";
 import Dropdown from "@/components/dropdown";
 import AddressAutocomplete, { type AddressValue } from "@/components/address-autocomplete";
 import NewCustomerForm, { NEW_CUSTOMER_LABELS, type OrchestrationResult } from "@/components/new-customer-form";
+import DemoBadge from "@/components/demo-badge";
 import { saveListViewState, useListViewScrollRestore } from "@/lib/list-view-state";
 
 /* ---- Types ---- */
@@ -22,6 +23,7 @@ interface Customer {
   type: string;
   first_name: string;
   last_name: string;
+  tags?: string[];
   email: string;
   phone: string;
   company_name: string;
@@ -308,9 +310,14 @@ export default function CustomersPage() {
                           {c.first_name?.[0]}{c.last_name?.[0]}
                         </div>
                         <div style={{ minWidth: 0 }}>
-                          <p style={{ fontWeight: 500, color: "var(--t-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                            {c.first_name} {c.last_name}
-                          </p>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+                            <p style={{ fontWeight: 500, color: "var(--t-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", margin: 0 }}>
+                              {c.first_name} {c.last_name}
+                            </p>
+                            <span style={{ flexShrink: 0 }}>
+                              <DemoBadge tags={c.tags} />
+                            </span>
+                          </div>
                           {c.company_name && (
                             <p style={{ fontSize: 11, color: "var(--t-text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                               {c.company_name}
