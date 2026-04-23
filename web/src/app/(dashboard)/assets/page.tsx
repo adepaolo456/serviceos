@@ -68,6 +68,7 @@ interface Asset {
   current_location_type: string;
   current_location: Record<string, string> | null;
   notes: string;
+  needs_dump: boolean;
   metadata: Record<string, unknown>;
   retired_at: string | null;
   retired_by: string | null;
@@ -361,7 +362,7 @@ export default function AssetsPage() {
   const [sectionOpen, setSectionOpen] = useState<Record<string, boolean>>({
     available: true,
     deployed: false,
-    staged: false,
+    awaiting_dump: false,
     maintenance: false,
   });
   const [sectionPages, setSectionPages] = useState<Record<string, number>>({});
@@ -374,7 +375,7 @@ export default function AssetsPage() {
       if (!raw) return;
       const parsed = JSON.parse(raw) as Record<string, unknown>;
       const next: Record<string, boolean> = {};
-      for (const k of ["available", "deployed", "staged", "maintenance"]) {
+      for (const k of ["available", "deployed", "awaiting_dump", "maintenance"]) {
         if (typeof parsed[k] === "boolean") next[k] = parsed[k] as boolean;
       }
       if (Object.keys(next).length > 0) {
@@ -418,7 +419,7 @@ export default function AssetsPage() {
     const keyMap: Record<string, string> = {
       available: "available",
       on_site: "deployed",
-      reserved: "staged",
+      awaiting_dump: "awaiting_dump",
       maintenance: "maintenance",
     };
     if (statusFilter === "all") {
@@ -555,7 +556,7 @@ export default function AssetsPage() {
   // Jobs-style segmented list view. Filtering + search happens
   // first (in filteredAssets); then this memo groups the results.
   // Sections with zero rows are hidden at render time. Section
-  // order matches the KPI tiles: Available → Deployed → Staged →
+  // order matches the KPI tiles: Available → Deployed → Awaiting Dump →
   // Maintenance. An "other" catch-all captures any statuses not
   // covered (in_transit, full_staged, retired, etc.).
   const assetSections = useMemo(() => {
@@ -573,9 +574,14 @@ export default function AssetsPage() {
         ),
       },
       {
-        key: "staged",
-        label: FEATURE_REGISTRY.assets_staged_section?.label ?? "Staged Assets",
-        assets: filteredAssets.filter((a) => a.status === "reserved"),
+        key: "awaiting_dump",
+        label: getFeatureLabel("asset_section_awaiting_dump"),
+        // Mirrors backend AssetsService.getAwaitingDump exactly:
+        //   (status = 'full_staged' OR needs_dump = true) AND status != 'retired'
+        // Keep these two predicates in sync if either side changes.
+        assets: filteredAssets.filter(
+          (a) => a.status !== "retired" && (a.status === "full_staged" || a.needs_dump),
+        ),
       },
       {
         key: "maintenance",
@@ -604,9 +610,15 @@ export default function AssetsPage() {
   const quickStats = useMemo(() => {
     const available = assets.filter((a) => a.status === "available").length;
     const deployed = assets.filter((a) => a.status === "on_site" || a.status === "deployed");
-    const staged = assets.filter((a) => a.status === "reserved").length;
+    // Mirrors backend AssetsService.getAwaitingDump exactly. If the predicate
+    // diverges between frontend and backend, tile counts and the yard's
+    // dump-run list stop agreeing — same class of bug Item 5 eliminated for
+    // current_job_id.
+    const awaitingDump = assets.filter(
+      (a) => a.status !== "retired" && (a.status === "full_staged" || a.needs_dump),
+    ).length;
     const maintenanceCount = assets.filter((a) => a.status === "maintenance").length;
-    return { available, deployed: deployed.length, staged, maintenanceCount };
+    return { available, deployed: deployed.length, awaitingDump, maintenanceCount };
   }, [assets]);
 
   const quickStatus = async (id: string, status: string) => {
@@ -801,7 +813,7 @@ export default function AssetsPage() {
             {/* Remaining KPI tiles (unchanged) */}
             {[
               { label: "DEPLOYED", value: quickStats.deployed, color: "var(--t-warning)", filter: "on_site" },
-              { label: "STAGED", value: quickStats.staged, color: "var(--t-warning)", filter: "reserved" },
+              { label: getFeatureLabel("asset_tile_awaiting_dump"), value: quickStats.awaitingDump, color: "var(--t-warning)", filter: "awaiting_dump" },
               { label: "MAINTENANCE", value: quickStats.maintenanceCount, color: "var(--t-error)", filter: "maintenance" },
             ].map((kpi) => {
               const isActive = statusFilter === kpi.filter;
