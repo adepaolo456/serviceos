@@ -694,27 +694,6 @@ export class QuotesController {
   }
 
   /**
-   * POST /quotes/:id/convert — Mark a quote as converted when booking completes.
-   */
-  @Post(':id/convert')
-  @ApiOperation({ summary: 'Mark quote as converted' })
-  async convert(
-    @TenantId() tenantId: string,
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() body: { bookedJobId?: string },
-  ) {
-    const quote = await this.quoteRepo.findOne({ where: { id, tenant_id: tenantId } });
-    if (!quote) return { error: 'Quote not found' };
-
-    await this.quoteRepo.update(id, {
-      status: 'converted',
-      booked_job_id: body.bookedJobId || null,
-    });
-
-    return { success: true, quoteNumber: quote.quote_number };
-  }
-
-  /**
    * POST /quotes/:id/resend — Re-send a quote via email/sms/both using the
    * existing hosted-quote token. Returns per-channel outcome so the UI can
    * show partial-success messaging without re-deriving validation rules.
