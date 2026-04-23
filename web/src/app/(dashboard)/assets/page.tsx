@@ -33,7 +33,7 @@ import { api } from "@/lib/api";
 import SlideOver from "@/components/slide-over";
 import Dropdown from "@/components/dropdown";
 import { useToast } from "@/components/toast";
-import { FEATURE_REGISTRY } from "@/lib/feature-registry";
+import { FEATURE_REGISTRY, getFeatureLabel } from "@/lib/feature-registry";
 
 // Phase C — localStorage key for the "Projected Availability" panel
 // collapse state. Stores only `{ showProjection: boolean }` — UI
@@ -68,8 +68,6 @@ interface Asset {
   current_location_type: string;
   current_location: Record<string, string> | null;
   current_job_id: string | null;
-  daily_rate: number;
-  weight_capacity: number;
   notes: string;
   metadata: Record<string, unknown>;
   created_at: string;
@@ -141,11 +139,32 @@ const SUBTYPES_BY_TYPE: Record<string, { value: string; label: string }[]> = {
   ],
 };
 
-const TYPE_PREFIX: Record<string, string> = {
-  dumpster: "D",
-  storage_container: "SC",
-  portable_restroom: "PR",
-};
+// Standard asset-number format: {prefix}-NN or {prefix}-NNN, where prefix
+// is 2–3 chars of uppercase letters and/or digits. Matches every value
+// SUBTYPE_PREFIX_MAP can emit (numeric "10"/"15"/…, letter "ST"/"DL"/…)
+// plus future 3-char prefixes. Rejects lowercase, long prefixes, garbage.
+// When this regex rejects an input, the UI shows the yellow soft-warning
+// banner before POST/PATCH. Backend never rejects by format — uniqueness
+// is the only hard constraint.
+const STANDARD_ASSET_NUMBER = /^[A-Z0-9]{2,3}-\d{2,3}$/;
+
+// Numeric-aware asset identifier sort. Splits on the first `-` into a
+// prefix string + numeric suffix; non-standard identifiers (no match)
+// sort by raw string after standard ones. Fixes the pre-existing
+// localeCompare bug where "10-100" sorted before "10-99".
+function compareIdentifiers(a: string, b: string): number {
+  const parse = (s: string) => {
+    const m = s.match(/^([A-Za-z0-9]+)-(\d+)$/);
+    return m
+      ? { prefix: m[1], num: parseInt(m[2], 10), raw: s }
+      : { prefix: s, num: -1, raw: s };
+  };
+  const pa = parse(a);
+  const pb = parse(b);
+  if (pa.prefix !== pb.prefix) return pa.prefix.localeCompare(pb.prefix);
+  if (pa.num !== pb.num) return pa.num - pb.num;
+  return pa.raw.localeCompare(pb.raw);
+}
 
 /* ─── Status color text (no badge backgrounds) ─── */
 
@@ -210,15 +229,13 @@ function getDeployedInfo(asset: Asset): { customerName: string; address: string;
 }
 
 function exportCSV(assets: Asset[]) {
-  const headers = ["Identifier", "Type", "Size", "Status", "Condition", "Daily Rate", "Weight Capacity", "Location", "Notes"];
+  const headers = ["Identifier", "Type", "Size", "Status", "Condition", "Location", "Notes"];
   const rows = assets.map((a) => [
     a.identifier,
     a.asset_type,
     a.subtype,
     a.status,
     a.condition,
-    a.daily_rate,
-    a.weight_capacity,
     a.current_location?.address || a.current_location_type || "Yard",
     (a.notes || "").replace(/,/g, ";"),
   ]);
@@ -518,7 +535,7 @@ export default function AssetsPage() {
         );
       });
     }
-    result.sort((a, b) => a.identifier.localeCompare(b.identifier));
+    result.sort((a, b) => compareIdentifiers(a.identifier, b.identifier));
     return result;
   }, [assets, selectedSize, statusFilter, searchQuery]);
 
@@ -2163,9 +2180,28 @@ function EditAssetModal({ asset, onClose, onSaved }: { asset: Asset; onClose: ()
   const [condition, setCondition] = useState(asset.condition || "good");
   const [notes, setNotes] = useState(asset.notes || "");
   const [saving, setSaving] = useState(false);
+  const [showWarn, setShowWarn] = useState(false);
+  const [duplicateError, setDuplicateError] = useState(false);
+  const { toast } = useToast();
+
+  useEffect(() => {
+    setShowWarn(false);
+    setDuplicateError(false);
+  }, [identifier]);
 
   const handleSave = async (e: FormEvent) => {
     e.preventDefault();
+    setDuplicateError(false);
+
+    // Only gate on the warning when the user actually changed the
+    // identifier to something non-standard. If they left it alone
+    // (e.g. a legacy non-standard id), don't nag them.
+    const changed = identifier !== asset.identifier;
+    if (changed && !STANDARD_ASSET_NUMBER.test(identifier) && !showWarn) {
+      setShowWarn(true);
+      return;
+    }
+
     setSaving(true);
     try {
       await api.patch(`/assets/${asset.id}`, {
@@ -2173,7 +2209,15 @@ function EditAssetModal({ asset, onClose, onSaved }: { asset: Asset; onClose: ()
         notes: notes || undefined,
       });
       onSaved();
-    } catch { setSaving(false); }
+    } catch (err) {
+      const e = err as { status?: number; body?: { error?: string } } | null;
+      if (e?.status === 409 && e?.body?.error === "duplicate_asset_number") {
+        setDuplicateError(true);
+      } else {
+        toast("error", "Save failed");
+      }
+      setSaving(false);
+    }
   };
 
   const inp: React.CSSProperties = {
@@ -2193,7 +2237,29 @@ function EditAssetModal({ asset, onClose, onSaved }: { asset: Asset; onClose: ()
           <div>
             <label style={lbl}>Identifier</label>
             <input value={identifier} onChange={e => setIdentifier(e.target.value)} style={inp} required />
+            {duplicateError && (
+              <p style={{ marginTop: 6, fontSize: 12, color: "var(--t-error)" }}>
+                {getFeatureLabel("asset_number_duplicate_error")}
+              </p>
+            )}
           </div>
+          {showWarn && (
+            <div style={{ borderRadius: 14, background: "var(--t-warning-soft, rgba(234,179,8,0.15))", border: "1px solid var(--t-warning)", padding: "12px 16px" }}>
+              <p style={{ fontSize: 14, fontWeight: 600, color: "var(--t-warning)" }}>
+                {getFeatureLabel("asset_number_warn_title")}
+              </p>
+              <p style={{ marginTop: 4, fontSize: 13, color: "var(--t-text-primary)" }}>
+                {getFeatureLabel("asset_number_warn_body")}
+              </p>
+              <button
+                type="button"
+                onClick={() => setShowWarn(false)}
+                style={{ marginTop: 8, padding: "6px 14px", borderRadius: 20, fontSize: 13, border: "1px solid var(--t-border)", background: "transparent", color: "var(--t-text-muted)", cursor: "pointer" }}
+              >
+                {getFeatureLabel("asset_number_warn_cancel")}
+              </button>
+            </div>
+          )}
           <div>
             <label style={lbl}>Size / Subtype</label>
             <select value={subtype} onChange={e => setSubtype(e.target.value)} style={{ ...inp, appearance: "none" as const }}>
@@ -2222,7 +2288,7 @@ function EditAssetModal({ asset, onClose, onSaved }: { asset: Asset; onClose: ()
           </div>
           <div className="flex gap-2 pt-2">
             <button type="submit" disabled={saving || !identifier} style={{ flex: 1, background: "var(--t-accent)", color: "var(--t-accent-on-accent)", fontWeight: 600, fontSize: 14, padding: "10px 20px", borderRadius: 24, border: "none", cursor: "pointer", transition: "opacity 0.15s ease", opacity: saving || !identifier ? 0.5 : 1 }}>
-              {saving ? "Saving..." : "Save Changes"}
+              {saving ? "Saving..." : showWarn ? getFeatureLabel("asset_number_warn_confirm") : "Save Changes"}
             </button>
             <button type="button" onClick={onClose} style={{ padding: "10px 20px", borderRadius: 24, fontSize: 14, border: "1px solid var(--t-border)", background: "transparent", color: "var(--t-text-muted)", cursor: "pointer" }}>
               Cancel
@@ -2240,20 +2306,28 @@ function CreateAssetForm({ prefilledSize, onSuccess }: { prefilledSize: string |
   const [assetType, setAssetType] = useState("dumpster");
   const [subtype, setSubtype] = useState(prefilledSize || "20yd");
   const [identifier, setIdentifier] = useState("");
-  const [dailyRate, setDailyRate] = useState("");
-  const [weightCapacity, setWeightCapacity] = useState("");
   const [condition, setCondition] = useState("good");
   const [notes, setNotes] = useState("");
   const [quantity, setQuantity] = useState("1");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  // Soft-warning state — user typed a non-standard identifier and hit
+  // submit; next submit proceeds through the warning. Reset when the
+  // identifier changes so the user can fix-and-retry without carrying
+  // stale acknowledgement.
+  const [showWarn, setShowWarn] = useState(false);
+  const [duplicateError, setDuplicateError] = useState(false);
+  // userTouched — once the user types in the identifier field, we stop
+  // overwriting it on subtype/assetType change. Dirty-flag guard lets
+  // the auto-suggest populate the initial value but preserves user
+  // edits on subsequent subtype switches.
+  const userTouched = useRef(false);
   const { toast } = useToast();
 
   useEffect(() => {
-    const prefix = TYPE_PREFIX[assetType] || "A";
-    const sizeNum = subtype.replace(/\D/g, "") || subtype;
-    setIdentifier(`${prefix}-${sizeNum}-001`);
-  }, [assetType, subtype]);
+    setShowWarn(false);
+    setDuplicateError(false);
+  }, [identifier]);
 
   useEffect(() => {
     if (!prefilledSize) {
@@ -2262,36 +2336,128 @@ function CreateAssetForm({ prefilledSize, onSuccess }: { prefilledSize: string |
     }
   }, [assetType, prefilledSize]);
 
+  // Fetch the next standard-format suggestion from the backend whenever
+  // assetType or subtype changes. AbortController cancels an in-flight
+  // fetch if the selection changes mid-request. `userTouched` blocks
+  // overwrite once the user has typed manually.
+  useEffect(() => {
+    if (userTouched.current) return;
+    const ac = new AbortController();
+    (async () => {
+      try {
+        const res = await api.get<{ suggested: string }>(
+          `/assets/next-number?assetType=${encodeURIComponent(assetType)}&subtype=${encodeURIComponent(subtype)}`,
+          { signal: ac.signal },
+        );
+        if (!userTouched.current) setIdentifier(res.suggested);
+      } catch {
+        // Silent — suggestion is advisory. User can still type manually.
+      }
+    })();
+    return () => ac.abort();
+  }, [assetType, subtype]);
+
+  const postOne = async (id: string) => {
+    await api.post("/assets", {
+      assetType, subtype, identifier: id,
+      condition, notes: notes || undefined,
+    });
+  };
+
+  // Fetch the next suggestion from the backend. Used for initial pre-fill
+  // and — critically — for bulk-create 409 recovery. Returns null if the
+  // endpoint is unavailable so the caller can fall back to local increment.
+  const fetchSuggestion = async (): Promise<string | null> => {
+    try {
+      const res = await api.get<{ suggested: string }>(
+        `/assets/next-number?assetType=${encodeURIComponent(assetType)}&subtype=${encodeURIComponent(subtype)}`,
+      );
+      return res.suggested;
+    } catch {
+      return null;
+    }
+  };
+
+  const is409 = (err: unknown) => {
+    const e = err as { status?: number; body?: { error?: string } } | null;
+    return e?.status === 409 && e?.body?.error === "duplicate_asset_number";
+  };
+
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError("");
+    setDuplicateError(false);
+
+    // Soft-warning gate — first submit with a non-standard identifier
+    // flips on the banner; second submit proceeds. Uniqueness is still
+    // enforced by the backend.
+    if (!STANDARD_ASSET_NUMBER.test(identifier) && !showWarn) {
+      setShowWarn(true);
+      return;
+    }
+
     setSaving(true);
     const qty = Math.max(1, Math.min(50, parseInt(quantity) || 1));
 
     try {
-      if (qty === 1) {
-        await api.post("/assets", {
-          assetType, subtype, identifier,
-          dailyRate: dailyRate ? Number(dailyRate) : undefined,
-          weightCapacity: weightCapacity ? Number(weightCapacity) : undefined,
-          condition, notes: notes || undefined,
-        });
+      const m = identifier.match(/^([A-Za-z0-9]+)-(\d{2,3})$/);
+      const canBulk = qty > 1 && m !== null;
+
+      if (!canBulk) {
+        try {
+          await postOne(identifier);
+        } catch (err) {
+          if (is409(err)) {
+            setDuplicateError(true);
+            setSaving(false);
+            return;
+          }
+          throw err;
+        }
+        toast("success", "Asset created");
       } else {
-        const match = identifier.match(/^(.*?)(\d+)$/);
-        const prefix = match ? match[1] : identifier + "-";
-        const startNum = match ? parseInt(match[2]) : 1;
-        for (let i = 0; i < qty; i++) {
-          const num = startNum + i;
-          const id = `${prefix}${String(num).padStart(3, "0")}`;
-          await api.post("/assets", {
-            assetType, subtype, identifier: id,
-            dailyRate: dailyRate ? Number(dailyRate) : undefined,
-            weightCapacity: weightCapacity ? Number(weightCapacity) : undefined,
-            condition, notes: notes || undefined,
-          });
+        const prefix = m![1];
+        let num = parseInt(m![2], 10);
+        let width = m![2].length >= 3 ? 3 : 2;
+        // Sequential post. On 201 we bump num and count the asset; on 409
+        // we do NOT count the attempt (created stays put) and we RESET
+        // num by refetching /assets/next-number so a concurrent burst of
+        // bulk creates from another operator doesn't chew through a
+        // string of dead numbers. Local increment is only the fallback
+        // if the refetch itself fails. Upper-bound attempts ensures we
+        // can't loop forever under a persistent failure mode.
+        let created = 0;
+        const maxAttempts = qty * 3;
+        let attempts = 0;
+        while (created < qty && attempts < maxAttempts) {
+          attempts++;
+          if (num >= 100 && width < 3) width = 3;
+          const id = `${prefix}-${String(num).padStart(width, "0")}`;
+          try {
+            await postOne(id);
+            created++;
+            num++;
+          } catch (err) {
+            if (is409(err)) {
+              const suggested = await fetchSuggestion();
+              const nm = suggested?.match(/^([A-Za-z0-9]+)-(\d{2,3})$/);
+              if (nm) {
+                num = parseInt(nm[2], 10);
+                if (nm[2].length >= 3) width = 3;
+              } else {
+                num++;
+              }
+              continue;
+            }
+            throw err;
+          }
+        }
+        if (created < qty) {
+          toast("warning", `${created} of ${qty} assets created (duplicates skipped)`);
+        } else {
+          toast("success", `${qty} assets created`);
         }
       }
-      toast("success", qty > 1 ? `${qty} assets created` : "Asset created");
       onSuccess();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create");
@@ -2334,28 +2500,57 @@ function CreateAssetForm({ prefilledSize, onSuccess }: { prefilledSize: string |
 
       <div>
         <label style={lbl}>Identifier</label>
-        <input value={identifier} onChange={(e) => setIdentifier(e.target.value)} required style={inp} placeholder="D-20-001" />
-        {qty > 1 && (
-          <p style={{ marginTop: 6, fontSize: 12, color: "var(--t-text-muted)" }}>
-            Will create: {identifier} through {(() => {
-              const match = identifier.match(/^(.*?)(\d+)$/);
-              if (!match) return `${identifier}-${String(qty).padStart(3, "0")}`;
-              return `${match[1]}${String(parseInt(match[2]) + qty - 1).padStart(3, "0")}`;
-            })()}
+        <input
+          value={identifier}
+          onChange={(e) => { userTouched.current = true; setIdentifier(e.target.value); }}
+          required
+          style={inp}
+          placeholder="10-07"
+        />
+        {duplicateError && (
+          <p style={{ marginTop: 6, fontSize: 12, color: "var(--t-error)" }}>
+            {getFeatureLabel("asset_number_duplicate_error")}
           </p>
         )}
+        {qty > 1 && (() => {
+          const m = identifier.match(/^([A-Za-z0-9]+)-(\d{2,3})$/);
+          if (!m) {
+            return (
+              <p style={{ marginTop: 6, fontSize: 12, color: "var(--t-text-muted)" }}>
+                Non-standard identifier — only 1 will be created regardless of quantity.
+              </p>
+            );
+          }
+          const prefix = m[1];
+          const startNum = parseInt(m[2], 10);
+          const width = m[2].length >= 3 ? 3 : 2;
+          const last = startNum + qty - 1;
+          const w = last >= 100 && width < 3 ? 3 : width;
+          return (
+            <p style={{ marginTop: 6, fontSize: 12, color: "var(--t-text-muted)" }}>
+              Will create: {identifier} through {`${prefix}-${String(last).padStart(w, "0")}`}
+            </p>
+          );
+        })()}
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label style={lbl}>Daily Rate ($)</label>
-          <input type="number" step="0.01" value={dailyRate} onChange={(e) => setDailyRate(e.target.value)} style={inp} placeholder="25.00" />
+      {showWarn && (
+        <div style={{ borderRadius: 14, background: "var(--t-warning-soft, rgba(234,179,8,0.15))", border: "1px solid var(--t-warning)", padding: "12px 16px" }}>
+          <p style={{ fontSize: 14, fontWeight: 600, color: "var(--t-warning)" }}>
+            {getFeatureLabel("asset_number_warn_title")}
+          </p>
+          <p style={{ marginTop: 4, fontSize: 13, color: "var(--t-text-primary)" }}>
+            {getFeatureLabel("asset_number_warn_body")}
+          </p>
+          <button
+            type="button"
+            onClick={() => setShowWarn(false)}
+            style={{ marginTop: 8, padding: "6px 14px", borderRadius: 20, fontSize: 13, border: "1px solid var(--t-border)", background: "transparent", color: "var(--t-text-muted)", cursor: "pointer" }}
+          >
+            {getFeatureLabel("asset_number_warn_cancel")}
+          </button>
         </div>
-        <div>
-          <label style={lbl}>Weight Capacity (tons)</label>
-          <input type="number" value={weightCapacity} onChange={(e) => setWeightCapacity(e.target.value)} style={inp} placeholder="4" />
-        </div>
-      </div>
+      )}
 
       <div className="grid grid-cols-2 gap-4">
         <div>
@@ -2388,7 +2583,13 @@ function CreateAssetForm({ prefilledSize, onSuccess }: { prefilledSize: string |
           opacity: saving ? 0.5 : 1,
         }}
       >
-        {saving ? "Creating..." : qty > 1 ? `Add ${qty} \u00d7 ${subtype} ${assetType === "dumpster" ? "dumpsters" : "assets"}` : "Add Asset"}
+        {saving
+          ? "Creating..."
+          : showWarn
+            ? getFeatureLabel("asset_number_warn_confirm")
+            : qty > 1
+              ? `Add ${qty} \u00d7 ${subtype} ${assetType === "dumpster" ? "dumpsters" : "assets"}`
+              : "Add Asset"}
       </button>
     </form>
   );

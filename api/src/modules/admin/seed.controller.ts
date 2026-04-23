@@ -170,17 +170,33 @@ export class SeedController {
     }
 
     // --- ASSETS ---
+    // Wipe and recreate — seed is dev/test only, and hardcoded offsets
+    // below only make sense against a clean slate. Without the delete,
+    // seeding a tenant that already has non-seed assets would either
+    // clobber them (via the findOne/update path) or collide with the
+    // unique index (post-Migration-1). Both are worse than a clean wipe.
+    await this.assetRepo.delete({ tenant_id: tid });
+
+    // Identifiers use the post-migration standard format ({prefix}-NN).
+    // Offsets are calibrated to the current pilot tenant's post-Migration-2
+    // state: non-seed 10yd occupy 10-01..10-06, 15yd 15-01..15-05, 20yd
+    // 20-01..20-10. Seed rows slot in after them. With the wipe above,
+    // these offsets leave gaps at 10-01..10-06 etc. — that's acceptable
+    // for dev/test and consistent with the post-migration state against
+    // which the jobs seed's findAsset() literals below were calibrated.
     const assetBatch: Array<{ identifier: string; subtype: string; status: string; staged_waste_type?: string; staged_at?: Date; staged_notes?: string; needs_dump?: boolean }> = [];
-    for (let i = 1; i <= 8; i++) assetBatch.push({ identifier: `D-100${i}`, subtype: '10yd', status: i <= 5 ? 'available' : i <= 7 ? 'deployed' : 'maintenance' });
+    for (let i = 1; i <= 8; i++) assetBatch.push({ identifier: `10-${String(i + 6).padStart(2, '0')}`, subtype: '10yd', status: i <= 5 ? 'available' : i <= 7 ? 'deployed' : 'maintenance' });
     for (let i = 1; i <= 10; i++) {
-      if (i === 10) assetBatch.push({ identifier: `D-15${String(i).padStart(2, '0')}`, subtype: '15yd', status: 'full_staged', staged_waste_type: 'cnd', staged_at: new Date(Date.now() - 86400000), staged_notes: 'Heavy concrete load', needs_dump: true });
-      else if (i <= 6) assetBatch.push({ identifier: `D-15${String(i).padStart(2, '0')}`, subtype: '15yd', status: 'available' });
-      else assetBatch.push({ identifier: `D-15${String(i).padStart(2, '0')}`, subtype: '15yd', status: 'deployed' });
+      const id = `15-${String(i + 5).padStart(2, '0')}`;
+      if (i === 10) assetBatch.push({ identifier: id, subtype: '15yd', status: 'full_staged', staged_waste_type: 'cnd', staged_at: new Date(Date.now() - 86400000), staged_notes: 'Heavy concrete load', needs_dump: true });
+      else if (i <= 6) assetBatch.push({ identifier: id, subtype: '15yd', status: 'available' });
+      else assetBatch.push({ identifier: id, subtype: '15yd', status: 'deployed' });
     }
     for (let i = 1; i <= 10; i++) {
-      if (i === 10) assetBatch.push({ identifier: `D-20${String(i).padStart(2, '0')}`, subtype: '20yd', status: 'full_staged', staged_waste_type: 'msw', staged_at: new Date(Date.now() - 2 * 86400000), needs_dump: true });
-      else if (i <= 5) assetBatch.push({ identifier: `D-20${String(i).padStart(2, '0')}`, subtype: '20yd', status: 'available' });
-      else assetBatch.push({ identifier: `D-20${String(i).padStart(2, '0')}`, subtype: '20yd', status: 'deployed' });
+      const id = `20-${String(i + 10).padStart(2, '0')}`;
+      if (i === 10) assetBatch.push({ identifier: id, subtype: '20yd', status: 'full_staged', staged_waste_type: 'msw', staged_at: new Date(Date.now() - 2 * 86400000), needs_dump: true });
+      else if (i <= 5) assetBatch.push({ identifier: id, subtype: '20yd', status: 'available' });
+      else assetBatch.push({ identifier: id, subtype: '20yd', status: 'deployed' });
     }
 
     let assetCount = 0;
@@ -351,13 +367,13 @@ export class SeedController {
 
     // --- JOB A: David Kim 20yd Delivery (completed, deployed) ---
     const custDavid = await findCust('david.kim@email.com');
-    const assetA = await findAsset('D-2001');
+    const assetA = await findAsset('20-11');
     const jobA: any = await this.jobRepo.save(makeJob({
       customer_id: custDavid, job_type: 'delivery', asset_subtype: '20yd', service_type: 'dumpster_rental',
       service_address: { street: '88 Summer Street', city: 'Stoughton', state: 'MA', zip: '02072' },
       scheduled_date: '2026-03-20', scheduled_window_start: '08:00', scheduled_window_end: '12:00',
       status: 'completed', completed_at: new Date('2026-03-20T10:30:00'),
-      assigned_driver_id: mike, asset_id: assetA, drop_off_asset_id: assetA, drop_off_asset_pin: 'D-2001',
+      assigned_driver_id: mike, asset_id: assetA, drop_off_asset_id: assetA, drop_off_asset_pin: '20-11',
       rental_days: 14, rental_start_date: '2026-03-20', rental_end_date: '2026-04-03',
       base_price: 800, total_price: 800,
     }));
@@ -367,7 +383,7 @@ export class SeedController {
 
     // --- JOB B: Jennifer Walsh 15yd Delivery (completed) ---
     const custJen = await findCust('jen.walsh@email.com');
-    const assetB = await findAsset('D-1505');
+    const assetB = await findAsset('15-10');
     const jobB: any = await this.jobRepo.save(makeJob({
       customer_id: custJen, job_type: 'delivery', asset_subtype: '15yd', service_type: 'dumpster_rental',
       service_address: { street: '55 North Avenue', city: 'Rockland', state: 'MA', zip: '02370' },
@@ -395,7 +411,7 @@ export class SeedController {
 
     // --- JOB C: Robert Patel 20yd (HAS overage) ---
     const custRobert = await findCust('robert.patel@email.com');
-    const assetC = await findAsset('D-2002');
+    const assetC = await findAsset('20-12');
     const jobC: any = await this.jobRepo.save(makeJob({
       customer_id: custRobert, job_type: 'delivery', asset_subtype: '20yd', service_type: 'dumpster_rental',
       service_address: { street: '340 Bedford Street', city: 'Bridgewater', state: 'MA', zip: '02324' },
@@ -424,7 +440,7 @@ export class SeedController {
 
     // --- JOB D: South Shore Renovations 15yd (15% discount, MSW overage) ---
     const custSSR = await findCust('jobs@southshorereno.com');
-    const assetD = await findAsset('D-1506');
+    const assetD = await findAsset('15-11');
     const jobD: any = await this.jobRepo.save(makeJob({
       customer_id: custSSR, job_type: 'delivery', asset_subtype: '15yd', service_type: 'dumpster_rental',
       service_address: { street: '150 Washington Street', city: 'Hanover', state: 'MA', zip: '02339' },
@@ -450,7 +466,7 @@ export class SeedController {
 
     // --- JOB E: Tom Richards FAILED pickup ---
     const custTom = await findCust('tom.richards@email.com');
-    const assetE = await findAsset('D-2005');
+    const assetE = await findAsset('20-15');
     // Original delivery for Tom
     const jobE0: any = await this.jobRepo.save(makeJob({
       customer_id: custTom, job_type: 'delivery', asset_subtype: '20yd', service_type: 'dumpster_rental',
@@ -491,7 +507,7 @@ export class SeedController {
     const custAmanda = await findCust('amanda.cruz@email.com');
 
     // F: John McCarthy 20yd Delivery today
-    const assetF = await findAsset('D-2006');
+    const assetF = await findAsset('20-16');
     const jobF: any = await this.jobRepo.save(makeJob({
       customer_id: custJohn, job_type: 'delivery', asset_subtype: '20yd', service_type: 'dumpster_rental',
       service_address: { street: '45 Pearl Street', city: 'Brockton', state: 'MA', zip: '02301' },
@@ -503,7 +519,7 @@ export class SeedController {
     log.push('Job F: John McCarthy 20yd Delivery today (confirmed, Mike)');
 
     // G: Maria Santos 15yd Delivery today
-    const assetG = await findAsset('D-1507');
+    const assetG = await findAsset('15-12');
     const jobG: any = await this.jobRepo.save(makeJob({
       customer_id: custMaria, job_type: 'delivery', asset_subtype: '15yd', service_type: 'dumpster_rental',
       service_address: { street: '120 West Elm Street', city: 'East Bridgewater', state: 'MA', zip: '02333' },
@@ -515,7 +531,7 @@ export class SeedController {
     log.push('Job G: Maria Santos 15yd Delivery today (confirmed, Mike)');
 
     // H: Mighty Dog Roofing 20yd Pickup today
-    const assetH = await findAsset('D-2003');
+    const assetH = await findAsset('20-13');
     if (assetH) await this.assetRepo.update(assetH, { status: 'deployed', current_location: { street: '500 Industrial Drive', city: 'Brockton', state: 'MA' } } as any);
     await this.jobRepo.save(makeJob({
       customer_id: custMDR, job_type: 'pickup', asset_subtype: '20yd', service_type: 'dumpster_rental',
@@ -536,8 +552,8 @@ export class SeedController {
     log.push('Job I: Best Brothers 10yd Delivery today (pending, unassigned, 10% off)');
 
     // J: Amanda Cruz 20yd Exchange today
-    const assetJ1 = await findAsset('D-2007');
-    const assetJ2 = await findAsset('D-2004');
+    const assetJ1 = await findAsset('20-17');
+    const assetJ2 = await findAsset('20-14');
     if (assetJ2) await this.assetRepo.update(assetJ2, { status: 'deployed', current_location: { street: '78 Oak Street', city: 'Easton', state: 'MA' } } as any);
     await this.jobRepo.save(makeJob({
       customer_id: custAmanda, job_type: 'exchange', asset_subtype: '20yd', service_type: 'dumpster_rental',

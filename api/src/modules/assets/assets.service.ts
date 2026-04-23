@@ -10,6 +10,14 @@ import {
   UpdateAssetDto,
   ListAssetsQueryDto,
 } from './dto/asset.dto';
+import { escapeRegex, getSubtypePrefix } from './subtype-prefix.util';
+
+// Name of the unique index added by
+// migrations/2026-04-23-assets-tenant-asset-type-identifier-unique-index.sql.
+// Postgres surfaces this string in the `constraint` field of the 23505 error,
+// which is how we distinguish "duplicate asset number" from any other unique
+// violation on this table. Keep in sync with the migration.
+const ASSET_UNIQUE_CONSTRAINT = 'assets_tenant_asset_type_identifier_unique';
 
 // Phase B — job statuses that mean "job is no longer consuming inventory
 // for projection purposes". Terminal states (completed/cancelled) plus
@@ -61,12 +69,76 @@ export class AssetsService {
       condition: dto.condition,
       current_location_type: dto.currentLocationType,
       current_location: dto.currentLocation,
-      weight_capacity: dto.weightCapacity,
-      daily_rate: dto.dailyRate,
       notes: dto.notes,
       metadata: dto.metadata,
     });
-    return this.assetsRepository.save(asset);
+    try {
+      return await this.assetsRepository.save(asset);
+    } catch (err) {
+      this.translateUniqueViolation(err);
+      throw err;
+    }
+  }
+
+  /**
+   * Max-suffix-plus-one allocator. Scopes by (tenant_id, asset_type,
+   * identifier LIKE prefix-%), parses standard-format identifiers in JS
+   * (so non-standard deviants like "SPECIAL-UNIT" are ignored without
+   * corrupting the max), and returns `{prefix}-{nn}` zero-padded to width
+   * 2, widening to 3 once a tenant crosses 99 of one prefix.
+   *
+   * Intentionally NOT cached. Cheap query (small result set per prefix);
+   * correctness under concurrent creates is enforced by the DB unique
+   * index — two callers can both see "10-07" as next; second POST gets
+   * 409 and the client increments.
+   */
+  async getNextAssetNumber(
+    tenantId: string,
+    assetType: string,
+    subtype: string,
+  ): Promise<string> {
+    const prefix = getSubtypePrefix(subtype);
+
+    const rows = await this.assetsRepository
+      .createQueryBuilder('a')
+      .select('a.identifier', 'identifier')
+      .where('a.tenant_id = :tenantId', { tenantId })
+      .andWhere('a.asset_type = :assetType', { assetType })
+      .andWhere('a.identifier LIKE :pattern', { pattern: `${prefix}-%` })
+      .getRawMany<{ identifier: string }>();
+
+    const pattern = new RegExp(`^${escapeRegex(prefix)}-(\\d{2,3})$`);
+    const suffixes = rows
+      .map((r) => r.identifier.match(pattern))
+      .filter((m): m is RegExpMatchArray => m !== null)
+      .map((m) => parseInt(m[1], 10))
+      .filter((n) => Number.isFinite(n));
+
+    const nextSuffix = (suffixes.length === 0 ? 0 : Math.max(...suffixes)) + 1;
+    const width = nextSuffix >= 100 ? 3 : 2;
+    return `${prefix}-${String(nextSuffix).padStart(width, '0')}`;
+  }
+
+  // Translate Postgres unique-violation on the asset-number index into a
+  // structured ConflictException the frontend can disambiguate from other
+  // conflicts. Re-throws anything else unchanged so callers see the
+  // original error.
+  private translateUniqueViolation(err: unknown): void {
+    if (!(err instanceof QueryFailedError)) return;
+    const driverError = (err as any).driverError;
+    if (driverError?.code !== '23505') return;
+    const constraint = driverError?.constraint || '';
+    const detail = driverError?.detail || '';
+    if (
+      constraint === ASSET_UNIQUE_CONSTRAINT ||
+      detail.includes(ASSET_UNIQUE_CONSTRAINT)
+    ) {
+      throw new ConflictException({
+        error: 'duplicate_asset_number',
+        message:
+          'An asset with this number already exists. Please choose another.',
+      });
+    }
   }
 
   async findAll(tenantId: string, query: ListAssetsQueryDto) {
@@ -131,13 +203,15 @@ export class AssetsService {
       asset.current_location_type = dto.currentLocationType;
     if (dto.currentLocation !== undefined)
       asset.current_location = dto.currentLocation;
-    if (dto.weightCapacity !== undefined)
-      asset.weight_capacity = dto.weightCapacity;
-    if (dto.dailyRate !== undefined) asset.daily_rate = dto.dailyRate;
     if (dto.notes !== undefined) asset.notes = dto.notes;
     if (dto.metadata !== undefined) asset.metadata = dto.metadata;
 
-    return this.assetsRepository.save(asset);
+    try {
+      return await this.assetsRepository.save(asset);
+    } catch (err) {
+      this.translateUniqueViolation(err);
+      throw err;
+    }
   }
 
   async remove(tenantId: string, id: string): Promise<void> {
