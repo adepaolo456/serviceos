@@ -24,6 +24,7 @@ const SOURCE_DISPLAY_LABELS: Record<string, string> = {
   portal: "Online Bookings",
   manual: "Manual Entry",
   schedule_next: "Scheduled Follow-Ups",
+  exchange: "Exchange",
   rescheduled_from_failure: "Rescheduled Jobs",
   other: "Other",
 };
