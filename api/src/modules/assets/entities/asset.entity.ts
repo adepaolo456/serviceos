@@ -46,24 +46,6 @@ export class Asset {
   @Column({ name: 'current_job_id', type: 'uuid', nullable: true })
   current_job_id!: string;
 
-  @Column({
-    name: 'weight_capacity',
-    type: 'decimal',
-    precision: 10,
-    scale: 2,
-    nullable: true,
-  })
-  weight_capacity!: number;
-
-  @Column({
-    name: 'daily_rate',
-    type: 'decimal',
-    precision: 10,
-    scale: 2,
-    nullable: true,
-  })
-  daily_rate!: number;
-
   @Column({ type: 'text', nullable: true })
   notes!: string;
 

@@ -4,7 +4,6 @@ import {
   IsOptional,
   IsString,
   IsIn,
-  IsNumber,
   IsObject,
   IsInt,
   Min,
@@ -61,18 +60,6 @@ export class CreateAssetDto {
   @IsObject()
   currentLocation?: Record<string, any>;
 
-  @ApiPropertyOptional({ example: 4000 })
-  @IsOptional()
-  @Type(() => Number)
-  @IsNumber()
-  weightCapacity?: number;
-
-  @ApiPropertyOptional({ example: 15.0 })
-  @IsOptional()
-  @Type(() => Number)
-  @IsNumber()
-  dailyRate?: number;
-
   @ApiPropertyOptional({ example: 'Blue container, minor dent on left side' })
   @IsOptional()
   @IsString()
@@ -123,4 +110,20 @@ export class ListAssetsQueryDto {
   @IsInt()
   @Min(1)
   limit?: number;
+}
+
+export class NextAssetNumberQueryDto {
+  @ApiProperty({
+    enum: ['dumpster', 'pod', 'restroom'],
+    example: 'dumpster',
+  })
+  @IsString()
+  @IsNotEmpty()
+  @IsIn(['dumpster', 'pod', 'restroom'])
+  assetType: string;
+
+  @ApiProperty({ example: '10yd' })
+  @IsString()
+  @IsNotEmpty()
+  subtype: string;
 }
