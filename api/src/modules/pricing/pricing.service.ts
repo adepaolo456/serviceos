@@ -4,7 +4,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { EntityManager, Repository } from 'typeorm';
 import { PricingRule } from './entities/pricing-rule.entity';
 import { PricingTemplate } from './entities/pricing-template.entity';
 import { TenantFee } from './entities/tenant-fee.entity';
@@ -215,7 +215,17 @@ export class PricingService {
     await this.pricingRulesRepository.save(rule);
   }
 
-  async calculate(tenantId: string, dto: CalculatePriceDto) {
+  async calculate(
+    tenantId: string,
+    dto: CalculatePriceDto,
+    // Optional EntityManager — when the caller is inside a dataSource
+    // transaction and passes `trx`, the snapshot INSERT runs on the
+    // same connection so its FK check (fk_pricing_snapshots_job_id)
+    // can see the uncommitted job the caller just inserted. Omitting
+    // this param (existing call sites) preserves today's behavior:
+    // snapshot writes via the default-connection instance repo.
+    manager?: EntityManager,
+  ) {
     const rule = await this.findActiveRule(tenantId, dto.serviceType, dto.assetSubtype, dto.customerType);
 
     // ── Step 5: Multi-yard support ──
@@ -420,7 +430,14 @@ export class PricingService {
 
     // ── Step 8: Snapshot persistence ──
     if (dto.persist_snapshot) {
-      const snapshot = this.snapshotRepo.create({
+      // Use the caller's transaction manager if provided so the
+      // snapshot INSERT commits atomically with the caller's writes
+      // (critical when dto.jobId references a job the caller just
+      // inserted on the same transaction).
+      const snapshotRepo = manager
+        ? manager.getRepository(PricingSnapshot)
+        : this.snapshotRepo;
+      const snapshot = snapshotRepo.create({
         tenant_id: tenantId,
         job_id: dto.jobId || null,
         request_inputs: dto as unknown as Record<string, unknown>,
@@ -429,8 +446,15 @@ export class PricingService {
         engine_version: 'v2',
         locked: true,
       });
-      const saved = await this.snapshotRepo.save(snapshot);
-      return { ...result, snapshot_id: saved.id };
+      const saved = await snapshotRepo.save(snapshot);
+      // Surface pricing_config_version_id so callers can persist it
+      // alongside snapshot_id on the job row (jobs.pricing_config_version_id
+      // + jobs.pricing_snapshot_id travel together per d38478e).
+      return {
+        ...result,
+        snapshot_id: saved.id,
+        pricing_config_version_id: rule.version_id || rule.id,
+      };
     }
 
     return result;

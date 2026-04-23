@@ -664,13 +664,10 @@ export class RentalChainsService {
     const size = dto.dumpster_size || chain.dumpster_size;
     const assetId = dto.asset_id ?? chain.asset_id ?? null;
 
-    // ── Path α: price the exchange via the existing pricing engine ──
-    // All inputs derived server-side from chain context — zero frontend
-    // payload change required. Uses the exact same pricing call the
-    // booking wizard uses (`PricingService.calculate` with jobType:
-    // 'exchange' + exchange_context), so lifecycle exchange pricing now
-    // matches booking-wizard exchange pricing byte-for-byte, including
-    // tenant-configured `rule.exchange_fee` discount behavior.
+    // ── Path α: pricing inputs (pre-transaction reads) ──
+    // Pure reads that gather the inputs needed by PricingService.calculate.
+    // These run outside the transaction because they don't mutate state —
+    // it's just cheaper to compute them once before opening the write txn.
     //
     // Coordinates: sourced from the chain's drop-off job's
     // service_address. When missing/invalid, the pricing engine
@@ -685,12 +682,6 @@ export class RentalChainsService {
     // rentalDays: computed from the new segment (exchange_date →
     // newPickupDateStr) so extra-day charges price correctly when
     // the operator overrides the pickup.
-    //
-    // Pricing runs OUTSIDE the write transaction — the call is a pure
-    // read over pricing_rules / client_pricing_overrides / tenant_fees
-    // / yards. If it throws (e.g. no active rule for the dropoff size),
-    // the caller sees the error before any chain mutation occurs —
-    // correct by design: we never want an unpriced exchange to land.
     const deliveryLink = await this.linkRepo.findOne({
       where: { rental_chain_id: chain.id, task_type: 'drop_off' },
       relations: ['job'],
@@ -709,23 +700,6 @@ export class RentalChainsService {
       customer?.type === 'commercial' ? 'commercial' : 'residential';
 
     const segmentDays = daysBetween(dto.exchange_date, newPickupDateStr);
-
-    const quote = await this.pricingService.calculate(tenantId, {
-      serviceType: 'dumpster_rental',
-      assetSubtype: size,
-      jobType: 'exchange',
-      customerType,
-      customerLat,
-      customerLng,
-      rentalDays: segmentDays,
-      customerId: chain.customer_id,
-      exchange_context: {
-        pickup_asset_subtype: chain.dumpster_size ?? size,
-        dropoff_asset_subtype: size,
-      },
-    });
-    const exchangeTotal = Number(quote.breakdown?.total) || 0;
-    const exchangeBasePrice = Number(quote.breakdown?.basePrice) || 0;
 
     return this.dataSource.transaction(async (trx) => {
       const chainRepo = trx.getRepository(RentalChain);
@@ -799,6 +773,7 @@ export class RentalChainsService {
         asset_subtype: size,
         status: 'pending',
         priority: 'normal',
+        source: 'exchange',
         scheduled_date: dto.exchange_date,
         asset_id: assetId,
       } as Partial<Job> as Job);
@@ -861,23 +836,72 @@ export class RentalChainsService {
       if (dto.dumpster_size) chain.dumpster_size = dto.dumpster_size;
       await chainRepo.save(chain);
 
-      // 7. Path α — persist computed price on the exchange job so
-      // the per-job prepayment gate (`enforceJobPrepayment`) no
-      // longer short-circuits on `price <= 0`. Mirrors how
-      // booking-flow exchange jobs end up priced, but sourced from
-      // the same pricing engine response we just computed above.
+      // 7. Path α — price the exchange via the canonical pricing
+      // engine. Runs INSIDE the transaction (after savedExchangeJob
+      // exists) so `persist_snapshot: true` can write the
+      // pricing_snapshots row with a valid job_id FK reference.
+      //
+      // Transaction rollback is the safety mechanism: if pricing
+      // throws (e.g. no active rule for the dropoff size), the txn
+      // aborts and the chain-link cancellation, the exchange job
+      // insert, AND any partial snapshot row all revert together.
+      // Net persistent state is unchanged — equivalent safety to the
+      // prior "pricing runs outside transaction" pattern, without
+      // the cost of the FK-blocking snapshot timing problem.
+      //
+      // Only the exchange job gets the snapshot. Pickup reuses the
+      // chain's existing pricing context (matches d38478e intent).
+      const quote = await this.pricingService.calculate(
+        tenantId,
+        {
+          serviceType: 'dumpster_rental',
+          assetSubtype: size,
+          jobType: 'exchange',
+          customerType,
+          customerLat,
+          customerLng,
+          rentalDays: segmentDays,
+          customerId: chain.customer_id,
+          jobId: savedExchangeJob.id,
+          persist_snapshot: true,
+          exchange_context: {
+            pickup_asset_subtype: chain.dumpster_size ?? size,
+            dropoff_asset_subtype: size,
+          },
+        },
+        // Pass the outer transaction's EntityManager so the snapshot
+        // INSERT sees the just-saved savedExchangeJob under the FK
+        // check. Without this, the snapshot save runs on the default
+        // connection where the uncommitted job is invisible and the
+        // FK fires (fk_pricing_snapshots_job_id → jobs.id).
+        trx,
+      );
+      const exchangeTotal = Number(quote.breakdown?.total) || 0;
+      const exchangeBasePrice = Number(quote.breakdown?.basePrice) || 0;
+      const snapshotId = (quote as { snapshot_id?: string }).snapshot_id ?? null;
+      const pricingConfigVersionId =
+        (quote as { pricing_config_version_id?: string }).pricing_config_version_id ?? null;
+
+      // Persist computed price + snapshot linkage on the exchange
+      // job. pricing_snapshot_id + pricing_config_version_id travel
+      // together so consumers (enforceJobPrepayment, reporting, etc.)
+      // can join back to pricing_snapshots for the full lock.
       await jobRepo.update(
         { id: savedExchangeJob.id, tenant_id: tenantId },
         {
           total_price: exchangeTotal,
           base_price: exchangeBasePrice,
+          pricing_snapshot_id: snapshotId,
+          pricing_config_version_id: pricingConfigVersionId,
         },
       );
       // Mirror the update onto the in-memory ref so callers that
-      // receive `createdJobs.exchange` see fresh pricing without
+      // receive `createdJobs.exchange` see fresh values without
       // a second round-trip.
       savedExchangeJob.total_price = exchangeTotal;
       savedExchangeJob.base_price = exchangeBasePrice;
+      savedExchangeJob.pricing_snapshot_id = snapshotId;
+      savedExchangeJob.pricing_config_version_id = pricingConfigVersionId;
 
       // 8. Path α — create a NEW invoice for the exchange via the
       // canonical billing path. Status defaults to 'open', which is
@@ -898,6 +922,7 @@ export class RentalChainsService {
           {
             customerId: chain.customer_id,
             jobId: savedExchangeJob.id,
+            rentalChainId: chain.id,
             source: 'exchange',
             invoiceType: 'exchange',
             status: 'open',
