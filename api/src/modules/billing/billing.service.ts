@@ -14,6 +14,7 @@ import { Asset } from '../assets/entities/asset.entity';
 import { PricingRule } from '../pricing/entities/pricing-rule.entity';
 import { Notification } from '../notifications/entities/notification.entity';
 import { NotificationsService } from '../notifications/notifications.service';
+import { TERMINAL_JOB_STATUSES } from '../../common/constants/job-statuses';
 
 @Injectable()
 export class BillingService {
@@ -347,7 +348,7 @@ export class BillingService {
 
       if (job.asset_id && oldSubtype !== newSubtype) {
         await this.assetRepo.update({ id: job.asset_id, tenant_id: tenantId } as any, {
-          status: 'available', current_job_id: null, current_location_type: 'yard',
+          status: 'available', current_location_type: 'yard',
         } as any);
 
         const available = await this.assetRepo
@@ -355,12 +356,20 @@ export class BillingService {
           .where('a.tenant_id = :tenantId', { tenantId })
           .andWhere('a.subtype = :subtype', { subtype: newSubtype })
           .andWhere('a.status NOT IN (:...excluded)', { excluded: ['reserved', 'deployed', 'on_site', 'in_transit', 'retired'] })
-          .andWhere('a.current_job_id IS NULL')
+          .andWhere(
+            `NOT EXISTS (
+              SELECT 1 FROM jobs j
+              WHERE (j.asset_id = a.id OR j.drop_off_asset_id = a.id)
+                AND j.tenant_id = a.tenant_id
+                AND j.status NOT IN (:...terminalActive)
+            )`,
+            { terminalActive: [...TERMINAL_JOB_STATUSES] },
+          )
           .orderBy('a.created_at', 'DESC')
           .getOne();
 
         if (available) {
-          await this.assetRepo.update({ id: available.id, tenant_id: tenantId } as any, { status: 'reserved', current_job_id: job.id } as any);
+          await this.assetRepo.update({ id: available.id, tenant_id: tenantId } as any, { status: 'reserved' } as any);
           await this.jobsRepository.update({ id: job.id, tenant_id: tenantId }, { asset_id: available.id });
         } else {
           await this.jobsRepository.update({ id: job.id, tenant_id: tenantId }, { asset_id: null } as any);

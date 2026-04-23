@@ -1,0 +1,25 @@
+-- Phase E — Drop assets.current_job_id.
+-- Column has been replaced by a NOT EXISTS(jobs) derivation as of the
+-- deploy that ships Phases B + C + D. After this migration runs, nothing
+-- in the codebase references the column.
+--
+-- Verified pre-drop (audit phase, Item 5):
+--   - No FK constraint (pg_constraint check)
+--   - No index (pg_indexes check)
+--   - No view reference (information_schema.views check)
+--   - No trigger (information_schema.triggers check)
+--   - No TypeORM @Column declaration remaining
+--   - No frontend field-access reads
+--
+-- Apply timing: run this migration AFTER the code deploy that ships
+-- Phases B + C + D. If it runs first, production code still reads/writes
+-- a column that doesn't exist, and every affected request 500s.
+--
+-- DO NOT APPLY IN THIS PR.
+--
+-- Rollback (theoretical): ALTER TABLE assets ADD COLUMN current_job_id uuid;
+-- Rollback would leave the column empty. Authoritative data lives in the
+-- jobs table; there is no reconstruction path that produces a correct
+-- value (the same drift that motivated removal prevents it).
+
+ALTER TABLE assets DROP COLUMN IF EXISTS current_job_id;

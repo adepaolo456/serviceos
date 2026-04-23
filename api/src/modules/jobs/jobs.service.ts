@@ -334,7 +334,6 @@ export class JobsService {
         { id: savedJob.asset_id, tenant_id: tenantId } as any,
         {
           status: 'reserved',
-          current_job_id: savedJob.id,
         } as any,
       );
     }
@@ -1580,7 +1579,6 @@ export class JobsService {
               { id: pickupJob.asset_id, tenant_id: tenantId } as any,
               {
                 status: 'available',
-                current_job_id: null,
               } as any,
             );
             assetsReleased.push({ id: pickupAsset.id, identifier: pickupAsset.identifier });
@@ -1600,7 +1598,6 @@ export class JobsService {
             { id: job.asset_id, tenant_id: tenantId } as any,
             {
               status: 'available',
-              current_job_id: null,
             } as any,
           );
           // Only add if not already in the released list
@@ -1682,14 +1679,12 @@ export class JobsService {
         case 'dispatched':
           await this.assetRepo.update({ id: job.asset_id, tenant_id } as any, {
             status: 'reserved',
-            current_job_id: job.id,
           } as any);
           break;
 
         case 'en_route':
           await this.assetRepo.update({ id: job.asset_id, tenant_id } as any, {
             status: 'in_transit',
-            current_job_id: job.id,
             current_location_type: 'in_transit',
           } as any);
           break;
@@ -1707,7 +1702,6 @@ export class JobsService {
         case 'failed':
           await this.assetRepo.update({ id: job.asset_id, tenant_id } as any, {
             status: 'available',
-            current_job_id: null,
             current_location_type: 'yard',
           } as any);
           break;
@@ -2983,7 +2977,6 @@ export class JobsService {
         { id: previousAssetId, tenant_id: tenantId } as any,
         {
           status: 'available',
-          current_job_id: null,
           current_location_type: 'yard',
         } as any,
       );
@@ -3002,7 +2995,6 @@ export class JobsService {
           { id: previousAssetId, tenant_id: tenantId } as any,
           {
             status: 'available',
-            current_job_id: null,
             current_location_type: 'yard',
           } as any,
         );
@@ -3015,7 +3007,6 @@ export class JobsService {
           { id: previousDropOffAssetId, tenant_id: tenantId } as any,
           {
             status: 'available',
-            current_job_id: null,
             current_location_type: 'yard',
           } as any,
         );
@@ -3097,13 +3088,11 @@ export class JobsService {
     if (jobType === 'delivery' || jobType === 'drop_off') {
       await this.assetRepo.update({ id: job.asset_id, tenant_id } as any, {
         status: 'on_site',
-        current_job_id: job.id,
         current_location_type: 'customer_site',
       } as any);
     } else if (jobType === 'pickup' || jobType === 'removal') {
       await this.assetRepo.update({ id: job.asset_id, tenant_id } as any, {
         status: 'available',
-        current_job_id: null,
         current_location_type: 'yard',
         needs_dump: true,
       } as any);
@@ -3119,21 +3108,18 @@ export class JobsService {
       // Old asset (main asset_id) returns to yard
       await this.assetRepo.update({ id: job.asset_id, tenant_id } as any, {
         status: 'available',
-        current_job_id: null,
         current_location_type: 'yard',
       } as any);
       // New asset (drop_off_asset_id) goes to customer site
       if (job.drop_off_asset_id) {
         await this.assetRepo.update({ id: job.drop_off_asset_id, tenant_id } as any, {
           status: 'on_site',
-          current_job_id: job.id,
           current_location_type: 'customer_site',
         } as any);
       }
     } else if (jobType === 'dump_run' || jobType === 'dump_and_return') {
       await this.assetRepo.update({ id: job.asset_id, tenant_id } as any, {
         status: 'available',
-        current_job_id: null,
         current_location_type: 'yard',
         needs_dump: false,
         staged_at: null,
@@ -3212,7 +3198,6 @@ export class JobsService {
         if (job.asset_id && job.asset_id !== newAssetId) {
           await this.assetRepo.update({ id: job.asset_id, tenant_id: tenantId } as any, {
             status: 'available',
-            current_job_id: null,
           } as any);
         }
 
@@ -3220,7 +3205,6 @@ export class JobsService {
         if (newAssetId && newAssetId !== job.asset_id) {
           await this.assetRepo.update({ id: newAssetId, tenant_id: tenantId } as any, {
             status: 'reserved',
-            current_job_id: id,
           } as any);
         }
       }
@@ -3726,7 +3710,7 @@ export class JobsService {
   }
 
   async updateAssetStatus(assetId: string, tenantId: string, status: string): Promise<void> {
-    await this.assetRepo.update({ id: assetId, tenant_id: tenantId } as any, { status, current_job_id: null } as any);
+    await this.assetRepo.update({ id: assetId, tenant_id: tenantId } as any, { status } as any);
   }
 
   async softDelete(tenantId: string, id: string): Promise<void> {
@@ -3788,10 +3772,12 @@ export class JobsService {
 
     const saved = await this.jobsRepository.save(job);
 
-    // Update assets to "scheduled_dump"
-    for (const assetId of body.assetIds) {
-      await this.assetRepo.update({ id: assetId, tenant_id: tenantId } as any, { current_job_id: saved.id } as any);
-    }
+    // Item 5 — removed. The previous code here walked `body.assetIds` and
+    // set `current_job_id: saved.id` on each asset. That column no longer
+    // exists; the link between the dump run and its assets is the dump
+    // run job row itself (saved) plus any per-asset `scheduled_dump`
+    // status updates handled at the actual state transition. No
+    // asset-side write is needed at creation time.
 
     return saved;
   }
