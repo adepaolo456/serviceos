@@ -2424,65 +2424,6 @@ const JobTile = memo(function JobTile({ job, isUnassigned, drivers, onAssign, on
    Drag Ghost
    ═══════════════════════════════════════════════════ */
 
-/* ═══ Status Dropdown (portal-based to escape overflow) ═══ */
-
-const STATUSES = ["pending", "confirmed", "en_route", "arrived", "in_progress", "completed", "failed", "cancelled"];
-
-function StatusDropdown({ jobId, currentStatus, onStatusChange }: { jobId: string; currentStatus: string; onStatusChange: (jobId: string, s: string) => void }) {
-  const [open, setOpen] = useState(false);
-  const btnRef = useRef<HTMLButtonElement>(null);
-  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const close = () => setOpen(false);
-    const onScroll = () => setOpen(false);
-    window.addEventListener("mousedown", close);
-    window.addEventListener("scroll", onScroll, true);
-    return () => { window.removeEventListener("mousedown", close); window.removeEventListener("scroll", onScroll, true); };
-  }, [open]);
-
-  const handleOpen = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (btnRef.current) {
-      const r = btnRef.current.getBoundingClientRect();
-      const spaceBelow = window.innerHeight - r.bottom;
-      setPos({
-        top: spaceBelow > 280 ? r.bottom + 4 : r.top - 280,
-        left: Math.min(r.left, window.innerWidth - 200),
-      });
-    }
-    setOpen(!open);
-  };
-
-  return (
-    <>
-      <button ref={btnRef} onClick={handleOpen}
-        className="flex items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-medium ml-auto"
-        style={{ borderColor: "var(--t-border)", color: "var(--t-text-muted)" }}>
-        Status: {DISPLAY_STATUS_LABELS[deriveDisplayStatus(currentStatus)]} ▾
-      </button>
-      {open && pos && typeof document !== "undefined" && createPortal(
-        <div onMouseDown={e => e.stopPropagation()}
-          className="fixed rounded-[14px] border shadow-2xl animate-dropdown py-1"
-          style={{ top: pos.top, left: pos.left, zIndex: 9999, background: "var(--t-bg-secondary)", borderColor: "var(--t-border)", minWidth: 180, maxHeight: 280, overflowY: "auto" }}>
-          {STATUSES.map(s => (
-            <button key={s} disabled={s === currentStatus}
-              onClick={(e) => { e.stopPropagation(); setOpen(false); if (confirm(`Change status to "${s.replace(/_/g, " ")}"?`)) onStatusChange(jobId, s); }}
-              className="flex w-full items-center gap-2 px-3 py-2 text-xs whitespace-nowrap disabled:opacity-30 transition-colors"
-              style={{ color: s === currentStatus ? "var(--t-text-muted)" : "var(--t-text-primary)" }}
-              onMouseEnter={e => { if (s !== currentStatus) (e.currentTarget as HTMLElement).style.background = "var(--t-bg-card-hover)"; }}
-              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}>
-              <span className="w-2 h-2 rounded-full" style={{ background: s === "completed" ? "var(--t-accent)" : s === "failed" || s === "cancelled" ? "var(--t-error)" : s === "pending" ? "var(--t-warning)" : "var(--t-info)" }} />
-              {s.replace(/_/g, " ")}
-            </button>
-          ))}
-        </div>,
-        document.body
-      )}
-    </>
-  );
-}
 
 function JobTileGhost({ job, bulkCount = 1 }: { job: DispatchJob; bulkCount?: number }) {
   const tc = TYPE_CONFIG[job.job_type] || { letter: "?", stripe: "#8A8A8A" };
