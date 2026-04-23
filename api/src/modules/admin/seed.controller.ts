@@ -312,7 +312,7 @@ export class SeedController {
     // 2. dump_tickets (refs jobs + invoices)
     // 3. invoices (refs jobs)
     // 4. jobs self-refs (parent_job_id)
-    // 5. assets refs (current_job_id)
+    // 5. clear asset.current_job_id refs — removed (Item 5, column gone)
     // 6. jobs
     await this.jobRepo.query(`DELETE FROM notifications WHERE tenant_id = $1 AND channel = 'automation'`, [tid]);
     await this.jobRepo.query(`UPDATE dump_tickets SET invoice_id = NULL WHERE tenant_id = $1`, [tid]);
@@ -320,7 +320,7 @@ export class SeedController {
     await this.jobRepo.query(`DELETE FROM payments WHERE tenant_id = $1`, [tid]);
     await this.jobRepo.query(`DELETE FROM invoices WHERE tenant_id = $1`, [tid]);
     await this.jobRepo.query(`UPDATE jobs SET parent_job_id = NULL, linked_job_ids = '[]'::jsonb WHERE tenant_id = $1`, [tid]);
-    await this.jobRepo.query(`UPDATE assets SET current_job_id = NULL WHERE tenant_id = $1`, [tid]);
+    // (was: UPDATE assets SET current_job_id = NULL — column removed Item 5)
     await this.jobRepo.query(`DELETE FROM jobs WHERE tenant_id = $1`, [tid]);
     log.push('Cleared existing jobs, invoices, dump tickets, and automation logs');
 
@@ -377,7 +377,7 @@ export class SeedController {
       rental_days: 14, rental_start_date: '2026-03-20', rental_end_date: '2026-04-03',
       base_price: 800, total_price: 800,
     }));
-    if (assetA) await this.assetRepo.update(assetA, { status: 'deployed', current_location: { street: '88 Summer Street', city: 'Stoughton', state: 'MA' }, current_job_id: jobA.id } as any);
+    if (assetA) await this.assetRepo.update(assetA, { status: 'deployed', current_location: { street: '88 Summer Street', city: 'Stoughton', state: 'MA' } } as any);
     await saveInv({ invoice_number: 'INV-2026-0010', customer_id: custDavid, job_id: jobA.id, status: 'paid', source: 'booking', invoice_type: 'rental', subtotal: 800, total: 800, amount_paid: 800, balance_due: 0, paid_at: new Date('2026-03-20'), payment_method: 'card', line_items: [{ description: '20yd Dumpster Rental — 14-day rental', quantity: 1, unitPrice: 800, amount: 800 }], notes: 'Paid at time of booking' });
     log.push('Job A: David Kim 20yd Delivery (completed, deployed)');
 
@@ -402,7 +402,7 @@ export class SeedController {
       assigned_driver_id: jake, asset_id: assetB, pick_up_asset_id: assetB,
       parent_job_id: jobB.id, dump_disposition: 'dumped',
     }));
-    if (assetB) await this.assetRepo.update(assetB, { status: 'available', current_location: null, current_job_id: null } as any);
+    if (assetB) await this.assetRepo.update(assetB, { status: 'available', current_location: null } as any);
     await this.jobRepo.update(jobB.id, { linked_job_ids: [jobB2.id] });
     // Dump ticket: clean
     const dumpRS = await findDump('Recycling Solutions');
@@ -430,7 +430,7 @@ export class SeedController {
       assigned_driver_id: jake, asset_id: assetC, pick_up_asset_id: assetC,
       parent_job_id: jobC.id, dump_disposition: 'dumped', customer_additional_charges: 422, dump_status: 'submitted',
     }));
-    if (assetC) await this.assetRepo.update(assetC, { status: 'available', current_location: null, current_job_id: null } as any);
+    if (assetC) await this.assetRepo.update(assetC, { status: 'available', current_location: null } as any);
     await this.jobRepo.update(jobC.id, { linked_job_ids: [jobC2.id] });
     // Overage invoice
     const invC: any = await saveInv({ invoice_number: 'INV-2026-0030', customer_id: custRobert, job_id: jobC.id, status: 'open', source: 'dump_slip', invoice_type: 'overage', subtotal: 422, total: 422, amount_paid: 0, balance_due: 422, due_date: '2026-04-27', line_items: [{ description: 'Weight overage: 1.2 tons over 3 ton allowance @ $185/ton', quantity: 1, unitPrice: 222, amount: 222 }, { description: 'Mattress (qty: 2) @ $100/each', quantity: 2, unitPrice: 100, amount: 200 }], notes: 'Additional charges from dump slip #T-89234 at Brockton Transfer Station' });
@@ -457,7 +457,7 @@ export class SeedController {
       assigned_driver_id: mike, asset_id: assetD, pick_up_asset_id: assetD,
       parent_job_id: jobD.id, dump_disposition: 'dumped', customer_additional_charges: 75, dump_status: 'submitted',
     }));
-    if (assetD) await this.assetRepo.update(assetD, { status: 'available', current_location: null, current_job_id: null } as any);
+    if (assetD) await this.assetRepo.update(assetD, { status: 'available', current_location: null } as any);
     await this.jobRepo.update(jobD.id, { linked_job_ids: [jobD2.id] });
     const dumpST = await findDump('Stoughton Transfer Station');
     const invD: any = await saveInv({ invoice_number: 'INV-2026-0031', customer_id: custSSR, job_id: jobD.id, status: 'open', source: 'dump_slip', invoice_type: 'overage', subtotal: 75, total: 75, amount_paid: 0, balance_due: 75, due_date: '2026-04-21', line_items: [{ description: 'Weight overage: 0.5 tons over 2 ton allowance @ $150/ton', quantity: 1, unitPrice: 75, amount: 75 }] });
@@ -477,7 +477,7 @@ export class SeedController {
       base_price: 800, total_price: 800,
     }));
     await saveInv({ invoice_number: 'INV-2026-0014', customer_id: custTom, job_id: jobE0.id, status: 'paid', source: 'booking', invoice_type: 'rental', subtotal: 800, total: 800, amount_paid: 800, balance_due: 0, paid_at: new Date('2026-03-15'), payment_method: 'card', line_items: [{ description: '20yd Dumpster Rental — 14-day rental', quantity: 1, unitPrice: 800, amount: 800 }] });
-    if (assetE) await this.assetRepo.update(assetE, { status: 'deployed', current_location: { street: '200 Centre Street', city: 'Abington', state: 'MA' }, current_job_id: jobE0.id } as any);
+    if (assetE) await this.assetRepo.update(assetE, { status: 'deployed', current_location: { street: '200 Centre Street', city: 'Abington', state: 'MA' } } as any);
 
     // Failed pickup
     const jobE: any = await this.jobRepo.save(makeJob({

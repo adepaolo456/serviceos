@@ -327,7 +327,6 @@ export default function DispatchPage() {
     id: string; identifier: string; subtype: string; status: string;
     needs_dump: boolean; staged_at: string; staged_waste_type: string;
     staged_notes: string; yard_id: string; yard?: { id: string; name: string };
-    current_job_id: string;
   }>>([]);
   const [showYardPanel, setShowYardPanel] = useState(false);
   const [rescheduleQueue, setRescheduleQueue] = useState<DispatchJob[]>([]);

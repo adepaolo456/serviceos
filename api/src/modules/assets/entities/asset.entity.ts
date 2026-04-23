@@ -43,9 +43,6 @@ export class Asset {
   @Column({ name: 'current_location', type: 'jsonb', nullable: true })
   current_location!: Record<string, any>;
 
-  @Column({ name: 'current_job_id', type: 'uuid', nullable: true })
-  current_job_id!: string;
-
   @Column({ type: 'text', nullable: true })
   notes!: string;
 

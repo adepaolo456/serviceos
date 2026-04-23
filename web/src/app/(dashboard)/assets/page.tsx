@@ -67,7 +67,6 @@ interface Asset {
   condition: string;
   current_location_type: string;
   current_location: Record<string, string> | null;
-  current_job_id: string | null;
   notes: string;
   metadata: Record<string, unknown>;
   retired_at: string | null;

@@ -13,6 +13,7 @@ import {
   RetireAssetDto,
 } from './dto/asset.dto';
 import { escapeRegex, getSubtypePrefix } from './subtype-prefix.util';
+import { TERMINAL_JOB_STATUSES } from '../../common/constants/job-statuses';
 
 // Name of the unique index added by
 // migrations/2026-04-23-assets-tenant-asset-type-identifier-unique-index.sql.
@@ -20,18 +21,6 @@ import { escapeRegex, getSubtypePrefix } from './subtype-prefix.util';
 // which is how we distinguish "duplicate asset number" from any other unique
 // violation on this table. Keep in sync with the migration.
 const ASSET_UNIQUE_CONSTRAINT = 'assets_tenant_asset_type_identifier_unique';
-
-// Phase B — job statuses that mean "job is no longer consuming inventory
-// for projection purposes". Terminal states (completed/cancelled) plus
-// failed and needs_reschedule — both of which leave the asset in a
-// distinct physical state but are no longer committing new capacity
-// against the projection window.
-const TERMINAL_JOB_STATUSES = [
-  'completed',
-  'cancelled',
-  'failed',
-  'needs_reschedule',
-] as const;
 
 @Injectable()
 export class AssetsService {
@@ -249,9 +238,9 @@ export class AssetsService {
   // to assets.id (verified against prod). Hard-delete DOES check it
   // (integrity), but retire is only about active work.
   //
-  // assets.current_job_id is deliberately NOT used — that column is
-  // denormalized and has drifted in prod (11 mismatched rows in the
-  // pilot tenant at last audit). Live join against jobs is the truth.
+  // Uses live joins against jobs (the authoritative truth); there is no
+  // denormalized pointer column on assets after Item 5 removed the
+  // drifting `current_job_id`.
   async retire(
     tenantId: string,
     assetId: string,
@@ -397,7 +386,20 @@ export class AssetsService {
         excluded: ['reserved', 'deployed', 'on_site', 'in_transit', 'full_staged', 'maintenance', 'retired'],
       })
       .andWhere('a.needs_dump = false')
-      .andWhere('a.current_job_id IS NULL')
+      // "Not referenced by any active job" — derived from the authoritative
+      // jobs table. Supported by partial index idx_jobs_tenant_asset_id_active
+      // and idx_jobs_tenant_drop_off_asset_id_active. Replaces the former
+      // denormalized `a.current_job_id IS NULL` check (Item 5 — that column
+      // drifted in prod and produced silent miscounts).
+      .andWhere(
+        `NOT EXISTS (
+          SELECT 1 FROM jobs j
+          WHERE (j.asset_id = a.id OR j.drop_off_asset_id = a.id)
+            AND j.tenant_id = a.tenant_id
+            AND j.status NOT IN (:...terminalActive)
+        )`,
+        { terminalActive: [...TERMINAL_JOB_STATUSES] },
+      )
       .orderBy('a.created_at', 'DESC')
       .getMany();
   }
@@ -524,7 +526,7 @@ export class AssetsService {
    *   base_available   = COUNT(assets.status = 'available'
    *                            AND subtype = :subtype
    *                            AND needs_dump = false
-   *                            AND current_job_id IS NULL)
+   *                            AND NOT EXISTS (active job referencing asset))
    *   outgoing_count   = COUNT(jobs.job_type IN ('delivery','exchange')
    *                            AND jobs.asset_subtype = :subtype
    *                            AND jobs.scheduled_date <= :targetDate
@@ -593,13 +595,44 @@ export class AssetsService {
 
     // Strict base filter — status='available' AND not pending dump
     // AND not referentially held by any job. Matches the stricter
-    // filter used by `findAvailable` above and excludes every known
-    // "out of inventory" condition without trusting any single flag.
+    // filter used by `findAvailable` above.
+    //
+    // "Not referenced by any active job" is derived from the jobs
+    // table (Item 5 — the former denormalized `current_job_id` column
+    // drifted in prod). Scope the active-refs fetch to this subtype
+    // via an inner join against assets so we don't pull refs for
+    // subtypes we aren't projecting.
+    const activeRefIds = new Set(
+      (
+        await this.jobsRepository
+          .createQueryBuilder('j')
+          .select([
+            'j.asset_id AS asset_id',
+            'j.drop_off_asset_id AS drop_off_asset_id',
+          ])
+          .innerJoin(
+            'assets',
+            'ref_a',
+            '(ref_a.id = j.asset_id OR ref_a.id = j.drop_off_asset_id) AND ref_a.tenant_id = j.tenant_id AND ref_a.subtype = :subtype',
+            { subtype },
+          )
+          .where('j.tenant_id = :tenantId', { tenantId })
+          .andWhere('j.status NOT IN (:...terminalActive)', {
+            terminalActive: [...TERMINAL_JOB_STATUSES],
+          })
+          .getRawMany<{
+            asset_id: string | null;
+            drop_off_asset_id: string | null;
+          }>()
+      )
+        .flatMap((r) => [r.asset_id, r.drop_off_asset_id])
+        .filter((x): x is string => !!x),
+    );
     const availableNow = assets.filter(
       (a) =>
         a.status === 'available' &&
         !a.needs_dump &&
-        !a.current_job_id,
+        !activeRefIds.has(a.id),
     ).length;
 
     // Expand the terminal set with `pending` when the caller wants

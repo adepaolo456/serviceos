@@ -11,6 +11,7 @@ import { BillingService } from '../billing/billing.service';
 import { CreatePublicBookingDto } from './dto/public-booking.dto';
 import { haversineDistance } from '../pricing/pricing.utils';
 import { issueNextJobNumber } from '../../common/utils/job-number.util';
+import { TERMINAL_JOB_STATUSES } from '../../common/constants/job-statuses';
 
 @Injectable()
 export class PublicService {
@@ -204,7 +205,17 @@ export class PublicService {
         .andWhere('a.status NOT IN (:...excluded)', {
           excluded: ['reserved', 'deployed', 'on_site', 'in_transit', 'retired'],
         })
-        .andWhere('a.current_job_id IS NULL')
+        // Item 5 — derived from authoritative jobs table. Supported by
+        // idx_jobs_tenant_asset_id_active + idx_jobs_tenant_drop_off_asset_id_active.
+        .andWhere(
+          `NOT EXISTS (
+            SELECT 1 FROM jobs j
+            WHERE (j.asset_id = a.id OR j.drop_off_asset_id = a.id)
+              AND j.tenant_id = :tid
+              AND j.status NOT IN (:...terminalActive)
+          )`,
+          { tid: t.id, terminalActive: [...TERMINAL_JOB_STATUSES] },
+        )
         .getCount();
       if (availableCount === 0) {
         throw new BadRequestException(
