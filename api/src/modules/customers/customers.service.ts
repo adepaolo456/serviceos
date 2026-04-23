@@ -242,12 +242,20 @@ export class CustomersService {
     if (!customer) {
       throw new NotFoundException(`Customer ${id} not found`);
     }
-    // Override stored rollups with live-computed values. See the Number()
-    // cast note in findAll — integer shape preservation matters for the
-    // frontend sort comparators and the avgValue math on the detail page.
-    customer.total_jobs = Number(raw[0].rollup_total_jobs);
-    customer.lifetime_revenue = raw[0].rollup_lifetime_revenue;
-    return customer;
+    // Phase B — the stored `customers.total_jobs` and
+    // `customers.lifetime_revenue` columns were dropped after Phase A
+    // soak proved live-compute was stable. Since those fields no
+    // longer exist on the Customer entity, we return a spread object
+    // (same pattern findAll uses per row) and cast to Customer so the
+    // function signature is preserved. The response body shape is
+    // unchanged — API consumers still see total_jobs (integer) and
+    // lifetime_revenue (decimal string) on the JSON payload, now
+    // derived 100% from live query rather than stored + override.
+    return {
+      ...customer,
+      total_jobs: Number(raw[0].rollup_total_jobs),
+      lifetime_revenue: raw[0].rollup_lifetime_revenue,
+    } as Customer;
   }
 
   async update(
