@@ -24,6 +24,31 @@ import { getTenantRentalDays } from '../../common/utils/tenant-rental-days.util'
 import { PricingService } from '../pricing/pricing.service';
 import { BillingService } from '../billing/billing.service';
 
+/**
+ * Result of `createExchange`. Contains the updated chain plus explicit
+ * references to the two newly-created jobs. Callers that need the jobs
+ * (e.g. JobsService.scheduleNextTask and JobsService.exchangeFromRental
+ * when delegating) read them directly instead of re-querying the DB
+ * with heuristics like "most recent created_at" or "highest
+ * sequence_number" — that pattern is fragile and was explicitly
+ * rejected during the Path-B/Path-γ consolidation audit.
+ *
+ * `exchange` = the new exchange job (the dumpster swap itself)
+ * `pickup`   = the fresh pickup job appended after the exchange
+ *
+ * Callers that only need the chain (e.g. the controller at
+ * rental-chains.controller.ts) destructure `{ chain }` and discard
+ * `createdJobs` so the over-the-wire response preserves the prior
+ * `RentalChain` contract exactly.
+ */
+export interface CreateExchangeResult {
+  chain: RentalChain;
+  createdJobs: {
+    exchange: Job;
+    pickup: Job;
+  };
+}
+
 // ── Date helpers (UTC, date-only) ──
 function shiftDateStr(date: string, days: number): string {
   const d = new Date(`${date}T00:00:00Z`);
@@ -604,7 +629,7 @@ export class RentalChainsService {
     tenantId: string,
     chainId: string,
     dto: CreateExchangeDto,
-  ): Promise<RentalChain> {
+  ): Promise<CreateExchangeResult> {
     const chain = await this.chainRepo.findOne({
       where: { id: chainId, tenant_id: tenantId },
     });
@@ -848,6 +873,11 @@ export class RentalChainsService {
           base_price: exchangeBasePrice,
         },
       );
+      // Mirror the update onto the in-memory ref so callers that
+      // receive `createdJobs.exchange` see fresh pricing without
+      // a second round-trip.
+      savedExchangeJob.total_price = exchangeTotal;
+      savedExchangeJob.base_price = exchangeBasePrice;
 
       // 8. Path α — create a NEW invoice for the exchange via the
       // canonical billing path. Status defaults to 'open', which is
@@ -885,7 +915,14 @@ export class RentalChainsService {
         );
       }
 
-      return this.findOne(tenantId, chain.id);
+      const updatedChain = await this.findOne(tenantId, chain.id);
+      return {
+        chain: updatedChain,
+        createdJobs: {
+          exchange: savedExchangeJob,
+          pickup: savedPickupJob,
+        },
+      };
     });
   }
 

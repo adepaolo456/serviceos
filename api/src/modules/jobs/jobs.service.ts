@@ -3576,22 +3576,59 @@ export class JobsService {
       const job = this.jobsRepository.create({ ...baseJob, job_number: await this.generateJobNumber(tenantId, 'pickup'), job_type: 'pickup', asset_id: parent.asset_id });
       jobs.push(await this.jobsRepository.save(job));
     } else if (body.type === 'exchange') {
-      const job = this.jobsRepository.create({ ...baseJob, job_number: await this.generateJobNumber(tenantId, 'exchange'), job_type: 'exchange', asset_id: parent.asset_id });
-      jobs.push(await this.jobsRepository.save(job));
-
-      // Auto-create exchange invoice
-      const exchangeFee = Number((body as any).exchangeFee || 0) || Number(job.base_price || 0);
-      if (exchangeFee > 0) {
-        await this.billingService.createInternalInvoice(tenantId, {
-          customerId: parent.customer_id,
-          jobId: jobs[jobs.length - 1].id,
-          source: 'exchange',
-          invoiceType: 'exchange',
-          status: 'open',
-          lineItems: [{ description: 'Dumpster Exchange', quantity: 1, unitPrice: exchangeFee, amount: exchangeFee }],
-          notes: `Exchange scheduled from job #${parent.job_number}`,
-        });
+      // Single-source-of-truth: delegate exchange creation to
+      // RentalChainsService.createExchange. The prior inline
+      // implementation created a bare exchange job with no
+      // task_chain_links row, no pricing snapshot, no
+      // asset_subtype, and no cancellation of the scheduled
+      // pickup — silent data drift on every Schedule-Next click.
+      // See commit d38478e for the billing-complete contract that
+      // createExchange enforces and that we now inherit here.
+      // Tenant scope: parentJobId was tenant-validated via findOne at
+      // the top of scheduleNextTask. task_chain_links has no tenant_id
+      // column; its tenant is derived from the job/chain it references,
+      // so filtering by job_id alone is safe (matches the pattern at
+      // rental-chains.service.ts:199 / :736).
+      const parentLink = await this.taskChainLinkRepo.findOne({
+        where: { job_id: parentJobId },
+      });
+      if (!parentLink?.rental_chain_id) {
+        throw new BadRequestException(
+          `Cannot schedule exchange from job ${parentJobId}: parent job has no rental chain link. ` +
+          `This indicates a data integrity issue — jobs reaching scheduleNextTask should be on a chain. ` +
+          `If this error appears, investigate how the parent job was created without a chain link.`,
+        );
       }
+
+      const { createdJobs } = await this.rentalChainsService.createExchange(
+        tenantId,
+        parentLink.rental_chain_id,
+        {
+          exchange_date: body.scheduledDate,
+          dumpster_size: body.newAssetSubtype,
+        },
+      );
+
+      // TODO(backlog): lift `time_window` into CreateExchangeDto so
+      // the service applies it inline rather than via these post-hoc
+      // updates. For now, match prior scheduleNextTask behavior by
+      // writing the window onto both newly-created jobs.
+      if (body.timeWindow) {
+        await this.jobsRepository.update(
+          { id: createdJobs.exchange.id, tenant_id: tenantId },
+          { scheduled_window_start: windowStart, scheduled_window_end: windowEnd },
+        );
+        await this.jobsRepository.update(
+          { id: createdJobs.pickup.id, tenant_id: tenantId },
+          { scheduled_window_start: windowStart, scheduled_window_end: windowEnd },
+        );
+        createdJobs.exchange.scheduled_window_start = windowStart;
+        createdJobs.exchange.scheduled_window_end = windowEnd;
+        createdJobs.pickup.scheduled_window_start = windowStart;
+        createdJobs.pickup.scheduled_window_end = windowEnd;
+      }
+
+      jobs.push(createdJobs.exchange, createdJobs.pickup);
     } else if (body.type === 'dump_and_return') {
       // Phase B2 — pickup retains its parent-asset inheritance (not
       // in scope for B2). Only the delivery sub-path's asset
@@ -3639,54 +3676,79 @@ export class JobsService {
       throw new NotFoundException(`Rental chain ${body.rentalChainId} not found`);
     }
 
-    // Try to find the most recent job in this chain to get service_address
-    const chainLink = await this.taskChainLinkRepo.findOne({
-      where: { rental_chain_id: chain.id },
-      relations: ['job'],
-      order: { sequence_number: 'DESC' },
+    // Single-source-of-truth: chains with a scheduled pickup link
+    // delegate to RentalChainsService.createExchange, which is the
+    // canonical path (chain link cancellation + insertion, pricing
+    // snapshot, invoice, asset_subtype denormalization).
+    //
+    // The legacy branch below used to unconditionally create a bare
+    // exchange job with `source: 'exchange_from_rental'` and no chain
+    // link update — the same data-drift class as scheduleNextTask's
+    // prior exchange branch. DB audit pre-ship confirmed zero current
+    // tenant rentals require the legacy path; we fail fast instead of
+    // preserving broken logic. If legacy standalone rental support is
+    // ever needed, the correct fix is a data migration onto chains,
+    // not code restoration.
+    // Tenant scope: chain.id was tenant-validated via rentalChainRepo.findOne
+    // above. task_chain_links has no tenant_id column — its tenant derives
+    // from the chain it references, which we already constrained. Same
+    // pattern as rental-chains.service.ts:454, :736.
+    const scheduledPickupLink = await this.taskChainLinkRepo.findOne({
+      where: {
+        rental_chain_id: chain.id,
+        task_type: 'pick_up',
+        status: 'scheduled',
+      },
     });
 
+    if (!scheduledPickupLink) {
+      throw new BadRequestException(
+        `Cannot create exchange for rental chain ${chain.id}: no scheduled pickup link exists on the chain. ` +
+        `This path previously handled legacy standalone rentals, but all current rentals are chain-backed. ` +
+        `If this error appears, investigate the rental's chain state.`,
+      );
+    }
+
+    const { createdJobs } = await this.rentalChainsService.createExchange(
+      tenantId,
+      chain.id,
+      {
+        exchange_date: body.scheduledDate,
+        dumpster_size: body.newAssetSubtype,
+      },
+    );
+
+    // TODO(backlog): lift `time_window` into CreateExchangeDto so
+    // the service applies it inline rather than via these post-hoc
+    // updates. Matches the same pattern used by scheduleNextTask.
     let windowStart = '08:00', windowEnd = '17:00';
     if (body.timeWindow === 'morning') { windowStart = '08:00'; windowEnd = '12:00'; }
     else if (body.timeWindow === 'afternoon') { windowStart = '12:00'; windowEnd = '17:00'; }
-
-    const exchangeJob = this.jobsRepository.create({
-      tenant_id: tenantId,
-      customer_id: chain.customer_id,
-      job_number: await this.generateJobNumber(tenantId, 'exchange'),
-      job_type: 'exchange',
-      service_type: 'dumpster_rental',
-      asset_subtype: body.newAssetSubtype || chain.dumpster_size,
-      asset_id: chain.asset_id || null,
-      service_address: chainLink?.job?.service_address || null,
-      status: 'pending',
-      priority: 'normal',
-      source: 'exchange_from_rental',
-      scheduled_date: body.scheduledDate,
-      scheduled_window_start: windowStart,
-      scheduled_window_end: windowEnd,
-    } as Partial<Job> as Job);
-    const savedJob = await this.jobsRepository.save(exchangeJob);
-
-    // Create exchange invoice
-    const exchangeFee = Number(body.exchangeFee || 0);
-    if (exchangeFee > 0) {
-      await this.billingService.createInternalInvoice(tenantId, {
-        customerId: chain.customer_id,
-        jobId: savedJob.id,
-        source: 'exchange',
-        invoiceType: 'exchange',
-        status: 'open',
-        lineItems: [{ description: 'Dumpster Exchange', quantity: 1, unitPrice: exchangeFee, amount: exchangeFee }],
-        notes: `Exchange scheduled for rental chain ${chain.id}`,
-      });
+    if (body.timeWindow) {
+      await this.jobsRepository.update(
+        { id: createdJobs.exchange.id, tenant_id: tenantId },
+        { scheduled_window_start: windowStart, scheduled_window_end: windowEnd },
+      );
+      await this.jobsRepository.update(
+        { id: createdJobs.pickup.id, tenant_id: tenantId },
+        { scheduled_window_start: windowStart, scheduled_window_end: windowEnd },
+      );
+      createdJobs.exchange.scheduled_window_start = windowStart;
+      createdJobs.exchange.scheduled_window_end = windowEnd;
+      createdJobs.pickup.scheduled_window_start = windowStart;
+      createdJobs.pickup.scheduled_window_end = windowEnd;
     }
 
-    // No chain link update needed — the rental chain was used only as source of truth
-    // for customer/address/asset. handleTypeChange operates on existing chain links,
-    // but this job was created outside the chain link system.
-
-    return { jobs: [savedJob], rentalChainId: chain.id };
+    // Preserve existing exchangeFromRental return contract
+    // (booking-wizard.tsx:658 reads `res.jobs?.[0]?.id`). The
+    // exchange job is first — it's what the wizard navigates to.
+    // The pickup is additive; prior callers checking `jobs.length`
+    // are none (grep-confirmed).
+    //
+    // body.exchangeFee is intentionally ignored — createExchange
+    // recomputes via the canonical pricing engine. See Decision 4
+    // from the Path-B/Path-γ consolidation audit (Scenario A).
+    return { jobs: [createdJobs.exchange, createdJobs.pickup], rentalChainId: chain.id };
   }
 
   async stageAtYard(tenantId: string, jobId: string, body: { wasteType?: string; notes?: string }) {
