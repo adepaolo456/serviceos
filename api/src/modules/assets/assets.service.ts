@@ -1,14 +1,16 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { QueryFailedError, Repository, In, DataSource } from 'typeorm';
+import { QueryFailedError, Repository, In, Not, DataSource } from 'typeorm';
 import { Asset } from './entities/asset.entity';
 import { Job } from '../jobs/entities/job.entity';
+import { RentalChain } from '../rental-chains/entities/rental-chain.entity';
 import { TenantSettings } from '../tenant-settings/entities/tenant-settings.entity';
 import { getTenantToday } from '../../common/utils/tenant-date.util';
 import {
   CreateAssetDto,
   UpdateAssetDto,
   ListAssetsQueryDto,
+  RetireAssetDto,
 } from './dto/asset.dto';
 import { escapeRegex, getSubtypePrefix } from './subtype-prefix.util';
 
@@ -38,6 +40,8 @@ export class AssetsService {
     private assetsRepository: Repository<Asset>,
     @InjectRepository(Job)
     private jobsRepository: Repository<Job>,
+    @InjectRepository(RentalChain)
+    private rentalChainsRepository: Repository<RentalChain>,
     // DataSource is a globally-registered provider by `TypeOrmModule.forRoot`.
     // Used only by `loadTenantTimezone` to read `tenant_settings` without
     // requiring `TenantSettings` to be added to this module's
@@ -162,6 +166,16 @@ export class AssetsService {
       qb.andWhere('a.status = :status', { status: query.status });
     }
 
+    // Default-exclude retired. Honor includeRetired=true as opt-in; an
+    // explicit status=retired filter also implies the user wants retired
+    // rows (skips the exclusion). Covered by the partial index added in
+    // migrations/2026-04-23-add-assets-retired-fields.sql.
+    const wantsRetired =
+      query.includeRetired === true || query.status === 'retired';
+    if (!wantsRetired) {
+      qb.andWhere('a.status != :retiredStatus', { retiredStatus: 'retired' });
+    }
+
     qb.orderBy('a.created_at', 'DESC').skip(skip).take(limit);
 
     const [data, total] = await qb.getManyAndCount();
@@ -194,6 +208,18 @@ export class AssetsService {
   ): Promise<Asset> {
     const asset = await this.findOne(tenantId, id);
 
+    // Retired assets are read-only. Unretire is the only legal transition
+    // back to an editable state (service-only in v1 — no HTTP route).
+    // This guard plus the DTO-level removal of 'retired' from IsIn closes
+    // the "metadata-less retire" backdoor that existed before Item 4.
+    if (asset.status === 'retired') {
+      throw new ConflictException({
+        error: 'asset_retired',
+        message:
+          'Cannot edit a retired asset. Unretire it first if changes are needed.',
+      });
+    }
+
     if (dto.assetType !== undefined) asset.asset_type = dto.assetType;
     if (dto.subtype !== undefined) asset.subtype = dto.subtype;
     if (dto.identifier !== undefined) asset.identifier = dto.identifier;
@@ -214,46 +240,148 @@ export class AssetsService {
     }
   }
 
-  async remove(tenantId: string, id: string): Promise<void> {
-    const asset = await this.findOne(tenantId, id);
+  // Retire an asset. Captures actor + reason + optional notes. Blocks if
+  // the asset is currently in active use — any non-terminal job (via
+  // asset_id or drop_off_asset_id) or any active rental chain.
+  //
+  // jobs.pick_up_asset_id is deliberately NOT checked — it's historical
+  // driver-app metadata, not a "currently in use" signal, and has no FK
+  // to assets.id (verified against prod). Hard-delete DOES check it
+  // (integrity), but retire is only about active work.
+  //
+  // assets.current_job_id is deliberately NOT used — that column is
+  // denormalized and has drifted in prod (11 mismatched rows in the
+  // pilot tenant at last audit). Live join against jobs is the truth.
+  async retire(
+    tenantId: string,
+    assetId: string,
+    userId: string,
+    dto: RetireAssetDto,
+  ): Promise<Asset> {
+    const asset = await this.assetsRepository.findOne({
+      where: { id: assetId, tenant_id: tenantId },
+    });
+    if (!asset) throw new NotFoundException(`Asset ${assetId} not found`);
+    if (asset.status === 'retired') {
+      throw new ConflictException({
+        error: 'already_retired',
+        message: 'This asset is already retired.',
+      });
+    }
+
+    const activeJobCount = await this.jobsRepository
+      .createQueryBuilder('j')
+      .where('j.tenant_id = :tenantId', { tenantId })
+      .andWhere('(j.asset_id = :assetId OR j.drop_off_asset_id = :assetId)', {
+        assetId,
+      })
+      .andWhere('j.status NOT IN (:...terminal)', {
+        terminal: TERMINAL_JOB_STATUSES,
+      })
+      .getCount();
+
+    // Positive filter against the authoritative "open chain" signal.
+    // Rental-chain lifecycle uses status='active' as the single source
+    // of truth for an open chain (see rental-chains.service.ts and
+    // jobs.service.ts:3361). Completed/cancelled/any-future-terminal
+    // state naturally falls out without us maintaining a terminal set.
+    const activeChainCount = await this.rentalChainsRepository
+      .createQueryBuilder('rc')
+      .where('rc.tenant_id = :tenantId', { tenantId })
+      .andWhere('rc.asset_id = :assetId', { assetId })
+      .andWhere('rc.status = :active', { active: 'active' })
+      .getCount();
+
+    if (activeJobCount > 0 || activeChainCount > 0) {
+      throw new ConflictException({
+        error: 'asset_in_use',
+        message: `Cannot retire an asset currently in active use (${activeJobCount} active job(s), ${activeChainCount} active chain(s)). Complete or reassign the linked work first.`,
+      });
+    }
+
+    asset.status = 'retired';
+    asset.retired_at = new Date();
+    asset.retired_by = userId;
+    asset.retired_reason = dto.reason;
+    asset.retired_notes = dto.notes ?? null;
+    return this.assetsRepository.save(asset);
+  }
+
+  // Service-only (no HTTP route in v1). Clears all retire metadata and
+  // sets the asset back to 'available'. Owner-scoped by caller.
+  async unretire(tenantId: string, assetId: string): Promise<Asset> {
+    const asset = await this.assetsRepository.findOne({
+      where: { id: assetId, tenant_id: tenantId },
+    });
+    if (!asset) throw new NotFoundException(`Asset ${assetId} not found`);
+    if (asset.status !== 'retired') {
+      throw new ConflictException({
+        error: 'not_retired',
+        message: 'Asset is not retired.',
+      });
+    }
+    asset.status = 'available';
+    asset.retired_at = null;
+    asset.retired_by = null;
+    asset.retired_reason = null;
+    asset.retired_notes = null;
+    return this.assetsRepository.save(asset);
+  }
+
+  // Permanent deletion. Blocks if ANY reference exists across 4 columns:
+  // jobs.asset_id, jobs.drop_off_asset_id, jobs.pick_up_asset_id,
+  // rental_chains.asset_id. jobs.pick_up_asset_id has NO DB FK (verified
+  // against prod), so the app-layer count is the only protection for
+  // that column — the FK `ON DELETE NO ACTION` safety net covers the
+  // other three.
+  //
+  // Race: the ref-count check and the DELETE are not atomic; a
+  // concurrent INSERT could slip a reference in between. The 23503
+  // translator below catches the FK case; pick_up_asset_id writes that
+  // race in would orphan (acceptable — column is dead schema per
+  // driver.controller.ts:89).
+  async hardDelete(tenantId: string, assetId: string): Promise<void> {
+    const asset = await this.assetsRepository.findOne({
+      where: { id: assetId, tenant_id: tenantId },
+    });
+    if (!asset) throw new NotFoundException(`Asset ${assetId} not found`);
+
+    const [jobAssetRefs, jobDropOffRefs, jobPickUpRefs, chainRefs] =
+      await Promise.all([
+        this.jobsRepository.count({
+          where: { tenant_id: tenantId, asset_id: assetId },
+        }),
+        this.jobsRepository.count({
+          where: { tenant_id: tenantId, drop_off_asset_id: assetId },
+        }),
+        this.jobsRepository.count({
+          where: { tenant_id: tenantId, pick_up_asset_id: assetId },
+        }),
+        this.rentalChainsRepository.count({
+          where: { tenant_id: tenantId, asset_id: assetId },
+        }),
+      ]);
+    const jobRefs = jobAssetRefs + jobDropOffRefs + jobPickUpRefs;
+    const totalRefs = jobRefs + chainRefs;
+    if (totalRefs > 0) {
+      throw new ConflictException({
+        error: 'asset_has_references',
+        message: `This asset has ${totalRefs} historical reference(s) and cannot be permanently deleted. Retire it instead.`,
+        references: { jobs: jobRefs, rental_chains: chainRefs },
+      });
+    }
 
     try {
-      await this.assetsRepository.remove(asset);
+      await this.assetsRepository.delete({ id: assetId, tenant_id: tenantId });
     } catch (err) {
       if (err instanceof QueryFailedError) {
         const driverError = (err as any).driverError;
-        const code = driverError?.code;
-        const constraint = driverError?.constraint || '';
-        const detail = driverError?.detail || '';
-        const message = err.message || '';
-
-        if (code === '23503') {
-          // assigned to jobs
-          if (
-            constraint === 'FK_8d31aa61b1949bfb81bd846e101' ||
-            detail.includes('FK_8d31aa61b1949bfb81bd846e101') ||
-            message.includes('FK_8d31aa61b1949bfb81bd846e101')
-          ) {
-            throw new ConflictException(
-              'Cannot delete this asset — it is assigned to one or more jobs. Reassign or complete those jobs first.'
-            );
-          }
-
-          // part of rental chains
-          if (
-            constraint === 'FK_9e43ca6dfec21fa9362e13ac189' ||
-            detail.includes('FK_9e43ca6dfec21fa9362e13ac189') ||
-            message.includes('FK_9e43ca6dfec21fa9362e13ac189')
-          ) {
-            throw new ConflictException(
-              'Cannot delete this asset — it is part of an active rental chain.'
-            );
-          }
-
-          // Fallback for any unknown FK constraint on assets
-          throw new ConflictException(
-            'Cannot delete this asset — it is still referenced by other records.'
-          );
+        if (driverError?.code === '23503') {
+          throw new ConflictException({
+            error: 'asset_has_references',
+            message:
+              'This asset was referenced by another operation before deletion completed. Retire it instead.',
+          });
         }
       }
       throw err;
@@ -266,7 +394,7 @@ export class AssetsService {
       .where('a.tenant_id = :tenantId', { tenantId })
       .andWhere('a.asset_type = :assetType', { assetType })
       .andWhere('a.status NOT IN (:...excluded)', {
-        excluded: ['reserved', 'deployed', 'on_site', 'in_transit', 'full_staged', 'maintenance'],
+        excluded: ['reserved', 'deployed', 'on_site', 'in_transit', 'full_staged', 'maintenance', 'retired'],
       })
       .andWhere('a.needs_dump = false')
       .andWhere('a.current_job_id IS NULL')
@@ -292,6 +420,10 @@ export class AssetsService {
       .leftJoinAndSelect('a.yard', 'yard')
       .where('a.tenant_id = :tenantId', { tenantId })
       .andWhere('(a.status = :staged OR a.needs_dump = true)', { staged: 'full_staged' })
+      // Defensive: retired assets should never be awaiting a dump, but
+      // filter explicitly so a stale full_staged flag on a retired row
+      // can't leak into the yard's dump-run list.
+      .andWhere('a.status != :retiredStatus', { retiredStatus: 'retired' })
       .orderBy('a.staged_at', 'ASC', 'NULLS LAST')
       .getMany();
   }
@@ -445,8 +577,10 @@ export class AssetsService {
     // (deployed/reserved/in_transit/maintenance) that the old response
     // shape returns. The strict base filter is applied in-memory on
     // this fetched list so we don't hit the DB twice.
+    // Retired assets are excluded unconditionally — they do not
+    // contribute to yard capacity, projections, or dispatch decisions.
     const assets = await this.assetsRepository.find({
-      where: { tenant_id: tenantId, subtype },
+      where: { tenant_id: tenantId, subtype, status: Not('retired') },
     });
 
     const total = assets.length;

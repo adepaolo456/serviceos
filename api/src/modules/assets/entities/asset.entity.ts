@@ -52,6 +52,21 @@ export class Asset {
   @Column({ type: 'jsonb', nullable: true, default: '{}' })
   metadata!: Record<string, any>;
 
+  // Retire metadata — populated atomically by AssetsService.retire().
+  // retired_at = NULL is the canonical signal for "not retired"; status
+  // remains the primary lifecycle flag. Cleared by unretire().
+  @Column({ name: 'retired_at', type: 'timestamptz', nullable: true })
+  retired_at!: Date | null;
+
+  @Column({ name: 'retired_by', type: 'uuid', nullable: true })
+  retired_by!: string | null;
+
+  @Column({ name: 'retired_reason', type: 'varchar', length: 20, nullable: true })
+  retired_reason!: string | null;
+
+  @Column({ name: 'retired_notes', type: 'text', nullable: true })
+  retired_notes!: string | null;
+
   @Column({ name: 'staged_at', type: 'timestamptz', nullable: true })
   staged_at!: Date;
 

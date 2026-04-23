@@ -202,7 +202,7 @@ export class PublicService {
         .where('a.tenant_id = :tid', { tid: t.id })
         .andWhere('a.subtype = :subtype', { subtype: assetSubtype })
         .andWhere('a.status NOT IN (:...excluded)', {
-          excluded: ['reserved', 'deployed', 'on_site', 'in_transit'],
+          excluded: ['reserved', 'deployed', 'on_site', 'in_transit', 'retired'],
         })
         .andWhere('a.current_job_id IS NULL')
         .getCount();
