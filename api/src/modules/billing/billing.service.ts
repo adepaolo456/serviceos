@@ -549,6 +549,7 @@ export class BillingService {
     params: {
       customerId: string;
       jobId?: string;
+      rentalChainId?: string;
       source: string;
       invoiceType: string;
       status?: string;
@@ -572,6 +573,7 @@ export class BillingService {
       invoice_number: invoiceNumber,
       customer_id: params.customerId,
       job_id: params.jobId || null,
+      rental_chain_id: params.rentalChainId || null,
       status: params.status || 'open',
       invoice_date: today,
       due_date: params.dueDate || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
