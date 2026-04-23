@@ -1,7 +1,8 @@
 import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { QueryFailedError, Repository } from 'typeorm';
+import { QueryFailedError, Repository, SelectQueryBuilder } from 'typeorm';
 import { Customer } from './entities/customer.entity';
+import { REVENUE_STATUSES } from '../../common/constants/revenue-statuses';
 import { Invoice } from '../billing/entities/invoice.entity';
 import { MapboxService } from '../mapbox/mapbox.service';
 import {
@@ -81,6 +82,41 @@ export class CustomersService {
     }
   }
 
+  // Live-compute rollups for total_jobs and lifetime_revenue. The stored
+  // `customers.total_jobs` and `customers.lifetime_revenue` columns are
+  // denormalized and are not maintained by any service write path
+  // (verified by audit). Rather than trying to maintain them correctly
+  // across every job/invoice write site, we compute on read from the
+  // authoritative tables.
+  //
+  // Shared semantics with reporting.service.ts via REVENUE_STATUSES —
+  // both surfaces MUST agree on what counts as booked revenue. If they
+  // drift, the /customers page and the reporting "top customers" widget
+  // will report different numbers for the same customer.
+  //
+  // Tenant scoping is hard-required — every subquery filters by both
+  // customer_id AND tenant_id. customer_id alone would be a cross-tenant
+  // leak vector.
+  private applyRollupSelects(
+    qb: SelectQueryBuilder<Customer>,
+  ): SelectQueryBuilder<Customer> {
+    return qb
+      .addSelect(
+        `(SELECT COUNT(*)::int FROM jobs j
+          WHERE j.customer_id = c.id
+            AND j.tenant_id = c.tenant_id)`,
+        'rollup_total_jobs',
+      )
+      .addSelect(
+        `(SELECT COALESCE(SUM(i.total), 0) FROM invoices i
+          WHERE i.customer_id = c.id
+            AND i.tenant_id = c.tenant_id
+            AND i.status = ANY(:revenueStatuses))`,
+        'rollup_lifetime_revenue',
+      )
+      .setParameter('revenueStatuses', [...REVENUE_STATUSES]);
+  }
+
   async findAll(tenantId: string, query: ListCustomersQueryDto) {
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
@@ -112,18 +148,33 @@ export class CustomersService {
       );
     }
 
+    // Count comes from a clone of the filtered QB — getRawAndEntities()
+    // has no `...AndCount` variant. Clone BEFORE the rollup addSelects,
+    // pagination, and ordering so the count query stays cheap.
+    const total = await qb.clone().getCount();
+
+    this.applyRollupSelects(qb);
     qb.orderBy('c.created_at', 'DESC').skip(skip).take(limit);
 
-    const [rows, total] = await qb.getManyAndCount();
+    const { entities, raw } = await qb.getRawAndEntities();
 
     // Destructure-and-omit: pulls portal_password_hash out of each row
     // so it cannot accidentally leak via spread, and replaces it with
     // the derived has_portal_access boolean. Consumers that don't know
     // about the new field simply ignore it (additive change).
-    const data = rows.map((row) => {
-      const { portal_password_hash, ...rest } = row;
+    //
+    // Rollups are merged per row from the raw result:
+    // - rollup_total_jobs comes back as string from the raw query;
+    //   explicit Number() preserves integer shape (frontend sorts on it).
+    // - rollup_lifetime_revenue comes back as a decimal string from pg;
+    //   leave as-is to match the existing decimal-string response shape
+    //   (frontend already uses Number(c.lifetime_revenue) to parse).
+    const data = entities.map((entity, idx) => {
+      const { portal_password_hash, ...rest } = entity;
       return {
         ...rest,
+        total_jobs: Number(raw[idx].rollup_total_jobs),
+        lifetime_revenue: raw[idx].rollup_lifetime_revenue,
         has_portal_access: !!portal_password_hash,
       };
     });
@@ -175,12 +226,27 @@ export class CustomersService {
   }
 
   async findOne(tenantId: string, id: string): Promise<Customer> {
-    const customer = await this.customersRepository.findOne({
-      where: { id, tenant_id: tenantId },
-    });
+    // QueryBuilder variant so we can attach the rollup addSelects that
+    // override stored total_jobs / lifetime_revenue with live-computed
+    // values. Same semantics as findAll — deliberately so the list and
+    // detail surfaces never disagree on counts/revenue.
+    const qb = this.customersRepository
+      .createQueryBuilder('c')
+      .where('c.id = :id', { id })
+      .andWhere('c.tenant_id = :tenantId', { tenantId });
+
+    this.applyRollupSelects(qb);
+
+    const { entities, raw } = await qb.getRawAndEntities();
+    const customer = entities[0];
     if (!customer) {
       throw new NotFoundException(`Customer ${id} not found`);
     }
+    // Override stored rollups with live-computed values. See the Number()
+    // cast note in findAll — integer shape preservation matters for the
+    // frontend sort comparators and the avgValue math on the detail page.
+    customer.total_jobs = Number(raw[0].rollup_total_jobs);
+    customer.lifetime_revenue = raw[0].rollup_lifetime_revenue;
     return customer;
   }
 

@@ -38,15 +38,20 @@ import {
   excludeDemoByCustomerIdNamed,
   excludeDemoCustomers,
 } from '../../common/helpers/demo-customers-predicate';
+import { REVENUE_STATUSES } from '../../common/constants/revenue-statuses';
 
 const CORRECTION_CUTOFF = '2026-04-02T00:00:00Z';
 function classifyRecord(createdAt: string | Date): 'legacy' | 'post-correction' {
   return new Date(createdAt) < new Date(CORRECTION_CUTOFF) ? 'legacy' : 'post-correction';
 }
 
-/** Statuses that count as booked revenue. Drafts and voided invoices are excluded. */
-const REVENUE_STATUSES = ['open', 'paid', 'partial'] as const;
-/** SQL fragment for WHERE clause (parameterised queries) */
+// REVENUE_STATUSES is imported from common/constants/revenue-statuses —
+// shared with customers.service.ts so lifetime-revenue figures never
+// drift between surfaces (see Phase A retire-rollups work).
+//
+// REVENUE_STATUS_SQL stays local: it's a raw SQL fragment interpolated
+// into 10+ parameterised queries in this file. Sharing it would require
+// consumers to use the same table alias `i` — not a safe abstraction.
 const REVENUE_STATUS_SQL = `i.status IN ('open', 'paid', 'partial')`;
 
 @Injectable()
