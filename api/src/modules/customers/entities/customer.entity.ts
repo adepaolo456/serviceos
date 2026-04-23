@@ -74,18 +74,6 @@ export class Customer {
   @Column({ name: 'stripe_customer_id', nullable: true })
   stripe_customer_id!: string;
 
-  @Column({
-    name: 'lifetime_revenue',
-    type: 'decimal',
-    precision: 10,
-    scale: 2,
-    default: 0,
-  })
-  lifetime_revenue!: number;
-
-  @Column({ name: 'total_jobs', type: 'int', default: 0 })
-  total_jobs!: number;
-
   @Column({ name: 'pricing_tier', default: 'standard' })
   pricing_tier!: string;
 
