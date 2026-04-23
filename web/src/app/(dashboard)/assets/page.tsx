@@ -203,13 +203,6 @@ function statusTextClass(s: string): string {
   return "text-[var(--t-text-muted)]";
 }
 
-function conditionTextClass(c: string): string {
-  if (c === "new" || c === "good") return "text-[var(--t-accent-text)]";
-  if (c === "fair") return "text-[var(--t-warning)]";
-  if (c === "poor") return "text-[var(--t-error)]";
-  return "text-[var(--t-text-muted)]";
-}
-
 /* ─── Helpers ─── */
 
 function daysBetween(a: string, b: string): number {
@@ -245,13 +238,12 @@ function getDeployedInfo(asset: Asset): { customerName: string; address: string;
 }
 
 function exportCSV(assets: Asset[]) {
-  const headers = ["Identifier", "Type", "Size", "Status", "Condition", "Location", "Notes"];
+  const headers = ["Identifier", "Type", "Size", "Status", "Location", "Notes"];
   const rows = assets.map((a) => [
     a.identifier,
     a.asset_type,
     a.subtype,
     a.status,
-    a.condition,
     a.current_location?.address || a.current_location_type || "Yard",
     (a.notes || "").replace(/,/g, ";"),
   ]);
@@ -1665,7 +1657,6 @@ function ListView({ assets, onSelect, onQuickStatus, onEdit, onDelete, onRetire,
               <th style={{ padding: "12px 16px", textAlign: "left", fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--t-text-muted)" }}>Status</th>
               <th style={{ padding: "12px 16px", textAlign: "left", fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--t-text-muted)" }}>Location</th>
               <th style={{ padding: "12px 16px", textAlign: "left", fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--t-text-muted)" }}>Days Out</th>
-              <th style={{ padding: "12px 16px", textAlign: "left", fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--t-text-muted)" }}>Condition</th>
               <th style={{ padding: "12px 8px" }}></th>
             </tr>
           </thead>
@@ -1723,13 +1714,6 @@ function ListView({ assets, onSelect, onQuickStatus, onEdit, onDelete, onRetire,
                       </span>
                     ) : (
                       <span style={{ color: "var(--t-text-muted)", fontSize: 13 }}>—</span>
-                    )}
-                  </td>
-                  <td style={{ padding: "12px 16px" }}>
-                    {asset.condition && (
-                      <span className={conditionTextClass(asset.condition)} style={{ fontSize: 11, fontWeight: 600, textTransform: "capitalize" }}>
-                        {asset.condition}
-                      </span>
                     )}
                   </td>
                   <td style={{ padding: "12px 8px" }} onClick={(e) => e.stopPropagation()}>
@@ -1888,11 +1872,6 @@ function AssetDetail({ asset, onStatusChange, onUpdated }: { asset: Asset; onSta
           <span className={statusTextClass(asset.status)} style={{ fontSize: 11, fontWeight: 600 }}>
             {STATUS_LABELS[asset.status] || asset.status.replace(/_/g, " ")}
           </span>
-          {asset.condition && (
-            <span className={conditionTextClass(asset.condition)} style={{ fontSize: 11, fontWeight: 600, textTransform: "capitalize" }}>
-              {asset.condition}
-            </span>
-          )}
         </div>
 
         <div className="flex gap-2 flex-wrap">
@@ -1977,10 +1956,6 @@ function OverviewTab({ asset, deployed }: { asset: Asset; deployed: ReturnType<t
       <div className="space-y-3">
         <h4 style={{ fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--t-text-muted)" }}>Specifications</h4>
         <div className="grid grid-cols-2 gap-3">
-          <div>
-            <p style={{ fontSize: 12, color: "var(--t-text-muted)" }}>Condition</p>
-            <p style={{ fontSize: 14, fontWeight: 500, color: "var(--t-text-primary)", textTransform: "capitalize" }}>{asset.condition || "\u2014"}</p>
-          </div>
           <div>
             <p style={{ fontSize: 12, color: "var(--t-text-muted)" }}>Location</p>
             <p style={{ fontSize: 14, fontWeight: 500, color: "var(--t-text-primary)" }}>
@@ -2204,13 +2179,11 @@ function MaintenanceTab({ asset, onUpdated }: { asset: Asset; onUpdated: () => v
 
 function BulkEditModal({ count, onClose, onSaved }: { count: number; onClose: () => void; onSaved: (updates: Record<string, unknown>) => void }) {
   const [status, setStatus] = useState("");
-  const [condition, setCondition] = useState("");
   const [notes, setNotes] = useState("");
 
   const handleSave = () => {
     const updates: Record<string, unknown> = {};
     if (status) updates.status = status;
-    if (condition) updates.condition = condition;
     if (notes) updates.notes = notes;
     if (Object.keys(updates).length === 0) { onClose(); return; }
     onSaved(updates);
@@ -2240,15 +2213,6 @@ function BulkEditModal({ count, onClose, onSaved }: { count: number; onClose: ()
             </select>
           </div>
           <div>
-            <label style={lbl}>Condition</label>
-            <select value={condition} onChange={e => setCondition(e.target.value)} style={{ ...inp, appearance: "none" as const }}>
-              <option value="">— No change —</option>
-              <option value="good">Good</option>
-              <option value="fair">Fair</option>
-              <option value="poor">Poor</option>
-            </select>
-          </div>
-          <div>
             <label style={lbl}>Notes</label>
             <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} style={{ ...inp, resize: "none" as const }} placeholder="Leave blank to keep existing notes" />
           </div>
@@ -2272,7 +2236,6 @@ function EditAssetModal({ asset, onClose, onSaved }: { asset: Asset; onClose: ()
   const [identifier, setIdentifier] = useState(asset.identifier);
   const [subtype, setSubtype] = useState(asset.subtype);
   const [status, setStatus] = useState(asset.status);
-  const [condition, setCondition] = useState(asset.condition || "good");
   const [notes, setNotes] = useState(asset.notes || "");
   const [saving, setSaving] = useState(false);
   const [showWarn, setShowWarn] = useState(false);
@@ -2300,7 +2263,7 @@ function EditAssetModal({ asset, onClose, onSaved }: { asset: Asset; onClose: ()
     setSaving(true);
     try {
       await api.patch(`/assets/${asset.id}`, {
-        identifier, subtype, status, condition,
+        identifier, subtype, status,
         notes: notes || undefined,
       });
       onSaved();
@@ -2367,14 +2330,6 @@ function EditAssetModal({ asset, onClose, onSaved }: { asset: Asset; onClose: ()
               <option value="available">Available</option>
               <option value="maintenance">Maintenance</option>
               {/* `retired` intentionally removed — use the Retire action (reason + actor captured). */}
-            </select>
-          </div>
-          <div>
-            <label style={lbl}>Condition</label>
-            <select value={condition} onChange={e => setCondition(e.target.value)} style={{ ...inp, appearance: "none" as const }}>
-              <option value="good">Good</option>
-              <option value="fair">Fair</option>
-              <option value="poor">Poor</option>
             </select>
           </div>
           <div>
@@ -2549,7 +2504,6 @@ function CreateAssetForm({ prefilledSize, onSuccess }: { prefilledSize: string |
   const [assetType, setAssetType] = useState("dumpster");
   const [subtype, setSubtype] = useState(prefilledSize || "20yd");
   const [identifier, setIdentifier] = useState("");
-  const [condition, setCondition] = useState("good");
   const [notes, setNotes] = useState("");
   const [quantity, setQuantity] = useState("1");
   const [error, setError] = useState("");
@@ -2603,7 +2557,7 @@ function CreateAssetForm({ prefilledSize, onSuccess }: { prefilledSize: string |
   const postOne = async (id: string) => {
     await api.post("/assets", {
       assetType, subtype, identifier: id,
-      condition, notes: notes || undefined,
+      notes: notes || undefined,
     });
   };
 
@@ -2795,20 +2749,9 @@ function CreateAssetForm({ prefilledSize, onSuccess }: { prefilledSize: string |
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label style={lbl}>Condition</label>
-          <select value={condition} onChange={(e) => setCondition(e.target.value)} style={{ ...inp, appearance: "none" as const }}>
-            <option value="good">Good</option>
-            <option value="new">New</option>
-            <option value="fair">Fair</option>
-            <option value="poor">Poor</option>
-          </select>
-        </div>
-        <div>
-          <label style={lbl}>Quantity</label>
-          <input type="number" min="1" max="50" value={quantity} onChange={(e) => setQuantity(e.target.value)} style={inp} placeholder="1" />
-        </div>
+      <div>
+        <label style={lbl}>Quantity</label>
+        <input type="number" min="1" max="50" value={quantity} onChange={(e) => setQuantity(e.target.value)} style={inp} placeholder="1" />
       </div>
 
       <div>
