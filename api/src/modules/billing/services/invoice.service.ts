@@ -2,7 +2,11 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ForbiddenException,
+  HttpException,
+  HttpStatus,
 } from '@nestjs/common';
+import { checkRateLimit } from '../../../common/rate-limiter';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource, Like } from 'typeorm';
 import { Invoice } from '../entities/invoice.entity';
@@ -572,39 +576,118 @@ export class InvoiceService {
     return invoice;
   }
 
-  async sendInvoice(tenantId: string, invoiceId: string, method: string) {
+  // Phase 1.8 — Invoice send/resend. Rewrite of the prior implementation
+  // which was unreachable (draft-only guard) AND violated Constraint 2
+  // (stamped sent_at before awaiting Resend, so a failed email left the
+  // invoice marked "sent"). New shape:
+  //   1. Validate role, customer email, rate limit — throw EARLY.
+  //   2. Await NotificationsService.send (the single Resend caller per
+  //      Constraint 1). Its returned Notification row carries the
+  //      delivery status from Resend.
+  //   3. If delivered: transactional stamp of invoice.sent_at +
+  //      sent_method. If NOT delivered: throw; invoice row untouched.
+  //
+  // Audit trail lives in the notifications table (row already written
+  // by NotificationsService.send). Per Constraint 3, `sent_at` is an
+  // overwrite — history is reconstructed via notifications.
+  async sendInvoice(
+    tenantId: string,
+    invoiceId: string,
+    method: string,
+    userId: string,
+    userRole: string,
+  ) {
+    // Role gate — owner/admin/dispatcher only. Service-layer defense
+    // matches the @Roles decorator at the controller; frontend hides
+    // the affordance but server is the truth.
+    const SEND_ROLES = new Set(['owner', 'admin', 'dispatcher']);
+    if (!SEND_ROLES.has(userRole)) {
+      throw new ForbiddenException({
+        error: 'invoice_send_requires_admin',
+        message: 'Only Admins, Owners, and Dispatchers can send invoices',
+      });
+    }
+
     const invoice = await this.findOne(tenantId, invoiceId);
 
-    // Guard: do not resend if already open, partial, paid, or voided
-    if (invoice.status !== 'draft') {
-      throw new BadRequestException(`Invoice is already ${invoice.status} — cannot send again`);
+    if (!invoice.customer?.email) {
+      throw new BadRequestException({
+        error: 'invoice_send_no_email',
+        message: 'Customer has no email on file',
+      });
     }
 
-    await this.invoiceRepo.update(invoiceId, {
-      sent_at: new Date(),
-      sent_method: method || 'email',
+    // Per-invoice, per-user, 30-second window. Stops accidental
+    // double-clicks + 'send twice quickly' operator error.
+    const limit = await checkRateLimit(
+      this.dataSource,
+      `${invoiceId}:${userId}`,
+      '/invoices/send',
+      1,
+      0.5,
+      'email',
+    );
+    if (!limit.allowed) {
+      throw new HttpException(
+        {
+          error: 'invoice_send_rate_limited',
+          message: 'Please wait a moment before sending again',
+          retryAfter: limit.retryAfterSeconds,
+        },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+
+    const tenantName =
+      (invoice as unknown as { tenant?: { name?: string } })?.tenant?.name ??
+      'your provider';
+    const subject = `Invoice #${invoice.invoice_number} from ${tenantName}`;
+    const body =
+      `<p>Hello ${invoice.customer.first_name},</p>` +
+      `<p>Your invoice <strong>#${invoice.invoice_number}</strong> for <strong>$${Number(
+        invoice.total,
+      ).toFixed(2)}</strong> is attached for your records.</p>` +
+      (invoice.due_date ? `<p>Due date: ${invoice.due_date}</p>` : '') +
+      `<p>Thank you,<br/>${tenantName}</p>`;
+
+    // Await Resend via the single canonical caller (Constraint 1).
+    // NotificationsService.send creates a queued Notification row, calls
+    // ResendEmailService.sendEmail, and mutates the row to delivered/failed
+    // with external_id populated — already Constraint 2-compliant at the
+    // notification-row level (see notifications.service.ts:179).
+    const notif = await this.notificationsService.send(tenantId, {
+      channel: 'email',
+      type: 'invoice_sent',
+      recipient: invoice.customer.email,
+      subject,
+      body,
+      customerId: invoice.customer_id,
     });
-    await this.reconcileBalance(invoiceId);
 
-    // NON-FATAL: notification email to customer. Failure here means
-    // the invoice is already persisted and marked sent (above); the
-    // email delivery is a separate out-of-band best-effort channel.
-    // The notifications table + retry infrastructure own resend; this
-    // service should not block the API response on provider latency.
-    // Caller can safely continue because the invoice state is
-    // already correct — the email is observational only.
-    if (invoice.customer?.email) {
-      try {
-        await this.notificationsService.send(tenantId, {
-          channel: 'email',
-          type: 'invoice_sent',
-          recipient: invoice.customer.email,
-          subject: `Invoice #${invoice.invoice_number}`,
-          body: `<p>Hello ${invoice.customer.first_name},</p><p>Invoice <strong>#${invoice.invoice_number}</strong> for <strong>$${Number(invoice.total).toFixed(2)}</strong> has been sent to you.</p><p>Due date: ${invoice.due_date}</p>`,
-          customerId: invoice.customer_id,
-        });
-      } catch { /* non-fatal — see comment above */ }
+    // Constraint 2 — stamp sent_at ONLY on delivered. Any other status
+    // (failed, queued-but-never-processed, suppressed) leaves the invoice
+    // row untouched so the operator sees "still unsent" and can retry.
+    if (notif.status !== 'delivered') {
+      throw new HttpException(
+        {
+          error: 'invoice_send_email_failed',
+          message: 'Email delivery failed. Please try again.',
+          notification_id: notif.id,
+        },
+        HttpStatus.BAD_GATEWAY,
+      );
     }
+
+    // Transactional stamp. Single-repo write today, but wrapping in a
+    // transaction matches the Phase B (site #21) pattern and leaves
+    // room for adding a sibling audit-log write (e.g. user_audit_log)
+    // without restructuring the method.
+    await this.dataSource.transaction(async (manager) => {
+      await manager.getRepository(Invoice).update(invoiceId, {
+        sent_at: new Date(),
+        sent_method: method || 'email',
+      });
+    });
 
     return this.findOne(tenantId, invoiceId);
   }

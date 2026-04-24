@@ -174,45 +174,12 @@ export class BillingService {
     return this.invoicesRepository.save(invoice);
   }
 
-  async sendInvoice(tenantId: string, id: string): Promise<Invoice> {
-    const invoice = await this.findOneInvoice(tenantId, id);
-    if (invoice.status !== 'draft') {
-      throw new BadRequestException(`Cannot send invoice with status "${invoice.status}"`);
-    }
-    invoice.status = 'open';
-    invoice.sent_at = new Date();
-    invoice.sent_method = 'email';
-    const saved = await this.invoicesRepository.save(invoice);
-
-    // NON-FATAL: invoice-sent notification email. Invoice is already
-    // saved with status='open' and sent_at set above; the email
-    // delivery is an out-of-band channel that the notifications
-    // subsystem owns end-to-end (including retries). Failure here
-    // means the operator-triggered "send" action didn't actually
-    // deliver — which is worth surfacing in the notifications UI but
-    // not worth blocking the API response for. Caller can safely
-    // continue because the invoice state is already correct.
-    try {
-      const invoiceWithCustomer = await this.invoicesRepository.findOne({
-        where: { id, tenant_id: tenantId },
-        relations: ['customer'],
-      });
-      const cust = invoiceWithCustomer?.customer;
-      if (cust?.email) {
-        await this.notificationsService.send(tenantId, {
-          channel: 'email',
-          type: 'invoice_sent',
-          recipient: cust.email,
-          subject: `Invoice #${saved.invoice_number} - $${saved.total}`,
-          body: `Hi ${cust.first_name} ${cust.last_name},\n\nInvoice #${saved.invoice_number} for $${saved.total} has been sent. Due by ${saved.due_date}.\n\nThank you for your business!`,
-          customerId: cust.id,
-          jobId: saved.job_id,
-        });
-      }
-    } catch { /* non-fatal — see comment above */ }
-
-    return saved;
-  }
+  // Phase 1.8 — the prior `sendInvoice(tenantId, id)` method lived here
+  // as a dead duplicate. Grep confirmed zero callers (no controller
+  // route, no downstream service dependency). The canonical invoice
+  // send flow is InvoiceService.sendInvoice at
+  // api/src/modules/billing/services/invoice.service.ts, wired via
+  // POST /invoices/:id/send. Removed to prevent drift.
 
   async editInvoice(
     tenantId: string,

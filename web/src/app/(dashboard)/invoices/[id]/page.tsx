@@ -26,6 +26,7 @@ import { RecordPaymentForm } from "@/components/record-payment-form";
 import { formatJobNumber } from "@/lib/job-status";
 import { navigateBack } from "@/lib/navigation";
 import { getFeatureLabel } from "@/lib/feature-registry";
+import { useTenantTimezone } from "@/lib/use-modules";
 
 interface ApiLineItem {
   id: string;
@@ -186,6 +187,21 @@ function InvoiceDetailPageContent({
   const [linkedJobStatus, setLinkedJobStatus] = useState<string | null>(null);
   const [creditMemos, setCreditMemos] = useState<{ id: string; amount: number; reason: string; status: string; created_at: string }[]>([]);
   const { toast } = useToast();
+  // Phase 1.8 — role gate for Send/Resend. Owner, admin, dispatcher only.
+  // Driver + viewer see no button (server enforces via @Roles guard).
+  const [currentUserRole, setCurrentUserRole] = useState<string | null>(null);
+  useEffect(() => {
+    api
+      .get<{ role: string }>("/auth/profile")
+      .then((p) => setCurrentUserRole(p?.role ?? null))
+      .catch(() => setCurrentUserRole(null));
+  }, []);
+  const canOfficeSend =
+    currentUserRole === "owner" ||
+    currentUserRole === "admin" ||
+    currentUserRole === "dispatcher";
+  // Tenant-local timestamp for the "Last sent: ..." display below the button.
+  const tenantTimezone = useTenantTimezone();
 
   const fetchData = async () => {
     try {
@@ -245,9 +261,30 @@ function InvoiceDetailPageContent({
     setActionLoading(true);
     try {
       await api.post(`/invoices/${id}/send`);
+      toast(
+        "success",
+        (getFeatureLabel("invoice_send_success") ?? "Invoice sent to {email}").replace(
+          "{email}",
+          invoice.customer?.email ?? "customer",
+        ),
+      );
       await fetchData();
-    } catch {
-      /* */
+    } catch (err) {
+      // Phase 1.8 — typed-error routing. Server returns structured error
+      // codes from rewrite at invoice.service.ts:sendInvoice.
+      const body = (err as { body?: { error?: string } })?.body;
+      const code = body?.error;
+      if (code === "invoice_send_no_email") {
+        toast("error", getFeatureLabel("invoice_send_no_email"));
+      } else if (code === "invoice_send_rate_limited") {
+        toast("error", getFeatureLabel("invoice_send_rate_limited"));
+      } else if (code === "invoice_send_requires_admin") {
+        toast("error", getFeatureLabel("invoice_send_requires_admin"));
+      } else if (code === "invoice_send_email_failed") {
+        toast("error", getFeatureLabel("invoice_send_email_failed"));
+      } else {
+        toast("error", getFeatureLabel("invoice_send_email_failed"));
+      }
     } finally {
       setActionLoading(false);
     }
@@ -509,7 +546,11 @@ function InvoiceDetailPageContent({
     );
   }
 
-  const canSend = invoice.status === "draft";
+  // Phase 1.8 — Send button gate moved from status-draft-only (unreachable
+  // for real invoices) to role-based + non-voided. Resend on Paid invoices
+  // operates as a receipt re-send; email copy is neutral (see
+  // invoice.service.ts:sendInvoice template).
+  const canSend = canOfficeSend && !["voided", "void"].includes(invoice.status);
   const canPay = ["open", "partial", "overdue"].includes(invoice.status);
   const canVoid = !["paid", "voided", "void"].includes(invoice.status);
 
@@ -600,7 +641,10 @@ function InvoiceDetailPageContent({
               {canSend && (
                 <button onClick={handleSend} disabled={actionLoading}
                   className="flex items-center gap-2 rounded-full bg-[var(--t-accent)] px-4 py-2 text-sm font-medium text-[var(--t-accent-on-accent)] transition-opacity hover:opacity-90 disabled:opacity-50">
-                  <Send className="h-4 w-4" /> Send
+                  <Send className="h-4 w-4" />
+                  {invoice.sent_at
+                    ? getFeatureLabel("invoice_resend_action")
+                    : getFeatureLabel("invoice_send_action")}
                 </button>
               )}
               {canPay && (
@@ -642,6 +686,25 @@ function InvoiceDetailPageContent({
           )}
         </div>
       </div>
+
+      {/* Phase 1.8 — Last sent: tenant-local timestamp below the action
+          bar. Renders only when `sent_at` is populated AND the viewer
+          has send permission (hiding from drivers keeps noise out of
+          the viewer role). Uses useTenantTimezone for B-3 compliance. */}
+      {canOfficeSend && invoice.sent_at && (
+        <p className="text-xs text-[var(--t-text-muted)] mt-2">
+          {getFeatureLabel("invoice_last_sent_prefix")}{" "}
+          {new Date(invoice.sent_at).toLocaleString("en-US", {
+            weekday: "short",
+            month: "short",
+            day: "numeric",
+            year: "numeric",
+            hour: "numeric",
+            minute: "2-digit",
+            timeZone: tenantTimezone,
+          })}
+        </p>
+      )}
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* Main content */}

@@ -9,9 +9,11 @@ import {
   Param,
   Query,
   ParseUUIDPipe,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import { TenantId, CurrentUser } from '../../../common/decorators';
+import { TenantId, CurrentUser, Roles } from '../../../common/decorators';
+import { RolesGuard } from '../../../common/guards';
 import { InvoiceService } from '../services/invoice.service';
 import { CreateInvoiceDto } from '../dto/create-invoice.dto';
 import { UpdateInvoiceDto } from '../dto/update-invoice.dto';
@@ -71,12 +73,22 @@ export class InvoiceController {
   }
 
   @Post(':id/send')
+  @UseGuards(RolesGuard)
+  @Roles('owner', 'admin', 'dispatcher')
   send(
     @TenantId() tenantId: string,
     @Param('id', ParseUUIDPipe) id: string,
     @Body() body: { method?: string },
+    @CurrentUser('id') userId: string,
+    @CurrentUser('role') userRole: string,
   ) {
-    return this.invoiceService.sendInvoice(tenantId, id, body.method || 'email');
+    return this.invoiceService.sendInvoice(
+      tenantId,
+      id,
+      body.method || 'email',
+      userId,
+      userRole,
+    );
   }
 
   @Post(':id/duplicate')
