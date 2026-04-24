@@ -22,6 +22,24 @@ import { TERMINAL_JOB_STATUSES } from '../../common/constants/job-statuses';
 // violation on this table. Keep in sync with the migration.
 const ASSET_UNIQUE_CONSTRAINT = 'assets_tenant_asset_type_identifier_unique';
 
+// Nested payload shape attached to each Asset in the findAll response.
+// Drives the Deployed table's Customer / Address / Days Out / Overdue
+// render. Nullable throughout to absorb the defense-in-depth case where
+// a deployed asset has no active chain (DB invariant should prevent it).
+export interface ActiveChainPayload {
+  id: string;
+  drop_off_date: string;
+  rental_days: number;
+  customer: {
+    id: string;
+    type: string;
+    first_name: string | null;
+    last_name: string | null;
+    company_name: string | null;
+    billing_address: Record<string, any> | null;
+  } | null;
+}
+
 @Injectable()
 export class AssetsService {
   constructor(
@@ -169,8 +187,54 @@ export class AssetsService {
 
     const [data, total] = await qb.getManyAndCount();
 
+    // Enrich each asset with its active rental chain + customer for the
+    // Deployed-table UI (customer name, address, drop-off date, rental
+    // days → Days Out + overdue flag). One active chain per asset is
+    // enforced by the `rental_chain_active_requires_asset` DB invariant,
+    // so a LEFT JOIN yields at most one row per asset — no DISTINCT and
+    // no row multiplication needed. Tenant scoping is explicit on both
+    // joined tables as defense-in-depth; the FKs alone are not trusted.
+    const assetIds = data.map((a) => a.id);
+    const chainMap = new Map<string, ActiveChainPayload>();
+    if (assetIds.length > 0) {
+      const chains = await this.rentalChainsRepository
+        .createQueryBuilder('rc')
+        .leftJoinAndSelect('rc.customer', 'c', 'c.tenant_id = :tenantId', {
+          tenantId,
+        })
+        .where('rc.tenant_id = :tenantId', { tenantId })
+        .andWhere('rc.status = :active', { active: 'active' })
+        .andWhere('rc.asset_id IN (:...assetIds)', { assetIds })
+        .getMany();
+
+      for (const rc of chains) {
+        const cust = rc.customer;
+        chainMap.set(rc.asset_id, {
+          id: rc.id,
+          drop_off_date: rc.drop_off_date,
+          rental_days: rc.rental_days,
+          customer: cust
+            ? {
+                id: cust.id,
+                type: cust.type,
+                first_name: cust.first_name ?? null,
+                last_name: cust.last_name ?? null,
+                company_name: cust.company_name ?? null,
+                billing_address:
+                  (cust.billing_address as Record<string, any> | null) ?? null,
+              }
+            : null,
+        });
+      }
+    }
+
+    const enriched = data.map((a) => ({
+      ...a,
+      active_chain: chainMap.get(a.id) ?? null,
+    }));
+
     return {
-      data,
+      data: enriched,
       meta: {
         total,
         page,

@@ -34,6 +34,8 @@ import SlideOver from "@/components/slide-over";
 import Dropdown from "@/components/dropdown";
 import { useToast } from "@/components/toast";
 import { FEATURE_REGISTRY, getFeatureLabel } from "@/lib/feature-registry";
+import { useTenantTimezone } from "@/lib/use-modules";
+import { getTenantToday } from "@/lib/utils/tenantDate";
 
 // Phase C — localStorage key for the "Projected Availability" panel
 // collapse state. Stores only `{ showProjection: boolean }` — UI
@@ -58,6 +60,22 @@ function defaultProjectionDate(): string {
 
 /* ─── Types ─── */
 
+interface ActiveChainCustomer {
+  id: string;
+  type: string;
+  first_name: string | null;
+  last_name: string | null;
+  company_name: string | null;
+  billing_address: { street?: string; city?: string; state?: string; zip?: string } | null;
+}
+
+interface ActiveChain {
+  id: string;
+  drop_off_date: string; // YYYY-MM-DD
+  rental_days: number;
+  customer: ActiveChainCustomer | null;
+}
+
 interface Asset {
   id: string;
   asset_type: string;
@@ -76,6 +94,7 @@ interface Asset {
   retired_notes: string | null;
   created_at: string;
   updated_at: string;
+  active_chain: ActiveChain | null;
 }
 
 interface AssetsResponse {
@@ -205,6 +224,33 @@ function statusTextClass(s: string): string {
 
 /* ─── Helpers ─── */
 
+// Calendar-day delta between two YYYY-MM-DD strings, computed via
+// Date.UTC so both inputs land on the same UTC midnight — DST- and
+// engine-portable. Returns NaN if either input is malformed.
+function daysBetweenYMD(from: string, to: string): number {
+  const p = (s: string) => {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+    if (!m) return null;
+    return Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  };
+  const a = p(from);
+  const b = p(to);
+  if (a === null || b === null) return NaN;
+  return Math.floor((b - a) / 86400000);
+}
+
+// YYYY-MM-DD + n days → YYYY-MM-DD. UTC arithmetic; matches the
+// daysBetweenYMD contract.
+function addDaysYMD(from: string, n: number): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(from);
+  if (!m) return "";
+  const t = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]) + n));
+  const yy = t.getUTCFullYear();
+  const mm = String(t.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(t.getUTCDate()).padStart(2, "0");
+  return `${yy}-${mm}-${dd}`;
+}
+
 function daysBetween(a: string, b: string): number {
   return Math.round((new Date(b).getTime() - new Date(a).getTime()) / 86400000);
 }
@@ -219,21 +265,76 @@ function fmtMoney(n: number): string {
   return formatCurrency(n);
 }
 
-function getDeployedInfo(asset: Asset): { customerName: string; address: string; deliveryDate: string; rentalEnd: string; daysDeployed: number; isOverdue: boolean } | null {
+interface DeployedInfo {
+  customerName: string;
+  address: string;
+  deliveryDate: string;
+  rentalEnd: string;
+  daysDeployed: number;
+  isOverdue: boolean;
+  customerId?: string;
+  // False when the asset is marked deployed but no active_chain row
+  // came back from the API. DB invariant prevents this, but the
+  // renderer still substitutes "—" for all chain-derived fields
+  // instead of rendering zeros.
+  hasChainData: boolean;
+}
+
+function getDeployedInfo(asset: Asset, today: string): DeployedInfo | null {
   if (asset.status !== "on_site" && asset.status !== "deployed") return null;
-  const meta = (asset.metadata || {}) as Record<string, any>;
-  const deliveryDate = meta.delivery_date || meta.deployed_date || asset.updated_at;
-  const rentalEnd = meta.rental_end_date || "";
-  const today = new Date().toISOString().split("T")[0];
-  const daysDeployed = daysBetween(deliveryDate, today);
-  const isOverdue = rentalEnd ? today > rentalEnd : false;
+
+  const chain = asset.active_chain;
+  if (!chain) {
+    if (typeof window !== "undefined") {
+      // Defense-in-depth log: DB invariant should prevent this shape.
+      // eslint-disable-next-line no-console
+      console.warn(
+        `Asset ${asset.id} (${asset.identifier}) status=${asset.status} but active_chain is null`,
+      );
+    }
+    return {
+      customerName: "",
+      address: "",
+      deliveryDate: "",
+      rentalEnd: "",
+      daysDeployed: 0,
+      isOverdue: false,
+      hasChainData: false,
+    };
+  }
+
+  const cust = chain.customer;
+  let customerName = "";
+  if (cust) {
+    const isCommercial = cust.type === "commercial" && !!(cust.company_name && cust.company_name.trim());
+    if (isCommercial) {
+      customerName = (cust.company_name || "").trim();
+    } else {
+      const first = (cust.first_name || "").trim();
+      const last = (cust.last_name || "").trim();
+      customerName = [first, last].filter(Boolean).join(" ");
+    }
+  }
+
+  const address = (cust?.billing_address?.street || "").trim();
+
+  const deliveryDate = chain.drop_off_date;
+  const rentalDays = chain.rental_days;
+  const rentalEnd = addDaysYMD(deliveryDate, rentalDays);
+
+  const raw = daysBetweenYMD(deliveryDate, today);
+  const daysDeployed = Number.isFinite(raw) ? Math.max(0, raw) : 0;
+  const isOverdue = Number.isFinite(raw) ? raw > rentalDays : false;
+
   return {
-    customerName: meta.customer_name || "",
-    address: asset.current_location?.address || "",
+    customerName,
+    address,
     deliveryDate,
     rentalEnd,
-    daysDeployed: Math.max(0, daysDeployed),
+    daysDeployed,
     isOverdue,
+    customerId: cust?.id,
+    hasChainData: true,
   };
 }
 
@@ -308,6 +409,11 @@ export default function AssetsPage() {
   const [projectionError, setProjectionError] = useState<string | null>(null);
   const { toast } = useToast();
   const router = useRouter();
+  const tenantTz = useTenantTimezone();
+  // Tenant-local YYYY-MM-DD anchor for Days Out math. Recomputed on each
+  // render so a long-lived tab eventually rolls to the next tenant day;
+  // getTenantToday is a pure Intl computation with no side-effects.
+  const today = getTenantToday(tenantTz);
 
   const fetchAssets = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -1455,6 +1561,7 @@ export default function AssetsPage() {
                   <>
                     <ListView
                       assets={pageAssets}
+                      today={today}
                       onSelect={setDetailAsset}
                       onQuickStatus={quickStatus}
                       onEdit={setEditAsset}
@@ -1542,7 +1649,7 @@ export default function AssetsPage() {
           })}
         </div>
       ) : (
-        <GridView assets={filteredAssets} onSelect={setDetailAsset} onQuickStatus={quickStatus} />
+        <GridView assets={filteredAssets} today={today} onSelect={setDetailAsset} onQuickStatus={quickStatus} />
       )}
 
       {/* Bulk Edit Floating Bar */}
@@ -1598,6 +1705,7 @@ export default function AssetsPage() {
         {detailAsset && (
           <AssetDetail
             asset={detailAsset}
+            today={today}
             onStatusChange={(status) => { quickStatus(detailAsset.id, status); setDetailAsset({ ...detailAsset, status }); }}
             onUpdated={() => { setDetailAsset(null); fetchAssets(); }}
           />
@@ -1636,10 +1744,11 @@ export default function AssetsPage() {
 
 /* ─── List View ─── */
 
-function ListView({ assets, onSelect, onQuickStatus, onEdit, onDelete, onRetire, bulkMode, selectedIds, onToggleSelect, onToggleSelectAll }: {
-  assets: Asset[]; onSelect: (a: Asset) => void; onQuickStatus: (id: string, status: string) => void; onEdit: (a: Asset) => void; onDelete: (a: Asset) => void; onRetire: (a: Asset) => void;
+function ListView({ assets, today, onSelect, onQuickStatus, onEdit, onDelete, onRetire, bulkMode, selectedIds, onToggleSelect, onToggleSelectAll }: {
+  assets: Asset[]; today: string; onSelect: (a: Asset) => void; onQuickStatus: (id: string, status: string) => void; onEdit: (a: Asset) => void; onDelete: (a: Asset) => void; onRetire: (a: Asset) => void;
   bulkMode?: boolean; selectedIds?: Set<string>; onToggleSelect?: (id: string) => void; onToggleSelectAll?: () => void;
 }) {
+  const router = useRouter();
   return (
     <div style={{ borderRadius: 20, border: "1px solid var(--t-border)", background: "var(--t-bg-card)", overflow: "hidden" }}>
       <div className="table-scroll">
@@ -1656,13 +1765,13 @@ function ListView({ assets, onSelect, onQuickStatus, onEdit, onDelete, onRetire,
               <th style={{ padding: "12px 16px", textAlign: "left", fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--t-text-muted)" }}>Size</th>
               <th style={{ padding: "12px 16px", textAlign: "left", fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--t-text-muted)" }}>Status</th>
               <th style={{ padding: "12px 16px", textAlign: "left", fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--t-text-muted)" }}>Location</th>
-              <th style={{ padding: "12px 16px", textAlign: "left", fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--t-text-muted)" }}>Days Out</th>
+              <th style={{ padding: "12px 16px", textAlign: "left", fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--t-text-muted)" }}>{getFeatureLabel("assets_deployed_days_out_column")}</th>
               <th style={{ padding: "12px 8px" }}></th>
             </tr>
           </thead>
           <tbody>
             {assets.map((asset) => {
-              const deployed = getDeployedInfo(asset);
+              const deployed = getDeployedInfo(asset, today);
 
               return (
                 <tr
@@ -1700,18 +1809,39 @@ function ListView({ assets, onSelect, onQuickStatus, onEdit, onDelete, onRetire,
                       {STATUS_LABELS[asset.status] || asset.status.replace(/_/g, " ")}
                     </span>
                   </td>
-                  <td style={{ padding: "12px 16px", fontSize: 13, color: "var(--t-text-muted)", maxWidth: 200 }} className="truncate">
+                  <td style={{ padding: "12px 16px", fontSize: 13, maxWidth: 240 }}>
                     {deployed ? (
-                      <span>{deployed.customerName ? `${deployed.customerName} \u2014 ` : ""}{deployed.address || "Customer site"}</span>
+                      <div style={{ lineHeight: 1.35 }}>
+                        {deployed.customerId && deployed.customerName ? (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); router.push(`/customers/${deployed.customerId}`); }}
+                            className="truncate text-left hover:underline block w-full"
+                            style={{ color: "var(--t-accent-text)", fontWeight: 500, background: "transparent", border: "none", padding: 0, cursor: "pointer" }}
+                          >
+                            {deployed.customerName}
+                          </button>
+                        ) : (
+                          <span className="truncate block w-full" style={{ color: "var(--t-text-muted)" }}>
+                            {deployed.hasChainData ? (deployed.customerName || "\u2014") : "\u2014"}
+                          </span>
+                        )}
+                        <span className="truncate block w-full" style={{ color: "var(--t-text-muted)", fontSize: 12 }}>
+                          {deployed.hasChainData ? (deployed.address || "\u2014") : "\u2014"}
+                        </span>
+                      </div>
                     ) : (
-                      <span>Yard</span>
+                      <span style={{ color: "var(--t-text-muted)" }}>Yard</span>
                     )}
                   </td>
                   <td style={{ padding: "12px 16px" }}>
                     {deployed ? (
-                      <span className="tabular-nums" style={{ fontSize: 13, fontWeight: 500, color: deployed.isOverdue ? "var(--t-error)" : "var(--t-text-primary)" }}>
-                        {deployed.daysDeployed}d {deployed.isOverdue && <span style={{ fontSize: 10, color: "var(--t-error)", fontWeight: 700 }}>OVERDUE</span>}
-                      </span>
+                      deployed.hasChainData ? (
+                        <span className="tabular-nums" style={{ fontSize: 13, fontWeight: 500, color: deployed.isOverdue ? "var(--t-error)" : "var(--t-text-primary)" }}>
+                          {deployed.daysDeployed}d {deployed.isOverdue && <span style={{ fontSize: 10, color: "var(--t-error)", fontWeight: 700 }}>{getFeatureLabel("assets_deployed_overdue_badge")}</span>}
+                        </span>
+                      ) : (
+                        <span style={{ color: "var(--t-text-muted)", fontSize: 13 }}>—</span>
+                      )
                     ) : (
                       <span style={{ color: "var(--t-text-muted)", fontSize: 13 }}>—</span>
                     )}
@@ -1780,11 +1910,12 @@ function ListView({ assets, onSelect, onQuickStatus, onEdit, onDelete, onRetire,
 
 /* ─── Grid View ─── */
 
-function GridView({ assets, onSelect, onQuickStatus }: { assets: Asset[]; onSelect: (a: Asset) => void; onQuickStatus: (id: string, status: string) => void }) {
+function GridView({ assets, today, onSelect, onQuickStatus }: { assets: Asset[]; today: string; onSelect: (a: Asset) => void; onQuickStatus: (id: string, status: string) => void }) {
+  const router = useRouter();
   return (
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
       {assets.map((asset) => {
-        const deployed = getDeployedInfo(asset);
+        const deployed = getDeployedInfo(asset, today);
 
         return (
           <button
@@ -1813,12 +1944,31 @@ function GridView({ assets, onSelect, onQuickStatus }: { assets: Asset[]; onSele
               {STATUS_LABELS[asset.status] || asset.status.replace(/_/g, " ")}
             </span>
 
-            <div className="truncate mt-2" style={{ fontSize: 12, color: "var(--t-text-muted)" }}>
+            <div className="mt-2" style={{ fontSize: 12, color: "var(--t-text-muted)", lineHeight: 1.35 }}>
               {deployed ? (
-                <span className="flex items-center gap-1">
-                  <MapPin className="h-3 w-3 shrink-0" />
-                  {deployed.customerName || deployed.address || "Customer site"}
-                </span>
+                <>
+                  {deployed.customerId && deployed.customerName ? (
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      onClick={(e) => { e.stopPropagation(); router.push(`/customers/${deployed.customerId}`); }}
+                      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); router.push(`/customers/${deployed.customerId}`); } }}
+                      className="flex items-center gap-1 truncate hover:underline"
+                      style={{ color: "var(--t-accent-text)", cursor: "pointer" }}
+                    >
+                      <MapPin className="h-3 w-3 shrink-0" />
+                      {deployed.customerName}
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-1 truncate">
+                      <MapPin className="h-3 w-3 shrink-0" />
+                      {deployed.hasChainData ? (deployed.customerName || "\u2014") : "\u2014"}
+                    </span>
+                  )}
+                  <span className="block truncate" style={{ paddingLeft: 16 }}>
+                    {deployed.hasChainData ? (deployed.address || "\u2014") : "\u2014"}
+                  </span>
+                </>
               ) : (
                 <span className="flex items-center gap-1"><MapPin className="h-3 w-3" /> Yard</span>
               )}
@@ -1826,7 +1976,9 @@ function GridView({ assets, onSelect, onQuickStatus }: { assets: Asset[]; onSele
 
             {deployed && (
               <p style={{ fontSize: 10, fontWeight: 500, color: deployed.isOverdue ? "var(--t-error)" : "var(--t-text-muted)", marginTop: 4 }}>
-                {deployed.daysDeployed}d out {deployed.isOverdue && "\u00b7 OVERDUE"}
+                {deployed.hasChainData
+                  ? (<>{deployed.daysDeployed}d out {deployed.isOverdue && `\u00b7 ${getFeatureLabel("assets_deployed_overdue_badge")}`}</>)
+                  : "\u2014"}
               </p>
             )}
 
@@ -1857,9 +2009,9 @@ function GridView({ assets, onSelect, onQuickStatus }: { assets: Asset[]; onSele
 
 /* ─── Asset Detail Panel ─── */
 
-function AssetDetail({ asset, onStatusChange, onUpdated }: { asset: Asset; onStatusChange: (status: string) => void; onUpdated: () => void }) {
+function AssetDetail({ asset, today, onStatusChange, onUpdated }: { asset: Asset; today: string; onStatusChange: (status: string) => void; onUpdated: () => void }) {
   const [activeTab, setActiveTab] = useState<"overview" | "history" | "maintenance">("overview");
-  const deployed = getDeployedInfo(asset);
+  const deployed = getDeployedInfo(asset, today);
 
   return (
     <div className="space-y-6">
