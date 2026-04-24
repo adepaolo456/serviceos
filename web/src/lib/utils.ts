@@ -25,6 +25,7 @@ const SOURCE_DISPLAY_LABELS: Record<string, string> = {
   manual: "Manual Entry",
   schedule_next: "Scheduled Follow-Ups",
   exchange: "Exchange",
+  marketplace: "Marketplace",
   rescheduled_from_failure: "Rescheduled Jobs",
   other: "Other",
 };

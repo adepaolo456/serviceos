@@ -100,6 +100,13 @@ export class RentalChainsService {
       dto.rental_days ??
       (await getTenantRentalDays(this.tenantSettingsRepo, tenantId));
 
+    // Source attribution for both paired jobs created below. Default
+    // 'manual' because the sole caller is POST /rental-chains (no
+    // frontend UI), so any call arriving here is an API/tooling action.
+    // Callers can override via dto.source — validated against the
+    // JOB_SOURCE_VALUES whitelist at the DTO layer.
+    const source = dto.source ?? 'manual';
+
     // Calculate expected pickup date
     const dropOff = new Date(dto.drop_off_date);
     const pickupDate = new Date(dropOff);
@@ -132,6 +139,7 @@ export class RentalChainsService {
       asset_subtype: dto.dumpster_size,
       status: 'pending',
       priority: 'normal',
+      source,
       scheduled_date: dto.drop_off_date,
       rental_days: rentalDays,
       rental_start_date: dto.drop_off_date,
@@ -151,6 +159,7 @@ export class RentalChainsService {
       asset_subtype: dto.dumpster_size,
       status: 'pending',
       priority: 'normal',
+      source,
       scheduled_date: expectedPickupDate,
       asset_id: dto.asset_id || null,
       parent_job_id: savedDropOff.id,
