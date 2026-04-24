@@ -288,21 +288,31 @@ const isRealBackendStatus = (s: string) => REAL_STATUSES.has(s);
 // display-only step would silently become the default target and 400
 // on submit.
 function defaultOverrideTarget(currentStatus: string): string {
-  const idx = TIMELINE_STEPS.findIndex((s) => s.status === currentStatus);
+  // Match on DISPLAY status, not raw status. Multiple raw statuses can
+  // collapse to the same timeline circle (e.g. `scheduled` and `dispatched`
+  // both display as "Assigned"). The operator thinks of them identically,
+  // so the helper should too. Source-of-truth mapping lives in
+  // `@/lib/job-status#deriveFromStatusString`.
+  const currentDisplay = deriveDisplayStatus(currentStatus);
+  const idx = TIMELINE_STEPS.findIndex(
+    (s) => deriveDisplayStatus(s.status) === currentDisplay,
+  );
   if (idx === -1) {
-    // Current status isn't on the canonical timeline (e.g. `in_progress`,
-    // `needs_reschedule`). Fall back to the first real step so the modal
-    // opens with a valid default instead of an empty selection.
+    // Current status doesn't map to any timeline circle (e.g. `cancelled`,
+    // `failed`, `needs_reschedule`). Fall back to the first real step so the
+    // modal opens with a valid default instead of an empty selection.
     return TIMELINE_STEPS.find((s) => isRealBackendStatus(s.status))?.status ?? "";
   }
-  // Walk backward for a real status.
+  // Skip entries whose display equals currentDisplay — two raw statuses (e.g. pending + confirmed) can both collapse to 'unassigned', and a target whose display equals current is operationally a same-status no-op.
   for (let i = idx - 1; i >= 0; i--) {
+    if (deriveDisplayStatus(TIMELINE_STEPS[i].status) === currentDisplay) continue;
     if (isRealBackendStatus(TIMELINE_STEPS[i].status)) {
       return TIMELINE_STEPS[i].status;
     }
   }
   // Fall forward if the backward walk is exhausted (current === step 0).
   for (let i = idx + 1; i < TIMELINE_STEPS.length; i++) {
+    if (deriveDisplayStatus(TIMELINE_STEPS[i].status) === currentDisplay) continue;
     if (isRealBackendStatus(TIMELINE_STEPS[i].status)) {
       return TIMELINE_STEPS[i].status;
     }

@@ -161,6 +161,8 @@ function deriveFromStatusString(
     }
     case "confirmed":
       return "unassigned";
+    case "scheduled":
+      return "assigned";
     case "dispatched":
       return "assigned";
     case "en_route":
