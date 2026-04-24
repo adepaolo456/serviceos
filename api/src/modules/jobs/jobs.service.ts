@@ -119,6 +119,14 @@ const VALID_TRANSITIONS: Record<string, string[]> = {
   needs_reschedule: ['pending', 'confirmed', 'dispatched', 'cancelled'],
 };
 
+// Raw statuses that `deriveFromStatusString` in
+// `web/src/lib/job-status.ts` maps to the "unassigned" display bucket.
+// Keep in sync with that function's switch — any new raw status that
+// renders as "Unassigned" on the timeline must be added here too.
+// Used by changeStatus below to couple driver-clear into admin
+// overrides that target the Unassigned display state.
+const UNASSIGNED_TARGETS = new Set(['pending', 'confirmed']);
+
 @Injectable()
 export class JobsService {
   constructor(
@@ -1242,6 +1250,19 @@ export class JobsService {
     const savedJob = await this.dataSource.transaction(async (manager) => {
       const txJobRepo = manager.getRepository(Job);
       const txNotifRepo = manager.getRepository(Notification);
+      // Phase 1.7 — admin override to an Unassigned-display status
+      // ALSO clears assigned_driver_id. Operator mental model: "roll
+      // this job back to Unassigned" means status AND driver. Without
+      // the clear, deriveDisplayStatus's object-form live-driver branch
+      // keeps rendering "Assigned" even after status reverts.
+      // Inline rather than delegating — no dedicated unassignDriver
+      // method exists; mirrors the existing cascadeDelete null-out
+      // pattern at jobs.service.ts:1592 and :1633. Runs inside this
+      // transaction so the field clear + save + audit-log write
+      // commit or roll back as one unit.
+      if (isAdmin && UNASSIGNED_TARGETS.has(dto.status)) {
+        job.assigned_driver_id = null as unknown as string;
+      }
       const saved = await txJobRepo.save(job);
       if (isAdmin && previousStatus !== dto.status) {
         await txNotifRepo.save(

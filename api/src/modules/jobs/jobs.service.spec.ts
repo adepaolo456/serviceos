@@ -487,4 +487,69 @@ describe('JobsService.changeStatus — Phase 1 override scope', () => {
     // audit-row branch is admin-gated.
     expect(h.transactionCommit).toHaveBeenCalledTimes(1);
   });
+
+  // ── #7/#8/#9 — Phase 1.7: override-to-Unassigned clears driver ──
+  // Status↔driver coupling fix. Admin override whose target raw status
+  // maps to the "Unassigned" display bucket (pending, confirmed) must
+  // null assigned_driver_id atomically with the status save — otherwise
+  // deriveDisplayStatus's object-form live-driver branch keeps the UI
+  // stuck on "Assigned".
+
+  it('7. override to Unassigned (confirmed) — clears assigned_driver_id atomically', async () => {
+    const h = await buildHarness({
+      status: 'dispatched',
+      assigned_driver_id: 'driver-1',
+      job_type: 'pickup',
+    } as Partial<Job>);
+
+    await h.service.changeStatus(
+      'tenant-1',
+      'job-1',
+      { status: 'confirmed', overrideReason: 'rollback' } as any,
+      'owner',
+    );
+
+    expect(h.txJobSave).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'confirmed', assigned_driver_id: null }),
+    );
+    expect(h.transactionCommit).toHaveBeenCalledTimes(1);
+  });
+
+  it('8. override to Assigned (dispatched) — leaves assigned_driver_id intact', async () => {
+    const h = await buildHarness({
+      status: 'en_route',
+      assigned_driver_id: 'driver-1',
+      job_type: 'pickup',
+    } as Partial<Job>);
+
+    await h.service.changeStatus(
+      'tenant-1',
+      'job-1',
+      { status: 'dispatched', overrideReason: 'rewind' } as any,
+      'owner',
+    );
+
+    expect(h.txJobSave).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'dispatched', assigned_driver_id: 'driver-1' }),
+    );
+  });
+
+  it('9. override to Unassigned (pending) — also clears driver', async () => {
+    const h = await buildHarness({
+      status: 'dispatched',
+      assigned_driver_id: 'driver-1',
+      job_type: 'delivery',
+    } as Partial<Job>);
+
+    await h.service.changeStatus(
+      'tenant-1',
+      'job-1',
+      { status: 'pending', overrideReason: 'reset' } as any,
+      'owner',
+    );
+
+    expect(h.txJobSave).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'pending', assigned_driver_id: null }),
+    );
+  });
 });
