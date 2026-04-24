@@ -260,6 +260,57 @@ const TIMELINE_STEPS = [
   { key: "completed_at", label: "Completed", status: "completed" },
 ];
 
+// Canonical backend status values the timeline can safely write to.
+// Mirrors VALID_TRANSITIONS in api/src/modules/jobs/jobs.service.ts:112
+// — keep the two lists in sync. Statuses that exist in the backend enum
+// but are NOT happy-path (in_progress, cancelled, failed, needs_reschedule)
+// are intentionally excluded; timeline is scoped to the 6 lifecycle
+// steps and those other states have their own workflows (cancellation
+// orchestrator, reschedule flow).
+const REAL_STATUSES = new Set([
+  "pending",
+  "confirmed",
+  "dispatched",
+  "en_route",
+  "arrived",
+  "completed",
+]);
+const isRealBackendStatus = (s: string) => REAL_STATUSES.has(s);
+
+// Default target resolver for the Override Status modal. Walks BACKWARD
+// from the current step to the nearest real status — the dominant
+// correction pattern is "driver tapped a state by accident, operator
+// wants to move it back one". Falls forward only when current is the
+// first real step (e.g. `pending` / Created). The defensive
+// isRealBackendStatus filter is a no-op today (all 6 TIMELINE_STEPS
+// statuses are real) but prevents a regression class if a future
+// display-only step gets added to TIMELINE_STEPS — without it, a
+// display-only step would silently become the default target and 400
+// on submit.
+function defaultOverrideTarget(currentStatus: string): string {
+  const idx = TIMELINE_STEPS.findIndex((s) => s.status === currentStatus);
+  if (idx === -1) {
+    // Current status isn't on the canonical timeline (e.g. `in_progress`,
+    // `needs_reschedule`). Fall back to the first real step so the modal
+    // opens with a valid default instead of an empty selection.
+    return TIMELINE_STEPS.find((s) => isRealBackendStatus(s.status))?.status ?? "";
+  }
+  // Walk backward for a real status.
+  for (let i = idx - 1; i >= 0; i--) {
+    if (isRealBackendStatus(TIMELINE_STEPS[i].status)) {
+      return TIMELINE_STEPS[i].status;
+    }
+  }
+  // Fall forward if the backward walk is exhausted (current === step 0).
+  for (let i = idx + 1; i < TIMELINE_STEPS.length; i++) {
+    if (isRealBackendStatus(TIMELINE_STEPS[i].status)) {
+      return TIMELINE_STEPS[i].status;
+    }
+  }
+  // Final safety net — unreachable in practice with the 6 canonical steps.
+  return TIMELINE_STEPS.find((s) => isRealBackendStatus(s.status))?.status ?? "";
+}
+
 /* --- Helpers --- */
 
 import { formatCurrency, formatSourceLabel } from "@/lib/utils";
@@ -437,8 +488,7 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
     if (overrideAutoOpened) return;
     if (!job || !isOfficeRole) return;
     if (searchParams.get("override") !== "1") return;
-    const firstDifferent = TIMELINE_STEPS.find((s) => s.status !== job.status)?.status ?? "";
-    setOverrideTarget(firstDifferent);
+    setOverrideTarget(defaultOverrideTarget(job.status));
     setOverrideReason("");
     setOverrideOpen(true);
     setOverrideAutoOpened(true);
@@ -1273,10 +1323,10 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
                   {canOverride && (
                     <button
                       onClick={() => {
-                        // Pre-fill: first timeline status that isn't the current one.
-                        // Dropdown in the modal lets the operator switch if desired.
-                        const firstDifferent = TIMELINE_STEPS.find((s) => s.status !== job.status)?.status ?? "";
-                        setOverrideTarget(firstDifferent);
+                        // Pre-fill with the backward-default (see
+                        // `defaultOverrideTarget`). Dropdown lets the
+                        // operator switch if desired.
+                        setOverrideTarget(defaultOverrideTarget(job.status));
                         setOverrideReason("");
                         setOverrideOpen(true);
                       }}
@@ -3242,8 +3292,25 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
               Correct a driver status error. This action is recorded.
             </p>
             <div className="space-y-3">
+              {/* Current status — read-only context so the operator can
+                  see what state the job is in while filling the form.
+                  Pill-styled badge mirrors the timeline chip's accent
+                  color scheme for visual continuity. */}
               <div>
-                <label className="block text-[11px] font-semibold uppercase tracking-wide mb-1" style={{ color: "var(--t-text-muted)" }}>Target Status</label>
+                <label className="block text-[11px] font-semibold uppercase tracking-wide mb-1" style={{ color: "var(--t-text-muted)" }}>
+                  {FEATURE_REGISTRY.job_override_status_current_label?.label ?? "Current status"}
+                </label>
+                <span
+                  className="inline-block rounded-full px-3 py-1 text-xs font-semibold"
+                  style={{ background: "var(--t-accent-soft)", color: "var(--t-accent)" }}
+                >
+                  {DISPLAY_STATUS_LABELS[deriveDisplayStatus(job.status)] ?? job.status}
+                </span>
+              </div>
+              <div>
+                <label className="block text-[11px] font-semibold uppercase tracking-wide mb-1" style={{ color: "var(--t-text-muted)" }}>
+                  {FEATURE_REGISTRY.job_override_status_target_label?.label ?? "New status"}
+                </label>
                 <select
                   value={overrideTarget}
                   onChange={(e) => setOverrideTarget(e.target.value)}
