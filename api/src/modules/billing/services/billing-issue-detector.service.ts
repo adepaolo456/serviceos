@@ -62,6 +62,11 @@ export class BillingIssueDetectorService {
     let resolved: ResolvedPrice | null = null;
     const dumpsterSize =
       job?.asset_subtype || this.extractSizeFromLineItems(lineItems);
+    // NARROWED: only NotFoundException is absorbed ("no pricing rule
+    // for this size" is a legitimate business outcome — detector
+    // skips price-dependent checks but still runs the other checks).
+    // All other errors propagate so DB failures / timeouts are not
+    // silently masked as "no rule."
     if (dumpsterSize) {
       try {
         resolved = await this.priceResolution.resolvePrice(
@@ -69,8 +74,9 @@ export class BillingIssueDetectorService {
           invoice.customer_id,
           dumpsterSize,
         );
-      } catch {
-        /* no pricing rule — skip price-dependent checks */
+      } catch (err) {
+        if (!(err instanceof NotFoundException)) throw err;
+        resolved = null;
       }
     }
 

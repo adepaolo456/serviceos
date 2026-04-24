@@ -1203,7 +1203,14 @@ export class JobsService {
 
     const savedJob = await this.jobsRepository.save(job);
 
-    // Billing issue detection on job completion
+    // Billing issue detection on job completion.
+    //
+    // NON-FATAL: the detector is an advisory surface that re-runs on
+    // every subsequent job completion and has its own retry path via
+    // the scheduled detector cron. Failure here means a single check
+    // was skipped — the detector will catch up on the next completion
+    // against the same invoice. Caller can safely continue because the
+    // job state is already correct; detection is observational.
     if (dto.status === 'completed') {
       try {
         const linkedInvoice = await this.jobsRepository.manager
@@ -1214,34 +1221,43 @@ export class JobsService {
         } else {
           await this.billingIssueDetector.detectMissingInvoice(tenantId, savedJob.id);
         }
-      } catch { /* billing issue detection is best-effort */ }
+      } catch { /* non-fatal — see comment above */ }
 
-      // If this job was previously failed, reverse the failed-trip charge
+      // If this job was previously failed, reverse the failed-trip charge.
+      //
+      // Site #26 (prior silent-error-swallow audit, closed): the
+      // previous try/catch silently dropped reversal failures,
+      // leaving the customer charged a failed-trip fee for a job that
+      // actually completed. Removed; errors now propagate so the
+      // completion surfaces as a 500 (forcing the operator to retry
+      // rather than accepting an overcharge).
       if (savedJob.is_failed_trip) {
-        try {
-          const failedInvoices = await this.invoiceRepo.find({
-            where: { job_id: savedJob.id, tenant_id: tenantId },
-            relations: ['line_items'],
-          });
-          for (const inv of failedInvoices) {
-            const hasFailedLine = inv.line_items?.some(
-              (li) => li.name?.toLowerCase().includes('failed'),
-            );
-            if (hasFailedLine && inv.status !== 'voided') {
-              await this.billingService.voidInternalInvoice(inv.id, tenantId, 'Failed trip charge reversed — job completed successfully');
-            }
+        const failedInvoices = await this.invoiceRepo.find({
+          where: { job_id: savedJob.id, tenant_id: tenantId },
+          relations: ['line_items'],
+        });
+        for (const inv of failedInvoices) {
+          const hasFailedLine = inv.line_items?.some(
+            (li) => li.name?.toLowerCase().includes('failed'),
+          );
+          if (hasFailedLine && inv.status !== 'voided') {
+            await this.billingService.voidInternalInvoice(inv.id, tenantId, 'Failed trip charge reversed — job completed successfully');
           }
-        } catch { /* reversal is best-effort */ }
+        }
       }
     }
 
-    // Rental chain reaction on job type change
+    // Rental chain reaction on job type change.
+    //
+    // Site #27 (prior silent-error-swallow audit, closed): the
+    // previous try/catch silently dropped chain-sync failures when a
+    // job type changed, leaving the chain structure out of sync with
+    // the jobs. Same 13-broken-deployments bug class. Removed; errors
+    // propagate.
     if (previousStatus !== dto.status && (dto as any).jobType && (dto as any).previousJobType) {
-      try {
-        await this.rentalChainsService.handleTypeChange(
-          tenantId, savedJob.id, (dto as any).previousJobType, (dto as any).jobType,
-        );
-      } catch { /* chain reaction is best-effort */ }
+      await this.rentalChainsService.handleTypeChange(
+        tenantId, savedJob.id, (dto as any).previousJobType, (dto as any).jobType,
+      );
     }
 
     // Auto-update asset status based on the new job status
@@ -1260,16 +1276,18 @@ export class JobsService {
     // terminal for the chain-state check but does not itself
     // trigger the check. Best-effort wrap so a chain-close
     // failure never blocks the primary status change.
+    // Site #28 (prior silent-error-swallow audit, closed): the
+    // previous try/catch silently dropped chain-auto-close failures,
+    // leaving chains flagged "active" even when every linked job was
+    // terminal. Dispatch board showed ghost active chains — same
+    // operational-staleness class as the 13 broken deployments.
+    // Removed; errors propagate.
     if (
       dto.status === 'cancelled' ||
       dto.status === 'failed' ||
       dto.status === 'needs_reschedule'
     ) {
-      try {
-        await this.autoCloseChainIfTerminal(tenantId, savedJob.id);
-      } catch {
-        /* chain auto-close is best-effort */
-      }
+      await this.autoCloseChainIfTerminal(tenantId, savedJob.id);
     }
 
     // Queue customer notifications for key status changes
@@ -1278,6 +1296,13 @@ export class JobsService {
       const recipient = job.customer.phone || job.customer.email || '';
       const channel = job.customer.phone ? 'sms' : 'email';
 
+      // NON-FATAL: customer-facing status notifications (booking
+      // confirmed / on-the-way / completed). These are out-of-band
+      // channels owned by the notifications subsystem; failure here
+      // means the customer doesn't get this specific update, but the
+      // job status transition is already persisted and the next
+      // transition will re-attempt a matching notification. Caller
+      // can safely continue because the job state is correct.
       try {
         if (dto.status === 'confirmed' && recipient) {
           await this.notificationsService.send(tenantId, {
@@ -1302,7 +1327,7 @@ export class JobsService {
             jobId: job.id, customerId: job.customer_id,
           });
         }
-      } catch { /* best effort — don't block status transition */ }
+      } catch { /* non-fatal — see comment above */ }
     }
 
     // Log admin status overrides (backward transitions).
@@ -1317,24 +1342,28 @@ export class JobsService {
     // no reason was provided (driver-app transitions, programmatic
     // changes, legacy callers) — preserves backward compatibility
     // with any existing audit-log consumers.
+    // Site #30 (prior silent-error-swallow audit, closed): the
+    // previous try/catch silently dropped the admin-override audit
+    // log row. An admin backwards-transitioning a job without an
+    // audit entry is a compliance gap — no accountability for the
+    // override. Removed; errors propagate so the transition surfaces
+    // as a 500 rather than landing without a log.
     if (isAdmin && previousStatus !== dto.status) {
-      try {
-        await this.notifRepo.save(this.notifRepo.create({
-          tenant_id: tenantId,
-          job_id: job.id,
-          channel: 'automation',
-          type: 'status_override',
-          recipient: 'system',
-          body: JSON.stringify({
-            from: previousStatus,
-            to: dto.status,
-            overriddenBy: userRole,
-            reason: dto.overrideReason ?? null,
-          }),
-          status: 'logged',
-          sent_at: new Date(),
-        }));
-      } catch { /* best effort */ }
+      await this.notifRepo.save(this.notifRepo.create({
+        tenant_id: tenantId,
+        job_id: job.id,
+        channel: 'automation',
+        type: 'status_override',
+        recipient: 'system',
+        body: JSON.stringify({
+          from: previousStatus,
+          to: dto.status,
+          overriddenBy: userRole,
+          reason: dto.overrideReason ?? null,
+        }),
+        status: 'logged',
+        sent_at: new Date(),
+      }));
     }
 
     return savedJob;
@@ -3249,6 +3278,12 @@ export class JobsService {
       const customerName = `${job.customer.first_name} ${job.customer.last_name}`;
       const recipient = job.customer.phone || job.customer.email || '';
       const channel = job.customer.phone ? 'sms' : 'email';
+      // NON-FATAL: assignment-driven booking-confirmed notification.
+      // Assignment is already persisted; the notification is an
+      // out-of-band channel. Failure here means the customer doesn't
+      // get this single confirmation message, but the assignment is
+      // correct and any subsequent status change will emit a fresh
+      // notification. Caller can safely continue.
       if (recipient) {
         try {
           await this.notificationsService.send(tenantId, {
@@ -3260,9 +3295,7 @@ export class JobsService {
             jobId: job.id,
             customerId: job.customer_id,
           });
-        } catch {
-          /* best effort — don't block assignment on notification failure */
-        }
+        } catch { /* non-fatal — see comment above */ }
       }
     }
 

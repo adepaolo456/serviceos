@@ -70,13 +70,25 @@ export class BookingCompletionService {
     params: BookingCompletionParams,
     manager?: EntityManager,
   ): Promise<BookingCompletionResult> {
-    const jobRepo = manager?.getRepository(Job) ?? this.jobsRepo;
-    const assetRepo = manager?.getRepository(Asset) ?? this.assetsRepo;
-    const invoiceRepo = manager?.getRepository(Invoice) ?? this.invoicesRepo;
-    const lineItemRepo = manager?.getRepository(InvoiceLineItem) ?? this.lineItemRepo;
-    const rentalChainRepo = manager?.getRepository(RentalChain) ?? this.rentalChainRepo;
-    const taskChainLinkRepo = manager?.getRepository(TaskChainLink) ?? this.taskChainLinkRepo;
-    const querySource = manager ?? this.dataSource;
+    // Wrap the full booking-completion sequence (steps 1-10: sequence
+    // numbers, asset reservation, job creation, invoice creation, line
+    // items, chain creation, link wiring) in a single transaction. When
+    // the caller passes an outer `manager` (orchestration path), we run
+    // inside their transaction — EntityManager.transaction reuses the
+    // active tx so this is a no-op wrapper there. When no manager is
+    // passed (bookings-controller path), we open a new transaction so
+    // the whole sequence is atomic. Any error inside rolls back every
+    // preceding write — eliminating the "jobs + invoice committed,
+    // chain silently missing" corruption class (13 broken deployments
+    // in tenant 822481be was this bug).
+    return (manager ?? this.dataSource).transaction(async (trx) => {
+    const jobRepo = trx.getRepository(Job);
+    const assetRepo = trx.getRepository(Asset);
+    const invoiceRepo = trx.getRepository(Invoice);
+    const lineItemRepo = trx.getRepository(InvoiceLineItem);
+    const rentalChainRepo = trx.getRepository(RentalChain);
+    const taskChainLinkRepo = trx.getRepository(TaskChainLink);
+    const querySource = trx;
 
     const {
       tenantId, customerId, dumpsterSize, serviceType, deliveryDate,
@@ -84,13 +96,11 @@ export class BookingCompletionService {
       totalPrice, taxAmount, placementNotes, pricingSnapshot, pricingTierUsed,
     } = params;
 
-    // 1. Generate job numbers. If the caller passed an outer
-    // `manager` (transactional booking-completion path), the sequence
-    // increment joins that transaction so rollback-on-failure discards
-    // the skipped numbers as a single unit.
-    const seqManager = manager ?? this.dataSource.manager;
-    const deliveryNumber = await issueNextJobNumber(seqManager, tenantId, 'delivery');
-    const pickupNumber = await issueNextJobNumber(seqManager, tenantId, 'pickup');
+    // 1. Generate job numbers — joined into the outer transaction
+    // (`trx`) so rollback-on-failure discards the skipped numbers as
+    // a single unit.
+    const deliveryNumber = await issueNextJobNumber(trx, tenantId, 'delivery');
+    const pickupNumber = await issueNextJobNumber(trx, tenantId, 'pickup');
 
     // Phase B2 — read the tenant's pre-assignment flag up-front. When
     // enabled, the delivery job's asset_id and the asset's `reserved`
@@ -101,43 +111,49 @@ export class BookingCompletionService {
     // B2 spec. Default false for all tenants until explicitly
     // opted in.
     const preAssignmentDisabled =
-      await this.isPreAssignmentDisabled(tenantId, manager);
+      await this.isPreAssignmentDisabled(tenantId, trx);
 
-    // 2. Asset availability check + auto-approve
+    // 2. Asset availability check + auto-approve.
+    //
+    // Site #1 (prior silent-error-swallow audit, closed): the previous
+    // try/catch around this lookup conflated "no asset available" (a
+    // legitimate business outcome that should leave assignedAsset=null
+    // and later surface as a chain_activation_requires_asset 400) with
+    // "DB error on the lookup query" (a real failure that must
+    // propagate). Removed; errors now bubble out and roll back the
+    // surrounding transaction.
     let autoApproved = false;
     let assignedAsset: { id: string; identifier: string } | null = null;
     let jobStatus = 'pending';
 
-    try {
-      const availableAsset = await assetRepo.findOne({
-        where: { tenant_id: tenantId, subtype: dumpsterSize, status: 'available' },
-      });
-      if (availableAsset) {
+    const availableAsset = await assetRepo.findOne({
+      where: { tenant_id: tenantId, subtype: dumpsterSize, status: 'available' },
+    });
+    if (availableAsset) {
+      autoApproved = true;
+      jobStatus = 'confirmed';
+      assignedAsset = { id: availableAsset.id, identifier: availableAsset.identifier };
+      // Phase B2 — only mark the asset `reserved` when pre-
+      // assignment is enabled. When disabled the asset stays
+      // `available` until the delivery driver captures it on
+      // completion, avoiding a state where the asset is reserved
+      // for a delivery whose asset_id is null.
+      if (!preAssignmentDisabled) {
+        await assetRepo.update(availableAsset.id, { status: 'reserved' });
+      }
+    } else {
+      const pickupCount = await jobRepo
+        .createQueryBuilder('j')
+        .where('j.tenant_id = :tenantId', { tenantId })
+        .andWhere('j.job_type = :type', { type: 'pickup' })
+        .andWhere('j.status NOT IN (:...ex)', { ex: ['completed', 'cancelled'] })
+        .andWhere('j.scheduled_date <= :date', { date: deliveryDate })
+        .getCount();
+      if (pickupCount > 0) {
         autoApproved = true;
         jobStatus = 'confirmed';
-        assignedAsset = { id: availableAsset.id, identifier: availableAsset.identifier };
-        // Phase B2 — only mark the asset `reserved` when pre-
-        // assignment is enabled. When disabled the asset stays
-        // `available` until the delivery driver captures it on
-        // completion, avoiding a state where the asset is reserved
-        // for a delivery whose asset_id is null.
-        if (!preAssignmentDisabled) {
-          await assetRepo.update(availableAsset.id, { status: 'reserved' });
-        }
-      } else {
-        const pickupCount = await jobRepo
-          .createQueryBuilder('j')
-          .where('j.tenant_id = :tenantId', { tenantId })
-          .andWhere('j.job_type = :type', { type: 'pickup' })
-          .andWhere('j.status NOT IN (:...ex)', { ex: ['completed', 'cancelled'] })
-          .andWhere('j.scheduled_date <= :date', { date: deliveryDate })
-          .getCount();
-        if (pickupCount > 0) {
-          autoApproved = true;
-          jobStatus = 'confirmed';
-        }
       }
-    } catch { /* non-fatal */ }
+    }
 
     // 3. Create delivery job
     const deliveryJob = jobRepo.create({
@@ -211,14 +227,23 @@ export class BookingCompletionService {
     } as Partial<Invoice> as Invoice);
     const savedInvoice = await invoiceRepo.save(invoice);
 
-    // 6. Pricing snapshot
+    // 6. Pricing snapshot.
+    //
+    // NON-FATAL: pricing_rule_snapshot + pricing_tier_used are
+    // informational audit fields. Failure here means the invoice is
+    // missing the snapshot metadata; it does NOT affect the invoice's
+    // numbers, FK relationships, or lifecycle. The invoice row is
+    // already saved at line ~212 with correct subtotal / tax / total.
+    // Caller can safely continue because the pricing calculation
+    // itself succeeded (otherwise we'd never reach this step) — the
+    // snapshot is a denormalized copy for reporting.
     if (pricingSnapshot) {
       try {
         await invoiceRepo.update(savedInvoice.id, {
           pricing_rule_snapshot: pricingSnapshot,
           pricing_tier_used: pricingTierUsed || 'global',
         } as Partial<Invoice>);
-      } catch { /* non-fatal */ }
+      } catch { /* non-fatal — see comment above */ }
     }
 
     // 7. Single rental line item (distance folded in)
@@ -234,7 +259,15 @@ export class BookingCompletionService {
     });
     await lineItemRepo.save(rentalItem);
 
-    // 8. Create rental chain + task chain links
+    // 8. Create rental chain + task chain links.
+    //
+    // Site #3 (prior silent-error-swallow audit, closed): the previous
+    // try/catch here swallowed chain-creation failures, returned
+    // `rentalChainId: null`, and let the caller proceed. Root cause of
+    // the 13 broken deployments in tenant 822481be — delivery jobs
+    // and invoices committed without a chain, dispatch sees garbage
+    // 20 days later. Removed; any failure inside the surrounding
+    // transaction rolls back every preceding write.
     //
     // Order is load-bearing: `assignedAsset` is computed in step 2
     // above (auto-assigned available asset for this subtype). We
@@ -243,10 +276,6 @@ export class BookingCompletionService {
     // CHECK constraint `rental_chain_active_requires_asset` so
     // operators see a clean 400 instead of a raw 500 when no asset
     // was available to auto-assign.
-    //
-    // Guard + asset-id wiring live OUTSIDE the try/catch below because
-    // that catch swallows every error as "non-fatal"; a guard inside
-    // would be silently dropped.
     const chainAssetId = assignedAsset?.id ?? null;
     if (!chainAssetId) {
       throw new BadRequestException(
@@ -254,48 +283,43 @@ export class BookingCompletionService {
       );
     }
 
-    let rentalChainId: string | null = null;
-    try {
-      const rentalChain = rentalChainRepo.create({
-        tenant_id: tenantId,
-        customer_id: customerId,
-        asset_id: chainAssetId,
-        drop_off_date: deliveryDate,
-        expected_pickup_date: pickupDate,
-        dumpster_size: dumpsterSize,
-        rental_days: rentalDays,
-        status: 'active',
-      });
-      const savedChain = await rentalChainRepo.save(rentalChain);
-      rentalChainId = savedChain.id;
+    const rentalChain = rentalChainRepo.create({
+      tenant_id: tenantId,
+      customer_id: customerId,
+      asset_id: chainAssetId,
+      drop_off_date: deliveryDate,
+      expected_pickup_date: pickupDate,
+      dumpster_size: dumpsterSize,
+      rental_days: rentalDays,
+      status: 'active',
+    });
+    const savedChain = await rentalChainRepo.save(rentalChain);
+    const rentalChainId: string = savedChain.id;
 
-      await invoiceRepo.update(savedInvoice.id, { rental_chain_id: savedChain.id });
+    await invoiceRepo.update(savedInvoice.id, { rental_chain_id: savedChain.id });
 
-      const deliveryLink = taskChainLinkRepo.create({
-        rental_chain_id: savedChain.id,
-        job_id: savedDelivery.id,
-        sequence_number: 1,
-        task_type: 'drop_off',
-        status: 'scheduled',
-        scheduled_date: deliveryDate,
-      });
-      const savedDeliveryLink = await taskChainLinkRepo.save(deliveryLink);
+    const deliveryLink = taskChainLinkRepo.create({
+      rental_chain_id: savedChain.id,
+      job_id: savedDelivery.id,
+      sequence_number: 1,
+      task_type: 'drop_off',
+      status: 'scheduled',
+      scheduled_date: deliveryDate,
+    });
+    const savedDeliveryLink = await taskChainLinkRepo.save(deliveryLink);
 
-      const pickupLink = taskChainLinkRepo.create({
-        rental_chain_id: savedChain.id,
-        job_id: savedPickup.id,
-        sequence_number: 2,
-        task_type: 'pick_up',
-        status: 'scheduled',
-        scheduled_date: pickupDate,
-        previous_link_id: savedDeliveryLink.id,
-      });
-      const savedPickupLink = await taskChainLinkRepo.save(pickupLink);
+    const pickupLink = taskChainLinkRepo.create({
+      rental_chain_id: savedChain.id,
+      job_id: savedPickup.id,
+      sequence_number: 2,
+      task_type: 'pick_up',
+      status: 'scheduled',
+      scheduled_date: pickupDate,
+      previous_link_id: savedDeliveryLink.id,
+    });
+    const savedPickupLink = await taskChainLinkRepo.save(pickupLink);
 
-      await taskChainLinkRepo.update(savedDeliveryLink.id, { next_link_id: savedPickupLink.id });
-    } catch {
-      this.logger.warn('Failed to create rental chain — non-fatal');
-    }
+    await taskChainLinkRepo.update(savedDeliveryLink.id, { next_link_id: savedPickupLink.id });
 
     return {
       deliveryJob: savedDelivery,
@@ -305,6 +329,7 @@ export class BookingCompletionService {
       autoApproved,
       assignedAsset,
     };
+    }); // end dataSource.transaction
   }
 
   /**

@@ -86,7 +86,13 @@ export class InvoiceService {
       if (job) dumpsterSize = job.asset_subtype;
     }
 
-    // 4. Resolve pricing
+    // 4. Resolve pricing.
+    //
+    // NARROWED: only NotFoundException is absorbed here ("no pricing
+    // rule for this size" is a legitimate business outcome — the
+    // caller supplies line_items manually). All other errors
+    // (DB failures, timeouts, unexpected throws inside priceResolution)
+    // propagate so they are not silently masked as "no rule."
     let resolvedPrice: ResolvedPrice | null = null;
     if (dumpsterSize) {
       try {
@@ -95,8 +101,12 @@ export class InvoiceService {
           dto.customer_id,
           dumpsterSize,
         );
-      } catch {
-        /* no pricing rule for this size — skip auto-pricing */
+      } catch (err) {
+        if (err instanceof NotFoundException) {
+          resolvedPrice = null;
+        } else {
+          throw err;
+        }
       }
     }
 
@@ -161,7 +171,14 @@ export class InvoiceService {
     // 10. Generate summary of work
     await this.generateSummaryOfWork(saved, resolvedPrice);
 
-    // 11. Render terms template
+    // 11. Render terms template.
+    //
+    // NON-FATAL: terms_text is an informational field populated from a
+    // tenant-configured template. Failure here means the invoice has
+    // no rendered terms string; the invoice itself (numbers, FKs,
+    // lifecycle) is unaffected. Caller can safely continue because
+    // terms can be re-rendered later via an edit or re-send, and the
+    // raw template is still stored on the tenant.
     const templateId = dto.terms_template_id;
     if (templateId && resolvedPrice) {
       try {
@@ -171,7 +188,7 @@ export class InvoiceService {
         );
         saved.terms_text = rendered;
         await this.invoiceRepo.update(saved.id, { terms_text: rendered });
-      } catch { /* template render failed — non-fatal */ }
+      } catch { /* non-fatal — see comment above */ }
     }
 
     // 12. Initial revision
@@ -569,7 +586,13 @@ export class InvoiceService {
     });
     await this.reconcileBalance(invoiceId);
 
-    // Send email to customer if they have one
+    // NON-FATAL: notification email to customer. Failure here means
+    // the invoice is already persisted and marked sent (above); the
+    // email delivery is a separate out-of-band best-effort channel.
+    // The notifications table + retry infrastructure own resend; this
+    // service should not block the API response on provider latency.
+    // Caller can safely continue because the invoice state is
+    // already correct — the email is observational only.
     if (invoice.customer?.email) {
       try {
         await this.notificationsService.send(tenantId, {
@@ -580,7 +603,7 @@ export class InvoiceService {
           body: `<p>Hello ${invoice.customer.first_name},</p><p>Invoice <strong>#${invoice.invoice_number}</strong> for <strong>$${Number(invoice.total).toFixed(2)}</strong> has been sent to you.</p><p>Due date: ${invoice.due_date}</p>`,
           customerId: invoice.customer_id,
         });
-      } catch { /* email send is best-effort */ }
+      } catch { /* non-fatal — see comment above */ }
     }
 
     return this.findOne(tenantId, invoiceId);
@@ -715,6 +738,12 @@ export class InvoiceService {
       ? [addr.street, addr.city, addr.state, addr.zip].filter(Boolean).join(', ')
       : undefined;
 
+    // NON-FATAL: delivery zone resolution is legacy / informational
+    // only — the distance-band pricing model replaces it. Failure
+    // leaves pricing.delivery_zone unset on the response. Caller can
+    // safely continue because no downstream code uses the zone field
+    // for pricing calculation; it is retained for display parity with
+    // older invoices that captured a zone label.
     try {
       const zone = await this.priceResolution.resolveDeliveryZone(
         tenantId,
@@ -723,7 +752,7 @@ export class InvoiceService {
         addrString,
       );
       if (zone) pricing.delivery_zone = zone;
-    } catch { /* delivery zone resolution is optional */ }
+    } catch { /* non-fatal — see comment above */ }
 
     return pricing;
   }

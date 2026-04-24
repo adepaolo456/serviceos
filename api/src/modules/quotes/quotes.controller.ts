@@ -400,15 +400,21 @@ export class QuotesController {
     const token = generateToken();
     const totalQuoted = body.totalQuoted ?? body.basePrice;
 
-    // Best-effort customer lookup by email (do not create — just link if exists)
+    // Customer lookup by email (do not create — just link if exists).
+    //
+    // Site #23 (prior silent-error-swallow audit, closed): the previous
+    // try/catch masked DB errors as "no customer" — a genuine outage
+    // would cause the quote to be created unlinked even when the
+    // customer existed, breaking the downstream "convert quote to
+    // booking" flow that assumes customer_id is populated when an
+    // email match existed. Removed; findOne returning null is still
+    // handled as the no-match case, but actual errors now propagate.
     let customerId: string | null = null;
     if (body.customerEmail) {
-      try {
-        const existing = await this.customerRepo.findOne({
-          where: { tenant_id: tenantId, email: body.customerEmail.toLowerCase().trim() },
-        });
-        if (existing) customerId = existing.id;
-      } catch { /* best-effort — null is fine */ }
+      const existing = await this.customerRepo.findOne({
+        where: { tenant_id: tenantId, email: body.customerEmail.toLowerCase().trim() },
+      });
+      if (existing) customerId = existing.id;
     }
 
     const quote = this.quoteRepo.create({

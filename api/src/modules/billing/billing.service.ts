@@ -99,24 +99,30 @@ export class BillingService {
     // Recalculate
     await this.recalculate(saved.id, tenantId);
 
-    // Resolve rental chain from job (scoped to tenant via rental_chains join)
+    // Resolve rental chain from job (scoped to tenant via rental_chains join).
+    //
+    // Site #16 (prior silent-error-swallow audit, closed): the previous
+    // try/catch here silently left the invoice with rental_chain_id=null
+    // if the lookup failed. Reporting + reconciliation + lifecycle
+    // surfaces all depend on this link; a silent null breaks them
+    // invisibly. Removed; errors now bubble up to the controller as a
+    // 500. A missing chain row is already a no-op — the if-check
+    // handles that without needing a catch.
     if (dto.jobId) {
-      try {
-        const link = await this.dataSource.query(
-          `SELECT tcl.rental_chain_id
-           FROM task_chain_links tcl
-           INNER JOIN rental_chains rc ON rc.id = tcl.rental_chain_id
-           WHERE tcl.job_id = $1 AND rc.tenant_id = $2
-           LIMIT 1`,
-          [dto.jobId, tenantId],
+      const link = await this.dataSource.query(
+        `SELECT tcl.rental_chain_id
+         FROM task_chain_links tcl
+         INNER JOIN rental_chains rc ON rc.id = tcl.rental_chain_id
+         WHERE tcl.job_id = $1 AND rc.tenant_id = $2
+         LIMIT 1`,
+        [dto.jobId, tenantId],
+      );
+      if (link?.[0]?.rental_chain_id) {
+        await this.invoicesRepository.update(
+          { id: saved.id, tenant_id: tenantId },
+          { rental_chain_id: link[0].rental_chain_id },
         );
-        if (link?.[0]?.rental_chain_id) {
-          await this.invoicesRepository.update(
-            { id: saved.id, tenant_id: tenantId },
-            { rental_chain_id: link[0].rental_chain_id },
-          );
-        }
-      } catch { /* non-fatal */ }
+      }
     }
 
     return this.findOneInvoice(tenantId, saved.id);
@@ -178,6 +184,14 @@ export class BillingService {
     invoice.sent_method = 'email';
     const saved = await this.invoicesRepository.save(invoice);
 
+    // NON-FATAL: invoice-sent notification email. Invoice is already
+    // saved with status='open' and sent_at set above; the email
+    // delivery is an out-of-band channel that the notifications
+    // subsystem owns end-to-end (including retries). Failure here
+    // means the operator-triggered "send" action didn't actually
+    // deliver — which is worth surfacing in the notifications UI but
+    // not worth blocking the API response for. Caller can safely
+    // continue because the invoice state is already correct.
     try {
       const invoiceWithCustomer = await this.invoicesRepository.findOne({
         where: { id, tenant_id: tenantId },
@@ -195,7 +209,7 @@ export class BillingService {
           jobId: saved.job_id,
         });
       }
-    } catch { /* best effort */ }
+    } catch { /* non-fatal — see comment above */ }
 
     return saved;
   }
@@ -258,36 +272,51 @@ export class BillingService {
 
     const saved = await this.findOneInvoice(tenantId, id);
 
-    // Audit log
+    // Audit log.
+    //
+    // Site #18 (prior silent-error-swallow audit, closed): the previous
+    // try/catch here silently dropped the audit trail if the write
+    // failed. An edit without an audit row is a compliance gap — you
+    // can't prove who changed what. Removed; errors now propagate so
+    // the edit surfaces as a 500 (the caller will retry rather than
+    // proceeding with an incomplete audit trail).
     if (Object.keys(changes).length > 0) {
-      try {
-        await this.notifRepo.save(this.notifRepo.create({
-          tenant_id: tenantId,
-          channel: 'automation',
-          type: 'invoice_edited',
-          recipient: 'system',
-          body: JSON.stringify({
-            entity_type: 'invoice',
-            entity_id: id,
-            invoice_number: invoice.invoice_number,
-            action: 'edited',
-            user_id: userId,
-            user_name: userName,
-            changes,
-          }),
-          status: 'logged',
-          sent_at: new Date(),
-        }));
-      } catch { /* best effort */ }
+      await this.notifRepo.save(this.notifRepo.create({
+        tenant_id: tenantId,
+        channel: 'automation',
+        type: 'invoice_edited',
+        recipient: 'system',
+        body: JSON.stringify({
+          entity_type: 'invoice',
+          entity_id: id,
+          invoice_number: invoice.invoice_number,
+          action: 'edited',
+          user_id: userId,
+          user_name: userName,
+          changes,
+        }),
+        status: 'logged',
+        sent_at: new Date(),
+      }));
     }
 
-    // Size change cascade
+    // Size change cascade.
+    //
+    // Site #19 (prior silent-error-swallow audit, closed): the previous
+    // try/catch here silently dropped cascade failures, leaving the
+    // invoice with a new subtype while downstream jobs kept the old
+    // size. Same 13-broken-deployments bug class. Wrapped in a
+    // transaction so the cascade's multiple writes (jobs, pickup jobs,
+    // asset inventory) are atomic — either all succeed or all roll
+    // back. The outer invoice save (line ~254) is intentionally
+    // OUTSIDE this tx per the audit sign-off; the cascade operates on
+    // the already-saved invoice and is a logically-separate unit.
     const newSubtype = body.newAssetSubtype as string | undefined;
     if (newSubtype && !isPaid && saved.job_id) {
-      try {
-        const cascadeResult = await this.cascadeSizeChange(tenantId, saved, newSubtype, userId, userName);
-        return { ...saved, cascade: cascadeResult } as any;
-      } catch { /* best effort */ }
+      const cascadeResult = await this.dataSource.transaction(async (trx) => {
+        return this.cascadeSizeChange(tenantId, saved, newSubtype, userId, userName, trx);
+      });
+      return { ...saved, cascade: cascadeResult } as any;
     }
 
     return saved;
@@ -299,10 +328,23 @@ export class BillingService {
     newSubtype: string,
     userId?: string,
     userName?: string,
+    manager?: EntityManager,
   ) {
+    // Site #19 fix — when called from `editInvoice`, the caller wraps
+    // this method in a dataSource.transaction and passes `manager`.
+    // Use manager-scoped repos so all the writes below join that
+    // transaction and roll back together on any failure. When no
+    // manager is provided (future direct callers), falls back to
+    // injected repos — backward compatible.
+    const lineItemRepo = manager?.getRepository(InvoiceLineItem) ?? this.lineItemRepo;
+    const jobsRepository = manager?.getRepository(Job) ?? this.jobsRepository;
+    const assetRepo = manager?.getRepository(Asset) ?? this.assetRepo;
+    const pricingRepo = manager?.getRepository(PricingRule) ?? this.pricingRepo;
+    const notifRepo = manager?.getRepository(Notification) ?? this.notifRepo;
+
     const oldTotal = Number(invoice.total);
 
-    const rule = await this.pricingRepo.findOne({
+    const rule = await pricingRepo.findOne({
       where: { tenant_id: tenantId, asset_subtype: newSubtype, is_active: true },
     });
     if (!rule) throw new BadRequestException(`No pricing rule found for ${newSubtype}`);
@@ -314,21 +356,21 @@ export class BillingService {
     const difference = newTotal - oldTotal;
 
     // Replace line items
-    await this.lineItemRepo.delete({ invoice_id: invoice.id });
-    const rentalItem = this.lineItemRepo.create({
+    await lineItemRepo.delete({ invoice_id: invoice.id });
+    const rentalItem = lineItemRepo.create({
       invoice_id: invoice.id, sort_order: 0, line_type: 'rental',
       name: `${newSubtype} Dumpster Rental`, quantity: 1, unit_rate: newBasePrice,
       amount: newBasePrice, net_amount: newBasePrice,
     });
-    await this.lineItemRepo.save(rentalItem);
+    await lineItemRepo.save(rentalItem);
 
     if (newDeliveryFee > 0) {
-      const deliveryItem = this.lineItemRepo.create({
+      const deliveryItem = lineItemRepo.create({
         invoice_id: invoice.id, sort_order: 1, line_type: 'fee',
         name: 'Delivery Fee', quantity: 1, unit_rate: newDeliveryFee,
         amount: newDeliveryFee, net_amount: newDeliveryFee,
       });
-      await this.lineItemRepo.save(deliveryItem);
+      await lineItemRepo.save(deliveryItem);
     }
 
     await this.recalculate(invoice.id, tenantId);
@@ -336,7 +378,7 @@ export class BillingService {
 
     // Update the linked job
     let assetWarning: string | null = null;
-    const job = await this.jobsRepository.findOne({ where: { id: invoice.job_id, tenant_id: tenantId } });
+    const job = await jobsRepository.findOne({ where: { id: invoice.job_id, tenant_id: tenantId } });
     if (job) {
       const oldSubtype = job.asset_subtype;
       job.asset_subtype = newSubtype;
@@ -344,14 +386,14 @@ export class BillingService {
       job.total_price = newTotal;
       job.rental_days = rentalDays;
       job.extra_day_rate = Number(rule.extra_day_rate) || 0;
-      await this.jobsRepository.save(job);
+      await jobsRepository.save(job);
 
       if (job.asset_id && oldSubtype !== newSubtype) {
-        await this.assetRepo.update({ id: job.asset_id, tenant_id: tenantId } as any, {
+        await assetRepo.update({ id: job.asset_id, tenant_id: tenantId } as any, {
           status: 'available', current_location_type: 'yard',
         } as any);
 
-        const available = await this.assetRepo
+        const available = await assetRepo
           .createQueryBuilder('a')
           .where('a.tenant_id = :tenantId', { tenantId })
           .andWhere('a.subtype = :subtype', { subtype: newSubtype })
@@ -369,15 +411,15 @@ export class BillingService {
           .getOne();
 
         if (available) {
-          await this.assetRepo.update({ id: available.id, tenant_id: tenantId } as any, { status: 'reserved' } as any);
-          await this.jobsRepository.update({ id: job.id, tenant_id: tenantId }, { asset_id: available.id });
+          await assetRepo.update({ id: available.id, tenant_id: tenantId } as any, { status: 'reserved' } as any);
+          await jobsRepository.update({ id: job.id, tenant_id: tenantId }, { asset_id: available.id });
         } else {
-          await this.jobsRepository.update({ id: job.id, tenant_id: tenantId }, { asset_id: null } as any);
+          await jobsRepository.update({ id: job.id, tenant_id: tenantId }, { asset_id: null } as any);
           assetWarning = `No ${newSubtype} assets available — asset needs manual assignment`;
         }
       }
 
-      const pickupJobs = await this.jobsRepository.find({
+      const pickupJobs = await jobsRepository.find({
         where: { tenant_id: tenantId, parent_job_id: job.id, job_type: 'pickup' },
       });
       for (const pickup of pickupJobs) {
@@ -385,10 +427,10 @@ export class BillingService {
         pickup.base_price = newBasePrice;
         pickup.total_price = newTotal;
         if (job.asset_id) pickup.asset_id = job.asset_id;
-        await this.jobsRepository.save(pickup);
+        await jobsRepository.save(pickup);
       }
 
-      await this.notifRepo.save(this.notifRepo.create({
+      await notifRepo.save(notifRepo.create({
         tenant_id: tenantId, job_id: job.id, channel: 'automation', type: 'size_change_cascade',
         recipient: 'system',
         body: JSON.stringify({
@@ -630,21 +672,29 @@ export class BillingService {
     const invoice = await this.invoicesRepository.findOneBy({ id: invoiceId, tenant_id: tenantId });
     if (!invoice || invoice.status === 'voided') return;
 
-    await this.invoicesRepository.update(
-      { id: invoiceId, tenant_id: tenantId },
-      {
-        voided_at: new Date(),
-        balance_due: 0,
-      },
-    );
+    // Site #21 (prior silent-error-swallow audit, closed): the invoice
+    // void UPDATE and the credit_memo INSERT used to run as separate
+    // writes with a silent catch around the memo. Result: invoice
+    // could show voided while the ledger had no matching credit memo
+    // — financial state asymmetry that diverges from reality and
+    // breaks reconciliation. Now wrapped in a transaction so both
+    // writes commit or neither does.
+    await this.dataSource.transaction(async (trx) => {
+      const invoiceRepo = trx.getRepository(Invoice);
+      const creditMemoRepo = trx.getRepository(CreditMemo);
 
-    // Create credit memo for the voided amount
-    try {
-      const memoResult = await this.dataSource.query(
+      await invoiceRepo.update(
+        { id: invoiceId, tenant_id: tenantId },
+        {
+          voided_at: new Date(),
+          balance_due: 0,
+        },
+      );
+
+      const memoResult = await trx.query(
         `SELECT COALESCE(MAX(memo_number), 0) + 1 as num FROM credit_memos WHERE tenant_id = $1`,
         [invoice.tenant_id],
       );
-      const creditMemoRepo = this.dataSource.getRepository(CreditMemo);
       await creditMemoRepo.save(creditMemoRepo.create({
         tenant_id: invoice.tenant_id,
         memo_number: memoResult[0].num,
@@ -654,7 +704,7 @@ export class BillingService {
         reason: reason || 'Internal void',
         status: 'applied',
       }));
-    } catch { /* credit memo is best-effort */ }
+    });
   }
 
   private async recalculate(invoiceId: string, tenantId: string) {

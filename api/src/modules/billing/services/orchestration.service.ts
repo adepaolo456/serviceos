@@ -62,7 +62,15 @@ export class OrchestrationService {
     dto: CreateWithBookingDto,
     auth: OrchestrationAuthContext,
   ): Promise<OrchestrationResult> {
-    // Idempotency check
+    // Idempotency check.
+    //
+    // NON-FATAL: .catch(() => []) on the SELECT. Failure here means the
+    // idempotency cache is unreachable; we fall through and re-process
+    // the request. Caller can safely continue because the real
+    // idempotency is enforced inside the booking transaction below —
+    // FK + unique-constraint checks on customer_id / job_number /
+    // invoice_number catch any true double-write at the DB layer. This
+    // cache is a fast-path optimization, not a correctness boundary.
     if (dto.idempotencyKey) {
       const existing = await this.dataSource.query(
         `SELECT result_json FROM orchestration_results WHERE tenant_id = $1 AND idempotency_key = $2 AND created_at > NOW() - INTERVAL '24 hours' LIMIT 1`,
@@ -199,6 +207,15 @@ export class OrchestrationService {
         || (customerLat === 0 && customerLng === 0);
       if (needsGeocode && siteAddr.street) {
         const addrStr = [siteAddr.street, siteAddr.city, siteAddr.state, siteAddr.zip].filter(Boolean).join(', ');
+        // NON-FATAL: geocoding is a best-effort fallback for missing
+        // lat/lng. Failure here leaves customerLat/Lng unresolved —
+        // the validation immediately below converts that to a clean
+        // BadRequestException('... could not be geocoded ...'). So the
+        // catch is effectively a redirect into a structured 400 path,
+        // not a silent swallow. Failure also covers Mapbox network
+        // blips, rate limits, or missing API keys — none of which
+        // should 500 when the downstream code already produces a
+        // caller-visible error.
         try {
           const geo = await this.mapboxService.geocodeAddress(addrStr);
           if (geo?.lat && geo?.lng) {
@@ -505,6 +522,16 @@ export class OrchestrationService {
     return this.throwIfDuplicateEmailConflict(err, tenantId, email);
   }
 
+  // NON-FATAL: storing the idempotency record is a cache-population
+  // step that runs AFTER the booking has already committed
+  // successfully. Failure here means a subsequent retry with the same
+  // idempotency key would re-run the orchestration — which is safe
+  // because the real idempotency is enforced by FK + unique
+  // constraints inside the transaction (customer email unique index,
+  // job numbers, invoice numbers). The ON CONFLICT DO NOTHING clause
+  // also makes the INSERT itself idempotent, so a racing duplicate is
+  // a no-op. Caller can safely continue because the booking is
+  // already durable; this write is cache-only.
   private async storeIdempotencyResult(tenantId: string, key: string | undefined, result: OrchestrationResult): Promise<void> {
     if (!key) return;
     try {
