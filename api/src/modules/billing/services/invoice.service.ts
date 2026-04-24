@@ -7,6 +7,7 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { checkRateLimit } from '../../../common/rate-limiter';
+import { buildInvoiceEmail } from '../email-templates/invoice-email.template';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource, Like } from 'typeorm';
 import { Invoice } from '../entities/invoice.entity';
@@ -576,6 +577,30 @@ export class InvoiceService {
     return invoice;
   }
 
+  // Phase 1.8.1 — dedicated loader for the email-send path. Loads ONLY
+  // the three relations the branded email template needs (tenant for
+  // branding, customer for greeting/email, line_items for the itemized
+  // table). Deliberately separate from findOne — Guardrail 1 prevents
+  // forcing these relations on the 17 other findOne callers that don't
+  // need them. Throws via NotFoundException parity with findOne so the
+  // controller 404 shape is identical for non-existent / cross-tenant ids.
+  async loadInvoiceForEmailSend(
+    tenantId: string,
+    invoiceId: string,
+  ): Promise<Invoice> {
+    const invoice = await this.invoiceRepo.findOne({
+      where: { id: invoiceId, tenant_id: tenantId },
+      relations: ['tenant', 'customer', 'line_items'],
+    });
+    if (!invoice) {
+      throw new NotFoundException(`Invoice ${invoiceId} not found`);
+    }
+    if (invoice.line_items) {
+      invoice.line_items.sort((a, b) => a.sort_order - b.sort_order);
+    }
+    return invoice;
+  }
+
   // Phase 1.8 — Invoice send/resend. Rewrite of the prior implementation
   // which was unreachable (draft-only guard) AND violated Constraint 2
   // (stamped sent_at before awaiting Resend, so a failed email left the
@@ -608,7 +633,12 @@ export class InvoiceService {
       });
     }
 
-    const invoice = await this.findOne(tenantId, invoiceId);
+    // Phase 1.8.1 — dedicated loader that eager-loads `tenant` +
+    // `customer` + `line_items` for the email template. The 17 other
+    // findOne callers do NOT need tenant branding; keeping them on the
+    // lighter findOne avoids forcing an N+1-prone relation on every
+    // invoice read.
+    const invoice = await this.loadInvoiceForEmailSend(tenantId, invoiceId);
 
     if (!invoice.customer?.email) {
       throw new BadRequestException({
@@ -638,17 +668,17 @@ export class InvoiceService {
       );
     }
 
-    const tenantName =
-      (invoice as unknown as { tenant?: { name?: string } })?.tenant?.name ??
-      'your provider';
-    const subject = `Invoice #${invoice.invoice_number} from ${tenantName}`;
-    const body =
-      `<p>Hello ${invoice.customer.first_name},</p>` +
-      `<p>Your invoice <strong>#${invoice.invoice_number}</strong> for <strong>$${Number(
-        invoice.total,
-      ).toFixed(2)}</strong> is attached for your records.</p>` +
-      (invoice.due_date ? `<p>Due date: ${invoice.due_date}</p>` : '') +
-      `<p>Thank you,<br/>${tenantName}</p>`;
+    // Phase 1.8.1 — build subject + HTML from the branded template.
+    // Pure function, throws on missing tenant/customer/line-items-with-total
+    // per Guardrail 4. Pay Now deferred (Guardrail 2); unpaid invoices
+    // render a contact-us CTA instead of a payment link.
+    const { subject, html } = buildInvoiceEmail({
+      invoice,
+      tenant: invoice.tenant ?? null,
+      customer: invoice.customer ?? null,
+      lineItems: invoice.line_items ?? [],
+      balanceDue: Number(invoice.balance_due ?? 0),
+    });
 
     // Await Resend via the single canonical caller (Constraint 1).
     // NotificationsService.send creates a queued Notification row, calls
@@ -660,7 +690,7 @@ export class InvoiceService {
       type: 'invoice_sent',
       recipient: invoice.customer.email,
       subject,
-      body,
+      body: html,
       customerId: invoice.customer_id,
     });
 

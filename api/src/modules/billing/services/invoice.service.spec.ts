@@ -51,8 +51,12 @@ function makeInvoice(overrides: Record<string, unknown> = {}) {
     id: 'inv-1',
     tenant_id: 'tenant-1',
     invoice_number: 1015,
-    total: '250.00',
+    invoice_date: '2026-04-15',
     due_date: '2026-05-01',
+    status: 'open',
+    total: '250.00',
+    amount_paid: '0.00',
+    balance_due: '250.00',
     customer_id: 'cust-1',
     customer: {
       id: 'cust-1',
@@ -60,6 +64,21 @@ function makeInvoice(overrides: Record<string, unknown> = {}) {
       last_name: 'Rivera',
       email: 'jamie@example.com',
     },
+    // Phase 1.8.1 — template requires tenant + line_items relations
+    // on the object returned by loadInvoiceForEmailSend.
+    tenant: {
+      id: 'tenant-1',
+      name: 'Test Tenant',
+      website_logo_url: null,
+      website_primary_color: '#2ECC71',
+      website_phone: '5550001111',
+      website_email: 'hi@test.example',
+      website_service_area: 'Test Area',
+      address: null,
+    },
+    line_items: [
+      { id: 'li-1', name: 'Dumpster Rental', quantity: 1, unit_rate: 250, amount: 250, sort_order: 0 },
+    ],
     ...overrides,
   };
 }
