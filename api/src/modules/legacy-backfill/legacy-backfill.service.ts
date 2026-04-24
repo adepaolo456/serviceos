@@ -403,10 +403,21 @@ export class LegacyBackfillService {
         }
       }
 
+      // Guard: mirror the DB CHECK `rental_chain_active_requires_asset`.
+      // Only applies when backfill derives `chainStatus === 'active'`
+      // (i.e. at least one non-terminal job) — completed/cancelled
+      // derivations are unaffected.
+      const backfillAssetId = delivery?.asset_id ?? null;
+      if (chainStatus === 'active' && !backfillAssetId) {
+        throw new BadRequestException(
+          'chain_activation_requires_asset: Cannot activate rental chain without an asset assigned',
+        );
+      }
+
       const chain = chainRepo.create({
         tenant_id: tenantId,
         customer_id: customerId,
-        asset_id: delivery?.asset_id ?? null,
+        asset_id: backfillAssetId,
         drop_off_date: dropOffDate || new Date().toISOString().split('T')[0],
         expected_pickup_date: expectedPickupDate,
         dumpster_size: dumpsterSize,

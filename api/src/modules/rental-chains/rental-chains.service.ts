@@ -91,11 +91,33 @@ export class RentalChainsService {
     private billingService: BillingService,
   ) {}
 
+  // Service-layer mirror of the DB CHECK constraint
+  // `rental_chain_active_requires_asset`. Surfaces the invariant as a
+  // clean 400 with a human-readable message instead of letting a
+  // raw Postgres 23514 check_violation bubble up as a 500. Fires
+  // BEFORE any DB write / transaction so the caller sees the error
+  // with zero side effects.
+  private assertAssetForActivation(
+    asset_id: string | null | undefined,
+  ): void {
+    if (!asset_id) {
+      throw new BadRequestException(
+        'chain_activation_requires_asset: Cannot activate rental chain without an asset assigned',
+      );
+    }
+  }
+
   // ─────────────────────────────────────────────────────────
   // CREATE CHAIN
   // ─────────────────────────────────────────────────────────
 
   async createChain(tenantId: string, dto: CreateRentalChainDto) {
+    // Guard: chain rows created here always land with status='active'
+    // (see the `chainRepo.create` call below). DB CHECK constraint
+    // `rental_chain_active_requires_asset` enforces the same invariant;
+    // this service-layer check turns a 500 into a 400.
+    this.assertAssetForActivation(dto.asset_id);
+
     const rentalDays =
       dto.rental_days ??
       (await getTenantRentalDays(this.tenantSettingsRepo, tenantId));
@@ -612,6 +634,13 @@ export class RentalChainsService {
       }
 
       if (dto.status !== undefined) {
+        // Guard: only check when transitioning to 'active'. Other
+        // statuses (completed, cancelled) don't require an asset_id.
+        // Uses the chain's current asset_id since updateChain does
+        // not accept an asset_id field on the DTO.
+        if (dto.status === 'active') {
+          this.assertAssetForActivation(chain.asset_id);
+        }
         chain.status = dto.status;
       }
 

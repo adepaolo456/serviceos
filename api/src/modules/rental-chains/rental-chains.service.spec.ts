@@ -21,7 +21,7 @@ jest.mock('../../common/utils/job-number.util', () => ({
 }));
 
 import { Test, TestingModule } from '@nestjs/testing';
-import { ConflictException } from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 
@@ -441,6 +441,136 @@ describe('RentalChainsService.createExchange — NO_SCHEDULED_PICKUP_FOR_EXCHANG
       expect.objectContaining({
         status: 'cancelled',
         cancellation_reason: 'exchange_replacement',
+      }),
+    );
+  });
+});
+
+// ── Asset-for-activation guard suite ──────────────────────────────
+// Mirrors the DB CHECK `rental_chain_active_requires_asset` at the
+// service layer. Two create-path tests + two update-path tests.
+
+describe('RentalChainsService — chain activation requires asset_id', () => {
+  const tenantId = 'tenant-1';
+  const chainId = 'chain-1';
+  const EXPECTED_MESSAGE =
+    'chain_activation_requires_asset: Cannot activate rental chain without an asset assigned';
+
+  let h: Harness;
+  beforeEach(async () => {
+    h = await buildHarness();
+  });
+
+  it('createChain: throws BadRequestException when dto.asset_id is missing (zero DB writes)', async () => {
+    let captured: BadRequestException | null = null;
+    try {
+      await h.service.createChain(tenantId, {
+        customer_id: 'cust-1',
+        drop_off_date: '2026-04-01',
+        dumpster_size: '20yd',
+        // asset_id intentionally omitted
+      });
+    } catch (e) {
+      captured = e as BadRequestException;
+    }
+    expect(captured).not.toBeNull();
+    expect(captured).toBeInstanceOf(BadRequestException);
+    expect(captured.getStatus()).toBe(400);
+    expect(captured.message).toBe(EXPECTED_MESSAGE);
+
+    // Guard fires before any chain / link / job write.
+    expect(h.chainRepo.save).not.toHaveBeenCalled();
+    expect(h.trxChainRepo.save).not.toHaveBeenCalled();
+    expect(h.trxJobRepo.save).not.toHaveBeenCalled();
+  });
+
+  it('createChain: guard passes when dto.asset_id is present (chainRepo.save reached)', async () => {
+    // Happy-path side: downstream job creation needs full mocking that
+    // is out of scope for a guard test. We only need to prove the
+    // guard did NOT short-circuit, which is true iff `chainRepo.save`
+    // is reached. The base harness doesn't expose `chainRepo.create`
+    // (only findOne/save) because the other suites don't exercise the
+    // non-trx create; add it here so `this.chainRepo.create(...)`
+    // returns the payload verbatim.
+    (h.chainRepo as unknown as { create: jest.Mock }).create = jest.fn(
+      (x: unknown) => x,
+    );
+    h.chainRepo.save.mockImplementation(async (c: unknown) => ({
+      ...(c as Record<string, unknown>),
+      id: 'new-chain-id',
+    }));
+
+    await h.service
+      .createChain(tenantId, {
+        customer_id: 'cust-1',
+        asset_id: 'asset-1',
+        drop_off_date: '2026-04-01',
+        dumpster_size: '20yd',
+        rental_days: 14,
+      })
+      .catch(() => {
+        // Downstream job creation may fail due to harness scope
+        // (Job repo is mocked minimally). Guard-bypass is proven by
+        // chainRepo.save being called below; downstream failures are
+        // not this test's concern.
+      });
+
+    expect(h.chainRepo.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tenant_id: tenantId,
+        customer_id: 'cust-1',
+        asset_id: 'asset-1',
+        status: 'active',
+      }),
+    );
+  });
+
+  it('updateChain: throws BadRequestException when transitioning to status=active on a chain with no asset_id (zero writes)', async () => {
+    h.chainRepo.findOne.mockResolvedValue({
+      id: chainId,
+      tenant_id: tenantId,
+      asset_id: null,
+      drop_off_date: '2026-04-01',
+      expected_pickup_date: '2026-04-15',
+      status: 'cancelled',
+    });
+
+    let captured: BadRequestException | null = null;
+    try {
+      await h.service.updateChain(tenantId, chainId, {
+        status: 'active',
+      });
+    } catch (e) {
+      captured = e as BadRequestException;
+    }
+    expect(captured).not.toBeNull();
+    expect(captured).toBeInstanceOf(BadRequestException);
+    expect(captured.getStatus()).toBe(400);
+    expect(captured.message).toBe(EXPECTED_MESSAGE);
+
+    // Zero side effects on the failed path.
+    expect(h.trxChainRepo.save).not.toHaveBeenCalled();
+  });
+
+  it('updateChain: guard passes when transitioning to status=active on a chain that has asset_id (chain saved with active)', async () => {
+    h.chainRepo.findOne.mockResolvedValue({
+      id: chainId,
+      tenant_id: tenantId,
+      asset_id: 'asset-1',
+      drop_off_date: '2026-04-01',
+      expected_pickup_date: '2026-04-15',
+      status: 'cancelled',
+    });
+
+    await h.service.updateChain(tenantId, chainId, {
+      status: 'active',
+    });
+
+    expect(h.trxChainRepo.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: chainId,
+        asset_id: 'asset-1',
+        status: 'active',
       }),
     );
   });

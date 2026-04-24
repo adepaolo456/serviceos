@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource, EntityManager } from 'typeorm';
 import { Job } from '../../jobs/entities/job.entity';
@@ -235,11 +235,31 @@ export class BookingCompletionService {
     await lineItemRepo.save(rentalItem);
 
     // 8. Create rental chain + task chain links
+    //
+    // Order is load-bearing: `assignedAsset` is computed in step 2
+    // above (auto-assigned available asset for this subtype). We
+    // thread its id onto the chain payload FIRST, then run the
+    // service-layer guard against the final value. Mirrors the DB
+    // CHECK constraint `rental_chain_active_requires_asset` so
+    // operators see a clean 400 instead of a raw 500 when no asset
+    // was available to auto-assign.
+    //
+    // Guard + asset-id wiring live OUTSIDE the try/catch below because
+    // that catch swallows every error as "non-fatal"; a guard inside
+    // would be silently dropped.
+    const chainAssetId = assignedAsset?.id ?? null;
+    if (!chainAssetId) {
+      throw new BadRequestException(
+        'chain_activation_requires_asset: Cannot activate rental chain without an asset assigned',
+      );
+    }
+
     let rentalChainId: string | null = null;
     try {
       const rentalChain = rentalChainRepo.create({
         tenant_id: tenantId,
         customer_id: customerId,
+        asset_id: chainAssetId,
         drop_off_date: deliveryDate,
         expected_pickup_date: pickupDate,
         dumpster_size: dumpsterSize,
