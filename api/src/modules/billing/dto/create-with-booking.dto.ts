@@ -12,6 +12,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
+import { JOB_SOURCE_VALUES, type JobSource } from '../../rental-chains/dto/create-rental-chain.dto';
 
 /**
  * Phase 4B — server-authoritative credit override payload.
@@ -138,10 +139,11 @@ export class CreateWithBookingDto {
   @Type(() => CreditOverrideDto)
   creditOverride?: CreditOverrideDto;
 
-  // Origin source (e.g., 'portal', 'phone')
+  // Origin source — must be in JOB_SOURCE_VALUES whitelist.
   @IsOptional()
   @IsString()
-  source?: string;
+  @IsIn(JOB_SOURCE_VALUES)
+  source?: JobSource;
 
   // Idempotency
   @IsOptional()

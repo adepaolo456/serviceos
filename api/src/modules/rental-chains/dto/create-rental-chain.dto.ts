@@ -1,9 +1,16 @@
 import { IsUUID, IsOptional, IsDateString, IsString, IsNumber, IsIn } from 'class-validator';
 
-// Canonical whitelist of jobs.source values. Mirrored for display in
-// web/src/lib/utils.ts SOURCE_DISPLAY_LABELS — keep both sides aligned
-// when adding values. Future backlog: extract to a shared monorepo
-// package so API validation and web display import from one file.
+/**
+ * Canonical source vocabulary for jobs.source.
+ *
+ * THREE-PLACE CONTRACT — adding a new value requires updating:
+ *   1. This array (API validation via @IsIn)
+ *   2. SOURCE_DISPLAY_LABELS in web/src/lib/utils.ts (UI labels)
+ *   3. chk_jobs_source_whitelist DB CHECK constraint (Supabase migration)
+ *
+ * Order here must match SOURCE_DISPLAY_LABELS key order for
+ * readability / grep parity.
+ */
 export const JOB_SOURCE_VALUES = [
   'phone',
   'portal',
@@ -13,6 +20,7 @@ export const JOB_SOURCE_VALUES = [
   'exchange',
   'marketplace',
   'automation',
+  'dispatch',
   'other',
 ] as const;
 

@@ -250,7 +250,11 @@ export class OrchestrationService {
           job_number: await issueNextJobNumber(queryRunner.manager, tenantId, 'exchange'), job_type: 'exchange',
           service_type: 'dumpster_rental', asset_subtype: dto.dumpsterSize,
           asset_id: chain.asset_id || null, service_address: siteAddr as Record<string, string>,
-          status: 'pending', priority: 'normal', source: 'quick_quote_exchange',
+          // source 'exchange' — matches RentalChainsService.createExchange
+          // semantic. This path creates an exchange job via the dispatcher
+          // new-customer→exchange flow; the resulting job is semantically
+          // identical in origin to a Schedule Next exchange.
+          status: 'pending', priority: 'normal', source: 'exchange',
           scheduled_date: dto.deliveryDate!, rental_days: rentalDays,
           scheduled_window_start: '08:00', scheduled_window_end: '17:00',
           placement_notes: enforcement.overrideNote && dto.placementNotes

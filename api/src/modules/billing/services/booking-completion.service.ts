@@ -9,6 +9,7 @@ import { RentalChain } from '../../rental-chains/entities/rental-chain.entity';
 import { TaskChainLink } from '../../rental-chains/entities/task-chain-link.entity';
 import { TenantSettings } from '../../tenant-settings/entities/tenant-settings.entity';
 import { issueNextJobNumber } from '../../../common/utils/job-number.util';
+import type { JobSource } from '../../rental-chains/dto/create-rental-chain.dto';
 
 /* ------------------------------------------------------------------ */
 /*  Input / output contracts                                           */
@@ -30,7 +31,7 @@ export interface BookingCompletionParams {
   placementNotes?: string;
   pricingSnapshot?: Record<string, any>;
   pricingTierUsed?: string;
-  source?: string;
+  source?: JobSource;
 }
 
 export interface BookingCompletionResult {

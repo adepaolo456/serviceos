@@ -18,16 +18,23 @@ export function formatPhone(phone: string | null | undefined): string {
   return phone; // return as-is if non-standard length
 }
 
-/** Map internal booking/job source codes to business-friendly display labels */
+/**
+ * UI display labels for jobs.source values.
+ *
+ * THREE-PLACE CONTRACT — keys here must match JOB_SOURCE_VALUES in
+ * api/src/modules/rental-chains/dto/create-rental-chain.dto.ts exactly.
+ * Adding a new value requires updating all three places (API, UI, DB).
+ */
 const SOURCE_DISPLAY_LABELS: Record<string, string> = {
   phone: "Phone Orders",
   portal: "Online Bookings",
   manual: "Manual Entry",
   schedule_next: "Scheduled Follow-Ups",
+  rescheduled_from_failure: "Rescheduled Jobs",
   exchange: "Exchange",
   marketplace: "Marketplace",
   automation: "Automation",
-  rescheduled_from_failure: "Rescheduled Jobs",
+  dispatch: "Dispatch",
   other: "Other",
 };
 
