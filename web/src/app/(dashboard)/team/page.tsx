@@ -8,6 +8,8 @@ import {
   Shield, Radio, UserCog,
 } from "lucide-react";
 import { api } from "@/lib/api";
+import { useToast } from "@/components/toast";
+import { getFeatureLabel } from "@/lib/feature-registry";
 
 interface TeamMember {
   id: string; firstName: string; lastName: string; email: string; phone: string;
@@ -41,21 +43,46 @@ const FILTERS = ["all", "driver", "admin", "dispatcher", "active", "inactive"];
 
 export default function TeamPage() {
   const router = useRouter();
+  const { toast } = useToast();
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("all");
   const [weekOf, setWeekOf] = useState(() => getMonday(new Date()));
+  // Mirrors the Assets includeRetired pattern at assets/page.tsx:384 / 422 / 430.
+  // Default OFF so the team page hides deactivated users until an admin opts in.
+  const [includeDeactivated, setIncludeDeactivated] = useState(false);
+  const [reactivatingId, setReactivatingId] = useState<string | null>(null);
 
   const fetchTeam = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await api.get<{ data: TeamMember[]; weekOf: string }>(`/team?weekOf=${weekOf}`);
+      const qs = `/team?weekOf=${weekOf}${includeDeactivated ? "&includeDeactivated=true" : ""}`;
+      const res = await api.get<{ data: TeamMember[]; weekOf: string }>(qs);
       setMembers(res.data);
-    } catch { /* */ }
-    finally { setLoading(false); }
-  }, [weekOf]);
+    } catch {
+      // Surface fetch failure — empty catch here was Phase B silent-swallow
+      // that hid network/5xx errors from the operator.
+      toast("error", getFeatureLabel("team_error_generic"));
+    } finally {
+      setLoading(false);
+    }
+  }, [weekOf, includeDeactivated, toast]);
 
   useEffect(() => { fetchTeam(); }, [fetchTeam]);
+
+  const handleReactivate = async (m: TeamMember, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setReactivatingId(m.id);
+    try {
+      await api.post(`/team/${m.id}/reactivate`);
+      toast("success", getFeatureLabel("team_reactivate_success"));
+      await fetchTeam();
+    } catch {
+      toast("error", getFeatureLabel("team_error_generic"));
+    } finally {
+      setReactivatingId(null);
+    }
+  };
 
   const filtered = members.filter(m => {
     if (filter === "all") return true;
@@ -127,7 +154,7 @@ export default function TeamPage() {
       </div>
 
       {/* Filters */}
-      <div className="mb-5">
+      <div className="mb-5 flex items-center gap-4 flex-wrap">
         <div style={{ display: "inline-flex", borderRadius: 22, backgroundColor: "var(--t-bg-secondary)", border: "1px solid var(--t-border)", padding: 3, gap: 2 }}>
           {FILTERS.map(f => (
             <button key={f} onClick={() => setFilter(f)}
@@ -136,6 +163,16 @@ export default function TeamPage() {
             </button>
           ))}
         </div>
+        {/* Include-deactivated toggle. Mirrors assets/page.tsx:1433-1438. */}
+        <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, color: "var(--t-text-muted)", cursor: "pointer" }}>
+          <input
+            type="checkbox"
+            checked={includeDeactivated}
+            onChange={(e) => setIncludeDeactivated(e.target.checked)}
+            style={{ margin: 0 }}
+          />
+          {getFeatureLabel("team_include_deactivated_toggle")}
+        </label>
       </div>
 
       {/* Team List */}
@@ -150,7 +187,8 @@ export default function TeamPage() {
         <div className="space-y-1">
           {filtered.map(m => (
             <div key={m.id} onClick={() => router.push(`/team/${m.id}`)}
-              className="flex items-center justify-between rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-5 py-3.5 cursor-pointer hover:bg-[var(--t-bg-card-hover)] transition-colors">
+              className="flex items-center justify-between rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] px-5 py-3.5 cursor-pointer hover:bg-[var(--t-bg-card-hover)] transition-colors"
+              style={{ opacity: m.isActive ? 1 : 0.55 }}>
               <div className="flex items-center gap-3 min-w-0">
                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--t-bg-card-hover)] text-sm font-bold text-[var(--t-text-primary)]">
                   {m.firstName[0]}{m.lastName[0]}
@@ -161,6 +199,11 @@ export default function TeamPage() {
                     <span className="text-[11px] font-semibold capitalize text-[var(--t-text-muted)]">{m.role}</span>
                     {m.role === "driver" && (
                       <span className="text-[11px] font-semibold text-[var(--t-accent)]">Billable</span>
+                    )}
+                    {!m.isActive && (
+                      <span style={{ fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", padding: "2px 8px", borderRadius: 10, background: "var(--t-bg-card-hover)", color: "var(--t-text-muted)", border: "1px solid var(--t-border)" }}>
+                        {getFeatureLabel("team_deactivated_badge")}
+                      </span>
                     )}
                   </div>
                 </div>
@@ -179,6 +222,17 @@ export default function TeamPage() {
                     <Phone className="h-3 w-3" />
                     <a href={`tel:${m.phone}`} className="hover:text-[var(--t-accent)]">{fmtPhone(m.phone)}</a>
                   </span>
+                )}
+
+                {/* Reactivate (shown only on deactivated rows, when the toggle revealed them) */}
+                {!m.isActive && (
+                  <button
+                    onClick={(e) => handleReactivate(m, e)}
+                    disabled={reactivatingId === m.id}
+                    className="rounded-full border border-[var(--t-border)] px-3 py-1 text-[11px] font-semibold text-[var(--t-text-primary)] hover:bg-[var(--t-bg-card-hover)] transition-colors disabled:opacity-50"
+                  >
+                    {reactivatingId === m.id ? "..." : getFeatureLabel("team_reactivate_action")}
+                  </button>
                 )}
 
                 {/* Status */}

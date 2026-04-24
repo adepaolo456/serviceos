@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Patch,
+  Delete,
   Body,
   Param,
   Query,
@@ -12,13 +13,14 @@ import {
   ParseUUIDPipe,
   NotFoundException,
   BadRequestException,
+  ForbiddenException,
   HttpException,
   HttpStatus,
   Logger,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Between, MoreThan, DataSource } from 'typeorm';
+import { Repository, Between, MoreThan, DataSource, IsNull } from 'typeorm';
 import type { Request, Response } from 'express';
 import { User } from '../auth/entities/user.entity';
 import { Job } from '../jobs/entities/job.entity';
@@ -27,6 +29,7 @@ import { RolesGuard } from '../../common/guards';
 import { Roles, CurrentUser } from '../../common/decorators';
 import { checkRateLimit } from '../../common/rate-limiter';
 import { PasswordResetService } from '../auth/services/password-reset.service';
+import { UsersService } from './users.service';
 
 @ApiTags('Team')
 @ApiBearerAuth()
@@ -40,6 +43,7 @@ export class TeamController {
     @InjectRepository(Job) private jobsRepo: Repository<Job>,
     private readonly dataSource: DataSource,
     private readonly passwordResetService: PasswordResetService,
+    private readonly usersService: UsersService,
   ) {}
 
   @Get('locations')
@@ -65,10 +69,25 @@ export class TeamController {
   }
 
   @Get()
-  async list(@Req() req: Request, @Query('weekOf') weekOf?: string) {
+  async list(
+    @Req() req: Request,
+    @Query('weekOf') weekOf?: string,
+    @Query('includeDeactivated') includeDeactivated?: string,
+  ) {
     const tenantId = (req.user as { tenantId: string }).tenantId;
+    // Default: live, active users only. `includeDeactivated=true` surfaces
+    // inactive users (but still hides soft-deleted). Mirrors the Assets
+    // `includeRetired` pattern at web assets page line 422.
+    const showInactive = includeDeactivated === 'true';
+    const where: Record<string, unknown> = {
+      tenant_id: tenantId,
+      deleted_at: IsNull(),
+    };
+    if (!showInactive) {
+      where.is_active = true;
+    }
     const users = await this.usersRepo.find({
-      where: { tenant_id: tenantId },
+      where,
       order: { role: 'ASC', first_name: 'ASC' },
     });
 
@@ -120,8 +139,9 @@ export class TeamController {
   @Get(':id')
   async getEmployee(@Req() req: Request, @Param('id') id: string) {
     const tenantId = (req.user as { tenantId: string }).tenantId;
+    // Always exclude soft-deleted rows. A deleted user has no UI surface.
     const user = await this.usersRepo.findOne({
-      where: { id, tenant_id: tenantId },
+      where: { id, tenant_id: tenantId, deleted_at: IsNull() },
     });
     if (!user) return null;
     return {
@@ -157,7 +177,44 @@ export class TeamController {
     @Param('id') id: string,
     @Body() body: Record<string, unknown>,
   ) {
-    const tenantId = (req.user as { tenantId: string }).tenantId;
+    const caller = req.user as { sub: string; tenantId: string; role: string };
+    const tenantId = caller.tenantId;
+
+    // Tightening #1: isActive may not flow through the generic PATCH.
+    // Callers must use POST /team/:id/deactivate or /reactivate so the
+    // lifecycle invariants (last-owner guard, refresh-token invalidation,
+    // audit log) can't be skipped.
+    if (body.isActive !== undefined) {
+      throw new BadRequestException({
+        error: 'is_active_via_dedicated_endpoint',
+      });
+    }
+
+    // Tightening #2 + #3: role change on the Owner needs both the
+    // last-owner invariant AND the "only the Owner themselves may initiate"
+    // authorization, so it can't be used to bypass the transfer-ownership
+    // endpoint.
+    if (body.role !== undefined) {
+      const target = await this.usersRepo.findOne({
+        where: { id, tenant_id: tenantId, deleted_at: IsNull() },
+        select: ['id', 'role', 'is_active'],
+      });
+      if (!target) throw new NotFoundException({ error: 'user_not_found' });
+
+      const targetIsOwner = target.role === 'owner' && target.is_active;
+      const newRole = body.role as string;
+
+      if (targetIsOwner && newRole !== 'owner') {
+        if (caller.sub !== target.id) {
+          // Per sign-off (3): only the Owner themselves may relinquish.
+          throw new ForbiddenException({ error: 'cannot_modify_owner_role' });
+        }
+        // Even the Owner themselves can't demote themselves via PATCH —
+        // that path would skip the atomic transfer. Redirect them.
+        throw new BadRequestException({ error: 'ownership_transfer_required' });
+      }
+    }
+
     const update: Record<string, unknown> = {};
     if (body.firstName !== undefined) update.first_name = body.firstName;
     if (body.lastName !== undefined) update.last_name = body.lastName;
@@ -171,7 +228,6 @@ export class TeamController {
     if (body.vehicleInfo !== undefined) update.vehicle_info = body.vehicleInfo;
     if (body.emergencyContact !== undefined)
       update.emergency_contact = body.emergencyContact;
-    if (body.isActive !== undefined) update.is_active = body.isActive;
     if (body.employeeStatus !== undefined)
       update.employee_status = body.employeeStatus;
     if (body.driverRates !== undefined) update.driver_rates = body.driverRates;
@@ -183,8 +239,73 @@ export class TeamController {
     if (body.smsOptIn !== undefined) update.sms_opt_in = body.smsOptIn;
     if (body.address !== undefined) update.address = body.address;
 
-    await this.usersRepo.update({ id, tenant_id: tenantId }, update);
+    const result = await this.usersRepo.update(
+      { id, tenant_id: tenantId, deleted_at: IsNull() },
+      update,
+    );
+    if (result.affected === 0) {
+      throw new NotFoundException({ error: 'user_not_found' });
+    }
     return this.getEmployee(req, id);
+  }
+
+  // ── Lifecycle endpoints ──────────────────────────────────────────────────
+  // All four delegate to UsersService which enforces: tenant scoping,
+  // last-owner invariant, audit logging, refresh-token invalidation. Route
+  // guards here handle the role-level authorization (`admin` or `owner`).
+
+  @Post(':id/deactivate')
+  @UseGuards(RolesGuard)
+  @Roles('admin', 'owner')
+  async deactivate(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() actor: { id: string; tenantId: string },
+  ) {
+    return this.usersService.deactivateUser(actor.tenantId, id, actor.id);
+  }
+
+  @Post(':id/reactivate')
+  @UseGuards(RolesGuard)
+  @Roles('admin', 'owner')
+  async reactivate(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() actor: { id: string; tenantId: string },
+  ) {
+    return this.usersService.reactivateUser(actor.tenantId, id, actor.id);
+  }
+
+  @Delete(':id')
+  @UseGuards(RolesGuard)
+  @Roles('admin', 'owner')
+  async softDelete(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() actor: { id: string; tenantId: string },
+  ) {
+    return this.usersService.softDeleteUser(actor.tenantId, id, actor.id);
+  }
+
+  // Ownership transfer can only be initiated by the current Owner (per
+  // sign-off, authorization enforced in UsersService.transferOwnership).
+  // Admin role is still required to pass RolesGuard; an admin calling it
+  // for someone else's Owner account will be rejected with
+  // `only_owner_can_transfer`.
+  @Post(':id/transfer-ownership')
+  @UseGuards(RolesGuard)
+  @Roles('admin', 'owner')
+  async transferOwnership(
+    @Param('id', ParseUUIDPipe) currentOwnerId: string,
+    @Body() body: { newOwnerId?: string },
+    @CurrentUser() actor: { id: string; tenantId: string },
+  ) {
+    if (!body.newOwnerId) {
+      throw new BadRequestException({ error: 'new_owner_id_required' });
+    }
+    return this.usersService.transferOwnership(
+      actor.tenantId,
+      currentOwnerId,
+      body.newOwnerId,
+      actor.id,
+    );
   }
 
   // Clock in/out

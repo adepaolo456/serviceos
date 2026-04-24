@@ -119,4 +119,10 @@ export class User {
 
   @UpdateDateColumn({ name: 'updated_at' })
   updated_at!: Date;
+
+  // Soft-delete marker. NULL = live row. NOT NULL = hidden from every UI and
+  // list query. Set by DELETE /team/:id via UsersService.softDeleteUser.
+  // Every user lookup must include `deleted_at IS NULL` in its WHERE clause.
+  @Column({ name: 'deleted_at', type: 'timestamptz', nullable: true })
+  deleted_at!: Date | null;
 }

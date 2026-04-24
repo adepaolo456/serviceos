@@ -13,6 +13,7 @@ import { useToast } from "@/components/toast";
 import SlideOver from "@/components/slide-over";
 import AddressAutocomplete, { type AddressValue } from "@/components/address-autocomplete";
 import { navigateBack } from "@/lib/navigation";
+import { getFeatureLabel } from "@/lib/feature-registry";
 
 /* ---- Types ---- */
 
@@ -67,6 +68,9 @@ const SIZES = ["10yd", "15yd", "20yd", "30yd", "40yd"];
 
 /* ---- Page ---- */
 
+interface TeamListMember { id: string; firstName: string; lastName: string; role: string; isActive: boolean; }
+interface CurrentUserProfile { id: string; role: string; }
+
 export default function EmployeeDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
@@ -74,11 +78,25 @@ export default function EmployeeDetailPage({ params }: { params: Promise<{ id: s
   const [emp, setEmp] = useState<Employee | null>(null);
   const [timesheet, setTimesheet] = useState<Timesheet | null>(null);
   const [perf, setPerf] = useState<Performance | null>(null);
+  const [me, setMe] = useState<CurrentUserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<Tab>("profile");
   const [editOpen, setEditOpen] = useState(false);
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
   const [resetSending, setResetSending] = useState(false);
+
+  // Team lifecycle state: mirrors the reset-password modal pattern (single
+  // confirm modal + in-flight flag) but three modals share the same shape.
+  const [deactivateOpen, setDeactivateOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [lifecycleBusy, setLifecycleBusy] = useState(false);
+  // Transfer flow state. `pendingAction` is what the operator asked for
+  // before the server demanded a transfer; after a successful transfer
+  // we re-run it automatically.
+  const [transferOpen, setTransferOpen] = useState(false);
+  const [transferTarget, setTransferTarget] = useState<string>("");
+  const [transferCandidates, setTransferCandidates] = useState<TeamListMember[]>([]);
+  const [pendingAction, setPendingAction] = useState<"deactivate" | "delete" | null>(null);
 
   const handleTriggerReset = async () => {
     if (!emp) return;
@@ -101,15 +119,124 @@ export default function EmployeeDetailPage({ params }: { params: Promise<{ id: s
     }
   };
 
+  // Central error → toast mapper. Returns true if the caller should open
+  // the transfer modal instead of toasting (the server said transfer-first).
+  const handleLifecycleError = (err: unknown, action: "deactivate" | "delete"): boolean => {
+    const body = (err as { body?: { error?: string } })?.body;
+    if (body?.error === "ownership_transfer_required") {
+      setPendingAction(action);
+      openTransferModal();
+      return true;
+    }
+    if (body?.error === "cannot_remove_last_owner") {
+      toast("error", getFeatureLabel("team_error_last_owner"));
+    } else if (body?.error === "only_owner_can_transfer" || body?.error === "cannot_modify_owner_role") {
+      toast("error", getFeatureLabel("team_error_only_owner_can_transfer"));
+    } else {
+      toast("error", getFeatureLabel("team_error_generic"));
+    }
+    return false;
+  };
+
+  const openTransferModal = async () => {
+    // Admin candidates: the tenant's active admins (not the current Owner).
+    try {
+      const res = await api.get<{ data: TeamListMember[] }>("/team");
+      setTransferCandidates(
+        res.data.filter((m) => m.role === "admin" && m.isActive && m.id !== emp?.id),
+      );
+    } catch {
+      setTransferCandidates([]);
+    }
+    setTransferTarget("");
+    setTransferOpen(true);
+  };
+
+  const handleDeactivate = async () => {
+    if (!emp) return;
+    setLifecycleBusy(true);
+    try {
+      await api.post(`/team/${emp.id}/deactivate`);
+      toast("success", getFeatureLabel("team_deactivate_success"));
+      setDeactivateOpen(false);
+      setEmp({ ...emp, isActive: false });
+    } catch (err) {
+      const redirected = handleLifecycleError(err, "deactivate");
+      if (redirected) setDeactivateOpen(false);
+    } finally {
+      setLifecycleBusy(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!emp) return;
+    setLifecycleBusy(true);
+    try {
+      await api.delete(`/team/${emp.id}`);
+      toast("success", getFeatureLabel("team_delete_success"));
+      setDeleteOpen(false);
+      router.push("/team");
+    } catch (err) {
+      const redirected = handleLifecycleError(err, "delete");
+      if (redirected) setDeleteOpen(false);
+    } finally {
+      setLifecycleBusy(false);
+    }
+  };
+
+  const handleReactivate = async () => {
+    if (!emp) return;
+    setLifecycleBusy(true);
+    try {
+      await api.post(`/team/${emp.id}/reactivate`);
+      toast("success", getFeatureLabel("team_reactivate_success"));
+      setEmp({ ...emp, isActive: true });
+    } catch {
+      toast("error", getFeatureLabel("team_error_generic"));
+    } finally {
+      setLifecycleBusy(false);
+    }
+  };
+
+  const handleTransferConfirm = async () => {
+    if (!emp || !transferTarget) return;
+    setLifecycleBusy(true);
+    try {
+      await api.post(`/team/${emp.id}/transfer-ownership`, { newOwnerId: transferTarget });
+      toast("success", getFeatureLabel("team_transfer_success"));
+      setTransferOpen(false);
+      // After a successful transfer the target user (previously Owner) is
+      // now an admin. Refresh `emp` role to reflect that, then run the
+      // originally-pending action on the demoted account.
+      const refreshed = await api.get<Employee>(`/team/${emp.id}`);
+      setEmp(refreshed);
+      const action = pendingAction;
+      setPendingAction(null);
+      if (action === "deactivate") await handleDeactivate();
+      else if (action === "delete") await handleDelete();
+    } catch (err) {
+      const body = (err as { body?: { error?: string } })?.body;
+      if (body?.error === "ineligible_owner_target") {
+        toast("error", getFeatureLabel("team_error_ineligible_target"));
+      } else {
+        toast("error", getFeatureLabel("team_error_generic"));
+      }
+    } finally {
+      setLifecycleBusy(false);
+    }
+  };
+
   useEffect(() => {
     async function load() {
       try {
-        const [e, t, p] = await Promise.all([
+        const [e, t, p, profile] = await Promise.all([
           api.get<Employee>(`/team/${id}`),
           api.get<Timesheet>(`/team/timesheet/${id}`),
           api.get<Performance>(`/team/${id}/performance`).catch(() => ({ monthJobs: 0, weekJobs: 0, avgPerDay: 0 })),
+          api.get<{ id: string; role: string }>("/auth/profile").catch(() => null),
         ]);
         setEmp(e); setTimesheet(t); setPerf(p);
+        if (profile) setMe({ id: profile.id, role: profile.role });
       } catch { /* */ } finally { setLoading(false); }
     }
     load();
@@ -161,7 +288,30 @@ export default function EmployeeDetailPage({ params }: { params: Promise<{ id: s
             >
               Reset password
             </button>
-            <button className="rounded-full border border-[var(--t-error)] px-4 py-2 text-[13px] font-medium text-[var(--t-error)] hover:opacity-80 transition-opacity">Deactivate</button>
+            {emp.isActive ? (
+              <button
+                onClick={() => setDeactivateOpen(true)}
+                disabled={lifecycleBusy}
+                className="rounded-full border border-[var(--t-error)] px-4 py-2 text-[13px] font-medium text-[var(--t-error)] hover:opacity-80 transition-opacity disabled:opacity-50"
+              >
+                {getFeatureLabel("team_deactivate_action")}
+              </button>
+            ) : (
+              <button
+                onClick={handleReactivate}
+                disabled={lifecycleBusy}
+                className="rounded-full border border-[var(--t-accent)] px-4 py-2 text-[13px] font-medium text-[var(--t-accent)] hover:opacity-80 transition-opacity disabled:opacity-50"
+              >
+                {getFeatureLabel("team_reactivate_action")}
+              </button>
+            )}
+            <button
+              onClick={() => setDeleteOpen(true)}
+              disabled={lifecycleBusy}
+              className="rounded-full border border-[var(--t-error)] px-4 py-2 text-[13px] font-medium text-[var(--t-error)] hover:opacity-80 transition-opacity disabled:opacity-50"
+            >
+              {getFeatureLabel("team_delete_action")}
+            </button>
           </div>
         </div>
       </div>
@@ -367,13 +517,151 @@ export default function EmployeeDetailPage({ params }: { params: Promise<{ id: s
       {tab === "settings" && (
         <div className="max-w-md space-y-4">
           <Card title="Account"><Row label="Email" value={emp.email} /><Row label="Role" value={<span className="capitalize">{emp.role}</span>} /></Card>
-          <button className="w-full rounded-full border border-[var(--t-error)] py-3 text-sm font-medium text-[var(--t-error)] hover:opacity-80 transition-opacity">Deactivate Employee</button>
+          {emp.isActive ? (
+            <button
+              onClick={() => setDeactivateOpen(true)}
+              disabled={lifecycleBusy}
+              className="w-full rounded-full border border-[var(--t-error)] py-3 text-sm font-medium text-[var(--t-error)] hover:opacity-80 transition-opacity disabled:opacity-50"
+            >
+              {getFeatureLabel("team_deactivate_action")} Employee
+            </button>
+          ) : (
+            <button
+              onClick={handleReactivate}
+              disabled={lifecycleBusy}
+              className="w-full rounded-full border border-[var(--t-accent)] py-3 text-sm font-medium text-[var(--t-accent)] hover:opacity-80 transition-opacity disabled:opacity-50"
+            >
+              {getFeatureLabel("team_reactivate_action")} Employee
+            </button>
+          )}
         </div>
       )}
 
       <SlideOver open={editOpen} onClose={() => setEditOpen(false)} title="Edit Employee">
-        <EditForm emp={emp} onSuccess={e => { setEmp(e); setEditOpen(false); toast("success", "Updated"); }} />
+        <EditForm emp={emp} me={me} onSuccess={e => { setEmp(e); setEditOpen(false); toast("success", "Updated"); }} />
       </SlideOver>
+
+      {deactivateOpen && (
+        <LifecycleModal
+          title={getFeatureLabel("team_deactivate_title")}
+          body={getFeatureLabel("team_deactivate_body")}
+          confirmLabel={getFeatureLabel("team_deactivate_confirm")}
+          destructive
+          busy={lifecycleBusy}
+          onCancel={() => setDeactivateOpen(false)}
+          onConfirm={handleDeactivate}
+        />
+      )}
+
+      {deleteOpen && (
+        <LifecycleModal
+          title={getFeatureLabel("team_delete_title")}
+          body={getFeatureLabel("team_delete_body")}
+          confirmLabel={getFeatureLabel("team_delete_confirm")}
+          destructive
+          busy={lifecycleBusy}
+          onCancel={() => setDeleteOpen(false)}
+          onConfirm={handleDelete}
+        />
+      )}
+
+      {transferOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" onClick={() => !lifecycleBusy && setTransferOpen(false)} />
+          <div className="relative w-full max-w-md rounded-[20px] shadow-2xl p-6" style={{ backgroundColor: "var(--t-bg-secondary)", border: "1px solid var(--t-border)" }}>
+            <h2 className="text-base font-semibold text-center" style={{ color: "var(--t-text-primary)" }}>
+              {getFeatureLabel("team_transfer_title")}
+            </h2>
+            <p className="text-sm mt-2 text-center" style={{ color: "var(--t-text-muted)" }}>
+              {getFeatureLabel("team_transfer_body")}
+            </p>
+            <div className="mt-4">
+              <label className="block text-[13px] font-semibold uppercase tracking-wide mb-1" style={{ color: "var(--t-text-muted)" }}>
+                {getFeatureLabel("team_transfer_target_label")}
+              </label>
+              {transferCandidates.length === 0 ? (
+                <p className="text-sm py-2" style={{ color: "var(--t-text-muted)" }}>
+                  {getFeatureLabel("team_transfer_empty")}
+                </p>
+              ) : (
+                <select
+                  value={transferTarget}
+                  onChange={(e) => setTransferTarget(e.target.value)}
+                  className="w-full rounded-[20px] border px-4 py-2.5 text-sm appearance-none"
+                  style={{ borderColor: "var(--t-border)", backgroundColor: "var(--t-bg-card)", color: "var(--t-text-primary)" }}
+                >
+                  <option value="">—</option>
+                  {transferCandidates.map((c) => (
+                    <option key={c.id} value={c.id}>{c.firstName} {c.lastName}</option>
+                  ))}
+                </select>
+              )}
+            </div>
+            <div className="flex gap-3 mt-6">
+              <button
+                type="button"
+                onClick={() => setTransferOpen(false)}
+                disabled={lifecycleBusy}
+                className="flex-1 rounded-full py-3 text-sm font-semibold border"
+                style={{ borderColor: "var(--t-border)", color: "var(--t-text-primary)" }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleTransferConfirm}
+                disabled={lifecycleBusy || !transferTarget || transferCandidates.length === 0}
+                className="flex-1 rounded-full py-3 text-sm font-semibold transition-opacity disabled:opacity-40"
+                style={{ backgroundColor: "var(--t-accent)", color: "var(--t-accent-on-accent)" }}
+              >
+                {lifecycleBusy ? "..." : getFeatureLabel("team_transfer_confirm")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Destructive confirm-modal helper. Title + body + Cancel/Confirm.
+// Mirrors the reset-password modal shape at lines 169-204 of this file.
+function LifecycleModal({
+  title, body, confirmLabel, destructive, busy, onCancel, onConfirm,
+}: {
+  title: string; body: string; confirmLabel: string;
+  destructive?: boolean; busy: boolean;
+  onCancel: () => void; onConfirm: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" onClick={() => !busy && onCancel()} />
+      <div className="relative w-full max-w-md rounded-[20px] shadow-2xl p-6" style={{ backgroundColor: "var(--t-bg-secondary)", border: "1px solid var(--t-border)" }}>
+        <h2 className="text-base font-semibold text-center" style={{ color: "var(--t-text-primary)" }}>{title}</h2>
+        <p className="text-sm mt-2 text-center" style={{ color: "var(--t-text-muted)" }}>{body}</p>
+        <div className="flex gap-3 mt-6">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={busy}
+            className="flex-1 rounded-full py-3 text-sm font-semibold border"
+            style={{ borderColor: "var(--t-border)", color: "var(--t-text-primary)" }}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={busy}
+            className="flex-1 rounded-full py-3 text-sm font-semibold transition-opacity disabled:opacity-40"
+            style={destructive
+              ? { backgroundColor: "var(--t-error)", color: "#fff" }
+              : { backgroundColor: "var(--t-accent)", color: "var(--t-accent-on-accent)" }}
+          >
+            {busy ? "..." : confirmLabel}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -621,7 +909,7 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
 
 /* ===== Edit Form ===== */
 
-function EditForm({ emp, onSuccess }: { emp: Employee; onSuccess: (e: Employee) => void }) {
+function EditForm({ emp, me, onSuccess }: { emp: Employee; me: CurrentUserProfile | null; onSuccess: (e: Employee) => void }) {
   const [firstName, setFirstName] = useState(emp.firstName);
   const [lastName, setLastName] = useState(emp.lastName);
   const [phone, setPhone] = useState(emp.phone || "");
@@ -658,7 +946,11 @@ function EditForm({ emp, onSuccess }: { emp: Employee; onSuccess: (e: Employee) 
         <div><label className={labelCls}>Last</label><input value={lastName} onChange={e => setLastName(e.target.value)} className={inputCls} /></div>
       </div>
       <div><label className={labelCls}>Phone</label><input value={phone} onChange={e => setPhone(e.target.value)} className={inputCls} /></div>
-      <div><label className={labelCls}>Role</label><select value={role} onChange={e => setRole(e.target.value)} className={`${inputCls} appearance-none`}><option value="driver">Driver</option><option value="dispatcher">Dispatcher</option><option value="admin">Admin</option><option value="owner">Owner</option></select></div>
+      {/* Guard: if target is the current Owner, disable the role dropdown —
+          the only way to change it is the atomic Transfer Ownership flow.
+          Server enforces this too; the UI hint avoids a confusing
+          round-trip-to-error for the operator. */}
+      <div><label className={labelCls}>Role</label><select value={role} onChange={e => setRole(e.target.value)} disabled={emp.role === "owner" && me?.id !== emp.id} title={emp.role === "owner" && me?.id !== emp.id ? "Only the Owner can change the Owner role (via Transfer Ownership)." : undefined} className={`${inputCls} appearance-none disabled:opacity-60 disabled:cursor-not-allowed`}><option value="driver">Driver</option><option value="dispatcher">Dispatcher</option><option value="admin">Admin</option><option value="owner">Owner</option></select></div>
       <div className="grid grid-cols-2 gap-3">
         <div><label className={labelCls}>Pay $/hr</label><input type="number" step="0.01" value={payRate} onChange={e => setPayRate(e.target.value)} className={inputCls} /></div>
         <div><label className={labelCls}>Hire Date</label><input type="date" value={hireDate} onChange={e => setHireDate(e.target.value)} className={inputCls} /></div>
