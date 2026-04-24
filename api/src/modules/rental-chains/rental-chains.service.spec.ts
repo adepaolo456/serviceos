@@ -331,6 +331,8 @@ describe('RentalChainsService.updateChain — date fail-fast guards', () => {
 describe('RentalChainsService.createExchange — NO_SCHEDULED_PICKUP_FOR_EXCHANGE fail-fast', () => {
   const tenantId = 'tenant-1';
   const chainId = 'chain-1';
+  // Used in the service_address inheritance assertion (Phase 8 regression fix).
+  const DELIVERY_ADDRESS = { street: '123 Main St', city: 'Brockton', state: 'MA', zip: '02301' };
   const baseChain = {
     id: chainId,
     tenant_id: tenantId,
@@ -353,10 +355,13 @@ describe('RentalChainsService.createExchange — NO_SCHEDULED_PICKUP_FOR_EXCHANG
 
     // Pre-transaction plumbing shared by both tests in this suite.
     h.chainRepo.findOne.mockResolvedValue({ ...baseChain });
-    // Non-trx delivery-link lookup for pricing inputs (coord extract).
+    // Non-trx delivery-link lookup. Its job.service_address feeds BOTH
+    // the pricing coord extract AND (Phase 8 regression fix) the
+    // service_address inheritance onto new exchange + replacement
+    // pickup jobs, so the mock provides a realistic address object.
     h.linkRepo.findOne.mockResolvedValue({
       id: 'link-delivery',
-      job: { service_address: null },
+      job: { service_address: DELIVERY_ADDRESS },
     });
     h.customerRepo.findOne.mockResolvedValue({
       id: 'cust-1',
@@ -442,6 +447,16 @@ describe('RentalChainsService.createExchange — NO_SCHEDULED_PICKUP_FOR_EXCHANG
         status: 'cancelled',
         cancellation_reason: 'exchange_replacement',
       }),
+    );
+
+    // Phase 8 regression fix — both the new exchange job and its
+    // replacement pickup job must inherit service_address from the
+    // delivery link so dispatch/jobs/driver tiles render "Line 2: Address".
+    expect(h.trxJobRepo.create).toHaveBeenCalledWith(
+      expect.objectContaining({ job_type: 'exchange', service_address: DELIVERY_ADDRESS }),
+    );
+    expect(h.trxJobRepo.create).toHaveBeenCalledWith(
+      expect.objectContaining({ job_type: 'pickup', service_address: DELIVERY_ADDRESS }),
     );
   });
 });

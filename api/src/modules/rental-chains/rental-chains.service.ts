@@ -732,6 +732,13 @@ export class RentalChainsService {
     const customerLat = Number(svcAddr?.lat) || 0;
     const customerLng = Number(svcAddr?.lng) || 0;
 
+    // Phase 8 (commit 3a457b4, Apr 2) promoted service_address into the
+    // dispatch/jobs/driver tile "Line 2" render. Exchange jobs created here
+    // MUST inherit service_address from the delivery link so every tile
+    // surface shows "what + where" at a glance. Missing it surfaces as a
+    // visible regression on dispatch board exchange tiles.
+    const inheritedServiceAddress = deliveryLink?.job?.service_address ?? null;
+
     const customer = await this.dataSource.getRepository(Customer).findOne({
       where: { id: chain.customer_id, tenant_id: tenantId },
     });
@@ -815,6 +822,7 @@ export class RentalChainsService {
         source: 'exchange',
         scheduled_date: dto.exchange_date,
         asset_id: assetId,
+        service_address: inheritedServiceAddress,
       } as Partial<Job> as Job);
       const savedExchangeJob = await jobRepo.save(exchangeJob);
 
@@ -844,6 +852,7 @@ export class RentalChainsService {
         scheduled_date: newPickupDateStr,
         asset_id: assetId,
         parent_job_id: savedExchangeJob.id,
+        service_address: inheritedServiceAddress,
       } as Partial<Job> as Job);
       const savedPickupJob = await jobRepo.save(pickupJob);
 
