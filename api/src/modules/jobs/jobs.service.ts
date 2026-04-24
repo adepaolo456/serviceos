@@ -323,7 +323,12 @@ export class JobsService {
       deposit_amount: dto.depositAmount,
       discount_percentage: discountPercentage || undefined,
       discount_amount: discountAmount || undefined,
-      source: dto.source,
+      // Default 'manual' — POST /jobs is invoked by dispatcher UI flows
+      // where source isn't explicitly set; 'manual' reflects that origin
+      // truthfully. Callers providing source override the default via
+      // nullish coalescing (explicit '' or false is preserved; only
+      // undefined/null falls back).
+      source: dto.source ?? 'manual',
     } as Partial<Job>);
 
     const savedJob = await this.jobsRepository.save(job);

@@ -1475,6 +1475,7 @@ function NewJobForm({ onSuccess }: { onSuccess: () => void }) {
         assignedDriverId: driverId || undefined,
         basePrice: priceQuote?.breakdown.basePrice,
         totalPrice: priceQuote?.breakdown.total,
+        source: "manual",
       });
       if (driverId) sessionStorage.setItem("serviceos_lastJobDriver", driverId);
       onSuccess();

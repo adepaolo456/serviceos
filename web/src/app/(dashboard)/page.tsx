@@ -744,6 +744,7 @@ function QuickJobForm({ onSuccess, timezone }: { onSuccess: () => void; timezone
         scheduledWindowStart: wStart, scheduledWindowEnd: wEnd,
         serviceAddress: address.street ? { street: address.street, city: address.city, state: address.state, zip: address.zip, lat: address.lat, lng: address.lng } : undefined,
         basePrice: price, totalPrice: price,
+        source: "manual",
       });
       onSuccess();
     } catch (err) { setError(err instanceof Error ? err.message : "Failed to create job"); }

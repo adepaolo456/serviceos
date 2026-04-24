@@ -12,6 +12,7 @@ export const JOB_SOURCE_VALUES = [
   'rescheduled_from_failure',
   'exchange',
   'marketplace',
+  'automation',
   'other',
 ] as const;
 

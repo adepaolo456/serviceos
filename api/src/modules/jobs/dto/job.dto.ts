@@ -14,6 +14,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
+import { JOB_SOURCE_VALUES, type JobSource } from '../../rental-chains/dto/create-rental-chain.dto';
 
 export class CreateJobDto {
   @ApiProperty({ example: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890' })
@@ -118,10 +119,11 @@ export class CreateJobDto {
   @IsNumber()
   depositAmount?: number;
 
-  @ApiPropertyOptional({ example: 'website' })
+  @ApiPropertyOptional({ example: 'manual' })
   @IsOptional()
   @IsString()
-  source?: string;
+  @IsIn(JOB_SOURCE_VALUES)
+  source?: JobSource;
 
   @ApiPropertyOptional({ example: '20yd', description: 'Asset subtype for pricing lookup' })
   @IsOptional()
