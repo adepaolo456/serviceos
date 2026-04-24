@@ -312,6 +312,19 @@ export default function DispatchPage() {
   const [qvDetail, setQvDetail] = useState<any>(null);
   const [qvLoading, setQvLoading] = useState(false);
   const [qvCreditState, setQvCreditState] = useState<DispatchCreditState | null>(null);
+  // Phase-1 override scope — role awareness for the QuickView
+  // "Override Status" button. Owner/admin only; dispatcher/driver
+  // see no override entry. Fetched from the same /auth/profile
+  // cache other surfaces use (Job Detail, dashboard).
+  const [currentUserRole, setCurrentUserRole] = useState<string | null>(null);
+  useEffect(() => {
+    api
+      .get<{ role: string }>("/auth/profile")
+      .then((p) => setCurrentUserRole(p?.role ?? null))
+      .catch(() => setCurrentUserRole(null));
+  }, []);
+  const canOverrideStatus =
+    currentUserRole === "owner" || currentUserRole === "admin";
   const [activeId, setActiveId] = useState<string | null>(null);
   const [collapsedCols, setCollapsedCols] = useState<Set<string>>(new Set());
   const [hiddenCols, setHiddenCols] = useState<Set<string>>(new Set());
@@ -1383,10 +1396,27 @@ export default function DispatchPage() {
         subtitle={formatJobNumber(quickViewJob?.job_number)}
         actions={quickViewJob ? <Link href={`/jobs/${quickViewJob.id}`} className="rounded-full px-3 py-1.5 text-xs font-medium" style={{ background: "var(--t-bg-card-hover)", color: "var(--t-text-primary)" }}><ExternalLink className="h-3 w-3 inline mr-1" />Full Detail</Link> : undefined}
         footer={quickViewJob ? (
-          <div className="flex gap-2">
-            {quickViewJob.customer?.phone && <a href={`tel:${quickViewJob.customer.phone}`} className="flex-1 flex items-center justify-center gap-1.5 rounded-full py-2.5 text-xs font-semibold" style={{ background: "var(--t-accent)", color: "var(--t-accent-on-accent)" }}><Phone className="h-3.5 w-3.5" /> Call</a>}
-            {quickViewJob.service_address && <button onClick={() => { const a = quickViewJob.service_address!; window.open(`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent([a.street, a.city, a.state].filter(Boolean).join(", "))}`, "_blank"); }}
-              className="flex-1 flex items-center justify-center gap-1.5 rounded-full py-2.5 text-xs font-semibold border" style={{ borderColor: "var(--t-border)", color: "var(--t-text-primary)" }}><Navigation className="h-3.5 w-3.5" /> Navigate</button>}
+          <div className="flex flex-col gap-2">
+            <div className="flex gap-2">
+              {quickViewJob.customer?.phone && <a href={`tel:${quickViewJob.customer.phone}`} className="flex-1 flex items-center justify-center gap-1.5 rounded-full py-2.5 text-xs font-semibold" style={{ background: "var(--t-accent)", color: "var(--t-accent-on-accent)" }}><Phone className="h-3.5 w-3.5" /> Call</a>}
+              {quickViewJob.service_address && <button onClick={() => { const a = quickViewJob.service_address!; window.open(`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent([a.street, a.city, a.state].filter(Boolean).join(", "))}`, "_blank"); }}
+                className="flex-1 flex items-center justify-center gap-1.5 rounded-full py-2.5 text-xs font-semibold border" style={{ borderColor: "var(--t-border)", color: "var(--t-text-primary)" }}><Navigation className="h-3.5 w-3.5" /> Navigate</button>}
+            </div>
+            {/* Phase-1 override scope — admin/owner only. Routes to
+                Job Detail with ?override=1 so the existing Override
+                Status modal auto-opens, keeping a single modal owner
+                and avoiding duplication into dispatch. Shared-modal
+                extraction is Phase 2 backlog. */}
+            {canOverrideStatus && (
+              <Link
+                href={`/jobs/${quickViewJob.id}?override=1`}
+                className="flex items-center justify-center gap-1.5 rounded-full py-2 text-xs font-semibold border"
+                style={{ borderColor: "var(--t-warning)", color: "var(--t-warning)" }}
+              >
+                <AlertTriangle className="h-3.5 w-3.5" />
+                {FEATURE_REGISTRY.job_override_status_action?.label ?? "Override Status"}
+              </Link>
+            )}
           </div>
         ) : undefined}
       >

@@ -942,10 +942,17 @@ export class JobsService {
     userName?: string,
   ): Promise<Job> {
     const job = await this.findOne(tenantId, id);
-    const isAdmin = ['owner', 'admin', 'dispatcher'].includes(userRole || '');
+    // Phase-1 override scope — dispatcher no longer has override privileges.
+    // Admin/Owner are the only roles that can bypass VALID_TRANSITIONS.
+    // Drivers still hit this endpoint for their own valid forward transitions
+    // (driver-app/src/api.ts:49,179,190) — they fall through the non-admin
+    // branch below and must obey VALID_TRANSITIONS as before. Dispatcher
+    // ends up in the same branch; they can still advance jobs along the
+    // canonical path but can't override backwards or skip steps.
+    const isAdmin = ['owner', 'admin'].includes(userRole || '');
     const previousStatus = job.status;
 
-    // Drivers must follow forward-only transitions; dispatchers/owners can override
+    // Drivers / dispatchers must follow forward-only transitions; admin/owner can override
     if (!isAdmin) {
       const allowed = VALID_TRANSITIONS[job.status];
       if (!allowed || !allowed.includes(dto.status)) {
@@ -953,6 +960,29 @@ export class JobsService {
           `Cannot transition from '${job.status}' to '${dto.status}'`,
         );
       }
+    }
+
+    // Phase-1 override scope — same-status no-op. Fires BEFORE reason
+    // validation so the frontend's disabled current-status circle is
+    // idempotent even if an admin somehow re-submits the same status.
+    // Returns the unchanged job, writes nothing to the audit log —
+    // audit represents real state changes, not attempted ones.
+    if (isAdmin && previousStatus === dto.status) {
+      return job;
+    }
+
+    // Phase-1 override scope — reason is mandatory for every admin
+    // override (trimmed, non-empty). Matches the Phase A/B error-code
+    // voice — prefix is parseable by the frontend for toast routing.
+    // The frontend blocks empty submits; this is the server-side gate.
+    if (isAdmin && previousStatus !== dto.status) {
+      const trimmedReason = (dto.overrideReason ?? '').trim();
+      if (!trimmedReason) {
+        throw new BadRequestException(
+          'override_reason_required: Reason is required for status override',
+        );
+      }
+      dto.overrideReason = trimmedReason;
     }
 
     // Phase 11A — if the driver is passing an asset in the same
@@ -1201,7 +1231,39 @@ export class JobsService {
       }
     }
 
-    const savedJob = await this.jobsRepository.save(job);
+    // Phase-1 override scope — wrap the job.save() and the override
+    // audit-log write in a single transaction. Matches the billing
+    // site #21 Phase B pattern (billing.service.spec.ts:234-254):
+    // if the audit insert rejects, the status change rolls back
+    // alongside it so we never land a state change without its
+    // corresponding audit row. Side effects (billing detection,
+    // chain reactions, customer notifications) happen AFTER commit
+    // and remain best-effort; they already had that semantics.
+    const savedJob = await this.dataSource.transaction(async (manager) => {
+      const txJobRepo = manager.getRepository(Job);
+      const txNotifRepo = manager.getRepository(Notification);
+      const saved = await txJobRepo.save(job);
+      if (isAdmin && previousStatus !== dto.status) {
+        await txNotifRepo.save(
+          txNotifRepo.create({
+            tenant_id: tenantId,
+            job_id: saved.id,
+            channel: 'automation',
+            type: 'status_override',
+            recipient: 'system',
+            body: JSON.stringify({
+              from: previousStatus,
+              to: dto.status,
+              overriddenBy: userRole,
+              reason: dto.overrideReason ?? null,
+            }),
+            status: 'logged',
+            sent_at: new Date(),
+          }),
+        );
+      }
+      return saved;
+    });
 
     // Billing issue detection on job completion.
     //
@@ -1330,41 +1392,11 @@ export class JobsService {
       } catch { /* non-fatal — see comment above */ }
     }
 
-    // Log admin status overrides (backward transitions).
-    //
-    // Phase B3-Fix — body now includes `reason: dto.overrideReason`
-    // so the operator-provided explanation is captured in the audit
-    // log at the same moment the status change commits. Previously
-    // the reason traveled via a second `PATCH /jobs/:id` call with
-    // `{ driver_notes }`, which was silently stripped by the global
-    // `whitelist: true` ValidationPipe because `UpdateJobDto` has no
-    // such field, so every override's reason was lost. Null when
-    // no reason was provided (driver-app transitions, programmatic
-    // changes, legacy callers) — preserves backward compatibility
-    // with any existing audit-log consumers.
-    // Site #30 (prior silent-error-swallow audit, closed): the
-    // previous try/catch silently dropped the admin-override audit
-    // log row. An admin backwards-transitioning a job without an
-    // audit entry is a compliance gap — no accountability for the
-    // override. Removed; errors propagate so the transition surfaces
-    // as a 500 rather than landing without a log.
-    if (isAdmin && previousStatus !== dto.status) {
-      await this.notifRepo.save(this.notifRepo.create({
-        tenant_id: tenantId,
-        job_id: job.id,
-        channel: 'automation',
-        type: 'status_override',
-        recipient: 'system',
-        body: JSON.stringify({
-          from: previousStatus,
-          to: dto.status,
-          overriddenBy: userRole,
-          reason: dto.overrideReason ?? null,
-        }),
-        status: 'logged',
-        sent_at: new Date(),
-      }));
-    }
+    // Phase-1 override scope — audit-log write relocated INTO the
+    // save-transaction above (see the `this.dataSource.transaction`
+    // block). Keeping it here would double-log on every override and
+    // reintroduce the Site #30 silent-failure class (a failing audit
+    // write after the status already committed).
 
     return savedJob;
   }

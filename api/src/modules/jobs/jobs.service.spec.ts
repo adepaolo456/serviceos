@@ -1,17 +1,34 @@
 /**
- * Silent-error-swallow audit — JobsService negative-path tests for:
- *   site #26  changeStatus → failed-trip invoice reversal must propagate
- *   site #27  changeStatus → chain-type-change handler must propagate
- *   site #28  changeStatus → auto-close chain must propagate
- *   site #30  changeStatus → admin-override audit log must propagate
+ * JobsService.changeStatus test coverage — two generations of concerns:
  *
- * Each test uses the same minimal harness and drives changeStatus
- * to the specific site, forcing the downstream call to throw.
+ * Phase B (silent-error-swallow audit — already shipped):
+ *   site #26  failed-trip invoice reversal must propagate
+ *   site #27  chain-type-change handler must propagate
+ *   site #28  auto-close chain must propagate
+ *   site #30  admin-override audit log must propagate
+ *
+ * Phase 1 (status override restoration — this spec file's additions):
+ *   1. Admin override positive — audit row written, status updated
+ *   2. Empty/whitespace reason rejected with override_reason_required:
+ *   3. Transactional rollback — audit insert failure prevents commit
+ *      (supersedes Phase B site #30's propagation-only assertion)
+ *   4. Same-status no-op — unchanged job returned, no audit row
+ *   5. Admin bypasses VALID_TRANSITIONS — backward transition succeeds
+ *   6. Dispatcher role — no longer bypasses; hits VALID_TRANSITIONS gate
+ *   + driver regression guard — valid forward transition still works
+ *
+ * NOTE on controller-level @Roles: the decorator is declarative NestJS
+ * metadata and not unit-testable at the service layer. Per the Phase 1
+ * sign-off we defend at the service by tightening the admin bypass
+ * (owner/admin only; dispatcher/driver fall into the VALID_TRANSITIONS
+ * gate). Controller-level coverage is the team lifecycle suite's
+ * pattern for analogous routes.
  */
 
 import { Test, TestingModule } from '@nestjs/testing';
+import { BadRequestException } from '@nestjs/common';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { DataSource } from 'typeorm';
+import { DataSource, EntityManager } from 'typeorm';
 
 import { JobsService } from './jobs.service';
 import { Job } from './entities/job.entity';
@@ -65,6 +82,12 @@ interface Harness {
   rentalChainsService: any;
   billingIssueDetector: any;
   autoCloseSpy: jest.SpyInstance;
+  // Phase 1 additions — the transaction wrap around save + audit
+  // needs observable spies so we can assert commit-vs-rollback.
+  transactionCommit: jest.Mock;
+  txJobSave: jest.Mock;
+  txNotifCreate: jest.Mock;
+  txNotifSave: jest.Mock;
 }
 
 async function buildHarness(jobOverrides: Partial<Job> = {}): Promise<Harness> {
@@ -114,6 +137,38 @@ async function buildHarness(jobOverrides: Partial<Job> = {}): Promise<Harness> {
   const alertService: any = {};
   const dispatchCreditEnforcement: any = {};
 
+  // Phase 1 — transaction mock matching billing.service.spec.ts:91-94
+  // pattern. Callback runs with a stub EntityManager whose
+  // getRepository(Job|Notification) returns trx-scoped spies; commit
+  // fires only on callback completion (not on throw). Existing
+  // assertions that go through the un-trx-scoped notifRepo.save /
+  // jobsRepository.save still pass because we route both repos to
+  // the same mocks — the visible call count remains accurate.
+  const transactionCommit = jest.fn();
+  const txJobSave = jest.fn((x: any) => Promise.resolve(x));
+  const txNotifCreate = jest.fn((x: any) => x);
+  const txNotifSave = jest.fn().mockResolvedValue(undefined);
+  const dataSource: any = {
+    transaction: jest.fn(
+      async (cb: (em: EntityManager) => Promise<unknown>) => {
+        const trxJob = { save: txJobSave };
+        const trxNotif = { save: txNotifSave, create: txNotifCreate };
+        const trx: any = {
+          getRepository: (entity: unknown) => {
+            if (entity === Job) return trxJob;
+            if (entity === Notification) return trxNotif;
+            throw new Error(
+              `unmocked trx repo: ${(entity as { name?: string })?.name ?? '?'}`,
+            );
+          },
+        };
+        const result = await cb(trx as EntityManager);
+        transactionCommit();
+        return result;
+      },
+    ),
+  };
+
   const module: TestingModule = await Test.createTestingModule({
     providers: [
       JobsService,
@@ -137,7 +192,7 @@ async function buildHarness(jobOverrides: Partial<Job> = {}): Promise<Harness> {
       { provide: NotificationsService, useValue: notificationsService },
       { provide: PricingService, useValue: pricingService },
       { provide: AlertService, useValue: alertService },
-      { provide: DataSource, useValue: {} },
+      { provide: DataSource, useValue: dataSource },
       { provide: DispatchCreditEnforcementService, useValue: dispatchCreditEnforcement },
     ],
   }).compile();
@@ -162,11 +217,16 @@ async function buildHarness(jobOverrides: Partial<Job> = {}): Promise<Harness> {
     rentalChainsService,
     billingIssueDetector,
     autoCloseSpy,
+    transactionCommit,
+    txJobSave,
+    txNotifCreate,
+    txNotifSave,
   };
 }
 
 describe('JobsService — silent-error-swallow fixes in changeStatus', () => {
   // Site #26: failed-trip reversal must propagate.
+  // Phase 1 — overrideReason is now required when admin changes status.
   it('site #26 (failed-trip reversal): throws when billingService.voidInternalInvoice errors', async () => {
     const h = await buildHarness({
       status: 'in_progress',
@@ -187,7 +247,7 @@ describe('JobsService — silent-error-swallow fixes in changeStatus', () => {
       h.service.changeStatus(
         'tenant-1',
         'job-1',
-        { status: 'completed' } as any,
+        { status: 'completed', overrideReason: 'test' } as any,
         'admin',
       ),
     ).rejects.toThrow('void failed');
@@ -208,6 +268,7 @@ describe('JobsService — silent-error-swallow fixes in changeStatus', () => {
           status: 'cancelled',
           jobType: 'exchange',
           previousJobType: 'delivery',
+          overrideReason: 'test',
         } as any,
         'admin',
       ),
@@ -217,32 +278,213 @@ describe('JobsService — silent-error-swallow fixes in changeStatus', () => {
   // Site #28: auto-close chain must propagate.
   it('site #28 (autoCloseChainIfTerminal): throws when autoClose helper errors', async () => {
     const h = await buildHarness({ status: 'in_progress' });
-    // Override the default spy for this test — let it throw so we
-    // verify the changeStatus code no longer swallows the error.
     h.autoCloseSpy.mockRejectedValue(new Error('chain close failed'));
 
     await expect(
       h.service.changeStatus(
         'tenant-1',
         'job-1',
-        { status: 'cancelled' } as any,
+        { status: 'cancelled', overrideReason: 'test' } as any,
         'admin',
       ),
     ).rejects.toThrow('chain close failed');
   });
 
-  // Site #30: admin override audit log must propagate.
-  it('site #30 (admin override audit): throws when notifRepo.save errors', async () => {
+  // Site #30: admin override audit log. Phase 1 subsumes this — the
+  // transactional rollback test (#3 below) asserts the same propagation
+  // PLUS the commit-never-reached invariant. Kept here as a smoke check
+  // that audit-write failures are still observable via the trx-scoped
+  // Notification repo.
+  it('site #30 (admin override audit): propagates when trx notif save errors', async () => {
     const h = await buildHarness({ status: 'in_progress' });
-    h.notifRepo.save.mockRejectedValue(new Error('audit save failed'));
+    h.txNotifSave.mockRejectedValue(new Error('audit save failed'));
 
     await expect(
       h.service.changeStatus(
         'tenant-1',
         'job-1',
-        { status: 'completed' } as any,
+        { status: 'completed', overrideReason: 'test' } as any,
         'admin',
       ),
     ).rejects.toThrow('audit save failed');
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────
+// Phase 1 — status override scope
+// ──────────────────────────────────────────────────────────────────────
+
+describe('JobsService.changeStatus — Phase 1 override scope', () => {
+  // ── #1 — Admin override positive ─────────────────────────────────────
+  it('1. admin override positive — status updated AND audit row written inside transaction', async () => {
+    const h = await buildHarness({ status: 'en_route', job_type: 'pickup' });
+
+    await h.service.changeStatus(
+      'tenant-1',
+      'job-1',
+      { status: 'arrived', overrideReason: 'Driver forgot to tap Arrived' } as any,
+      'owner',
+      'u-owner',
+      'Owner',
+    );
+
+    // Save happened through the trx-scoped Job repo (proves transaction opened).
+    expect(h.txJobSave).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'arrived' }),
+    );
+    // Audit row created inside the transaction with expected shape + trimmed reason.
+    expect(h.txNotifCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        channel: 'automation',
+        type: 'status_override',
+        body: expect.stringContaining('"from":"en_route"'),
+      }),
+    );
+    const body = JSON.parse(h.txNotifCreate.mock.calls[0][0].body);
+    expect(body).toEqual({
+      from: 'en_route',
+      to: 'arrived',
+      overriddenBy: 'owner',
+      reason: 'Driver forgot to tap Arrived',
+    });
+    expect(h.transactionCommit).toHaveBeenCalledTimes(1);
+  });
+
+  // ── #2 — Empty / whitespace reason rejected ──────────────────────────
+  it('2. empty whitespace reason — throws override_reason_required: before any write', async () => {
+    const h = await buildHarness({ status: 'en_route' });
+
+    await expect(
+      h.service.changeStatus(
+        'tenant-1',
+        'job-1',
+        { status: 'arrived', overrideReason: '   ' } as any,
+        'admin',
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    // No transaction opened → no writes attempted.
+    expect(h.transactionCommit).not.toHaveBeenCalled();
+    expect(h.txJobSave).not.toHaveBeenCalled();
+    expect(h.txNotifCreate).not.toHaveBeenCalled();
+  });
+
+  it('2b. missing reason — throws with override_reason_required: prefix', async () => {
+    const h = await buildHarness({ status: 'en_route' });
+
+    await expect(
+      h.service.changeStatus(
+        'tenant-1',
+        'job-1',
+        { status: 'arrived' } as any,
+        'owner',
+      ),
+    ).rejects.toMatchObject({
+      message: expect.stringMatching(/^override_reason_required:/),
+    });
+    expect(h.transactionCommit).not.toHaveBeenCalled();
+  });
+
+  // ── #3 — Transactional rollback ──────────────────────────────────────
+  it('3. transactional rollback — audit insert failure prevents commit (supersedes #30)', async () => {
+    const h = await buildHarness({ status: 'en_route', job_type: 'pickup' });
+    h.txNotifSave.mockRejectedValue(new Error('audit insert failed'));
+
+    await expect(
+      h.service.changeStatus(
+        'tenant-1',
+        'job-1',
+        { status: 'arrived', overrideReason: 'oops' } as any,
+        'admin',
+      ),
+    ).rejects.toThrow('audit insert failed');
+
+    // Job save ran INSIDE the transaction (proves save + audit are a unit)…
+    expect(h.txJobSave).toHaveBeenCalled();
+    // …but the tx never committed, so that save rolls back too.
+    expect(h.transactionCommit).not.toHaveBeenCalled();
+  });
+
+  // ── #4 — Same-status no-op ───────────────────────────────────────────
+  it('4. same-status no-op — returns unchanged job, no audit row, no transaction', async () => {
+    const h = await buildHarness({ status: 'arrived', job_type: 'pickup' });
+
+    const result = await h.service.changeStatus(
+      'tenant-1',
+      'job-1',
+      { status: 'arrived', overrideReason: 'noop' } as any,
+      'owner',
+    );
+
+    expect(result.status).toBe('arrived');
+    expect(h.transactionCommit).not.toHaveBeenCalled();
+    expect(h.txNotifCreate).not.toHaveBeenCalled();
+    expect(h.txJobSave).not.toHaveBeenCalled();
+  });
+
+  // ── #5 — Admin bypasses VALID_TRANSITIONS ────────────────────────────
+  it('5. admin bypasses VALID_TRANSITIONS — en_route → pending backward transition succeeds', async () => {
+    const h = await buildHarness({ status: 'en_route', job_type: 'pickup' });
+    // en_route → pending is NOT in VALID_TRANSITIONS. Non-admin would be
+    // rejected at the gate; admin bypasses.
+
+    await h.service.changeStatus(
+      'tenant-1',
+      'job-1',
+      { status: 'pending', overrideReason: 'Dispatched early by mistake' } as any,
+      'owner',
+      'u-owner',
+      'Owner',
+    );
+
+    expect(h.txJobSave).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'pending' }),
+    );
+    const body = JSON.parse(h.txNotifCreate.mock.calls[0][0].body);
+    expect(body.from).toBe('en_route');
+    expect(body.to).toBe('pending');
+    expect(h.transactionCommit).toHaveBeenCalledTimes(1);
+  });
+
+  // ── #6 — Dispatcher hits VALID_TRANSITIONS gate (service-layer defense) ─
+  // Controller-level @Roles guard is the primary gate; this test verifies
+  // the service-layer tightening (dispatcher removed from admin bypass)
+  // means dispatcher now falls through to VALID_TRANSITIONS validation.
+  it('6. dispatcher role — en_route → pending rejected by VALID_TRANSITIONS (was bypassed pre-Phase 1)', async () => {
+    const h = await buildHarness({ status: 'en_route', job_type: 'pickup' });
+
+    await expect(
+      h.service.changeStatus(
+        'tenant-1',
+        'job-1',
+        { status: 'pending' } as any,
+        'dispatcher',
+      ),
+    ).rejects.toThrow(/Cannot transition from 'en_route' to 'pending'/);
+
+    expect(h.transactionCommit).not.toHaveBeenCalled();
+    expect(h.txJobSave).not.toHaveBeenCalled();
+  });
+
+  // Regression guard — driver forward transitions must still work after
+  // Phase 1's tightening; the driver app would break otherwise.
+  it('regression: driver role — valid forward transition en_route → arrived succeeds without reason or audit row', async () => {
+    const h = await buildHarness({ status: 'en_route', job_type: 'pickup' });
+
+    await h.service.changeStatus(
+      'tenant-1',
+      'job-1',
+      { status: 'arrived' } as any,
+      'driver',
+    );
+
+    expect(h.txJobSave).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'arrived' }),
+    );
+    // Not an admin → audit write skipped inside the transaction.
+    expect(h.txNotifCreate).not.toHaveBeenCalled();
+    // Commit fires — the transaction wraps non-admin save too; only the
+    // audit-row branch is admin-gated.
+    expect(h.transactionCommit).toHaveBeenCalledTimes(1);
   });
 });

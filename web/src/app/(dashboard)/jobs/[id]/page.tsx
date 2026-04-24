@@ -240,31 +240,16 @@ const TRANSITION_STYLES: Record<string, { label: string; className: string; icon
 // Office can only trigger these as primary actions
 const OFFICE_ALLOWED_TRANSITIONS = new Set(["dispatched", "cancelled"]);
 
-// Override corrections: current stored status → allowed correction targets
-//
-// `confirmed` is the post-assign-auto-flip state from
-// `JobsService.assignJob` (sets status='confirmed' when a driver is
-// assigned to a pending job). The UI labels these jobs "Assigned" via
-// `deriveDisplayStatus`'s live-driver branch, but the raw status is
-// `confirmed`, not `dispatched`. Without this entry the office kebab
-// hid Override Status for assigned jobs entirely, blocking the
-// office completion workflow.
-//
-// `dispatched`, `en_route`, `arrived` widened to include `completed`
-// so the office can shortcut from any active stage to completion in
-// a single override. The backend admin override at
-// `jobs.service.ts:864` already permits any forward transition for
-// admin/dispatcher/owner — these targets just expose what's already
-// legal server-side. Asset/dump-slip completion gates remain
-// authoritative on the backend (see `delivery_completion_requires_asset`
-// and `dump_slip_required` in `changeStatus`).
-const OVERRIDE_TARGETS: Record<string, string[]> = {
-  confirmed: ["dispatched", "en_route", "arrived", "in_progress", "completed"],
-  dispatched: ["en_route", "arrived", "in_progress", "completed"],
-  en_route: ["dispatched", "arrived", "in_progress", "completed"],
-  arrived: ["en_route", "in_progress", "completed"],
-  in_progress: ["arrived", "completed"],
-};
+// Phase-1 override scope — the `OVERRIDE_TARGETS` adjacent-only map
+// (added in commit 11ad997 Apr 6, widened in b4222da, and consumed by
+// both the kebab `canOverride` gate and the timeline chip predicate)
+// was deleted. It narrowed the UI to a subset of transitions that the
+// backend never actually enforced — admin/owner override at
+// `jobs.service.ts:changeStatus` has always permitted any-to-any.
+// The UI now mirrors backend truth: any non-current status is a valid
+// override target for admin/owner. `deriveDisplayStatus` + the backend
+// completion gates (`delivery_completion_requires_asset`, asset gates,
+// reason-required, same-status no-op) remain authoritative.
 
 const TIMELINE_STEPS = [
   { key: "created_at", label: "Created", status: "pending" },
@@ -425,12 +410,13 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
     target: string;
     reason: string;
   } | null>(null);
-  // Phase B3-UI Issue 2 — current user's role, used to gate the
-  // clickable lifecycle chip shortcut. Only office roles (owner,
-  // admin, dispatcher) see chips as interactive; drivers see them
-  // as static. Fetched once on mount; null while loading (chips
-  // render as static until the role is known, avoiding a flash of
-  // clickable UI before auth is confirmed).
+  // Phase-1 override scope — current user's role, used to gate the
+  // clickable lifecycle chip shortcut AND the kebab Override Status
+  // entry. Tightened to owner/admin only (dispatcher removed — they
+  // no longer have override privileges per the sign-off). Drivers
+  // and dispatchers see chips as static. Fetched once on mount;
+  // null while loading (chips render as static until the role is
+  // known, avoiding a flash of clickable UI before auth is confirmed).
   const [currentUserRole, setCurrentUserRole] = useState<string | null>(null);
   useEffect(() => {
     api
@@ -439,9 +425,24 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
       .catch(() => setCurrentUserRole(null));
   }, []);
   const isOfficeRole =
-    currentUserRole === "owner" ||
-    currentUserRole === "admin" ||
-    currentUserRole === "dispatcher";
+    currentUserRole === "owner" || currentUserRole === "admin";
+
+  // Phase-1 override scope — dispatch board's QuickView navigates
+  // here with ?override=1 to open the override modal in-place. Runs
+  // once when both (a) the job has loaded, (b) the role is known
+  // and is office, and (c) the query param is truthy. Uses ref-ish
+  // state (`overrideAutoOpened`) to prevent re-firing on re-renders.
+  const [overrideAutoOpened, setOverrideAutoOpened] = useState(false);
+  useEffect(() => {
+    if (overrideAutoOpened) return;
+    if (!job || !isOfficeRole) return;
+    if (searchParams.get("override") !== "1") return;
+    const firstDifferent = TIMELINE_STEPS.find((s) => s.status !== job.status)?.status ?? "";
+    setOverrideTarget(firstDifferent);
+    setOverrideReason("");
+    setOverrideOpen(true);
+    setOverrideAutoOpened(true);
+  }, [job, isOfficeRole, searchParams, overrideAutoOpened]);
   // Refresh signal for <LifecycleContextPanel/>. Bumped after any
   // mutation that can change a job's live status (override,
   // forward transition, cancel) so the panel refetches the
@@ -1256,7 +1257,11 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
                 {FEATURE_REGISTRY.driver_task_delete_action?.label ?? "Delete Task"}
               </button>
             ) : (() => {
-              const canOverride = (OVERRIDE_TARGETS[job.status]?.length ?? 0) > 0;
+              // Phase-1 override scope — previously gated on
+              // OVERRIDE_TARGETS (adjacent-only); now any non-current
+              // status is a valid target, so the sole gate is role.
+              // Drivers and dispatchers get no Override Status item.
+              const canOverride = isOfficeRole;
               const canSchedule =
                 job.status === "completed" &&
                 (job.job_type === "delivery" || job.job_type === "drop_off");
@@ -1268,7 +1273,10 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
                   {canOverride && (
                     <button
                       onClick={() => {
-                        setOverrideTarget(OVERRIDE_TARGETS[job.status]?.[0] || "");
+                        // Pre-fill: first timeline status that isn't the current one.
+                        // Dropdown in the modal lets the operator switch if desired.
+                        const firstDifferent = TIMELINE_STEPS.find((s) => s.status !== job.status)?.status ?? "";
+                        setOverrideTarget(firstDifferent);
                         setOverrideReason("");
                         setOverrideOpen(true);
                       }}
@@ -1752,18 +1760,18 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
             // `completed_at` so an unassignment after en_route never
             // leaves an orphaned later-step timestamp visible.
             const timestamp = i <= statusIdx ? rawTimestamp : undefined;
-            // Phase B3-UI Issue 2 — clickable-chip override shortcut.
-            // A step chip is interactive iff (a) the viewer is an
-            // office role AND (b) the step's raw status is in
-            // `OVERRIDE_TARGETS[job.status]` AND (c) it isn't the
-            // current status (overriding to self is a no-op). Reuses
-            // the existing override modal — sets the same state the
-            // kebab menu sets — so reason entry and audit trail are
-            // identical to the three-dot path.
+            // Phase-1 override scope — every timeline chip is
+            // interactive for office roles (owner/admin) except the
+            // current status (no-op). Dropped the OVERRIDE_TARGETS
+            // narrowing map — backend already permits any-to-any for
+            // admin/owner, and the prior map gated UI more tightly
+            // than the server, hiding the feature on common states
+            // (pending, completed, cancelled). Current-status chip
+            // stays non-interactive because the frontend should not
+            // invite a no-op round trip. Reuses the existing override
+            // modal (reason entry + same audit trail as the kebab).
             const chipIsOverrideTarget =
-              isOfficeRole &&
-              step.status !== job.status &&
-              (OVERRIDE_TARGETS[job.status] || []).includes(step.status);
+              isOfficeRole && step.status !== job.status;
             const chipOnClick = chipIsOverrideTarget
               ? () => {
                   setOverrideTarget(step.status);
@@ -1808,7 +1816,11 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
                     {chipInner}
                   </button>
                 ) : (
-                  <div className="flex flex-col items-center">
+                  <div
+                    className="flex flex-col items-center"
+                    style={isOfficeRole && step.status === job.status ? { cursor: "not-allowed" } : undefined}
+                    title={isOfficeRole && step.status === job.status ? (FEATURE_REGISTRY.job_override_status_same_status_tooltip?.label ?? "Already in this status") : undefined}
+                  >
                     {chipInner}
                   </div>
                 )}
@@ -3238,26 +3250,17 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
                   className="w-full rounded-[14px] border px-3.5 py-2.5 text-sm outline-none focus:border-[var(--t-accent)]"
                   style={{ background: "var(--t-bg-card)", borderColor: "var(--t-border)", color: "var(--t-text-primary)" }}
                 >
-                  {/* Dedupe override targets by display status so
-                      `arrived` and `in_progress` (which both collapse
-                      to the "Arrived" display label in
-                      `deriveDisplayStatus`) don't render two options
-                      with the same label. Keeps the first occurrence
-                      so the canonical raw value for each display step
-                      survives. */}
-                  {(() => {
-                    const seen = new Set<string>();
-                    return (OVERRIDE_TARGETS[job.status] || [])
-                      .filter((s) => {
-                        const disp = deriveDisplayStatus(s);
-                        if (seen.has(disp)) return false;
-                        seen.add(disp);
-                        return true;
-                      })
-                      .map((s) => (
-                        <option key={s} value={s}>{DISPLAY_STATUS_LABELS[deriveDisplayStatus(s)]}</option>
-                      ));
-                  })()}
+                  {/* Phase-1 override scope — dropdown now pulls from
+                      the canonical six TIMELINE_STEPS (Created, Unassigned,
+                      Assigned, En Route, Arrived, Completed) minus the
+                      current status. Backend permits any-to-any, and the
+                      same-status no-op guard protects against idempotent
+                      round-trips even if an admin somehow selected current. */}
+                  {TIMELINE_STEPS
+                    .filter((s) => s.status !== job.status)
+                    .map((s) => (
+                      <option key={s.status} value={s.status}>{s.label}</option>
+                    ))}
                 </select>
               </div>
               <div>
