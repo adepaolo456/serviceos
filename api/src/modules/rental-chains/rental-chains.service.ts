@@ -310,6 +310,7 @@ export class RentalChainsService {
         asset_subtype: chain.dumpster_size,
         status: 'pending',
         priority: 'normal',
+        source: 'manual',
         scheduled_date: newPickupDateStr,
         asset_id: chain.asset_id || null,
       } as Partial<Job> as Job);
@@ -801,6 +802,7 @@ export class RentalChainsService {
         asset_subtype: size,
         status: 'pending',
         priority: 'normal',
+        source: 'exchange',
         scheduled_date: newPickupDateStr,
         asset_id: assetId,
         parent_job_id: savedExchangeJob.id,
