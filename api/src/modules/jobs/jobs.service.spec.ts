@@ -295,15 +295,20 @@ describe('JobsService — silent-error-swallow fixes in changeStatus', () => {
   // PLUS the commit-never-reached invariant. Kept here as a smoke check
   // that audit-write failures are still observable via the trx-scoped
   // Notification repo.
+  //
+  // Arc 1 — scenario changed from `in_progress → completed` (now classified
+  // as sanctioned-forward, so no audit row is written) to `completed →
+  // confirmed` which remains a genuine out-of-flow admin correction. The
+  // audit-error propagation invariant being tested is unchanged.
   it('site #30 (admin override audit): propagates when trx notif save errors', async () => {
-    const h = await buildHarness({ status: 'in_progress' });
+    const h = await buildHarness({ status: 'completed' });
     h.txNotifSave.mockRejectedValue(new Error('audit save failed'));
 
     await expect(
       h.service.changeStatus(
         'tenant-1',
         'job-1',
-        { status: 'completed', overrideReason: 'test' } as any,
+        { status: 'confirmed', overrideReason: 'test' } as any,
         'admin',
       ),
     ).rejects.toThrow('audit save failed');
@@ -316,13 +321,17 @@ describe('JobsService — silent-error-swallow fixes in changeStatus', () => {
 
 describe('JobsService.changeStatus — Phase 1 override scope', () => {
   // ── #1 — Admin override positive ─────────────────────────────────────
+  // Arc 1 — scenario changed from `en_route → arrived` (now sanctioned-forward,
+  // no audit row) to `en_route → pending`, a genuine out-of-flow correction.
+  // The invariants under test — status saved via the trx repo, audit row
+  // written inside the transaction, commit fires — are unchanged.
   it('1. admin override positive — status updated AND audit row written inside transaction', async () => {
     const h = await buildHarness({ status: 'en_route', job_type: 'pickup' });
 
     await h.service.changeStatus(
       'tenant-1',
       'job-1',
-      { status: 'arrived', overrideReason: 'Driver forgot to tap Arrived' } as any,
+      { status: 'pending', overrideReason: 'Rolled back after mis-dispatch' } as any,
       'owner',
       'u-owner',
       'Owner',
@@ -330,7 +339,7 @@ describe('JobsService.changeStatus — Phase 1 override scope', () => {
 
     // Save happened through the trx-scoped Job repo (proves transaction opened).
     expect(h.txJobSave).toHaveBeenCalledWith(
-      expect.objectContaining({ status: 'arrived' }),
+      expect.objectContaining({ status: 'pending' }),
     );
     // Audit row created inside the transaction with expected shape + trimmed reason.
     expect(h.txNotifCreate).toHaveBeenCalledWith(
@@ -343,14 +352,17 @@ describe('JobsService.changeStatus — Phase 1 override scope', () => {
     const body = JSON.parse(h.txNotifCreate.mock.calls[0][0].body);
     expect(body).toEqual({
       from: 'en_route',
-      to: 'arrived',
+      to: 'pending',
       overriddenBy: 'owner',
-      reason: 'Driver forgot to tap Arrived',
+      reason: 'Rolled back after mis-dispatch',
     });
     expect(h.transactionCommit).toHaveBeenCalledTimes(1);
   });
 
   // ── #2 — Empty / whitespace reason rejected ──────────────────────────
+  // Arc 1 — scenario changed from `en_route → arrived` (sanctioned-forward,
+  // gate bypassed) to `en_route → pending` (genuine out-of-flow). The
+  // reason-required invariant being tested is unchanged.
   it('2. empty whitespace reason — throws override_reason_required: before any write', async () => {
     const h = await buildHarness({ status: 'en_route' });
 
@@ -358,7 +370,7 @@ describe('JobsService.changeStatus — Phase 1 override scope', () => {
       h.service.changeStatus(
         'tenant-1',
         'job-1',
-        { status: 'arrived', overrideReason: '   ' } as any,
+        { status: 'pending', overrideReason: '   ' } as any,
         'admin',
       ),
     ).rejects.toBeInstanceOf(BadRequestException);
@@ -376,7 +388,7 @@ describe('JobsService.changeStatus — Phase 1 override scope', () => {
       h.service.changeStatus(
         'tenant-1',
         'job-1',
-        { status: 'arrived' } as any,
+        { status: 'pending' } as any,
         'owner',
       ),
     ).rejects.toMatchObject({
@@ -386,6 +398,9 @@ describe('JobsService.changeStatus — Phase 1 override scope', () => {
   });
 
   // ── #3 — Transactional rollback ──────────────────────────────────────
+  // Arc 1 — scenario changed from `en_route → arrived` (sanctioned, no audit
+  // row) to `en_route → pending` (genuine override). The save+audit atomicity
+  // invariant is unchanged.
   it('3. transactional rollback — audit insert failure prevents commit (supersedes #30)', async () => {
     const h = await buildHarness({ status: 'en_route', job_type: 'pickup' });
     h.txNotifSave.mockRejectedValue(new Error('audit insert failed'));
@@ -394,7 +409,7 @@ describe('JobsService.changeStatus — Phase 1 override scope', () => {
       h.service.changeStatus(
         'tenant-1',
         'job-1',
-        { status: 'arrived', overrideReason: 'oops' } as any,
+        { status: 'pending', overrideReason: 'oops' } as any,
         'admin',
       ),
     ).rejects.toThrow('audit insert failed');
@@ -551,5 +566,194 @@ describe('JobsService.changeStatus — Phase 1 override scope', () => {
     expect(h.txJobSave).toHaveBeenCalledWith(
       expect.objectContaining({ status: 'pending', assigned_driver_id: null }),
     );
+  });
+
+  // ──────────────────────────────────────────────────────────────────────
+  // Arc 1 — transition-aware override gate
+  // ──────────────────────────────────────────────────────────────────────
+  // Option A (see arc1-phase0-audit-report.md): the reason-required gate and
+  // the `status_override` audit row both fire ONLY when the transition is NOT
+  // in VALID_TRANSITIONS[previousStatus]. An admin doing a sanctioned forward
+  // step is operationally identical to a driver doing the same step — no
+  // reason demanded, no override audit row. Genuine out-of-flow corrections
+  // still require a reason and still produce an audit row (covered by the
+  // pre-existing Phase 1 tests above).
+
+  describe('Arc 1 — transition-aware override gate', () => {
+    // #A1 — Field-test reproduction: owner is the assigned driver on a
+    // confirmed job, taps "On My Way". `confirmed → en_route` is a legal
+    // forward edge after the VALID_TRANSITIONS enlargement, so no reason is
+    // required and no override audit row is written.
+    it('A1. owner + assigned driver + sanctioned forward (confirmed → en_route) — success, no reason, no audit row', async () => {
+      const h = await buildHarness({
+        status: 'confirmed',
+        assigned_driver_id: 'u-owner',
+        job_type: 'delivery',
+      } as Partial<Job>);
+
+      await h.service.changeStatus(
+        'tenant-1',
+        'job-1',
+        { status: 'en_route' } as any,
+        'owner',
+        'u-owner',
+        'Owner',
+      );
+
+      expect(h.txJobSave).toHaveBeenCalledWith(
+        expect.objectContaining({ status: 'en_route' }),
+      );
+      expect(h.txNotifCreate).not.toHaveBeenCalled();
+      expect(h.transactionCommit).toHaveBeenCalledTimes(1);
+    });
+
+    // #A2 — The signal is transition legality, not who owns the job. An owner
+    // who is NOT the assigned driver, doing a sanctioned forward step, gets
+    // the same no-reason treatment. (Prevents the gate from drifting back
+    // toward a capacity check.)
+    it('A2. owner + NOT assigned driver + sanctioned forward — success, no reason, no audit row', async () => {
+      const h = await buildHarness({
+        status: 'en_route',
+        assigned_driver_id: 'someone-else',
+        job_type: 'pickup',
+      } as Partial<Job>);
+
+      await h.service.changeStatus(
+        'tenant-1',
+        'job-1',
+        { status: 'arrived' } as any,
+        'owner',
+        'u-owner',
+        'Owner',
+      );
+
+      expect(h.txJobSave).toHaveBeenCalledWith(
+        expect.objectContaining({ status: 'arrived' }),
+      );
+      expect(h.txNotifCreate).not.toHaveBeenCalled();
+      expect(h.transactionCommit).toHaveBeenCalledTimes(1);
+    });
+
+    // #A3 — Phase 1.7 invariant preserved: genuine backward override with
+    // reason still writes the audit row. (Complements the pre-existing #1/#5
+    // tests — this one pins the post-Arc-1 classification from the positive
+    // side, asserting that a non-sanctioned transition remains classified as
+    // an override.)
+    it('A3. owner + backward (non-sanctioned) + reason — success with audit row', async () => {
+      const h = await buildHarness({ status: 'completed', job_type: 'pickup' });
+
+      await h.service.changeStatus(
+        'tenant-1',
+        'job-1',
+        { status: 'confirmed', overrideReason: 'fixing dispatcher mistake' } as any,
+        'owner',
+      );
+
+      expect(h.txJobSave).toHaveBeenCalledWith(
+        expect.objectContaining({ status: 'confirmed' }),
+      );
+      expect(h.txNotifCreate).toHaveBeenCalledTimes(1);
+      const body = JSON.parse(h.txNotifCreate.mock.calls[0][0].body);
+      expect(body).toEqual({
+        from: 'completed',
+        to: 'confirmed',
+        overriddenBy: 'owner',
+        reason: 'fixing dispatcher mistake',
+      });
+    });
+
+    // #A4 — Phase 1.7 invariant preserved: genuine backward override without
+    // reason still throws override_reason_required.
+    it('A4. owner + backward (non-sanctioned) + NO reason — throws override_reason_required', async () => {
+      const h = await buildHarness({ status: 'completed', job_type: 'pickup' });
+
+      await expect(
+        h.service.changeStatus(
+          'tenant-1',
+          'job-1',
+          { status: 'confirmed' } as any,
+          'owner',
+        ),
+      ).rejects.toMatchObject({
+        message: expect.stringMatching(/^override_reason_required:/),
+      });
+      expect(h.txJobSave).not.toHaveBeenCalled();
+      expect(h.transactionCommit).not.toHaveBeenCalled();
+    });
+
+    // #A5 — Admin cancel from the web cancel modal sends `cancellationReason`
+    // but NOT `overrideReason`. Because `cancelled` is in every non-terminal
+    // VALID_TRANSITIONS entry, the transition is sanctioned forward and the
+    // reason gate is skipped. `cancellationReason` is persisted through its
+    // own dedicated column (unrelated to the override audit row).
+    it('A5. admin cancel via cancel-modal payload (cancellationReason only) — success, no override audit row', async () => {
+      const h = await buildHarness({ status: 'confirmed', job_type: 'delivery' });
+
+      await h.service.changeStatus(
+        'tenant-1',
+        'job-1',
+        { status: 'cancelled', cancellationReason: 'customer request' } as any,
+        'admin',
+      );
+
+      expect(h.txJobSave).toHaveBeenCalledWith(
+        expect.objectContaining({ status: 'cancelled' }),
+      );
+      // Sanctioned forward → no `status_override` notification even though
+      // the actor is admin and the status changed. The `cancellationReason`
+      // capture lives in its own column and is not the override audit row.
+      expect(h.txNotifCreate).not.toHaveBeenCalled();
+    });
+
+    // #A6 — Newly legal forward edge: `confirmed → en_route` for a regular
+    // driver-role user. Before the VALID_TRANSITIONS enlargement, the driver
+    // app's "On My Way" tap from a confirmed job would have been rejected at
+    // the VALID_TRANSITIONS gate.
+    it('A6. driver + confirmed → en_route (newly legal forward edge) — success', async () => {
+      const h = await buildHarness({
+        status: 'confirmed',
+        assigned_driver_id: 'u-driver',
+        job_type: 'delivery',
+      } as Partial<Job>);
+
+      await h.service.changeStatus(
+        'tenant-1',
+        'job-1',
+        { status: 'en_route' } as any,
+        'driver',
+        'u-driver',
+      );
+
+      expect(h.txJobSave).toHaveBeenCalledWith(
+        expect.objectContaining({ status: 'en_route' }),
+      );
+      expect(h.txNotifCreate).not.toHaveBeenCalled();
+      expect(h.transactionCommit).toHaveBeenCalledTimes(1);
+    });
+
+    // #A7 — Newly legal forward edge: `pending → en_route`. Rare in practice
+    // (jobs normally walk through `confirmed` first) but the driver app's
+    // STATUS_FLOW at driver-app/app/job/[id].tsx:105 maps this transition.
+    it('A7. driver + pending → en_route (newly legal forward edge) — success', async () => {
+      const h = await buildHarness({
+        status: 'pending',
+        assigned_driver_id: 'u-driver',
+        job_type: 'delivery',
+      } as Partial<Job>);
+
+      await h.service.changeStatus(
+        'tenant-1',
+        'job-1',
+        { status: 'en_route' } as any,
+        'driver',
+        'u-driver',
+      );
+
+      expect(h.txJobSave).toHaveBeenCalledWith(
+        expect.objectContaining({ status: 'en_route' }),
+      );
+      expect(h.txNotifCreate).not.toHaveBeenCalled();
+      expect(h.transactionCommit).toHaveBeenCalledTimes(1);
+    });
   });
 });

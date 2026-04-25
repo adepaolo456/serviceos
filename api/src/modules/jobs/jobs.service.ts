@@ -109,9 +109,13 @@ const EMPTY_DISPATCH_ACTOR: JobsDispatchActor = {
   creditOverride: null,
 };
 
+// Forward chain is canonical: pending → confirmed → dispatched → en_route → arrived → in_progress → completed.
+// `dispatched` remains a valid intermediate when a dispatcher explicitly assigns a route, but is OPTIONAL.
+// A driver tapping "On My Way" from the driver app is itself the sanctioning event; the system does not
+// require an explicit prior `dispatched` write for that path. See Arc 1 audit § 11.1.
 const VALID_TRANSITIONS: Record<string, string[]> = {
-  pending: ['confirmed', 'cancelled'],
-  confirmed: ['dispatched', 'cancelled', 'failed', 'needs_reschedule'],
+  pending: ['confirmed', 'en_route', 'cancelled'],
+  confirmed: ['dispatched', 'en_route', 'cancelled', 'failed', 'needs_reschedule'],
   dispatched: ['en_route', 'cancelled', 'failed', 'needs_reschedule'],
   en_route: ['arrived', 'cancelled', 'failed', 'needs_reschedule'],
   arrived: ['in_progress', 'cancelled', 'failed', 'needs_reschedule'],
@@ -960,6 +964,16 @@ export class JobsService {
     const isAdmin = ['owner', 'admin'].includes(userRole || '');
     const previousStatus = job.status;
 
+    // Arc 1 — A transition is "sanctioned forward" when it appears in the canonical
+    // VALID_TRANSITIONS graph for the current status. In that case, no override reason
+    // is required regardless of the caller's role — the action is identical to what a
+    // driver-role user would do. The reason-required gate and the override audit-row
+    // write are reserved for genuine out-of-flow corrections (e.g., backward moves,
+    // terminal-state reversal). Computed once here and referenced by both the reason
+    // gate below and the audit-row write inside the save-transaction.
+    const isSanctionedForward =
+      VALID_TRANSITIONS[previousStatus]?.includes(dto.status) ?? false;
+
     // Drivers / dispatchers must follow forward-only transitions; admin/owner can override
     if (!isAdmin) {
       const allowed = VALID_TRANSITIONS[job.status];
@@ -983,7 +997,10 @@ export class JobsService {
     // override (trimmed, non-empty). Matches the Phase A/B error-code
     // voice — prefix is parseable by the frontend for toast routing.
     // The frontend blocks empty submits; this is the server-side gate.
-    if (isAdmin && previousStatus !== dto.status) {
+    // Arc 1 — gate widened with `!isSanctionedForward` so an admin/owner doing
+    // a normal forward transition (e.g., owner-as-driver tapping "On My Way")
+    // is not treated as an override.
+    if (isAdmin && previousStatus !== dto.status && !isSanctionedForward) {
       const trimmedReason = (dto.overrideReason ?? '').trim();
       if (!trimmedReason) {
         throw new BadRequestException(
@@ -1264,7 +1281,11 @@ export class JobsService {
         job.assigned_driver_id = null as unknown as string;
       }
       const saved = await txJobRepo.save(job);
-      if (isAdmin && previousStatus !== dto.status) {
+      // Arc 1 — audit row fires ONLY on genuine overrides. An admin doing a
+      // sanctioned forward transition is operationally identical to a driver
+      // doing the same transition; writing a `status_override` notification
+      // on that path would pollute reporting and mislead operators.
+      if (isAdmin && previousStatus !== dto.status && !isSanctionedForward) {
         await txNotifRepo.save(
           txNotifRepo.create({
             tenant_id: tenantId,
