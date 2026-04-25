@@ -196,7 +196,7 @@ interface AssetOption {
 
 /* --- Constants --- */
 
-import { deriveDisplayStatus, DISPLAY_STATUS_LABELS, displayStatusColor, formatJobNumber } from "@/lib/job-status";
+import { deriveDisplayStatus, DISPLAY_STATUS_LABELS, displayStatusColor, formatJobNumber, VALID_JOB_TRANSITIONS, canCancelJobByStatus } from "@/lib/job-status";
 import { navigateBack } from "@/lib/navigation";
 
 const JOB_TYPE_COLORS: Record<string, string> = {
@@ -213,14 +213,13 @@ const SIZE_COLORS: Record<string, string> = {
   "40yd": "text-rose-400",
 };
 
-const VALID_TRANSITIONS: Record<string, string[]> = {
-  pending: ["confirmed", "cancelled"],
-  confirmed: ["dispatched", "cancelled"],
-  dispatched: ["en_route", "cancelled"],
-  en_route: ["arrived", "cancelled"],
-  arrived: ["in_progress", "cancelled"],
-  in_progress: ["completed", "cancelled"],
-};
+// Arc J.1e — VALID_TRANSITIONS hoisted to @/lib/job-status as
+// VALID_JOB_TRANSITIONS so the dispatch QuickView and the Rental
+// Lifecycles leg-row kebab can share the same domain rule. The lib
+// table also widens entries for failed and needs_reschedule so the
+// kebab Cancel Job item and the ?cancel=1 deep-link resolve on those
+// non-terminal operator-attention states.
+const VALID_TRANSITIONS = VALID_JOB_TRANSITIONS;
 
 const TRANSITION_STYLES: Record<string, { label: string; className: string; icon: typeof CheckCircle2 }> = {
   // Phase BA — "Mark Ready" (`confirmed`) removed from office-allowed
@@ -511,16 +510,59 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
   // once when both (a) the job has loaded, (b) the role is known
   // and is office, and (c) the query param is truthy. Uses ref-ish
   // state (`overrideAutoOpened`) to prevent re-firing on re-renders.
+  //
+  // Arc J.1e precedence — when both ?cancel=1 and ?override=1 are
+  // present, cancel takes precedence (more destructive, has its own
+  // multi-step confirmation). This effect bails when ?cancel=1 is
+  // also present so the cancel effect below owns the trigger.
   const [overrideAutoOpened, setOverrideAutoOpened] = useState(false);
   useEffect(() => {
     if (overrideAutoOpened) return;
     if (!job || !isOfficeRole) return;
+    if (searchParams.get("cancel") === "1") return;
     if (searchParams.get("override") !== "1") return;
     setOverrideTarget(defaultOverrideTarget(job.status));
     setOverrideReason("");
     setOverrideOpen(true);
     setOverrideAutoOpened(true);
   }, [job, isOfficeRole, searchParams, overrideAutoOpened]);
+
+  // Arc J.1e — ?cancel=1 deep-link consumer. Mirrors the ?override=1
+  // pattern above. The dispatch QuickView and the Rental Lifecycles
+  // leg-row kebab navigate here to auto-open the 3-step cancellation
+  // modal. Domain gate: status must be in VALID_JOB_TRANSITIONS with
+  // 'cancelled' as a valid target — for terminal jobs we toast and
+  // strip rather than open. Role gate: office only (defense-in-depth
+  // — backend RolesGuard is the security boundary). Strips both
+  // ?cancel and ?override on consumption so refresh / back-button
+  // don't re-trigger.
+  const [cancelAutoOpened, setCancelAutoOpened] = useState(false);
+  useEffect(() => {
+    if (cancelAutoOpened) return;
+    if (!job) return;
+    if (searchParams.get("cancel") !== "1") return;
+    setCancelAutoOpened(true);
+    if (!isOfficeRole) {
+      router.replace(`/jobs/${id}`, { scroll: false });
+      return;
+    }
+    if (!canCancelJobByStatus(job.status)) {
+      toast(
+        "warning",
+        FEATURE_REGISTRY.cancel_job_deeplink_terminal?.label ??
+          "This job cannot be cancelled in its current status.",
+      );
+      router.replace(`/jobs/${id}`, { scroll: false });
+      return;
+    }
+    void openCancelModal();
+    router.replace(`/jobs/${id}`, { scroll: false });
+  // openCancelModal is stable across renders (defined inline as a
+  // closure over the page's state setters) — including it in deps
+  // would just re-register on every render. The guard
+  // `cancelAutoOpened` ensures single-fire semantics.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [job, isOfficeRole, searchParams, cancelAutoOpened, id, router, toast]);
   // Refresh signal for <LifecycleContextPanel/>. Bumped after any
   // mutation that can change a job's live status (override,
   // forward transition, cancel) so the panel refetches the
@@ -1442,7 +1484,12 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
                 job.status === "completed" &&
                 (job.job_type === "delivery" || job.job_type === "drop_off");
               const hasLifecycleGroup = canOverride || canSchedule;
-              const canCancel = transitions.includes("cancelled");
+              // Arc J.1e — defense-in-depth role gate. Backend
+              // RolesGuard at POST /jobs/:id/cancel-with-financials
+              // remains the security boundary; hiding the UI element
+              // for non-office roles avoids the visible-button-→-403
+              // dead end and matches the Override Status precedent.
+              const canCancel = isOfficeRole && transitions.includes("cancelled");
               return (
                 <>
                   {/* ── Lifecycle / scheduling group ── */}

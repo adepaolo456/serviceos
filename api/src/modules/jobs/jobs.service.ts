@@ -119,6 +119,7 @@ const EMPTY_DISPATCH_ACTOR: JobsDispatchActor = {
 const VALID_TRANSITIONS: Record<string, string[]> = {
   pending: ['confirmed', 'en_route', 'cancelled'],
   confirmed: ['dispatched', 'en_route', 'cancelled', 'failed', 'needs_reschedule'],
+  scheduled: ['en_route', 'cancelled', 'failed', 'needs_reschedule'],
   dispatched: ['en_route', 'cancelled', 'failed', 'needs_reschedule'],
   en_route: ['arrived', 'cancelled', 'failed', 'needs_reschedule'],
   arrived: ['in_progress', 'cancelled', 'failed', 'needs_reschedule'],

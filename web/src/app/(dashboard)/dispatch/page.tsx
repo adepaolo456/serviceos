@@ -1421,7 +1421,7 @@ export default function DispatchPage() {
         ) : undefined}
       >
         {quickViewJob && qvLoading ? <QuickViewSkeleton /> : quickViewJob && qvDetail ? (
-          <QVContent job={quickViewJob} detail={qvDetail} board={board} creditState={qvCreditState} onAssign={async (jid, did, creditOverride) => {
+          <QVContent job={quickViewJob} detail={qvDetail} board={board} creditState={qvCreditState} canOverrideStatus={canOverrideStatus} onAssign={async (jid, did, creditOverride) => {
             await api.patch(`/jobs/${jid}/assign`, { assignedDriverId: did, ...(creditOverride ? { creditOverride } : {}) }); toast("success", "Reassigned"); await fetchBoard(true);
           }} onRefresh={() => fetchBoard(true)} toast={toast} />
         ) : null}
@@ -2492,9 +2492,10 @@ function JobTileGhost({ job, bulkCount = 1 }: { job: DispatchJob; bulkCount?: nu
    QuickView Content
    ═══════════════════════════════════════════════════ */
 
-function QVContent({ job, detail, board, creditState, onAssign, onRefresh, toast }: {
+function QVContent({ job, detail, board, creditState, canOverrideStatus, onAssign, onRefresh, toast }: {
   job: DispatchJob; detail: any; board: DispatchBoard | null;
   creditState: DispatchCreditState | null;
+  canOverrideStatus: boolean;
   onAssign: (jobId: string, driverId: string | null, creditOverride?: { reason: string }) => Promise<void>;
   onRefresh: () => Promise<void>;
   toast: (type: "success" | "error" | "warning", msg: string) => void;
@@ -2905,48 +2906,25 @@ function QVContent({ job, detail, board, creditState, onAssign, onRefresh, toast
               {FEATURE_REGISTRY.driver_task_delete_action?.label ?? "Delete Task"}
             </button>
           ) : (
-            <button
-              onClick={async () => {
-                if (!confirm("Cancel this job?")) return;
-                try {
-                  // Arc J.1 — preflight the cancellation context. If
-                  // any linked invoice has paid OR unpaid funds, the
-                  // financial-decision modal on the job detail page
-                  // is required (refund/credit/keep authority). Route
-                  // the operator there. Otherwise (zero-balance job),
-                  // fall through to the legacy PATCH path which
-                  // covers the simple cancel-and-be-done case.
-                  const ctx = await api
-                    .get<{
-                      summary?: {
-                        hasPaidInvoices?: boolean;
-                        hasUnpaidInvoices?: boolean;
-                      };
-                    }>(`/jobs/${job.id}/cancellation-context`)
-                    .catch(() => null);
-                  const requiresDecision =
-                    !!ctx?.summary?.hasPaidInvoices ||
-                    !!ctx?.summary?.hasUnpaidInvoices;
-                  if (requiresDecision) {
-                    toast(
-                      "warning",
-                      "This job has invoice activity — open the job detail page to cancel with a financial decision.",
-                    );
-                    window.location.href = `/jobs/${job.id}`;
-                    return;
-                  }
-                  await api.patch(`/jobs/${job.id}/status`, { status: "cancelled" });
-                  toast("success", "Cancelled");
-                  await onRefresh();
-                } catch {
-                  toast("error", "Failed");
-                }
-              }}
-              className="w-full rounded-full border py-2 text-xs font-medium"
-              style={{ borderColor: "var(--t-error)", color: "var(--t-error)" }}
-            >
-              Cancel Job
-            </button>
+            // Arc J.1e — every cancel goes through the 3-step modal
+            // on the job detail page. Click → navigate to
+            // /jobs/:id?cancel=1 → destination page auto-opens the
+            // modal (see jobs/[id]/page.tsx ?cancel=1 effect) → modal
+            // owns confirmation, financial decision, and orchestrator
+            // POST. No preflight here, no window.confirm interstitial,
+            // no legacy PATCH fast path — the modal's Step 3 is the
+            // user's destructive-action ack. Hidden for non-office
+            // roles (defense-in-depth; backend RolesGuard is the
+            // security boundary).
+            canOverrideStatus && (
+              <Link
+                href={`/jobs/${job.id}?cancel=1`}
+                className="w-full rounded-full border py-2 text-xs font-medium text-center"
+                style={{ borderColor: "var(--t-error)", color: "var(--t-error)" }}
+              >
+                {FEATURE_REGISTRY.cancel_job_quickview_action?.label ?? "Cancel Job"}
+              </Link>
+            )
           )}
         </>
       )}

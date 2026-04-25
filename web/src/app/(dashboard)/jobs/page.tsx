@@ -108,7 +108,8 @@ interface PriceQuote { breakdown: { basePrice: number; total: number; tax: numbe
 
 /* ─── Constants ─── */
 
-import { deriveDisplayStatus, DISPLAY_STATUS_LABELS, displayStatusColor, formatJobNumber } from "@/lib/job-status";
+import { deriveDisplayStatus, DISPLAY_STATUS_LABELS, displayStatusColor, formatJobNumber, canCancelJobByStatus } from "@/lib/job-status";
+import { XCircle } from "lucide-react";
 import { saveListViewState, useListViewScrollRestore } from "@/lib/list-view-state";
 
 const STATUS_LABELS: Record<string, string> = {
@@ -256,6 +257,19 @@ function JobsPageContent() {
   // "overdue" lifecycle stat comparison below. Shares the
   // /auth/profile cache with `useModules` — no extra fetch.
   const timezone = useTenantTimezone();
+  // Arc J.1e — current user role for the leg-row Cancel Job kebab
+  // gate. Replicates the established pattern in
+  // dispatch/page.tsx:319-327 and jobs/[id]/page.tsx:499-507; not
+  // lifted into a shared hook this arc to stay scope-bounded.
+  const [currentUserRole, setCurrentUserRole] = useState<string | null>(null);
+  useEffect(() => {
+    api
+      .get<{ role: string }>("/auth/profile")
+      .then((p) => setCurrentUserRole(p?.role ?? null))
+      .catch(() => setCurrentUserRole(null));
+  }, []);
+  const isOfficeRole =
+    currentUserRole === "owner" || currentUserRole === "admin";
   const [jobs, setJobs] = useState<Job[]>([]);
   const [total, setTotal] = useState(0);
   // Phase B2 — initialize statusFilter from the ?status= URL
@@ -1163,9 +1177,47 @@ function JobsPageContent() {
                                   {/* intentionally empty — task-type summary already in the label */}
                                 </td>
                                 <td style={{ padding: "8px 16px" }}>
-                                  <span className="text-[10px] font-medium" style={{ color: displayStatusColor(childDisplay) }}>
-                                    {DISPLAY_STATUS_LABELS[childDisplay]}
-                                  </span>
+                                  <div className="flex items-center gap-2 justify-between">
+                                    <span className="text-[10px] font-medium" style={{ color: displayStatusColor(childDisplay) }}>
+                                      {DISPLAY_STATUS_LABELS[childDisplay]}
+                                    </span>
+                                    {/* Arc J.1e — leg-row Cancel Job entry point.
+                                        Domain gate: canCancelJobByStatus mirrors the
+                                        kebab on jobs/[id]/page.tsx. Role gate: office
+                                        only (defense-in-depth — backend RolesGuard
+                                        is the security boundary). Click → navigate
+                                        to /jobs/:childId?cancel=1 → destination
+                                        page auto-opens the 3-step modal. */}
+                                    {isOfficeRole && canCancelJobByStatus(childJob.status) && (
+                                      <Dropdown
+                                        trigger={
+                                          <button
+                                            type="button"
+                                            onClick={(e) => e.stopPropagation()}
+                                            className="p-1 rounded hover:bg-[var(--t-bg-card-hover)] transition-colors"
+                                            style={{ color: "var(--t-text-muted)" }}
+                                            aria-label={FEATURE_REGISTRY.lifecycle_leg_actions_menu?.label ?? "Leg actions"}
+                                          >
+                                            <MoreHorizontal className="h-3.5 w-3.5" />
+                                          </button>
+                                        }
+                                        align="right"
+                                      >
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            snapshotListState();
+                                            router.push(`/jobs/${childJob.id}?cancel=1`);
+                                          }}
+                                          className="flex w-full min-h-[36px] items-center gap-2 px-3 py-1.5 text-sm text-[var(--t-error)] hover:bg-[var(--t-bg-card-hover)] transition-colors"
+                                        >
+                                          <XCircle className="h-3.5 w-3.5" />
+                                          {FEATURE_REGISTRY.lifecycle_leg_cancel_action?.label ?? "Cancel Job"}
+                                        </button>
+                                      </Dropdown>
+                                    )}
+                                  </div>
                                 </td>
                               </tr>
                             );

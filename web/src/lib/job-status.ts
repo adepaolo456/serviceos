@@ -498,3 +498,37 @@ export function displayFilterToStoredStatuses(displayFilter: string): string[] |
       return null;
   }
 }
+
+// ──────────────────────────────────────────────────────────────────
+// Arc J.1e — VALID_JOB_TRANSITIONS + canCancelJobByStatus
+//
+// Hoisted from jobs/[id]/page.tsx so the dispatch QuickView body and
+// the Rental Lifecycles leg-row kebab can share the same domain rule.
+// Mirrors the canonical server-side table at
+// api/src/modules/jobs/jobs.service.ts:VALID_TRANSITIONS.
+//
+// Arc J.1e widening: failed and needs_reschedule are non-terminal
+// operator-attention states; the office must either reschedule or
+// cancel them. Adding cancelled here surfaces the kebab Cancel Job
+// item and lets ?cancel=1 deep-links resolve. completed and
+// cancelled remain absent — those are truly terminal and the UI
+// must hide the cancel affordance.
+// ──────────────────────────────────────────────────────────────────
+
+export const VALID_JOB_TRANSITIONS: Record<string, string[]> = {
+  pending: ['confirmed', 'cancelled'],
+  confirmed: ['dispatched', 'cancelled'],
+  scheduled: ['en_route', 'cancelled'],
+  dispatched: ['en_route', 'cancelled'],
+  en_route: ['arrived', 'cancelled'],
+  arrived: ['in_progress', 'cancelled'],
+  in_progress: ['completed', 'cancelled'],
+  failed: ['cancelled'],
+  needs_reschedule: ['cancelled'],
+};
+
+export function canCancelJobByStatus(status: string | null | undefined): boolean {
+  if (!status) return false;
+  return (VALID_JOB_TRANSITIONS[status] ?? []).includes('cancelled');
+}
+
