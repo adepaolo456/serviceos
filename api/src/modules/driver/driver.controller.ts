@@ -30,6 +30,12 @@ export class DriverController {
       .where('j.tenant_id = :tenantId', { tenantId })
       .andWhere('j.assigned_driver_id = :userId', { userId })
       .andWhere('j.scheduled_date = :today', { today })
+      // Arc H — hide terminal-state jobs from the driver app's today list.
+      // Without this, a driver with a stale assigned_driver_id on a cancelled
+      // or completed job still saw it in the queue (audit archH-phase0 § 7/9).
+      .andWhere('j.status NOT IN (:...hidden)', {
+        hidden: ['cancelled', 'completed', 'failed'],
+      })
       .orderBy('j.route_order', 'ASC', 'NULLS LAST')
       .addOrderBy('j.scheduled_window_start', 'ASC', 'NULLS LAST')
       .getMany();
@@ -50,7 +56,18 @@ export class DriverController {
       .where('j.tenant_id = :tenantId', { tenantId })
       .andWhere('j.assigned_driver_id = :userId', { userId });
 
-    if (status) qb.andWhere('j.status = :status', { status });
+    if (status) {
+      // Caller asked explicitly for a specific status — respect it (a driver
+      // legitimately may want to view their cancelled / completed history).
+      qb.andWhere('j.status = :status', { status });
+    } else {
+      // Arc H — default exclusion of terminal statuses. Without this, the
+      // driver app's "all jobs" list defaulted to including stale
+      // cancelled/completed/failed assignments (audit archH-phase0 § 7/9).
+      qb.andWhere('j.status NOT IN (:...hidden)', {
+        hidden: ['cancelled', 'completed', 'failed'],
+      });
+    }
     if (dateFrom) qb.andWhere('j.scheduled_date >= :dateFrom', { dateFrom });
     if (dateTo) qb.andWhere('j.scheduled_date <= :dateTo', { dateTo });
 

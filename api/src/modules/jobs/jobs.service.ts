@@ -123,13 +123,31 @@ const VALID_TRANSITIONS: Record<string, string[]> = {
   needs_reschedule: ['pending', 'confirmed', 'dispatched', 'cancelled'],
 };
 
-// Raw statuses that `deriveFromStatusString` in
-// `web/src/lib/job-status.ts` maps to the "unassigned" display bucket.
-// Keep in sync with that function's switch — any new raw status that
-// renders as "Unassigned" on the timeline must be added here too.
-// Used by changeStatus below to couple driver-clear into admin
-// overrides that target the Unassigned display state.
-const UNASSIGNED_TARGETS = new Set(['pending', 'confirmed']);
+// Arc H — statuses whose PERSISTED operational state makes the assigned-driver
+// FK meaningless and triggers a driver-clear coupling on save.
+//
+// The set is governed by what the row will actually look like AFTER save, not
+// by the request's `dto.status` shape. Two notable absences:
+//
+//  • `needs_reschedule` — dispatch still owns these jobs (re-route or
+//    reschedule), so the driver assignment is preserved as routing context.
+//  • `failed` — `dto.status === 'failed'` is rewritten to
+//    `job.status = 'needs_reschedule'` at jobs.service.ts:~1201 BEFORE save,
+//    so the persisted row is `needs_reschedule`. Including `failed` here
+//    would diverge the driver-clear outcome between two request shapes that
+//    produce the identical persisted row — a latent inconsistency.
+//
+// This set is intentionally NOT the same as the dispatch / driver-app
+// terminal filter list (which DOES include `failed`). Filters operate on
+// what's already persisted and should hide anything terminal-for-routing;
+// the clear-set operates on the FK write path and should only fire when the
+// persisted state is one where the driver field is operationally moot.
+const CLEAR_DRIVER_TARGETS: ReadonlySet<string> = new Set([
+  'pending',
+  'confirmed',
+  'cancelled',
+  'completed',
+]);
 
 @Injectable()
 export class JobsService {
@@ -1272,15 +1290,32 @@ export class JobsService {
       // this job back to Unassigned" means status AND driver. Without
       // the clear, deriveDisplayStatus's object-form live-driver branch
       // keeps rendering "Assigned" even after status reverts.
-      // Inline rather than delegating — no dedicated unassignDriver
-      // method exists; mirrors the existing cascadeDelete null-out
-      // pattern at jobs.service.ts:1592 and :1633. Runs inside this
-      // transaction so the field clear + save + audit-log write
-      // commit or roll back as one unit.
-      if (isAdmin && UNASSIGNED_TARGETS.has(dto.status)) {
+      //
+      // Arc H — Bug 1 fix. The in-memory mutation below is kept so any
+      // post-transaction code that reads `savedJob.assigned_driver_id`
+      // sees the cleared state, but the FK null is PERSISTED via a
+      // separate column-only Repository.update call AFTER save() — the
+      // cascadeDelete-style pattern at jobs.service.ts:1635. Without
+      // that, TypeORM's Repository.save(entity) reconciles the loaded
+      // `assigned_driver` relation against the FK column and rehydrates
+      // the FK from the relation's id, silently overwriting the null.
+      // This is what the original Phase 1.7 comment claimed to mirror
+      // ("cascadeDelete null-out pattern at :1633") but didn't —
+      // cascadeDelete uses Repository.update (column-only); changeStatus
+      // was using Repository.save (entity-shaped) which has the
+      // reconciliation behavior. Tests #7/#9 in jobs.service.spec.ts pass
+      // assertions on the in-memory entity; production needs the FK
+      // null to actually hit the DB, which requires the update call.
+      if (isAdmin && CLEAR_DRIVER_TARGETS.has(dto.status)) {
         job.assigned_driver_id = null as unknown as string;
       }
       const saved = await txJobRepo.save(job);
+      if (isAdmin && CLEAR_DRIVER_TARGETS.has(dto.status)) {
+        await txJobRepo.update(
+          { id: job.id, tenant_id: tenantId },
+          { assigned_driver_id: null },
+        );
+      }
       // Arc 1 — audit row fires ONLY on genuine overrides. An admin doing a
       // sanctioned forward transition is operationally identical to a driver
       // doing the same transition; writing a `status_override` notification

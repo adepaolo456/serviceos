@@ -54,7 +54,7 @@ import { AlertService } from '../alerts/services/alert.service';
 import { DispatchCreditEnforcementService } from '../dispatch/dispatch-credit-enforcement.service';
 
 function makeJob(partial: Partial<Job> = {}): Job {
-  return {
+  const base = {
     id: 'job-1',
     tenant_id: 'tenant-1',
     job_type: 'delivery',
@@ -68,7 +68,20 @@ function makeJob(partial: Partial<Job> = {}): Job {
     service_address: { lat: 1, lng: 2 },
     is_failed_trip: false,
     ...partial,
-  } as any as Job;
+  } as Record<string, unknown>;
+  // Arc H — match the production findOne shape: when assigned_driver_id is set,
+  // findOne also populates the `assigned_driver` relation via
+  // `leftJoinAndSelect('j.assigned_driver', 'assigned_driver')`. Tests that
+  // omitted this relation hid the TypeORM relation-FK reconciliation bug class
+  // (see archH-phase0-audit-report § 3) — `Repository.save(entity)` on an
+  // entity with both the FK and the loaded relation will rehydrate the FK
+  // from the relation, silently overwriting an explicit `null`. Without the
+  // relation, the test mock just records what the in-memory entity looked
+  // like and the bug stays invisible.
+  if (base.assigned_driver_id && !base.assigned_driver) {
+    base.assigned_driver = { id: base.assigned_driver_id };
+  }
+  return base as unknown as Job;
 }
 
 interface Harness {
@@ -88,6 +101,10 @@ interface Harness {
   txJobSave: jest.Mock;
   txNotifCreate: jest.Mock;
   txNotifSave: jest.Mock;
+  // Arc H — Bug 1 fix issues the FK null via Repository.update(criteria,
+  // partial) AFTER the save, to bypass TypeORM's relation-FK reconciliation.
+  // Distinct mock so tests can assert the update call directly.
+  txJobUpdate: jest.Mock;
 }
 
 async function buildHarness(jobOverrides: Partial<Job> = {}): Promise<Harness> {
@@ -146,12 +163,13 @@ async function buildHarness(jobOverrides: Partial<Job> = {}): Promise<Harness> {
   // the same mocks — the visible call count remains accurate.
   const transactionCommit = jest.fn();
   const txJobSave = jest.fn((x: any) => Promise.resolve(x));
+  const txJobUpdate = jest.fn().mockResolvedValue({ affected: 1, raw: [], generatedMaps: [] });
   const txNotifCreate = jest.fn((x: any) => x);
   const txNotifSave = jest.fn().mockResolvedValue(undefined);
   const dataSource: any = {
     transaction: jest.fn(
       async (cb: (em: EntityManager) => Promise<unknown>) => {
-        const trxJob = { save: txJobSave };
+        const trxJob = { save: txJobSave, update: txJobUpdate };
         const trxNotif = { save: txNotifSave, create: txNotifCreate };
         const trx: any = {
           getRepository: (entity: unknown) => {
@@ -219,6 +237,7 @@ async function buildHarness(jobOverrides: Partial<Job> = {}): Promise<Harness> {
     autoCloseSpy,
     transactionCommit,
     txJobSave,
+    txJobUpdate,
     txNotifCreate,
     txNotifSave,
   };
@@ -527,6 +546,14 @@ describe('JobsService.changeStatus — Phase 1 override scope', () => {
     expect(h.txJobSave).toHaveBeenCalledWith(
       expect.objectContaining({ status: 'confirmed', assigned_driver_id: null }),
     );
+    // Arc H — Bug 1 fix issues the FK null via Repository.update(criteria, partial)
+    // after the Repository.save(entity) to bypass TypeORM's relation-FK
+    // reconciliation. Assert the update call directly; the save assertion above
+    // remains valid for the status change.
+    expect(h.txJobUpdate).toHaveBeenCalledWith(
+      { id: 'job-1', tenant_id: 'tenant-1' },
+      { assigned_driver_id: null },
+    );
     expect(h.transactionCommit).toHaveBeenCalledTimes(1);
   });
 
@@ -565,6 +592,12 @@ describe('JobsService.changeStatus — Phase 1 override scope', () => {
 
     expect(h.txJobSave).toHaveBeenCalledWith(
       expect.objectContaining({ status: 'pending', assigned_driver_id: null }),
+    );
+    // Arc H — see test #7 for the rationale: the FK null is persisted via
+    // a separate column-only Repository.update call after the save.
+    expect(h.txJobUpdate).toHaveBeenCalledWith(
+      { id: 'job-1', tenant_id: 'tenant-1' },
+      { assigned_driver_id: null },
     );
   });
 
@@ -754,6 +787,219 @@ describe('JobsService.changeStatus — Phase 1 override scope', () => {
       );
       expect(h.txNotifCreate).not.toHaveBeenCalled();
       expect(h.transactionCommit).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // ──────────────────────────────────────────────────────────────────────
+  // Arc H — driver-clear hygiene
+  // ──────────────────────────────────────────────────────────────────────
+  // Covers Bug 1 (override-to-Unassigned actually nulls the FK in the DB
+  // write, not just on the in-memory entity), Bug 2 (terminal-target overrides
+  // also clear the driver), and the negative cases that prove the gate is
+  // bounded (sanctioned-forward steps, needs_reschedule). See
+  // archH-phase0-audit-report.md.
+
+  describe('Arc H — driver-clear hygiene', () => {
+    // #H1 — Bug 1 reproduction: override `dispatched → confirmed` (a target
+    // in CLEAR_DRIVER_TARGETS) by an admin issues the column-only update so
+    // the FK null actually persists, bypassing TypeORM's relation-FK
+    // reconciliation. (The pre-existing test #7 also asserts this; H1 is a
+    // standalone coverage point so a future refactor of #7 doesn't lose it.)
+    it('H1. override dispatched → confirmed by owner — issues column-only FK update', async () => {
+      const h = await buildHarness({
+        status: 'dispatched',
+        assigned_driver_id: 'u-driver',
+        job_type: 'delivery',
+      } as Partial<Job>);
+
+      await h.service.changeStatus(
+        'tenant-1',
+        'job-1',
+        { status: 'confirmed', overrideReason: 'roll back' } as any,
+        'owner',
+      );
+
+      expect(h.txJobUpdate).toHaveBeenCalledWith(
+        { id: 'job-1', tenant_id: 'tenant-1' },
+        { assigned_driver_id: null },
+      );
+      expect(h.txJobUpdate).toHaveBeenCalledTimes(1);
+    });
+
+    // #H2 — Bug 2 reproduction: override `dispatched → cancelled` by an admin
+    // (the override-modal cancel path) also clears the driver. Pre-Arc-H the
+    // UNASSIGNED_TARGETS set didn't include `cancelled`, so this never fired.
+    it('H2. override dispatched → cancelled by admin — clears the driver via update', async () => {
+      const h = await buildHarness({
+        status: 'dispatched',
+        assigned_driver_id: 'u-driver',
+        job_type: 'pickup',
+      } as Partial<Job>);
+
+      await h.service.changeStatus(
+        'tenant-1',
+        'job-1',
+        { status: 'cancelled', overrideReason: 'customer no-show' } as any,
+        'admin',
+      );
+
+      expect(h.txJobUpdate).toHaveBeenCalledWith(
+        { id: 'job-1', tenant_id: 'tenant-1' },
+        { assigned_driver_id: null },
+      );
+    });
+
+    // #H3 — Web cancel-modal payload (`{status:'cancelled', cancellationReason}`,
+    // no `overrideReason`). The transition is sanctioned-forward (cancelled
+    // is in VALID_TRANSITIONS[confirmed]), so the override-reason gate is
+    // skipped per Arc 1, but the driver-clear should still fire because the
+    // target is in CLEAR_DRIVER_TARGETS.
+    it('H3. cancel-modal payload by admin — clears the driver via update without overrideReason', async () => {
+      const h = await buildHarness({
+        status: 'confirmed',
+        assigned_driver_id: 'u-driver',
+        job_type: 'delivery',
+      } as Partial<Job>);
+
+      await h.service.changeStatus(
+        'tenant-1',
+        'job-1',
+        { status: 'cancelled', cancellationReason: 'customer request' } as any,
+        'admin',
+      );
+
+      expect(h.txJobUpdate).toHaveBeenCalledWith(
+        { id: 'job-1', tenant_id: 'tenant-1' },
+        { assigned_driver_id: null },
+      );
+    });
+
+    // #H4 — Defensive negative: a sanctioned forward step targeting a status
+    // NOT in CLEAR_DRIVER_TARGETS leaves the driver intact. Arrived is the
+    // canonical "still actively executing" state.
+    it('H4. en_route → arrived by driver — does NOT issue an FK update', async () => {
+      const h = await buildHarness({
+        status: 'en_route',
+        assigned_driver_id: 'u-driver',
+        job_type: 'pickup',
+      } as Partial<Job>);
+
+      await h.service.changeStatus(
+        'tenant-1',
+        'job-1',
+        { status: 'arrived' } as any,
+        'driver',
+        'u-driver',
+      );
+
+      expect(h.txJobUpdate).not.toHaveBeenCalled();
+    });
+
+    // #H5 — Per the Arc H guardrail: `needs_reschedule` is NOT terminal.
+    // Dispatch still owns those jobs and needs the assignment for rerouting.
+    it('H5. override dispatched → needs_reschedule by owner — does NOT issue an FK update', async () => {
+      const h = await buildHarness({
+        status: 'dispatched',
+        assigned_driver_id: 'u-driver',
+        job_type: 'delivery',
+      } as Partial<Job>);
+
+      await h.service.changeStatus(
+        'tenant-1',
+        'job-1',
+        { status: 'needs_reschedule', overrideReason: 'customer asked' } as any,
+        'owner',
+      );
+
+      expect(h.txJobUpdate).not.toHaveBeenCalled();
+    });
+
+    // #H6 — A genuine override (admin, target in CLEAR_DRIVER_TARGETS, NOT
+    // sanctioned-forward) writes BOTH the override audit row (Phase 1.7
+    // invariant from Arc 1) AND the FK update. The two side effects co-fire
+    // inside the same save-transaction.
+    it('H6. genuine override fires both audit row and FK update inside one transaction', async () => {
+      const h = await buildHarness({
+        status: 'completed',
+        assigned_driver_id: 'u-driver',
+        job_type: 'pickup',
+      } as Partial<Job>);
+
+      await h.service.changeStatus(
+        'tenant-1',
+        'job-1',
+        { status: 'confirmed', overrideReason: 'mistakenly completed' } as any,
+        'owner',
+      );
+
+      // Audit row from Arc 1 still writes.
+      expect(h.txNotifCreate).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'status_override' }),
+      );
+      // Plus the Arc H column-only FK null.
+      expect(h.txJobUpdate).toHaveBeenCalledWith(
+        { id: 'job-1', tenant_id: 'tenant-1' },
+        { assigned_driver_id: null },
+      );
+      // Atomic — single committed transaction.
+      expect(h.transactionCommit).toHaveBeenCalledTimes(1);
+    });
+
+    // #H7 — Drift guard: assert CLEAR_DRIVER_TARGETS membership is exactly
+    // {pending, confirmed, cancelled, completed}. Catches accidental
+    // additions (especially `needs_reschedule` or `failed`, both of which
+    // would re-introduce the persisted-state-vs-request-shape divergence
+    // documented above the constant) or accidental removals. The constant
+    // is module-private; we assert it indirectly by exercising every
+    // membership case end-to-end.
+    it('H7. CLEAR_DRIVER_TARGETS contains the right members (drift guard)', async () => {
+      // Each tuple: [previousStatus, dtoStatus, expectedClear].
+      // dtoStatus enumerates statuses the system writes; expectedClear marks
+      // whether the FK update should fire. Job type is `delivery` so none of
+      // the per-type completion gates (dump-slip for pickup/exchange/removal,
+      // drop-off-asset for exchange) intercept the test path.
+      //
+      // `failed` is NOT in CLEAR_DRIVER_TARGETS — the service rewrites
+      // `dto.status='failed'` to `job.status='needs_reschedule'` before
+      // save, so the persisted row would be needs_reschedule (driver-
+      // preserved). Including failed in the set would diverge driver-clear
+      // outcomes between two request shapes producing the identical row.
+      // Negative coverage for `needs_reschedule` already proves the
+      // persisted-state rule (#H5 plus the case below).
+      const cases: Array<[string, string, boolean]> = [
+        ['dispatched', 'pending', true],
+        ['dispatched', 'confirmed', true],
+        ['dispatched', 'cancelled', true],
+        ['in_progress', 'completed', true],
+        ['dispatched', 'en_route', false],
+        ['en_route', 'arrived', false],
+        ['arrived', 'in_progress', false],
+        ['dispatched', 'needs_reschedule', false],
+      ];
+
+      for (const [previousStatus, dtoStatus, expectedClear] of cases) {
+        const h = await buildHarness({
+          status: previousStatus,
+          assigned_driver_id: 'u-driver',
+          job_type: 'delivery',
+        } as Partial<Job>);
+
+        await h.service.changeStatus(
+          'tenant-1',
+          'job-1',
+          { status: dtoStatus, overrideReason: 'drift-guard' } as any,
+          'owner',
+        );
+
+        if (expectedClear) {
+          expect(h.txJobUpdate).toHaveBeenCalledWith(
+            { id: 'job-1', tenant_id: 'tenant-1' },
+            { assigned_driver_id: null },
+          );
+        } else {
+          expect(h.txJobUpdate).not.toHaveBeenCalled();
+        }
+      }
     });
   });
 });

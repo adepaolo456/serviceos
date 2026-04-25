@@ -59,6 +59,14 @@ export class DispatchService {
       .leftJoinAndSelect('j.asset', 'asset')
       .where('j.tenant_id = :tenantId', { tenantId })
       .andWhere('j.scheduled_date = :date', { date })
+      // Arc H — hide terminal-state jobs from the per-driver columns. Pre-Arc-H
+      // the board had no status filter, so cancelled/completed/failed jobs that
+      // retained a stale assigned_driver_id leaked onto driver routes (audit
+      // archH-phase0 § 5/9). `needs_reschedule` is intentionally NOT hidden —
+      // dispatchers act on those.
+      .andWhere('j.status NOT IN (:...hidden)', {
+        hidden: ['cancelled', 'completed', 'failed'],
+      })
       .orderBy('j.route_order', 'ASC', 'NULLS LAST')
       .addOrderBy('j.scheduled_window_start', 'ASC', 'NULLS LAST')
       .getMany();
