@@ -1915,6 +1915,13 @@ export const FEATURE_REGISTRY: Record<string, FeatureDescription> = {
   invoice_send_requires_admin: { id: "invoice_send_requires_admin", label: "Only Admins, Owners, and Dispatchers can send invoices", category: "billing", shortDescription: "Toast copy when the backend returns invoice_send_requires_admin. Defense-in-depth — the UI already hides the button for non-office roles.", guideDescription: "", routeOrSurface: "/invoices", tenantOverrideKey: "invoice_send_requires_admin", isUserFacing: true, isGuideEligible: false, keywords: ["invoice", "send", "role", "admin"] },
   invoice_send_email_failed: { id: "invoice_send_email_failed", label: "Email delivery failed. Please try again.", category: "billing", shortDescription: "Toast copy when Resend returns failure. Constraint 2: invoice.sent_at is NOT stamped on this path — operator can retry with a fresh attempt.", guideDescription: "", routeOrSurface: "/invoices", tenantOverrideKey: "invoice_send_email_failed", isUserFacing: true, isGuideEligible: false, keywords: ["invoice", "send", "failed", "email"] },
 
+  // ── Arc J.1f PR 3 — Invoice status badges on Financials card (Job Detail) ──
+  // The chain-scoped invoices list on /jobs/[id] previously hardcoded "Unpaid"
+  // as the fallback string and had no branch for voided invoices, causing
+  // voided invoices to render as "Unpaid" with overdue/warning colors.
+  invoice_status_voided: { id: "invoice_status_voided", label: "Voided", category: "billing", shortDescription: "Status badge for a voided invoice on the chain-scoped invoices list inside the Financials card.", guideDescription: "", routeOrSurface: "/jobs/[id]", tenantOverrideKey: "invoice_status_voided", isUserFacing: true, isGuideEligible: false, keywords: ["invoice", "status", "voided"] },
+  invoice_status_unpaid: { id: "invoice_status_unpaid", label: "Unpaid", category: "billing", shortDescription: "Fallback status badge for an invoice that is neither paid, draft, nor voided on the chain-scoped invoices list inside the Financials card.", guideDescription: "", routeOrSurface: "/jobs/[id]", tenantOverrideKey: "invoice_status_unpaid", isUserFacing: true, isGuideEligible: false, keywords: ["invoice", "status", "unpaid"] },
+
   // ── Pickup modal header alias for Phase 16.1 ──
   // The new shared modal uses labelKey(jobType, "modal") to
   // pick the header. For pickup we reuse the existing

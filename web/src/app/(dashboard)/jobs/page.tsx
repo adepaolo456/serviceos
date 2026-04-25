@@ -1189,33 +1189,42 @@ function JobsPageContent() {
                                         to /jobs/:childId?cancel=1 → destination
                                         page auto-opens the 3-step modal. */}
                                     {isOfficeRole && canCancelJobByStatus(childJob.status) && (
-                                      <Dropdown
-                                        trigger={
+                                      <span
+                                        onClick={(e) => e.stopPropagation()}
+                                        className="inline-flex"
+                                      >
+                                        <Dropdown
+                                          trigger={
+                                            <button
+                                              type="button"
+                                              // No onClick — let the click bubble to the Dropdown's
+                                              // wrapping div so the menu opens. stopPropagation moved
+                                              // to the outer <span> to suppress the row's navigation
+                                              // handler without swallowing the menu-open trigger.
+                                              // See arcJ1f-phase0-audit-report.md §J.1f-bug3.
+                                              className="p-1 rounded hover:bg-[var(--t-bg-card-hover)] transition-colors"
+                                              style={{ color: "var(--t-text-muted)" }}
+                                              aria-label={FEATURE_REGISTRY.lifecycle_leg_actions_menu?.label ?? "Leg actions"}
+                                            >
+                                              <MoreHorizontal className="h-3.5 w-3.5" />
+                                            </button>
+                                          }
+                                          align="right"
+                                        >
                                           <button
                                             type="button"
-                                            onClick={(e) => e.stopPropagation()}
-                                            className="p-1 rounded hover:bg-[var(--t-bg-card-hover)] transition-colors"
-                                            style={{ color: "var(--t-text-muted)" }}
-                                            aria-label={FEATURE_REGISTRY.lifecycle_leg_actions_menu?.label ?? "Leg actions"}
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              snapshotListState();
+                                              router.push(`/jobs/${childJob.id}?cancel=1`);
+                                            }}
+                                            className="flex w-full min-h-[36px] items-center gap-2 px-3 py-1.5 text-sm text-[var(--t-error)] hover:bg-[var(--t-bg-card-hover)] transition-colors"
                                           >
-                                            <MoreHorizontal className="h-3.5 w-3.5" />
+                                            <XCircle className="h-3.5 w-3.5" />
+                                            {FEATURE_REGISTRY.lifecycle_leg_cancel_action?.label ?? "Cancel Job"}
                                           </button>
-                                        }
-                                        align="right"
-                                      >
-                                        <button
-                                          type="button"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            snapshotListState();
-                                            router.push(`/jobs/${childJob.id}?cancel=1`);
-                                          }}
-                                          className="flex w-full min-h-[36px] items-center gap-2 px-3 py-1.5 text-sm text-[var(--t-error)] hover:bg-[var(--t-bg-card-hover)] transition-colors"
-                                        >
-                                          <XCircle className="h-3.5 w-3.5" />
-                                          {FEATURE_REGISTRY.lifecycle_leg_cancel_action?.label ?? "Cancel Job"}
-                                        </button>
-                                      </Dropdown>
+                                        </Dropdown>
+                                      </span>
                                     )}
                                   </div>
                                 </td>

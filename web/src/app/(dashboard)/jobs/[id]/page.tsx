@@ -2437,7 +2437,7 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
                           </span>
                         </div>
                         <div className="flex items-center gap-2">
-                          {!isPaid && Number(inv.balanceDue) > 0 && (
+                          {!isPaid && Number(inv.balanceDue) > 0 && inv.status !== "voided" && (
                             <span
                               className="text-[10px] font-semibold tabular-nums"
                               style={{ color: "var(--t-warning)" }}
@@ -2450,12 +2450,20 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
                             style={{
                               color: isPaid
                                 ? "var(--t-accent)"
-                                : isOverdue
-                                  ? "var(--t-error)"
-                                  : "var(--t-warning)",
+                                : inv.status === "voided"
+                                  ? "var(--t-text-muted)"
+                                  : isOverdue
+                                    ? "var(--t-error)"
+                                    : "var(--t-warning)",
                             }}
                           >
-                            {isPaid ? "Paid" : inv.status === "draft" ? "Draft" : "Unpaid"}
+                            {isPaid
+                              ? "Paid"
+                              : inv.status === "draft"
+                                ? "Draft"
+                                : inv.status === "voided"
+                                  ? (FEATURE_REGISTRY.invoice_status_voided?.label ?? "Voided")
+                                  : (FEATURE_REGISTRY.invoice_status_unpaid?.label ?? "Unpaid")}
                           </span>
                         </div>
                       </Link>
