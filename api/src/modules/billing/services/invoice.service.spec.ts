@@ -243,3 +243,128 @@ describe('InvoiceService.sendInvoice — Phase 1.8', () => {
     expect(h.transactionCommit).not.toHaveBeenCalled();
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────
+// Arc J.1f PR 2 — InvoiceService.findAll jobId filter (J.2.B)
+//
+// Closes the within-tenant cross-customer Invoice Summary leak: prior to
+// this fix, /invoices?jobId=... silently dropped the param (NestJS
+// whitelist:true ValidationPipe stripped the undeclared field), and
+// findAll returned the tenant-wide latest invoice instead of the job's
+// invoice. Tests assert that the new branch is AND'd with the existing
+// tenant_id where-clause — never substituted for it.
+// ─────────────────────────────────────────────────────────────────────────
+
+interface FindAllHarness {
+  service: InvoiceService;
+  qb: {
+    leftJoinAndSelect: jest.Mock;
+    where: jest.Mock;
+    andWhere: jest.Mock;
+    orderBy: jest.Mock;
+    addOrderBy: jest.Mock;
+    skip: jest.Mock;
+    take: jest.Mock;
+    getManyAndCount: jest.Mock;
+  };
+}
+
+function makeQueryBuilderMock(rows: unknown[] = []): FindAllHarness['qb'] {
+  const qb: any = {};
+  // Every chainable method returns the same mock instance so the fluent
+  // builder chain in findAll resolves end-to-end.
+  qb.leftJoinAndSelect = jest.fn().mockReturnValue(qb);
+  qb.where = jest.fn().mockReturnValue(qb);
+  qb.andWhere = jest.fn().mockReturnValue(qb);
+  qb.orderBy = jest.fn().mockReturnValue(qb);
+  qb.addOrderBy = jest.fn().mockReturnValue(qb);
+  qb.skip = jest.fn().mockReturnValue(qb);
+  qb.take = jest.fn().mockReturnValue(qb);
+  qb.getManyAndCount = jest.fn().mockResolvedValue([rows, rows.length]);
+  return qb;
+}
+
+async function buildFindAllHarness(rows: unknown[] = []): Promise<FindAllHarness> {
+  const qb = makeQueryBuilderMock(rows);
+
+  const invoiceRepo = {
+    createQueryBuilder: jest.fn().mockReturnValue(qb),
+    findOne: jest.fn(),
+    update: jest.fn(),
+  };
+
+  const stubRepo = () => ({
+    find: jest.fn().mockResolvedValue([]),
+    findOne: jest.fn(),
+    save: jest.fn(),
+    create: jest.fn((x: unknown) => x),
+    update: jest.fn(),
+  });
+
+  const dataSource: any = {
+    query: jest.fn().mockResolvedValue([{ count: '0' }]),
+    transaction: jest.fn(),
+  };
+
+  const module: TestingModule = await Test.createTestingModule({
+    providers: [
+      InvoiceService,
+      { provide: getRepositoryToken(Invoice), useValue: invoiceRepo },
+      { provide: getRepositoryToken(InvoiceLineItem), useValue: stubRepo() },
+      { provide: getRepositoryToken(InvoiceRevision), useValue: stubRepo() },
+      { provide: getRepositoryToken(Payment), useValue: stubRepo() },
+      { provide: getRepositoryToken(CreditMemo), useValue: stubRepo() },
+      { provide: getRepositoryToken(JobCost), useValue: stubRepo() },
+      { provide: getRepositoryToken(Job), useValue: stubRepo() },
+      { provide: getRepositoryToken(Customer), useValue: stubRepo() },
+      { provide: getRepositoryToken(TaskChainLink), useValue: stubRepo() },
+      { provide: PriceResolutionService, useValue: { resolvePrice: jest.fn() } },
+      { provide: NotificationsService, useValue: { send: jest.fn() } },
+      { provide: DataSource, useValue: dataSource },
+    ],
+  }).compile();
+
+  return { service: module.get(InvoiceService), qb };
+}
+
+describe('InvoiceService.findAll — Arc J.1f PR 2 (J.2.B jobId filter)', () => {
+  // Real UUID-format strings — defensive realism in case any future test path
+  // exercises the DTO ValidationPipe (e.g., a controller-level e2e test).
+  const JOB_A_UUID = '11111111-1111-4111-8111-111111111111';
+  const JOB_TENANT_A_UUID = '22222222-2222-4222-8222-222222222222';
+
+  it('respects jobId — applies tenant scope AND i.job_id = :jobId branch', async () => {
+    const h = await buildFindAllHarness([]);
+
+    await h.service.findAll('tenant-1', { jobId: JOB_A_UUID, limit: 10 } as any);
+
+    // Existing tenant scope preserved.
+    expect(h.qb.where).toHaveBeenCalledWith('i.tenant_id = :tenantId', {
+      tenantId: 'tenant-1',
+    });
+    // New jobId branch applied via andWhere — AND'd, not substituted.
+    expect(h.qb.andWhere).toHaveBeenCalledWith('i.job_id = :jobId', {
+      jobId: JOB_A_UUID,
+    });
+  });
+
+  it('cross-tenant jobId returns empty — tenant_id and job_id are AND composed', async () => {
+    const h = await buildFindAllHarness([]);
+
+    // Query tenant B but jobId belongs to tenant A — the AND composition
+    // means no row can match both clauses, so result is empty.
+    const result = await h.service.findAll('tenant-B', {
+      jobId: JOB_TENANT_A_UUID,
+      limit: 10,
+    } as any);
+
+    expect(result.data).toEqual([]);
+    // Both clauses recorded on the query builder.
+    expect(h.qb.where).toHaveBeenCalledWith('i.tenant_id = :tenantId', {
+      tenantId: 'tenant-B',
+    });
+    expect(h.qb.andWhere).toHaveBeenCalledWith('i.job_id = :jobId', {
+      jobId: JOB_TENANT_A_UUID,
+    });
+  });
+});

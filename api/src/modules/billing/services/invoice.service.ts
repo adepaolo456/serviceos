@@ -505,6 +505,9 @@ export class InvoiceService {
         customerId: query.customerId,
       });
     }
+    if (query.jobId) {
+      qb.andWhere('i.job_id = :jobId', { jobId: query.jobId });
+    }
     if (query.dateFrom) {
       qb.andWhere('i.invoice_date >= :dateFrom', { dateFrom: query.dateFrom });
     }

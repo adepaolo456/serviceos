@@ -11,6 +11,10 @@ export class ListInvoicesQueryDto {
   customerId?: string;
 
   @IsOptional()
+  @IsUUID()
+  jobId?: string;
+
+  @IsOptional()
   @IsString()
   dateFrom?: string;
 
