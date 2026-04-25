@@ -2905,8 +2905,48 @@ function QVContent({ job, detail, board, creditState, onAssign, onRefresh, toast
               {FEATURE_REGISTRY.driver_task_delete_action?.label ?? "Delete Task"}
             </button>
           ) : (
-            <button onClick={async () => { if (!confirm("Cancel this job?")) return; try { await api.patch(`/jobs/${job.id}/status`, { status: "cancelled" }); toast("success", "Cancelled"); await onRefresh(); } catch { toast("error", "Failed"); } }}
-              className="w-full rounded-full border py-2 text-xs font-medium" style={{ borderColor: "var(--t-error)", color: "var(--t-error)" }}>Cancel Job</button>
+            <button
+              onClick={async () => {
+                if (!confirm("Cancel this job?")) return;
+                try {
+                  // Arc J.1 — preflight the cancellation context. If
+                  // any linked invoice has paid OR unpaid funds, the
+                  // financial-decision modal on the job detail page
+                  // is required (refund/credit/keep authority). Route
+                  // the operator there. Otherwise (zero-balance job),
+                  // fall through to the legacy PATCH path which
+                  // covers the simple cancel-and-be-done case.
+                  const ctx = await api
+                    .get<{
+                      summary?: {
+                        hasPaidInvoices?: boolean;
+                        hasUnpaidInvoices?: boolean;
+                      };
+                    }>(`/jobs/${job.id}/cancellation-context`)
+                    .catch(() => null);
+                  const requiresDecision =
+                    !!ctx?.summary?.hasPaidInvoices ||
+                    !!ctx?.summary?.hasUnpaidInvoices;
+                  if (requiresDecision) {
+                    toast(
+                      "warning",
+                      "This job has invoice activity — open the job detail page to cancel with a financial decision.",
+                    );
+                    window.location.href = `/jobs/${job.id}`;
+                    return;
+                  }
+                  await api.patch(`/jobs/${job.id}/status`, { status: "cancelled" });
+                  toast("success", "Cancelled");
+                  await onRefresh();
+                } catch {
+                  toast("error", "Failed");
+                }
+              }}
+              className="w-full rounded-full border py-2 text-xs font-medium"
+              style={{ borderColor: "var(--t-error)", color: "var(--t-error)" }}
+            >
+              Cancel Job
+            </button>
           )}
         </>
       )}

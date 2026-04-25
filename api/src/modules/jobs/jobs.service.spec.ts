@@ -41,6 +41,8 @@ import { Route } from '../dispatch/entities/route.entity';
 import { Invoice } from '../billing/entities/invoice.entity';
 import { BillingIssue } from '../billing/entities/billing-issue.entity';
 import { CreditMemo } from '../billing/entities/credit-memo.entity';
+import { Payment } from '../billing/entities/payment.entity';
+import { CreditAuditEvent } from '../credit-audit/credit-audit-event.entity';
 import { RentalChain } from '../rental-chains/entities/rental-chain.entity';
 import { TaskChainLink } from '../rental-chains/entities/task-chain-link.entity';
 import { DumpTicket } from '../dump-locations/entities/dump-ticket.entity';
@@ -52,6 +54,8 @@ import { PricingService } from '../pricing/pricing.service';
 import { RentalChainsService } from '../rental-chains/rental-chains.service';
 import { AlertService } from '../alerts/services/alert.service';
 import { DispatchCreditEnforcementService } from '../dispatch/dispatch-credit-enforcement.service';
+import { CreditAuditService } from '../credit-audit/credit-audit.service';
+import { StripeService } from '../stripe/stripe.service';
 
 function makeJob(partial: Partial<Job> = {}): Job {
   const base = {
@@ -91,9 +95,13 @@ interface Harness {
   invoiceRepo: any;
   taskChainLinkRepo: any;
   rentalChainRepo: any;
+  creditMemoRepo: any;
+  paymentRepo: any;
   billingService: any;
   rentalChainsService: any;
   billingIssueDetector: any;
+  creditAuditService: any;
+  stripeService: any;
   autoCloseSpy: jest.SpyInstance;
   // Phase 1 additions — the transaction wrap around save + audit
   // needs observable spies so we can assert commit-vs-rollback.
@@ -105,6 +113,22 @@ interface Harness {
   // partial) AFTER the save, to bypass TypeORM's relation-FK reconciliation.
   // Distinct mock so tests can assert the update call directly.
   txJobUpdate: jest.Mock;
+  // Arc J.1 — trx-bound spies for the cancellation orchestrator. The
+  // transaction mock routes Invoice / CreditMemo / Payment /
+  // CreditAuditEvent repository.getRepository() calls to these spies so
+  // cancelJobWithFinancials assertions can target the trx-scoped writes
+  // directly (proves atomicity).
+  txInvoiceUpdate: jest.Mock;
+  txCreditMemoCreate: jest.Mock;
+  txCreditMemoSave: jest.Mock;
+  txPaymentUpdate: jest.Mock;
+  txPaymentFindOne: jest.Mock;
+  txAuditCreate: jest.Mock;
+  txAuditSave: jest.Mock;
+  // Track every transaction opened, in order. cancelJobWithFinancials
+  // opens 1 main + N post-commit (one per refund_paid → Stripe call),
+  // so this lets J4b/J4c assert the post-commit pattern.
+  transactionInvocationCount: () => number;
 }
 
 async function buildHarness(jobOverrides: Partial<Job> = {}): Promise<Harness> {
@@ -134,9 +158,36 @@ async function buildHarness(jobOverrides: Partial<Job> = {}): Promise<Harness> {
   const invoiceRepo: any = {
     find: jest.fn().mockResolvedValue([]),
     findOne: jest.fn(),
+    update: jest.fn().mockResolvedValue({ affected: 1, raw: [], generatedMaps: [] }),
   };
-  const taskChainLinkRepo: any = { findOne: jest.fn().mockResolvedValue(null) };
+  const taskChainLinkRepo: any = {
+    findOne: jest.fn().mockResolvedValue(null),
+    find: jest.fn().mockResolvedValue([]),
+  };
   const rentalChainRepo: any = { findOne: jest.fn() };
+  // Arc J.1 — un-trx-scoped repos used by the cancellation orchestrator
+  // for the pre-transaction load (linkedInvoices) and the helper's
+  // resolveRefundProviderStatusForAudit fallback.
+  const creditMemoRepo: any = {
+    create: jest.fn((x: any) => x),
+    save: jest.fn((x: any) => Promise.resolve({ id: 'memo-default', ...x })),
+  };
+  const paymentRepo: any = {
+    findOne: jest.fn(),
+    find: jest.fn().mockResolvedValue([]),
+    update: jest.fn().mockResolvedValue({ affected: 1, raw: [], generatedMaps: [] }),
+    save: jest.fn((x: any) => Promise.resolve(x)),
+  };
+  const creditAuditService: any = {
+    record: jest.fn().mockResolvedValue(undefined),
+    findAll: jest.fn(),
+  };
+  const stripeService: any = {
+    createRefundForPaymentIntent: jest
+      .fn()
+      .mockResolvedValue({ refundId: 're_test', refundedAmount: 0 }),
+    getClient: jest.fn(),
+  };
 
   const billingService: any = {
     voidInternalInvoice: jest.fn(),
@@ -166,15 +217,57 @@ async function buildHarness(jobOverrides: Partial<Job> = {}): Promise<Harness> {
   const txJobUpdate = jest.fn().mockResolvedValue({ affected: 1, raw: [], generatedMaps: [] });
   const txNotifCreate = jest.fn((x: any) => x);
   const txNotifSave = jest.fn().mockResolvedValue(undefined);
+  // Arc J.1 — trx-bound spies for cancellation orchestrator paths.
+  // Defaults are happy-path; individual J-suite tests override.
+  //
+  // NOTE on the create+save chain: `txCreditMemoCreate` returns its
+  // input UNCHANGED (no id auto-injection) so that `txCreditMemoSave`
+  // is the single source of truth for the saved row's id. Tests that
+  // need a deterministic id override `txCreditMemoSave.mockImplementation`.
+  const txInvoiceUpdate = jest
+    .fn()
+    .mockResolvedValue({ affected: 1, raw: [], generatedMaps: [] });
+  const txCreditMemoCreate = jest.fn((x: any) => x);
+  const txCreditMemoSave = jest.fn((x: any) =>
+    Promise.resolve({ id: 'memo-default', ...x }),
+  );
+  const txPaymentUpdate = jest
+    .fn()
+    .mockResolvedValue({ affected: 1, raw: [], generatedMaps: [] });
+  const txPaymentFindOne = jest.fn();
+  const txAuditCreate = jest.fn((x: any) => x);
+  const txAuditSave = jest.fn((x: any) =>
+    Promise.resolve({ id: 'audit-default', ...x }),
+  );
+  // Arc J.1 — counts every dataSource.transaction(...) entry. The
+  // cancellation orchestrator opens 1 main tx + 1 post-commit tx per
+  // refund_paid Stripe call, so J4b/J4c can assert exact invocation
+  // counts to verify the post-commit pattern is in place.
+  let transactionInvocations = 0;
   const dataSource: any = {
     transaction: jest.fn(
       async (cb: (em: EntityManager) => Promise<unknown>) => {
+        transactionInvocations += 1;
         const trxJob = { save: txJobSave, update: txJobUpdate };
         const trxNotif = { save: txNotifSave, create: txNotifCreate };
+        const trxInvoice = { update: txInvoiceUpdate };
+        const trxCreditMemo = {
+          create: txCreditMemoCreate,
+          save: txCreditMemoSave,
+        };
+        const trxPayment = {
+          update: txPaymentUpdate,
+          findOne: txPaymentFindOne,
+        };
+        const trxAudit = { create: txAuditCreate, save: txAuditSave };
         const trx: any = {
           getRepository: (entity: unknown) => {
             if (entity === Job) return trxJob;
             if (entity === Notification) return trxNotif;
+            if (entity === Invoice) return trxInvoice;
+            if (entity === CreditMemo) return trxCreditMemo;
+            if (entity === Payment) return trxPayment;
+            if (entity === CreditAuditEvent) return trxAudit;
             throw new Error(
               `unmocked trx repo: ${(entity as { name?: string })?.name ?? '?'}`,
             );
@@ -185,6 +278,22 @@ async function buildHarness(jobOverrides: Partial<Job> = {}): Promise<Harness> {
         return result;
       },
     ),
+    // The legacy cascadeDelete path uses `dataSource.manager` directly
+    // (un-trx-scoped) — route those calls to the un-trx repos so the
+    // cascadeDelete smoke test's assertions still target observable
+    // mocks.
+    manager: {
+      getRepository: (entity: unknown) => {
+        if (entity === Invoice) return invoiceRepo;
+        if (entity === CreditMemo) return creditMemoRepo;
+        if (entity === Payment) return paymentRepo;
+        if (entity === CreditAuditEvent)
+          return { create: jest.fn((x: any) => x), save: jest.fn() };
+        throw new Error(
+          `unmocked manager repo: ${(entity as { name?: string })?.name ?? '?'}`,
+        );
+      },
+    },
   };
 
   const module: TestingModule = await Test.createTestingModule({
@@ -199,7 +308,8 @@ async function buildHarness(jobOverrides: Partial<Job> = {}): Promise<Harness> {
       { provide: getRepositoryToken(Route), useValue: {} },
       { provide: getRepositoryToken(Invoice), useValue: invoiceRepo },
       { provide: getRepositoryToken(BillingIssue), useValue: {} },
-      { provide: getRepositoryToken(CreditMemo), useValue: {} },
+      { provide: getRepositoryToken(CreditMemo), useValue: creditMemoRepo },
+      { provide: getRepositoryToken(Payment), useValue: paymentRepo },
       { provide: getRepositoryToken(RentalChain), useValue: rentalChainRepo },
       { provide: getRepositoryToken(TaskChainLink), useValue: taskChainLinkRepo },
       { provide: getRepositoryToken(DumpTicket), useValue: {} },
@@ -212,6 +322,8 @@ async function buildHarness(jobOverrides: Partial<Job> = {}): Promise<Harness> {
       { provide: AlertService, useValue: alertService },
       { provide: DataSource, useValue: dataSource },
       { provide: DispatchCreditEnforcementService, useValue: dispatchCreditEnforcement },
+      { provide: CreditAuditService, useValue: creditAuditService },
+      { provide: StripeService, useValue: stripeService },
     ],
   }).compile();
 
@@ -231,15 +343,27 @@ async function buildHarness(jobOverrides: Partial<Job> = {}): Promise<Harness> {
     invoiceRepo,
     taskChainLinkRepo,
     rentalChainRepo,
+    creditMemoRepo,
+    paymentRepo,
     billingService,
     rentalChainsService,
     billingIssueDetector,
+    creditAuditService,
+    stripeService,
     autoCloseSpy,
     transactionCommit,
     txJobSave,
     txJobUpdate,
     txNotifCreate,
     txNotifSave,
+    txInvoiceUpdate,
+    txCreditMemoCreate,
+    txCreditMemoSave,
+    txPaymentUpdate,
+    txPaymentFindOne,
+    txAuditCreate,
+    txAuditSave,
+    transactionInvocationCount: () => transactionInvocations,
   };
 }
 
@@ -1001,5 +1125,939 @@ describe('JobsService.changeStatus — Phase 1 override scope', () => {
         }
       }
     });
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────
+// Arc J.1 — cancellation orchestrator (cancelJobWithFinancials)
+//
+// Invariant locks (the J-suite is responsible for these):
+//   • Every cancellation produces ≥ 1 credit_audit_events row, written
+//     through the threaded-manager path so it is atomic with the rest
+//     of the transaction (J1, J1b, J10).
+//   • Per-invoice decisions follow a four-branch contract:
+//     void_unpaid | refund_paid | credit_memo | keep_paid (J2-J6).
+//   • Partial-payment auto-voids the unpaid balance as part of the
+//     paid-portion decision (J7).
+//   • Atomic rollback when ANY decision fails (J8 — Lock 2 mock pattern).
+//   • DTO validation rejects bad combos (J9, J11, J12).
+//   • Stripe API call lives AFTER commit, in its OWN post-commit
+//     transaction so the payment-status update + result audit row are
+//     atomic with each other (J4, J4b, J4c — Lock 3).
+//   • Card payments without stripe_payment_intent_id route to the
+//     manual_required path with no Stripe call (J5).
+// ──────────────────────────────────────────────────────────────────────
+
+describe('JobsService.cancelJobWithFinancials — Arc J.1', () => {
+  // Shared helper: wires a job + invoice loadout for a one-decision
+  // scenario. Tests override the specifics (decision type, payment
+  // shape, etc.) per-case.
+  async function buildCancelHarness(opts: {
+    job?: Partial<Job>;
+    linkedInvoices?: Array<Partial<Invoice> & { id: string }>;
+    payment?: any;
+  } = {}) {
+    const h = await buildHarness({
+      status: 'confirmed',
+      ...opts.job,
+    });
+    // Tenant-scoped job load inside the orchestrator goes through
+    // jobsRepository.findOne. The pre-existing harness mock returns
+    // null; replace per test.
+    h.jobsRepository.findOne.mockResolvedValue({
+      id: 'job-1',
+      tenant_id: 'tenant-1',
+      status: 'confirmed',
+      job_number: 'J-1',
+      job_type: 'delivery',
+      customer_id: 'cust-1',
+      asset_id: 'asset-1',
+      ...opts.job,
+    });
+
+    // Direct invoices via job_id.
+    h.invoiceRepo.find.mockResolvedValue(opts.linkedInvoices ?? []);
+    h.taskChainLinkRepo.findOne.mockResolvedValue(null);
+
+    if (opts.payment) {
+      h.txPaymentFindOne.mockResolvedValue(opts.payment);
+      h.paymentRepo.findOne.mockResolvedValue(opts.payment);
+    }
+    return h;
+  }
+
+  // ── J1: zero-dollar single-invoice → cancellation_no_financials ──────
+  it('J1. single zero-dollar invoice — Step 2 skipped, no financial helper called, single cancellation_no_financials audit row', async () => {
+    const h = await buildCancelHarness({
+      linkedInvoices: [
+        {
+          id: 'inv-1',
+          tenant_id: 'tenant-1',
+          job_id: 'job-1',
+          customer_id: 'cust-1',
+          invoice_number: 1001,
+          status: 'paid',
+          total: 0,
+          amount_paid: 0,
+          balance_due: 0,
+        } as any,
+      ],
+    });
+
+    await h.service.cancelJobWithFinancials(
+      'tenant-1',
+      'job-1',
+      { cancellationReason: 'r', invoiceDecisions: [] },
+      'u-owner',
+      'owner',
+      'Owner',
+    );
+
+    // (a) NO financial helper writes (no invoice update via trx, no
+    //     credit memo, no payment update).
+    expect(h.txInvoiceUpdate).not.toHaveBeenCalled();
+    expect(h.txCreditMemoSave).not.toHaveBeenCalled();
+    expect(h.txPaymentUpdate).not.toHaveBeenCalled();
+
+    // (b) Job saved with cancelled status.
+    expect(h.txJobSave).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'cancelled' }),
+    );
+
+    // (c) ONE credit_audit_events row of type cancellation_no_financials.
+    const auditCalls = (h.creditAuditService.record as jest.Mock).mock.calls;
+    expect(auditCalls).toHaveLength(1);
+    expect(auditCalls[0][0]).toEqual(
+      expect.objectContaining({
+        eventType: 'cancellation_no_financials',
+        metadata: expect.objectContaining({
+          invoice_count: 1,
+          reason_no_financials: 'all_invoices_zero_value',
+        }),
+      }),
+    );
+
+    // (d) Audit row written via threaded-manager path (second arg
+    //     present + has getRepository).
+    expect(auditCalls[0][1]).toBeDefined();
+    expect(typeof auditCalls[0][1].getRepository).toBe('function');
+
+    // (e) Transaction committed exactly once (main only — no Stripe).
+    expect(h.transactionCommit).toHaveBeenCalledTimes(1);
+  });
+
+  // ── J1b: zero linked invoices → cancellation_no_financials variant ──
+  it('J1b. job with zero linked invoices — single cancellation_no_financials audit row with no_linked_invoices', async () => {
+    const h = await buildCancelHarness({ linkedInvoices: [] });
+
+    await h.service.cancelJobWithFinancials(
+      'tenant-1',
+      'job-1',
+      { cancellationReason: 'r', invoiceDecisions: [] },
+      'u-owner',
+      'owner',
+      'Owner',
+    );
+
+    const auditCalls = (h.creditAuditService.record as jest.Mock).mock.calls;
+    expect(auditCalls).toHaveLength(1);
+    expect(auditCalls[0][0]).toEqual(
+      expect.objectContaining({
+        eventType: 'cancellation_no_financials',
+        metadata: expect.objectContaining({
+          invoice_count: 0,
+          reason_no_financials: 'no_linked_invoices',
+        }),
+      }),
+    );
+    expect(h.transactionCommit).toHaveBeenCalledTimes(1);
+  });
+
+  // ── J2: void_unpaid on unpaid invoice ────────────────────────────────
+  it('J2. void_unpaid on unpaid invoice — invoice voided, no memo, audit row cancellation_void_unpaid', async () => {
+    const inv = {
+      id: 'inv-1',
+      tenant_id: 'tenant-1',
+      job_id: 'job-1',
+      customer_id: 'cust-1',
+      invoice_number: 1002,
+      status: 'open',
+      total: 500,
+      amount_paid: 0,
+      balance_due: 500,
+    };
+    const h = await buildCancelHarness({ linkedInvoices: [inv as any] });
+
+    await h.service.cancelJobWithFinancials(
+      'tenant-1',
+      'job-1',
+      {
+        cancellationReason: 'r',
+        invoiceDecisions: [{ invoice_id: 'inv-1', decision: 'void_unpaid' }],
+      },
+      'u-owner',
+      'owner',
+      'Owner',
+    );
+
+    expect(h.txInvoiceUpdate).toHaveBeenCalledWith(
+      { id: 'inv-1', tenant_id: 'tenant-1' },
+      expect.objectContaining({
+        status: 'voided',
+        balance_due: 0,
+      }),
+    );
+    expect(h.txCreditMemoSave).not.toHaveBeenCalled();
+    expect(h.txPaymentUpdate).not.toHaveBeenCalled();
+
+    const auditCalls = (h.creditAuditService.record as jest.Mock).mock.calls;
+    expect(auditCalls).toHaveLength(1);
+    expect(auditCalls[0][0]).toEqual(
+      expect.objectContaining({
+        eventType: 'cancellation_void_unpaid',
+        metadata: expect.objectContaining({
+          invoice_id: 'inv-1',
+          amount_paid_at_decision: 0,
+          balance_due_at_decision: 500,
+          unpaid_balance_voided: 0,
+          paid_portion_decision: null,
+          paid_portion_amount: null,
+        }),
+      }),
+    );
+    expect(auditCalls[0][1]).toBeDefined();
+    expect(typeof auditCalls[0][1].getRepository).toBe('function');
+  });
+
+  // ── J3: credit_memo on fully-paid invoice ────────────────────────────
+  it('J3. credit_memo on fully-paid invoice — memo with amount_paid (not total), invoice voided, audit row cancellation_credit_memo', async () => {
+    const inv = {
+      id: 'inv-3',
+      tenant_id: 'tenant-1',
+      job_id: 'job-1',
+      customer_id: 'cust-1',
+      invoice_number: 1003,
+      status: 'paid',
+      total: 1000,
+      amount_paid: 1000,
+      balance_due: 0,
+    };
+    const h = await buildCancelHarness({
+      linkedInvoices: [inv as any],
+      payment: {
+        id: 'pay-3',
+        tenant_id: 'tenant-1',
+        invoice_id: 'inv-3',
+        amount: 1000,
+        payment_method: 'card',
+        stripe_payment_intent_id: 'pi_test_card',
+        refunded_amount: 0,
+      },
+    });
+    h.txCreditMemoSave.mockImplementation((x: any) =>
+      Promise.resolve({ id: 'memo-3', ...x }),
+    );
+
+    await h.service.cancelJobWithFinancials(
+      'tenant-1',
+      'job-1',
+      {
+        cancellationReason: 'r',
+        invoiceDecisions: [{ invoice_id: 'inv-3', decision: 'credit_memo' }],
+      },
+      'u-owner',
+      'owner',
+      'Owner',
+    );
+
+    expect(h.txCreditMemoCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        original_invoice_id: 'inv-3',
+        amount: 1000,
+        status: 'issued',
+      }),
+    );
+    expect(h.txCreditMemoSave).toHaveBeenCalled();
+
+    expect(h.txInvoiceUpdate).toHaveBeenCalledWith(
+      { id: 'inv-3', tenant_id: 'tenant-1' },
+      expect.objectContaining({ status: 'voided', balance_due: 0 }),
+    );
+
+    // No Stripe call on credit_memo — refund-vs-credit are distinct.
+    expect(h.stripeService.createRefundForPaymentIntent).not.toHaveBeenCalled();
+
+    const auditCalls = (h.creditAuditService.record as jest.Mock).mock.calls;
+    expect(auditCalls[0][0]).toEqual(
+      expect.objectContaining({
+        eventType: 'cancellation_credit_memo',
+        metadata: expect.objectContaining({
+          paid_portion_decision: 'credit_memo',
+          paid_portion_amount: 1000,
+          unpaid_balance_voided: 0,
+          credit_memo_id: 'memo-3',
+        }),
+      }),
+    );
+  });
+
+  // ── J4: refund_paid card with PI → Stripe call after commit ──────────
+  it('J4. refund_paid on card payment WITH stripe_payment_intent_id — payment updated inside-tx, Stripe call AFTER commit, success audit row', async () => {
+    const inv = {
+      id: 'inv-4',
+      tenant_id: 'tenant-1',
+      job_id: 'job-1',
+      customer_id: 'cust-1',
+      invoice_number: 1004,
+      status: 'paid',
+      total: 750,
+      amount_paid: 750,
+      balance_due: 0,
+    };
+    const h = await buildCancelHarness({
+      linkedInvoices: [inv as any],
+      payment: {
+        id: 'pay-4',
+        tenant_id: 'tenant-1',
+        invoice_id: 'inv-4',
+        amount: 750,
+        payment_method: 'card',
+        stripe_payment_intent_id: 'pi_card_4',
+        refunded_amount: 0,
+      },
+    });
+    h.stripeService.createRefundForPaymentIntent.mockResolvedValue({
+      refundId: 're_test_4',
+      refundedAmount: 750,
+    });
+
+    await h.service.cancelJobWithFinancials(
+      'tenant-1',
+      'job-1',
+      {
+        cancellationReason: 'r',
+        invoiceDecisions: [{ invoice_id: 'inv-4', decision: 'refund_paid' }],
+      },
+      'u-owner',
+      'owner',
+      'Owner',
+    );
+
+    // Inside main tx: payment row updated with refunded_amount + pending_stripe.
+    expect(h.txPaymentUpdate).toHaveBeenCalledWith(
+      { id: 'pay-4', tenant_id: 'tenant-1' },
+      expect.objectContaining({
+        refunded_amount: 750,
+        refund_provider_status: 'pending_stripe',
+      }),
+    );
+
+    // Stripe API called AFTER main-tx commit with the loaded PI.
+    expect(h.stripeService.createRefundForPaymentIntent).toHaveBeenCalledWith(
+      'tenant-1',
+      'pi_card_4',
+      750,
+      expect.objectContaining({ invoiceId: 'inv-4' }),
+    );
+
+    // Success path: post-commit tx updates payment to stripe_succeeded
+    // AND writes a second audit row with stripe_refund_id.
+    expect(h.txPaymentUpdate).toHaveBeenCalledWith(
+      { id: 'pay-4', tenant_id: 'tenant-1' },
+      { refund_provider_status: 'stripe_succeeded' },
+    );
+
+    const auditCalls = (h.creditAuditService.record as jest.Mock).mock.calls;
+    // 2 calls: 1 inside main tx (pending_stripe) + 1 post-commit (stripe_succeeded).
+    expect(auditCalls).toHaveLength(2);
+    expect(auditCalls[1][0]).toEqual(
+      expect.objectContaining({
+        eventType: 'cancellation_refund_paid',
+        metadata: expect.objectContaining({
+          refund_provider_status: 'stripe_succeeded',
+          stripe_refund_id: 're_test_4',
+        }),
+      }),
+    );
+  });
+
+  // ── J4b (Lock 3): post-commit Stripe success uses its own transaction ──
+  it('J4b. Stripe success path uses post-commit transaction — exactly 2 dataSource.transaction invocations', async () => {
+    const inv = {
+      id: 'inv-4b',
+      tenant_id: 'tenant-1',
+      job_id: 'job-1',
+      customer_id: 'cust-1',
+      invoice_number: 1005,
+      status: 'paid',
+      total: 100,
+      amount_paid: 100,
+      balance_due: 0,
+    };
+    const h = await buildCancelHarness({
+      linkedInvoices: [inv as any],
+      payment: {
+        id: 'pay-4b',
+        tenant_id: 'tenant-1',
+        invoice_id: 'inv-4b',
+        amount: 100,
+        payment_method: 'card',
+        stripe_payment_intent_id: 'pi_card_4b',
+        refunded_amount: 0,
+      },
+    });
+    h.stripeService.createRefundForPaymentIntent.mockResolvedValue({
+      refundId: 're_test_4b',
+      refundedAmount: 100,
+    });
+
+    await h.service.cancelJobWithFinancials(
+      'tenant-1',
+      'job-1',
+      {
+        cancellationReason: 'r',
+        invoiceDecisions: [{ invoice_id: 'inv-4b', decision: 'refund_paid' }],
+      },
+      'u-owner',
+      'owner',
+      'Owner',
+    );
+
+    // Lock 3: 1 main + 1 post-commit success transaction = 2 total.
+    expect(h.transactionInvocationCount()).toBe(2);
+  });
+
+  // ── J4c (Lock 3): post-commit Stripe failure uses its own transaction ──
+  it('J4c. Stripe failure path uses post-commit transaction with stripe_failed status + error metadata', async () => {
+    const inv = {
+      id: 'inv-4c',
+      tenant_id: 'tenant-1',
+      job_id: 'job-1',
+      customer_id: 'cust-1',
+      invoice_number: 1006,
+      status: 'paid',
+      total: 200,
+      amount_paid: 200,
+      balance_due: 0,
+    };
+    const h = await buildCancelHarness({
+      linkedInvoices: [inv as any],
+      payment: {
+        id: 'pay-4c',
+        tenant_id: 'tenant-1',
+        invoice_id: 'inv-4c',
+        amount: 200,
+        payment_method: 'card',
+        stripe_payment_intent_id: 'pi_card_4c',
+        refunded_amount: 0,
+      },
+    });
+    h.stripeService.createRefundForPaymentIntent.mockRejectedValue(
+      new Error('stripe network down'),
+    );
+
+    const result = await h.service.cancelJobWithFinancials(
+      'tenant-1',
+      'job-1',
+      {
+        cancellationReason: 'r',
+        invoiceDecisions: [{ invoice_id: 'inv-4c', decision: 'refund_paid' }],
+      },
+      'u-owner',
+      'owner',
+      'Owner',
+    );
+
+    // Lock 3: 1 main + 1 post-commit failure transaction = 2 total.
+    expect(h.transactionInvocationCount()).toBe(2);
+
+    // Post-commit tx wrote stripe_failed.
+    expect(h.txPaymentUpdate).toHaveBeenCalledWith(
+      { id: 'pay-4c', tenant_id: 'tenant-1' },
+      { refund_provider_status: 'stripe_failed' },
+    );
+
+    // Failure-state audit row populated.
+    const auditCalls = (h.creditAuditService.record as jest.Mock).mock.calls;
+    const failedAudit = auditCalls.find(
+      (c) =>
+        c[0].metadata?.refund_provider_status === 'stripe_failed',
+    );
+    expect(failedAudit).toBeDefined();
+    expect(failedAudit![0].metadata.stripe_error_message).toContain(
+      'stripe network down',
+    );
+
+    // Surfaced to operator.
+    expect(result.stripeFailures).toHaveLength(1);
+    expect(result.stripeFailures[0]).toEqual(
+      expect.objectContaining({
+        invoice_id: 'inv-4c',
+        payment_id: 'pay-4c',
+        error: expect.stringContaining('stripe network down'),
+      }),
+    );
+
+    // Job IS still cancelled — Stripe failure does NOT roll back.
+    expect(h.txJobSave).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'cancelled' }),
+    );
+  });
+
+  // ── J5: refund_paid card WITHOUT PI → manual_required, no Stripe call ──
+  it('J5. refund_paid on card payment WITHOUT stripe_payment_intent_id — marked manual_required, NO Stripe call, audit row cancellation_refund_paid', async () => {
+    const inv = {
+      id: 'inv-5',
+      tenant_id: 'tenant-1',
+      job_id: 'job-1',
+      customer_id: 'cust-1',
+      invoice_number: 1007,
+      status: 'paid',
+      total: 300,
+      amount_paid: 300,
+      balance_due: 0,
+    };
+    const h = await buildCancelHarness({
+      linkedInvoices: [inv as any],
+      payment: {
+        id: 'pay-5',
+        tenant_id: 'tenant-1',
+        invoice_id: 'inv-5',
+        amount: 300,
+        payment_method: 'card',
+        stripe_payment_intent_id: null,
+        refunded_amount: 0,
+      },
+    });
+
+    await h.service.cancelJobWithFinancials(
+      'tenant-1',
+      'job-1',
+      {
+        cancellationReason: 'r',
+        invoiceDecisions: [{ invoice_id: 'inv-5', decision: 'refund_paid' }],
+      },
+      'u-owner',
+      'owner',
+      'Owner',
+    );
+
+    expect(h.txPaymentUpdate).toHaveBeenCalledWith(
+      { id: 'pay-5', tenant_id: 'tenant-1' },
+      expect.objectContaining({
+        refunded_amount: 300,
+        refund_provider_status: 'manual_required',
+      }),
+    );
+
+    expect(h.stripeService.createRefundForPaymentIntent).not.toHaveBeenCalled();
+    // No post-commit tx since no Stripe call.
+    expect(h.transactionInvocationCount()).toBe(1);
+  });
+
+  // ── J6: keep_paid on fully-paid invoice ──────────────────────────────
+  it('J6. keep_paid on fully-paid invoice — no payment update, no memo, audit row records reason', async () => {
+    const inv = {
+      id: 'inv-6',
+      tenant_id: 'tenant-1',
+      job_id: 'job-1',
+      customer_id: 'cust-1',
+      invoice_number: 1008,
+      status: 'paid',
+      total: 200,
+      amount_paid: 200,
+      balance_due: 0,
+    };
+    const h = await buildCancelHarness({ linkedInvoices: [inv as any] });
+
+    await h.service.cancelJobWithFinancials(
+      'tenant-1',
+      'job-1',
+      {
+        cancellationReason: 'r',
+        invoiceDecisions: [
+          {
+            invoice_id: 'inv-6',
+            decision: 'keep_paid',
+            reason: 'customer kept service',
+          },
+        ],
+      },
+      'u-owner',
+      'owner',
+      'Owner',
+    );
+
+    expect(h.txPaymentUpdate).not.toHaveBeenCalled();
+    expect(h.txCreditMemoSave).not.toHaveBeenCalled();
+    // balance_due is 0 → no auto-void → no invoice update either.
+    expect(h.txInvoiceUpdate).not.toHaveBeenCalled();
+
+    const auditCalls = (h.creditAuditService.record as jest.Mock).mock.calls;
+    expect(auditCalls[0][0]).toEqual(
+      expect.objectContaining({
+        eventType: 'cancellation_keep_paid',
+        metadata: expect.objectContaining({
+          decision_reason: 'customer kept service',
+          paid_portion_decision: 'keep_paid',
+          paid_portion_amount: 200,
+          unpaid_balance_voided: 0,
+        }),
+      }),
+    );
+  });
+
+  // ── J7: partial-payment + credit_memo → memo for $400, balance voided ─
+  it('J7. partial-payment ($1000 total, $400 paid, $600 balance) + credit_memo — memo for $400 + auto-void $600 + single audit row', async () => {
+    const inv = {
+      id: 'inv-7',
+      tenant_id: 'tenant-1',
+      job_id: 'job-1',
+      customer_id: 'cust-1',
+      invoice_number: 1009,
+      status: 'partial',
+      total: 1000,
+      amount_paid: 400,
+      balance_due: 600,
+    };
+    const h = await buildCancelHarness({
+      linkedInvoices: [inv as any],
+      payment: {
+        id: 'pay-7',
+        tenant_id: 'tenant-1',
+        invoice_id: 'inv-7',
+        amount: 400,
+        payment_method: 'card',
+        stripe_payment_intent_id: 'pi_card_7',
+        refunded_amount: 0,
+      },
+    });
+    h.txCreditMemoSave.mockImplementation((x: any) =>
+      Promise.resolve({ id: 'memo-7', ...x }),
+    );
+
+    await h.service.cancelJobWithFinancials(
+      'tenant-1',
+      'job-1',
+      {
+        cancellationReason: 'r',
+        invoiceDecisions: [{ invoice_id: 'inv-7', decision: 'credit_memo' }],
+      },
+      'u-owner',
+      'owner',
+      'Owner',
+    );
+
+    // Memo for $400 (amount_paid), NOT $1000 (total).
+    expect(h.txCreditMemoCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        original_invoice_id: 'inv-7',
+        amount: 400,
+      }),
+    );
+
+    // Single invoice update voids the invoice + zeros the balance
+    // (auto-void of the unpaid $600 happens in the same write).
+    expect(h.txInvoiceUpdate).toHaveBeenCalledTimes(1);
+    expect(h.txInvoiceUpdate).toHaveBeenCalledWith(
+      { id: 'inv-7', tenant_id: 'tenant-1' },
+      expect.objectContaining({ status: 'voided', balance_due: 0 }),
+    );
+
+    // ONE audit row — paid + unpaid halves merged into one event.
+    const auditCalls = (h.creditAuditService.record as jest.Mock).mock.calls;
+    expect(auditCalls).toHaveLength(1);
+    expect(auditCalls[0][0]).toEqual(
+      expect.objectContaining({
+        eventType: 'cancellation_credit_memo',
+        metadata: expect.objectContaining({
+          paid_portion_decision: 'credit_memo',
+          paid_portion_amount: 400,
+          unpaid_balance_voided: 600,
+          credit_memo_id: 'memo-7',
+        }),
+      }),
+    );
+
+    expect(h.transactionCommit).toHaveBeenCalledTimes(1);
+  });
+
+  // ── J8 (Lock 2): rollback on second-decision failure ─────────────────
+  // Two paid invoices, both `credit_memo` decisions. First memo save
+  // resolves (no-op for the rollback assertion); second memo save
+  // rejects with "forced rollback test"; the entire transaction
+  // rolls back. Lock-2 mock pattern preserved exactly:
+  //   creditMemoRepo.save = jest.fn()
+  //     .mockResolvedValueOnce(memo1)
+  //     .mockRejectedValueOnce(new Error('forced rollback test'));
+  it('J8. mixed decisions — rollback when one fails, no audit rows persisted, no commit', async () => {
+    const invPaidA = {
+      id: 'inv-8a',
+      tenant_id: 'tenant-1',
+      job_id: 'job-1',
+      customer_id: 'cust-1',
+      invoice_number: 1010,
+      status: 'paid',
+      total: 500,
+      amount_paid: 500,
+      balance_due: 0,
+    };
+    const invPaidB = {
+      id: 'inv-8b',
+      tenant_id: 'tenant-1',
+      job_id: 'job-1',
+      customer_id: 'cust-1',
+      invoice_number: 1011,
+      status: 'paid',
+      total: 700,
+      amount_paid: 700,
+      balance_due: 0,
+    };
+    const h = await buildCancelHarness({
+      linkedInvoices: [invPaidA as any, invPaidB as any],
+    });
+
+    // Lock 2 — exact mock pattern: first save resolves, second rejects.
+    const memo1 = { id: 'memo-1', original_invoice_id: 'inv-8a', amount: 500, status: 'issued' };
+    h.txCreditMemoSave
+      .mockReset()
+      .mockResolvedValueOnce(memo1)
+      .mockRejectedValueOnce(new Error('forced rollback test'));
+
+    await expect(
+      h.service.cancelJobWithFinancials(
+        'tenant-1',
+        'job-1',
+        {
+          cancellationReason: 'r',
+          invoiceDecisions: [
+            { invoice_id: 'inv-8a', decision: 'credit_memo' },
+            { invoice_id: 'inv-8b', decision: 'credit_memo' },
+          ],
+        },
+        'u-owner',
+        'owner',
+        'Owner',
+      ),
+    ).rejects.toThrow('forced rollback test');
+
+    // Transaction never committed.
+    expect(h.transactionCommit).not.toHaveBeenCalled();
+  });
+
+  // ── J9: DTO validation — keep_paid without reason rejected ───────────
+  // Note: this exercises the SERVICE-layer guard. The class-validator
+  // DTO layer 1 runs at the controller before this method is reached;
+  // the orchestrator's eligibility check is layer 2 and is what this
+  // test asserts. (DTO-layer rejection is enforced by ValidationPipe
+  // outside the service unit.)
+  it('J9. keep_paid without reason — service-layer guard rejects with keep_paid_reason_required', async () => {
+    const inv = {
+      id: 'inv-9',
+      tenant_id: 'tenant-1',
+      job_id: 'job-1',
+      customer_id: 'cust-1',
+      invoice_number: 1012,
+      status: 'paid',
+      total: 100,
+      amount_paid: 100,
+      balance_due: 0,
+    };
+    const h = await buildCancelHarness({ linkedInvoices: [inv as any] });
+
+    await expect(
+      h.service.cancelJobWithFinancials(
+        'tenant-1',
+        'job-1',
+        {
+          cancellationReason: 'r',
+          invoiceDecisions: [
+            { invoice_id: 'inv-9', decision: 'keep_paid' },
+          ],
+        },
+        'u-owner',
+        'owner',
+        'Owner',
+      ),
+    ).rejects.toMatchObject({
+      message: expect.stringMatching(/^keep_paid_reason_required:/),
+    });
+
+    expect(h.transactionCommit).not.toHaveBeenCalled();
+    expect(h.txJobSave).not.toHaveBeenCalled();
+  });
+
+  // ── J10: threaded-manager — audit save inside trx, NOT this.repo ─────
+  it('J10. audit row written via threaded manager — not via the un-trx-scoped repo', async () => {
+    const inv = {
+      id: 'inv-10',
+      tenant_id: 'tenant-1',
+      job_id: 'job-1',
+      customer_id: 'cust-1',
+      invoice_number: 1013,
+      status: 'open',
+      total: 50,
+      amount_paid: 0,
+      balance_due: 50,
+    };
+    const h = await buildCancelHarness({ linkedInvoices: [inv as any] });
+
+    await h.service.cancelJobWithFinancials(
+      'tenant-1',
+      'job-1',
+      {
+        cancellationReason: 'r',
+        invoiceDecisions: [{ invoice_id: 'inv-10', decision: 'void_unpaid' }],
+      },
+      'u-owner',
+      'owner',
+      'Owner',
+    );
+
+    const auditCalls = (h.creditAuditService.record as jest.Mock).mock.calls;
+    // Every call is invoked WITH a manager (second arg). Proves
+    // threaded-manager use inside the orchestrator.
+    expect(auditCalls.length).toBeGreaterThan(0);
+    for (const call of auditCalls) {
+      expect(call[1]).toBeDefined();
+      expect(typeof call[1].getRepository).toBe('function');
+    }
+  });
+
+  // ── J11: void_unpaid rejected when amount_paid > 0 ───────────────────
+  it('J11. void_unpaid rejected when invoice has amount_paid > 0 — service-layer guard 400', async () => {
+    const inv = {
+      id: 'inv-11',
+      tenant_id: 'tenant-1',
+      job_id: 'job-1',
+      customer_id: 'cust-1',
+      invoice_number: 1014,
+      status: 'paid',
+      total: 100,
+      amount_paid: 100,
+      balance_due: 0,
+    };
+    const h = await buildCancelHarness({ linkedInvoices: [inv as any] });
+
+    await expect(
+      h.service.cancelJobWithFinancials(
+        'tenant-1',
+        'job-1',
+        {
+          cancellationReason: 'r',
+          invoiceDecisions: [
+            { invoice_id: 'inv-11', decision: 'void_unpaid' },
+          ],
+        },
+        'u-owner',
+        'owner',
+        'Owner',
+      ),
+    ).rejects.toMatchObject({
+      message: expect.stringMatching(/^decision_invalid_for_paid_invoice:/),
+    });
+
+    expect(h.transactionCommit).not.toHaveBeenCalled();
+    expect(h.txInvoiceUpdate).not.toHaveBeenCalled();
+  });
+
+  // ── J12: paid-portion decisions rejected when amount_paid == 0 ──────
+  it('J12. refund_paid|credit_memo|keep_paid rejected when invoice has amount_paid == 0 — service-layer guard 400', async () => {
+    const inv = {
+      id: 'inv-12',
+      tenant_id: 'tenant-1',
+      job_id: 'job-1',
+      customer_id: 'cust-1',
+      invoice_number: 1015,
+      status: 'open',
+      total: 100,
+      amount_paid: 0,
+      balance_due: 100,
+    };
+    const h = await buildCancelHarness({ linkedInvoices: [inv as any] });
+
+    await expect(
+      h.service.cancelJobWithFinancials(
+        'tenant-1',
+        'job-1',
+        {
+          cancellationReason: 'r',
+          invoiceDecisions: [
+            { invoice_id: 'inv-12', decision: 'refund_paid' },
+          ],
+        },
+        'u-owner',
+        'owner',
+        'Owner',
+      ),
+    ).rejects.toMatchObject({
+      message: expect.stringMatching(/^decision_invalid_for_unpaid_invoice:/),
+    });
+
+    expect(h.transactionCommit).not.toHaveBeenCalled();
+    expect(h.txPaymentUpdate).not.toHaveBeenCalled();
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────
+// Arc J.1 — cascadeDelete smoke test (helper-extraction regression lock)
+//
+// cascadeDelete previously inlined invoice.update + creditMemo.save
+// directly. Arc J.1 routes those writes through
+// applyFinancialDecisionTx with a `credit_memo` decision and the
+// `cascadeDeleteOverrideAmount` knob (which preserves "memo for full
+// invoice total" semantics — different from the orchestrator's
+// `credit_memo` decision, which uses amount_paid).
+//
+// This smoke test locks the externally observable behavior of
+// cascadeDelete so the helper extraction does not regress.
+// ──────────────────────────────────────────────────────────────────────
+
+describe('JobsService.cascadeDelete — Arc J.1 helper-extraction smoke test', () => {
+  it('void+memo path still produces voidedInvoices and creditMemos shape (memo amount = invoice total)', async () => {
+    const h = await buildHarness({ status: 'pending' });
+
+    // Single linked invoice opted into voiding via the legacy
+    // `voidInvoices` opt-in array.
+    h.invoiceRepo.findOne.mockResolvedValue({
+      id: 'inv-cd-1',
+      tenant_id: 'tenant-1',
+      job_id: 'job-1',
+      customer_id: 'cust-1',
+      invoice_number: 999,
+      total: 250,
+      amount_paid: 0,
+      balance_due: 250,
+    });
+
+    // The cascadeDelete legacy path uses the un-trx-scoped repos via
+    // `dataSource.manager.getRepository(...)`. Configure those mocks.
+    h.creditMemoRepo.save.mockImplementation((x: any) =>
+      Promise.resolve({ id: 'memo-cd-1', amount: x.amount, ...x }),
+    );
+
+    const result = await h.service.cascadeDelete(
+      'tenant-1',
+      'job-1',
+      'u-owner',
+      {
+        voidInvoices: [{ invoiceId: 'inv-cd-1', void: true }],
+        voidReason: 'Cancelled in test',
+      },
+    );
+
+    // External shape preserved: voidedInvoices entry includes invoice_number,
+    // creditMemos entry includes id + amount, and the cascadeDelete-specific
+    // memo amount equals the invoice TOTAL (not amount_paid).
+    expect(result.voidedInvoices).toEqual([
+      { id: 'inv-cd-1', invoice_number: 999 },
+    ]);
+    expect(result.creditMemos).toEqual([{ id: 'memo-cd-1', amount: 250 }]);
+
+    // Memo created via the un-trx-scoped repo with amount = invoice total.
+    expect(h.creditMemoRepo.save).toHaveBeenCalled();
+    const savedMemo = h.creditMemoRepo.save.mock.calls[0][0];
+    expect(savedMemo.amount).toBe(250);
+    expect(savedMemo.original_invoice_id).toBe('inv-cd-1');
   });
 });

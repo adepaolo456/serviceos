@@ -48,6 +48,9 @@ export class Payment {
   @Column({ name: 'refunded_amount', type: 'decimal', precision: 10, scale: 2, default: 0 })
   refunded_amount!: number;
 
+  @Column({ name: 'refund_provider_status', type: 'text', nullable: true })
+  refund_provider_status!: string | null;
+
   @Column({ name: 'applied_at', type: 'timestamptz', default: () => 'NOW()' })
   applied_at!: Date;
 

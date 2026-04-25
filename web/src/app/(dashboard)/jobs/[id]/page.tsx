@@ -370,11 +370,29 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
   // `cancelContext` is null while loading or on fetch failure; the
   // failure case routes through `cancelWithReasonFallback` below
   // which preserves the pre-Phase-2 prompt() flow.
+  //
+  // Arc J.1 — extends Phase 2 with a 3-step financial-decision flow:
+  // Step 1 = reason, Step 2 = per-invoice decisions (skipped when no
+  // invoice has paid or unpaid funds), Step 3 = confirm. The submit
+  // path now posts to /jobs/:id/cancel-with-financials instead of the
+  // legacy PATCH /jobs/:id/status (which stays for non-financial flows
+  // and the network-failure fallback).
+  type FinancialDecisionType =
+    | "void_unpaid"
+    | "refund_paid"
+    | "credit_memo"
+    | "keep_paid";
+  type CancelStep = "reason" | "decisions" | "confirm";
   const [cancelModalOpen, setCancelModalOpen] = useState(false);
   const [cancelContext, setCancelContext] =
     useState<CancellationContext | null>(null);
   const [cancelContextLoading, setCancelContextLoading] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
+  const [cancelStep, setCancelStep] = useState<CancelStep>("reason");
+  const [invoiceDecisions, setInvoiceDecisions] = useState<
+    Record<string, { decision: FinancialDecisionType | ""; reason: string }>
+  >({});
+  const [stripeFailureCount, setStripeFailureCount] = useState<number>(0);
 
   // Connected Lifecycle Navigation — separate state from the cancel
   // modal so the prev/current/next triplet under the job header can
@@ -954,6 +972,9 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
     if (actionLoading || cancelContextLoading) return;
     setCancelReason("");
     setCancelContext(null);
+    setCancelStep("reason");
+    setInvoiceDecisions({});
+    setStripeFailureCount(0);
     setCancelModalOpen(true);
     setCancelContextLoading(true);
     try {
@@ -979,28 +1000,120 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
     }
   };
 
-  // Phase 2 — confirm handler. Calls the existing cancel PATCH path
-  // unchanged (no new backend flags, no chain-level mutation) and
-  // preserves the existing cancellationReason capture from the
-  // pre-modal prompt flow.
+  // Arc J.1 — derived Step-2 invoice list (those needing a decision):
+  // anything with amount_paid > 0 OR balance_due > 0. Computed inline
+  // so it stays in sync with `cancelContext` without an extra effect.
+  const decisionableInvoices =
+    cancelContext?.invoices.filter(
+      (i) => i.amount_paid > 0 || i.balance_due > 0,
+    ) ?? [];
+
+  // Arc J.1 — eligibility helper for the Step-2 dropdown. Mirrors the
+  // service-layer guard exactly so the operator can't construct an
+  // invalid combination from the supported UI.
+  const isDecisionEligible = (
+    decision: FinancialDecisionType,
+    inv: { amount_paid: number; balance_due: number },
+  ): boolean => {
+    if (decision === "void_unpaid") return inv.amount_paid === 0;
+    return inv.amount_paid > 0;
+  };
+
+  const allDecisionsValid = decisionableInvoices.every((inv) => {
+    const d = invoiceDecisions[inv.id];
+    if (!d || !d.decision) return false;
+    if (!isDecisionEligible(d.decision, inv)) return false;
+    if (d.decision === "keep_paid" && !d.reason.trim()) return false;
+    return true;
+  });
+
+  // Arc J.1 — Step 1 → Step 2 (or Step 3 if no decisionable invoices).
+  const advanceFromReason = () => {
+    if (!cancelReason.trim()) return;
+    if (decisionableInvoices.length === 0) {
+      setCancelStep("confirm");
+      return;
+    }
+    // Seed empty decisions for any invoices not yet in state.
+    const seeded = { ...invoiceDecisions };
+    for (const inv of decisionableInvoices) {
+      if (!seeded[inv.id]) seeded[inv.id] = { decision: "", reason: "" };
+    }
+    setInvoiceDecisions(seeded);
+    setCancelStep("decisions");
+  };
+
+  const advanceFromDecisions = () => {
+    if (!allDecisionsValid) return;
+    setCancelStep("confirm");
+  };
+
+  // Arc J.1 — submit handler hits the new orchestrator endpoint.
+  // The orchestrator atomically: (1) sets job.status = cancelled,
+  // (2) applies each invoice decision in the same transaction,
+  // (3) writes one credit_audit_events row per decision (or one
+  // cancellation_no_financials row when there are no decisions).
+  // Stripe API calls fire AFTER commit; failures are surfaced via
+  // `stripeFailures` in the response.
   const confirmCancelFromModal = async () => {
     if (!cancelReason.trim()) return;
+    if (
+      decisionableInvoices.length > 0 &&
+      !allDecisionsValid
+    ) {
+      return;
+    }
     setActionLoading(true);
     try {
-      await api.patch(`/jobs/${id}/status`, {
-        status: "cancelled",
+      const payload = {
         cancellationReason: cancelReason.trim(),
-      });
-      toast("success", "Job cancelled");
+        invoiceDecisions: decisionableInvoices.map((inv) => {
+          const d = invoiceDecisions[inv.id];
+          const out: {
+            invoice_id: string;
+            decision: FinancialDecisionType;
+            reason?: string;
+          } = {
+            invoice_id: inv.id,
+            decision: d.decision as FinancialDecisionType,
+          };
+          if (d.decision === "keep_paid") out.reason = d.reason.trim();
+          return out;
+        }),
+      };
+      const result = await api.post<{
+        success: boolean;
+        stripeFailures: Array<{ invoice_id: string; payment_id: string; error: string }>;
+      }>(`/jobs/${id}/cancel-with-financials`, payload);
+
+      const failures = result.stripeFailures?.length ?? 0;
+      if (failures > 0) {
+        setStripeFailureCount(failures);
+        toast(
+          "warning",
+          (
+            FEATURE_REGISTRY.cancel_job_stripe_failure_banner?.label ??
+            "Job cancelled. Stripe refund failed for {N} invoice(s). Retry from the invoice page or refund manually in Stripe."
+          ).replace("{N}", String(failures)),
+        );
+      } else {
+        toast("success", "Job cancelled");
+      }
       setCancelModalOpen(false);
       setCancelReason("");
       setCancelContext(null);
+      setInvoiceDecisions({});
+      setCancelStep("reason");
       await fetchJob();
       setLifecyclePanelRefresh((n) => n + 1);
-    } catch {
-      // Keep the modal open so the operator can retry without
-      // losing the reason text.
-      toast("error", "Failed to update");
+    } catch (err) {
+      // Keep the modal open so the operator can adjust without
+      // losing typed reasons / decisions. Surface the service-layer
+      // error code if present.
+      const msg =
+        (err as { response?: { data?: { message?: string } } }).response?.data
+          ?.message ?? "Failed to cancel";
+      toast("error", msg);
     } finally {
       setActionLoading(false);
     }
@@ -1011,6 +1124,9 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
     setCancelModalOpen(false);
     setCancelReason("");
     setCancelContext(null);
+    setInvoiceDecisions({});
+    setCancelStep("reason");
+    setStripeFailureCount(0);
   };
 
   const changeStatus = async (newStatus: string) => {
@@ -3668,65 +3784,463 @@ function JobDetailPageContent({ params }: { params: Promise<{ id: string }> }) {
                   </div>
                 )}
 
-                {/* ── Cancellation reason (required) ────────── */}
-                <div className="mb-4">
-                  <label className="text-[11px] font-semibold uppercase tracking-wide text-[var(--t-text-muted)] mb-1 block">
-                    {FEATURE_REGISTRY.cancel_job_reason_label?.label ??
-                      "Cancellation reason"}
-                    <span
-                      className="ml-1"
-                      style={{ color: "var(--t-error)" }}
-                    >
-                      *
-                    </span>
-                  </label>
-                  <textarea
-                    value={cancelReason}
-                    onChange={(e) => setCancelReason(e.target.value)}
-                    placeholder={
-                      FEATURE_REGISTRY.cancel_job_reason_placeholder?.label ??
-                      "Why is this job being cancelled?"
-                    }
-                    rows={3}
-                    className="w-full rounded-[12px] border px-3 py-2 text-sm resize-none focus:outline-none focus:border-[var(--t-accent)]"
-                    style={{
-                      background: "var(--t-bg-card)",
-                      borderColor: "var(--t-border)",
-                      color: "var(--t-text-primary)",
-                    }}
-                    autoFocus
-                  />
-                </div>
+                {/* Arc J.1 — three-step body. Step 1 collects the
+                    reason (preserves prior Phase-2 UX). Step 2 collects
+                    per-invoice financial decisions; skipped when no
+                    decisionable invoice exists. Step 3 is a final
+                    review before submit. */}
 
-                {/* ── Actions ──────────────────────────────── */}
-                <div className="flex justify-end gap-2">
-                  <button
-                    onClick={closeCancelModal}
-                    disabled={actionLoading}
-                    className="rounded-full px-4 py-2 text-xs font-medium border transition-colors hover:bg-[var(--t-bg-card-hover)] disabled:opacity-40"
-                    style={{
-                      borderColor: "var(--t-border)",
-                      color: "var(--t-text-muted)",
-                    }}
-                  >
-                    {FEATURE_REGISTRY.cancel_job_modal_dismiss?.label ??
-                      "Keep Job"}
-                  </button>
-                  <button
-                    onClick={confirmCancelFromModal}
-                    disabled={!cancelReason.trim() || actionLoading}
-                    className="rounded-full px-4 py-2 text-xs font-semibold transition-opacity hover:opacity-90 disabled:opacity-40"
-                    style={{
-                      background: "var(--t-error)",
-                      color: "var(--t-accent-on-accent)",
-                    }}
-                  >
-                    {actionLoading
-                      ? "Cancelling…"
-                      : FEATURE_REGISTRY.cancel_job_modal_confirm?.label ??
-                        "Confirm Cancellation"}
-                  </button>
-                </div>
+                {/* ── Step 1: Cancellation reason (required) ── */}
+                {cancelStep === "reason" && (
+                  <>
+                    <div className="mb-4">
+                      <label className="text-[11px] font-semibold uppercase tracking-wide text-[var(--t-text-muted)] mb-1 block">
+                        {FEATURE_REGISTRY.cancel_job_step_label_reason?.label ??
+                          "Cancellation Reason"}
+                        <span
+                          className="ml-1"
+                          style={{ color: "var(--t-error)" }}
+                        >
+                          *
+                        </span>
+                      </label>
+                      <textarea
+                        value={cancelReason}
+                        onChange={(e) => setCancelReason(e.target.value)}
+                        placeholder={
+                          FEATURE_REGISTRY.cancel_job_reason_placeholder
+                            ?.label ?? "Why is this job being cancelled?"
+                        }
+                        rows={3}
+                        className="w-full rounded-[12px] border px-3 py-2 text-sm resize-none focus:outline-none focus:border-[var(--t-accent)]"
+                        style={{
+                          background: "var(--t-bg-card)",
+                          borderColor: "var(--t-border)",
+                          color: "var(--t-text-primary)",
+                        }}
+                        autoFocus
+                      />
+                    </div>
+
+                    <div className="flex justify-end gap-2">
+                      <button
+                        onClick={closeCancelModal}
+                        disabled={actionLoading}
+                        className="rounded-full px-4 py-2 text-xs font-medium border transition-colors hover:bg-[var(--t-bg-card-hover)] disabled:opacity-40"
+                        style={{
+                          borderColor: "var(--t-border)",
+                          color: "var(--t-text-muted)",
+                        }}
+                      >
+                        {FEATURE_REGISTRY.cancel_job_modal_dismiss?.label ??
+                          "Keep Job"}
+                      </button>
+                      <button
+                        onClick={advanceFromReason}
+                        disabled={!cancelReason.trim() || actionLoading}
+                        className="rounded-full px-4 py-2 text-xs font-semibold transition-opacity hover:opacity-90 disabled:opacity-40"
+                        style={{
+                          background: "var(--t-accent)",
+                          color: "var(--t-accent-on-accent)",
+                        }}
+                      >
+                        {FEATURE_REGISTRY.cancel_job_continue?.label ??
+                          "Continue"}
+                      </button>
+                    </div>
+                  </>
+                )}
+
+                {/* ── Step 2: Per-invoice financial decisions ── */}
+                {cancelStep === "decisions" && (
+                  <>
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--t-text-muted)] mb-2">
+                      {FEATURE_REGISTRY.cancel_job_step_label_decisions
+                        ?.label ?? "Financial Decisions"}
+                    </p>
+                    <ul
+                      className="space-y-2 rounded-[12px] border p-2 mb-3"
+                      style={{
+                        background: "var(--t-bg-elevated)",
+                        borderColor: "var(--t-border)",
+                      }}
+                    >
+                      {decisionableInvoices.map((inv) => {
+                        const d =
+                          invoiceDecisions[inv.id] ?? {
+                            decision: "",
+                            reason: "",
+                          };
+                        const isPartial =
+                          inv.amount_paid > 0 && inv.balance_due > 0;
+                        const partialHint =
+                          d.decision === "keep_paid"
+                            ? (
+                                FEATURE_REGISTRY
+                                  .cancel_job_partial_voided_hint_keep_paid
+                                  ?.label ??
+                                "Customer keeps the paid {AMOUNT_PAID}; unpaid balance of {AMOUNT_UNPAID} will be voided."
+                              )
+                                .replace(
+                                  "{AMOUNT_PAID}",
+                                  formatCurrency(inv.amount_paid),
+                                )
+                                .replace(
+                                  "{AMOUNT_UNPAID}",
+                                  formatCurrency(inv.balance_due),
+                                )
+                            : (
+                                FEATURE_REGISTRY
+                                  .cancel_job_partial_voided_hint_refund_credit
+                                  ?.label ??
+                                "Unpaid balance of {AMOUNT} will be voided automatically."
+                              ).replace(
+                                "{AMOUNT}",
+                                formatCurrency(inv.balance_due),
+                              );
+
+                        return (
+                          <li
+                            key={inv.id}
+                            className="px-2 py-2 border-b last:border-b-0"
+                            style={{ borderColor: "var(--t-border)" }}
+                          >
+                            <div className="flex items-center justify-between gap-2 mb-2">
+                              <span className="text-xs font-medium text-[var(--t-text-primary)]">
+                                #{inv.invoice_number}
+                              </span>
+                              <span className="text-[11px] text-[var(--t-text-muted)] tabular-nums">
+                                Total {formatCurrency(inv.total_amount)} · Paid{" "}
+                                {formatCurrency(inv.amount_paid)} · Bal{" "}
+                                {formatCurrency(inv.balance_due)}
+                              </span>
+                            </div>
+                            <select
+                              value={d.decision}
+                              onChange={(e) =>
+                                setInvoiceDecisions((prev) => ({
+                                  ...prev,
+                                  [inv.id]: {
+                                    decision: e.target
+                                      .value as FinancialDecisionType,
+                                    reason: prev[inv.id]?.reason ?? "",
+                                  },
+                                }))
+                              }
+                              className="w-full rounded-[8px] border px-2 py-1.5 text-xs"
+                              style={{
+                                background: "var(--t-bg-card)",
+                                borderColor: "var(--t-border)",
+                                color: "var(--t-text-primary)",
+                              }}
+                            >
+                              <option value="">— Select —</option>
+                              <option
+                                value="void_unpaid"
+                                disabled={!isDecisionEligible("void_unpaid", inv)}
+                                title={
+                                  isDecisionEligible("void_unpaid", inv)
+                                    ? undefined
+                                    : FEATURE_REGISTRY
+                                        .cancel_job_decision_disabled_paid
+                                        ?.label
+                                }
+                              >
+                                {FEATURE_REGISTRY.cancel_job_decision_void_unpaid
+                                  ?.label ?? "Void unpaid invoice"}
+                              </option>
+                              <option
+                                value="refund_paid"
+                                disabled={!isDecisionEligible("refund_paid", inv)}
+                                title={
+                                  isDecisionEligible("refund_paid", inv)
+                                    ? undefined
+                                    : FEATURE_REGISTRY
+                                        .cancel_job_decision_disabled_unpaid
+                                        ?.label
+                                }
+                              >
+                                {FEATURE_REGISTRY.cancel_job_decision_refund_paid
+                                  ?.label ?? "Refund payment"}
+                              </option>
+                              <option
+                                value="credit_memo"
+                                disabled={!isDecisionEligible("credit_memo", inv)}
+                                title={
+                                  isDecisionEligible("credit_memo", inv)
+                                    ? undefined
+                                    : FEATURE_REGISTRY
+                                        .cancel_job_decision_disabled_unpaid
+                                        ?.label
+                                }
+                              >
+                                {FEATURE_REGISTRY.cancel_job_decision_credit_memo
+                                  ?.label ?? "Issue credit memo"}
+                              </option>
+                              <option
+                                value="keep_paid"
+                                disabled={!isDecisionEligible("keep_paid", inv)}
+                                title={
+                                  isDecisionEligible("keep_paid", inv)
+                                    ? undefined
+                                    : FEATURE_REGISTRY
+                                        .cancel_job_decision_disabled_unpaid
+                                        ?.label
+                                }
+                              >
+                                {FEATURE_REGISTRY.cancel_job_decision_keep_paid
+                                  ?.label ?? "Keep payment as final"}
+                              </option>
+                            </select>
+
+                            {d.decision === "keep_paid" && (
+                              <textarea
+                                value={d.reason}
+                                onChange={(e) =>
+                                  setInvoiceDecisions((prev) => ({
+                                    ...prev,
+                                    [inv.id]: {
+                                      decision: "keep_paid",
+                                      reason: e.target.value,
+                                    },
+                                  }))
+                                }
+                                placeholder={
+                                  FEATURE_REGISTRY
+                                    .cancel_job_keep_paid_reason_placeholder
+                                    ?.label ?? "Why is this payment being kept?"
+                                }
+                                rows={2}
+                                className="mt-2 w-full rounded-[8px] border px-2 py-1.5 text-xs resize-none"
+                                style={{
+                                  background: "var(--t-bg-card)",
+                                  borderColor: "var(--t-border)",
+                                  color: "var(--t-text-primary)",
+                                }}
+                              />
+                            )}
+
+                            {isPartial && d.decision && (
+                              <p className="mt-1.5 text-[10px] text-[var(--t-text-muted)]">
+                                {partialHint}
+                              </p>
+                            )}
+                          </li>
+                        );
+                      })}
+                    </ul>
+
+                    {/* Running totals */}
+                    <div className="mb-3 grid grid-cols-2 gap-1 text-[11px] text-[var(--t-text-muted)] tabular-nums">
+                      <div>
+                        {(
+                          FEATURE_REGISTRY.cancel_job_totals_refund?.label ??
+                          "To refund: {AMOUNT}"
+                        ).replace(
+                          "{AMOUNT}",
+                          formatCurrency(
+                            decisionableInvoices.reduce(
+                              (s, inv) =>
+                                invoiceDecisions[inv.id]?.decision ===
+                                "refund_paid"
+                                  ? s + inv.amount_paid
+                                  : s,
+                              0,
+                            ),
+                          ),
+                        )}
+                      </div>
+                      <div>
+                        {(
+                          FEATURE_REGISTRY.cancel_job_totals_credit?.label ??
+                          "To credit: {AMOUNT}"
+                        ).replace(
+                          "{AMOUNT}",
+                          formatCurrency(
+                            decisionableInvoices.reduce(
+                              (s, inv) =>
+                                invoiceDecisions[inv.id]?.decision ===
+                                "credit_memo"
+                                  ? s + inv.amount_paid
+                                  : s,
+                              0,
+                            ),
+                          ),
+                        )}
+                      </div>
+                      <div>
+                        {(
+                          FEATURE_REGISTRY.cancel_job_totals_void?.label ??
+                          "To void: {AMOUNT}"
+                        ).replace(
+                          "{AMOUNT}",
+                          formatCurrency(
+                            decisionableInvoices.reduce((s, inv) => {
+                              const d = invoiceDecisions[inv.id]?.decision;
+                              if (d === "void_unpaid") return s + inv.balance_due;
+                              if (
+                                d === "refund_paid" ||
+                                d === "credit_memo" ||
+                                d === "keep_paid"
+                              )
+                                return s + inv.balance_due;
+                              return s;
+                            }, 0),
+                          ),
+                        )}
+                      </div>
+                      <div>
+                        {(
+                          FEATURE_REGISTRY.cancel_job_totals_kept?.label ??
+                          "Kept paid: {AMOUNT}"
+                        ).replace(
+                          "{AMOUNT}",
+                          formatCurrency(
+                            decisionableInvoices.reduce(
+                              (s, inv) =>
+                                invoiceDecisions[inv.id]?.decision ===
+                                "keep_paid"
+                                  ? s + inv.amount_paid
+                                  : s,
+                              0,
+                            ),
+                          ),
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex justify-between gap-2">
+                      <button
+                        onClick={() => setCancelStep("reason")}
+                        disabled={actionLoading}
+                        className="rounded-full px-4 py-2 text-xs font-medium border transition-colors disabled:opacity-40"
+                        style={{
+                          borderColor: "var(--t-border)",
+                          color: "var(--t-text-muted)",
+                        }}
+                      >
+                        {FEATURE_REGISTRY.cancel_job_back?.label ?? "Back"}
+                      </button>
+                      <button
+                        onClick={advanceFromDecisions}
+                        disabled={!allDecisionsValid || actionLoading}
+                        className="rounded-full px-4 py-2 text-xs font-semibold transition-opacity hover:opacity-90 disabled:opacity-40"
+                        style={{
+                          background: "var(--t-accent)",
+                          color: "var(--t-accent-on-accent)",
+                        }}
+                      >
+                        {FEATURE_REGISTRY.cancel_job_continue?.label ??
+                          "Continue"}
+                      </button>
+                    </div>
+                  </>
+                )}
+
+                {/* ── Step 3: Confirm ── */}
+                {cancelStep === "confirm" && (
+                  <>
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--t-text-muted)] mb-2">
+                      {FEATURE_REGISTRY.cancel_job_step_label_confirm?.label ??
+                        "Confirm"}
+                    </p>
+                    <div
+                      className="rounded-[12px] border p-3 mb-3 text-xs"
+                      style={{
+                        background: "var(--t-bg-elevated)",
+                        borderColor: "var(--t-border)",
+                      }}
+                    >
+                      <p className="text-[var(--t-text-primary)] mb-2">
+                        <strong>Reason:</strong> {cancelReason.trim()}
+                      </p>
+                      {decisionableInvoices.length > 0 && (
+                        <ul className="space-y-1">
+                          {decisionableInvoices.map((inv) => {
+                            const d = invoiceDecisions[inv.id];
+                            return (
+                              <li
+                                key={inv.id}
+                                className="text-[11px] text-[var(--t-text-muted)]"
+                              >
+                                #{inv.invoice_number} →{" "}
+                                <span style={{ color: "var(--t-text-primary)" }}>
+                                  {d?.decision
+                                    ? FEATURE_REGISTRY[
+                                        `cancel_job_decision_${d.decision}` as keyof typeof FEATURE_REGISTRY
+                                      ]?.label ?? d.decision
+                                    : "—"}
+                                </span>
+                                {d?.decision === "keep_paid" && d.reason && (
+                                  <span className="ml-1">
+                                    ({d.reason.trim()})
+                                  </span>
+                                )}
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      )}
+                      {decisionableInvoices.length === 0 && (
+                        <p className="text-[11px] text-[var(--t-text-muted)]">
+                          No financial decisions required.
+                        </p>
+                      )}
+                    </div>
+
+                    {stripeFailureCount > 0 && (
+                      <div
+                        className="rounded-[12px] px-3 py-2 mb-3 text-xs"
+                        style={{
+                          background: "var(--t-error-soft)",
+                          color: "var(--t-error)",
+                          border: "1px solid var(--t-error)",
+                        }}
+                        role="alert"
+                      >
+                        {(
+                          FEATURE_REGISTRY.cancel_job_stripe_failure_banner
+                            ?.label ??
+                          "Stripe refund failed for {N} invoice(s)."
+                        ).replace("{N}", String(stripeFailureCount))}
+                      </div>
+                    )}
+
+                    <div className="flex justify-between gap-2">
+                      <button
+                        onClick={() =>
+                          setCancelStep(
+                            decisionableInvoices.length > 0
+                              ? "decisions"
+                              : "reason",
+                          )
+                        }
+                        disabled={actionLoading}
+                        className="rounded-full px-4 py-2 text-xs font-medium border transition-colors disabled:opacity-40"
+                        style={{
+                          borderColor: "var(--t-border)",
+                          color: "var(--t-text-muted)",
+                        }}
+                      >
+                        {FEATURE_REGISTRY.cancel_job_back?.label ?? "Back"}
+                      </button>
+                      <button
+                        onClick={confirmCancelFromModal}
+                        disabled={actionLoading}
+                        className="rounded-full px-4 py-2 text-xs font-semibold transition-opacity hover:opacity-90 disabled:opacity-40"
+                        style={{
+                          background: "var(--t-error)",
+                          color: "var(--t-accent-on-accent)",
+                        }}
+                      >
+                        {actionLoading
+                          ? "Cancelling…"
+                          : FEATURE_REGISTRY.cancel_job_modal_confirm?.label ??
+                            "Confirm Cancellation"}
+                      </button>
+                    </div>
+                  </>
+                )}
               </>
             )}
           </div>

@@ -1316,17 +1316,50 @@ function JobsPageContent() {
                   "Cancel {N} stale jobs? This will improve availability projections.";
                 const msg = template.replace("{N}", String(ids.length));
                 if (!window.confirm(msg)) return;
+                // Arc J.1 — bulk cancel is best-effort across jobs
+                // that do NOT require a financial decision. Per-job
+                // preflight against /cancellation-context: if any
+                // invoice has paid or unpaid funds, that job is
+                // skipped from the bulk loop and the operator is
+                // told to handle it from the job detail modal
+                // (refund/credit/keep authority cannot be fanned
+                // out across an opaque bulk action).
+                let cancelledCount = 0;
+                let skippedDecisionRequired = 0;
                 for (let i = 0; i < ids.length; i++) {
                   setBulkProgress(`Cancelling ${i + 1} of ${ids.length}...`);
-                  // Reuses the existing lifecycle endpoint —
-                  // server-side validation, audit log, and
-                  // downstream asset state-machine all continue to
-                  // apply per-job.
-                  try { await api.patch(`/jobs/${ids[i]}/status`, { status: "cancelled" }); } catch { /* continue on individual failure */ }
+                  try {
+                    const ctx = await api
+                      .get<{
+                        summary?: {
+                          hasPaidInvoices?: boolean;
+                          hasUnpaidInvoices?: boolean;
+                        };
+                      }>(`/jobs/${ids[i]}/cancellation-context`)
+                      .catch(() => null);
+                    const requiresDecision =
+                      !!ctx?.summary?.hasPaidInvoices ||
+                      !!ctx?.summary?.hasUnpaidInvoices;
+                    if (requiresDecision) {
+                      skippedDecisionRequired += 1;
+                      continue;
+                    }
+                    await api.patch(`/jobs/${ids[i]}/status`, { status: "cancelled" });
+                    cancelledCount += 1;
+                  } catch {
+                    /* continue on individual failure */
+                  }
                 }
                 setBulkProgress(null);
                 setSelectedJobIds(new Set());
-                toast("success", `Cancelled ${ids.length} job(s)`);
+                if (skippedDecisionRequired > 0) {
+                  toast(
+                    "warning",
+                    `Cancelled ${cancelledCount}; ${skippedDecisionRequired} job(s) skipped — open each job to choose a refund/credit/keep decision.`,
+                  );
+                } else {
+                  toast("success", `Cancelled ${cancelledCount} job(s)`);
+                }
                 // Refresh both the list and the KPI badge.
                 fetchJobs();
                 api

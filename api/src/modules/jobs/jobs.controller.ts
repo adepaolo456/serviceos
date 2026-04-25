@@ -27,6 +27,7 @@ import {
 // a type-only symbol trips TS1272 on the @Body() decorator's
 // metadata emission.
 import type { UpdateScheduledDateDto } from './dto/update-scheduled-date.dto';
+import { CancelWithFinancialsDto } from './dto/cancel-with-financials.dto';
 import { TenantId, CurrentUser, Roles } from '../../common/decorators';
 import { RolesGuard } from '../../common/guards';
 import {
@@ -275,6 +276,50 @@ export class JobsController {
       }
     }
     return this.jobsService.changeStatus(tenantId, id, dto, userRole, userId, userEmail);
+  }
+
+  /**
+   * Arc J.1 — cancel a job with per-invoice financial decisions.
+   *
+   * Funnels every cancellation through a single atomic transaction:
+   * job state change + per-invoice void/refund/memo/keep + audit row
+   * per decision. Stripe API calls fire AFTER commit, each in its own
+   * small post-commit transaction so payment-status update + result
+   * audit row land atomically together.
+   *
+   * RBAC: owner|admin only — refund authority is restricted, dispatcher
+   * cannot issue refunds. PATCH /:id/status remains the path for
+   * non-financial cancellations (zero-dollar jobs, modal fallback).
+   *
+   * NOTE on rate limiting: standing rule § Anthony memory entry 8
+   * recommends 10/hour per user on this endpoint. The codebase does
+   * NOT currently have @nestjs/throttler wired (verified by grep). A
+   * follow-up arc should add it; documenting here so the rate-limit
+   * gap doesn't get lost.
+   */
+  @Post(':id/cancel-with-financials')
+  @UseGuards(RolesGuard)
+  @Roles('owner', 'admin')
+  @ApiOperation({
+    summary:
+      'Arc J.1 — cancel a job with per-invoice financial decisions (void/refund/credit/keep)',
+  })
+  async cancelWithFinancials(
+    @TenantId() tenantId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CancelWithFinancialsDto,
+    @CurrentUser('id') userId: string,
+    @CurrentUser('role') userRole: string,
+    @CurrentUser('email') userEmail: string,
+  ) {
+    return this.jobsService.cancelJobWithFinancials(
+      tenantId,
+      id,
+      dto,
+      userId,
+      userRole,
+      userEmail,
+    );
   }
 
   @Patch(':id/asset')

@@ -31,6 +31,40 @@ export class StripeService {
     return this.stripe;
   }
 
+  /**
+   * Arc J.1 — thin refund-API helper for the cancellation orchestrator.
+   *
+   * Purpose: `refundInvoice` re-derives invoice state, picks the most
+   * recent payment, and writes notifications — all redundant when the
+   * orchestrator already has the right Payment row loaded and its own
+   * audit trail. This method is the thin call: ONE Stripe API call,
+   * tenant-scoped via `stripe_connect_id`, no DB writes, no
+   * notifications. The orchestrator wraps the result in its
+   * post-commit transaction.
+   *
+   * Throws if Stripe rejects the create call. Caller is expected to
+   * catch and route the failure into a `stripe_failed` audit row.
+   */
+  async createRefundForPaymentIntent(
+    tenantId: string,
+    paymentIntentId: string,
+    amount: number,
+    metadata: Record<string, string>,
+  ): Promise<{ refundId: string; refundedAmount: number }> {
+    const tenant = await this.tenantRepo.findOne({ where: { id: tenantId } });
+    const refund = await this.stripe.refunds.create(
+      {
+        payment_intent: paymentIntentId,
+        amount: Math.round(amount * 100),
+        metadata,
+      },
+      tenant?.stripe_connect_id
+        ? { stripeAccount: tenant.stripe_connect_id }
+        : undefined,
+    );
+    return { refundId: refund.id, refundedAmount: refund.amount / 100 };
+  }
+
   async onboardConnect(tenantId: string) {
     const tenant = await this.tenantRepo.findOne({ where: { id: tenantId } });
     if (!tenant) throw new NotFoundException('Tenant not found');

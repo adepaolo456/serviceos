@@ -15,6 +15,7 @@ import { Route } from '../dispatch/entities/route.entity';
 import { Invoice } from '../billing/entities/invoice.entity';
 import { BillingIssue } from '../billing/entities/billing-issue.entity';
 import { CreditMemo } from '../billing/entities/credit-memo.entity';
+import { Payment } from '../billing/entities/payment.entity';
 import { RentalChain } from '../rental-chains/entities/rental-chain.entity';
 import { TaskChainLink } from '../rental-chains/entities/task-chain-link.entity';
 import { DumpTicket } from '../dump-locations/entities/dump-ticket.entity';
@@ -32,6 +33,8 @@ import {
 import { NotificationsService } from '../notifications/notifications.service';
 import { PricingService } from '../pricing/pricing.service';
 import { AlertService } from '../alerts/services/alert.service';
+import { CreditAuditService } from '../credit-audit/credit-audit.service';
+import { StripeService } from '../stripe/stripe.service';
 import {
   LifecycleContextResponse,
   LifecycleNode,
@@ -172,6 +175,8 @@ export class JobsService {
     private billingIssueRepo: Repository<BillingIssue>,
     @InjectRepository(CreditMemo)
     private creditMemoRepo: Repository<CreditMemo>,
+    @InjectRepository(Payment)
+    private paymentRepo: Repository<Payment>,
     @InjectRepository(RentalChain)
     private rentalChainRepo: Repository<RentalChain>,
     @InjectRepository(TaskChainLink)
@@ -200,6 +205,14 @@ export class JobsService {
     // through `enforceDriverAssignment`. Prevents controller-level
     // duplication and closes the `PATCH /jobs/:id` bypass.
     private dispatchCreditEnforcement: DispatchCreditEnforcementService,
+    // Arc J.1 — cancellation orchestrator writes credit_audit_events
+    // through the threaded-manager path so the audit row is atomic
+    // with the cancellation transaction.
+    private creditAuditService: CreditAuditService,
+    // Arc J.1 — thin Stripe API helper invoked AFTER the main
+    // cancellation transaction commits, for `refund_paid` decisions on
+    // card payments with a stripe_payment_intent_id present.
+    private stripeService: StripeService,
   ) {}
 
   /**
@@ -1753,6 +1766,23 @@ export class JobsService {
     }
 
     // 5. Invoice voiding
+    //
+    // Arc J.1 — the void+memo writes are now extracted into
+    // `applyFinancialDecisionTx`. cascadeDelete keeps its opt-in loop
+    // and resolves each opted-in invoice to a `credit_memo` decision
+    // (matching the prior behavior of always creating a memo for the
+    // invoice's full total when an invoice is opted into voiding).
+    // Behavior locked by the cascadeDelete smoke test in
+    // jobs.service.spec.ts.
+    //
+    // The helper requires an EntityManager. cascadeDelete itself is
+    // historically non-transactional (Arc J Phase 0 § 5 documents this
+    // as a latent risk). Rather than retrofit a transaction here in
+    // the same arc that introduces the orchestrator, we run the helper
+    // through `dataSource.manager` so the helper's manager-bound write
+    // path stays consistent — same as the un-trx-scoped repos
+    // cascadeDelete used before. Wrapping cascadeDelete in a real
+    // transaction is a separate cleanup arc.
     if (options.voidInvoices && options.voidInvoices.length > 0) {
       for (const inv of options.voidInvoices) {
         if (!inv.void) continue;
@@ -1762,25 +1792,38 @@ export class JobsService {
         });
         if (!invoice) continue;
 
-        await this.invoiceRepo.update(invoice.id, {
-          status: 'voided',
-          voided_at: now,
-          balance_due: 0,
-        });
-        voidedInvoices.push({ id: invoice.id, invoice_number: invoice.invoice_number });
+        // Preserve cascadeDelete's prior semantics: the credit memo
+        // amount equals the invoice total (NOT amount_paid). This is
+        // the deliberate divergence from the orchestrator's
+        // `credit_memo` decision, which uses `amount_paid`. The
+        // cascadeDelete-only override is passed via the third
+        // positional `cascadeDeleteOverrideAmount` so the helper can
+        // honor it without leaking that knowledge into the
+        // orchestrator's decision branches.
+        const result = await this.applyFinancialDecisionTx(
+          this.dataSource.manager,
+          invoice,
+          {
+            type: 'credit_memo',
+            cascadeDeleteOverrideAmount: Number(invoice.total),
+            cascadeDeleteOverrideReason: options.voidReason || 'Task cancelled',
+          },
+          tenantId,
+          userId,
+        );
 
-        // Create credit memo
-        const memo = this.creditMemoRepo.create({
-          tenant_id: tenantId,
-          original_invoice_id: invoice.id,
-          customer_id: invoice.customer_id,
-          amount: invoice.total,
-          reason: options.voidReason || 'Task cancelled',
-          status: 'issued',
-          created_by: userId,
-        });
-        const savedMemo = await this.creditMemoRepo.save(memo);
-        creditMemos.push({ id: savedMemo.id, amount: Number(savedMemo.amount) });
+        if (result.voided) {
+          voidedInvoices.push({
+            id: invoice.id,
+            invoice_number: invoice.invoice_number,
+          });
+        }
+        if (result.creditMemoId) {
+          creditMemos.push({
+            id: result.creditMemoId,
+            amount: result.creditMemoAmount ?? 0,
+          });
+        }
       }
     }
 
@@ -4056,5 +4099,660 @@ export class JobsService {
     } as Partial<Job>);
 
     return this.jobsRepository.save(job);
+  }
+
+  // ─────────────────────────────────────────────────────────────────
+  // Arc J.1 — Cancellation orchestrator + financial-decision helper
+  // ─────────────────────────────────────────────────────────────────
+
+  /**
+   * Apply a financial decision against a single invoice inside a
+   * caller-managed transaction.
+   *
+   * Used by:
+   *   - `cancelJobWithFinancials` — canonical cancellation path. Each
+   *     decision is a `void_unpaid | refund_paid | credit_memo |
+   *     keep_paid`.
+   *   - `cascadeDelete` — legacy delete-task path. Always uses
+   *     `credit_memo` with the cascadeDeleteOverride* knobs to
+   *     preserve the prior "memo for full invoice total" semantics.
+   *
+   * Eligibility re-check (defense in depth — DTO-layer check at
+   * `class-validator` and modal UI guards are layers 1 and 3):
+   *   - `void_unpaid` rejected when `amount_paid > 0`
+   *   - `refund_paid | credit_memo | keep_paid` rejected when
+   *     `amount_paid == 0` (UNLESS cascadeDeleteOverrideAmount is set,
+   *     since the legacy path memos for full total regardless)
+   *
+   * Partial-payment rule (Anthony's policy lock): when an invoice has
+   * BOTH `amount_paid > 0` AND `balance_due > 0` and the chosen
+   * decision is `refund_paid | credit_memo | keep_paid`, the unpaid
+   * balance is auto-voided as part of the same write. The audit
+   * metadata records both halves under one event.
+   */
+  private async applyFinancialDecisionTx(
+    manager: EntityManager,
+    invoice: Invoice,
+    decision:
+      | { type: 'void_unpaid' }
+      | { type: 'refund_paid' }
+      | {
+          type: 'credit_memo';
+          cascadeDeleteOverrideAmount?: number;
+          cascadeDeleteOverrideReason?: string;
+        }
+      | { type: 'keep_paid'; reason: string },
+    tenantId: string,
+    userId: string,
+  ): Promise<{
+    voided: boolean;
+    unpaidBalanceVoided: number;
+    creditMemoId: string | null;
+    creditMemoAmount: number | null;
+    refundIntent: {
+      paymentId: string;
+      stripePaymentIntentId: string | null;
+      amount: number;
+      paymentMethod: string;
+    } | null;
+    auditEventType:
+      | 'cancellation_void_unpaid'
+      | 'cancellation_refund_paid'
+      | 'cancellation_credit_memo'
+      | 'cancellation_keep_paid';
+    auditMetadata: Record<string, unknown>;
+  }> {
+    const amountPaid = Number(invoice.amount_paid) || 0;
+    const balanceDue = Number(invoice.balance_due) || 0;
+    const total = Number(invoice.total) || 0;
+    const now = new Date();
+
+    const isCascadeDeleteOverride =
+      decision.type === 'credit_memo' &&
+      typeof (decision as { cascadeDeleteOverrideAmount?: number })
+        .cascadeDeleteOverrideAmount === 'number';
+
+    // Eligibility re-check (skipped for cascadeDelete legacy path,
+    // which intentionally creates a memo for the full total even when
+    // amount_paid is 0).
+    if (!isCascadeDeleteOverride) {
+      if (decision.type === 'void_unpaid' && amountPaid > 0) {
+        throw new BadRequestException(
+          `decision_invalid_for_paid_invoice: invoice ${invoice.invoice_number} has amount_paid=${amountPaid}; void_unpaid is not allowed`,
+        );
+      }
+      if (
+        (decision.type === 'refund_paid' ||
+          decision.type === 'credit_memo' ||
+          decision.type === 'keep_paid') &&
+        amountPaid === 0
+      ) {
+        throw new BadRequestException(
+          `decision_invalid_for_unpaid_invoice: invoice ${invoice.invoice_number} has amount_paid=0; ${decision.type} is not allowed`,
+        );
+      }
+      if (decision.type === 'keep_paid' && !decision.reason?.trim()) {
+        throw new BadRequestException(
+          `keep_paid_reason_required: invoice ${invoice.invoice_number} keep_paid decision requires a reason`,
+        );
+      }
+    }
+
+    const invoiceRepo = manager.getRepository(Invoice);
+    const creditMemoRepo = manager.getRepository(CreditMemo);
+    const paymentRepo = manager.getRepository(Payment);
+
+    let voided = false;
+    let unpaidBalanceVoided = 0;
+    let creditMemoId: string | null = null;
+    let creditMemoAmount: number | null = null;
+    let refundIntent: {
+      paymentId: string;
+      stripePaymentIntentId: string | null;
+      amount: number;
+      paymentMethod: string;
+    } | null = null;
+
+    if (decision.type === 'void_unpaid') {
+      await invoiceRepo.update(
+        { id: invoice.id, tenant_id: tenantId },
+        { status: 'voided', voided_at: now, balance_due: 0 },
+      );
+      voided = true;
+      // Note: `unpaidBalanceVoided` stays 0 here — the policy
+      // distinguishes "void_unpaid" (whole invoice was unpaid) from
+      // "unpaid balance auto-voided as a side effect of a paid-portion
+      // decision." The audit metadata reflects this distinction.
+    } else if (decision.type === 'refund_paid') {
+      // Find the most recent payment on the invoice. We refund against
+      // ONE payment row — multi-payment invoices are out of scope for
+      // Arc J.1 and have not been observed in production.
+      const payment = await paymentRepo.findOne({
+        where: { invoice_id: invoice.id, tenant_id: tenantId },
+        order: { applied_at: 'DESC' },
+      });
+      if (!payment) {
+        throw new BadRequestException(
+          `payment_not_found: invoice ${invoice.invoice_number} has amount_paid > 0 but no Payment row`,
+        );
+      }
+
+      const refundProviderStatus =
+        payment.payment_method === 'cash'
+          ? 'manual_completed'
+          : payment.stripe_payment_intent_id
+            ? 'pending_stripe'
+            : 'manual_required';
+
+      const newRefunded =
+        Math.round(
+          (Number(payment.refunded_amount || 0) + amountPaid) * 100,
+        ) / 100;
+
+      await paymentRepo.update(
+        { id: payment.id, tenant_id: tenantId },
+        {
+          refunded_amount: newRefunded,
+          refund_provider_status: refundProviderStatus,
+        },
+      );
+
+      // Always void the invoice on a refund decision: the customer is
+      // getting their money back, the invoice should not stay open.
+      // Auto-void any remaining balance in the same write.
+      await invoiceRepo.update(
+        { id: invoice.id, tenant_id: tenantId },
+        { status: 'voided', voided_at: now, balance_due: 0 },
+      );
+      voided = true;
+      unpaidBalanceVoided = balanceDue;
+
+      // Only populate refundIntent for the path that actually hits the
+      // Stripe API. Cash + manual_required have nothing for the
+      // post-commit Stripe call to do.
+      if (refundProviderStatus === 'pending_stripe') {
+        refundIntent = {
+          paymentId: payment.id,
+          stripePaymentIntentId: payment.stripe_payment_intent_id,
+          amount: amountPaid,
+          paymentMethod: payment.payment_method,
+        };
+      }
+    } else if (decision.type === 'credit_memo') {
+      const memoAmount = isCascadeDeleteOverride
+        ? Number(
+            (decision as { cascadeDeleteOverrideAmount?: number })
+              .cascadeDeleteOverrideAmount,
+          )
+        : amountPaid;
+      const memoReason = isCascadeDeleteOverride
+        ? (decision as { cascadeDeleteOverrideReason?: string })
+            .cascadeDeleteOverrideReason || 'Cancelled — credit issued'
+        : 'Cancelled — credit issued';
+
+      const memo = creditMemoRepo.create({
+        tenant_id: tenantId,
+        original_invoice_id: invoice.id,
+        customer_id: invoice.customer_id,
+        amount: memoAmount,
+        reason: memoReason,
+        status: 'issued',
+        created_by: userId,
+      });
+      const savedMemo = await creditMemoRepo.save(memo);
+      creditMemoId = savedMemo.id;
+      creditMemoAmount = Number(savedMemo.amount);
+
+      await invoiceRepo.update(
+        { id: invoice.id, tenant_id: tenantId },
+        { status: 'voided', voided_at: now, balance_due: 0 },
+      );
+      voided = true;
+      unpaidBalanceVoided = balanceDue;
+    } else if (decision.type === 'keep_paid') {
+      // No payment touch, no memo. Auto-void any unpaid balance.
+      if (balanceDue > 0) {
+        await invoiceRepo.update(
+          { id: invoice.id, tenant_id: tenantId },
+          { status: 'voided', voided_at: now, balance_due: 0 },
+        );
+        voided = true;
+        unpaidBalanceVoided = balanceDue;
+      }
+      // If balanceDue === 0 the invoice stays in its current state
+      // (paid, partial, etc.) — explicitly NOT changing status.
+    }
+
+    const auditEventType:
+      | 'cancellation_void_unpaid'
+      | 'cancellation_refund_paid'
+      | 'cancellation_credit_memo'
+      | 'cancellation_keep_paid' =
+      decision.type === 'void_unpaid'
+        ? 'cancellation_void_unpaid'
+        : decision.type === 'refund_paid'
+          ? 'cancellation_refund_paid'
+          : decision.type === 'credit_memo'
+            ? 'cancellation_credit_memo'
+            : 'cancellation_keep_paid';
+
+    const paidPortionDecision =
+      decision.type === 'void_unpaid' ? null : decision.type;
+    const paidPortionAmount =
+      decision.type === 'void_unpaid' ? null : amountPaid;
+    const decisionReason =
+      decision.type === 'keep_paid' ? decision.reason : null;
+    const refundProviderStatusForAudit =
+      decision.type === 'refund_paid'
+        ? refundIntent
+          ? 'pending_stripe'
+          : isCascadeDeleteOverride
+            ? null
+            : (await this.resolveRefundProviderStatusForAudit(invoice, tenantId))
+        : null;
+
+    const auditMetadata: Record<string, unknown> = {
+      invoice_id: invoice.id,
+      invoice_number: invoice.invoice_number,
+      amount_paid_at_decision: amountPaid,
+      balance_due_at_decision: balanceDue,
+      total_amount_at_decision: total,
+      decision_reason: decisionReason,
+      paid_portion_decision: paidPortionDecision,
+      paid_portion_amount: paidPortionAmount,
+      unpaid_balance_voided: unpaidBalanceVoided,
+      refund_provider_status: refundProviderStatusForAudit,
+      stripe_refund_id: null,
+      credit_memo_id: creditMemoId,
+    };
+
+    return {
+      voided,
+      unpaidBalanceVoided,
+      creditMemoId,
+      creditMemoAmount,
+      refundIntent,
+      auditEventType,
+      auditMetadata,
+    };
+  }
+
+  /**
+   * Helper for `applyFinancialDecisionTx`: when a `refund_paid`
+   * decision lands on a payment that is NOT eligible for a Stripe API
+   * call (cash → `manual_completed`, card without PI →
+   * `manual_required`), the audit row should still record the final
+   * refund_provider_status. The orchestrator's post-commit Stripe path
+   * only updates `pending_stripe` rows.
+   */
+  private async resolveRefundProviderStatusForAudit(
+    invoice: Invoice,
+    tenantId: string,
+  ): Promise<string | null> {
+    const payment = await this.paymentRepo.findOne({
+      where: { invoice_id: invoice.id, tenant_id: tenantId },
+      order: { applied_at: 'DESC' },
+    });
+    if (!payment) return null;
+    if (payment.payment_method === 'cash') return 'manual_completed';
+    if (payment.stripe_payment_intent_id) return 'pending_stripe';
+    return 'manual_required';
+  }
+
+  /**
+   * Cancel a job with per-invoice financial decisions. Arc J.1.
+   *
+   * Wraps the job state change + every per-invoice decision + every
+   * audit row in a single `dataSource.transaction`. Stripe API calls
+   * happen AFTER commit, each in its own small post-commit transaction
+   * (Lock 3) so the payment-status update + the result audit row land
+   * atomically together.
+   *
+   * RBAC enforced at the controller (@Roles owner|admin). Tenant
+   * scoping enforced on every read/write.
+   */
+  async cancelJobWithFinancials(
+    tenantId: string,
+    jobId: string,
+    dto: {
+      cancellationReason: string;
+      invoiceDecisions: Array<{
+        invoice_id: string;
+        decision: 'void_unpaid' | 'refund_paid' | 'credit_memo' | 'keep_paid';
+        reason?: string;
+      }>;
+    },
+    userId: string,
+    _userRole: string,
+    _userEmail: string,
+  ): Promise<{
+    success: true;
+    jobId: string;
+    decisionsApplied: number;
+    creditMemos: Array<{ id: string; amount: number; invoice_id: string }>;
+    voidedInvoiceIds: string[];
+    stripeFailures: Array<{
+      invoice_id: string;
+      payment_id: string;
+      error: string;
+    }>;
+  }> {
+    if (!dto.cancellationReason?.trim()) {
+      throw new BadRequestException(
+        'cancellation_reason_required: cancellationReason is required',
+      );
+    }
+
+    // Pre-load the job (tenant-scoped existence check). 404 here means
+    // the cross-tenant probe surface stays clean.
+    const job = await this.jobsRepository.findOne({
+      where: { id: jobId, tenant_id: tenantId },
+    });
+    if (!job) throw new NotFoundException('Job not found');
+
+    if (['cancelled', 'completed'].includes(job.status)) {
+      throw new BadRequestException(
+        `invalid_state: job ${job.job_number} is already ${job.status}`,
+      );
+    }
+
+    // Collect linked invoices: direct `job_id` match plus any invoices
+    // sharing this job's `rental_chain_id`. Tenant-scoped on every
+    // query.
+    const directInvoices = await this.invoiceRepo.find({
+      where: { job_id: jobId, tenant_id: tenantId },
+    });
+    const link = await this.taskChainLinkRepo.findOne({
+      where: { job_id: jobId },
+    });
+    let chainInvoices: Invoice[] = [];
+    if (link) {
+      chainInvoices = await this.invoiceRepo.find({
+        where: {
+          rental_chain_id: link.rental_chain_id,
+          tenant_id: tenantId,
+        },
+      });
+    }
+    // Dedupe — direct + chain may overlap.
+    const linkedInvoices: Invoice[] = [];
+    const seen = new Set<string>();
+    for (const inv of [...directInvoices, ...chainInvoices]) {
+      if (seen.has(inv.id)) continue;
+      seen.add(inv.id);
+      linkedInvoices.push(inv);
+    }
+
+    // Filter out fully-resolved invoices (zero paid AND zero balance).
+    // These are not part of the financial-decision surface — Step 2 of
+    // the modal skips them.
+    const decisionableInvoices = linkedInvoices.filter(
+      (i) => Number(i.amount_paid) > 0 || Number(i.balance_due) > 0,
+    );
+
+    // Service-layer validation: every decisionable invoice must have a
+    // decision in the DTO; the DTO must not contain stray decisions
+    // for invoices that aren't decisionable. Layer 2 of the
+    // three-layer eligibility enforcement.
+    const dtoByInvoiceId = new Map<
+      string,
+      { decision: string; reason?: string }
+    >();
+    for (const d of dto.invoiceDecisions) {
+      if (dtoByInvoiceId.has(d.invoice_id)) {
+        throw new BadRequestException(
+          `duplicate_decision: invoice ${d.invoice_id} has more than one decision`,
+        );
+      }
+      dtoByInvoiceId.set(d.invoice_id, {
+        decision: d.decision,
+        reason: d.reason,
+      });
+    }
+    for (const inv of decisionableInvoices) {
+      if (!dtoByInvoiceId.has(inv.id)) {
+        throw new BadRequestException(
+          `decision_required_for_invoice: invoice ${inv.invoice_number} requires a decision`,
+        );
+      }
+    }
+    for (const [invoiceId] of dtoByInvoiceId) {
+      const found = decisionableInvoices.find((i) => i.id === invoiceId);
+      if (!found) {
+        throw new BadRequestException(
+          `decision_for_unknown_invoice: invoice ${invoiceId} is not linked to job ${job.job_number}`,
+        );
+      }
+    }
+
+    // Re-validate eligibility per invoice against DB state — defense
+    // in depth, even though `applyFinancialDecisionTx` re-checks too.
+    // We do this BEFORE opening the transaction so a 4xx returns fast
+    // without holding a DB connection.
+    for (const inv of decisionableInvoices) {
+      const d = dtoByInvoiceId.get(inv.id)!;
+      const amountPaid = Number(inv.amount_paid) || 0;
+      if (d.decision === 'void_unpaid' && amountPaid > 0) {
+        throw new BadRequestException(
+          `decision_invalid_for_paid_invoice: invoice ${inv.invoice_number} has amount_paid=${amountPaid}; void_unpaid is not allowed`,
+        );
+      }
+      if (
+        (d.decision === 'refund_paid' ||
+          d.decision === 'credit_memo' ||
+          d.decision === 'keep_paid') &&
+        amountPaid === 0
+      ) {
+        throw new BadRequestException(
+          `decision_invalid_for_unpaid_invoice: invoice ${inv.invoice_number} has amount_paid=0; ${d.decision} is not allowed`,
+        );
+      }
+      if (d.decision === 'keep_paid' && !d.reason?.trim()) {
+        throw new BadRequestException(
+          `keep_paid_reason_required: invoice ${inv.invoice_number} keep_paid decision requires a reason`,
+        );
+      }
+    }
+
+    // ── Main transaction ────────────────────────────────────────
+    const refundIntents: Array<{
+      invoiceId: string;
+      paymentId: string;
+      stripePaymentIntentId: string;
+      amount: number;
+      auditMetadata: Record<string, unknown>;
+      customerId: string;
+    }> = [];
+    const creditMemos: Array<{
+      id: string;
+      amount: number;
+      invoice_id: string;
+    }> = [];
+    const voidedInvoiceIds: string[] = [];
+
+    await this.dataSource.transaction(async (manager) => {
+      const txJobRepo = manager.getRepository(Job);
+
+      // 1. Cancel the job itself.
+      job.status = 'cancelled';
+      job.cancelled_at = new Date();
+      job.cancellation_reason = dto.cancellationReason.trim();
+      job.rescheduled_by_customer = false;
+      await txJobRepo.save(job);
+
+      // 2. Per-invoice financial decisions.
+      let decisionsApplied = 0;
+      for (const inv of decisionableInvoices) {
+        const d = dtoByInvoiceId.get(inv.id)!;
+        const decision =
+          d.decision === 'keep_paid'
+            ? { type: 'keep_paid' as const, reason: d.reason ?? '' }
+            : { type: d.decision as 'void_unpaid' | 'refund_paid' | 'credit_memo' };
+
+        const result = await this.applyFinancialDecisionTx(
+          manager,
+          inv,
+          decision,
+          tenantId,
+          userId,
+        );
+        decisionsApplied += 1;
+
+        if (result.voided) voidedInvoiceIds.push(inv.id);
+        if (result.creditMemoId) {
+          creditMemos.push({
+            id: result.creditMemoId,
+            amount: result.creditMemoAmount ?? 0,
+            invoice_id: inv.id,
+          });
+        }
+        if (result.refundIntent) {
+          refundIntents.push({
+            invoiceId: inv.id,
+            paymentId: result.refundIntent.paymentId,
+            stripePaymentIntentId: result.refundIntent.stripePaymentIntentId!,
+            amount: result.refundIntent.amount,
+            auditMetadata: result.auditMetadata,
+            customerId: inv.customer_id,
+          });
+        }
+
+        await this.creditAuditService.record(
+          {
+            tenantId,
+            eventType: result.auditEventType,
+            userId,
+            customerId: inv.customer_id,
+            jobId: job.id,
+            reason: dto.cancellationReason.trim(),
+            metadata: result.auditMetadata,
+          },
+          manager,
+        );
+      }
+
+      // 3. If no decisions applied, write the synthetic
+      // `cancellation_no_financials` row so every Arc J cancellation
+      // produces ≥ 1 credit_audit_events row (invariant locked by J1
+      // / J1b).
+      if (decisionsApplied === 0) {
+        await this.creditAuditService.record(
+          {
+            tenantId,
+            eventType: 'cancellation_no_financials',
+            userId,
+            customerId: job.customer_id ?? null,
+            jobId: job.id,
+            reason: dto.cancellationReason.trim(),
+            metadata: {
+              invoice_count: linkedInvoices.length,
+              reason_no_financials:
+                linkedInvoices.length === 0
+                  ? 'no_linked_invoices'
+                  : 'all_invoices_zero_value',
+            },
+          },
+          manager,
+        );
+      }
+    });
+
+    // ── Post-commit Stripe API calls (Lock 3) ───────────────────
+    const stripeFailures: Array<{
+      invoice_id: string;
+      payment_id: string;
+      error: string;
+    }> = [];
+
+    for (const intent of refundIntents) {
+      try {
+        const refund = await this.stripeService.createRefundForPaymentIntent(
+          tenantId,
+          intent.stripePaymentIntentId,
+          intent.amount,
+          { invoiceId: intent.invoiceId, jobId: job.id, tenantId },
+        );
+
+        // Success path: payment status + audit row in one small tx.
+        await this.dataSource.transaction(async (postMgr) => {
+          await postMgr.getRepository(Payment).update(
+            { id: intent.paymentId, tenant_id: tenantId },
+            { refund_provider_status: 'stripe_succeeded' },
+          );
+          await this.creditAuditService.record(
+            {
+              tenantId,
+              eventType: 'cancellation_refund_paid',
+              userId,
+              customerId: intent.customerId,
+              jobId: job.id,
+              reason: dto.cancellationReason.trim(),
+              metadata: {
+                ...intent.auditMetadata,
+                refund_provider_status: 'stripe_succeeded',
+                stripe_refund_id: refund.refundId,
+              },
+            },
+            postMgr,
+          );
+        });
+      } catch (stripeErr) {
+        try {
+          await this.dataSource.transaction(async (postMgr) => {
+            await postMgr.getRepository(Payment).update(
+              { id: intent.paymentId, tenant_id: tenantId },
+              { refund_provider_status: 'stripe_failed' },
+            );
+            await this.creditAuditService.record(
+              {
+                tenantId,
+                eventType: 'cancellation_refund_paid',
+                userId,
+                customerId: intent.customerId,
+                jobId: job.id,
+                reason: dto.cancellationReason.trim(),
+                metadata: {
+                  ...intent.auditMetadata,
+                  refund_provider_status: 'stripe_failed',
+                  stripe_error_message: String(
+                    (stripeErr as { message?: string })?.message ??
+                      'unknown stripe error',
+                  ),
+                },
+              },
+              postMgr,
+            );
+          });
+        } catch (postCommitErr) {
+          // Failure-of-failure: log loud and surface in the response.
+          // Operator gets enough information to reconcile manually in
+          // both Stripe + the credit-audit dashboard.
+          // eslint-disable-next-line no-console
+          console.error(
+            `[cancelJobWithFinancials] Stripe refund failed AND post-commit recording failed for payment ${intent.paymentId} on job ${job.id}: ${(postCommitErr as Error).message}`,
+          );
+          stripeFailures.push({
+            invoice_id: intent.invoiceId,
+            payment_id: intent.paymentId,
+            error: `Refund failed: ${(stripeErr as Error).message}. Audit recording also failed: ${(postCommitErr as Error).message}. Manual reconciliation required.`,
+          });
+          continue;
+        }
+        stripeFailures.push({
+          invoice_id: intent.invoiceId,
+          payment_id: intent.paymentId,
+          error: (stripeErr as Error).message,
+        });
+      }
+    }
+
+    return {
+      success: true,
+      jobId: job.id,
+      decisionsApplied: decisionableInvoices.length,
+      creditMemos,
+      voidedInvoiceIds,
+      stripeFailures,
+    };
   }
 }

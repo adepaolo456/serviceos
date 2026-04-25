@@ -11,6 +11,7 @@ import { Route } from '../dispatch/entities/route.entity';
 import { Invoice } from '../billing/entities/invoice.entity';
 import { BillingIssue } from '../billing/entities/billing-issue.entity';
 import { CreditMemo } from '../billing/entities/credit-memo.entity';
+import { Payment } from '../billing/entities/payment.entity';
 import { Tenant } from '../tenants/entities/tenant.entity';
 import { RentalChain } from '../rental-chains/entities/rental-chain.entity';
 import { TaskChainLink } from '../rental-chains/entities/task-chain-link.entity';
@@ -23,13 +24,14 @@ import { CustomersModule } from '../customers/customers.module';
 import { CreditAuditModule } from '../credit-audit/credit-audit.module';
 import { PermissionModule } from '../permissions/permission.module';
 import { AlertsModule } from '../alerts/alerts.module';
+import { StripeModule } from '../stripe/stripe.module';
 import { DispatchCreditEnforcementService } from '../dispatch/dispatch-credit-enforcement.service';
 import { JobsService } from './jobs.service';
 import { JobsController } from './jobs.controller';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Job, JobPricingAudit, Asset, PricingRule, ClientPricingOverride, Notification, Customer, Route, Invoice, BillingIssue, CreditMemo, Tenant, RentalChain, TaskChainLink, DumpTicket]),
+    TypeOrmModule.forFeature([Job, JobPricingAudit, Asset, PricingRule, ClientPricingOverride, Notification, Customer, Route, Invoice, BillingIssue, CreditMemo, Payment, Tenant, RentalChain, TaskChainLink, DumpTicket]),
     BillingModule,
     PricingModule,
     RentalChainsModule,
@@ -40,6 +42,11 @@ import { JobsController } from './jobs.controller';
     // Phase 15 — JobsService injects AlertService to inline alert
     // indicators in the /jobs/:id/lifecycle-context response.
     AlertsModule,
+    // Arc J.1 — cancellation orchestrator calls
+    // StripeService.createRefundForPaymentIntent post-commit for
+    // `refund_paid` decisions on card payments with a
+    // stripe_payment_intent_id present.
+    StripeModule,
   ],
   controllers: [JobsController],
   providers: [JobsService, DispatchCreditEnforcementService],
