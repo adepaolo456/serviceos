@@ -1443,13 +1443,14 @@ describe('JobsService.cancelJobWithFinancials — Arc J.1', () => {
       'Owner',
     );
 
-    // Inside main tx: payment row updated with refunded_amount + pending_stripe.
-    expect(h.txPaymentUpdate).toHaveBeenCalledWith(
+    // Arc J.1f-bug2 — inside-tx call writes refund_provider_status ONLY.
+    // refunded_amount is deferred to the post-commit success handler
+    // (asserted in J4d). Exact-payload match catches accidental future
+    // re-introduction of refunded_amount on the deferred path.
+    expect(h.txPaymentUpdate).toHaveBeenNthCalledWith(
+      1,
       { id: 'pay-4', tenant_id: 'tenant-1' },
-      expect.objectContaining({
-        refunded_amount: 750,
-        refund_provider_status: 'pending_stripe',
-      }),
+      { refund_provider_status: 'pending_stripe' },
     );
 
     // Stripe API called AFTER main-tx commit with the loaded PI.
@@ -1458,13 +1459,6 @@ describe('JobsService.cancelJobWithFinancials — Arc J.1', () => {
       'pi_card_4',
       750,
       expect.objectContaining({ invoiceId: 'inv-4' }),
-    );
-
-    // Success path: post-commit tx updates payment to stripe_succeeded
-    // AND writes a second audit row with stripe_refund_id.
-    expect(h.txPaymentUpdate).toHaveBeenCalledWith(
-      { id: 'pay-4', tenant_id: 'tenant-1' },
-      { refund_provider_status: 'stripe_succeeded' },
     );
 
     const auditCalls = (h.creditAuditService.record as jest.Mock).mock.calls;
@@ -1604,6 +1598,69 @@ describe('JobsService.cancelJobWithFinancials — Arc J.1', () => {
     );
   });
 
+  // ── J4d (Arc J.1f-bug2): post-commit Stripe success writes refunded_amount ──
+  // Locks the column-semantics contract: stripe_succeeded ALWAYS pairs with
+  // refunded_amount = actual moved amount. Inside-tx call writes status only
+  // (pending_stripe with no refunded_amount); post-commit call writes both.
+  it('J4d. post-commit Stripe success — refunded_amount + stripe_succeeded written together', async () => {
+    const inv = {
+      id: 'inv-4d',
+      tenant_id: 'tenant-1',
+      job_id: 'job-1',
+      customer_id: 'cust-1',
+      invoice_number: 10052,
+      status: 'paid',
+      total: 600,
+      amount_paid: 600,
+      balance_due: 0,
+    };
+    const h = await buildCancelHarness({
+      linkedInvoices: [inv as any],
+      payment: {
+        id: 'pay-4d',
+        tenant_id: 'tenant-1',
+        invoice_id: 'inv-4d',
+        amount: 600,
+        payment_method: 'card',
+        stripe_payment_intent_id: 'pi_card_4d',
+        refunded_amount: 0,
+      },
+    });
+    h.stripeService.createRefundForPaymentIntent.mockResolvedValue({
+      refundId: 're_test_4d',
+      refundedAmount: 600,
+    });
+
+    await h.service.cancelJobWithFinancials(
+      'tenant-1',
+      'job-1',
+      {
+        cancellationReason: 'r',
+        invoiceDecisions: [{ invoice_id: 'inv-4d', decision: 'refund_paid' }],
+      },
+      'u-owner',
+      'owner',
+      'Owner',
+    );
+
+    // Inside-tx (1st call): pending_stripe ONLY, no refunded_amount.
+    expect(h.txPaymentUpdate).toHaveBeenNthCalledWith(
+      1,
+      { id: 'pay-4d', tenant_id: 'tenant-1' },
+      { refund_provider_status: 'pending_stripe' },
+    );
+
+    // Post-commit (2nd call): stripe_succeeded + refunded_amount = intent.amount.
+    expect(h.txPaymentUpdate).toHaveBeenNthCalledWith(
+      2,
+      { id: 'pay-4d', tenant_id: 'tenant-1' },
+      {
+        refund_provider_status: 'stripe_succeeded',
+        refunded_amount: 600,
+      },
+    );
+  });
+
   // ── J5: refund_paid card WITHOUT PI → manual_required, no Stripe call ──
   it('J5. refund_paid on card payment WITHOUT stripe_payment_intent_id — marked manual_required, NO Stripe call, audit row cancellation_refund_paid', async () => {
     const inv = {
@@ -1642,16 +1699,90 @@ describe('JobsService.cancelJobWithFinancials — Arc J.1', () => {
       'Owner',
     );
 
-    expect(h.txPaymentUpdate).toHaveBeenCalledWith(
+    // Arc J.1f-bug2 — inside-tx call writes refund_provider_status ONLY.
+    // refunded_amount stays 0 because no money has moved; the operator
+    // will refund manually in the Stripe Dashboard later. The intended-
+    // refund value is preserved in audit metadata (paid_portion_amount).
+    expect(h.txPaymentUpdate).toHaveBeenNthCalledWith(
+      1,
       { id: 'pay-5', tenant_id: 'tenant-1' },
+      { refund_provider_status: 'manual_required' },
+    );
+
+    // Audit metadata still carries the intended-refund amount so a
+    // future operator-completes flow can recover the value without
+    // polluting payments.refunded_amount.
+    const j5AuditParams = (h.creditAuditService.record as jest.Mock).mock
+      .calls[0][0];
+    expect(j5AuditParams).toEqual(
       expect.objectContaining({
-        refunded_amount: 300,
-        refund_provider_status: 'manual_required',
+        eventType: 'cancellation_refund_paid',
+        metadata: expect.objectContaining({
+          paid_portion_amount: 300,
+          paid_portion_decision: 'refund_paid',
+          refund_provider_status: 'manual_required',
+        }),
       }),
     );
 
     expect(h.stripeService.createRefundForPaymentIntent).not.toHaveBeenCalled();
     // No post-commit tx since no Stripe call.
+    expect(h.transactionInvocationCount()).toBe(1);
+  });
+
+  // ── J5b (Arc J.1f-bug2): cash refund → manual_completed writes amount immediately ──
+  // Cash refunds are presumed instant by ops (the operator hands the cash
+  // back at the time of cancellation). Unlike `manual_required` (card with
+  // no PI, deferred to a manual Stripe Dashboard refund) and `pending_stripe`
+  // (deferred to post-commit), `manual_completed` writes refunded_amount in
+  // the inside-tx update.
+  it('J5b. refund_paid with cash payment — manual_completed status WITH refunded_amount written immediately', async () => {
+    const inv = {
+      id: 'inv-5b',
+      tenant_id: 'tenant-1',
+      job_id: 'job-1',
+      customer_id: 'cust-1',
+      invoice_number: 10071,
+      status: 'paid',
+      total: 425,
+      amount_paid: 425,
+      balance_due: 0,
+    };
+    const h = await buildCancelHarness({
+      linkedInvoices: [inv as any],
+      payment: {
+        id: 'pay-5b',
+        tenant_id: 'tenant-1',
+        invoice_id: 'inv-5b',
+        amount: 425,
+        payment_method: 'cash',
+        stripe_payment_intent_id: null,
+        refunded_amount: 0,
+      },
+    });
+
+    await h.service.cancelJobWithFinancials(
+      'tenant-1',
+      'job-1',
+      {
+        cancellationReason: 'r',
+        invoiceDecisions: [{ invoice_id: 'inv-5b', decision: 'refund_paid' }],
+      },
+      'u-owner',
+      'owner',
+      'Owner',
+    );
+
+    // Cash refund — refunded_amount written immediately, status manual_completed.
+    expect(h.txPaymentUpdate).toHaveBeenNthCalledWith(
+      1,
+      { id: 'pay-5b', tenant_id: 'tenant-1' },
+      {
+        refund_provider_status: 'manual_completed',
+        refunded_amount: 425,
+      },
+    );
+    expect(h.stripeService.createRefundForPaymentIntent).not.toHaveBeenCalled();
     expect(h.transactionInvocationCount()).toBe(1);
   });
 
@@ -1996,6 +2127,85 @@ describe('JobsService.cancelJobWithFinancials — Arc J.1', () => {
 
     expect(h.transactionCommit).not.toHaveBeenCalled();
     expect(h.txPaymentUpdate).not.toHaveBeenCalled();
+  });
+
+  // ── J13 (Arc J.1f-bug1): orchestrator clears assigned_driver_id ──────
+  // Mirrors Arc H's CLEAR_DRIVER_TARGETS coupling for the override-status
+  // path. cancelled is unconditionally a driver-clearing target. Column-
+  // only update bypasses TypeORM's relation-FK reconciliation.
+  it('J13. cancelJobWithFinancials clears assigned_driver_id via column-only update', async () => {
+    const inv = {
+      id: 'inv-13',
+      tenant_id: 'tenant-1',
+      job_id: 'job-1',
+      customer_id: 'cust-1',
+      invoice_number: 10131,
+      status: 'open',
+      total: 500,
+      amount_paid: 0,
+      balance_due: 500,
+    };
+    const h = await buildCancelHarness({
+      job: { assigned_driver_id: 'driver-1' as any },
+      linkedInvoices: [inv as any],
+    });
+
+    await h.service.cancelJobWithFinancials(
+      'tenant-1',
+      'job-1',
+      {
+        cancellationReason: 'J13 driver-clear test',
+        invoiceDecisions: [{ invoice_id: 'inv-13', decision: 'void_unpaid' }],
+      },
+      'u-owner',
+      'owner',
+      'Owner',
+    );
+
+    // Column-only update with both id + tenant_id in WHERE,
+    // assigned_driver_id: null in SET. Mirrors Arc H pattern.
+    expect(h.txJobUpdate).toHaveBeenCalledWith(
+      { id: 'job-1', tenant_id: 'tenant-1' },
+      { assigned_driver_id: null },
+    );
+    expect(h.transactionCommit).toHaveBeenCalledTimes(1);
+  });
+
+  it('J13b. cancelJobWithFinancials skips driver-clear when no driver was attached', async () => {
+    const inv = {
+      id: 'inv-13b',
+      tenant_id: 'tenant-1',
+      job_id: 'job-1',
+      customer_id: 'cust-1',
+      invoice_number: 10132,
+      status: 'open',
+      total: 500,
+      amount_paid: 0,
+      balance_due: 500,
+    };
+    const h = await buildCancelHarness({
+      // No assigned_driver_id on job.
+      linkedInvoices: [inv as any],
+    });
+
+    await h.service.cancelJobWithFinancials(
+      'tenant-1',
+      'job-1',
+      {
+        cancellationReason: 'J13b no-op test',
+        invoiceDecisions: [{ invoice_id: 'inv-13b', decision: 'void_unpaid' }],
+      },
+      'u-owner',
+      'owner',
+      'Owner',
+    );
+
+    // No driver was attached → no column-only update fired.
+    expect(h.txJobUpdate).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ assigned_driver_id: null }),
+    );
+    expect(h.transactionCommit).toHaveBeenCalledTimes(1);
   });
 });
 

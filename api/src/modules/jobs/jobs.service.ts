@@ -4250,12 +4250,27 @@ export class JobsService {
           (Number(payment.refunded_amount || 0) + amountPaid) * 100,
         ) / 100;
 
+      // Arc J.1f-bug2 — refunded_amount column-semantics contract:
+      //   - manual_completed: write immediately (cash refund presumed instant by ops)
+      //   - pending_stripe:   defer to post-commit Stripe success handler
+      //   - manual_required:  defer until operator manually completes the refund
+      //                       (a future flow will transition this to manual_completed
+      //                        and write refunded_amount at that point)
+      // The audit metadata's paid_portion_amount preserves the intended-refund
+      // value for the deferred cases.
+      // Arc J.1 invariant: one refund per payment per cancellation. Multi-refund
+      // accumulation across cancellation arcs against the same payment is out of
+      // scope; if added later, the post-commit handler must accumulate.
+      // See arcJ1f-phase0-audit-report.md §J.1f-bug2 and §7.6.
+      const updatePayload: Partial<Payment> = {
+        refund_provider_status: refundProviderStatus,
+      };
+      if (refundProviderStatus === 'manual_completed') {
+        updatePayload.refunded_amount = newRefunded;
+      }
       await paymentRepo.update(
         { id: payment.id, tenant_id: tenantId },
-        {
-          refunded_amount: newRefunded,
-          refund_provider_status: refundProviderStatus,
-        },
+        updatePayload,
       );
 
       // Always void the invoice on a refund decision: the customer is
@@ -4581,6 +4596,19 @@ export class JobsService {
       job.rescheduled_by_customer = false;
       await txJobRepo.save(job);
 
+      // Arc J.1f-bug1 — mirror Arc H's CLEAR_DRIVER_TARGETS coupling
+      // for the orchestrator-cancel path. `cancelled` is unconditionally
+      // a driver-clearing target. Column-only `update` bypasses TypeORM's
+      // relation-FK reconciliation (the latent risk if `findOne` ever
+      // loads `assigned_driver`). See Arc H commit 41d9387 and
+      // arcJ1f-phase0-audit-report.md §J.1f-bug1.
+      if (job.assigned_driver_id) {
+        await txJobRepo.update(
+          { id: job.id, tenant_id: tenantId },
+          { assigned_driver_id: null },
+        );
+      }
+
       // 2. Per-invoice financial decisions.
       let decisionsApplied = 0;
       for (const inv of decisionableInvoices) {
@@ -4676,9 +4704,19 @@ export class JobsService {
 
         // Success path: payment status + audit row in one small tx.
         await this.dataSource.transaction(async (postMgr) => {
+          // Arc J.1f-bug2 — Stripe API confirmed the refund moved.
+          // Write refunded_amount to match the contract:
+          // refund_provider_status='stripe_succeeded' always pairs with
+          // refunded_amount = actual moved amount.
+          // intent.amount carries the single-cancellation refund value
+          // (Arc J.1 invariant — one refund per payment per cancellation;
+          // multi-refund accumulation is out of scope, see §7.6 of the audit).
           await postMgr.getRepository(Payment).update(
             { id: intent.paymentId, tenant_id: tenantId },
-            { refund_provider_status: 'stripe_succeeded' },
+            {
+              refund_provider_status: 'stripe_succeeded',
+              refunded_amount: intent.amount,
+            },
           );
           await this.creditAuditService.record(
             {
