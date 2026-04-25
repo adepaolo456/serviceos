@@ -284,11 +284,16 @@ export class StripeService {
           const inv = await this.invoiceRepo.findOne({ where: { id: invId } });
           if (inv) {
             const paidAmount = (session.amount_total || 0) / 100;
+            const paymentIntentId =
+              typeof session.payment_intent === 'string'
+                ? session.payment_intent
+                : session.payment_intent?.id ?? null;
             await this.paymentRepo.save(this.paymentRepo.create({
               tenant_id: tId,
               invoice_id: invId,
               amount: paidAmount,
               payment_method: 'stripe_checkout',
+              stripe_payment_intent_id: paymentIntentId,
               status: 'completed',
               applied_at: new Date(),
               notes: `Stripe Checkout Session ${session.id}`,
