@@ -1,10 +1,12 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
+import { ClsModule } from 'nestjs-cls';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { CommonModule } from './common/common.module';
+import { TenantContextInterceptor } from './common/cls/tenant-context.interceptor';
 import { AuthModule } from './modules/auth/auth.module';
 import { CustomersModule } from './modules/customers/customers.module';
 import { AssetsModule } from './modules/assets/assets.module';
@@ -46,6 +48,14 @@ import { AlertsModule } from './modules/alerts/alerts.module';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    // Arc K Phase 1A Step 1 — request-scoped CLS context for tenant_id
+    // propagation. Middleware mounts on every HTTP route; the
+    // TenantContextInterceptor (registered below) populates the store
+    // after JwtAuthGuard sets req.user.
+    ClsModule.forRoot({
+      global: true,
+      middleware: { mount: true },
+    }),
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
@@ -111,6 +121,13 @@ import { AlertsModule } from './modules/alerts/alerts.module';
     {
       provide: APP_GUARD,
       useClass: JwtAuthGuard,
+    },
+    // Arc K Phase 1A Step 1 — populates CLS with { tenant_id, user_id,
+    // role } after JwtAuthGuard sets req.user, or { scope: 'platform' }
+    // for anonymous routes. Order: middleware → guard → interceptor.
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: TenantContextInterceptor,
     },
   ],
 })

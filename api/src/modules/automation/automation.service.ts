@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource, LessThan, In, IsNull, Not } from 'typeorm';
+import { ClsService } from 'nestjs-cls';
 import { Job } from '../jobs/entities/job.entity';
 import { Customer } from '../customers/entities/customer.entity';
 import { PricingRule } from '../pricing/entities/pricing-rule.entity';
@@ -16,6 +17,7 @@ import { SmsService } from '../sms/sms.service';
 import { SmsOptOutService } from '../sms/sms-opt-out.service';
 import { normalizePhone } from '../../common/utils/phone';
 import { issueNextJobNumber } from '../../common/utils/job-number.util';
+import { CLS_TENANT_ID, ServiceOSClsStore } from '../../common/cls/cls.config';
 
 // SMS opt-out keywords. Matched case-insensitively against a trimmed,
 // upper-cased message body. Exact match only — "STOP please" is not a STOP.
@@ -40,6 +42,7 @@ export class AutomationService {
     private smsService: SmsService,
     private optOutService: SmsOptOutService,
     private dataSource: DataSource,
+    private cls: ClsService<ServiceOSClsStore>,
   ) {}
 
   async scanOverdueRentals(tenantId?: string) {
@@ -62,51 +65,56 @@ export class AutomationService {
     let totalExtraCharges = 0;
 
     for (const job of jobs) {
-      const endDate = new Date(job.rental_end_date);
-      const todayDate = new Date(today);
-      const extraDays = Math.max(0, Math.ceil((todayDate.getTime() - endDate.getTime()) / (1000 * 60 * 60 * 24)));
-      const rate = Number(job.extra_day_rate) || 0;
-      const charges = extraDays * rate;
+      // Arc K Phase 1A Step 1 — per-iteration tenant scope so any
+      // exception escaping the loop body is tagged with the current
+      // tenant rather than the cron's outer 'platform' scope.
+      await this.cls.runWith({ [CLS_TENANT_ID]: job.tenant_id }, async () => {
+        const endDate = new Date(job.rental_end_date);
+        const todayDate = new Date(today);
+        const extraDays = Math.max(0, Math.ceil((todayDate.getTime() - endDate.getTime()) / (1000 * 60 * 60 * 24)));
+        const rate = Number(job.extra_day_rate) || 0;
+        const charges = extraDays * rate;
 
-      // Check if customer is exempt from extra day charges
-      const isExempt = job.customer?.exempt_extra_day_charges;
-      const finalCharges = isExempt ? 0 : charges;
+        // Check if customer is exempt from extra day charges
+        const isExempt = job.customer?.exempt_extra_day_charges;
+        const finalCharges = isExempt ? 0 : charges;
 
-      await this.jobRepo.update(job.id, {
-        extra_days: extraDays,
-        extra_day_charges: finalCharges,
-        is_overdue: true,
-        extra_day_last_calculated_at: new Date(),
-      } as any);
-
-      totalExtraCharges += finalCharges;
-
-      // Send notification if not notified or last notification was 3+ days ago
-      const shouldNotify = !job.overdue_notified_at ||
-        (new Date().getTime() - new Date(job.overdue_notified_at).getTime()) > 3 * 24 * 60 * 60 * 1000;
-
-      if (shouldNotify) {
         await this.jobRepo.update(job.id, {
-          overdue_notified_at: new Date(),
-          overdue_notification_count: (job.overdue_notification_count || 0) + 1,
-        });
-        notificationsSent++;
+          extra_days: extraDays,
+          extra_day_charges: finalCharges,
+          is_overdue: true,
+          extra_day_last_calculated_at: new Date(),
+        } as any);
 
-        await this.notifRepo.save(this.notifRepo.create({
-          tenant_id: job.tenant_id,
-          job_id: job.id,
-          channel: 'automation',
-          type: 'overdue_notification',
-          recipient: 'system',
-          body: JSON.stringify({
-            customerName: job.customer ? `${job.customer.first_name} ${job.customer.last_name}` : null,
-            extraDays, charges, rate,
-            assetIdentifier: job.asset?.identifier,
-          }),
-          status: 'logged',
-          sent_at: new Date(),
-        }));
-      }
+        totalExtraCharges += finalCharges;
+
+        // Send notification if not notified or last notification was 3+ days ago
+        const shouldNotify = !job.overdue_notified_at ||
+          (new Date().getTime() - new Date(job.overdue_notified_at).getTime()) > 3 * 24 * 60 * 60 * 1000;
+
+        if (shouldNotify) {
+          await this.jobRepo.update(job.id, {
+            overdue_notified_at: new Date(),
+            overdue_notification_count: (job.overdue_notification_count || 0) + 1,
+          });
+          notificationsSent++;
+
+          await this.notifRepo.save(this.notifRepo.create({
+            tenant_id: job.tenant_id,
+            job_id: job.id,
+            channel: 'automation',
+            type: 'overdue_notification',
+            recipient: 'system',
+            body: JSON.stringify({
+              customerName: job.customer ? `${job.customer.first_name} ${job.customer.last_name}` : null,
+              extraDays, charges, rate,
+              assetIdentifier: job.asset?.identifier,
+            }),
+            status: 'logged',
+            sent_at: new Date(),
+          }));
+        }
+      });
     }
 
     // Log the scan
@@ -320,6 +328,11 @@ export class AutomationService {
     );
 
     for (const ts of enabledTenants) {
+      // Arc K Phase 1A Step 1 — per-tenant CLS scope wraps the entire
+      // body so exceptions thrown inside (notifications, SMS, template
+      // render) carry the current tenant tag rather than the cron's
+      // outer 'platform' scope.
+      await this.cls.runWith({ [CLS_TENANT_ID]: ts.tenant_id }, async () => {
       const delayMs = (ts.quote_follow_up_delay_hours ?? 24) * 60 * 60 * 1000;
       const cutoff = new Date(now.getTime() - delayMs);
 
@@ -424,6 +437,7 @@ export class AutomationService {
           }
         }
       }
+      }); // close cls.runWith for this tenant iteration
     }
 
     return { processed, sent, skipped, timestamp: now.toISOString() };
