@@ -31,6 +31,7 @@ import {
   ServiceOSClsStore,
 } from '../cls/cls.config';
 import { shouldDropEvent } from './filter-rules';
+import { scrubEvent } from './scrubber';
 
 // RFC 4122 UUID format. Strict — exactly 36 chars, four dashes.
 const UUID_RE =
@@ -108,7 +109,11 @@ export function beforeSend(event: ErrorEvent, hint?: EventHint): ErrorEvent | nu
   // Step 3 — §K.4 filter. Drop denied exceptions early.
   if (shouldDropEvent(event, hint)) return null;
 
-  // Step 4 PII scrubbing will run here.
+  // Step 4 — §K.2 PII scrubbing. Strips ~30 fields, hashes 3 fields
+  // tenant-scoped (sha256(tenantId:value:salt)). MUST run BEFORE tag
+  // application so any PII that survives the filter is removed before
+  // the event is delivered.
+  event = scrubEvent(event);
 
   const { tenantId, scope } = readClsContext();
 
