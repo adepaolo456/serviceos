@@ -300,9 +300,15 @@ export class StripeService {
         if (pi.metadata.invoiceId) {
           const failedInv = await this.invoiceRepo.findOne({ where: { id: pi.metadata.invoiceId } });
           if (failedInv) {
+            // §K.3 (Arc K Phase 1A Step 0): prefer pi.metadata.tenantId — set on PIs
+            // created by chargeInvoice since this commit. Fall back to invoice
+            // tenant_id for legacy PIs created before metadata enrichment. This
+            // resolution pattern is also the foundation for Sentry tenant tagging
+            // wired in Step 2.
+            const tenantId = pi.metadata.tenantId ?? failedInv.tenant_id;
             // Phase 6: Alert admin of failed payment
             await this.logPaymentFailedAlert(
-              failedInv.tenant_id,
+              tenantId,
               pi.metadata.invoiceId,
               pi.last_payment_error?.message || 'Unknown error',
             );
