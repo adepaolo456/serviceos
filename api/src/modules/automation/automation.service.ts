@@ -24,6 +24,15 @@ import { CLS_TENANT_ID, ServiceOSClsStore } from '../../common/cls/cls.config';
 const STOP_KEYWORDS = new Set(['STOP', 'STOPALL', 'UNSUBSCRIBE', 'CANCEL', 'END', 'QUIT']);
 const START_KEYWORDS = new Set(['START', 'YES', 'UNSTOP']);
 
+export type ScanOverdueRentalsResult = {
+  tenantId: string;
+  ok: boolean;
+  overdueCount: number;
+  totalExtraCharges: number;
+  notificationsSent: number;
+  error?: string;
+};
+
 @Injectable()
 export class AutomationService {
   private readonly logger = new Logger(AutomationService.name);
@@ -45,81 +54,118 @@ export class AutomationService {
     private cls: ClsService<ServiceOSClsStore>,
   ) {}
 
-  async scanOverdueRentals(tenantId?: string) {
-    const today = new Date().toISOString().split('T')[0];
+  // Cron entry. Enumerates every tenant from tenant_settings (the canonical
+  // active-tenant base, matching processQuoteFollowUps's enumeration
+  // infrastructure) and dispatches a per-tenant scan inside its own CLS
+  // tenant scope + try/catch so one tenant's failure cannot abort the rest.
+  async scanOverdueRentals(): Promise<ScanOverdueRentalsResult[]> {
+    const tenantRows: Array<{ tenant_id: string }> = await this.dataSource.query(
+      `SELECT tenant_id FROM tenant_settings`,
+    );
 
-    const qb = this.jobRepo.createQueryBuilder('j')
-      .leftJoinAndSelect('j.customer', 'c')
-      .leftJoinAndSelect('j.asset', 'a')
-      .where('j.rental_end_date IS NOT NULL')
-      .andWhere('j.rental_end_date < :today', { today })
-      .andWhere('j.status IN (:...statuses)', { statuses: ['confirmed', 'dispatched', 'en_route', 'arrived', 'in_progress'] })
-      .andWhere('j.job_type = :type', { type: 'delivery' });
-
-    if (tenantId) {
-      qb.andWhere('j.tenant_id = :tid', { tid: tenantId });
-    }
-
-    const jobs = await qb.getMany();
-    let notificationsSent = 0;
-    let totalExtraCharges = 0;
-
-    for (const job of jobs) {
-      // Arc K Phase 1A Step 1 — per-iteration tenant scope so any
-      // exception escaping the loop body is tagged with the current
-      // tenant rather than the cron's outer 'platform' scope.
-      await this.cls.runWith({ [CLS_TENANT_ID]: job.tenant_id }, async () => {
-        const endDate = new Date(job.rental_end_date);
-        const todayDate = new Date(today);
-        const extraDays = Math.max(0, Math.ceil((todayDate.getTime() - endDate.getTime()) / (1000 * 60 * 60 * 24)));
-        const rate = Number(job.extra_day_rate) || 0;
-        const charges = extraDays * rate;
-
-        // Check if customer is exempt from extra day charges
-        const isExempt = job.customer?.exempt_extra_day_charges;
-        const finalCharges = isExempt ? 0 : charges;
-
-        await this.jobRepo.update(job.id, {
-          extra_days: extraDays,
-          extra_day_charges: finalCharges,
-          is_overdue: true,
-          extra_day_last_calculated_at: new Date(),
-        } as any);
-
-        totalExtraCharges += finalCharges;
-
-        // Send notification if not notified or last notification was 3+ days ago
-        const shouldNotify = !job.overdue_notified_at ||
-          (new Date().getTime() - new Date(job.overdue_notified_at).getTime()) > 3 * 24 * 60 * 60 * 1000;
-
-        if (shouldNotify) {
-          await this.jobRepo.update(job.id, {
-            overdue_notified_at: new Date(),
-            overdue_notification_count: (job.overdue_notification_count || 0) + 1,
+    const results: ScanOverdueRentalsResult[] = [];
+    for (const row of tenantRows) {
+      const tenantId = row.tenant_id;
+      await this.cls.runWith({ [CLS_TENANT_ID]: tenantId }, async () => {
+        try {
+          const result = await this.scanOverdueRentalsForTenant(tenantId);
+          results.push(result);
+        } catch (err: any) {
+          this.logger.error(
+            `scanOverdueRentals failed for tenant=${tenantId}: ${err.message}`,
+          );
+          results.push({
+            tenantId,
+            ok: false,
+            error: err.message,
+            overdueCount: 0,
+            totalExtraCharges: 0,
+            notificationsSent: 0,
           });
-          notificationsSent++;
-
-          await this.notifRepo.save(this.notifRepo.create({
-            tenant_id: job.tenant_id,
-            job_id: job.id,
-            channel: 'automation',
-            type: 'overdue_notification',
-            recipient: 'system',
-            body: JSON.stringify({
-              customerName: job.customer ? `${job.customer.first_name} ${job.customer.last_name}` : null,
-              extraDays, charges, rate,
-              assetIdentifier: job.asset?.identifier,
-            }),
-            status: 'logged',
-            sent_at: new Date(),
-          }));
         }
       });
     }
 
-    // Log the scan
+    return results;
+  }
+
+  // Per-tenant scan. Public so the manual-trigger controller endpoint
+  // (POST /automation/overdue/scan) can invoke it directly with a JWT
+  // -derived tenantId, bypassing the cron enumeration step.
+  async scanOverdueRentalsForTenant(
+    tenantId: string,
+  ): Promise<ScanOverdueRentalsResult> {
+    const today = new Date().toISOString().split('T')[0];
+
+    const jobs = await this.jobRepo.createQueryBuilder('j')
+      .leftJoinAndSelect('j.customer', 'c')
+      .leftJoinAndSelect('j.asset', 'a')
+      .where('j.tenant_id = :tid', { tid: tenantId })
+      .andWhere('j.rental_end_date IS NOT NULL')
+      .andWhere('j.rental_end_date < :today', { today })
+      .andWhere('j.status IN (:...statuses)', { statuses: ['confirmed', 'dispatched', 'en_route', 'arrived', 'in_progress'] })
+      .andWhere('j.job_type = :type', { type: 'delivery' })
+      .getMany();
+
+    let notificationsSent = 0;
+    let totalExtraCharges = 0;
+
+    for (const job of jobs) {
+      await this.cls.runWith({ [CLS_TENANT_ID]: job.tenant_id }, async () => {
+        try {
+          const endDate = new Date(job.rental_end_date);
+          const todayDate = new Date(today);
+          const extraDays = Math.max(0, Math.ceil((todayDate.getTime() - endDate.getTime()) / (1000 * 60 * 60 * 24)));
+          const rate = Number(job.extra_day_rate) || 0;
+          const charges = extraDays * rate;
+
+          const isExempt = job.customer?.exempt_extra_day_charges;
+          const finalCharges = isExempt ? 0 : charges;
+
+          await this.jobRepo.update(job.id, {
+            extra_days: extraDays,
+            extra_day_charges: finalCharges,
+            is_overdue: true,
+            extra_day_last_calculated_at: new Date(),
+          } as any);
+
+          totalExtraCharges += finalCharges;
+
+          const shouldNotify = !job.overdue_notified_at ||
+            (new Date().getTime() - new Date(job.overdue_notified_at).getTime()) > 3 * 24 * 60 * 60 * 1000;
+
+          if (shouldNotify) {
+            await this.jobRepo.update(job.id, {
+              overdue_notified_at: new Date(),
+              overdue_notification_count: (job.overdue_notification_count || 0) + 1,
+            });
+            notificationsSent++;
+
+            await this.notifRepo.save(this.notifRepo.create({
+              tenant_id: job.tenant_id,
+              job_id: job.id,
+              channel: 'automation',
+              type: 'overdue_notification',
+              recipient: 'system',
+              body: JSON.stringify({
+                customerName: job.customer ? `${job.customer.first_name} ${job.customer.last_name}` : null,
+                extraDays, charges, rate,
+                assetIdentifier: job.asset?.identifier,
+              }),
+              status: 'logged',
+              sent_at: new Date(),
+            }));
+          }
+        } catch (err: any) {
+          this.logger.error(
+            `scanOverdueRentals iteration failed: tenant=${tenantId} jobId=${job.id}: ${err.message}`,
+          );
+        }
+      });
+    }
+
     await this.notifRepo.save(this.notifRepo.create({
-      tenant_id: tenantId || 'all',
+      tenant_id: tenantId,
       channel: 'automation',
       type: 'overdue_scan',
       recipient: 'system',
@@ -128,7 +174,13 @@ export class AutomationService {
       sent_at: new Date(),
     }));
 
-    return { overdueCount: jobs.length, totalExtraCharges, notificationsSent, date: today };
+    return {
+      tenantId,
+      ok: true,
+      overdueCount: jobs.length,
+      totalExtraCharges,
+      notificationsSent,
+    };
   }
 
   async getOverdueJobs(tenantId: string) {

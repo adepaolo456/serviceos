@@ -52,7 +52,7 @@ export class AutomationController {
   @Post('overdue/scan')
   @ApiOperation({ summary: 'Manually trigger overdue scan' })
   scanOverdue(@TenantId() tenantId: string) {
-    return this.automationService.scanOverdueRentals(tenantId);
+    return this.automationService.scanOverdueRentalsForTenant(tenantId);
   }
 
   @Post('overdue/:jobId/notify')
@@ -88,7 +88,14 @@ export class AutomationController {
   @ApiOperation({ summary: 'Cron: scan all tenants for overdue rentals' })
   async cronOverdueScan(@Req() req: Request) {
     this.assertCronAuthorized(req);
-    return this.automationService.scanOverdueRentals();
+    const results = await this.automationService.scanOverdueRentals();
+    return {
+      tenantsScanned: results.length,
+      overdueCount: results.reduce((s, r) => s + r.overdueCount, 0),
+      totalExtraCharges: results.reduce((s, r) => s + r.totalExtraCharges, 0),
+      notificationsSent: results.reduce((s, r) => s + r.notificationsSent, 0),
+      errors: results.filter((r) => !r.ok).map((r) => ({ tenantId: r.tenantId, error: r.error })),
+    };
   }
 
   @Public()
