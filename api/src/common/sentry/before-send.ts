@@ -30,6 +30,7 @@ import {
   CLS_TENANT_ID,
   ServiceOSClsStore,
 } from '../cls/cls.config';
+import { shouldDropEvent } from './filter-rules';
 
 // RFC 4122 UUID format. Strict — exactly 36 chars, four dashes.
 const UUID_RE =
@@ -90,10 +91,24 @@ function readClsContext(): {
 /**
  * The Sentry beforeSend hook. Returns the (tagged) event for delivery,
  * or null to drop the event entirely.
+ *
+ * Pipeline order (Phase 1A):
+ *   1. filter (Step 3 §K.4 deny rules) — drop matching events early
+ *   2. scrub  (Step 4 §K.2 PII strip/hash) — runs here
+ *   3. tag    — set tenant_id or scope=platform from CLS
+ *   4. guard  — drop event if neither tag was set
+ *
+ * The filter runs FIRST because tagging an event we're going to discard
+ * is wasted work. But every event that survives the filter MUST still
+ * pass through the tag enforcement and untagged-event guard before
+ * delivery — there is no path for an "allowed" event to bypass tag
+ * enforcement.
  */
-export function beforeSend(event: ErrorEvent, _hint?: EventHint): ErrorEvent | null {
-  // Step 3 filter rules will run here; Step 4 scrubbing will run here.
-  // Step 2 wires only the tag/drop layer.
+export function beforeSend(event: ErrorEvent, hint?: EventHint): ErrorEvent | null {
+  // Step 3 — §K.4 filter. Drop denied exceptions early.
+  if (shouldDropEvent(event, hint)) return null;
+
+  // Step 4 PII scrubbing will run here.
 
   const { tenantId, scope } = readClsContext();
 
