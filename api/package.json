@@ -7,7 +7,7 @@
   "license": "UNLICENSED",
   "scripts": {
     "build": "nest build",
-    "vercel-build": "nest build && RELEASE_SHA=\"${VERCEL_GIT_COMMIT_SHA:-$(git rev-parse HEAD 2>/dev/null || echo \"cli-deploy-$(date -u +%Y%m%dT%H%M%SZ)-no-sha\")}\" && if [ -z \"$SENTRY_AUTH_TOKEN\" ] || [ -z \"$SENTRY_ORG\" ] || [ -z \"$SENTRY_PROJECT_API\" ]; then echo \"Skipping Sentry source-map upload: required env vars not present\"; else sentry-cli sourcemaps inject ./dist && sentry-cli sourcemaps upload ./dist --release \"$RELEASE_SHA\" --org \"$SENTRY_ORG\" --project \"$SENTRY_PROJECT_API\"; fi && find dist -name '*.map' -delete",
+    "vercel-build": "nest build && RELEASE_SHA=\"${VERCEL_GIT_COMMIT_SHA:-$(git rev-parse HEAD 2>/dev/null || echo \"cli-deploy-$(date -u +%Y%m%dT%H%M%SZ)-no-sha\")}\" && if [ -z \"$SENTRY_AUTH_TOKEN\" ] || [ -z \"$SENTRY_ORG\" ] || [ -z \"$SENTRY_PROJECT_API\" ]; then echo \"Skipping Sentry source-map upload: required env vars not present\"; else ( sentry-cli releases new \"$RELEASE_SHA\" --org \"$SENTRY_ORG\" --project \"$SENTRY_PROJECT_API\" || sentry-cli releases info \"$RELEASE_SHA\" --org \"$SENTRY_ORG\" --project \"$SENTRY_PROJECT_API\" ) && sentry-cli sourcemaps inject ./dist && sentry-cli sourcemaps upload ./dist --release \"$RELEASE_SHA\" --org \"$SENTRY_ORG\" --project \"$SENTRY_PROJECT_API\" && sentry-cli releases finalize \"$RELEASE_SHA\" --org \"$SENTRY_ORG\" --project \"$SENTRY_PROJECT_API\"; fi && find dist -name '*.map' -delete",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",
     "start:dev": "nest start --watch",
