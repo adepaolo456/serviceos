@@ -7,7 +7,7 @@
   "license": "UNLICENSED",
   "scripts": {
     "build": "nest build",
-    "vercel-build": "nest build",
+    "vercel-build": "nest build && find dist -name '*.map' -delete",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",
     "start:dev": "nest start --watch",
@@ -32,6 +32,8 @@
     "@nestjs/platform-express": "^11.0.1",
     "@nestjs/swagger": "^11.2.6",
     "@nestjs/typeorm": "^11.0.0",
+    "@sentry/nestjs": "^10.50.0",
+    "@sentry/profiling-node": "^10.50.0",
     "@types/passport-google-oauth20": "^2.0.17",
     "bcrypt": "^6.0.0",
     "class-transformer": "^0.5.1",

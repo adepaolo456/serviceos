@@ -1,3 +1,7 @@
+// Arc K Phase 1A Step 2 — Sentry init MUST run before @nestjs/core
+// so the SDK's auto-instrumentation patches the framework correctly.
+import './common/sentry/instrument';
+
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';

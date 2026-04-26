@@ -7,6 +7,7 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { CommonModule } from './common/common.module';
 import { TenantContextInterceptor } from './common/cls/tenant-context.interceptor';
+import { SentryModule } from './common/sentry/sentry.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { CustomersModule } from './modules/customers/customers.module';
 import { AssetsModule } from './modules/assets/assets.module';
@@ -56,6 +57,9 @@ import { AlertsModule } from './modules/alerts/alerts.module';
       global: true,
       middleware: { mount: true },
     }),
+    // Arc K Phase 1A Step 2 — Sentry global filter + auto-instrumentation.
+    // Registered AFTER ClsModule so beforeSend can read CLS context.
+    SentryModule,
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
