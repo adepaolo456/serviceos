@@ -24,7 +24,7 @@ export class TaskChainLink {
   @JoinColumn({ name: 'rental_chain_id' })
   rental_chain!: RentalChain;
 
-  @Column({ name: 'job_id' })
+  @Column({ name: 'job_id', type: 'uuid' })
   job_id!: string;
 
   @ManyToOne(() => Job)

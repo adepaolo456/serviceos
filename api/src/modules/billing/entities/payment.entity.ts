@@ -13,14 +13,14 @@ export class Payment {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
-  @Column({ name: 'tenant_id' })
+  @Column({ name: 'tenant_id', type: 'uuid' })
   tenant_id!: string;
 
   @ManyToOne(() => Tenant)
   @JoinColumn({ name: 'tenant_id' })
   tenant!: Tenant;
 
-  @Column({ name: 'invoice_id' })
+  @Column({ name: 'invoice_id', type: 'uuid' })
   invoice_id!: string;
 
   @ManyToOne(() => Invoice, (inv) => inv.payments)

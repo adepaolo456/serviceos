@@ -12,7 +12,7 @@ export class InvoiceRevision {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
-  @Column({ name: 'invoice_id' })
+  @Column({ name: 'invoice_id', type: 'uuid' })
   invoice_id!: string;
 
   @ManyToOne(() => Invoice, (inv) => inv.revisions, { onDelete: 'CASCADE' })

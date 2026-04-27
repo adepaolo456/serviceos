@@ -7,7 +7,7 @@ export class ScheduledNotification {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
-  @Column({ name: 'tenant_id' })
+  @Column({ name: 'tenant_id', type: 'uuid' })
   tenant_id!: string;
 
   @ManyToOne(() => Tenant)
@@ -17,7 +17,7 @@ export class ScheduledNotification {
   @Column({ name: 'notification_type', length: 50 })
   notification_type!: string;
 
-  @Column({ name: 'customer_id' })
+  @Column({ name: 'customer_id', type: 'uuid' })
   customer_id!: string;
 
   @ManyToOne(() => Customer)

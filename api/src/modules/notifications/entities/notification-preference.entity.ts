@@ -7,7 +7,7 @@ export class NotificationPreference {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
-  @Column({ name: 'tenant_id' })
+  @Column({ name: 'tenant_id', type: 'uuid' })
   tenant_id!: string;
 
   @ManyToOne(() => Tenant)

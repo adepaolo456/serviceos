@@ -17,7 +17,7 @@ export class Job {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
-  @Column({ name: 'tenant_id' })
+  @Column({ name: 'tenant_id', type: 'uuid' })
   tenant_id!: string;
 
   @ManyToOne(() => Tenant)
@@ -36,7 +36,7 @@ export class Job {
   @Column({ type: 'text', nullable: true })
   title!: string | null;
 
-  @Column({ name: 'customer_id' })
+  @Column({ name: 'customer_id', type: 'uuid' })
   customer_id!: string;
 
   @ManyToOne(() => Customer)

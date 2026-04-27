@@ -14,7 +14,7 @@ export class CreditMemo {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
-  @Column({ name: 'tenant_id' })
+  @Column({ name: 'tenant_id', type: 'uuid' })
   tenant_id!: string;
 
   @ManyToOne(() => Tenant)
@@ -31,7 +31,7 @@ export class CreditMemo {
   @JoinColumn({ name: 'original_invoice_id' })
   original_invoice!: Invoice;
 
-  @Column({ name: 'customer_id' })
+  @Column({ name: 'customer_id', type: 'uuid' })
   customer_id!: string;
 
   @ManyToOne(() => Customer)

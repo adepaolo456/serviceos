@@ -14,14 +14,14 @@ export class JobCost {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
-  @Column({ name: 'tenant_id' })
+  @Column({ name: 'tenant_id', type: 'uuid' })
   tenant_id!: string;
 
   @ManyToOne(() => Tenant)
   @JoinColumn({ name: 'tenant_id' })
   tenant!: Tenant;
 
-  @Column({ name: 'job_id' })
+  @Column({ name: 'job_id', type: 'uuid' })
   job_id!: string;
 
   @ManyToOne(() => Job)

@@ -14,7 +14,7 @@ export class InvoiceLineItem {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
-  @Column({ name: 'invoice_id' })
+  @Column({ name: 'invoice_id', type: 'uuid' })
   invoice_id!: string;
 
   @ManyToOne(() => Invoice, (inv) => inv.line_items, { onDelete: 'CASCADE' })
