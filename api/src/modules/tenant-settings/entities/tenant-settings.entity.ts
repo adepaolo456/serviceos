@@ -11,7 +11,7 @@ export class TenantSettings {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
-  @Column({ name: 'tenant_id', unique: true })
+  @Column({ name: 'tenant_id', type: 'uuid', unique: true })
   tenant_id!: string;
 
   @Column({ name: 'default_rental_period_days', type: 'int', default: 14 })

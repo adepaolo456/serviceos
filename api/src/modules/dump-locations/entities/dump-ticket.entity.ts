@@ -14,7 +14,7 @@ export class DumpTicket {
   @JoinColumn({ name: 'job_id' })
   job!: Job;
 
-  @Column({ name: 'tenant_id' })
+  @Column({ name: 'tenant_id', type: 'uuid' })
   tenant_id!: string;
 
   @Column({ name: 'dump_location_id', type: 'uuid' })
