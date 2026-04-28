@@ -43,33 +43,13 @@ export class GeocodeBackfillService {
     const dryRun = opts.dry_run ?? true;
     const skipVerified = opts.skip_verified ?? true;
 
-    // Diagnostic: test geocoding availability before scanning records
-    let testGeoError: string | null = null;
-    let testGeo: { lat: number; lng: number } | null = null;
-    try {
-      testGeo = await this.mapbox.geocodeAddress('1 Main Street, Boston, MA');
-    } catch (err) {
-      testGeoError = err instanceof Error ? err.message : String(err);
-    }
-    const testMsg = testGeo ? 'OK (' + testGeo.lat + ',' + testGeo.lng + ')' : 'FAILED — ' + (testGeoError || 'returned null');
-    this.logger.log('Geocode availability test: ' + testMsg);
-
-    const result: BackfillResult & { _diagnostic?: Record<string, unknown> } = {
+    const result: BackfillResult = {
       tenant_id: opts.tenant_id,
       dry_run: dryRun,
       jobs: { total_scanned: 0, already_valid: 0, geocoded: 0, failed: 0, skipped_verified: 0 },
       customers: { total_scanned: 0, already_valid: 0, geocoded: 0, failed: 0, skipped_verified: 0 },
       service_sites: { total_scanned: 0, already_valid: 0, geocoded: 0, failed: 0 },
       failures: [],
-      _diagnostic: {
-        mapbox_available: !!testGeo,
-        mapbox_token_set: !!process.env.MAPBOX_TOKEN,
-        mapbox_token_length: (process.env.MAPBOX_TOKEN || '').length,
-        mapbox_token_prefix: (process.env.MAPBOX_TOKEN || '').slice(0, 10),
-        test_geocode_result: testGeo ? `${testGeo.lat},${testGeo.lng}` : null,
-        test_geocode_error: testGeoError,
-        test_raw_response: await this.testGeocodeRaw(),
-      },
     };
 
     if (opts.include_jobs !== false) {
@@ -274,22 +254,6 @@ export class GeocodeBackfillService {
           .where('id = :id AND tenant_id = :tenantId', { id: cust.id, tenantId })
           .execute();
       }
-    }
-  }
-
-  /** Raw geocode test — bypasses MapboxService to capture full HTTP response */
-  private async testGeocodeRaw(): Promise<string> {
-    const token = process.env.MAPBOX_TOKEN || '';
-    if (!token) return 'NO_TOKEN';
-    try {
-      const params = new URLSearchParams({ q: '1 Main Street, Boston, MA', access_token: token, country: 'US', limit: '1', types: 'address' });
-      const res = await fetch(`https://api.mapbox.com/search/geocode/v6/forward?${params}`, {
-        headers: { 'Referer': 'https://serviceos-api.vercel.app' },
-      });
-      const body = await res.text();
-      return `HTTP ${res.status}: ${body.slice(0, 300)}`;
-    } catch (err) {
-      return `FETCH_ERROR: ${err instanceof Error ? err.message : String(err)}`;
     }
   }
 

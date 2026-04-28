@@ -317,6 +317,13 @@ export class Job {
 
   // ── Placement pin (Phase 20) ──
 
+  /**
+   * Optional placement coordinates. Populated by the customer-portal "drop pin" flow
+   * (see portal.service.ts:1087) where the customer marks where exactly to place the
+   * dumpster on their property. Independent of the geocoding pipeline that fills
+   * service_address.lat/lng. Null is the default and remains null on jobs where the
+   * customer hasn't dropped a pin.
+   */
   @Column({ name: 'placement_lat', type: 'decimal', precision: 10, scale: 7, nullable: true })
   placement_lat!: number | null;
 

@@ -1,6 +1,7 @@
-import { Controller, Post, Get, Body, Query } from '@nestjs/common';
+import { Controller, Post, Get, Body, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { TenantId } from '../../common/decorators';
+import { Roles, TenantId } from '../../common/decorators';
+import { RolesGuard } from '../../common/guards';
 import { GeocodeBackfillService } from './geocode-backfill.service';
 
 @ApiTags('Geocoding')
@@ -10,6 +11,8 @@ export class GeocodeBackfillController {
   constructor(private readonly backfillService: GeocodeBackfillService) {}
 
   @Post('backfill')
+  @UseGuards(RolesGuard)
+  @Roles('owner')
   @ApiOperation({ summary: 'Backfill missing geocodes for tenant records (admin)' })
   async backfill(
     @TenantId() tenantId: string,
