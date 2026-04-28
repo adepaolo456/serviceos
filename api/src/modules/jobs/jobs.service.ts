@@ -35,6 +35,7 @@ import { PricingService } from '../pricing/pricing.service';
 import { AlertService } from '../alerts/services/alert.service';
 import { CreditAuditService } from '../credit-audit/credit-audit.service';
 import { StripeService } from '../stripe/stripe.service';
+import { MapboxService } from '../mapbox/mapbox.service';
 import {
   LifecycleContextResponse,
   LifecycleNode,
@@ -214,6 +215,7 @@ export class JobsService {
     // cancellation transaction commits, for `refund_paid` decisions on
     // card payments with a stripe_payment_intent_id present.
     private stripeService: StripeService,
+    private mapboxService: MapboxService,
   ) {}
 
   /**
@@ -357,7 +359,7 @@ export class JobsService {
       scheduled_date: dto.scheduledDate,
       scheduled_window_start: dto.scheduledWindowStart,
       scheduled_window_end: dto.scheduledWindowEnd,
-      service_address: dto.serviceAddress,
+      service_address: await this.mapboxService.softGeocodeAndMerge(dto.serviceAddress) as Record<string, any>,
       placement_notes: dto.placementNotes,
       rental_start_date: dto.rentalStartDate,
       rental_end_date: dto.rentalEndDate,
@@ -858,7 +860,7 @@ export class JobsService {
     if (dto.scheduledWindowEnd !== undefined)
       job.scheduled_window_end = dto.scheduledWindowEnd;
     if (dto.serviceAddress !== undefined)
-      job.service_address = dto.serviceAddress;
+      job.service_address = await this.mapboxService.softGeocodeAndMerge(dto.serviceAddress) as Record<string, any>;
     if (dto.placementNotes !== undefined)
       job.placement_notes = dto.placementNotes;
     if (dto.rentalStartDate !== undefined)

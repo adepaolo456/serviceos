@@ -36,8 +36,8 @@ export class CustomersService {
 
   async create(tenantId: string, dto: CreateCustomerDto): Promise<Customer> {
     // Soft geocode billing address and service sites before saving
-    const billingAddress = await this.softGeocodeAddress(dto.billingAddress as Record<string, any> | undefined);
-    const serviceAddresses = await this.softGeocodeAddressList(dto.serviceAddresses as Record<string, any>[] | undefined);
+    const billingAddress = await this.mapboxService.softGeocodeAndMerge(dto.billingAddress as Record<string, any> | undefined);
+    const serviceAddresses = await this.mapboxService.softGeocodeAndMergeList(dto.serviceAddresses as Record<string, any>[] | undefined);
 
     const customer = this.customersRepository.create({
       tenant_id: tenantId,
@@ -272,9 +272,9 @@ export class CustomersService {
     if (dto.email !== undefined) customer.email = dto.email;
     if (dto.phone !== undefined) customer.phone = dto.phone;
     if (dto.billingAddress !== undefined)
-      customer.billing_address = await this.softGeocodeAddress(dto.billingAddress as Record<string, any> | undefined);
+      customer.billing_address = await this.mapboxService.softGeocodeAndMerge(dto.billingAddress as Record<string, any> | undefined) as Record<string, any>;
     if (dto.serviceAddresses !== undefined)
-      customer.service_addresses = await this.softGeocodeAddressList(dto.serviceAddresses as Record<string, any>[] | undefined);
+      customer.service_addresses = await this.mapboxService.softGeocodeAndMergeList(dto.serviceAddresses as Record<string, any>[] | undefined) as Record<string, any>[];
     if (dto.notes !== undefined) customer.notes = dto.notes;
     if (dto.driverInstructions !== undefined)
       customer.driver_instructions = dto.driverInstructions;
@@ -424,42 +424,4 @@ export class CustomersService {
     };
   }
 
-  /**
-   * Soft geocode a single address. Never throws — returns the address
-   * with coords added on success, or unchanged on failure.
-   */
-  private async softGeocodeAddress(
-    addr: Record<string, any> | undefined | null,
-  ): Promise<Record<string, any> | undefined> {
-    if (!addr) return addr as undefined;
-    if (hasValidServiceCoordinates(addr)) return addr;
-
-    const addrStr = buildAddressString(addr as Record<string, unknown>);
-    if (!addrStr) return addr;
-
-    try {
-      const geo = await this.mapboxService.geocodeAddress(addrStr);
-      if (geo && isValidCoordinatePair(geo.lat, geo.lng)) {
-        return { ...addr, lat: geo.lat, lng: geo.lng, geocoded_at: new Date().toISOString(), geocode_source: 'mapbox' };
-      }
-    } catch {
-      this.logger.warn(`Soft geocode failed for: ${addrStr}`);
-    }
-
-    return addr;
-  }
-
-  /**
-   * Soft geocode each address in a list. Never throws.
-   */
-  private async softGeocodeAddressList(
-    addrs: Record<string, any>[] | undefined | null,
-  ): Promise<Record<string, any>[] | undefined> {
-    if (!addrs || !Array.isArray(addrs)) return addrs as undefined;
-    const result: Record<string, any>[] = [];
-    for (const addr of addrs) {
-      result.push((await this.softGeocodeAddress(addr)) ?? addr);
-    }
-    return result;
-  }
 }

@@ -113,7 +113,8 @@ export class GeocodeBackfillService {
       }
 
       if (!dryRun) {
-        const updated = { ...addr, lat: geo.lat, lng: geo.lng, geocoded_at: new Date().toISOString(), geocode_source: 'mapbox' };
+        const updated: Record<string, any> = { ...addr, lat: geo.lat, lng: geo.lng, geocoded_at: new Date().toISOString(), geocode_source: 'mapbox' };
+        delete updated.geocode_failed_at;
         await this.jobRepo
           .createQueryBuilder()
           .update(Job)
@@ -175,7 +176,8 @@ export class GeocodeBackfillService {
       }
 
       if (!dryRun) {
-        const updated = { ...addr, lat: geo.lat, lng: geo.lng, geocoded_at: new Date().toISOString(), geocode_source: 'mapbox' };
+        const updated: Record<string, any> = { ...addr, lat: geo.lat, lng: geo.lng, geocoded_at: new Date().toISOString(), geocode_source: 'mapbox' };
+        delete updated.geocode_failed_at;
         await this.customerRepo
           .createQueryBuilder()
           .update(Customer)
@@ -239,7 +241,9 @@ export class GeocodeBackfillService {
         }
 
         if (!dryRun) {
-          updatedSites[i] = { ...site, lat: geo.lat, lng: geo.lng, geocoded_at: new Date().toISOString(), geocode_source: 'mapbox' };
+          const updatedSite: Record<string, any> = { ...site, lat: geo.lat, lng: geo.lng, geocoded_at: new Date().toISOString(), geocode_source: 'mapbox' };
+          delete updatedSite.geocode_failed_at;
+          updatedSites[i] = updatedSite;
           anyUpdated = true;
         }
         result.service_sites.geocoded++;

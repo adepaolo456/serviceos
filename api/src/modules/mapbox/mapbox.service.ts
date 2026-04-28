@@ -1,4 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
+import {
+  buildAddressString,
+  isValidCoordinatePair,
+} from '../../common/helpers/coordinate-validator';
 
 const MAPBOX_TOKEN = process.env.MAPBOX_TOKEN || '';
 
@@ -64,6 +68,104 @@ export class MapboxService {
       this.logger.warn(`Geocode failed for "${address}": ${err}`);
       return null;
     }
+  }
+
+  /**
+   * Soft-geocode an address. Never throws. Wraps `geocodeAddress` (which already
+   * returns null on failure) with a discriminated-union return shape, suitable
+   * for callers that want explicit success/failure paths without try/catch.
+   *
+   * Idempotency is the caller's responsibility — this method always attempts
+   * the geocode. For automatic skip-when-already-geocoded behavior, use
+   * `softGeocodeAndMerge()` instead.
+   *
+   * Logs are PII-redacted: `zip=… street_len=…`. Full address is never logged.
+   */
+  async softGeocodeAddress(input: {
+    street?: string;
+    city?: string;
+    state?: string;
+    zip?: string;
+  }): Promise<
+    | { ok: true; lat: number; lng: number; source: 'mapbox' }
+    | { ok: false; failedAt: string }
+  > {
+    const addrStr = buildAddressString(input as Record<string, unknown>);
+    if (!addrStr) {
+      return { ok: false, failedAt: new Date().toISOString() };
+    }
+
+    try {
+      const geo = await this.geocodeAddress(addrStr);
+      if (geo && isValidCoordinatePair(geo.lat, geo.lng)) {
+        return { ok: true, lat: geo.lat, lng: geo.lng, source: 'mapbox' };
+      }
+    } catch {
+      // geocodeAddress already swallows internal failures; defense-in-depth.
+    }
+
+    this.logger.warn(
+      `Soft geocode failed for zip=${input.zip ?? 'unknown'} street_len=${input.street?.length ?? 0}`,
+    );
+    return { ok: false, failedAt: new Date().toISOString() };
+  }
+
+  /**
+   * Address-JSONB lifecycle helper. Preserves all existing keys; applies the
+   * geocode_failed_at lifecycle.
+   *
+   * Idempotent: if `lat` and `lng` are both truthy, returns the address unchanged
+   * (no Mapbox call). Legacy (0, 0) rows are correctly retried since 0 is falsy.
+   *
+   * On success: writes lat / lng / geocoded_at / geocode_source AND deletes any
+   * prior `geocode_failed_at` marker.
+   * On failure: preserves any existing lat / lng AND sets `geocode_failed_at`
+   * to the current ISO timestamp.
+   *
+   * Never throws.
+   */
+  async softGeocodeAndMerge(
+    addr: Record<string, any> | undefined | null,
+  ): Promise<Record<string, any> | undefined | null> {
+    if (!addr) return addr;
+    if (addr.lat && addr.lng) return addr;
+
+    const result = await this.softGeocodeAddress({
+      street: addr.street,
+      city: addr.city,
+      state: addr.state,
+      zip: addr.zip,
+    });
+
+    if (result.ok === false) {
+      return {
+        ...addr,
+        geocode_failed_at: result.failedAt,
+      };
+    }
+
+    const merged: Record<string, any> = {
+      ...addr,
+      lat: result.lat,
+      lng: result.lng,
+      geocoded_at: new Date().toISOString(),
+      geocode_source: result.source,
+    };
+    delete merged.geocode_failed_at;
+    return merged;
+  }
+
+  /**
+   * Array variant of softGeocodeAndMerge. Spreads soft-geocoding over each
+   * address element. Same idempotency + lifecycle semantics per element.
+   */
+  async softGeocodeAndMergeList(
+    addrs: Record<string, any>[] | undefined | null,
+  ): Promise<Record<string, any>[] | undefined | null> {
+    if (!Array.isArray(addrs)) return addrs;
+    return Promise.all(
+      addrs.map((a) => this.softGeocodeAndMerge(a) as Promise<Record<string, any>>),
+    );
   }
 
   /**

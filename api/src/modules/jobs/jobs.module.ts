@@ -25,6 +25,7 @@ import { CreditAuditModule } from '../credit-audit/credit-audit.module';
 import { PermissionModule } from '../permissions/permission.module';
 import { AlertsModule } from '../alerts/alerts.module';
 import { StripeModule } from '../stripe/stripe.module';
+import { MapboxModule } from '../mapbox/mapbox.module';
 import { DispatchCreditEnforcementService } from '../dispatch/dispatch-credit-enforcement.service';
 import { JobsService } from './jobs.service';
 import { JobsController } from './jobs.controller';
@@ -47,6 +48,7 @@ import { JobsController } from './jobs.controller';
     // `refund_paid` decisions on card payments with a
     // stripe_payment_intent_id present.
     StripeModule,
+    MapboxModule,
   ],
   controllers: [JobsController],
   providers: [JobsService, DispatchCreditEnforcementService],
