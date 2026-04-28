@@ -316,15 +316,21 @@ export class ReportingService {
 
     // Two-hop Shape A: exclude tickets whose job belongs to a demo customer.
     // Outer NOT EXISTS selects jobs; inner EXISTS identifies demo-customer jobs.
+    // Inner subquery references uuid tenant_id columns (jobs, customers); the
+    // outer ticketRepo QB is on dump_tickets where tenant_id is varchar in DB.
+    // A single shared :tid placeholder cannot be type-resolved against both
+    // varchar and uuid columns in one statement, so the subquery binds a
+    // distinct :demoCustomersTid (uuid context) while :tid stays bound to the
+    // outer varchar context. Both resolve to the same runtime tenantId value.
     const twoHopDemoExclusion = `NOT EXISTS (
       SELECT 1
       FROM jobs j
       WHERE j.id = t.job_id
-        AND j.tenant_id = :tid
+        AND j.tenant_id = :demoCustomersTid
         AND EXISTS (
           SELECT 1 FROM customers demo_c
           WHERE demo_c.id = j.customer_id
-            AND demo_c.tenant_id = :tid
+            AND demo_c.tenant_id = :demoCustomersTid
             AND demo_c.tags @> '["demo"]'::jsonb
         )
     )`;
@@ -335,7 +341,7 @@ export class ReportingService {
       .where('t.tenant_id = :tid', { tid: tenantId })
       .andWhere('t.created_at >= :start', { start })
       .andWhere('t.created_at <= :end', { end: end + 'T23:59:59' })
-      .andWhere(twoHopDemoExclusion)
+      .andWhere(twoHopDemoExclusion, { demoCustomersTid: tenantId })
       .getRawOne();
 
     const dumpCosts = Number(totals?.totalDumpCosts) || 0;
@@ -350,7 +356,7 @@ export class ReportingService {
       .where('t.tenant_id = :tid', { tid: tenantId })
       .andWhere('t.created_at >= :start', { start })
       .andWhere('t.created_at <= :end', { end: end + 'T23:59:59' })
-      .andWhere(twoHopDemoExclusion)
+      .andWhere(twoHopDemoExclusion, { demoCustomersTid: tenantId })
       .groupBy('t.dump_location_id')
       .addGroupBy('t.dump_location_name')
       .getRawMany<{
@@ -368,7 +374,7 @@ export class ReportingService {
       .where('t.tenant_id = :tid', { tid: tenantId })
       .andWhere('t.created_at >= :start', { start })
       .andWhere('t.created_at <= :end', { end: end + 'T23:59:59' })
-      .andWhere(twoHopDemoExclusion)
+      .andWhere(twoHopDemoExclusion, { demoCustomersTid: tenantId })
       .groupBy('t.waste_type')
       .getRawMany<{
         wasteType: string | null;
@@ -419,21 +425,27 @@ export class ReportingService {
     // preserved for search / display, but exclusion is driven by the
     // ticket's underlying job-customer, not by the LEFT JOIN row — so
     // tickets whose job has no customer are NOT accidentally dropped.
+    //
+    // $1 binds tenantId in the outer varchar context (dump_tickets.tenant_id).
+    // $4 binds the same tenantId value in the uuid context of the inner
+    // subqueries (jobs.tenant_id, customers.tenant_id). One placeholder per
+    // type-family is required — PG cannot infer one bind type that satisfies
+    // both varchar and uuid columns in a single statement.
     const demoExclusion = `AND NOT EXISTS (
       SELECT 1 FROM jobs demo_j
       WHERE demo_j.id = t.job_id
-        AND demo_j.tenant_id = $1
+        AND demo_j.tenant_id = $4
         AND EXISTS (
           SELECT 1 FROM customers demo_c
           WHERE demo_c.id = demo_j.customer_id
-            AND demo_c.tenant_id = $1
+            AND demo_c.tenant_id = $4
             AND demo_c.tags @> '["demo"]'::jsonb
         )
     )`;
     const baseWhere = `t.tenant_id = $1 AND t.submitted_at >= $2 AND t.submitted_at <= $3 ${demoExclusion}`;
-    const params: any[] = [tenantId, start, end + 'T23:59:59'];
+    const params: any[] = [tenantId, start, end + 'T23:59:59', tenantId];
     let extraWhere = '';
-    let paramIdx = 4;
+    let paramIdx = 5;
 
     if (dumpLocationId) { extraWhere += ` AND t.dump_location_id = $${paramIdx}`; params.push(dumpLocationId); paramIdx++; }
     if (status) {

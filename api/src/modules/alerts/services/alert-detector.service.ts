@@ -409,6 +409,11 @@ export class AlertDetectorService {
         total_cost: string | null;
       }>
     >(
+      // $1 binds tenantId in the outer varchar context (dump_tickets.tenant_id).
+      // $3 binds the same tenantId value in the uuid context of jobs.tenant_id.
+      // PG cannot infer one bind type that satisfies both varchar and uuid in
+      // a single statement, so the two type-families need distinct placeholders
+      // even though the runtime value is identical.
       `SELECT dt.id AS ticket_id,
               dt.job_id,
               j.asset_subtype AS size,
@@ -419,8 +424,8 @@ export class AlertDetectorService {
        WHERE dt.tenant_id = $1
          AND dt.voided_at IS NULL
          AND dt.created_at >= $2
-         AND j.tenant_id = $1`,
-      [tenantId, cutoff.toISOString()],
+         AND j.tenant_id = $3`,
+      [tenantId, cutoff.toISOString(), tenantId],
     );
 
     const out: DerivedAlert[] = [];

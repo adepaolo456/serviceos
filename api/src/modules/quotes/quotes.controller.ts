@@ -586,8 +586,8 @@ export class QuotesController {
 
     if (customerId) {
       qb.andWhere(
-        '(q.customer_id = :customerId OR (q.customer_id IS NULL AND q.customer_email IN (SELECT email FROM customers WHERE id = :customerId AND tenant_id = :tenantId)))',
-        { customerId, tenantId },
+        '(q.customer_id = :customerId OR (q.customer_id IS NULL AND q.customer_email IN (SELECT email FROM customers WHERE id = :customerId AND tenant_id = :customersTenantId)))',
+        { customerId, customersTenantId: tenantId },
       );
     }
 
