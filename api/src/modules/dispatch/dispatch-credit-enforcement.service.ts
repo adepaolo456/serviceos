@@ -443,12 +443,20 @@ export class DispatchCreditEnforcementService {
       .where('inv.tenant_id = :tenantId', { tenantId })
       .andWhere('inv.job_id IS NULL')
       .andWhere(
+        // task_chain_links has no tenant_id column. Joining jobs and
+        // filtering j.tenant_id = :tenantId inside the subquery makes the
+        // tenant boundary explicit and fail-closed if :jobId ever crosses
+        // tenants — instead of relying on the outer inv.tenant_id filter
+        // and unenforced data invariants (rental_chain_ids being per-tenant
+        // by convention).
         `inv.rental_chain_id IN (
            SELECT tcl.rental_chain_id
              FROM task_chain_links tcl
+             JOIN jobs j ON j.id = tcl.job_id
             WHERE tcl.job_id = :jobId
+              AND j.tenant_id = :tenantId
         )`,
-        { jobId },
+        { jobId, tenantId },
       )
       .andWhere('inv.status IN (:...paidStatuses)', {
         paidStatuses: ['paid', 'partial'],
