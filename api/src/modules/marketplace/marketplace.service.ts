@@ -61,6 +61,25 @@ export class MarketplaceService {
     return integration;
   }
 
+  /**
+   * Gate for public-facing marketplace reads (availability/pricing).
+   * Returns 404 (not 403) regardless of whether the tenant doesn't exist,
+   * has no integration, or has a disabled integration — to avoid leaking
+   * enumeration signal about which tenants are on the marketplace.
+   * Same response shape in all three cases by design.
+   */
+  private async resolveIntegrationByTenant(
+    tenantId: string,
+    source = 'rentthis',
+  ): Promise<void> {
+    const integration = await this.integrationsRepository.findOne({
+      where: { tenant_id: tenantId, source, enabled: true },
+    });
+    if (!integration) {
+      throw new NotFoundException('Marketplace data not available for this tenant');
+    }
+  }
+
   async createBooking(tenantId: string, dto: CreateMarketplaceBookingDto) {
     // Tenant-scoped existence check. The compound unique index on
     // (tenant_id, marketplace_booking_id) also enforces this at the DB layer,
@@ -229,6 +248,7 @@ export class MarketplaceService {
     subtype: string | undefined,
     date: string,
   ) {
+    await this.resolveIntegrationByTenant(tenantId);
     const qb = this.assetsRepository
       .createQueryBuilder('a')
       .where('a.tenant_id = :tenantId', { tenantId })
@@ -251,6 +271,7 @@ export class MarketplaceService {
     lat: number,
     lng: number,
   ) {
+    await this.resolveIntegrationByTenant(tenantId);
     const tenant = await this.tenantsRepository.findOne({
       where: { id: tenantId },
     });
