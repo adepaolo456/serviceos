@@ -107,7 +107,7 @@ export default function CustomersPage() {
   const handleDelete = async (id: string, name: string) => {
     if (!confirm(`Delete "${name}"?`)) return;
     try { await api.delete(`/customers/${id}`); toast("success", "Deleted"); fetchCustomers(); }
-    catch { toast("error", "Failed to delete"); }
+    catch (err: any) { toast("error", err?.message ?? "Failed to delete"); }
   };
 
   const toggleSort = (key: SortKey) => {

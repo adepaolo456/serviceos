@@ -397,6 +397,17 @@ export class CustomersService {
             );
           }
 
+          // associated customer notes
+          if (
+            constraint === 'fk_customer_notes_customer_id' ||
+            detail.includes('fk_customer_notes_customer_id') ||
+            message.includes('fk_customer_notes_customer_id')
+          ) {
+            throw new ConflictException(
+              'Cannot delete this customer — they have notes on record. Remove those first.'
+            );
+          }
+
           // Fallback for any unknown FK constraint on customers
           throw new ConflictException(
             'Cannot delete this customer — they have related records. Resolve them first.'
