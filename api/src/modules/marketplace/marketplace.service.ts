@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { MarketplaceBooking } from './entities/marketplace-booking.entity';
 import { MarketplaceIntegration } from './entities/marketplace-integration.entity';
 import { Customer } from '../customers/entities/customer.entity';
@@ -14,12 +14,12 @@ import { Job } from '../jobs/entities/job.entity';
 import { Asset } from '../assets/entities/asset.entity';
 import { Tenant } from '../tenants/entities/tenant.entity';
 import { PricingService } from '../pricing/pricing.service';
+import { JobsService } from '../jobs/jobs.service';
 import {
   CreateMarketplaceBookingDto,
   ListMarketplaceBookingsQueryDto,
   RejectBookingDto,
 } from './dto/marketplace.dto';
-import { issueNextJobNumber } from '../../common/utils/job-number.util';
 
 @Injectable()
 export class MarketplaceService {
@@ -37,6 +37,8 @@ export class MarketplaceService {
     @InjectRepository(Tenant)
     private tenantsRepository: Repository<Tenant>,
     private pricingService: PricingService,
+    private jobsService: JobsService,
+    private dataSource: DataSource,
   ) {}
 
   // Looks up a marketplace integration by its public key id. The controller
@@ -155,74 +157,129 @@ export class MarketplaceService {
   }
 
   async accept(tenantId: string, id: string) {
-    const booking = await this.bookingsRepository.findOne({
+    // Pre-TX validation. Fail fast on the two state-shape checks before
+    // opening a transaction so the common "wrong status" / "not found"
+    // path doesn't pay for a TX open/abort. Mirrors the pre-TX pattern
+    // used by JobsService.create (Fix C) and BillingService.
+    // createInternalInvoice (Fix A).
+    const preBooking = await this.bookingsRepository.findOne({
       where: { id, tenant_id: tenantId },
     });
-    if (!booking) {
+    if (!preBooking) {
       throw new NotFoundException(`Booking ${id} not found`);
     }
-    if (booking.status !== 'pending') {
-      throw new BadRequestException(`Booking is already "${booking.status}"`);
+    if (preBooking.status !== 'pending') {
+      throw new BadRequestException(`Booking is already "${preBooking.status}"`);
     }
 
-    // Find or create customer
-    let customer = await this.customersRepository.findOne({
-      where: { tenant_id: tenantId, email: booking.customer_email },
-    });
-    if (!customer) {
-      const nameParts = booking.customer_name.split(' ');
-      const firstName = nameParts[0] || booking.customer_name;
-      const lastName = nameParts.slice(1).join(' ') || '';
-      customer = await this.customersRepository.save(
-        this.customersRepository.create({
-          tenant_id: tenantId,
-          first_name: firstName,
-          last_name: lastName,
-          email: booking.customer_email,
-          phone: booking.customer_phone,
-          lead_source: 'marketplace',
-          service_addresses: booking.service_address
-            ? [booking.service_address]
-            : [],
-        }),
+    // SSoT handoff. Every write below — customer create, JobsService.
+    // create's whole body, and the booking projection — runs inside one
+    // transaction. A throw at any step (including inside JobsService.
+    // create) rolls back every preceding write as a unit. Pre-refactor
+    // each call ran on the default datasource and a mid-flow throw
+    // could leave behind an orphan customer, an orphan job, or a job
+    // whose marketplace_booking_id pointed at a booking row whose
+    // status was still 'pending'.
+    return this.dataSource.transaction(async (manager) => {
+      const bookingRepo = manager.getRepository(MarketplaceBooking);
+      const customerRepo = manager.getRepository(Customer);
+      const jobRepo = manager.getRepository(Job);
+
+      // Re-read inside the TX so the booking we mutate at the end of
+      // the body is the manager-bound row, not a stale entity from the
+      // pre-TX read above.
+      const booking = await bookingRepo.findOne({
+        where: { id, tenant_id: tenantId },
+      });
+      if (!booking) {
+        // Defensive: a concurrent delete between pre-TX validation and
+        // TX open is improbable but not impossible. 404 is the same
+        // envelope the pre-check would have produced.
+        throw new NotFoundException(`Booking ${id} not found`);
+      }
+
+      // Find-or-create the customer scoped to (tenant_id, email).
+      let customer = await customerRepo.findOne({
+        where: { tenant_id: tenantId, email: booking.customer_email },
+      });
+      if (!customer) {
+        const nameParts = booking.customer_name.split(' ');
+        const firstName = nameParts[0] || booking.customer_name;
+        const lastName = nameParts.slice(1).join(' ') || '';
+        customer = await customerRepo.save(
+          customerRepo.create({
+            tenant_id: tenantId,
+            first_name: firstName,
+            last_name: lastName,
+            email: booking.customer_email,
+            phone: booking.customer_phone,
+            lead_source: 'marketplace',
+            service_addresses: booking.service_address
+              ? [booking.service_address]
+              : [],
+          }),
+        );
+      }
+
+      // Delegate job creation to the SSoT path. JobsService.create
+      // handles atomic job-number issuance, asset reservation, and
+      // (when present) auto-invoicing. We pass `manager` so all of
+      // its writes join this outer TX rather than opening a fresh one.
+      //
+      // Pricing fields (basePrice / totalPrice) and assetSubtype are
+      // intentionally omitted from the DTO so JobsService.create's
+      // auto-invoice gate (`job_type === 'delivery' && total_price > 0`)
+      // does NOT trip — marketplace bookings invoice via the platform's
+      // own settlement path, not the operator's POS path. The Job's
+      // base_price / total_price are then projected from the booking's
+      // quoted_price in the post-create UPDATE below, so the persisted
+      // Job row matches its pre-refactor field-for-field shape.
+      const createdJob = await this.jobsService.create(
+        tenantId,
+        {
+          customerId: customer.id,
+          jobType: 'delivery',
+          serviceType: booking.listing_type,
+          scheduledDate: booking.requested_date,
+          serviceAddress: booking.service_address,
+          placementNotes: booking.special_instructions,
+          rentalDays: booking.rental_days,
+          source: 'marketplace',
+        },
+        manager,
       );
-    }
 
-    // Generate job number. Prior to the tenants.next_job_sequence
-    // migration this path issued its own sequence via a LIKE-prefix
-    // count on `JOB-YYYYMMDD-%`, which was both fragile (a
-    // concurrent booking could miss the count and collide) and
-    // tightly coupled to the legacy format. Now every module draws
-    // from the canonical tenant-scoped counter.
-    const jobNumber = await issueNextJobNumber(this.jobsRepository.manager, tenantId, 'delivery');
+      // Project fields with no CreateJobDto analog. `marketplace_booking_id`
+      // and `status: 'confirmed'` are marketplace-flow specific; the price
+      // fields are projected here (rather than passed through the DTO) to
+      // keep the auto-invoice gate suppressed — see comment above. All
+      // four columns are tenant-scoped via the WHERE id+tenant_id pair.
+      await jobRepo.update(
+        { id: createdJob.id, tenant_id: tenantId },
+        {
+          marketplace_booking_id: booking.marketplace_booking_id,
+          status: 'confirmed',
+          base_price: booking.quoted_price,
+          total_price: booking.quoted_price,
+        },
+      );
 
-    // Create job
-    const job = await this.jobsRepository.save(
-      this.jobsRepository.create({
-        tenant_id: tenantId,
-        job_number: jobNumber,
-        customer_id: customer.id,
-        job_type: 'delivery',
-        service_type: booking.listing_type,
-        scheduled_date: booking.requested_date,
-        service_address: booking.service_address,
-        placement_notes: booking.special_instructions,
-        rental_days: booking.rental_days,
-        base_price: booking.quoted_price,
-        total_price: booking.quoted_price,
-        source: 'marketplace',
-        marketplace_booking_id: booking.marketplace_booking_id,
-        status: 'confirmed',
-      }),
-    );
+      // Booking projection. Order matters only insofar as the booking
+      // must reference the persisted job's id, which is now safe because
+      // createdJob is from a row that committed via the same manager.
+      booking.status = 'accepted';
+      booking.job_id = createdJob.id;
+      booking.processed_at = new Date();
+      const savedBooking = await bookingRepo.save(booking);
 
-    // Update booking
-    booking.status = 'accepted';
-    booking.job_id = job.id;
-    booking.processed_at = new Date();
-    await this.bookingsRepository.save(booking);
+      // Re-fetch the projected job so the response reflects the
+      // post-UPDATE state (price fields, status, marketplace link).
+      const job = await jobRepo.findOne({
+        where: { id: createdJob.id, tenant_id: tenantId },
+      });
 
-    return { booking, customer, job };
+      return { booking: savedBooking, customer, job };
+    });
   }
 
   async reject(tenantId: string, id: string, dto: RejectBookingDto) {

@@ -7,6 +7,7 @@ import { Job } from '../jobs/entities/job.entity';
 import { Asset } from '../assets/entities/asset.entity';
 import { Tenant } from '../tenants/entities/tenant.entity';
 import { PricingModule } from '../pricing/pricing.module';
+import { JobsModule } from '../jobs/jobs.module';
 import { MarketplaceService } from './marketplace.service';
 import { MarketplaceController } from './marketplace.controller';
 
@@ -21,6 +22,11 @@ import { MarketplaceController } from './marketplace.controller';
       Tenant,
     ]),
     PricingModule,
+    // Marketplace `accept()` delegates job creation to JobsService so
+    // it inherits the SSoT pricing/numbering path. The dependency is
+    // mechanically safe: JobsModule does not (transitively) import
+    // MarketplaceModule.
+    JobsModule,
   ],
   controllers: [MarketplaceController],
   providers: [MarketplaceService],

@@ -298,10 +298,18 @@ export class JobsService {
     return issueNextJobNumber(manager ?? this.dataSource.manager, tenantId, jobType);
   }
 
-  async create(tenantId: string, dto: CreateJobDto): Promise<Job> {
-    // Pre-TX validation. Fail-fast before opening a transaction so the
-    // tenant-scope NotFoundException doesn't unnecessarily round-trip
-    // through a TX open/abort. Mirrors Fix B's pre-TX pattern.
+  async create(
+    tenantId: string,
+    dto: CreateJobDto,
+    manager?: EntityManager,
+  ): Promise<Job> {
+    // Pre-TX validation. Fail-fast before opening (or joining) a
+    // transaction so the tenant-scope NotFoundException doesn't
+    // unnecessarily round-trip through a TX open/abort. Runs in BOTH
+    // branches — when an outer manager is supplied, the caller has
+    // already opened a TX, but the validation still belongs outside
+    // the helper because it reads with `this.assetRepo` (default
+    // datasource) and we don't want to widen the helper's read scope.
     let preCheckedAsset: Asset | null = null;
     if (dto.assetId) {
       preCheckedAsset = await this.assetRepo.findOne({
@@ -310,15 +318,17 @@ export class JobsService {
       if (!preCheckedAsset) throw new NotFoundException('Asset not found');
     }
 
-    // Wrap the entire create body in one transaction so every write
-    // (jobs INSERT + asset reservation + auto-invoice path) commits or
-    // rolls back as a single unit. Closes the partial-state class
-    // analogous to the one Fix B closed for cascadeDelete: a throw
-    // between the jobs INSERT and the asset reservation UPDATE used to
-    // leave an orphan job with asset_id set but the asset still
-    // available.
-    return this.dataSource.transaction(async (manager) =>
-      this._createInTx(tenantId, dto, preCheckedAsset, manager),
+    // Dispatch (mirrors `createInternalInvoice` in billing.service.ts):
+    // when an outer transaction's manager is supplied, join it instead
+    // of opening a fresh one — so the helper's writes commit/roll back
+    // atomically with the caller's other writes. When no manager is
+    // supplied, behave exactly as before (Fix C: wrap the full body in
+    // one transaction).
+    if (manager) {
+      return this._createInTx(tenantId, dto, preCheckedAsset, manager);
+    }
+    return this.dataSource.transaction(async (m) =>
+      this._createInTx(tenantId, dto, preCheckedAsset, m),
     );
   }
 

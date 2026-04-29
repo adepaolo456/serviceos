@@ -2705,19 +2705,29 @@ describe('JobsService.create — Fix C (transaction wrapper)', () => {
     expect(invoiceRepoFromArg.findOne).toBe(h.txInvoiceFindOne);
   });
 
-  // Test 4 — Public signature unchanged. No `manager?` fan-out.
-  it('public create signature: 2 declared params (tenantId, dto), no optional manager', async () => {
+  // Test 4 — Public signature: (tenantId, dto, manager?). The optional
+  // `manager?` was added so callers already inside a transaction
+  // (e.g., MarketplaceService.accept) can hand their EntityManager
+  // through and have create's body join the outer TX rather than
+  // opening a fresh one. The previous Fix-C contract pinned 2 params
+  // — that's been intentionally relaxed to 3.
+  it('public create signature: manager? extension is wire-compatible with 2-arg callers', async () => {
     const h = await buildHarness();
     h.billingService.hasInvoice = jest.fn().mockResolvedValue(false);
     h.billingService.createInternalInvoice = jest
       .fn()
       .mockResolvedValue({ id: 'inv-fixC-4' });
 
-    // Function.length counts non-default, non-rest params before the
-    // first param with a default value. Public create has exactly 2.
-    expect(h.service.create.length).toBe(2);
+    // Function.length is 3 now — the third is `manager?`. TypeScript
+    // optional params surface in JavaScript as plain named params (no
+    // default value), so Function.length counts them. Pinning at 3
+    // catches a future regression where a 4th param sneaks in or the
+    // manager arg gets reordered into a position that would shadow it.
+    expect(h.service.create.length).toBe(3);
 
-    // Calling with exactly 2 args works (no missing-arg error).
+    // Calling with exactly 2 args still works (no missing-arg error
+    // and no manager required) — the legacy POST /jobs caller path.
+    // This is the wire-compatibility proof.
     await expect(h.service.create('tenant-1', baseDto)).resolves.toBeDefined();
   });
 });
