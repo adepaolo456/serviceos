@@ -136,3 +136,4 @@ import { AlertsModule } from './modules/alerts/alerts.module';
   ],
 })
 export class AppModule {}
+
