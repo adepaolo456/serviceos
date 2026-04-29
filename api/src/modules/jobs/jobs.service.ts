@@ -299,15 +299,46 @@ export class JobsService {
   }
 
   async create(tenantId: string, dto: CreateJobDto): Promise<Job> {
-    // Validate that the asset (if provided) belongs to this tenant before creating the job.
+    // Pre-TX validation. Fail-fast before opening a transaction so the
+    // tenant-scope NotFoundException doesn't unnecessarily round-trip
+    // through a TX open/abort. Mirrors Fix B's pre-TX pattern.
+    let preCheckedAsset: Asset | null = null;
     if (dto.assetId) {
-      const asset = await this.assetRepo.findOne({
+      preCheckedAsset = await this.assetRepo.findOne({
         where: { id: dto.assetId, tenant_id: tenantId },
       });
-      if (!asset) throw new NotFoundException('Asset not found');
+      if (!preCheckedAsset) throw new NotFoundException('Asset not found');
     }
 
-    const jobNumber = await this.generateJobNumber(tenantId, dto.jobType);
+    // Wrap the entire create body in one transaction so every write
+    // (jobs INSERT + asset reservation + auto-invoice path) commits or
+    // rolls back as a single unit. Closes the partial-state class
+    // analogous to the one Fix B closed for cascadeDelete: a throw
+    // between the jobs INSERT and the asset reservation UPDATE used to
+    // leave an orphan job with asset_id set but the asset still
+    // available.
+    return this.dataSource.transaction(async (manager) =>
+      this._createInTx(tenantId, dto, preCheckedAsset, manager),
+    );
+  }
+
+  private async _createInTx(
+    tenantId: string,
+    dto: CreateJobDto,
+    _preCheckedAsset: Asset | null,
+    manager: EntityManager,
+  ): Promise<Job> {
+    // Derive every repo from the supplied manager so all reads and
+    // writes in the body join the outer transaction. No `this.X` repo
+    // access below this line — every accessor is manager-bound.
+    const jobsRepo = manager.getRepository(Job);
+    const assetRepo = manager.getRepository(Asset);
+    const pricingRepo = manager.getRepository(PricingRule);
+    const clientPricingRepo = manager.getRepository(ClientPricingOverride);
+    const customerRepo = manager.getRepository(Customer);
+    const tenantSettingsRepo = manager.getRepository(TenantSettings);
+
+    const jobNumber = await this.generateJobNumber(tenantId, dto.jobType, manager);
 
     // Auto-calculate pricing if assetSubtype provided but no explicit price
     let basePrice = dto.basePrice;
@@ -317,7 +348,7 @@ export class JobsService {
     let discountAmount = 0;
 
     if (dto.assetSubtype && !dto.basePrice) {
-      const rule = await this.pricingRepo.findOne({
+      const rule = await pricingRepo.findOne({
         where: { tenant_id: tenantId, asset_subtype: dto.assetSubtype, is_active: true },
       });
       if (rule) {
@@ -327,7 +358,7 @@ export class JobsService {
         // etc.) continue to fall back to the global rule unchanged.
         if (dto.customerId) {
           const today = new Date().toISOString().split('T')[0];
-          const override = await this.clientPricingRepo
+          const override = await clientPricingRepo
             .createQueryBuilder('o')
             .where('o.tenant_id = :tenantId', { tenantId })
             .andWhere('o.customer_id = :customerId', { customerId: dto.customerId })
@@ -342,14 +373,11 @@ export class JobsService {
         rentalDays =
           rentalDays ??
           rule.rental_period_days ??
-          (await getTenantRentalDays(
-            this.dataSource.getRepository(TenantSettings),
-            tenantId,
-          ));
+          (await getTenantRentalDays(tenantSettingsRepo, tenantId));
 
         // Check customer discount
         if (dto.customerId) {
-          const customer = await this.customerRepo.findOne({ where: { id: dto.customerId, tenant_id: tenantId } });
+          const customer = await customerRepo.findOne({ where: { id: dto.customerId, tenant_id: tenantId } });
           if (customer?.discount_percentage) {
             discountPercentage = Number(customer.discount_percentage);
             discountAmount = Math.round(basePrice * discountPercentage) / 100;
@@ -360,7 +388,7 @@ export class JobsService {
       }
     }
 
-    const job = this.jobsRepository.create({
+    const job = jobsRepo.create({
       tenant_id: tenantId,
       job_number: jobNumber,
       customer_id: dto.customerId,
@@ -391,11 +419,11 @@ export class JobsService {
       source: dto.source ?? 'manual',
     } as Partial<Job>);
 
-    const savedJob = await this.jobsRepository.save(job);
+    const savedJob = await jobsRepo.save(job);
 
     // Reserve asset if one was assigned at creation
     if (savedJob.asset_id) {
-      await this.assetRepo.update(
+      await assetRepo.update(
         { id: savedJob.asset_id, tenant_id: tenantId } as any,
         {
           status: 'reserved',
@@ -403,7 +431,10 @@ export class JobsService {
       );
     }
 
-    // Auto-create POS invoice for delivery jobs with a price
+    // Auto-create POS invoice for delivery jobs with a price.
+    // hasInvoice stays bare-repo: it's a defensive double-create guard
+    // against a job that didn't exist 1ms ago, so its read is functionally
+    // equivalent in real flow. Locked decision; not extended here.
     const price = Number(savedJob.total_price) || 0;
     if (savedJob.job_type === 'delivery' && price > 0) {
       const exists = await this.billingService.hasInvoice(tenantId, savedJob.id, 'booking');
@@ -423,6 +454,11 @@ export class JobsService {
         // (subtotal − discount, rounded to cents). The helper validates
         // payment.amount === total within $0.01 to catch caller drift.
         const expectedTotal = Math.round((bp - disc) * 100) / 100;
+        // Pass the outer TX manager so createInternalInvoice's writes
+        // (Invoice + line items + Payment + reconcileBalance) join this
+        // transaction. Pre-Fix-C this call omitted the third argument,
+        // so the helper opened its own internal TX — a successful
+        // invoice could commit independently of a downstream throw.
         await this.billingService.createInternalInvoice(tenantId, {
           customerId: savedJob.customer_id,
           jobId: savedJob.id,
@@ -437,7 +473,7 @@ export class JobsService {
             amount: expectedTotal,
             payment_method: 'card',
           },
-        });
+        }, manager);
       }
     }
 

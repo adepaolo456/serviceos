@@ -57,6 +57,7 @@ import { DispatchCreditEnforcementService } from '../dispatch/dispatch-credit-en
 import { CreditAuditService } from '../credit-audit/credit-audit.service';
 import { StripeService } from '../stripe/stripe.service';
 import { MapboxService } from '../mapbox/mapbox.service';
+import { TenantSettings } from '../tenant-settings/entities/tenant-settings.entity';
 
 function makeJob(partial: Partial<Job> = {}): Job {
   const base = {
@@ -136,6 +137,15 @@ interface Harness {
   txTaskChainLinkFind: jest.Mock;
   txRentalChainUpdate: jest.Mock;
   txInvoiceFindOne: jest.Mock;
+  // Fix C — JobsService.create trx-bound spies for the in-TX reads
+  // (pricing resolution + customer discount + tenant settings rental
+  // days) plus the jobs INSERT and the createInternalInvoice manager
+  // identity check.
+  txPricingFindOne: jest.Mock;
+  txClientPricingGetOne: jest.Mock;
+  txCustomerFindOne: jest.Mock;
+  txTenantSettingsFindOne: jest.Mock;
+  txJobSaveSpy: jest.Mock;
   // Track every transaction opened, in order. cancelJobWithFinancials
   // opens 1 main + N post-commit (one per refund_paid → Stripe call),
   // so this lets J4b/J4c assert the post-commit pattern.
@@ -265,6 +275,18 @@ async function buildHarness(jobOverrides: Partial<Job> = {}): Promise<Harness> {
   const txRentalChainUpdate = jest
     .fn()
     .mockResolvedValue({ affected: 1, raw: [], generatedMaps: [] });
+  // Fix C — JobsService.create trx-bound spies. Pricing resolution +
+  // discount + tenant settings reads run inside the TX; jobs INSERT and
+  // createInternalInvoice receive the trx manager.
+  const txPricingFindOne = jest.fn().mockResolvedValue(null);
+  const txClientPricingGetOne = jest.fn().mockResolvedValue(null);
+  const txCustomerFindOne = jest.fn().mockResolvedValue(null);
+  const txTenantSettingsFindOne = jest
+    .fn()
+    .mockResolvedValue({ default_rental_period_days: 14 });
+  const txJobSaveSpy = jest.fn((x: any) =>
+    Promise.resolve({ id: 'mock-job-id', ...x }),
+  );
   // Arc J.1 — counts every dataSource.transaction(...) entry. The
   // cancellation orchestrator opens 1 main tx + 1 post-commit tx per
   // refund_paid Stripe call, so J4b/J4c can assert exact invocation
@@ -277,11 +299,23 @@ async function buildHarness(jobOverrides: Partial<Job> = {}): Promise<Harness> {
         // Fix B — cascadeDelete now reads/deletes through the trx Job
         // repo (pickup findOne, driver_task delete) so trxJob exposes
         // findOne + delete in addition to save/update.
+        // Fix C — JobsService.create now also goes through this trx Job
+        // repo: jobsRepo.create + jobsRepo.save inside _createInTx. The
+        // create method delegates to txJobSaveSpy (separate spy) so Fix
+        // C tests can target the create-path save without colliding with
+        // changeStatus's txJobSave assertions.
         const trxJob = {
-          save: txJobSave,
+          save: jest.fn(async (x: any) => {
+            // Route create-shape entities (no id, fresh INSERT) to the
+            // Fix-C-specific spy; route changeStatus-shape (existing
+            // entity passed back through) to txJobSave.
+            if (x && !x.id) return txJobSaveSpy(x);
+            return txJobSave(x);
+          }),
           update: txJobUpdate,
           findOne: jest.fn().mockResolvedValue(null),
           delete: jest.fn().mockResolvedValue({ affected: 1, raw: [] }),
+          create: jest.fn((x: any) => x),
         };
         const trxNotif = { save: txNotifSave, create: txNotifCreate };
         const trxInvoice = {
@@ -308,6 +342,17 @@ async function buildHarness(jobOverrides: Partial<Job> = {}): Promise<Harness> {
         const trxRentalChain = {
           update: txRentalChainUpdate,
         };
+        // Fix C — pricing resolution + discount + tenant settings reads.
+        const trxPricing = { findOne: txPricingFindOne };
+        const trxClientPricing = {
+          createQueryBuilder: jest.fn(() => ({
+            where: jest.fn().mockReturnThis(),
+            andWhere: jest.fn().mockReturnThis(),
+            getOne: txClientPricingGetOne,
+          })),
+        };
+        const trxCustomer = { findOne: txCustomerFindOne };
+        const trxTenantSettings = { findOne: txTenantSettingsFindOne };
         const trx: any = {
           getRepository: (entity: unknown) => {
             if (entity === Job) return trxJob;
@@ -319,10 +364,21 @@ async function buildHarness(jobOverrides: Partial<Job> = {}): Promise<Harness> {
             if (entity === Asset) return trxAsset;
             if (entity === TaskChainLink) return trxTaskChainLink;
             if (entity === RentalChain) return trxRentalChain;
+            if (entity === PricingRule) return trxPricing;
+            if (entity === ClientPricingOverride) return trxClientPricing;
+            if (entity === Customer) return trxCustomer;
+            if (entity === TenantSettings) return trxTenantSettings;
             throw new Error(
               `unmocked trx repo: ${(entity as { name?: string })?.name ?? '?'}`,
             );
           },
+          // Fix C — issueNextJobNumber (called via generateJobNumber from
+          // _createInTx) issues a raw UPDATE … RETURNING via manager.query.
+          // Stub returns the unwrapped rows shape the helper expects
+          // (`[[{ issued_sequence: N }]]` is the nested-tuple form;
+          // `[{ issued_sequence: N }]` is the flat form — the helper
+          // handles both at job-number.util.ts:69-70).
+          query: jest.fn().mockResolvedValue([{ issued_sequence: 1 }]),
         };
         const result = await cb(trx as EntityManager);
         transactionCommit();
@@ -380,6 +436,11 @@ async function buildHarness(jobOverrides: Partial<Job> = {}): Promise<Harness> {
       // previously failed at TestingModule.compile(). Minimal stub
       // covers the only methods touched (softGeocodeAndMerge).
       { provide: MapboxService, useValue: { softGeocodeAndMerge: jest.fn(async (x: any) => x) } },
+      // Fix C — TenantSettings repo is read inside _createInTx via
+      // manager.getRepository(TenantSettings). The token must be
+      // registered in the module so JobsService boots; the actual reads
+      // go through the trx mock above (txTenantSettingsFindOne).
+      { provide: getRepositoryToken(TenantSettings), useValue: {} },
     ],
   }).compile();
 
@@ -425,6 +486,11 @@ async function buildHarness(jobOverrides: Partial<Job> = {}): Promise<Harness> {
     txTaskChainLinkFind,
     txRentalChainUpdate,
     txInvoiceFindOne,
+    txPricingFindOne,
+    txClientPricingGetOne,
+    txCustomerFindOne,
+    txTenantSettingsFindOne,
+    txJobSaveSpy,
     transactionInvocationCount: () => transactionInvocations,
   };
 }
@@ -2506,5 +2572,152 @@ describe('JobsService.cascadeDelete — Fix B (transaction wrapper)', () => {
     // No TypeError; the call completes and the transaction commits.
     expect(result.deletedTasks).toEqual([{ id: 'job-1', job_number: 'J-1' }]);
     expect(h.transactionCommit).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────
+// Fix C — JobsService.create transaction wrapper
+//
+// Before Fix C, JobsService.create made 2 direct DB writes (jobs INSERT
+// at L394 + assets UPDATE at L398 for asset reservation) plus 1
+// delegated write set (createInternalInvoice at L426 — Fix-A-extended
+// but called WITHOUT a manager argument, so the helper opened its own
+// internal TX). A throw between the jobs INSERT and the asset UPDATE
+// left an orphan job with asset_id set but the asset still 'available'
+// — the partial-state class analogous to the one Fix B closed for
+// cascadeDelete. A throw after a successful invoice commit left the
+// invoice/Payment row durable while jobs/asset state could fail
+// independently.
+//
+// Fix C wraps the body in a single dataSource.transaction so every
+// write commits or rolls back as a unit, threads the outer manager
+// through generateJobNumber + getTenantRentalDays + createInternalInvoice,
+// and converts every read inside _createInTx to manager.getRepository(X)
+// for read-your-writes consistency.
+// ──────────────────────────────────────────────────────────────────────
+
+describe('JobsService.create — Fix C (transaction wrapper)', () => {
+  // Minimal CreateJobDto for the happy path.
+  const baseDto = {
+    customerId: 'cust-1',
+    jobType: 'delivery' as const,
+    serviceType: 'dumpster_rental',
+    scheduledDate: '2026-05-01',
+    serviceAddress: { street: '123 Main', city: 'Austin', state: 'TX', zip: '78701' },
+    basePrice: 500,
+    totalPrice: 500,
+  } as any;
+
+  // Test 1 — Happy path commits everything in one TX.
+  it('happy path: opens one transaction, jobs INSERT goes through trx repo, commits', async () => {
+    const h = await buildHarness();
+    h.billingService.hasInvoice = jest.fn().mockResolvedValue(false);
+    h.billingService.createInternalInvoice = jest
+      .fn()
+      .mockResolvedValue({ id: 'inv-fixC-1' });
+
+    const result = await h.service.create('tenant-1', baseDto);
+
+    // Exactly one transaction opened
+    expect(h.transactionInvocationCount()).toBe(1);
+    // jobs INSERT went through the trx-scoped Job repo (txJobSaveSpy
+    // is the entity-without-id branch in the trxJob.save dispatcher)
+    expect(h.txJobSaveSpy).toHaveBeenCalled();
+    // Outer transaction committed (callback returned successfully)
+    expect(h.transactionCommit).toHaveBeenCalledTimes(1);
+    // Returned the saved job
+    expect(result).toEqual(expect.objectContaining({ id: 'mock-job-id' }));
+  });
+
+  // Test 2 — Asset reservation throw rolls back prior jobs INSERT (load-bearing).
+  it('mid-body throw: assetRepo.update error rolls back the earlier jobs INSERT (commit NOT reached)', async () => {
+    const h = await buildHarness();
+    // Pre-TX validation needs to see the asset (otherwise it throws
+    // NotFoundException before the TX opens — that's the wrong code
+    // path to test). Stub the bare assetRepo.findOne to return a valid
+    // tenant-scoped asset so we proceed into _createInTx.
+    h.billingService.hasInvoice = jest.fn().mockResolvedValue(false);
+    h.billingService.createInternalInvoice = jest.fn();
+    (h as any).assetRepo = (h as any).assetRepo ?? {};
+    // Note: harness exposes the bare assetRepo via the shared `assetRepo`
+    // mock used at module-init time. Configure findOne directly.
+    const buildHarnessThis = h as any;
+    buildHarnessThis.assetRepo = buildHarnessThis.assetRepo;
+    // Use the module's bare assetRepo (it's the one wired into
+    // JobsService at construction). Reach in via the harness's
+    // `service` to find it isn't trivial; instead mock the asset
+    // existence check by using assignedDriverId path that doesn't need
+    // pre-TX validation. Drop assetId so pre-TX validation skips, then
+    // simulate the in-TX assetRepo.update by setting savedJob.asset_id
+    // via the txJobSaveSpy override.
+    h.txJobSaveSpy.mockImplementationOnce(async (x: any) =>
+      Promise.resolve({ id: 'mock-job-id', ...x, asset_id: 'asset-1' }),
+    );
+    // Force the trx-scoped asset reservation UPDATE to throw mid-call
+    // AFTER the trx-scoped jobs INSERT has already gone through.
+    h.txAssetUpdate.mockRejectedValueOnce(
+      new Error('asset_update_db_error_simulated'),
+    );
+
+    // No assetId in DTO → pre-TX validation skipped. Inside _createInTx,
+    // the jobs INSERT uses the txJobSaveSpy override which simulates a
+    // saved job WITH asset_id, triggering the asset reservation branch
+    // that calls assetRepo.update (trx-scoped) → throws.
+    await expect(
+      h.service.create('tenant-1', baseDto),
+    ).rejects.toThrow('asset_update_db_error_simulated');
+
+    // Pre-throw write DID happen inside the transaction…
+    expect(h.txJobSaveSpy).toHaveBeenCalled();
+    // …but the transaction never committed, so Postgres rolls back the
+    // jobs INSERT. This is the partial-state class Fix C closes.
+    expect(h.transactionCommit).not.toHaveBeenCalled();
+    // The Fix-B-untouched behavior: the auto-invoice path was never
+    // reached because assetRepo.update threw before it.
+    expect(h.billingService.createInternalInvoice).not.toHaveBeenCalled();
+  });
+
+  // Test 3 — createInternalInvoice receives the trx manager, NOT bare
+  // dataSource.manager. Locks the L426 third-arg swap against future regression.
+  it('createInternalInvoice is called with the trx manager (not dataSource.manager)', async () => {
+    const h = await buildHarness();
+    h.billingService.hasInvoice = jest.fn().mockResolvedValue(false);
+    const helperSpy = jest
+      .fn()
+      .mockResolvedValue({ id: 'inv-fixC-3' });
+    h.billingService.createInternalInvoice = helperSpy;
+
+    await h.service.create('tenant-1', baseDto);
+
+    expect(helperSpy).toHaveBeenCalledTimes(1);
+    // Three positional args: tenantId, params, manager.
+    const [arg0, arg1, arg2] = helperSpy.mock.calls[0];
+    expect(arg0).toBe('tenant-1');
+    expect(arg1).toEqual(
+      expect.objectContaining({ status: 'paid', source: 'booking' }),
+    );
+    // The third arg is the trx manager — exposes getRepository, and
+    // calling getRepository(Invoice) returns the Fix-B-wired trx
+    // invoice mock (txInvoiceFindOne identity), proving we're holding
+    // the TX manager and not the bare dataSource.manager.
+    expect(typeof (arg2 as any).getRepository).toBe('function');
+    const invoiceRepoFromArg = (arg2 as any).getRepository(Invoice);
+    expect(invoiceRepoFromArg.findOne).toBe(h.txInvoiceFindOne);
+  });
+
+  // Test 4 — Public signature unchanged. No `manager?` fan-out.
+  it('public create signature: 2 declared params (tenantId, dto), no optional manager', async () => {
+    const h = await buildHarness();
+    h.billingService.hasInvoice = jest.fn().mockResolvedValue(false);
+    h.billingService.createInternalInvoice = jest
+      .fn()
+      .mockResolvedValue({ id: 'inv-fixC-4' });
+
+    // Function.length counts non-default, non-rest params before the
+    // first param with a default value. Public create has exactly 2.
+    expect(h.service.create.length).toBe(2);
+
+    // Calling with exactly 2 args works (no missing-arg error).
+    await expect(h.service.create('tenant-1', baseDto)).resolves.toBeDefined();
   });
 });
