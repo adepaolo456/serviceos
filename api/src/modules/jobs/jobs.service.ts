@@ -76,8 +76,9 @@ export interface JobsDispatchActor {
  * Options accepted by `cascadeDelete`. Defaulted to `{}` at the
  * parameter so a controller forwarding an empty `@Body()` (NestJS
  * passes `undefined` when the request has no body) cannot trigger a
- * `Cannot read properties of undefined` throw on first access. Fix B
- * (full transaction wrapper) is tracked separately.
+ * `Cannot read properties of undefined` throw on first access (Fix A).
+ * The full body now runs inside one `dataSource.transaction` so any
+ * mid-body throw rolls back every preceding write as a unit (Fix B).
  */
 export interface CascadeDeleteOptions {
   deletePickup?: boolean;
@@ -1626,12 +1627,40 @@ export class JobsService {
     userId: string,
     options: CascadeDeleteOptions = {},
   ) {
+    // Pre-TX validation. Fail-fast before opening a transaction so the
+    // BadRequestException for in-progress jobs doesn't unnecessarily
+    // round-trip through a TX open/abort.
     const job = await this.findOne(tenantId, id);
-
-    // 1. Validate
     if (['en_route', 'arrived', 'in_progress'].includes(job.status)) {
       throw new BadRequestException('Cannot delete a task that is currently in progress');
     }
+
+    // Wrap the entire cleanup body in one transaction so every write
+    // (jobs cancel + driver unassign + pickup cleanup + asset release +
+    // invoice void/memo via applyFinancialDecisionTx + rental chain
+    // cancel) commits or rolls back as a single unit. Closes the
+    // partial-state class observed in PR2 smoke (Fix A docs at
+    // CascadeDeleteOptions interface).
+    return this.dataSource.transaction(async (manager) =>
+      this._cascadeDeleteInTx(tenantId, userId, options, job, manager),
+    );
+  }
+
+  private async _cascadeDeleteInTx(
+    tenantId: string,
+    userId: string,
+    options: CascadeDeleteOptions,
+    job: Job,
+    manager: EntityManager,
+  ) {
+    // Derive every repo from the supplied manager so all reads and
+    // writes in the body join the outer transaction. No `this.X` repo
+    // access below this line — every accessor is manager-bound.
+    const jobsRepo = manager.getRepository(Job);
+    const assetRepo = manager.getRepository(Asset);
+    const invoiceRepo = manager.getRepository(Invoice);
+    const taskChainLinkRepo = manager.getRepository(TaskChainLink);
+    const rentalChainRepo = manager.getRepository(RentalChain);
 
     // ── Driver Task V1 — hard delete branch ──
     //
@@ -1666,8 +1695,8 @@ export class JobsService {
       // path accidentally attaches one — delete any stray
       // `task_chain_links` rows first so the foreign key can't
       // block the delete, then delete the job row itself.
-      await this.taskChainLinkRepo.delete({ job_id: job.id });
-      const result = await this.jobsRepository.delete({
+      await taskChainLinkRepo.delete({ job_id: job.id });
+      const result = await jobsRepo.delete({
         id: job.id,
         tenant_id: tenantId,
         job_type: 'driver_task',
@@ -1692,7 +1721,7 @@ export class JobsService {
     const previousStatus = job.status;
 
     // 2. Cancel main task
-    await this.jobsRepository.update(
+    await jobsRepo.update(
       { id: job.id, tenant_id: tenantId },
       { status: 'cancelled', cancelled_at: now },
     );
@@ -1700,7 +1729,7 @@ export class JobsService {
 
     // 7. Driver unassign on main task
     if (job.assigned_driver_id) {
-      await this.jobsRepository.update(
+      await jobsRepo.update(
         { id: job.id, tenant_id: tenantId },
         { assigned_driver_id: null as any },
       );
@@ -1712,14 +1741,14 @@ export class JobsService {
 
       // Try linked_job_ids first
       if (Array.isArray(job.linked_job_ids) && job.linked_job_ids.length > 0) {
-        pickupJob = await this.jobsRepository.findOne({
+        pickupJob = await jobsRepo.findOne({
           where: { id: In(job.linked_job_ids), job_type: 'pickup', tenant_id: tenantId },
         });
       }
 
       // Fallback
       if (!pickupJob) {
-        pickupJob = await this.jobsRepository.findOne({
+        pickupJob = await jobsRepo.findOne({
           where: {
             tenant_id: tenantId,
             customer_id: job.customer_id,
@@ -1733,7 +1762,7 @@ export class JobsService {
       }
 
       if (pickupJob) {
-        await this.jobsRepository.update(
+        await jobsRepo.update(
           { id: pickupJob.id, tenant_id: tenantId },
           { status: 'cancelled', cancelled_at: now },
         );
@@ -1741,7 +1770,7 @@ export class JobsService {
 
         // Unassign driver from pickup
         if (pickupJob.assigned_driver_id) {
-          await this.jobsRepository.update(
+          await jobsRepo.update(
             { id: pickupJob.id, tenant_id: tenantId },
             { assigned_driver_id: null as any },
           );
@@ -1749,9 +1778,9 @@ export class JobsService {
 
         // Release pickup's asset
         if (pickupJob.asset_id) {
-          const pickupAsset = await this.assetRepo.findOne({ where: { id: pickupJob.asset_id, tenant_id: tenantId } });
+          const pickupAsset = await assetRepo.findOne({ where: { id: pickupJob.asset_id, tenant_id: tenantId } });
           if (pickupAsset) {
-            await this.assetRepo.update(
+            await assetRepo.update(
               { id: pickupJob.asset_id, tenant_id: tenantId } as any,
               {
                 status: 'available',
@@ -1765,12 +1794,12 @@ export class JobsService {
 
     // 4. Asset release for main task
     if (job.asset_id) {
-      const asset = await this.assetRepo.findOne({ where: { id: job.asset_id, tenant_id: tenantId } });
+      const asset = await assetRepo.findOne({ where: { id: job.asset_id, tenant_id: tenantId } });
       if (asset) {
         const preDeliveryStatuses = ['pending', 'confirmed'];
         if (preDeliveryStatuses.includes(previousStatus)) {
           // Not yet delivered — release back to available
-          await this.assetRepo.update(
+          await assetRepo.update(
             { id: job.asset_id, tenant_id: tenantId } as any,
             {
               status: 'available',
@@ -1787,41 +1816,28 @@ export class JobsService {
 
     // 5. Invoice voiding
     //
-    // Arc J.1 — the void+memo writes are now extracted into
+    // Arc J.1 — the void+memo writes are extracted into
     // `applyFinancialDecisionTx`. cascadeDelete keeps its opt-in loop
     // and resolves each opted-in invoice to a `credit_memo` decision
-    // (matching the prior behavior of always creating a memo for the
-    // invoice's full total when an invoice is opted into voiding).
-    // Behavior locked by the cascadeDelete smoke test in
-    // jobs.service.spec.ts.
-    //
-    // The helper requires an EntityManager. cascadeDelete itself is
-    // historically non-transactional (Arc J Phase 0 § 5 documents this
-    // as a latent risk). Rather than retrofit a transaction here in
-    // the same arc that introduces the orchestrator, we run the helper
-    // through `dataSource.manager` so the helper's manager-bound write
-    // path stays consistent — same as the un-trx-scoped repos
-    // cascadeDelete used before. Wrapping cascadeDelete in a real
-    // transaction is a separate cleanup arc.
+    // (preserving "memo for full invoice total" semantics — different
+    // from the orchestrator's `credit_memo` decision, which uses
+    // amount_paid). The cascadeDeleteOverride* knobs are how the
+    // helper distinguishes the two.
     if (options.voidInvoices && options.voidInvoices.length > 0) {
       for (const inv of options.voidInvoices) {
         if (!inv.void) continue;
 
-        const invoice = await this.invoiceRepo.findOne({
+        const invoice = await invoiceRepo.findOne({
           where: { id: inv.invoiceId, tenant_id: tenantId },
         });
         if (!invoice) continue;
 
-        // Preserve cascadeDelete's prior semantics: the credit memo
-        // amount equals the invoice total (NOT amount_paid). This is
-        // the deliberate divergence from the orchestrator's
-        // `credit_memo` decision, which uses `amount_paid`. The
-        // cascadeDelete-only override is passed via the third
-        // positional `cascadeDeleteOverrideAmount` so the helper can
-        // honor it without leaking that knowledge into the
-        // orchestrator's decision branches.
+        // Pass the outer TX manager so applyFinancialDecisionTx's
+        // invoice/credit_memo writes join this transaction. Pre-Fix-B
+        // this was `this.dataSource.manager` (bare connection), which
+        // committed each write independently.
         const result = await this.applyFinancialDecisionTx(
-          this.dataSource.manager,
+          manager,
           invoice,
           {
             type: 'credit_memo',
@@ -1849,13 +1865,13 @@ export class JobsService {
 
     // 6. Rental chain cancellation
     const allDeletedJobIds = deletedTasks.map((t) => t.id);
-    const chainLinks = await this.taskChainLinkRepo.find({
+    const chainLinks = await taskChainLinkRepo.find({
       where: { job_id: In(allDeletedJobIds) },
     });
 
     const chainIds = [...new Set(chainLinks.map((l) => l.rental_chain_id))];
     for (const chainId of chainIds) {
-      await this.rentalChainRepo.update({ id: chainId, tenant_id: tenantId }, { status: 'cancelled' });
+      await rentalChainRepo.update({ id: chainId, tenant_id: tenantId }, { status: 'cancelled' });
       rentalChainsCancelled.push({ id: chainId });
     }
 

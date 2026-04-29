@@ -56,6 +56,7 @@ import { AlertService } from '../alerts/services/alert.service';
 import { DispatchCreditEnforcementService } from '../dispatch/dispatch-credit-enforcement.service';
 import { CreditAuditService } from '../credit-audit/credit-audit.service';
 import { StripeService } from '../stripe/stripe.service';
+import { MapboxService } from '../mapbox/mapbox.service';
 
 function makeJob(partial: Partial<Job> = {}): Job {
   const base = {
@@ -125,6 +126,16 @@ interface Harness {
   txPaymentFindOne: jest.Mock;
   txAuditCreate: jest.Mock;
   txAuditSave: jest.Mock;
+  // Fix B — cascadeDelete trx-bound spies for tables newly written
+  // inside the transaction wrapper (Asset / TaskChainLink / RentalChain).
+  // The trx mock routes manager.getRepository(<entity>) calls to these
+  // so Fix B assertions can target trx-scoped reads/writes directly.
+  txAssetFindOne: jest.Mock;
+  txAssetUpdate: jest.Mock;
+  txTaskChainLinkDelete: jest.Mock;
+  txTaskChainLinkFind: jest.Mock;
+  txRentalChainUpdate: jest.Mock;
+  txInvoiceFindOne: jest.Mock;
   // Track every transaction opened, in order. cancelJobWithFinancials
   // opens 1 main + N post-commit (one per refund_paid → Stripe call),
   // so this lets J4b/J4c assert the post-commit pattern.
@@ -227,6 +238,7 @@ async function buildHarness(jobOverrides: Partial<Job> = {}): Promise<Harness> {
   const txInvoiceUpdate = jest
     .fn()
     .mockResolvedValue({ affected: 1, raw: [], generatedMaps: [] });
+  const txInvoiceFindOne = jest.fn().mockResolvedValue(null);
   const txCreditMemoCreate = jest.fn((x: any) => x);
   const txCreditMemoSave = jest.fn((x: any) =>
     Promise.resolve({ id: 'memo-default', ...x }),
@@ -239,6 +251,20 @@ async function buildHarness(jobOverrides: Partial<Job> = {}): Promise<Harness> {
   const txAuditSave = jest.fn((x: any) =>
     Promise.resolve({ id: 'audit-default', ...x }),
   );
+  // Fix B — cascadeDelete trx-bound spies (Asset / TaskChainLink /
+  // RentalChain). Default returns are happy-path no-ops; individual
+  // tests override.
+  const txAssetFindOne = jest.fn().mockResolvedValue(null);
+  const txAssetUpdate = jest
+    .fn()
+    .mockResolvedValue({ affected: 1, raw: [], generatedMaps: [] });
+  const txTaskChainLinkDelete = jest
+    .fn()
+    .mockResolvedValue({ affected: 0, raw: [] });
+  const txTaskChainLinkFind = jest.fn().mockResolvedValue([]);
+  const txRentalChainUpdate = jest
+    .fn()
+    .mockResolvedValue({ affected: 1, raw: [], generatedMaps: [] });
   // Arc J.1 — counts every dataSource.transaction(...) entry. The
   // cancellation orchestrator opens 1 main tx + 1 post-commit tx per
   // refund_paid Stripe call, so J4b/J4c can assert exact invocation
@@ -248,9 +274,20 @@ async function buildHarness(jobOverrides: Partial<Job> = {}): Promise<Harness> {
     transaction: jest.fn(
       async (cb: (em: EntityManager) => Promise<unknown>) => {
         transactionInvocations += 1;
-        const trxJob = { save: txJobSave, update: txJobUpdate };
+        // Fix B — cascadeDelete now reads/deletes through the trx Job
+        // repo (pickup findOne, driver_task delete) so trxJob exposes
+        // findOne + delete in addition to save/update.
+        const trxJob = {
+          save: txJobSave,
+          update: txJobUpdate,
+          findOne: jest.fn().mockResolvedValue(null),
+          delete: jest.fn().mockResolvedValue({ affected: 1, raw: [] }),
+        };
         const trxNotif = { save: txNotifSave, create: txNotifCreate };
-        const trxInvoice = { update: txInvoiceUpdate };
+        const trxInvoice = {
+          update: txInvoiceUpdate,
+          findOne: txInvoiceFindOne,
+        };
         const trxCreditMemo = {
           create: txCreditMemoCreate,
           save: txCreditMemoSave,
@@ -260,6 +297,17 @@ async function buildHarness(jobOverrides: Partial<Job> = {}): Promise<Harness> {
           findOne: txPaymentFindOne,
         };
         const trxAudit = { create: txAuditCreate, save: txAuditSave };
+        const trxAsset = {
+          findOne: txAssetFindOne,
+          update: txAssetUpdate,
+        };
+        const trxTaskChainLink = {
+          delete: txTaskChainLinkDelete,
+          find: txTaskChainLinkFind,
+        };
+        const trxRentalChain = {
+          update: txRentalChainUpdate,
+        };
         const trx: any = {
           getRepository: (entity: unknown) => {
             if (entity === Job) return trxJob;
@@ -268,6 +316,9 @@ async function buildHarness(jobOverrides: Partial<Job> = {}): Promise<Harness> {
             if (entity === CreditMemo) return trxCreditMemo;
             if (entity === Payment) return trxPayment;
             if (entity === CreditAuditEvent) return trxAudit;
+            if (entity === Asset) return trxAsset;
+            if (entity === TaskChainLink) return trxTaskChainLink;
+            if (entity === RentalChain) return trxRentalChain;
             throw new Error(
               `unmocked trx repo: ${(entity as { name?: string })?.name ?? '?'}`,
             );
@@ -324,6 +375,11 @@ async function buildHarness(jobOverrides: Partial<Job> = {}): Promise<Harness> {
       { provide: DispatchCreditEnforcementService, useValue: dispatchCreditEnforcement },
       { provide: CreditAuditService, useValue: creditAuditService },
       { provide: StripeService, useValue: stripeService },
+      // Pre-existing harness gap: JobsService gained a MapboxService
+      // dependency but the spec didn't backfill the mock; every test
+      // previously failed at TestingModule.compile(). Minimal stub
+      // covers the only methods touched (softGeocodeAndMerge).
+      { provide: MapboxService, useValue: { softGeocodeAndMerge: jest.fn(async (x: any) => x) } },
     ],
   }).compile();
 
@@ -363,6 +419,12 @@ async function buildHarness(jobOverrides: Partial<Job> = {}): Promise<Harness> {
     txPaymentFindOne,
     txAuditCreate,
     txAuditSave,
+    txAssetFindOne,
+    txAssetUpdate,
+    txTaskChainLinkDelete,
+    txTaskChainLinkFind,
+    txRentalChainUpdate,
+    txInvoiceFindOne,
     transactionInvocationCount: () => transactionInvocations,
   };
 }
@@ -2219,8 +2281,13 @@ describe('JobsService.cancelJobWithFinancials — Arc J.1', () => {
 // invoice total" semantics — different from the orchestrator's
 // `credit_memo` decision, which uses amount_paid).
 //
-// This smoke test locks the externally observable behavior of
-// cascadeDelete so the helper extraction does not regress.
+// Fix B — cascadeDelete now wraps its body in `dataSource.transaction`,
+// so every read/write (including `applyFinancialDecisionTx`'s invoice
+// update + credit-memo insert) goes through the trx-scoped repos. The
+// smoke test below targets the trx-scoped mocks accordingly. The pre-
+// Fix-B assertions on the un-trx-scoped `creditMemoRepo.save` were
+// locking the bug shape verbatim (helper called with the bare
+// `this.dataSource.manager`); they are correctly retargeted here.
 // ──────────────────────────────────────────────────────────────────────
 
 describe('JobsService.cascadeDelete — Arc J.1 helper-extraction smoke test', () => {
@@ -2228,8 +2295,9 @@ describe('JobsService.cascadeDelete — Arc J.1 helper-extraction smoke test', (
     const h = await buildHarness({ status: 'pending' });
 
     // Single linked invoice opted into voiding via the legacy
-    // `voidInvoices` opt-in array.
-    h.invoiceRepo.findOne.mockResolvedValue({
+    // `voidInvoices` opt-in array. Fix B: invoice findOne now goes
+    // through the trx-scoped repo.
+    h.txInvoiceFindOne.mockResolvedValue({
       id: 'inv-cd-1',
       tenant_id: 'tenant-1',
       job_id: 'job-1',
@@ -2240,9 +2308,9 @@ describe('JobsService.cascadeDelete — Arc J.1 helper-extraction smoke test', (
       balance_due: 250,
     });
 
-    // The cascadeDelete legacy path uses the un-trx-scoped repos via
-    // `dataSource.manager.getRepository(...)`. Configure those mocks.
-    h.creditMemoRepo.save.mockImplementation((x: any) =>
+    // Fix B: credit memo save runs through the trx-scoped repo because
+    // `applyFinancialDecisionTx` now receives the outer TX manager.
+    h.txCreditMemoSave.mockImplementation((x: any) =>
       Promise.resolve({ id: 'memo-cd-1', amount: x.amount, ...x }),
     );
 
@@ -2264,10 +2332,179 @@ describe('JobsService.cascadeDelete — Arc J.1 helper-extraction smoke test', (
     ]);
     expect(result.creditMemos).toEqual([{ id: 'memo-cd-1', amount: 250 }]);
 
-    // Memo created via the un-trx-scoped repo with amount = invoice total.
-    expect(h.creditMemoRepo.save).toHaveBeenCalled();
-    const savedMemo = h.creditMemoRepo.save.mock.calls[0][0];
+    // Memo created via the trx-scoped repo with amount = invoice total.
+    expect(h.txCreditMemoSave).toHaveBeenCalled();
+    const savedMemo = h.txCreditMemoSave.mock.calls[0][0];
     expect(savedMemo.amount).toBe(250);
     expect(savedMemo.original_invoice_id).toBe('inv-cd-1');
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────
+// Fix B — cascadeDelete transaction wrapper
+//
+// Before Fix B, cascadeDelete made 9 direct DB writes (across jobs,
+// assets, task_chain_links, rental_chains) plus 1 delegated write set
+// (via applyFinancialDecisionTx for invoice voids/credit memos), all
+// committing independently. The PR2 incident produced 4 phantom-paid
+// invoices because L1695's `UPDATE jobs SET status='cancelled'`
+// committed before L1693's TypeError aborted the rest of the body.
+//
+// Fix B wraps the body in a single `dataSource.transaction` so every
+// write commits or rolls back as a unit, and threads the outer TX
+// manager into `applyFinancialDecisionTx` so its writes join the same
+// transaction (was bug at pre-Fix-B L1823: passed bare
+// `this.dataSource.manager` instead of the TX manager).
+// ──────────────────────────────────────────────────────────────────────
+
+describe('JobsService.cascadeDelete — Fix B (transaction wrapper)', () => {
+  // Test 1 — Happy path commits all intended writes.
+  it('happy path: opens one transaction, writes job cancel through trx repo, commits', async () => {
+    const h = await buildHarness({
+      status: 'pending',
+      assigned_driver_id: undefined,
+      assigned_driver: undefined,
+      asset_id: undefined,
+      linked_job_ids: [],
+    });
+
+    const result = await h.service.cascadeDelete(
+      'tenant-1',
+      'job-1',
+      'u-owner',
+    );
+
+    // Exactly one transaction opened
+    expect(h.transactionInvocationCount()).toBe(1);
+    // Job cancel UPDATE went through the trx-scoped repo
+    expect(h.txJobUpdate).toHaveBeenCalledWith(
+      { id: 'job-1', tenant_id: 'tenant-1' },
+      expect.objectContaining({ status: 'cancelled', cancelled_at: expect.any(Date) }),
+    );
+    // Outer transaction committed (callback returned successfully)
+    expect(h.transactionCommit).toHaveBeenCalledTimes(1);
+    expect(result.deletedTasks).toEqual([{ id: 'job-1', job_number: 'J-1' }]);
+  });
+
+  // Test 2 — Mid-body throw rolls back. THE load-bearing test.
+  it('mid-body throw: applyFinancialDecisionTx error rolls back the earlier job-cancel update (commit NOT reached)', async () => {
+    const h = await buildHarness({
+      status: 'pending',
+      assigned_driver_id: undefined,
+      assigned_driver: undefined,
+      asset_id: undefined,
+      linked_job_ids: [],
+    });
+
+    h.txInvoiceFindOne.mockResolvedValue({
+      id: 'inv-throw-1',
+      tenant_id: 'tenant-1',
+      job_id: 'job-1',
+      customer_id: 'cust-1',
+      invoice_number: 1234,
+      total: 500,
+      amount_paid: 500,
+      balance_due: 0,
+    });
+    // Force applyFinancialDecisionTx to throw mid-body, AFTER the job
+    // cancel UPDATE has already gone through the trx-scoped repo.
+    jest
+      .spyOn(h.service as any, 'applyFinancialDecisionTx')
+      .mockRejectedValue(new BadRequestException('payment_not_found'));
+
+    await expect(
+      h.service.cascadeDelete('tenant-1', 'job-1', 'u-owner', {
+        voidInvoices: [{ invoiceId: 'inv-throw-1', void: true }],
+      }),
+    ).rejects.toThrow(BadRequestException);
+
+    // Pre-throw write DID happen inside the transaction…
+    expect(h.txJobUpdate).toHaveBeenCalledWith(
+      { id: 'job-1', tenant_id: 'tenant-1' },
+      expect.objectContaining({ status: 'cancelled' }),
+    );
+    // …but the transaction never committed, so Postgres rolls back the
+    // job UPDATE. This is the partial-state class Fix B closes.
+    expect(h.transactionCommit).not.toHaveBeenCalled();
+  });
+
+  // Test 3 — applyFinancialDecisionTx receives the real TX manager.
+  // Locks the L1823 first-arg swap from `this.dataSource.manager` to
+  // the trx manager.
+  it('applyFinancialDecisionTx is called with the trx manager, NOT dataSource.manager', async () => {
+    const h = await buildHarness({
+      status: 'pending',
+      assigned_driver_id: undefined,
+      assigned_driver: undefined,
+      asset_id: undefined,
+      linked_job_ids: [],
+    });
+
+    h.txInvoiceFindOne.mockResolvedValue({
+      id: 'inv-trx-1',
+      tenant_id: 'tenant-1',
+      job_id: 'job-1',
+      customer_id: 'cust-1',
+      invoice_number: 555,
+      total: 100,
+      amount_paid: 0,
+      balance_due: 100,
+    });
+
+    const helperSpy = jest
+      .spyOn(h.service as any, 'applyFinancialDecisionTx')
+      .mockResolvedValue({
+        voided: true,
+        unpaidBalanceVoided: 0,
+        creditMemoId: 'memo-trx',
+        creditMemoAmount: 100,
+        refundIntent: null,
+        auditEventType: 'cancellation_credit_memo',
+        auditMetadata: {},
+      });
+
+    await h.service.cascadeDelete('tenant-1', 'job-1', 'u-owner', {
+      voidInvoices: [{ invoiceId: 'inv-trx-1', void: true }],
+    });
+
+    expect(helperSpy).toHaveBeenCalledTimes(1);
+    const firstArg = helperSpy.mock.calls[0][0] as any;
+    // The trx manager is the EntityManager-shaped object the
+    // dataSource.transaction callback received. It exposes
+    // `getRepository`; the bare `dataSource.manager` is a different
+    // object. Asserting `getRepository(Invoice)` returns the trx
+    // invoice mock (not the un-trx invoiceRepo) proves we're holding
+    // the TX manager.
+    expect(typeof firstArg.getRepository).toBe('function');
+    const invoiceRepoFromArg = firstArg.getRepository(Invoice);
+    // The trx Invoice repo has `findOne: txInvoiceFindOne`; the
+    // un-trx invoiceRepo has its own `findOne` jest.fn. They are
+    // distinct object identities.
+    expect(invoiceRepoFromArg.findOne).toBe(h.txInvoiceFindOne);
+  });
+
+  // Test 4 — Fix A regression coverage: options default-arg still
+  // handles undefined.
+  it('Fix A regression: cascadeDelete called without options does NOT throw TypeError on options.deletePickup', async () => {
+    const h = await buildHarness({
+      status: 'pending',
+      assigned_driver_id: undefined,
+      assigned_driver: undefined,
+      asset_id: undefined,
+      linked_job_ids: [],
+    });
+
+    // Call with no options arg at all — pre-Fix-A this threw
+    // `TypeError: Cannot read properties of undefined (reading 'deletePickup')`
+    // at the L1693-equivalent options.deletePickup access.
+    const result = await h.service.cascadeDelete(
+      'tenant-1',
+      'job-1',
+      'u-owner',
+    );
+
+    // No TypeError; the call completes and the transaction commits.
+    expect(result.deletedTasks).toEqual([{ id: 'job-1', job_number: 'J-1' }]);
+    expect(h.transactionCommit).toHaveBeenCalledTimes(1);
   });
 });
