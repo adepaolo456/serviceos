@@ -9,7 +9,7 @@ import {
 import { checkRateLimit } from '../../../common/rate-limiter';
 import { buildInvoiceEmail } from '../email-templates/invoice-email.template';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource, Like } from 'typeorm';
+import { Repository, DataSource, EntityManager, Like } from 'typeorm';
 import { Invoice } from '../entities/invoice.entity';
 import { InvoiceLineItem } from '../entities/invoice-line-item.entity';
 import { InvoiceRevision } from '../entities/invoice-revision.entity';
@@ -971,13 +971,22 @@ export class InvoiceService {
   // RECONCILE BALANCE — single source of truth for status/amounts
   // ─────────────────────────────────────────────────────────
 
-  async reconcileBalance(invoiceId: string): Promise<void> {
-    const payments = await this.paymentRepo.find({
+  // Accepts an optional EntityManager so callers running inside a
+  // transaction (e.g. createInternalInvoice's paid-with-payment path)
+  // observe their own in-flight Payment row. Without it, the bare
+  // `this.paymentRepo.find` reads the pre-commit baseline, computes
+  // totalPaid=0, and writes the wrong status.
+  async reconcileBalance(invoiceId: string, manager?: EntityManager): Promise<void> {
+    const paymentRepo = manager ? manager.getRepository(Payment) : this.paymentRepo;
+    const invoiceRepo = manager ? manager.getRepository(Invoice) : this.invoiceRepo;
+    const creditMemoRepo = manager ? manager.getRepository(CreditMemo) : this.creditMemoRepo;
+
+    const payments = await paymentRepo.find({
       where: { invoice_id: invoiceId, status: 'completed' },
     });
     const totalPaid = payments.reduce((sum, p) => sum + Number(p.amount), 0);
 
-    const invoice = await this.invoiceRepo.findOneOrFail({ where: { id: invoiceId } });
+    const invoice = await invoiceRepo.findOneOrFail({ where: { id: invoiceId } });
 
     const amountPaid = Math.round(totalPaid * 100) / 100;
     const balanceDue = Math.max(Math.round((Number(invoice.total) - totalPaid) * 100) / 100, 0);
@@ -996,11 +1005,11 @@ export class InvoiceService {
     // Handle overpayment — idempotent credit memo
     const overpayment = Math.round(Math.max(totalPaid - Number(invoice.total), 0) * 100) / 100;
     if (overpayment > 0) {
-      const existingMemo = await this.creditMemoRepo.findOne({
+      const existingMemo = await creditMemoRepo.findOne({
         where: { original_invoice_id: invoiceId, reason: Like('%Overpayment%') },
       });
       if (!existingMemo) {
-        await this.creditMemoRepo.save(this.creditMemoRepo.create({
+        await creditMemoRepo.save(creditMemoRepo.create({
           tenant_id: invoice.tenant_id,
           original_invoice_id: invoiceId,
           customer_id: invoice.customer_id,
@@ -1009,7 +1018,7 @@ export class InvoiceService {
           status: 'issued',
         }));
       } else if (Math.round(Number(existingMemo.amount) * 100) !== Math.round(overpayment * 100)) {
-        await this.creditMemoRepo.update(existingMemo.id, { amount: overpayment });
+        await creditMemoRepo.update(existingMemo.id, { amount: overpayment });
       }
     }
 
@@ -1018,7 +1027,7 @@ export class InvoiceService {
     // TODO: Remove after Phase 2 validation
     console.log(`[reconcileBalance] invoice=${invoiceId} total=${invoice.total} totalPaid=${totalPaid} balanceDue=${balanceDue} status=${status}`);
 
-    await this.invoiceRepo.update(invoiceId, {
+    await invoiceRepo.update(invoiceId, {
       amount_paid: amountPaid,
       balance_due: balanceDue,
       status,

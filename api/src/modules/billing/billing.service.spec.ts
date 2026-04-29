@@ -4,11 +4,20 @@
  *   site #18  editInvoice — audit-log write must propagate
  *   site #19  editInvoice — size-change cascade must roll back
  *   site #21  voidInternalInvoice — credit-memo write must roll back
+ *
+ * Fix A coverage — createInternalInvoice Shape #2 (memory rule #1
+ * invariant gate; bypass closed at helper boundary):
+ *   - paid + payment block: invoice via reconcileBalance, Payment row written
+ *   - paid + no payment block: throws payment_required_for_paid_status
+ *   - paid + mismatched amount: throws and outer transaction NOT committed
+ *   - paid + legacyPaidWithoutPayment opt-in: legacy bypass shape preserved + warn log
+ *   - default open status: unchanged, no Payment row, no reconcile
  */
 
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource, EntityManager } from 'typeorm';
+import { BadRequestException, Logger } from '@nestjs/common';
 
 import { BillingService } from './billing.service';
 import { Invoice } from './entities/invoice.entity';
@@ -20,6 +29,7 @@ import { Asset } from '../assets/entities/asset.entity';
 import { PricingRule } from '../pricing/entities/pricing-rule.entity';
 import { Notification } from '../notifications/entities/notification.entity';
 import { NotificationsService } from '../notifications/notifications.service';
+import { InvoiceService } from './services/invoice.service';
 
 interface Harness {
   service: BillingService;
@@ -29,11 +39,14 @@ interface Harness {
   dataSourceQuery: jest.Mock;
   transactionCommit: jest.Mock;
   trxInvoiceRepo: any;
+  trxLineItemRepo: any;
+  trxPaymentRepo: any;
   trxCreditMemoRepo: any;
   trxQuery: jest.Mock;
   pricingRepo: any;
   jobsRepository: any;
   assetRepo: any;
+  invoiceServiceMock: { reconcileBalance: jest.Mock };
 }
 
 async function buildHarness(): Promise<Harness> {
@@ -63,7 +76,20 @@ async function buildHarness(): Promise<Harness> {
   const assetRepo: any = { findOne: jest.fn() };
 
   const trxInvoiceRepo: any = {
+    create: jest.fn((x: any) => x),
+    save: jest.fn((x: any) => Promise.resolve({ ...x, id: 'mock-inv-id' })),
     update: jest.fn(),
+    findOne: jest.fn((opts: any) =>
+      Promise.resolve({ id: opts?.where?.id ?? 'mock-inv-id', tenant_id: opts?.where?.tenant_id ?? 'tenant-1' }),
+    ),
+  };
+  const trxLineItemRepo: any = {
+    create: jest.fn((x: any) => x),
+    save: jest.fn((x: any) => Promise.resolve({ ...x, id: 'mock-li-id' })),
+  };
+  const trxPaymentRepo: any = {
+    create: jest.fn((x: any) => x),
+    save: jest.fn((x: any) => Promise.resolve({ ...x, id: 'mock-pay-id' })),
   };
   const trxCreditMemoRepo: any = {
     create: jest.fn((x: any) => x),
@@ -74,9 +100,9 @@ async function buildHarness(): Promise<Harness> {
   const trx: Partial<EntityManager> & { getRepository: any; query: any } = {
     getRepository: (e: unknown) => {
       if (e === Invoice) return trxInvoiceRepo;
+      if (e === InvoiceLineItem) return trxLineItemRepo;
+      if (e === Payment) return trxPaymentRepo;
       if (e === CreditMemo) return trxCreditMemoRepo;
-      // For cascadeSizeChange: return stubs that may reject per test.
-      if (e === InvoiceLineItem) return lineItemRepo;
       if (e === Job) return jobsRepository;
       if (e === Asset) return assetRepo;
       if (e === PricingRule) return pricingRepo;
@@ -98,6 +124,8 @@ async function buildHarness(): Promise<Harness> {
     },
   };
 
+  const invoiceServiceMock = { reconcileBalance: jest.fn().mockResolvedValue(undefined) };
+
   const module: TestingModule = await Test.createTestingModule({
     providers: [
       BillingService,
@@ -110,6 +138,7 @@ async function buildHarness(): Promise<Harness> {
       { provide: getRepositoryToken(PricingRule), useValue: pricingRepo },
       { provide: DataSource, useValue: dataSource },
       { provide: NotificationsService, useValue: { send: jest.fn() } },
+      { provide: InvoiceService, useValue: invoiceServiceMock },
     ],
   }).compile();
 
@@ -121,11 +150,14 @@ async function buildHarness(): Promise<Harness> {
     dataSourceQuery,
     transactionCommit,
     trxInvoiceRepo,
+    trxLineItemRepo,
+    trxPaymentRepo,
     trxCreditMemoRepo,
     trxQuery,
     pricingRepo,
     jobsRepository,
     assetRepo,
+    invoiceServiceMock,
   };
 }
 
@@ -251,5 +283,186 @@ describe('BillingService — silent-error-swallow fixes', () => {
     expect(h.trxInvoiceRepo.update).toHaveBeenCalled();
     // ...but the tx never committed, so the UPDATE would roll back.
     expect(h.transactionCommit).not.toHaveBeenCalled();
+  });
+});
+
+describe('BillingService.createInternalInvoice — Fix A (Shape #2 invariant gate)', () => {
+  // Happy path: paid + payment block. Invoice inserts open, Payment row
+  // written, reconcileBalance called inside the same tx. Commit reached.
+  it('paid + payment block: writes Payment row and calls reconcileBalance inside the transaction', async () => {
+    const h = await buildHarness();
+    h.dataSourceQuery.mockResolvedValue([{ num: 4242 }]);
+
+    await h.service.createInternalInvoice('tenant-1', {
+      customerId: 'cust-1',
+      jobId: 'job-1',
+      source: 'booking',
+      invoiceType: 'rental',
+      status: 'paid',
+      paymentMethod: 'card',
+      lineItems: [
+        { description: 'Rental', quantity: 1, unitPrice: 100, amount: 100 },
+      ],
+      notes: 'Paid at time of booking',
+      payment: {
+        amount: 100,
+        payment_method: 'card',
+      },
+    });
+
+    // Insert: status='open' (memory rule #1 — never direct-write 'paid')
+    expect(h.trxInvoiceRepo.save).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'open', paid_at: null }),
+    );
+    // Subtotal/total update: amount_paid stays 0, reconcile derives final state
+    expect(h.trxInvoiceRepo.update).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'mock-inv-id' }),
+      expect.objectContaining({ subtotal: 100, total: 100, amount_paid: 0, balance_due: 100 }),
+    );
+    // Payment row written via tx-scoped repo
+    expect(h.trxPaymentRepo.save).toHaveBeenCalledTimes(1);
+    expect(h.trxPaymentRepo.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tenant_id: 'tenant-1',
+        invoice_id: 'mock-inv-id',
+        amount: 100,
+        payment_method: 'card',
+        status: 'completed',
+      }),
+    );
+    // reconcileBalance called with the same EntityManager so it joins the tx
+    expect(h.invoiceServiceMock.reconcileBalance).toHaveBeenCalledTimes(1);
+    expect(h.invoiceServiceMock.reconcileBalance).toHaveBeenCalledWith(
+      'mock-inv-id',
+      expect.anything(),
+    );
+    // Outer transaction committed
+    expect(h.transactionCommit).toHaveBeenCalled();
+  });
+
+  // Validation gate fires BEFORE any DB write — no transaction, no inserts.
+  it('paid + no payment block: throws payment_required_for_paid_status before any DB write', async () => {
+    const h = await buildHarness();
+
+    await expect(
+      h.service.createInternalInvoice('tenant-1', {
+        customerId: 'cust-1',
+        source: 'booking',
+        invoiceType: 'rental',
+        status: 'paid',
+        lineItems: [
+          { description: 'Rental', quantity: 1, unitPrice: 100, amount: 100 },
+        ],
+      }),
+    ).rejects.toThrow(BadRequestException);
+
+    expect(h.dataSourceQuery).not.toHaveBeenCalled();
+    expect(h.trxInvoiceRepo.save).not.toHaveBeenCalled();
+    expect(h.trxLineItemRepo.save).not.toHaveBeenCalled();
+    expect(h.trxPaymentRepo.save).not.toHaveBeenCalled();
+    expect(h.invoiceServiceMock.reconcileBalance).not.toHaveBeenCalled();
+    expect(h.transactionCommit).not.toHaveBeenCalled();
+  });
+
+  // Mismatched amount throws AFTER total is computed but inside the
+  // transaction. Commit must NOT be reached so the invoice + line-item
+  // writes roll back.
+  it('paid + mismatched amount: throws and outer transaction is NOT committed', async () => {
+    const h = await buildHarness();
+    h.dataSourceQuery.mockResolvedValue([{ num: 4243 }]);
+
+    await expect(
+      h.service.createInternalInvoice('tenant-1', {
+        customerId: 'cust-1',
+        source: 'booking',
+        invoiceType: 'rental',
+        status: 'paid',
+        lineItems: [
+          { description: 'Rental', quantity: 1, unitPrice: 100, amount: 100 },
+        ],
+        payment: {
+          amount: 200,
+          payment_method: 'card',
+        },
+      }),
+    ).rejects.toThrow('payment_amount_must_match_invoice_total');
+
+    // Invoice and line items DID write inside the transaction…
+    expect(h.trxInvoiceRepo.save).toHaveBeenCalledTimes(1);
+    expect(h.trxLineItemRepo.save).toHaveBeenCalledTimes(1);
+    // …but the Payment write never happened and reconcile was not called…
+    expect(h.trxPaymentRepo.save).not.toHaveBeenCalled();
+    expect(h.invoiceServiceMock.reconcileBalance).not.toHaveBeenCalled();
+    // …and the outer transaction never committed, so all preceding
+    // writes roll back as a unit (the partial-state class Fix A closes).
+    expect(h.transactionCommit).not.toHaveBeenCalled();
+  });
+
+  // Legacy escape hatch: preserves the pre-fix bypass shape exactly so
+  // seed/import paths see no behavior change. Logs a warn line so every
+  // use surfaces in the audit trail.
+  it('paid + legacyPaidWithoutPayment: preserves bypass shape and emits Logger.warn', async () => {
+    const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => {});
+    try {
+      const h = await buildHarness();
+      h.dataSourceQuery.mockResolvedValue([{ num: 4244 }]);
+
+      await h.service.createInternalInvoice('tenant-1', {
+        customerId: 'cust-1',
+        source: 'booking',
+        invoiceType: 'rental',
+        status: 'paid',
+        lineItems: [
+          { description: 'Seed', quantity: 1, unitPrice: 100, amount: 100 },
+        ],
+        legacyPaidWithoutPayment: true,
+      });
+
+      // Legacy path — direct-write the bypass shape unchanged
+      expect(h.trxInvoiceRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({ status: 'paid', paid_at: expect.any(Date) }),
+      );
+      expect(h.trxInvoiceRepo.update).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'mock-inv-id' }),
+        expect.objectContaining({ subtotal: 100, total: 100, amount_paid: 100, balance_due: 0 }),
+      );
+      // No Payment row, no reconcile (this is the deliberate legacy bypass)
+      expect(h.trxPaymentRepo.save).not.toHaveBeenCalled();
+      expect(h.invoiceServiceMock.reconcileBalance).not.toHaveBeenCalled();
+      // Audit-trail warn line emitted
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('[INTERNAL ESCAPE HATCH]'),
+      );
+      expect(h.transactionCommit).toHaveBeenCalled();
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  // Default flow (no status, or status:'open') is unchanged by Fix A.
+  it("default 'open' flow: unchanged — no Payment row, no reconcile", async () => {
+    const h = await buildHarness();
+    h.dataSourceQuery.mockResolvedValue([{ num: 4245 }]);
+
+    await h.service.createInternalInvoice('tenant-1', {
+      customerId: 'cust-1',
+      source: 'failed_trip',
+      invoiceType: 'failure_charge',
+      status: 'open',
+      lineItems: [
+        { description: 'Failed pickup charge', quantity: 1, unitPrice: 150, amount: 150 },
+      ],
+    });
+
+    expect(h.trxInvoiceRepo.save).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'open', paid_at: null }),
+    );
+    expect(h.trxInvoiceRepo.update).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'mock-inv-id' }),
+      expect.objectContaining({ subtotal: 150, total: 150, amount_paid: 0, balance_due: 150 }),
+    );
+    expect(h.trxPaymentRepo.save).not.toHaveBeenCalled();
+    expect(h.invoiceServiceMock.reconcileBalance).not.toHaveBeenCalled();
+    expect(h.transactionCommit).toHaveBeenCalled();
   });
 });

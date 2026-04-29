@@ -1,5 +1,6 @@
 import {
   Injectable,
+  Logger,
   NotFoundException,
   BadRequestException,
 } from '@nestjs/common';
@@ -14,10 +15,13 @@ import { Asset } from '../assets/entities/asset.entity';
 import { PricingRule } from '../pricing/entities/pricing-rule.entity';
 import { Notification } from '../notifications/entities/notification.entity';
 import { NotificationsService } from '../notifications/notifications.service';
+import { InvoiceService } from './services/invoice.service';
 import { TERMINAL_JOB_STATUSES } from '../../common/constants/job-statuses';
 
 @Injectable()
 export class BillingService {
+  private readonly logger = new Logger(BillingService.name);
+
   constructor(
     @InjectRepository(Invoice)
     private invoicesRepository: Repository<Invoice>,
@@ -35,6 +39,7 @@ export class BillingService {
     private pricingRepo: Repository<PricingRule>,
     private dataSource: DataSource,
     private notificationsService: NotificationsService,
+    private invoiceService: InvoiceService,
   ) {}
 
   private async getNextInvoiceNumber(tenantId: string): Promise<number> {
@@ -553,6 +558,23 @@ export class BillingService {
     return { data, meta: { total, page, limit, totalPages: Math.ceil(total / limit) } };
   }
 
+  /**
+   * Internal invoice creation. Memory rule #1 invariant gate: when
+   * `params.status === 'paid'`, callers MUST supply a `payment` block —
+   * the helper writes the invoice with `status: 'open'`, inserts the
+   * Payment row, then derives the final paid status via
+   * `reconcileBalance`. The pre-fix shape (direct status='paid' +
+   * amount_paid=total + balance_due=0 with no Payment row) is
+   * preserved ONLY behind the `legacyPaidWithoutPayment: true` opt-in
+   * for seed/import paths and is never reachable from any HTTP DTO.
+   *
+   * The full body (validation → invoice insert → line-items → optional
+   * Payment + reconcile) runs inside a single transaction so a throw
+   * after partial writes (e.g. payment_amount_must_match_invoice_total)
+   * rolls everything back. When the caller supplies its own `manager`
+   * the helper joins that outer transaction; otherwise it opens a
+   * fresh one.
+   */
   async createInternalInvoice(
     tenantId: string,
     params: {
@@ -567,32 +589,98 @@ export class BillingService {
       notes?: string;
       discountAmount?: number;
       dueDate?: string;
+      // Required iff `status === 'paid'` and `legacyPaidWithoutPayment`
+      // is not set. Server-side state only — never accept these from a
+      // request body.
+      payment?: {
+        amount: number;
+        payment_method: 'cash' | 'card' | 'check' | 'ach' | 'other';
+        stripe_payment_intent_id?: string | null;
+        applied_at?: Date;
+      };
+      // Internal escape hatch for seed/import paths that need to author
+      // already-paid invoices without a Payment row. NEVER reachable
+      // from any HTTP request body — DTOs, controllers, and request
+      // payloads must never expose this field.
+      legacyPaidWithoutPayment?: boolean;
     },
     manager?: EntityManager,
   ): Promise<Invoice> {
-    const repo = manager ? manager.getRepository(Invoice) : this.invoicesRepository;
-    const liRepo = manager ? manager.getRepository(InvoiceLineItem) : this.lineItemRepo;
+    const isPaid = params.status === 'paid';
+    const useLegacy = params.legacyPaidWithoutPayment === true;
+
+    // Pre-validation: fail BEFORE any DB write or transaction open.
+    if (isPaid && !useLegacy && !params.payment) {
+      throw new BadRequestException('payment_required_for_paid_status');
+    }
+
+    const run = (txManager: EntityManager) =>
+      this._createInternalInvoiceInTx(tenantId, params, txManager, isPaid, useLegacy);
+
+    if (manager) {
+      return run(manager);
+    }
+    return this.dataSource.transaction(async (txManager) => run(txManager));
+  }
+
+  private async _createInternalInvoiceInTx(
+    tenantId: string,
+    params: {
+      customerId: string;
+      jobId?: string;
+      rentalChainId?: string;
+      source: string;
+      invoiceType: string;
+      status?: string;
+      lineItems: Array<{ description: string; quantity: number; unitPrice: number; amount: number }>;
+      paymentMethod?: string;
+      notes?: string;
+      discountAmount?: number;
+      dueDate?: string;
+      payment?: {
+        amount: number;
+        payment_method: 'cash' | 'card' | 'check' | 'ach' | 'other';
+        stripe_payment_intent_id?: string | null;
+        applied_at?: Date;
+      };
+      legacyPaidWithoutPayment?: boolean;
+    },
+    manager: EntityManager,
+    isPaid: boolean,
+    useLegacy: boolean,
+  ): Promise<Invoice> {
+    if (isPaid && useLegacy) {
+      this.logger.warn(
+        '[INTERNAL ESCAPE HATCH] createInternalInvoice called with legacyPaidWithoutPayment=true',
+      );
+    }
+
+    const repo = manager.getRepository(Invoice);
+    const liRepo = manager.getRepository(InvoiceLineItem);
+    const paymentRepo = manager.getRepository(Payment);
     const invoiceNumber = await this.getNextInvoiceNumber(tenantId);
     const today = new Date().toISOString().split('T')[0];
-    const isPaid = params.status === 'paid';
     const now = new Date();
 
+    // Always insert with `status: 'open'`. The legacy escape hatch is
+    // the only path that may end with status='paid' on this initial
+    // insert — and only because seed/import paths expect the legacy
+    // shape verbatim.
     const invoice = repo.create({
       tenant_id: tenantId,
       invoice_number: invoiceNumber,
       customer_id: params.customerId,
       job_id: params.jobId || null,
       rental_chain_id: params.rentalChainId || null,
-      status: params.status || 'open',
+      status: useLegacy && isPaid ? 'paid' : 'open',
       invoice_date: today,
       due_date: params.dueDate || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
       summary_of_work: params.notes,
-      paid_at: isPaid ? now : null,
+      paid_at: useLegacy && isPaid ? now : null,
     } as Partial<Invoice>);
 
     const saved = await repo.save(invoice);
 
-    // Create line items
     let subtotal = 0;
     for (let i = 0; i < params.lineItems.length; i++) {
       const li = params.lineItems[i];
@@ -619,10 +707,38 @@ export class BillingService {
       {
         subtotal,
         total,
-        amount_paid: isPaid ? total : 0,
-        balance_due: isPaid ? 0 : total,
+        // Legacy path preserves the pre-fix bypass shape exactly so
+        // seed/import callers see no behavior change. Non-legacy paths
+        // (open or paid-with-payment) start at amount_paid=0/balance_due=total
+        // and let reconcileBalance derive the final state from the
+        // Payment row below.
+        amount_paid: useLegacy && isPaid ? total : 0,
+        balance_due: useLegacy && isPaid ? 0 : total,
       },
     );
+
+    // Paid-with-payment path: write Payment row, then let reconcileBalance
+    // derive status='paid', amount_paid=total, balance_due=0, paid_at=now.
+    // This is the canonical SSoT for invoice paid-state per memory rule #1.
+    if (isPaid && !useLegacy && params.payment) {
+      if (Math.abs(params.payment.amount - total) > 0.01) {
+        throw new BadRequestException('payment_amount_must_match_invoice_total');
+      }
+
+      await paymentRepo.save(
+        paymentRepo.create({
+          tenant_id: tenantId,
+          invoice_id: saved.id,
+          amount: params.payment.amount,
+          payment_method: params.payment.payment_method,
+          stripe_payment_intent_id: params.payment.stripe_payment_intent_id ?? null,
+          status: 'completed',
+          applied_at: params.payment.applied_at ?? now,
+        } as Partial<Payment>),
+      );
+
+      await this.invoiceService.reconcileBalance(saved.id, manager);
+    }
 
     return repo.findOne({ where: { id: saved.id, tenant_id: saved.tenant_id } }) as Promise<Invoice>;
   }

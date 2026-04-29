@@ -73,6 +73,19 @@ export interface JobsDispatchActor {
 }
 
 /**
+ * Options accepted by `cascadeDelete`. Defaulted to `{}` at the
+ * parameter so a controller forwarding an empty `@Body()` (NestJS
+ * passes `undefined` when the request has no body) cannot trigger a
+ * `Cannot read properties of undefined` throw on first access. Fix B
+ * (full transaction wrapper) is tracked separately.
+ */
+export interface CascadeDeleteOptions {
+  deletePickup?: boolean;
+  voidInvoices?: { invoiceId: string; void: boolean }[];
+  voidReason?: string;
+}
+
+/**
  * Cancellation Orchestrator Phase 1 — response shape for the
  * read-only preview endpoint `GET /jobs/:id/cancellation-context`.
  * Exposed at module scope so the controller's return-type inference
@@ -405,6 +418,10 @@ export class JobsService {
           lineItems.push({ description: `Customer discount (${discPct}%)`, quantity: 1, unitPrice: -disc, amount: -disc });
         }
 
+        // Mirrors the helper's internal `total` computation
+        // (subtotal − discount, rounded to cents). The helper validates
+        // payment.amount === total within $0.01 to catch caller drift.
+        const expectedTotal = Math.round((bp - disc) * 100) / 100;
         await this.billingService.createInternalInvoice(tenantId, {
           customerId: savedJob.customer_id,
           jobId: savedJob.id,
@@ -415,6 +432,10 @@ export class JobsService {
           lineItems,
           discountAmount: disc,
           notes: 'Paid at time of booking',
+          payment: {
+            amount: expectedTotal,
+            payment_method: 'card',
+          },
         });
       }
     }
@@ -1603,11 +1624,7 @@ export class JobsService {
     tenantId: string,
     id: string,
     userId: string,
-    options: {
-      deletePickup?: boolean;
-      voidInvoices?: { invoiceId: string; void: boolean }[];
-      voidReason?: string;
-    },
+    options: CascadeDeleteOptions = {},
   ) {
     const job = await this.findOne(tenantId, id);
 

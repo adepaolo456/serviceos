@@ -292,6 +292,12 @@ export class PublicService {
       if (deliveryFee > 0) {
         lineItems.push({ description: 'Delivery Fee', quantity: 1, unitPrice: deliveryFee, amount: deliveryFee });
       }
+      // Mirrors the helper's internal `total` computation: subtotal of
+      // line-items minus optional discount (none here). The helper
+      // validates payment.amount === total within $0.01.
+      const expectedTotal = Math.round(
+        (basePrice + (deliveryFee > 0 ? deliveryFee : 0)) * 100,
+      ) / 100;
       const savedInvoice = await this.billingService.createInternalInvoice(t.id, {
         customerId: customer.id,
         jobId: saved.id,
@@ -302,6 +308,10 @@ export class PublicService {
         lineItems,
         dueDate: new Date().toISOString().split('T')[0],
         notes: 'Paid at time of booking',
+        payment: {
+          amount: expectedTotal,
+          payment_method: 'card',
+        },
       }, queryRunner.manager);
 
       // Mark quote as converted — atomic with job/customer/invoice creation.
