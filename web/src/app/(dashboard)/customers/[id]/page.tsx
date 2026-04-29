@@ -203,7 +203,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
   const handleDelete = async () => {
     if (!confirm("Delete this customer?")) return;
     try { await api.delete(`/customers/${id}`); toast("success", "Deleted"); router.push("/customers"); }
-    catch { toast("error", "Failed"); }
+    catch (err: any) { toast("error", err?.message ?? "Failed to delete"); }
   };
 
   const addNote = async () => {
