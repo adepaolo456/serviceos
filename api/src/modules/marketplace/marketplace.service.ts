@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, QueryFailedError, Repository } from 'typeorm';
 import { MarketplaceBooking } from './entities/marketplace-booking.entity';
 import { MarketplaceIntegration } from './entities/marketplace-integration.entity';
 import { Customer } from '../customers/entities/customer.entity';
@@ -206,19 +206,48 @@ export class MarketplaceService {
         const nameParts = booking.customer_name.split(' ');
         const firstName = nameParts[0] || booking.customer_name;
         const lastName = nameParts.slice(1).join(' ') || '';
-        customer = await customerRepo.save(
-          customerRepo.create({
-            tenant_id: tenantId,
-            first_name: firstName,
-            last_name: lastName,
-            email: booking.customer_email,
-            phone: booking.customer_phone,
-            lead_source: 'marketplace',
-            service_addresses: booking.service_address
-              ? [booking.service_address]
-              : [],
-          }),
-        );
+        try {
+          customer = await customerRepo.save(
+            customerRepo.create({
+              tenant_id: tenantId,
+              first_name: firstName,
+              last_name: lastName,
+              email: booking.customer_email,
+              phone: booking.customer_phone,
+              lead_source: 'marketplace',
+              service_addresses: booking.service_address
+                ? [booking.service_address]
+                : [],
+            }),
+          );
+        } catch (err) {
+          // Concurrency arc Surface 3: a parallel accept() flow with the
+          // same (tenant_id, lower(email)) committed between our findOne
+          // and our save. The unique constraint
+          // idx_customers_tenant_email_unique caught it (Postgres
+          // SQLSTATE 23505 = unique_violation). Re-run the lookup; the
+          // parallel TX has committed, so the customer now exists and is
+          // returnable. Anything other than 23505 is unexpected at this
+          // call site and propagates unchanged.
+          if (
+            err instanceof QueryFailedError &&
+            (err as QueryFailedError & { code?: string }).code === '23505'
+          ) {
+            customer = await customerRepo.findOne({
+              where: { tenant_id: tenantId, email: booking.customer_email },
+            });
+            if (!customer) {
+              // Theoretically impossible: if the unique constraint just
+              // fired on (tenant_id, lower(email)), the parallel TX must
+              // have committed a row with that exact key. If we see null
+              // here anyway, re-throw the original error rather than
+              // silently using null and crashing downstream.
+              throw err;
+            }
+          } else {
+            throw err;
+          }
+        }
       }
 
       // Delegate job creation to the SSoT path. JobsService.create
