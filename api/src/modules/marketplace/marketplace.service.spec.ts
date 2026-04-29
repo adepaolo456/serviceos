@@ -26,7 +26,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { DataSource, EntityManager } from 'typeorm';
+import { DataSource, EntityManager, QueryFailedError } from 'typeorm';
 
 import { MarketplaceService } from './marketplace.service';
 import { MarketplaceBooking } from './entities/marketplace-booking.entity';
@@ -372,6 +372,102 @@ describe('MarketplaceService.accept()', () => {
         NotFoundException,
       );
       expect(h.jobsCreate).not.toHaveBeenCalled();
+      expect(h.commitCalled).not.toHaveBeenCalled();
+    });
+  });
+
+  // Concurrency arc — Surface 3. The unique constraint
+  // idx_customers_tenant_email_unique on customers (tenant_id, lower(email))
+  // protects data integrity at the DB layer; these tests cover the
+  // app-side error envelope that recovers the existing customer instead
+  // of surfacing a 500 to the race-loser.
+  describe('concurrency — Surface 3 customer dedup race', () => {
+    it('catches unique-violation on customer save, retries findOne, returns existing customer, accept() succeeds', async () => {
+      const h = await buildHarness();
+
+      // Race scenario: initial findOne returns null (parallel TX has not
+      // yet committed); customer save throws unique violation (parallel
+      // TX committed in between); retry findOne returns the parallel
+      // TX's committed customer.
+      const existingCustomer = {
+        id: 'cust-parallel-1',
+        tenant_id: 'tenant-1',
+        email: 'jane@example.com',
+      };
+      h.trxCustomerRepo.findOne
+        .mockResolvedValueOnce(null) // initial find (no row yet)
+        .mockResolvedValueOnce(existingCustomer); // retry find (parallel TX committed)
+
+      // Build a unique-violation matching the Postgres SQLSTATE 23505
+      // shape that TypeORM's QueryFailedError carries.
+      const uniqueViolation = new QueryFailedError(
+        'INSERT INTO customers ...',
+        [],
+        new Error(
+          'duplicate key value violates unique constraint "idx_customers_tenant_email_unique"',
+        ),
+      );
+      (uniqueViolation as QueryFailedError & { code: string }).code = '23505';
+      h.trxCustomerRepo.save.mockRejectedValueOnce(uniqueViolation);
+
+      const result = await h.service.accept('tenant-1', 'bk-1');
+
+      // findOne was called twice — initial + retry-after-violation.
+      expect(h.trxCustomerRepo.findOne).toHaveBeenCalledTimes(2);
+      // save attempted once and threw; not retried.
+      expect(h.trxCustomerRepo.save).toHaveBeenCalledTimes(1);
+      // jobsService.create proceeded with the existing customer's id —
+      // proves the recovery path threads the right id forward.
+      expect(h.jobsCreate).toHaveBeenCalledTimes(1);
+      const dtoArg = h.jobsCreate.mock.calls[0][1] as Record<string, unknown>;
+      expect(dtoArg.customerId).toBe('cust-parallel-1');
+      // The TX still committed exactly once — recovery joined the same
+      // outer transaction.
+      expect(h.commitCalled).toHaveBeenCalledTimes(1);
+      expect(result.customer.id).toBe('cust-parallel-1');
+    });
+
+    it('rethrows the original QueryFailedError if retry findOne returns null (defensive)', async () => {
+      const h = await buildHarness();
+
+      // Pathological invariant violation: unique constraint fires but
+      // retry sees null. Should never happen; if it does, the original
+      // error must surface (not be swallowed as a synthesized null).
+      h.trxCustomerRepo.findOne
+        .mockResolvedValueOnce(null) // initial
+        .mockResolvedValueOnce(null); // retry — invariant violated
+
+      const uniqueViolation = new QueryFailedError(
+        'INSERT INTO customers ...',
+        [],
+        new Error('duplicate key value violates unique constraint'),
+      );
+      (uniqueViolation as QueryFailedError & { code: string }).code = '23505';
+      h.trxCustomerRepo.save.mockRejectedValueOnce(uniqueViolation);
+
+      await expect(h.service.accept('tenant-1', 'bk-1')).rejects.toBe(
+        uniqueViolation,
+      );
+      expect(h.commitCalled).not.toHaveBeenCalled();
+    });
+
+    it('rethrows non-23505 QueryFailedError unchanged (does not catch broader)', async () => {
+      const h = await buildHarness();
+      h.trxCustomerRepo.findOne.mockResolvedValueOnce(null);
+
+      // FK violation (23503) is a different constraint class; the catch
+      // must not swallow it.
+      const fkViolation = new QueryFailedError(
+        'INSERT INTO customers ...',
+        [],
+        new Error('insert or update on table "customers" violates foreign key constraint'),
+      );
+      (fkViolation as QueryFailedError & { code: string }).code = '23503';
+      h.trxCustomerRepo.save.mockRejectedValueOnce(fkViolation);
+
+      await expect(h.service.accept('tenant-1', 'bk-1')).rejects.toBe(fkViolation);
+      // No retry findOne attempted (only the initial one).
+      expect(h.trxCustomerRepo.findOne).toHaveBeenCalledTimes(1);
       expect(h.commitCalled).not.toHaveBeenCalled();
     });
   });
