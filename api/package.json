@@ -97,6 +97,14 @@
     "testEnvironment": "node",
     "setupFiles": [
       "<rootDir>/test-setup.ts"
-    ]
+    ],
+    "coverageThreshold": {
+      "global": {
+        "statements": 16,
+        "branches": 15,
+        "functions": 7,
+        "lines": 16
+      }
+    }
   }
 }
