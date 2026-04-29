@@ -10,14 +10,13 @@
  *   - paid + payment block: invoice via reconcileBalance, Payment row written
  *   - paid + no payment block: throws payment_required_for_paid_status
  *   - paid + mismatched amount: throws and outer transaction NOT committed
- *   - paid + legacyPaidWithoutPayment opt-in: legacy bypass shape preserved + warn log
  *   - default open status: unchanged, no Payment row, no reconcile
  */
 
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource, EntityManager } from 'typeorm';
-import { BadRequestException, Logger } from '@nestjs/common';
+import { BadRequestException } from '@nestjs/common';
 
 import { BillingService } from './billing.service';
 import { Invoice } from './entities/invoice.entity';
@@ -396,47 +395,6 @@ describe('BillingService.createInternalInvoice — Fix A (Shape #2 invariant gat
     // …and the outer transaction never committed, so all preceding
     // writes roll back as a unit (the partial-state class Fix A closes).
     expect(h.transactionCommit).not.toHaveBeenCalled();
-  });
-
-  // Legacy escape hatch: preserves the pre-fix bypass shape exactly so
-  // seed/import paths see no behavior change. Logs a warn line so every
-  // use surfaces in the audit trail.
-  it('paid + legacyPaidWithoutPayment: preserves bypass shape and emits Logger.warn', async () => {
-    const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => {});
-    try {
-      const h = await buildHarness();
-      h.dataSourceQuery.mockResolvedValue([{ num: 4244 }]);
-
-      await h.service.createInternalInvoice('tenant-1', {
-        customerId: 'cust-1',
-        source: 'booking',
-        invoiceType: 'rental',
-        status: 'paid',
-        lineItems: [
-          { description: 'Seed', quantity: 1, unitPrice: 100, amount: 100 },
-        ],
-        legacyPaidWithoutPayment: true,
-      });
-
-      // Legacy path — direct-write the bypass shape unchanged
-      expect(h.trxInvoiceRepo.save).toHaveBeenCalledWith(
-        expect.objectContaining({ status: 'paid', paid_at: expect.any(Date) }),
-      );
-      expect(h.trxInvoiceRepo.update).toHaveBeenCalledWith(
-        expect.objectContaining({ id: 'mock-inv-id' }),
-        expect.objectContaining({ subtotal: 100, total: 100, amount_paid: 100, balance_due: 0 }),
-      );
-      // No Payment row, no reconcile (this is the deliberate legacy bypass)
-      expect(h.trxPaymentRepo.save).not.toHaveBeenCalled();
-      expect(h.invoiceServiceMock.reconcileBalance).not.toHaveBeenCalled();
-      // Audit-trail warn line emitted
-      expect(warnSpy).toHaveBeenCalledWith(
-        expect.stringContaining('[INTERNAL ESCAPE HATCH]'),
-      );
-      expect(h.transactionCommit).toHaveBeenCalled();
-    } finally {
-      warnSpy.mockRestore();
-    }
   });
 
   // Default flow (no status, or status:'open') is unchanged by Fix A.
