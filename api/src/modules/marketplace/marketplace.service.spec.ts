@@ -471,4 +471,74 @@ describe('MarketplaceService.accept()', () => {
       expect(h.commitCalled).not.toHaveBeenCalled();
     });
   });
+
+  // Concurrency arc — Surface 4. Two operators clicking Accept in
+  // parallel previously both saw status='pending' inside their TXs
+  // and both produced Job rows referencing the same booking. The fix
+  // is a row-level pessimistic-write lock at the in-TX bookingRepo.
+  // findOne plus a post-lock status re-check; the second concurrent
+  // caller wakes up after the first commits, observes the now-
+  // 'accepted' status, and throws the same envelope as the pre-TX
+  // check at line 172.
+  describe('concurrency — Surface 4 marketplace double-accept race', () => {
+    it('passes lock: { mode: pessimistic_write } to the in-TX bookingRepo.findOne', async () => {
+      const h = await buildHarness();
+
+      await h.service.accept('tenant-1', 'bk-1');
+
+      // First call is the pre-TX validation findOne (no lock); second
+      // is the in-TX re-read which MUST carry the pessimistic_write
+      // lock. Pinning the call shape catches a future maintainer
+      // dropping the lock option.
+      expect(h.trxBookingRepo.findOne).toHaveBeenCalledTimes(1);
+      expect(h.trxBookingRepo.findOne).toHaveBeenCalledWith({
+        where: { id: 'bk-1', tenant_id: 'tenant-1' },
+        lock: { mode: 'pessimistic_write' },
+      });
+    });
+
+    it('throws BadRequestException when the booking arrives in accepted state post-lock (second concurrent caller)', async () => {
+      const h = await buildHarness();
+      // Pre-TX read sees pending — caller A and caller B race past it.
+      h.bookingsRepo.findOne.mockResolvedValueOnce(makeBookingRow());
+      // In-TX read (post-lock-acquire) returns the row with the now-
+      // committed status='accepted' from caller A's TX. Caller B is
+      // the second caller; it wakes here and must throw.
+      h.trxBookingRepo.findOne.mockResolvedValueOnce(
+        makeBookingRow({ status: 'accepted', job_id: 'job-from-A' }),
+      );
+
+      await expect(h.service.accept('tenant-1', 'bk-1')).rejects.toMatchObject(
+        {
+          // Match the BadRequestException envelope used by the pre-TX
+          // check at line 172, by-message — keeps the caller-visible
+          // string identical regardless of whether the operator lost
+          // the race or just hit a stale UI.
+          message: 'Booking is already "accepted"',
+        },
+      );
+
+      // The TX opened (so the lock fired) but never committed: no
+      // jobsService.create, no booking save, no orphan customer.
+      expect(h.jobsCreate).not.toHaveBeenCalled();
+      expect(h.trxBookingRepo.save).not.toHaveBeenCalled();
+      expect(h.commitCalled).not.toHaveBeenCalled();
+    });
+
+    it('throws BadRequestException when the booking is in any non-pending state post-lock (e.g., rejected)', async () => {
+      const h = await buildHarness();
+      h.bookingsRepo.findOne.mockResolvedValueOnce(makeBookingRow());
+      // Cover the full "non-pending" surface: rejected mid-TX is also
+      // a state the post-lock check must reject. The status string is
+      // interpolated into the envelope, so the message changes shape.
+      h.trxBookingRepo.findOne.mockResolvedValueOnce(
+        makeBookingRow({ status: 'rejected' }),
+      );
+
+      await expect(h.service.accept('tenant-1', 'bk-1')).rejects.toMatchObject({
+        message: 'Booking is already "rejected"',
+      });
+      expect(h.commitCalled).not.toHaveBeenCalled();
+    });
+  });
 });

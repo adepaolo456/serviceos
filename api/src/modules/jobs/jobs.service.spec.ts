@@ -58,6 +58,7 @@ import { CreditAuditService } from '../credit-audit/credit-audit.service';
 import { StripeService } from '../stripe/stripe.service';
 import { MapboxService } from '../mapbox/mapbox.service';
 import { TenantSettings } from '../tenant-settings/entities/tenant-settings.entity';
+import { AssetsService } from '../assets/assets.service';
 
 function makeJob(partial: Partial<Job> = {}): Job {
   const base = {
@@ -150,6 +151,10 @@ interface Harness {
   // opens 1 main + N post-commit (one per refund_paid → Stripe call),
   // so this lets J4b/J4c assert the post-commit pattern.
   transactionInvocationCount: () => number;
+  // PR-B Surface 1 — spy on AssetsService.lockAssetRow so tests can
+  // override the lock outcome (e.g., return an asset, throw
+  // NotFoundException, etc.) and assert the call shape.
+  lockAssetRow: jest.Mock;
 }
 
 async function buildHarness(jobOverrides: Partial<Job> = {}): Promise<Harness> {
@@ -441,6 +446,20 @@ async function buildHarness(jobOverrides: Partial<Job> = {}): Promise<Harness> {
       // registered in the module so JobsService boots; the actual reads
       // go through the trx mock above (txTenantSettingsFindOne).
       { provide: getRepositoryToken(TenantSettings), useValue: {} },
+      // PR-B Surface 1 — AssetsService.lockAssetRow is invoked inside
+      // _createInTx when dto.assetId is supplied. Default mock returns
+      // a happy-path locked asset; tests that target the lock-conflict
+      // path override per-case.
+      {
+        provide: AssetsService,
+        useValue: {
+          lockAssetRow: jest.fn(async () => ({
+            id: 'asset-1',
+            tenant_id: 'tenant-1',
+            status: 'available',
+          })),
+        },
+      },
     ],
   }).compile();
 
@@ -492,6 +511,7 @@ async function buildHarness(jobOverrides: Partial<Job> = {}): Promise<Harness> {
     txTenantSettingsFindOne,
     txJobSaveSpy,
     transactionInvocationCount: () => transactionInvocations,
+    lockAssetRow: module.get(AssetsService).lockAssetRow as jest.Mock,
   };
 }
 
@@ -2729,5 +2749,153 @@ describe('JobsService.create — Fix C (transaction wrapper)', () => {
     // and no manager required) — the legacy POST /jobs caller path.
     // This is the wire-compatibility proof.
     await expect(h.service.create('tenant-1', baseDto)).resolves.toBeDefined();
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────
+// PR-B Surface 1 — asset reservation race in JobsService._createInTx
+// ──────────────────────────────────────────────────────────────────────
+// Two parallel _createInTx calls for the same asset_id previously
+// raced through their pre-TX existence checks (`this.assetRepo.findOne`
+// at line 314-319) and both INSERTed jobs referencing the asset — no
+// DB unique on (tenant_id, asset_id) protected the invariant. The fix
+// is `assetsService.lockAssetRow(manager, dto.assetId, tenantId)`
+// inside _createInTx, followed by a re-check via the existing
+// `findActiveAssignmentConflict` query. The second concurrent caller
+// blocks at the lock, wakes after the first commits, observes the
+// committed sibling job, and throws BadRequestException.
+//
+// These tests defend the call-site contract:
+//   1. lockAssetRow is invoked with (TX manager, dto.assetId, tenantId)
+//      — multi-tenant safety + caller-owned TX boundary.
+//   2. lockAssetRow is NOT invoked when dto.assetId is absent (paths
+//      that create jobs without asset reservation, e.g.,
+//      MarketplaceService.accept and PublicService.createBooking,
+//      bypass the lock entirely).
+//   3. A non-null findActiveAssignmentConflict result throws
+//      BadRequestException with the documented "no longer available"
+//      message and short-circuits before the jobs INSERT.
+//   4. A null findActiveAssignmentConflict result allows the INSERT
+//      to proceed (no false-positive throws on the no-contention path).
+// ──────────────────────────────────────────────────────────────────────
+
+describe('JobsService._createInTx — PR-B Surface 1 (asset row lock)', () => {
+  const baseDtoWithAsset = {
+    customerId: 'cust-1',
+    jobType: 'delivery' as const,
+    serviceType: 'dumpster_rental',
+    scheduledDate: '2026-05-01',
+    serviceAddress: { street: '123 Main', city: 'Austin', state: 'TX', zip: '78701' },
+    assetId: 'asset-1',
+    basePrice: 500,
+    totalPrice: 500,
+  } as any;
+
+  const baseDtoNoAsset = {
+    customerId: 'cust-1',
+    jobType: 'delivery' as const,
+    serviceType: 'dumpster_rental',
+    scheduledDate: '2026-05-01',
+    serviceAddress: { street: '123 Main', city: 'Austin', state: 'TX', zip: '78701' },
+    basePrice: 500,
+    totalPrice: 500,
+  } as any;
+
+  it('invokes lockAssetRow with the TX manager, assetId, and tenantId — positional args', async () => {
+    const h = await buildHarness();
+    h.billingService.hasInvoice = jest.fn().mockResolvedValue(false);
+    h.billingService.createInternalInvoice = jest
+      .fn()
+      .mockResolvedValue({ id: 'inv-prB-1' });
+    // Pre-TX existence check — needs to find the asset so we proceed
+    // into _createInTx (not throw NotFoundException early).
+    (h.service as any).assetRepo.findOne = jest
+      .fn()
+      .mockResolvedValue({ id: 'asset-1', tenant_id: 'tenant-1' });
+    // No competing job exists; happy path.
+    jest
+      .spyOn(h.service, 'findActiveAssignmentConflict')
+      .mockResolvedValue(null);
+
+    await h.service.create('tenant-1', baseDtoWithAsset);
+
+    expect(h.lockAssetRow).toHaveBeenCalledTimes(1);
+    const [managerArg, assetIdArg, tenantIdArg] = h.lockAssetRow.mock.calls[0];
+    // First positional arg MUST be the TX manager (caller-supplied),
+    // never `this.dataSource.manager` — proves the caller owns the TX
+    // boundary and the lock joins the outer TX.
+    expect(typeof (managerArg as any).getRepository).toBe('function');
+    expect(assetIdArg).toBe('asset-1');
+    expect(tenantIdArg).toBe('tenant-1');
+  });
+
+  it('does NOT invoke lockAssetRow when dto.assetId is absent', async () => {
+    const h = await buildHarness();
+    h.billingService.hasInvoice = jest.fn().mockResolvedValue(false);
+    h.billingService.createInternalInvoice = jest
+      .fn()
+      .mockResolvedValue({ id: 'inv-prB-noasset' });
+
+    await h.service.create('tenant-1', baseDtoNoAsset);
+
+    // Bypass surface — MarketplaceService.accept and PublicService.
+    // createBooking both call create(...) without an assetId, and the
+    // lock must not fire on those paths. Mis-firing here would be a
+    // scope-creep regression (Q2 = _createInTx ONLY).
+    expect(h.lockAssetRow).not.toHaveBeenCalled();
+  });
+
+  it('throws BadRequestException with "no longer available" envelope when findActiveAssignmentConflict returns a sibling', async () => {
+    const h = await buildHarness();
+    h.billingService.hasInvoice = jest.fn().mockResolvedValue(false);
+    h.billingService.createInternalInvoice = jest.fn();
+    (h.service as any).assetRepo.findOne = jest
+      .fn()
+      .mockResolvedValue({ id: 'asset-1', tenant_id: 'tenant-1' });
+    // Race outcome: the parallel TX has already committed Job_A on
+    // asset-1. Our lock acquires after their commit; the post-lock
+    // re-check observes Job_A and surfaces a clean envelope.
+    jest.spyOn(h.service, 'findActiveAssignmentConflict').mockResolvedValue({
+      id: 'job-A-from-parallel',
+      job_number: 'D-9000',
+      job_type: 'delivery',
+      status: 'pending',
+      scheduled_date: '2026-05-01',
+      conflict_field: 'asset_id',
+    });
+
+    await expect(
+      h.service.create('tenant-1', baseDtoWithAsset),
+    ).rejects.toMatchObject({
+      message: 'Asset asset-1 is no longer available',
+    });
+
+    // Lock fired (proving the post-lock re-check ran), but the jobs
+    // INSERT was short-circuited and the outer TX never committed.
+    expect(h.lockAssetRow).toHaveBeenCalledTimes(1);
+    expect(h.txJobSaveSpy).not.toHaveBeenCalled();
+    expect(h.transactionCommit).not.toHaveBeenCalled();
+  });
+
+  it('proceeds with the INSERT when findActiveAssignmentConflict returns null (no-contention happy path)', async () => {
+    const h = await buildHarness();
+    h.billingService.hasInvoice = jest.fn().mockResolvedValue(false);
+    h.billingService.createInternalInvoice = jest
+      .fn()
+      .mockResolvedValue({ id: 'inv-prB-noconflict' });
+    (h.service as any).assetRepo.findOne = jest
+      .fn()
+      .mockResolvedValue({ id: 'asset-1', tenant_id: 'tenant-1' });
+    jest
+      .spyOn(h.service, 'findActiveAssignmentConflict')
+      .mockResolvedValue(null);
+
+    const result = await h.service.create('tenant-1', baseDtoWithAsset);
+
+    // Lock fired, no conflict found, jobs INSERT proceeded, TX committed.
+    expect(h.lockAssetRow).toHaveBeenCalledTimes(1);
+    expect(h.txJobSaveSpy).toHaveBeenCalled();
+    expect(h.transactionCommit).toHaveBeenCalledTimes(1);
+    expect(result).toEqual(expect.objectContaining({ id: 'mock-job-id' }));
   });
 });
