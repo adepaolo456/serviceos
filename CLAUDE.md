@@ -81,8 +81,8 @@ Reference: `docs/audits/2026-04-30-autoclose-expansion-audit.md`
 PR #19 audit (`docs/audits/2026-04-30-reconcilebalance-bypass-audit.md`) verified the 4 bypass sites at their post-PR #17 line numbers, surfaced 2 critical findings beyond the original PR-C1b notes, and locked a 3-stage PR shape via billing-guardian sign-off.
 
 **Status:**
-- ✅ PR-C1c-pre — `reconcileBalance()` math fix at `invoice.service.ts:987` + `isFullyRefunded()` helper + tests (this PR)
-- ⏳ PR-C1c — Sites 1 + 2 sync bypass replacements (next; depends on PR-C1c-pre)
+- ✅ PR-C1c-pre — `reconcileBalance()` math fix at `invoice.service.ts:987` + `isFullyRefunded()` helper + tests (PR #20)
+- ✅ PR-C1c — Sites 1 + 2 sync bypass replacements (`chargeInvoice` → `reconcileBalance`; `refundInvoice` → `isFullyRefunded` + `voided_at` stamp + `reconcileBalance`) (this PR)
 - ⏳ PR-C2 — Sites 3 + 4 webhook bypass replacements + new `stripe_events` event-id dedup table
 
 **Locked blockers (from PR #19 audit):**

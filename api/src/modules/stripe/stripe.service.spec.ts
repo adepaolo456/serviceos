@@ -19,6 +19,7 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 
 import { StripeService } from './stripe.service';
+import { InvoiceService } from '../billing/services/invoice.service';
 import { Tenant } from '../tenants/entities/tenant.entity';
 import { Customer } from '../customers/entities/customer.entity';
 import { Invoice } from '../billing/entities/invoice.entity';
@@ -47,6 +48,14 @@ interface Harness {
     subscriptions: { create: jest.Mock };
     webhooks: { constructEvent: jest.Mock };
   };
+  // PR-C1c — InvoiceService.reconcileBalance / isFullyRefunded are the
+  // canonical writer + helper Sites 1 + 2 now call. Tests assert the
+  // call shape; the helper bodies are independently tested in
+  // invoice.service.spec.ts (PR-C1c-pre).
+  invoiceService: {
+    reconcileBalance: jest.Mock;
+    isFullyRefunded: jest.Mock;
+  };
   logPaymentFailedAlertSpy: jest.SpyInstance;
 }
 
@@ -70,6 +79,13 @@ async function buildHarness(): Promise<Harness> {
     query: jest.fn().mockResolvedValue([{ cnt: '0' }]),
   };
 
+  // PR-C1c — InvoiceService mock. Default: isFullyRefunded → false
+  // (partial-refund path). Tests override per-case.
+  const invoiceService = {
+    reconcileBalance: jest.fn().mockResolvedValue(undefined),
+    isFullyRefunded: jest.fn().mockResolvedValue(false),
+  };
+
   const module: TestingModule = await Test.createTestingModule({
     providers: [
       StripeService,
@@ -80,6 +96,7 @@ async function buildHarness(): Promise<Harness> {
       { provide: getRepositoryToken(Notification), useValue: notifRepo },
       { provide: getRepositoryToken(SubscriptionPlan), useValue: planRepo },
       { provide: DataSource, useValue: dataSource },
+      { provide: InvoiceService, useValue: invoiceService },
     ],
   }).compile();
 
@@ -112,6 +129,7 @@ async function buildHarness(): Promise<Harness> {
     customerRepo: customerRepo as any,
     tenantRepo: tenantRepo as any,
     stripeMock,
+    invoiceService,
     logPaymentFailedAlertSpy,
   };
 }
@@ -448,7 +466,143 @@ describe('StripeService — PR-C1b-1 idempotency keys', () => {
     expect(h.paymentRepo.save).not.toHaveBeenCalled();
     expect(h.invoiceRepo.update).not.toHaveBeenCalled();
     expect(h.notifRepo.save).not.toHaveBeenCalled();
+    // PR-C1c — canonical writer also not invoked when Stripe rejects.
+    // (Vacuously true post-PR-C1c since chargeInvoice/refundInvoice no
+    // longer reach reconcileBalance on error, but worth pinning.)
+    expect(h.invoiceService.reconcileBalance).not.toHaveBeenCalled();
 
     errSpy.mockRestore();
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────
+// PR-C1c — Sites 1 + 2 sync bypass replacements
+//
+// Closes the synchronous half of the reconcileBalance() bypass arc
+// (PR #19 audit, docs/audits/2026-04-30-reconcilebalance-bypass-audit.md).
+// chargeInvoice and refundInvoice no longer write invoice columns
+// directly; they call the canonical InvoiceService.reconcileBalance()
+// (PR-C1c-pre, PR #20). refundInvoice additionally stamps voided_at
+// before reconcileBalance when isFullyRefunded() is true, so the
+// canonical writer's voided_at-keyed branch produces 'voided' status.
+//
+// Sites 3 + 4 (webhook handlers) remain bypassed pending PR-C2's
+// stripe_events event-id dedup table.
+// ──────────────────────────────────────────────────────────────────────
+describe('StripeService — PR-C1c sync bypass replacements (Sites 1 + 2)', () => {
+  beforeEach(() => {
+    delete process.env.STRIPE_WEBHOOK_SECRET;
+    process.env.NODE_ENV = 'test';
+    process.env.GIT_SHA = 'abcdef12';
+    delete process.env.VERCEL_GIT_COMMIT_SHA;
+  });
+
+  // ── Site 1 — chargeInvoice success calls reconcileBalance ────────────
+  it('1. chargeInvoice success — invoiceService.reconcileBalance called once with invoiceId; no direct invoiceRepo.update for amount_paid/balance_due/status', async () => {
+    const h = await buildHarness();
+    h.invoiceRepo.findOne.mockResolvedValue({
+      id: 'inv-1',
+      tenant_id: 't-1',
+      customer_id: 'cust-1',
+      status: 'open',
+      balance_due: '100.00',
+      total: '100.00',
+      job_id: 'job-1',
+    });
+    h.customerRepo.findOne.mockResolvedValue({
+      id: 'cust-1',
+      tenant_id: 't-1',
+      stripe_customer_id: 'cus_existing',
+    });
+    h.tenantRepo.findOne.mockResolvedValue({ id: 't-1', stripe_connect_id: null });
+    h.paymentRepo.find.mockResolvedValue([]);
+    h.stripeMock.paymentMethods.list.mockResolvedValue({
+      data: [{ id: 'pm_1', card: { last4: '4242' } }],
+    });
+    h.stripeMock.paymentIntents.create.mockResolvedValue({ id: 'pi_test_1' });
+
+    await h.service.chargeInvoice('t-1', 'inv-1');
+
+    // Canonical writer was invoked exactly once with the invoiceId.
+    expect(h.invoiceService.reconcileBalance).toHaveBeenCalledTimes(1);
+    expect(h.invoiceService.reconcileBalance).toHaveBeenCalledWith('inv-1');
+    // The bypass shape (writing amount_paid/balance_due/status directly)
+    // is gone — the only invoiceRepo.update path remaining for refunds is
+    // the voided_at stamp, which chargeInvoice never invokes.
+    expect(h.invoiceRepo.update).not.toHaveBeenCalled();
+  });
+
+  // ── Site 2 — refundInvoice partial refund: no voided_at stamp ────────
+  it('2. refundInvoice partial — isFullyRefunded=false; NO voided_at stamp; reconcileBalance called', async () => {
+    const h = await buildHarness();
+    h.invoiceRepo.findOne.mockResolvedValue({
+      id: 'inv-2',
+      tenant_id: 't-1',
+      total: '150.00',
+      job_id: 'job-2',
+    });
+    h.paymentRepo.findOne.mockResolvedValue({
+      id: 'pay-2',
+      invoice_id: 'inv-2',
+      stripe_payment_intent_id: 'pi_existing',
+      refunded_amount: 0,
+    });
+    h.tenantRepo.findOne.mockResolvedValue({ id: 't-1', stripe_connect_id: null });
+    h.stripeMock.refunds.create.mockResolvedValue({ id: 're_test', amount: 5000 });
+    h.paymentRepo.find.mockResolvedValue([]);
+    // Default isFullyRefunded mock returns false → partial-refund path.
+    h.invoiceService.isFullyRefunded.mockResolvedValue(false);
+
+    await h.service.refundInvoice('t-1', 'inv-2', 50);
+
+    expect(h.invoiceService.isFullyRefunded).toHaveBeenCalledTimes(1);
+    expect(h.invoiceService.isFullyRefunded).toHaveBeenCalledWith('inv-2');
+    expect(h.invoiceService.reconcileBalance).toHaveBeenCalledTimes(1);
+    expect(h.invoiceService.reconcileBalance).toHaveBeenCalledWith('inv-2');
+    // No voided_at stamp on partial — the only invoiceRepo.update path
+    // in refundInvoice (voided_at) was NOT triggered.
+    expect(h.invoiceRepo.update).not.toHaveBeenCalled();
+  });
+
+  // ── Site 2 — refundInvoice full refund: voided_at stamped first ──────
+  it('3. refundInvoice full refund — isFullyRefunded=true; invoiceRepo.update({voided_at:Date}) BEFORE reconcileBalance', async () => {
+    const h = await buildHarness();
+    h.invoiceRepo.findOne.mockResolvedValue({
+      id: 'inv-3',
+      tenant_id: 't-1',
+      total: '100.00',
+      job_id: 'job-3',
+    });
+    h.paymentRepo.findOne.mockResolvedValue({
+      id: 'pay-3',
+      invoice_id: 'inv-3',
+      stripe_payment_intent_id: 'pi_existing',
+      refunded_amount: 0,
+    });
+    h.tenantRepo.findOne.mockResolvedValue({ id: 't-1', stripe_connect_id: null });
+    h.stripeMock.refunds.create.mockResolvedValue({ id: 're_test', amount: 10000 });
+    h.paymentRepo.find.mockResolvedValue([]);
+    // Full refund path → helper returns true.
+    h.invoiceService.isFullyRefunded.mockResolvedValue(true);
+
+    await h.service.refundInvoice('t-1', 'inv-3');
+
+    // 1. isFullyRefunded called.
+    expect(h.invoiceService.isFullyRefunded).toHaveBeenCalledTimes(1);
+    expect(h.invoiceService.isFullyRefunded).toHaveBeenCalledWith('inv-3');
+    // 2. voided_at stamped on the invoice row.
+    expect(h.invoiceRepo.update).toHaveBeenCalledTimes(1);
+    expect(h.invoiceRepo.update).toHaveBeenCalledWith(
+      'inv-3',
+      expect.objectContaining({ voided_at: expect.any(Date) }),
+    );
+    // 3. reconcileBalance called.
+    expect(h.invoiceService.reconcileBalance).toHaveBeenCalledTimes(1);
+    expect(h.invoiceService.reconcileBalance).toHaveBeenCalledWith('inv-3');
+    // Ordering: voided_at stamp must precede reconcileBalance so the
+    // canonical writer's voided_at-keyed branch produces 'voided' status.
+    const stampOrder = h.invoiceRepo.update.mock.invocationCallOrder[0];
+    const reconcileOrder = h.invoiceService.reconcileBalance.mock.invocationCallOrder[0];
+    expect(stampOrder).toBeLessThan(reconcileOrder);
   });
 });
