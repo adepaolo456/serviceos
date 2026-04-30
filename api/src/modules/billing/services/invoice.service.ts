@@ -984,7 +984,16 @@ export class InvoiceService {
     const payments = await paymentRepo.find({
       where: { invoice_id: invoiceId, status: 'completed' },
     });
-    const totalPaid = payments.reduce((sum, p) => sum + Number(p.amount), 0);
+    // PR-C1c-pre: subtract refunded amounts so the canonical totalPaid
+    // reflects net money received. Without this, refunded payments
+    // still counted as gross paid — invoices showed 'paid' with $0
+    // balance even after the customer was refunded. See
+    // docs/audits/2026-04-30-reconcilebalance-bypass-audit.md
+    // Phase 1 Critical Finding #1.
+    const totalPaid = payments.reduce(
+      (sum, p) => sum + Number(p.amount) - Number(p.refunded_amount || 0),
+      0,
+    );
 
     const invoice = await invoiceRepo.findOneOrFail({ where: { id: invoiceId } });
 
@@ -1033,6 +1042,51 @@ export class InvoiceService {
       status,
       paid_at: paidAt,
     });
+  }
+
+  /**
+   * PR-C1c-pre: Returns true when the cumulative refunded_amount
+   * across all completed payments on this invoice equals or exceeds
+   * the invoice total. Callers (refundInvoice in PR-C1c) should stamp
+   * voided_at on the invoice row when this returns true, BEFORE
+   * calling reconcileBalance(), so the canonical writer's
+   * voided_at-keyed branch produces 'voided' status instead of
+   * falling through to 'open'. Matches the voidInvoice →
+   * reconcileBalance precedent.
+   *
+   * Pure read — no mutations. Cents-comparison avoids floating-point
+   * drift. tenant_id scoping is delegated to the caller via the
+   * invoice_id (the invoice row itself carries tenant_id).
+   *
+   * See docs/audits/2026-04-30-reconcilebalance-bypass-audit.md
+   * Phase 1 Critical Finding #2 and the C-2 blocker resolution.
+   */
+  async isFullyRefunded(
+    invoiceId: string,
+    manager?: EntityManager,
+  ): Promise<boolean> {
+    const paymentRepo = manager
+      ? manager.getRepository(Payment)
+      : this.paymentRepo;
+    const invoiceRepo = manager
+      ? manager.getRepository(Invoice)
+      : this.invoiceRepo;
+
+    const payments = await paymentRepo.find({
+      where: { invoice_id: invoiceId, status: 'completed' },
+    });
+    const totalRefunded = payments.reduce(
+      (sum, p) => sum + Number(p.refunded_amount || 0),
+      0,
+    );
+    const invoice = await invoiceRepo.findOneOrFail({
+      where: { id: invoiceId },
+    });
+
+    return (
+      Math.round(totalRefunded * 100) >=
+      Math.round(Number(invoice.total) * 100)
+    );
   }
 
   // ─────────────────────────────────────────────────────────

@@ -78,19 +78,22 @@ Reference: `docs/audits/2026-04-30-autoclose-expansion-audit.md`
 
 ### Deferred — `reconcileBalance()` bypass audit + fix arc
 
-PR-C1b audit (`docs/audits/2026-04-30-stripe-idempotency-audit.md`) surfaced 4 direct writes to `invoice.amount_paid` / `invoice.balance_due` / `invoice.status` outside the canonical `reconcileBalance()` path. These violate the inviolable invoice rule (CLAUDE.md "Invoice rules" #1).
+PR #19 audit (`docs/audits/2026-04-30-reconcilebalance-bypass-audit.md`) verified the 4 bypass sites at their post-PR #17 line numbers, surfaced 2 critical findings beyond the original PR-C1b notes, and locked a 3-stage PR shape via billing-guardian sign-off.
 
-Sites:
-- `api/src/modules/stripe/stripe.service.ts:194-199` (chargeInvoice synchronous path)
-- `api/src/modules/stripe/stripe.service.ts:251-255` (refundInvoice synchronous path)
-- `api/src/modules/stripe/stripe.service.ts:288-293` (webhook payment_intent.succeeded)
-- `api/src/modules/stripe/stripe.service.ts:344-349` (webhook checkout.session.completed)
+**Status:**
+- ✅ PR-C1c-pre — `reconcileBalance()` math fix at `invoice.service.ts:987` + `isFullyRefunded()` helper + tests (this PR)
+- ⏳ PR-C1c — Sites 1 + 2 sync bypass replacements (next; depends on PR-C1c-pre)
+- ⏳ PR-C2 — Sites 3 + 4 webhook bypass replacements + new `stripe_events` event-id dedup table
 
-Synchronous bypasses (chargeInvoice / refundInvoice) are pure violations not coupled to webhook concerns. Webhook bypasses couple to webhook event dedup (PR-C2 scope).
+**Locked blockers (from PR #19 audit):**
+- C-1: refund-subtraction is the intended `totalPaid` semantic
+- C-2: refund flow stamps `voided_at` when `refundedAmount === total` (matches `voidInvoice` precedent)
+- C-3: Site 4 payment-row dedup defers to PR-C2 alongside event-id dedup
 
-Required next step: dedicated billing-guardian-led audit before any implementation. That audit decides PR shape (PR-C1c standalone synchronous fix vs PR-C2 bundled with webhook dedup vs combined). Do NOT pre-commit to PR-C2 bundling.
+**Out of scope (separate hardening, deferred):**
+- PR-C1d — pessimistic invoice-row lock for `chargeInvoice` / `refundInvoice` controller routes
 
-Tracked: 2026-04-30 from PR-C1b-1 audit.
+PR-C1c-pre changes the canonical `totalPaid` semantic for ALL existing `reconcileBalance()` callers (`voidInvoice`, `applyPayment`, `recalculateTotals`, `createInternalInvoice`). Per audit, blast radius is bounded and corrective — historical incorrect totals heal on the next reconcile call.
 
 ### Deferred — `subscriptions.service.ts` idempotency + SSoT arc
 
