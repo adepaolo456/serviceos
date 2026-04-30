@@ -187,15 +187,33 @@ export class MarketplaceService {
 
       // Re-read inside the TX so the booking we mutate at the end of
       // the body is the manager-bound row, not a stale entity from the
-      // pre-TX read above.
+      // pre-TX read above. PR-B Surface 4 — pessimistic-write lock on
+      // the booking row serializes concurrent accept() calls. Two
+      // operators clicking Accept in parallel previously both saw
+      // status='pending' here and produced two Job rows referencing
+      // the same booking. The lock makes the second caller wait for
+      // the first to commit; on wake the post-lock status check at
+      // line 198 observes status='accepted' and throws the matching
+      // BadRequestException envelope from line 172. Tenant-scoped per
+      // multi-tenant safety standing rule.
       const booking = await bookingRepo.findOne({
         where: { id, tenant_id: tenantId },
+        lock: { mode: 'pessimistic_write' },
       });
       if (!booking) {
         // Defensive: a concurrent delete between pre-TX validation and
         // TX open is improbable but not impossible. 404 is the same
         // envelope the pre-check would have produced.
         throw new NotFoundException(`Booking ${id} not found`);
+      }
+      // PR-B Surface 4 — post-lock status re-check. The pre-TX check at
+      // line 171 only covers the no-contention path; the second
+      // concurrent accept() caller observes status='accepted' here
+      // after waking from the row lock and throws the same envelope.
+      if (booking.status !== 'pending') {
+        throw new BadRequestException(
+          `Booking is already "${booking.status}"`,
+        );
       }
 
       // Find-or-create the customer scoped to (tenant_id, email).

@@ -26,6 +26,7 @@ import { PermissionModule } from '../permissions/permission.module';
 import { AlertsModule } from '../alerts/alerts.module';
 import { StripeModule } from '../stripe/stripe.module';
 import { MapboxModule } from '../mapbox/mapbox.module';
+import { AssetsModule } from '../assets/assets.module';
 import { DispatchCreditEnforcementService } from '../dispatch/dispatch-credit-enforcement.service';
 import { JobsService } from './jobs.service';
 import { JobsController } from './jobs.controller';
@@ -49,6 +50,9 @@ import { JobsController } from './jobs.controller';
     // stripe_payment_intent_id present.
     StripeModule,
     MapboxModule,
+    // PR-B Surface 1 — JobsService injects AssetsService.lockAssetRow
+    // to pessimistically lock the asset row inside `_createInTx`.
+    AssetsModule,
   ],
   controllers: [JobsController],
   providers: [JobsService, DispatchCreditEnforcementService],

@@ -36,6 +36,7 @@ import { AlertService } from '../alerts/services/alert.service';
 import { CreditAuditService } from '../credit-audit/credit-audit.service';
 import { StripeService } from '../stripe/stripe.service';
 import { MapboxService } from '../mapbox/mapbox.service';
+import { AssetsService } from '../assets/assets.service';
 import {
   LifecycleContextResponse,
   LifecycleNode,
@@ -230,6 +231,10 @@ export class JobsService {
     // card payments with a stripe_payment_intent_id present.
     private stripeService: StripeService,
     private mapboxService: MapboxService,
+    // PR-B Surface 1 — `lockAssetRow` is invoked inside `_createInTx`
+    // to pessimistically lock the asset row before the job INSERT,
+    // serializing concurrent reservations on the same asset.
+    private assetsService: AssetsService,
   ) {}
 
   /**
@@ -395,6 +400,32 @@ export class JobsService {
         }
 
         totalPrice = basePrice - discountAmount;
+      }
+    }
+
+    // PR-B Surface 1 — pessimistic-write lock on the asset row before
+    // the Job INSERT. Two parallel _createInTx calls for the same
+    // asset_id previously raced through their pre-TX existence checks
+    // and both INSERTed jobs referencing the asset (no DB unique
+    // protected this). The lock serializes them: the second caller
+    // blocks until the first commits, then the post-lock conflict
+    // check sees the committed sibling job and throws a clean
+    // BadRequestException matching PR-A's envelope. Tenant-scoped per
+    // multi-tenant safety standing rule. Skipped when no assetId is
+    // supplied (paths that create jobs without an asset reservation,
+    // e.g. MarketplaceService.accept and PublicService.createBooking,
+    // bypass this entirely).
+    if (dto.assetId) {
+      await this.assetsService.lockAssetRow(manager, dto.assetId, tenantId);
+      const conflict = await this.findActiveAssignmentConflict(
+        tenantId,
+        dto.assetId,
+        '00000000-0000-0000-0000-000000000000',
+      );
+      if (conflict) {
+        throw new BadRequestException(
+          `Asset ${dto.assetId} is no longer available`,
+        );
       }
     }
 

@@ -1,6 +1,6 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { QueryFailedError, Repository, In, Not, DataSource } from 'typeorm';
+import { QueryFailedError, Repository, In, Not, DataSource, EntityManager } from 'typeorm';
 import { Asset } from './entities/asset.entity';
 import { Job } from '../jobs/entities/job.entity';
 import { RentalChain } from '../rental-chains/entities/rental-chain.entity';
@@ -56,6 +56,29 @@ export class AssetsService {
     // `JobsService.loadTenantTimezone` pattern.
     private dataSource: DataSource,
   ) {}
+
+  /**
+   * PR-B Surface 1 — pessimistic-write lock on an asset row. Acquires a
+   * row-level FOR UPDATE lock inside the caller-supplied TX manager so
+   * concurrent reservation flows serialize at the asset row instead of
+   * racing on a stale read. Caller owns the TX boundary; the helper
+   * never resolves a manager from `this`. tenant_id is required in the
+   * WHERE clause — multi-tenant safety standing rule.
+   */
+  async lockAssetRow(
+    manager: EntityManager,
+    assetId: string,
+    tenantId: string,
+  ): Promise<Asset> {
+    const asset = await manager.getRepository(Asset).findOne({
+      where: { id: assetId, tenant_id: tenantId },
+      lock: { mode: 'pessimistic_write' },
+    });
+    if (!asset) {
+      throw new NotFoundException('Asset not found');
+    }
+    return asset;
+  }
 
   /**
    * Phase B — tenant-local timezone resolver. Mirrors
