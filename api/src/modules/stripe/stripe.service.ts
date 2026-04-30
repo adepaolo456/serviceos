@@ -9,6 +9,7 @@ import { Payment } from '../billing/entities/payment.entity';
 import { Notification } from '../notifications/entities/notification.entity';
 import { SubscriptionPlan } from '../subscriptions/entities/subscription-plan.entity';
 import { buildStripeIdempotencyKey } from './idempotency.util';
+import { InvoiceService } from '../billing/services/invoice.service';
 
 @Injectable()
 export class StripeService {
@@ -23,6 +24,12 @@ export class StripeService {
     @InjectRepository(Notification) private notifRepo: Repository<Notification>,
     @InjectRepository(SubscriptionPlan) private planRepo: Repository<SubscriptionPlan>,
     private dataSource: DataSource,
+    // PR-C1c: invoiceService.reconcileBalance() is the canonical writer
+    // for invoice.amount_paid / balance_due / status / paid_at. Sites 1 + 2
+    // (chargeInvoice / refundInvoice sync paths) call it instead of writing
+    // invoice columns directly. Sites 3 + 4 (webhook handlers) remain
+    // bypassed pending PR-C2's stripe_events event-id dedup table.
+    private invoiceService: InvoiceService,
   ) {
     this.stripe = new Stripe(process.env.STRIPE_SECRET_KEY || 'sk_test_placeholder', { apiVersion: '2024-12-18.acacia' as any });
   }
@@ -246,16 +253,13 @@ export class StripeService {
         status: 'completed',
       }));
 
-      // Derive invoice state from payments
-      const allPayments = await this.paymentRepo.find({ where: { invoice_id: invoiceId, status: 'completed' } });
-      const totalPaid = allPayments.reduce((sum, p) => sum + Number(p.amount), 0);
-      const balanceDue = Math.max(Math.round((Number(invoice.total) - totalPaid) * 100) / 100, 0);
-      await this.invoiceRepo.update(invoiceId, {
-        status: balanceDue <= 0 ? 'paid' : 'partial',
-        amount_paid: Math.round(totalPaid * 100) / 100,
-        balance_due: balanceDue,
-        paid_at: balanceDue <= 0 ? new Date() : null,
-      });
+      // PR-C1c: redirect to canonical reconcileBalance() writer.
+      // The paymentRepo.save above records the new payment row;
+      // reconcileBalance reads all completed payments (including
+      // this one) and produces the correct amount_paid / balance_due
+      // / status / paid_at per the canonical contract. See
+      // docs/audits/2026-04-30-reconcilebalance-bypass-audit.md.
+      await this.invoiceService.reconcileBalance(invoiceId);
 
       await this.notifRepo.save(this.notifRepo.create({
         tenant_id: tenantId, job_id: invoice.job_id, channel: 'automation', type: 'payment_collected',
@@ -348,16 +352,22 @@ export class StripeService {
     payment.refunded_amount = Math.round((Number(payment.refunded_amount || 0) + refundedAmount) * 100) / 100;
     await this.paymentRepo.save(payment);
 
-    // Derive invoice state from payments (accounting for refunds)
-    const allPayments = await this.paymentRepo.find({ where: { invoice_id: invoiceId, status: 'completed' } });
-    const totalPaid = allPayments.reduce((sum, p) => sum + Number(p.amount) - Number(p.refunded_amount || 0), 0);
-    const balanceDue = Math.max(Math.round((Number(invoice.total) - totalPaid) * 100) / 100, 0);
-    const newStatus = totalPaid <= 0 ? 'voided' : balanceDue <= 0 ? 'paid' : 'partial';
-    await this.invoiceRepo.update(invoiceId, {
-      amount_paid: Math.round(totalPaid * 100) / 100,
-      balance_due: balanceDue,
-      status: newStatus,
-    });
+    // PR-C1c: stamp voided_at on full refund per C-2 (audit doc),
+    // then redirect to canonical reconcileBalance() writer. The
+    // payment.refunded_amount update at line ~348-349 above is what
+    // reconcileBalance() reads to compute net totalPaid (PR-C1c-pre
+    // math fix at invoice.service.ts:987). Stamping voided_at BEFORE
+    // reconcileBalance lets the canonical writer's voided_at-keyed
+    // branch produce 'voided' status; without the stamp,
+    // fully-refunded invoices would fall into 'open' status. See
+    // docs/audits/2026-04-30-reconcilebalance-bypass-audit.md
+    // Phase 1 Critical Finding #2. Partial refunds leave voided_at
+    // null and let reconcileBalance set status to 'partial' via its
+    // 0 < amount_paid < total branch.
+    if (await this.invoiceService.isFullyRefunded(invoiceId)) {
+      await this.invoiceRepo.update(invoiceId, { voided_at: new Date() });
+    }
+    await this.invoiceService.reconcileBalance(invoiceId);
 
     await this.notifRepo.save(this.notifRepo.create({
       tenant_id: tenantId, job_id: invoice.job_id, channel: 'automation', type: 'refund_processed',
