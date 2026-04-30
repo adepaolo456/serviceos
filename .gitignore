@@ -14,4 +14,9 @@ dist/
 .DS_Store
 .vercel
 .env*.local
-.claude/
+
+# Claude Code local config (commit subagents + hooks, ignore session state)
+.claude/sessions/
+.claude/cache/
+.claude/agent-memory/
+.claude/settings.local.json
