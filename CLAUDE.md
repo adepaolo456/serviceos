@@ -54,3 +54,8 @@ This file is loaded at every Claude Code session start. These rules are non-nego
 - Use Opus for planning, Sonnet for execution: `/model opus` → plan mode → approve → `/model sonnet` → execute.
 - Specialized review: invoke `@serviceos-qa-auditor`, `@serviceos-billing-guardian`, `@serviceos-lifecycle-auditor` after implementation.
 - NEVER auto-commit. NEVER auto-push.
+
+## Followups (infrastructure — small, when you have a quiet 10 minutes)
+
+- Install gh CLI (`brew install gh && gh auth login`) so Claude Code can open PRs directly via `gh pr create` instead of falling back to the browser. Avoids the manual title/body copy-paste step on PRs #10 and #11.
+- Add `gh pr create` step to PR-B-style implementation prompts once gh is installed — replaces the "open this URL in your browser" final step.
