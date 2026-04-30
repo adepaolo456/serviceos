@@ -35,6 +35,7 @@ import { PricingService } from '../pricing/pricing.service';
 import { AlertService } from '../alerts/services/alert.service';
 import { CreditAuditService } from '../credit-audit/credit-audit.service';
 import { StripeService } from '../stripe/stripe.service';
+import { buildStripeIdempotencyKey } from '../stripe/idempotency.util';
 import { MapboxService } from '../mapbox/mapbox.service';
 import { AssetsService } from '../assets/assets.service';
 import {
@@ -4844,11 +4845,24 @@ export class JobsService {
 
     for (const intent of refundIntents) {
       try {
+        // PR-C1b-1: Stripe idempotency. Arc J.1 §7.6 invariant — one
+        // Stripe refund per (job, payment) ever. If the deferred
+        // multi-refund-accumulation flow is ever shipped, this key
+        // shape MUST be updated first (e.g. add a refund-attempt
+        // discriminator) — otherwise legitimate subsequent refunds
+        // on the same (job, payment) will be silently deduped at Stripe.
+        const idempotencyKey = buildStripeIdempotencyKey([
+          'tenant-' + tenantId,
+          'refund',
+          'job-' + job.id,
+          'payment-' + intent.paymentId,
+        ]);
         const refund = await this.stripeService.createRefundForPaymentIntent(
           tenantId,
           intent.stripePaymentIntentId,
           intent.amount,
           { invoiceId: intent.invoiceId, jobId: job.id, tenantId },
+          idempotencyKey,
         );
 
         // Success path: payment status + audit row in one small tx.
