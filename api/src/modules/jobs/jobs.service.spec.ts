@@ -1615,11 +1615,15 @@ describe('JobsService.cancelJobWithFinancials — Arc J.1', () => {
     );
 
     // Stripe API called AFTER main-tx commit with the loaded PI.
+    // PR-C1b-1: signature gained a 5th idempotencyKey arg; matched
+    // generically here (J4's intent is the refund flow, not the key).
+    // Specific key value asserted in the PR-C1b describe block below.
     expect(h.stripeService.createRefundForPaymentIntent).toHaveBeenCalledWith(
       'tenant-1',
       'pi_card_4',
       750,
       expect.objectContaining({ invoiceId: 'inv-4' }),
+      expect.any(String),
     );
 
     const auditCalls = (h.creditAuditService.record as jest.Mock).mock.calls;
@@ -2522,6 +2526,119 @@ describe('JobsService.cancelJobWithFinancials — PR-C1a', () => {
       expect.stringContaining('autoCloseChainIfTerminal failed for job job-1'),
     );
     errSpy.mockRestore();
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────
+// PR-C1b-1 — Stripe outbound idempotency keys at the cancellation
+// refund call site (jobs.service.ts createRefundForPaymentIntent).
+//
+// Site 1 of 4 P0 sites covered by PR-C1b-1. Asserts the deterministic
+// idempotency key shape `tenant-{t}:refund:job-{j}:payment-{p}` is
+// passed to StripeService.createRefundForPaymentIntent as the 5th
+// argument. Per the audit, this key is derived purely from already-
+// persisted DB IDs and locks the Arc J.1 §7.6 invariant (one Stripe
+// refund per (job, payment) ever).
+// ──────────────────────────────────────────────────────────────────────
+describe('JobsService.cancelJobWithFinancials — PR-C1b-1 (Site 1 idempotency key)', () => {
+  const ORIGINAL_NODE_ENV = process.env.NODE_ENV;
+  const ORIGINAL_GIT_SHA = process.env.GIT_SHA;
+  const ORIGINAL_VERCEL_SHA = process.env.VERCEL_GIT_COMMIT_SHA;
+
+  beforeEach(() => {
+    // Deterministic env so the helper produces a fixed prefix.
+    process.env.NODE_ENV = 'test';
+    process.env.GIT_SHA = 'abcdef12';
+    delete process.env.VERCEL_GIT_COMMIT_SHA;
+  });
+
+  afterEach(() => {
+    if (ORIGINAL_NODE_ENV === undefined) {
+      delete process.env.NODE_ENV;
+    } else {
+      process.env.NODE_ENV = ORIGINAL_NODE_ENV;
+    }
+    if (ORIGINAL_GIT_SHA === undefined) {
+      delete process.env.GIT_SHA;
+    } else {
+      process.env.GIT_SHA = ORIGINAL_GIT_SHA;
+    }
+    if (ORIGINAL_VERCEL_SHA !== undefined) {
+      process.env.VERCEL_GIT_COMMIT_SHA = ORIGINAL_VERCEL_SHA;
+    }
+  });
+
+  it('PR-C1b-1. refund_paid path passes idempotencyKey "tenant-{t}:refund:job-{j}:payment-{p}" to createRefundForPaymentIntent', async () => {
+    // Reuses the J4 setup shape (refund_paid + stripe_payment_intent_id)
+    // since that is the only path that exercises the Stripe call.
+    const inv = {
+      id: 'inv-c1b',
+      tenant_id: 'tenant-1',
+      job_id: 'job-1',
+      customer_id: 'cust-1',
+      invoice_number: 1099,
+      status: 'paid',
+      total: 500,
+      amount_paid: 500,
+      balance_due: 0,
+    };
+    const h = await buildHarness({ status: 'confirmed' });
+    const jobFixture = {
+      id: 'job-1',
+      tenant_id: 'tenant-1',
+      status: 'confirmed',
+      job_number: 'J-1',
+      job_type: 'delivery',
+      customer_id: 'cust-1',
+      asset_id: 'asset-1',
+    };
+    h.jobsRepository.findOne.mockResolvedValue(jobFixture);
+    h.txJobFindOne.mockResolvedValue(jobFixture);
+    h.invoiceRepo.find.mockResolvedValue([inv as any]);
+    h.taskChainLinkRepo.findOne.mockResolvedValue(null);
+    h.txPaymentFindOne.mockResolvedValue({
+      id: 'pay-c1b',
+      tenant_id: 'tenant-1',
+      invoice_id: 'inv-c1b',
+      amount: 500,
+      payment_method: 'card',
+      stripe_payment_intent_id: 'pi_card_c1b',
+      refunded_amount: 0,
+    });
+    h.paymentRepo.findOne.mockResolvedValue({
+      id: 'pay-c1b',
+      tenant_id: 'tenant-1',
+      invoice_id: 'inv-c1b',
+      amount: 500,
+      payment_method: 'card',
+      stripe_payment_intent_id: 'pi_card_c1b',
+      refunded_amount: 0,
+    });
+    h.stripeService.createRefundForPaymentIntent.mockResolvedValue({
+      refundId: 're_test_c1b',
+      refundedAmount: 500,
+    });
+
+    await h.service.cancelJobWithFinancials(
+      'tenant-1',
+      'job-1',
+      {
+        cancellationReason: 'r',
+        invoiceDecisions: [{ invoice_id: 'inv-c1b', decision: 'refund_paid' }],
+      },
+      'u-owner',
+      'owner',
+      'Owner',
+    );
+
+    expect(h.stripeService.createRefundForPaymentIntent).toHaveBeenCalledTimes(1);
+    expect(h.stripeService.createRefundForPaymentIntent).toHaveBeenCalledWith(
+      'tenant-1',
+      'pi_card_c1b',
+      500,
+      expect.objectContaining({ invoiceId: 'inv-c1b' }),
+      'test-abcdef12-tenant-tenant-1:refund:job-job-1:payment-pay-c1b',
+    );
   });
 });
 

@@ -8,6 +8,7 @@ import { Invoice } from '../billing/entities/invoice.entity';
 import { Payment } from '../billing/entities/payment.entity';
 import { Notification } from '../notifications/entities/notification.entity';
 import { SubscriptionPlan } from '../subscriptions/entities/subscription-plan.entity';
+import { buildStripeIdempotencyKey } from './idempotency.util';
 
 @Injectable()
 export class StripeService {
@@ -50,19 +51,40 @@ export class StripeService {
     paymentIntentId: string,
     amount: number,
     metadata: Record<string, string>,
+    idempotencyKey?: string,
   ): Promise<{ refundId: string; refundedAmount: number }> {
     const tenant = await this.tenantRepo.findOne({ where: { id: tenantId } });
-    const refund = await this.stripe.refunds.create(
-      {
-        payment_intent: paymentIntentId,
-        amount: Math.round(amount * 100),
-        metadata,
-      },
-      tenant?.stripe_connect_id
+    const payload = {
+      payment_intent: paymentIntentId,
+      amount: Math.round(amount * 100),
+      metadata,
+    };
+    const requestOptions: Stripe.RequestOptions = {
+      ...(idempotencyKey ? { idempotencyKey } : {}),
+      ...(tenant?.stripe_connect_id
         ? { stripeAccount: tenant.stripe_connect_id }
-        : undefined,
-    );
-    return { refundId: refund.id, refundedAmount: refund.amount / 100 };
+        : {}),
+    };
+    try {
+      const refund = await this.stripe.refunds.create(payload, requestOptions);
+      return { refundId: refund.id, refundedAmount: refund.amount / 100 };
+    } catch (err: any) {
+      if (
+        err?.type === 'StripeIdempotencyError' ||
+        err?.code === 'idempotency_error'
+      ) {
+        console.error(
+          '[stripe-idempotency] Conflict on key reuse with different payload',
+          {
+            idempotencyKey,
+            method: 'refunds.create',
+            tenantId,
+            payloadKeys: Object.keys(payload),
+          },
+        );
+      }
+      throw err;
+    }
   }
 
   async onboardConnect(tenantId: string) {
@@ -163,7 +185,18 @@ export class StripeService {
 
       if (!paymentMethods.data.length) throw new BadRequestException('No card on file. Customer needs to add a payment method.');
 
-      const pi = await this.stripe.paymentIntents.create({
+      // PR-C1b-1: Stripe idempotency. Balance-keying distinguishes
+      // "retry the same charge" (Stripe replays cached response — safe
+      // dedup) from "balance changed, new charge attempt" (new key
+      // fires — correctly takes the new charge). Pure invoice-keyed
+      // shape would silently dedupe a legitimate retry-after-card-fix.
+      const idempotencyKey = buildStripeIdempotencyKey([
+        'tenant-' + tenantId,
+        'charge',
+        'invoice-' + invoiceId,
+        'balance-' + amount,
+      ]);
+      const piPayload: Stripe.PaymentIntentCreateParams = {
         amount,
         currency: 'usd',
         customer: stripeCustomerId,
@@ -175,7 +208,33 @@ export class StripeService {
           application_fee_amount: appFee,
           transfer_data: { destination: tenant.stripe_connect_id },
         } : {}),
-      }, tenant?.stripe_connect_id ? { stripeAccount: tenant.stripe_connect_id } : undefined);
+      };
+      const piOptions: Stripe.RequestOptions = {
+        idempotencyKey,
+        ...(tenant?.stripe_connect_id
+          ? { stripeAccount: tenant.stripe_connect_id }
+          : {}),
+      };
+      let pi: Stripe.PaymentIntent;
+      try {
+        pi = await this.stripe.paymentIntents.create(piPayload, piOptions);
+      } catch (innerErr: any) {
+        if (
+          innerErr?.type === 'StripeIdempotencyError' ||
+          innerErr?.code === 'idempotency_error'
+        ) {
+          console.error(
+            '[stripe-idempotency] Conflict on key reuse with different payload',
+            {
+              idempotencyKey,
+              method: 'paymentIntents.create',
+              tenantId,
+              payloadKeys: Object.keys(piPayload),
+            },
+          );
+        }
+        throw innerErr;
+      }
 
       // Create payment record first
       await this.paymentRepo.save(this.paymentRepo.create({
@@ -231,11 +290,57 @@ export class StripeService {
     const tenant = await this.tenantRepo.findOne({ where: { id: tenantId } });
     const refundAmount = amount ? Math.round(amount * 100) : undefined;
 
-    const refund = await this.stripe.refunds.create({
+    // PR-C1b-1: Stripe idempotency. Cumulative discriminator prevents
+    // silent dedup of legitimate identical-amount partial refunds.
+    // `prevRefundedCents` snapshot at call time + this refund's `cents`
+    // makes each subsequent partial refund a unique key.
+    const prevRefundedCents = Math.round(
+      Number(payment.refunded_amount || 0) * 100,
+    );
+    const refundCents =
+      refundAmount ??
+      Math.max(
+        Math.round(Number(invoice.total) * 100) - prevRefundedCents,
+        0,
+      );
+    const idempotencyKey = buildStripeIdempotencyKey([
+      'tenant-' + tenantId,
+      'refund',
+      'invoice-' + invoiceId,
+      'payment-' + payment.id,
+      'cumulative-' + prevRefundedCents + '-' + refundCents,
+    ]);
+    const refundPayload: Stripe.RefundCreateParams = {
       payment_intent: payment.stripe_payment_intent_id,
       ...(refundAmount ? { amount: refundAmount } : {}),
       metadata: { invoiceId, tenantId },
-    }, tenant?.stripe_connect_id ? { stripeAccount: tenant.stripe_connect_id } : undefined);
+    };
+    const refundOptions: Stripe.RequestOptions = {
+      idempotencyKey,
+      ...(tenant?.stripe_connect_id
+        ? { stripeAccount: tenant.stripe_connect_id }
+        : {}),
+    };
+    let refund: Stripe.Refund;
+    try {
+      refund = await this.stripe.refunds.create(refundPayload, refundOptions);
+    } catch (err: any) {
+      if (
+        err?.type === 'StripeIdempotencyError' ||
+        err?.code === 'idempotency_error'
+      ) {
+        console.error(
+          '[stripe-idempotency] Conflict on key reuse with different payload',
+          {
+            idempotencyKey,
+            method: 'refunds.create',
+            tenantId,
+            payloadKeys: Object.keys(refundPayload),
+          },
+        );
+      }
+      throw err;
+    }
 
     const refundedAmount = refund.amount / 100;
 
@@ -456,11 +561,47 @@ export class StripeService {
     }
 
     if (priceId) {
-      const subscription = await this.stripe.subscriptions.create({
+      // PR-C1b-1: Stripe idempotency. Coexists with the existing
+      // `if (!stripeCustomerId)` guard above — guard catches the
+      // "customer already exists" duplicate; this key catches the
+      // orthogonal "Stripe call succeeded but DB write missed" race
+      // (line 465 update happens AFTER the create). Subscriptions are
+      // platform-account (no Connect routing here), so the options
+      // object holds the idempotency key alone.
+      const subscribeIdempotencyKey = buildStripeIdempotencyKey([
+        'tenant-' + tenantId,
+        'subscribe',
+        'tier-' + tier,
+        'cycle-' + billingCycle,
+      ]);
+      const subscribePayload: Stripe.SubscriptionCreateParams = {
         customer: stripeCustomerId,
         items: [{ price: priceId, quantity }],
         metadata: { tenantId, tier },
-      });
+      };
+      let subscription: Stripe.Subscription;
+      try {
+        subscription = await this.stripe.subscriptions.create(
+          subscribePayload,
+          { idempotencyKey: subscribeIdempotencyKey },
+        );
+      } catch (err: any) {
+        if (
+          err?.type === 'StripeIdempotencyError' ||
+          err?.code === 'idempotency_error'
+        ) {
+          console.error(
+            '[stripe-idempotency] Conflict on key reuse with different payload',
+            {
+              idempotencyKey: subscribeIdempotencyKey,
+              method: 'subscriptions.create',
+              tenantId,
+              payloadKeys: Object.keys(subscribePayload),
+            },
+          );
+        }
+        throw err;
+      }
 
       await this.tenantRepo.update(tenantId, {
         subscription_tier: tier,

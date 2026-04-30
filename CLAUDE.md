@@ -75,3 +75,42 @@ Following PR #15 (autoCloseChainIfTerminal expansion audit, STRICT verdict), par
 PR #14's one-time backfill of 6 ghost chains to `'completed'` is documented as a backfill, NOT a precedent for new code behavior. New code must never write `'completed'` to a chain with cancellations until the arc lands.
 
 Reference: `docs/audits/2026-04-30-autoclose-expansion-audit.md`
+
+### Deferred — `reconcileBalance()` bypass audit + fix arc
+
+PR-C1b audit (`docs/audits/2026-04-30-stripe-idempotency-audit.md`) surfaced 4 direct writes to `invoice.amount_paid` / `invoice.balance_due` / `invoice.status` outside the canonical `reconcileBalance()` path. These violate the inviolable invoice rule (CLAUDE.md "Invoice rules" #1).
+
+Sites:
+- `api/src/modules/stripe/stripe.service.ts:194-199` (chargeInvoice synchronous path)
+- `api/src/modules/stripe/stripe.service.ts:251-255` (refundInvoice synchronous path)
+- `api/src/modules/stripe/stripe.service.ts:288-293` (webhook payment_intent.succeeded)
+- `api/src/modules/stripe/stripe.service.ts:344-349` (webhook checkout.session.completed)
+
+Synchronous bypasses (chargeInvoice / refundInvoice) are pure violations not coupled to webhook concerns. Webhook bypasses couple to webhook event dedup (PR-C2 scope).
+
+Required next step: dedicated billing-guardian-led audit before any implementation. That audit decides PR shape (PR-C1c standalone synchronous fix vs PR-C2 bundled with webhook dedup vs combined). Do NOT pre-commit to PR-C2 bundling.
+
+Tracked: 2026-04-30 from PR-C1b-1 audit.
+
+### Deferred — `subscriptions.service.ts` idempotency + SSoT arc
+
+Status: LIVE customer-facing billing code (verified via Phase 0a grep on 2026-04-30).
+
+4 Stripe writes need classification + idempotency:
+- `api/src/modules/subscriptions/subscriptions.service.ts:72` (`customers.create`)
+- `api/src/modules/subscriptions/subscriptions.service.ts:84` (`prices.create`)
+- `api/src/modules/subscriptions/subscriptions.service.ts:95` (`checkout.sessions.create`)
+- `api/src/modules/subscriptions/subscriptions.service.ts:121` (`billingPortal.sessions.create`)
+
+5 active HTTP routes:
+- `GET /billing/subscription`
+- `POST /billing/select-plan`
+- `POST /billing/create-checkout-session`
+- `GET /billing/portal`
+- `POST /billing/webhook`
+
+SSoT concern: `SubscriptionsService` (`/billing/*`) and `StripeService.subscribe` (`/stripe/*`) are parallel implementations of subscription flows. Decide which is canonical.
+
+Required next step: dedicated billing-guardian-led audit (PR-C1b-2 likely). Audit must (a) classify each site P0/P1/P2, (b) decide whether `SubscriptionsService` should be deprecated in favor of `StripeService.subscribe`, (c) propose key shapes per site only after classification, (d) propose webhook handling ownership at `/billing/webhook` (separate from the `/stripe/webhook` dedup that's PR-C2's scope).
+
+Tracked: 2026-04-30 from PR-C1b-1 Phase 0a verdict.
