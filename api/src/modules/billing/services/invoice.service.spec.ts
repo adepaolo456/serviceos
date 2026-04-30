@@ -368,3 +368,358 @@ describe('InvoiceService.findAll — Arc J.1f PR 2 (J.2.B jobId filter)', () => 
     });
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────
+// PR-C1c-pre — InvoiceService.reconcileBalance refund-accounting fix +
+// isFullyRefunded() helper.
+//
+// Closes Critical Finding #1 from PR #19 audit
+// (docs/audits/2026-04-30-reconcilebalance-bypass-audit.md):
+// reconcileBalance() at line 987 was buggy — totalPaid summed
+// p.amount without subtracting p.refunded_amount, so refunded
+// payments still counted as gross paid. PR-C1c-pre fixes the math
+// and adds isFullyRefunded() so callers (PR-C1c refundInvoice) can
+// stamp voided_at on full refund before invoking reconcileBalance().
+// ─────────────────────────────────────────────────────────────────────────
+
+interface ReconcileHarness {
+  service: InvoiceService;
+  invoiceRepo: {
+    findOne: jest.Mock;
+    findOneOrFail: jest.Mock;
+    update: jest.Mock;
+  };
+  paymentRepo: { find: jest.Mock };
+  creditMemoRepo: {
+    findOne: jest.Mock;
+    create: jest.Mock;
+    save: jest.Mock;
+    update: jest.Mock;
+  };
+}
+
+async function buildReconcileHarness(): Promise<ReconcileHarness> {
+  const reconcileStubRepo = () => ({
+    find: jest.fn().mockResolvedValue([]),
+    findOne: jest.fn(),
+    findOneOrFail: jest.fn(),
+    save: jest.fn().mockImplementation((x: unknown) => x),
+    create: jest.fn((x: unknown) => x),
+    update: jest.fn(),
+  });
+
+  const invoiceRepo = reconcileStubRepo();
+  const paymentRepo = reconcileStubRepo();
+  const creditMemoRepo = reconcileStubRepo();
+
+  const dataSource: any = {
+    query: jest.fn().mockResolvedValue([{ count: '0' }]),
+    transaction: jest.fn(),
+  };
+
+  const module: TestingModule = await Test.createTestingModule({
+    providers: [
+      InvoiceService,
+      { provide: getRepositoryToken(Invoice), useValue: invoiceRepo },
+      { provide: getRepositoryToken(InvoiceLineItem), useValue: reconcileStubRepo() },
+      { provide: getRepositoryToken(InvoiceRevision), useValue: reconcileStubRepo() },
+      { provide: getRepositoryToken(Payment), useValue: paymentRepo },
+      { provide: getRepositoryToken(CreditMemo), useValue: creditMemoRepo },
+      { provide: getRepositoryToken(JobCost), useValue: reconcileStubRepo() },
+      { provide: getRepositoryToken(Job), useValue: reconcileStubRepo() },
+      { provide: getRepositoryToken(Customer), useValue: reconcileStubRepo() },
+      { provide: getRepositoryToken(TaskChainLink), useValue: reconcileStubRepo() },
+      { provide: PriceResolutionService, useValue: { resolvePrice: jest.fn() } },
+      { provide: NotificationsService, useValue: { send: jest.fn() } },
+      { provide: DataSource, useValue: dataSource },
+    ],
+  }).compile();
+
+  // Silence the diagnostic console.log inside reconcileBalance.
+  jest.spyOn(console, 'log').mockImplementation(() => {});
+
+  return {
+    service: module.get(InvoiceService),
+    invoiceRepo: invoiceRepo as any,
+    paymentRepo: paymentRepo as any,
+    creditMemoRepo: creditMemoRepo as any,
+  };
+}
+
+describe('InvoiceService.reconcileBalance — PR-C1c-pre refund accounting', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  // ── 1: partial refund ────────────────────────────────────────────────
+  it('1. partial refund — $50 of $100 paid → amount_paid=50, balance_due=50, status=partial', async () => {
+    const h = await buildReconcileHarness();
+    h.paymentRepo.find.mockResolvedValue([
+      { id: 'pay-1', amount: '100', refunded_amount: '50', status: 'completed' },
+    ]);
+    h.invoiceRepo.findOneOrFail.mockResolvedValue({
+      id: 'inv-1',
+      tenant_id: 't-1',
+      customer_id: 'c-1',
+      total: '100',
+      voided_at: null,
+      paid_at: null,
+      invoice_number: 1,
+    });
+
+    await h.service.reconcileBalance('inv-1');
+
+    expect(h.invoiceRepo.update).toHaveBeenCalledWith(
+      'inv-1',
+      expect.objectContaining({
+        amount_paid: 50,
+        balance_due: 50,
+        status: 'partial',
+        paid_at: null,
+      }),
+    );
+  });
+
+  // ── 2: full refund without voided_at ─────────────────────────────────
+  it('2. full refund WITHOUT voided_at stamp — totalPaid=0 falls into open branch (caller must stamp voided_at first)', async () => {
+    const h = await buildReconcileHarness();
+    h.paymentRepo.find.mockResolvedValue([
+      { id: 'pay-1', amount: '100', refunded_amount: '100', status: 'completed' },
+    ]);
+    h.invoiceRepo.findOneOrFail.mockResolvedValue({
+      id: 'inv-2',
+      tenant_id: 't-1',
+      customer_id: 'c-1',
+      total: '100',
+      voided_at: null,
+      paid_at: null,
+      invoice_number: 2,
+    });
+
+    await h.service.reconcileBalance('inv-2');
+
+    // Documented C-2 gap — without voided_at, status falls to 'open'.
+    // Resolution: refund flow stamps voided_at before calling
+    // reconcileBalance (PR-C1c uses isFullyRefunded() for this).
+    expect(h.invoiceRepo.update).toHaveBeenCalledWith(
+      'inv-2',
+      expect.objectContaining({
+        amount_paid: 0,
+        balance_due: 100,
+        status: 'open',
+        paid_at: null,
+      }),
+    );
+  });
+
+  // ── 3: full refund WITH voided_at ────────────────────────────────────
+  it('3. full refund WITH voided_at stamped — status=voided', async () => {
+    const h = await buildReconcileHarness();
+    h.paymentRepo.find.mockResolvedValue([
+      { id: 'pay-1', amount: '100', refunded_amount: '100', status: 'completed' },
+    ]);
+    h.invoiceRepo.findOneOrFail.mockResolvedValue({
+      id: 'inv-3',
+      tenant_id: 't-1',
+      customer_id: 'c-1',
+      total: '100',
+      voided_at: new Date('2026-04-30T12:00:00Z'),
+      paid_at: null,
+      invoice_number: 3,
+    });
+
+    await h.service.reconcileBalance('inv-3');
+
+    expect(h.invoiceRepo.update).toHaveBeenCalledWith(
+      'inv-3',
+      expect.objectContaining({
+        amount_paid: 0,
+        balance_due: 100,
+        status: 'voided',
+      }),
+    );
+  });
+
+  // ── 4: multiple payments, one refunded ───────────────────────────────
+  it('4. multi-payment with refund — $60 paid + $40 paid + $30 refund on first → amount_paid=70, balance_due=30, status=partial', async () => {
+    const h = await buildReconcileHarness();
+    h.paymentRepo.find.mockResolvedValue([
+      { id: 'pay-1', amount: '60', refunded_amount: '30', status: 'completed' },
+      { id: 'pay-2', amount: '40', refunded_amount: '0', status: 'completed' },
+    ]);
+    h.invoiceRepo.findOneOrFail.mockResolvedValue({
+      id: 'inv-4',
+      tenant_id: 't-1',
+      customer_id: 'c-1',
+      total: '100',
+      voided_at: null,
+      paid_at: null,
+      invoice_number: 4,
+    });
+
+    await h.service.reconcileBalance('inv-4');
+
+    // 60 - 30 + 40 = 70
+    expect(h.invoiceRepo.update).toHaveBeenCalledWith(
+      'inv-4',
+      expect.objectContaining({
+        amount_paid: 70,
+        balance_due: 30,
+        status: 'partial',
+      }),
+    );
+  });
+
+  // ── 5: null refunded_amount handled as 0 ─────────────────────────────
+  it('5. null refunded_amount — treated as 0, no NaN propagation', async () => {
+    const h = await buildReconcileHarness();
+    h.paymentRepo.find.mockResolvedValue([
+      { id: 'pay-1', amount: '100', refunded_amount: null, status: 'completed' },
+    ]);
+    h.invoiceRepo.findOneOrFail.mockResolvedValue({
+      id: 'inv-5',
+      tenant_id: 't-1',
+      customer_id: 'c-1',
+      total: '100',
+      voided_at: null,
+      paid_at: null,
+      invoice_number: 5,
+    });
+
+    await h.service.reconcileBalance('inv-5');
+
+    // Null refunded_amount must NOT produce NaN amount_paid.
+    const updateCall = h.invoiceRepo.update.mock.calls[0][1];
+    expect(Number.isFinite(updateCall.amount_paid)).toBe(true);
+    expect(updateCall).toEqual(
+      expect.objectContaining({
+        amount_paid: 100,
+        balance_due: 0,
+        status: 'paid',
+      }),
+    );
+  });
+
+  // ── 6: overpayment after refund ──────────────────────────────────────
+  it('6. overpayment after refund — $150 paid on $100 invoice, $20 refund → totalPaid=130, balance_due=0, status=paid, $30 overpayment memo issued', async () => {
+    const h = await buildReconcileHarness();
+    h.paymentRepo.find.mockResolvedValue([
+      { id: 'pay-1', amount: '150', refunded_amount: '20', status: 'completed' },
+    ]);
+    h.invoiceRepo.findOneOrFail.mockResolvedValue({
+      id: 'inv-6',
+      tenant_id: 't-1',
+      customer_id: 'c-1',
+      total: '100',
+      voided_at: null,
+      paid_at: null,
+      invoice_number: 6,
+    });
+    // No existing overpayment memo → create path.
+    h.creditMemoRepo.findOne.mockResolvedValue(null);
+
+    await h.service.reconcileBalance('inv-6');
+
+    // totalPaid = 150 - 20 = 130; balanceDue clamped to 0; status='paid'
+    expect(h.invoiceRepo.update).toHaveBeenCalledWith(
+      'inv-6',
+      expect.objectContaining({
+        amount_paid: 130,
+        balance_due: 0,
+        status: 'paid',
+      }),
+    );
+    // Overpayment = 130 - 100 = 30; memo created (idempotent path).
+    expect(h.creditMemoRepo.save).toHaveBeenCalledTimes(1);
+    expect(h.creditMemoRepo.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        original_invoice_id: 'inv-6',
+        amount: 30,
+        reason: 'Overpayment on invoice #6',
+        status: 'issued',
+      }),
+    );
+  });
+});
+
+describe('InvoiceService.isFullyRefunded — PR-C1c-pre helper', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  // ── 1: no payments ───────────────────────────────────────────────────
+  it('1. no completed payments → false', async () => {
+    const h = await buildReconcileHarness();
+    h.paymentRepo.find.mockResolvedValue([]);
+    h.invoiceRepo.findOneOrFail.mockResolvedValue({ id: 'inv-1', total: '100' });
+
+    expect(await h.service.isFullyRefunded('inv-1')).toBe(false);
+  });
+
+  // ── 2: single payment, no refund ─────────────────────────────────────
+  it('2. single payment with refunded_amount=0 → false', async () => {
+    const h = await buildReconcileHarness();
+    h.paymentRepo.find.mockResolvedValue([
+      { id: 'pay-1', amount: '100', refunded_amount: '0', status: 'completed' },
+    ]);
+    h.invoiceRepo.findOneOrFail.mockResolvedValue({ id: 'inv-1', total: '100' });
+
+    expect(await h.service.isFullyRefunded('inv-1')).toBe(false);
+  });
+
+  // ── 3: single payment, partial refund ────────────────────────────────
+  it('3. single payment, partial refund ($50 of $100) → false', async () => {
+    const h = await buildReconcileHarness();
+    h.paymentRepo.find.mockResolvedValue([
+      { id: 'pay-1', amount: '100', refunded_amount: '50', status: 'completed' },
+    ]);
+    h.invoiceRepo.findOneOrFail.mockResolvedValue({ id: 'inv-1', total: '100' });
+
+    expect(await h.service.isFullyRefunded('inv-1')).toBe(false);
+  });
+
+  // ── 4: single payment, full refund ───────────────────────────────────
+  it('4. single payment, full refund ($100 of $100) → true', async () => {
+    const h = await buildReconcileHarness();
+    h.paymentRepo.find.mockResolvedValue([
+      { id: 'pay-1', amount: '100', refunded_amount: '100', status: 'completed' },
+    ]);
+    h.invoiceRepo.findOneOrFail.mockResolvedValue({ id: 'inv-1', total: '100' });
+
+    expect(await h.service.isFullyRefunded('inv-1')).toBe(true);
+  });
+
+  // ── 5: multiple payments, sum of refunds equals total ────────────────
+  it('5. multiple payments, sum of refunds equals total ($60 + $40 paid; $30 + $70 refunded) → true', async () => {
+    const h = await buildReconcileHarness();
+    h.paymentRepo.find.mockResolvedValue([
+      { id: 'pay-1', amount: '60', refunded_amount: '30', status: 'completed' },
+      { id: 'pay-2', amount: '40', refunded_amount: '70', status: 'completed' },
+    ]);
+    h.invoiceRepo.findOneOrFail.mockResolvedValue({ id: 'inv-1', total: '100' });
+
+    expect(await h.service.isFullyRefunded('inv-1')).toBe(true);
+  });
+
+  // ── 6: refunds exceed total (overpayment refund) ─────────────────────
+  it('6. multiple payments, sum of refunds exceeds total ($150 paid, $150 refunded on $100 invoice) → true', async () => {
+    const h = await buildReconcileHarness();
+    h.paymentRepo.find.mockResolvedValue([
+      { id: 'pay-1', amount: '150', refunded_amount: '150', status: 'completed' },
+    ]);
+    h.invoiceRepo.findOneOrFail.mockResolvedValue({ id: 'inv-1', total: '100' });
+
+    expect(await h.service.isFullyRefunded('inv-1')).toBe(true);
+  });
+
+  // ── 7: cents precision ───────────────────────────────────────────────
+  it('7. cents precision — total=99.99, refunded=99.99 → true (no floating-point drift)', async () => {
+    const h = await buildReconcileHarness();
+    h.paymentRepo.find.mockResolvedValue([
+      { id: 'pay-1', amount: '99.99', refunded_amount: '99.99', status: 'completed' },
+    ]);
+    h.invoiceRepo.findOneOrFail.mockResolvedValue({ id: 'inv-1', total: '99.99' });
+
+    expect(await h.service.isFullyRefunded('inv-1')).toBe(true);
+  });
+});
