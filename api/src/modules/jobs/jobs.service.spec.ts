@@ -116,6 +116,11 @@ interface Harness {
   // partial) AFTER the save, to bypass TypeORM's relation-FK reconciliation.
   // Distinct mock so tests can assert the update call directly.
   txJobUpdate: jest.Mock;
+  // PR-C1a — trx-bound findOne spy for the cancellation orchestrator's
+  // pessimistic lockJobRow re-read. Default null (no behavior change for
+  // unrelated trx-Job paths); buildCancelHarness sets a happy-path job
+  // so existing cancelJobWithFinancials tests pass through the lock guard.
+  txJobFindOne: jest.Mock;
   // Arc J.1 — trx-bound spies for the cancellation orchestrator. The
   // transaction mock routes Invoice / CreditMemo / Payment /
   // CreditAuditEvent repository.getRepository() calls to these spies so
@@ -241,6 +246,7 @@ async function buildHarness(jobOverrides: Partial<Job> = {}): Promise<Harness> {
   const transactionCommit = jest.fn();
   const txJobSave = jest.fn((x: any) => Promise.resolve(x));
   const txJobUpdate = jest.fn().mockResolvedValue({ affected: 1, raw: [], generatedMaps: [] });
+  const txJobFindOne = jest.fn().mockResolvedValue(null);
   const txNotifCreate = jest.fn((x: any) => x);
   const txNotifSave = jest.fn().mockResolvedValue(undefined);
   // Arc J.1 — trx-bound spies for cancellation orchestrator paths.
@@ -318,7 +324,7 @@ async function buildHarness(jobOverrides: Partial<Job> = {}): Promise<Harness> {
             return txJobSave(x);
           }),
           update: txJobUpdate,
-          findOne: jest.fn().mockResolvedValue(null),
+          findOne: txJobFindOne,
           delete: jest.fn().mockResolvedValue({ affected: 1, raw: [] }),
           create: jest.fn((x: any) => x),
         };
@@ -490,6 +496,7 @@ async function buildHarness(jobOverrides: Partial<Job> = {}): Promise<Harness> {
     transactionCommit,
     txJobSave,
     txJobUpdate,
+    txJobFindOne,
     txNotifCreate,
     txNotifSave,
     txInvoiceUpdate,
@@ -1312,7 +1319,7 @@ describe('JobsService.cancelJobWithFinancials — Arc J.1', () => {
     // Tenant-scoped job load inside the orchestrator goes through
     // jobsRepository.findOne. The pre-existing harness mock returns
     // null; replace per test.
-    h.jobsRepository.findOne.mockResolvedValue({
+    const jobFixture = {
       id: 'job-1',
       tenant_id: 'tenant-1',
       status: 'confirmed',
@@ -1321,7 +1328,13 @@ describe('JobsService.cancelJobWithFinancials — Arc J.1', () => {
       customer_id: 'cust-1',
       asset_id: 'asset-1',
       ...opts.job,
-    });
+    };
+    h.jobsRepository.findOne.mockResolvedValue(jobFixture);
+    // PR-C1a — inside-TX lockJobRow re-reads the job through
+    // manager.getRepository(Job).findOne. Default to the same fixture
+    // so existing cancelJobWithFinancials tests pass the post-lock
+    // status guard. PR-C1a-specific tests override this per-case.
+    h.txJobFindOne.mockResolvedValue(jobFixture);
 
     // Direct invoices via job_id.
     h.invoiceRepo.find.mockResolvedValue(opts.linkedInvoices ?? []);
@@ -2354,6 +2367,161 @@ describe('JobsService.cancelJobWithFinancials — Arc J.1', () => {
       expect.objectContaining({ assigned_driver_id: null }),
     );
     expect(h.transactionCommit).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────
+// PR-C1a — cancellation lock + autoCloseChainIfTerminal helper call
+//
+// Closes two items from the PR-C audit (PR #13) and the
+// autoCloseChainIfTerminal expansion audit (PR #15, STRICT verdict):
+//
+//  1. Surface 2 cancellation race — pessimistic SELECT FOR UPDATE on the
+//     job row inside the cancelJobWithFinancials TX, with post-lock
+//     status guard. Closes TOCTOU between the pre-TX status read and
+//     the inside-TX writes. Mirrors AssetsService.lockAssetRow (PR-B
+//     Surface 1) pattern.
+//
+//  2. LC-Q2 ghost-chain bug — cancelJobWithFinancials now invokes
+//     autoCloseChainIfTerminal post-TX-commit (non-fatal wrap). All-
+//     cancelled chains close to status='cancelled' automatically.
+//     Helper itself unchanged. Partial-completion chains intentionally
+//     stay 'active' (deferred lifecycle-semantics arc).
+// ──────────────────────────────────────────────────────────────────────
+describe('JobsService.cancelJobWithFinancials — PR-C1a', () => {
+  // Reuse buildCancelHarness pattern from Arc J.1 — same harness
+  // factory, same job/invoice mocking. PR-C1a tests differ only in
+  // what the inside-TX lockJobRow re-read returns (txJobFindOne) and
+  // whether autoCloseChainIfTerminal's stub is asserted.
+  async function buildCancelHarness(opts: {
+    job?: Partial<Job>;
+    linkedInvoices?: Array<Partial<Invoice> & { id: string }>;
+    payment?: any;
+    lockedJobOverride?: Partial<Job> | null;
+  } = {}) {
+    const h = await buildHarness({
+      status: 'confirmed',
+      ...opts.job,
+    });
+    const jobFixture = {
+      id: 'job-1',
+      tenant_id: 'tenant-1',
+      status: 'confirmed',
+      job_number: 'J-1',
+      job_type: 'delivery',
+      customer_id: 'cust-1',
+      asset_id: 'asset-1',
+      ...opts.job,
+    };
+    h.jobsRepository.findOne.mockResolvedValue(jobFixture);
+    if (opts.lockedJobOverride === null) {
+      // Lock helper sees job vanished post-TX-open — throws NotFound.
+      h.txJobFindOne.mockResolvedValue(null);
+    } else if (opts.lockedJobOverride) {
+      // Race: another caller cancelled/completed between pre-TX read
+      // and lock acquisition. Lock guard must throw BadRequestException.
+      h.txJobFindOne.mockResolvedValue({
+        ...jobFixture,
+        ...opts.lockedJobOverride,
+      });
+    } else {
+      h.txJobFindOne.mockResolvedValue(jobFixture);
+    }
+    h.invoiceRepo.find.mockResolvedValue(opts.linkedInvoices ?? []);
+    h.taskChainLinkRepo.findOne.mockResolvedValue(null);
+    if (opts.payment) {
+      h.txPaymentFindOne.mockResolvedValue(opts.payment);
+      h.paymentRepo.findOne.mockResolvedValue(opts.payment);
+    }
+    return h;
+  }
+
+  // ── PR-C1a-1: post-lock status guard rejects concurrent cancel race ──
+  it('PR-C1a-1. concurrent cancel race — post-lock status="cancelled" throws invalid_state and skips financial writes', async () => {
+    // Zero linked invoices keeps us on the cancellation_no_financials
+    // path so the only thing standing between TX-open and the writes is
+    // the lock guard. Pre-TX status check (jobsRepository.findOne) sees
+    // 'confirmed' and passes; the race surfaces only inside the TX.
+    const h = await buildCancelHarness({
+      lockedJobOverride: { status: 'cancelled' },
+      linkedInvoices: [],
+    });
+
+    // Pre-TX status check passes (jobsRepository.findOne returns
+    // 'confirmed'); the race is closed only by the inside-TX lock.
+    await expect(
+      h.service.cancelJobWithFinancials(
+        'tenant-1',
+        'job-1',
+        { cancellationReason: 'r', invoiceDecisions: [] },
+        'u-owner',
+        'owner',
+        'Owner',
+      ),
+    ).rejects.toThrow(/invalid_state: job J-1 is already cancelled/);
+
+    // Lock guard fired BEFORE any financial or job-cancellation writes.
+    expect(h.txJobSave).not.toHaveBeenCalled();
+    expect(h.txInvoiceUpdate).not.toHaveBeenCalled();
+    expect(h.txCreditMemoSave).not.toHaveBeenCalled();
+    expect(h.txPaymentUpdate).not.toHaveBeenCalled();
+    expect(h.creditAuditService.record).not.toHaveBeenCalled();
+    // Lock helper itself was invoked.
+    expect(h.txJobFindOne).toHaveBeenCalledTimes(1);
+  });
+
+  // ── PR-C1a-2: post-TX autoCloseChainIfTerminal call wires through ──
+  it('PR-C1a-2. successful cancellation calls autoCloseChainIfTerminal post-TX with (tenantId, jobId)', async () => {
+    const h = await buildCancelHarness({ linkedInvoices: [] });
+
+    await h.service.cancelJobWithFinancials(
+      'tenant-1',
+      'job-1',
+      { cancellationReason: 'r', invoiceDecisions: [] },
+      'u-owner',
+      'owner',
+      'Owner',
+    );
+
+    // Job was cancelled (lock guard passed, TX committed).
+    expect(h.txJobSave).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'cancelled' }),
+    );
+    // PR-C1a contract — autoCloseChainIfTerminal called exactly once with
+    // the function's tenantId + jobId. Stub from harness line 470 is the
+    // assertion target (we assert the call shape, not the helper's body
+    // — the helper's behavior is independently exercised by changeStatus
+    // tests + production).
+    expect(h.autoCloseSpy).toHaveBeenCalledTimes(1);
+    expect(h.autoCloseSpy).toHaveBeenCalledWith('tenant-1', 'job-1');
+  });
+
+  // ── PR-C1a-3: chain-close failure logs but does not throw ──
+  it('PR-C1a-3. autoCloseChainIfTerminal failure is logged and swallowed (cancellation result still returned)', async () => {
+    const h = await buildCancelHarness({ linkedInvoices: [] });
+    // Override the global stub to throw — simulates a transient DB
+    // hiccup in the post-TX chain-close. Cancellation result must
+    // still be returned to the caller; financial state is committed.
+    h.autoCloseSpy.mockRejectedValueOnce(new Error('chain-close DB hiccup'));
+    const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    const result = await h.service.cancelJobWithFinancials(
+      'tenant-1',
+      'job-1',
+      { cancellationReason: 'r', invoiceDecisions: [] },
+      'u-owner',
+      'owner',
+      'Owner',
+    );
+
+    expect(result).toEqual(
+      expect.objectContaining({ success: true, jobId: 'job-1' }),
+    );
+    expect(h.autoCloseSpy).toHaveBeenCalledTimes(1);
+    expect(errSpy).toHaveBeenCalledWith(
+      expect.stringContaining('autoCloseChainIfTerminal failed for job job-1'),
+    );
+    errSpy.mockRestore();
   });
 });
 

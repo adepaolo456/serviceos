@@ -59,3 +59,19 @@ This file is loaded at every Claude Code session start. These rules are non-nego
 
 - Install gh CLI (`brew install gh && gh auth login`) so Claude Code can open PRs directly via `gh pr create` instead of falling back to the browser. Avoids the manual title/body copy-paste step on PRs #10 and #11.
 - Add `gh pr create` step to PR-B-style implementation prompts once gh is installed — replaces the "open this URL in your browser" final step.
+
+### Lifecycle-semantics arc — partial-completion enum
+
+Following PR #15 (autoCloseChainIfTerminal expansion audit, STRICT verdict), partial-completion rental chains (delivery completed + pickup cancelled) intentionally remain `status='active'` until a future arc lands a `'partially_completed'` enum value and updates these consumers:
+
+- `api/src/modules/reporting/reporting.service.ts:1314,1490` — completed_rentals KPI + average_rental_duration denominator + per-period trend buckets
+- `web/src/app/(dashboard)/customers/[id]/page.tsx:661-662` — chain-status label short-circuit
+- `web/src/app/(dashboard)/jobs/page.tsx:586-588` — same short-circuit pattern
+- `web/src/app/(dashboard)/rentals/[id]/page.tsx:392` — STATUS_LABELS map
+- `web/src/components/rental-chain-timeline.tsx:75` — raw chain.status render
+- `api/src/modules/assets/assets.service.ts:368` — retirement guard re-audit
+- DB enum migration via Supabase `ALTER TYPE` BEFORE API deploy (TypeORM `synchronize: true` in prod requires manual ALTER first)
+
+PR #14's one-time backfill of 6 ghost chains to `'completed'` is documented as a backfill, NOT a precedent for new code behavior. New code must never write `'completed'` to a chain with cancellations until the arc lands.
+
+Reference: `docs/audits/2026-04-30-autoclose-expansion-audit.md`

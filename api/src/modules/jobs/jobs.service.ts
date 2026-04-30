@@ -2118,6 +2118,30 @@ export class JobsService {
   }
 
   /**
+   * PR-C1a — pessimistic-write lock on a job row. Acquires FOR UPDATE
+   * inside the caller-supplied TX manager so concurrent status-mutation
+   * flows (cancel, complete, etc.) serialize at the row instead of
+   * racing on a stale read. Caller owns the TX boundary; the helper
+   * never resolves a manager from `this`. tenant_id required in the
+   * WHERE clause — multi-tenant safety standing rule. Mirrors
+   * AssetsService.lockAssetRow (PR-B Surface 1).
+   */
+  private async lockJobRow(
+    manager: EntityManager,
+    jobId: string,
+    tenantId: string,
+  ): Promise<Job> {
+    const locked = await manager.getRepository(Job).findOne({
+      where: { id: jobId, tenant_id: tenantId },
+      lock: { mode: 'pessimistic_write' },
+    });
+    if (!locked) {
+      throw new NotFoundException('Job not found');
+    }
+    return locked;
+  }
+
+  /**
    * Cancellation Orchestrator Phase 1 — read-only preview of the
    * lifecycle + billing fallout of cancelling the given job.
    * Returns chain siblings (tenant-scoped via jobs.tenant_id) and
@@ -4701,6 +4725,19 @@ export class JobsService {
     await this.dataSource.transaction(async (manager) => {
       const txJobRepo = manager.getRepository(Job);
 
+      // PR-C1a — pessimistic lock + post-lock status guard. Closes the
+      // TOCTOU between the pre-TX status read above and the inside-TX
+      // writes below. Concurrent cancellation callers serialize on the
+      // job row; the second caller fails this guard and throws before
+      // reaching financial writes or Stripe refunds. Mirrors
+      // AssetsService.lockAssetRow (PR-B Surface 1) pattern.
+      const lockedJob = await this.lockJobRow(manager, jobId, tenantId);
+      if (['cancelled', 'completed'].includes(lockedJob.status)) {
+        throw new BadRequestException(
+          `invalid_state: job ${lockedJob.job_number} is already ${lockedJob.status}`,
+        );
+      }
+
       // 1. Cancel the job itself.
       job.status = 'cancelled';
       job.cancelled_at = new Date();
@@ -4895,6 +4932,19 @@ export class JobsService {
           error: (stripeErr as Error).message,
         });
       }
+    }
+
+    // PR-C1a — Auto-close chain if all linked jobs are now terminal.
+    // Mirrors changeStatus post-commit pattern. Non-fatal: failure logs
+    // but does not throw — the job and all financial state are already
+    // committed; surfacing a chain-close error here would hide the
+    // successful cancellation result from the caller.
+    try {
+      await this.autoCloseChainIfTerminal(tenantId, jobId);
+    } catch (chainErr) {
+      console.error(
+        `[cancelJobWithFinancials] autoCloseChainIfTerminal failed for job ${jobId}: ${(chainErr as Error).message}`,
+      );
     }
 
     return {
