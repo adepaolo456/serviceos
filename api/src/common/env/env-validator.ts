@@ -139,7 +139,7 @@ export function validateEnv(env: NodeJS.ProcessEnv = process.env): void {
     (r) => r.classification === 'critical',
   ).length;
   // eslint-disable-next-line no-console
-  console.error(
+  console.log(
     `[EnvValidator] OK env=${envName} checked=${checked} critical_pass=${criticalTotal} important_pass=${importantTotal - warnings.length} important_warn=${warnings.length}`,
   );
 }

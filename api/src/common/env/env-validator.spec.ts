@@ -21,6 +21,7 @@ const PROD_BASE: NodeJS.ProcessEnv = {
 describe('validateEnv', () => {
   let exitSpy: jest.SpyInstance;
   let consoleSpy: jest.SpyInstance;
+  let consoleLogSpy: jest.SpyInstance;
 
   beforeEach(() => {
     exitSpy = jest
@@ -29,15 +30,20 @@ describe('validateEnv', () => {
         throw new Error(`exit:${code}`);
       }) as never);
     consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    consoleLogSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
   });
 
   afterEach(() => {
     exitSpy.mockRestore();
     consoleSpy.mockRestore();
+    consoleLogSpy.mockRestore();
   });
 
   function loggedLines(): string[] {
-    return consoleSpy.mock.calls.map((args) => String(args[0]));
+    return [
+      ...consoleSpy.mock.calls.map((args) => String(args[0])),
+      ...consoleLogSpy.mock.calls.map((args) => String(args[0])),
+    ];
   }
 
   it('passes silently in production when all Critical vars are valid', () => {
