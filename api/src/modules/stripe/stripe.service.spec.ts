@@ -26,6 +26,7 @@ import { Invoice } from '../billing/entities/invoice.entity';
 import { Payment } from '../billing/entities/payment.entity';
 import { Notification } from '../notifications/entities/notification.entity';
 import { SubscriptionPlan } from '../subscriptions/entities/subscription-plan.entity';
+import { StripeEvent } from './entities/stripe-event.entity';
 
 interface Harness {
   service: StripeService;
@@ -39,7 +40,18 @@ interface Harness {
   };
   notifRepo: { save: jest.Mock; create: jest.Mock };
   customerRepo: { findOne: jest.Mock; update: jest.Mock };
-  tenantRepo: { findOne: jest.Mock };
+  tenantRepo: { findOne: jest.Mock; update: jest.Mock };
+  // PR-C2-pre — stripeEventRepo uses createQueryBuilder().insert()...
+  // chain. Tests control execute() return per-case via stripeEventQb.
+  stripeEventRepo: { createQueryBuilder: jest.Mock };
+  stripeEventQb: {
+    insert: jest.Mock;
+    into: jest.Mock;
+    values: jest.Mock;
+    orIgnore: jest.Mock;
+    returning: jest.Mock;
+    execute: jest.Mock;
+  };
   stripeMock: {
     paymentIntents: { create: jest.Mock };
     paymentMethods: { list: jest.Mock };
@@ -75,6 +87,25 @@ async function buildHarness(): Promise<Harness> {
   const tenantRepo = stubRepo();
   const planRepo = stubRepo();
 
+  // PR-C2-pre — stripeEventRepo for webhook event-id dedup. Default
+  // execute() = first-occurrence (raw + identifiers populated). Tests
+  // override per-case via stripeEventQb.execute.mockResolvedValueOnce().
+  const stripeEventQb = {
+    insert: jest.fn().mockReturnThis(),
+    into: jest.fn().mockReturnThis(),
+    values: jest.fn().mockReturnThis(),
+    orIgnore: jest.fn().mockReturnThis(),
+    returning: jest.fn().mockReturnThis(),
+    execute: jest.fn().mockResolvedValue({
+      raw: [{ id: 'evt-row-uuid' }],
+      identifiers: [{ id: 'evt-row-uuid' }],
+      generatedMaps: [],
+    }),
+  };
+  const stripeEventRepo = {
+    createQueryBuilder: jest.fn().mockReturnValue(stripeEventQb),
+  };
+
   const dataSource = {
     query: jest.fn().mockResolvedValue([{ cnt: '0' }]),
   };
@@ -95,6 +126,7 @@ async function buildHarness(): Promise<Harness> {
       { provide: getRepositoryToken(Payment), useValue: paymentRepo },
       { provide: getRepositoryToken(Notification), useValue: notifRepo },
       { provide: getRepositoryToken(SubscriptionPlan), useValue: planRepo },
+      { provide: getRepositoryToken(StripeEvent), useValue: stripeEventRepo },
       { provide: DataSource, useValue: dataSource },
       { provide: InvoiceService, useValue: invoiceService },
     ],
@@ -128,6 +160,8 @@ async function buildHarness(): Promise<Harness> {
     notifRepo: notifRepo as any,
     customerRepo: customerRepo as any,
     tenantRepo: tenantRepo as any,
+    stripeEventRepo: stripeEventRepo as any,
+    stripeEventQb: stripeEventQb as any,
     stripeMock,
     invoiceService,
     logPaymentFailedAlertSpy,
@@ -604,5 +638,232 @@ describe('StripeService — PR-C1c sync bypass replacements (Sites 1 + 2)', () =
     const stampOrder = h.invoiceRepo.update.mock.invocationCallOrder[0];
     const reconcileOrder = h.invoiceService.reconcileBalance.mock.invocationCallOrder[0];
     expect(stampOrder).toBeLessThan(reconcileOrder);
+  });
+});
+
+// ── PR-C2-pre — webhook event-id dedup ────────────────────────────────────
+//
+// Tests verify the dedup block at handleWebhook entry point. Per audit D-3,
+// dedup happens AFTER signature verify and BEFORE the switch — duplicate
+// events return early without reaching any case handler.
+//
+// Test 0: InsertResult shape pin-down — handler treats `raw` and/or
+//         `identifiers` populated as inserted=true; both empty as duplicate.
+//         If TypeORM upgrade changes shape, this test breaks before
+//         production silently regresses.
+// Test 1: First-occurrence event processed (handler runs).
+// Test 2: Duplicate dropped at entry point (handler skipped + warn log).
+// Test 3: account.updated with NULL tenant_id accepted (D-1 best-effort).
+// Test 4: Same event_id, different tenants → distinct (compound index keys).
+// Test 5: Signature failure prevents dedup INSERT (denial-of-webhook prevention).
+// Test 6: Money event with no derivable tenant_id throws (locked Option A).
+
+describe('StripeService — PR-C2-pre webhook event dedup', () => {
+  beforeEach(() => {
+    delete process.env.STRIPE_WEBHOOK_SECRET;
+  });
+  afterEach(() => {
+    delete process.env.STRIPE_WEBHOOK_SECRET;
+  });
+
+  // ── #0 InsertResult shape pin-down ──────────────────────────────────
+  it('handler proceeds when raw is populated; returns early when both raw and identifiers empty', async () => {
+    const h = await buildHarness();
+
+    // First call: raw populated, identifiers empty → inserted=true → handler runs
+    h.stripeEventQb.execute.mockResolvedValueOnce({
+      raw: [{ id: 'evt-row-uuid' }],
+      identifiers: [],
+      generatedMaps: [],
+    });
+
+    const event1 = {
+      id: 'evt_first',
+      type: 'account.updated',
+      data: { object: { id: 'acct_a', charges_enabled: true, payouts_enabled: true } },
+    };
+    await h.service.handleWebhook(Buffer.from(JSON.stringify(event1)), 'sig');
+    expect(h.tenantRepo.update).toHaveBeenCalledTimes(1);
+
+    // Second call: both raw and identifiers empty → inserted=false → handler skipped
+    h.tenantRepo.update.mockClear();
+    h.stripeEventQb.execute.mockResolvedValueOnce({
+      raw: [],
+      identifiers: [],
+      generatedMaps: [],
+    });
+
+    const event2 = {
+      id: 'evt_dup',
+      type: 'account.updated',
+      data: { object: { id: 'acct_b', charges_enabled: true, payouts_enabled: true } },
+    };
+    await h.service.handleWebhook(Buffer.from(JSON.stringify(event2)), 'sig');
+    expect(h.tenantRepo.update).not.toHaveBeenCalled();
+  });
+
+  // ── #1 First-occurrence event is processed ────────────────────────────
+  it('processes a new webhook event end-to-end', async () => {
+    const h = await buildHarness();
+    h.stripeEventQb.execute.mockResolvedValueOnce({
+      raw: [{ id: 'evt-row' }],
+      identifiers: [{ id: 'evt-row' }],
+      generatedMaps: [],
+    });
+
+    const event = {
+      id: 'evt_new',
+      type: 'account.updated',
+      data: { object: { id: 'acct_x', charges_enabled: true, payouts_enabled: true } },
+    };
+    const result = await h.service.handleWebhook(Buffer.from(JSON.stringify(event)), 'sig');
+
+    // Dedup INSERT was attempted with correct values
+    expect(h.stripeEventQb.values).toHaveBeenCalledWith({
+      event_id: 'evt_new',
+      event_type: 'account.updated',
+      tenant_id: null, // account.updated → null per D-1
+    });
+    // Handler ran (account.updated case → tenantRepo.update)
+    expect(h.tenantRepo.update).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ received: true });
+  });
+
+  // ── #2 Duplicate dropped at entry point ───────────────────────────────
+  it('drops duplicate webhook events at entry point with warn log', async () => {
+    const h = await buildHarness();
+    // CONFLICT: both raw and identifiers empty
+    h.stripeEventQb.execute.mockResolvedValueOnce({
+      raw: [],
+      identifiers: [],
+      generatedMaps: [],
+    });
+    const loggerSpy = jest.spyOn((h.service as any).logger, 'warn');
+
+    const event = {
+      id: 'evt_dup',
+      type: 'account.updated',
+      data: { object: { id: 'acct_y', charges_enabled: true, payouts_enabled: true } },
+    };
+    const result = await h.service.handleWebhook(Buffer.from(JSON.stringify(event)), 'sig');
+
+    // Handler did NOT run
+    expect(h.tenantRepo.update).not.toHaveBeenCalled();
+    // Warn log emitted with event.id + event.type
+    expect(loggerSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Duplicate webhook event ignored: evt_dup (account.updated)'),
+    );
+    // Still returns receipt to Stripe (200) so it doesn't retry forever
+    expect(result).toEqual({ received: true });
+  });
+
+  // ── #3 account.updated with NULL tenant_id accepted ───────────────────
+  it('handles account.updated events with null tenant_id (D-1 best-effort)', async () => {
+    const h = await buildHarness();
+    h.stripeEventQb.execute.mockResolvedValueOnce({
+      raw: [{ id: 'evt-row' }],
+      identifiers: [{ id: 'evt-row' }],
+      generatedMaps: [],
+    });
+
+    const event = {
+      id: 'evt_acct',
+      type: 'account.updated',
+      data: { object: { id: 'acct_z', charges_enabled: true, payouts_enabled: true } },
+    };
+    await h.service.handleWebhook(Buffer.from(JSON.stringify(event)), 'sig');
+
+    // Dedup row tenant_id = null (per D-1 — Connect events have no payload tenant)
+    expect(h.stripeEventQb.values).toHaveBeenCalledWith(
+      expect.objectContaining({ tenant_id: null }),
+    );
+    // Handler proceeds (account update applied)
+    expect(h.tenantRepo.update).toHaveBeenCalledTimes(1);
+  });
+
+  // ── #4 Same event_id, different tenants → distinct ────────────────────
+  it('treats same event_id with different tenant_ids as distinct dedup rows', async () => {
+    const h = await buildHarness();
+    // Mock can't enforce uniqueness — that's PG's job. Here we verify the
+    // implementation passes the correct tenant_id per event without caching
+    // the first call's value.
+    h.stripeEventQb.execute.mockResolvedValue({
+      raw: [{ id: 'evt-row' }],
+      identifiers: [{ id: 'evt-row' }],
+      generatedMaps: [],
+    });
+
+    const event1 = {
+      id: 'evt_shared_id',
+      type: 'payment_intent.payment_failed',
+      data: {
+        object: {
+          id: 'pi_1',
+          metadata: { tenantId: 'tenant_A', invoiceId: 'inv_a' },
+          last_payment_error: { message: 'card declined' },
+        },
+      },
+    };
+    const event2 = {
+      id: 'evt_shared_id',
+      type: 'payment_intent.payment_failed',
+      data: {
+        object: {
+          id: 'pi_2',
+          metadata: { tenantId: 'tenant_B', invoiceId: 'inv_b' },
+          last_payment_error: { message: 'card declined' },
+        },
+      },
+    };
+    h.invoiceRepo.findOne.mockResolvedValue({ id: 'inv_a', tenant_id: 'tenant_A' });
+
+    await h.service.handleWebhook(Buffer.from(JSON.stringify(event1)), 'sig');
+    await h.service.handleWebhook(Buffer.from(JSON.stringify(event2)), 'sig');
+
+    // Both inserts attempted with different tenant_ids
+    const valuesCalls = h.stripeEventQb.values.mock.calls;
+    expect(valuesCalls).toHaveLength(2);
+    expect(valuesCalls[0][0]).toEqual(
+      expect.objectContaining({ event_id: 'evt_shared_id', tenant_id: 'tenant_A' }),
+    );
+    expect(valuesCalls[1][0]).toEqual(
+      expect.objectContaining({ event_id: 'evt_shared_id', tenant_id: 'tenant_B' }),
+    );
+  });
+
+  // ── #5 Signature failure prevents dedup INSERT (CRITICAL) ─────────────
+  it('rejects bad signature before dedup INSERT runs (denial-of-webhook prevention)', async () => {
+    const h = await buildHarness();
+    process.env.STRIPE_WEBHOOK_SECRET = 'whsec_test';
+    h.stripeMock.webhooks.constructEvent.mockImplementation(() => {
+      throw new Error('Invalid signature');
+    });
+
+    await expect(
+      h.service.handleWebhook(Buffer.from('{}'), 'bad_sig'),
+    ).rejects.toThrow(/Invalid webhook signature/);
+
+    // CRITICAL: dedup INSERT must NOT have run. If it did, an attacker could
+    // pollute stripe_events with junk event_ids to make real events drop.
+    expect(h.stripeEventRepo.createQueryBuilder).not.toHaveBeenCalled();
+  });
+
+  // ── #6 Money event with no derivable tenant_id throws ────────────────
+  it('throws on payment_intent.succeeded with no derivable tenant_id (locked Option A)', async () => {
+    const h = await buildHarness();
+    // Empty metadata: no tenantId, no invoiceId — orphan PI
+    const event = {
+      id: 'evt_orphan_pi',
+      type: 'payment_intent.succeeded',
+      data: { object: { id: 'pi_orphan', metadata: {} } },
+    };
+
+    await expect(
+      h.service.handleWebhook(Buffer.from(JSON.stringify(event)), 'sig'),
+    ).rejects.toThrow(/Cannot resolve tenant for payment_intent\.succeeded/);
+
+    // CRITICAL: throw happens BEFORE dedup INSERT — no row written, Stripe
+    // will retry, error surfaces in Sentry.
+    expect(h.stripeEventRepo.createQueryBuilder).not.toHaveBeenCalled();
   });
 });

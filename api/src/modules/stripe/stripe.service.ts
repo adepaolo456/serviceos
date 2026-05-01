@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException, NotFoundException, Logger } from '@nestjs/common';
+import { Injectable, BadRequestException, InternalServerErrorException, NotFoundException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import Stripe from 'stripe';
@@ -8,6 +8,7 @@ import { Invoice } from '../billing/entities/invoice.entity';
 import { Payment } from '../billing/entities/payment.entity';
 import { Notification } from '../notifications/entities/notification.entity';
 import { SubscriptionPlan } from '../subscriptions/entities/subscription-plan.entity';
+import { StripeEvent } from './entities/stripe-event.entity';
 import { buildStripeIdempotencyKey } from './idempotency.util';
 import { InvoiceService } from '../billing/services/invoice.service';
 
@@ -23,6 +24,7 @@ export class StripeService {
     @InjectRepository(Payment) private paymentRepo: Repository<Payment>,
     @InjectRepository(Notification) private notifRepo: Repository<Notification>,
     @InjectRepository(SubscriptionPlan) private planRepo: Repository<SubscriptionPlan>,
+    @InjectRepository(StripeEvent) private stripeEventRepo: Repository<StripeEvent>,
     private dataSource: DataSource,
     // PR-C1c: invoiceService.reconcileBalance() is the canonical writer
     // for invoice.amount_paid / balance_due / status / paid_at. Sites 1 + 2
@@ -388,6 +390,65 @@ export class StripeService {
         : JSON.parse(payload.toString()) as Stripe.Event;
     } catch {
       throw new BadRequestException('Invalid webhook signature');
+    }
+
+    // PR-C2-pre: webhook event-id dedup at entry point.
+    // Per audit D-3 (docs/audits/2026-04-30-pr-c2-webhook-dedup-audit.md):
+    // INSERT ... ON CONFLICT DO NOTHING RETURNING id is the canonical
+    // first-occurrence detector. Duplicate events return early without
+    // reaching the switch. Money-movement event tenant resolution uses
+    // the locked Option A inline fallback chain (metadata.tenantId →
+    // metadata.invoiceId → invoice.tenant_id → throw).
+    let dedupTenantId: string | null = null;
+    if (event.type.startsWith('payment_intent.')) {
+      const pi = event.data.object as Stripe.PaymentIntent;
+      if (pi.metadata?.tenantId) {
+        dedupTenantId = pi.metadata.tenantId;
+      } else if (pi.metadata?.invoiceId) {
+        const inv = await this.invoiceRepo.findOne({ where: { id: pi.metadata.invoiceId } });
+        if (inv) dedupTenantId = inv.tenant_id;
+      }
+      if (!dedupTenantId) {
+        throw new InternalServerErrorException(
+          `Cannot resolve tenant for ${event.type}: no metadata.tenantId or resolvable invoiceId in event ${event.id}`,
+        );
+      }
+    } else if (event.type === 'checkout.session.completed') {
+      const session = event.data.object as Stripe.Checkout.Session;
+      dedupTenantId = session.metadata?.tenantId ?? null;
+      if (!dedupTenantId) {
+        throw new InternalServerErrorException(
+          `Cannot resolve tenant for checkout.session.completed: no metadata.tenantId in event ${event.id}`,
+        );
+      }
+    } else if (event.type === 'account.updated') {
+      // Per audit D-1: best-effort dedup for Connect platform events
+      // (no payload-derivable tenant_id). Future hardening: issue #33.
+      dedupTenantId = null;
+    } else {
+      // Unhandled event type: best-effort dedup with NULL tenant_id.
+      // The switch will no-op for unknown events anyway; logging here for
+      // visibility into events Stripe sends that we don't handle.
+      this.logger.warn(`Unhandled webhook event type: ${event.type} (${event.id}) — dedup with NULL tenant_id`);
+      dedupTenantId = null;
+    }
+
+    const dedup = await this.stripeEventRepo
+      .createQueryBuilder()
+      .insert()
+      .into(StripeEvent)
+      .values({ event_id: event.id, event_type: event.type, tenant_id: dedupTenantId })
+      .orIgnore()
+      .returning(['id'])
+      .execute();
+
+    // TypeORM 0.3.x InsertResult shape varies on Postgres .orIgnore().returning():
+    // successful insert populates `raw` (and may populate `identifiers`); on
+    // CONFLICT both are empty. Check both to be safe — covered by Test 0.
+    const inserted = (dedup.raw?.length ?? 0) > 0 || (dedup.identifiers?.length ?? 0) > 0;
+    if (!inserted) {
+      this.logger.warn(`Duplicate webhook event ignored: ${event.id} (${event.type})`);
+      return { received: true };
     }
 
     switch (event.type) {
