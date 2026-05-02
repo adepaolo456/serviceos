@@ -1,10 +1,10 @@
 # Session Closeout Protocol
 
-**Purpose.** Keep ServiceOS state consistent across the three places it lives: Claude's memory, the GitHub Project board, and repo docs. Without this discipline, these three drift apart and stale state causes real waste — work gets re-discovered, items stay on backlogs after they ship, decisions get re-litigated.
+**Purpose.** Keep ServiceOS state consistent across the three places it lives: project memory, the GitHub Project board, and repo docs. Without this discipline, these three drift apart and stale state causes real waste — work gets re-discovered, items stay on backlogs after they ship, decisions get re-litigated.
 
 **Trigger.** Run this at the end of every material working session before parking. For trivial/no-op sessions, do a 30-second no-change check. Takes ~5 minutes for material sessions. Skipping it on material sessions is the most expensive shortcut in this codebase.
 
-**Audience.** Anthony (founder), Claude (AI advisor), and any future contractor. Contractors should read this on day one.
+**Audience.** The operator and any future contributor. New contributors should read this on day one.
 
 ---
 
@@ -12,7 +12,7 @@
 
 | Source | What it tracks | Update cadence |
 |---|---|---|
-| **Claude's memory** (persistent context maintained by the AI advisor) | Architecture, standing rules, current production state, strategy decisions, deploy protocol | Updated by Claude when something material changes; reviewed at session close |
+| **Project memory** (persistent context for the operator's workflow) | Architecture, standing rules, current production state, strategy decisions, deploy protocol | Updated when something material changes; reviewed at session close |
 | **GitHub Project board** ([ServiceOS Roadmap](https://github.com/users/adepaolo456/projects/1)) | Backlog items, priorities, status, scope, audit-required gates, bake-window safety | Updated when issues are filed, status moves, or field values change |
 | **Repo docs** (`docs/audits/`, `docs/audit-queries/`, `CLAUDE.md`, this runbook) | Decisions worth preserving, audit history, reusable queries, standing rules | Updated only when today produced something durable |
 
@@ -31,7 +31,7 @@ Run all three at session end. Skip a step only if it's genuinely a no-op for the
 
 ### Step 1 — Memory delta (~2 min)
 
-Claude proposes specific edits in this format:
+Propose specific edits in this format:
 
 ```
 - ADD: <new fact, ≤500 chars>
@@ -39,14 +39,14 @@ Claude proposes specific edits in this format:
 - REMOVE #N: <reason — usually superseded or stale>
 ```
 
-Anthony approves, rejects, or revises each. The AI advisor then executes the approved memory edits using the active memory tool/workflow.
+Operator approves, rejects, or revises each. Apply approved memory edits using the active memory tool/workflow.
 
 **What goes in memory:**
 - New standing rules (e.g., "always X before Y")
 - Architecture changes (new modules, new tables, new infra)
 - Current production state (deploy SHAs, tenant counts, active bakes)
 - Strategic direction (revenue model, sequencing decisions)
-- Anything that changes how Claude should reason about this codebase next session
+- Anything that changes how the codebase should be reasoned about next session
 
 **What does NOT go in memory:**
 - Backlog items (those go on the board)
@@ -85,10 +85,10 @@ If a field value is genuinely unknown, leave it null and add a comment explainin
 Only act if today produced something durable. Three categories:
 
 **a. New audit / decision doc** — `docs/audits/YYYY-MM-DD-<topic>.md`
-Use this when a real architectural or scope decision was made and someone (you, Claude, a contractor) might need to re-read the reasoning later. Include: context, options considered, decision, rationale, out-of-scope notes.
+Use this when a real architectural or scope decision was made and someone might need to re-read the reasoning later. Include: context, options considered, decision, rationale, out-of-scope notes.
 
 **b. Standing rule update** — `CLAUDE.md`
-Use this when a new always-rule emerges. Examples: "always use scoped staging," "never use `vercel --prod` for web," "all user-facing labels via registry." If Claude needs to remember it across all future sessions, it belongs here.
+Use this when a new always-rule emerges. Examples: "always use scoped staging," "never use `vercel --prod` for web," "all user-facing labels via registry." If a rule needs to apply across all future sessions, it belongs here.
 
 **c. New reusable audit query** — `docs/audit-queries/<name>.sql` + entry in `docs/audit-queries/README.md`
 Use this when you wrote a SELECT query you'll want to re-run later. Always SELECT-only. Always include the header block (Purpose / When to run / Expected clean result / Source provenance).
@@ -128,7 +128,7 @@ If nothing material happened, the closeout takes 30 seconds (`view` memory, glan
 ## Closeout in 30 seconds (the cheat sheet)
 
 ```
-1. Memory:  Claude proposes edits → Anthony approves → execute
+1. Memory:  Propose edits → operator approves → execute
 2. Board:   For each touched item — status, fields, new issues
 3. Docs:    Anything decision-worthy → commit to repo
 PARK.
@@ -138,15 +138,13 @@ If a closeout takes longer than ~10 minutes, the session ran too long, OR a real
 
 ---
 
-## For contractors reading this
+## For new contributors
 
-If you're inheriting this codebase, three things to know:
+If you're inheriting this codebase, two things to know:
 
-1. **Anthony works in tight feedback loops with Claude as advisor.** The board reflects this — items get explicit `Audit Required` and `Bake-Window Safe` fields because work happens in narrow windows around production bakes. Respect those gates.
+1. **Work happens in narrow windows around production bakes.** The board reflects this — items get explicit `Audit Required` and `Bake-Window Safe` fields. Respect those gates. Picking up an item flagged unsafe during an active bake is the fastest way to break production.
 
-2. **Memory entries you'll see referenced (e.g., "memory entry #28") are Claude's persistent context.** You can't read them directly, but Anthony can paste any relevant entry on request. If something seems to assume context you don't have, ask.
-
-3. **The board's "Bake-Safe Now" view is your default landing spot.** Filter is `bake-window-safe:Yes -status:Done`. Sort by Priority desc. Pick the smallest Effort with the highest Priority. That's the canonical "what should I work on right now" answer.
+2. **The board's "Bake-Safe Now" view is your default landing spot.** Filter is `bake-window-safe:Yes -status:Done`. Sort by Priority desc. Pick the smallest Effort with the highest Priority. That's the canonical "what should I work on right now" answer.
 
 ---
 
