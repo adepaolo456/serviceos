@@ -5,7 +5,7 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, EntityManager, Repository } from 'typeorm';
 import { RentalChain } from './entities/rental-chain.entity';
 import { TaskChainLink } from './entities/task-chain-link.entity';
 import { Job } from '../jobs/entities/job.entity';
@@ -668,8 +668,36 @@ export class RentalChainsService {
     tenantId: string,
     chainId: string,
     dto: CreateExchangeDto,
+    manager?: EntityManager,
   ): Promise<CreateExchangeResult> {
-    const chain = await this.chainRepo.findOne({
+    // When a manager is supplied (caller already inside a transaction —
+    // e.g. OrchestrationService.createWithBooking's exchange path),
+    // run inline on that manager. Atomicity is the caller's responsibility:
+    // its rollback unwinds every write here. When no manager is supplied,
+    // open our own transaction so direct callers
+    // (RentalChainsController, JobsService.scheduleNextTask,
+    // JobsService.exchangeFromRental) keep their existing semantics.
+    if (manager) {
+      return this.createExchangeInManager(tenantId, chainId, dto, manager);
+    }
+    return this.dataSource.transaction((trx) =>
+      this.createExchangeInManager(tenantId, chainId, dto, trx),
+    );
+  }
+
+  private async createExchangeInManager(
+    tenantId: string,
+    chainId: string,
+    dto: CreateExchangeDto,
+    manager: EntityManager,
+  ): Promise<CreateExchangeResult> {
+    const chainRepo = manager.getRepository(RentalChain);
+    const linkRepo = manager.getRepository(TaskChainLink);
+    const jobRepo = manager.getRepository(Job);
+    const tenantSettingsRepo = manager.getRepository(TenantSettings);
+    const customerRepo = manager.getRepository(Customer);
+
+    const chain = await chainRepo.findOne({
       where: { id: chainId, tenant_id: tenantId },
     });
     if (!chain) throw new NotFoundException(`Rental chain ${chainId} not found`);
@@ -680,7 +708,7 @@ export class RentalChainsService {
       newPickupDateStr = dto.override_pickup_date;
     } else {
       const rentalDays = await getTenantRentalDays(
-        this.tenantSettingsRepo,
+        tenantSettingsRepo,
         tenantId,
       );
       const d = new Date(dto.exchange_date);
@@ -703,10 +731,12 @@ export class RentalChainsService {
     const size = dto.dumpster_size || chain.dumpster_size;
     const assetId = dto.asset_id ?? chain.asset_id ?? null;
 
-    // ── Path α: pricing inputs (pre-transaction reads) ──
-    // Pure reads that gather the inputs needed by PricingService.calculate.
-    // These run outside the transaction because they don't mutate state —
-    // it's just cheaper to compute them once before opening the write txn.
+    // ── Path α: pricing inputs ──
+    // Reads that gather the inputs needed by PricingService.calculate.
+    // Run on the supplied manager so when invoked from inside a caller
+    // transaction (orchestration's queryRunner), they see in-flight
+    // writes; when run via our own dataSource.transaction wrapper, they
+    // see the same trx the writes below run on.
     //
     // Coordinates: sourced from the chain's drop-off job's
     // service_address. When missing/invalid, the pricing engine
@@ -721,7 +751,7 @@ export class RentalChainsService {
     // rentalDays: computed from the new segment (exchange_date →
     // newPickupDateStr) so extra-day charges price correctly when
     // the operator overrides the pickup.
-    const deliveryLink = await this.linkRepo.findOne({
+    const deliveryLink = await linkRepo.findOne({
       where: { rental_chain_id: chain.id, task_type: 'drop_off' },
       relations: ['job'],
       order: { sequence_number: 'ASC' },
@@ -739,7 +769,7 @@ export class RentalChainsService {
     // visible regression on dispatch board exchange tiles.
     const inheritedServiceAddress = deliveryLink?.job?.service_address ?? null;
 
-    const customer = await this.dataSource.getRepository(Customer).findOne({
+    const customer = await customerRepo.findOne({
       where: { id: chain.customer_id, tenant_id: tenantId },
     });
     const customerType: 'residential' | 'commercial' =
@@ -747,11 +777,7 @@ export class RentalChainsService {
 
     const segmentDays = daysBetween(dto.exchange_date, newPickupDateStr);
 
-    return this.dataSource.transaction(async (trx) => {
-      const chainRepo = trx.getRepository(RentalChain);
-      const linkRepo = trx.getRepository(TaskChainLink);
-      const jobRepo = trx.getRepository(Job);
-
+    {
       // 1. Cancel the currently-scheduled pickup (if any)
       const currentPickupLink = await linkRepo.findOne({
         where: {
@@ -807,13 +833,13 @@ export class RentalChainsService {
       previousLinkId = currentPickupLink.previous_link_id ?? null;
       previousSeq = currentPickupLink.sequence_number - 1;
 
-      // 2. Create the exchange job. Inside a transaction — pass `trx`
-      // so the sequence increment joins the outer transaction and
-      // rolls back as a unit if the commit fails later.
+      // 2. Create the exchange job. Inside a transaction — pass the
+      // active manager so the sequence increment joins the outer
+      // transaction and rolls back as a unit if the commit fails later.
       const exchangeJob = jobRepo.create({
         tenant_id: tenantId,
         customer_id: chain.customer_id,
-        job_number: await issueNextJobNumber(trx, tenantId, 'exchange'),
+        job_number: await issueNextJobNumber(manager, tenantId, 'exchange'),
         job_type: 'exchange',
         service_type: 'dumpster_rental',
         asset_subtype: size,
@@ -842,7 +868,7 @@ export class RentalChainsService {
       const pickupJob = jobRepo.create({
         tenant_id: tenantId,
         customer_id: chain.customer_id,
-        job_number: await issueNextJobNumber(trx, tenantId, 'pickup'),
+        job_number: await issueNextJobNumber(manager, tenantId, 'pickup'),
         job_type: 'pickup',
         service_type: 'dumpster_rental',
         asset_subtype: size,
@@ -918,12 +944,12 @@ export class RentalChainsService {
             dropoff_asset_subtype: size,
           },
         },
-        // Pass the outer transaction's EntityManager so the snapshot
-        // INSERT sees the just-saved savedExchangeJob under the FK
-        // check. Without this, the snapshot save runs on the default
-        // connection where the uncommitted job is invisible and the
-        // FK fires (fk_pricing_snapshots_job_id → jobs.id).
-        trx,
+        // Pass the active EntityManager so the snapshot INSERT sees
+        // the just-saved savedExchangeJob under the FK check. Without
+        // this, the snapshot save runs on the default connection where
+        // the uncommitted job is invisible and the FK fires
+        // (fk_pricing_snapshots_job_id → jobs.id).
+        manager,
       );
       const exchangeTotal = Number(quote.breakdown?.total) || 0;
       const exchangeBasePrice = Number(quote.breakdown?.basePrice) || 0;
@@ -957,8 +983,10 @@ export class RentalChainsService {
       // what the existing dispatch prepayment gate
       // (`hasPaidLinkedInvoice`) reads — unpaid lifecycle exchanges
       // now block assignment/dispatch the same way booking-flow
-      // unpaid exchanges do. Passing `trx` joins the outer
-      // transaction so the invoice + line items commit atomically
+      // unpaid exchanges do. Passing `manager` joins the active
+      // transaction (own dataSource.transaction wrapper, or a caller-
+      // supplied EntityManager when called from inside another
+      // transaction) so the invoice + line items commit atomically
       // with the chain writes; a rollback anywhere in this block
       // unwinds everything together.
       //
@@ -985,11 +1013,25 @@ export class RentalChainsService {
             ],
             notes: `Exchange scheduled on rental chain ${chain.id}`,
           },
-          trx,
+          manager,
         );
       }
 
-      const updatedChain = await this.findOne(tenantId, chain.id);
+      // Reload chain through the active manager so callers see
+      // in-flight writes (e.g. expected_pickup_date update at step 6)
+      // even when invoked from inside a not-yet-committed outer
+      // transaction. Mirrors `findOne`'s behavior but routed through
+      // `manager` instead of the default-connection chainRepo.
+      const updatedChain = await chainRepo.findOne({
+        where: { id: chain.id, tenant_id: tenantId },
+        relations: ['links', 'links.job', 'customer', 'asset'],
+      });
+      if (!updatedChain) {
+        throw new NotFoundException(`Rental chain ${chain.id} not found`);
+      }
+      if (updatedChain.links) {
+        updatedChain.links.sort((a, b) => a.sequence_number - b.sequence_number);
+      }
       return {
         chain: updatedChain,
         createdJobs: {
@@ -997,7 +1039,7 @@ export class RentalChainsService {
           pickup: savedPickupJob,
         },
       };
-    });
+    }
   }
 
   // ─────────────────────────────────────────────────────────

@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Invoice } from './entities/invoice.entity';
 import { InvoiceLineItem } from './entities/invoice-line-item.entity';
@@ -33,6 +33,7 @@ import { OrchestrationService } from './services/orchestration.service';
 import { BookingCompletionService } from './services/booking-completion.service';
 import { CreditAuditModule } from '../credit-audit/credit-audit.module';
 import { PermissionModule } from '../permissions/permission.module';
+import { RentalChainsModule } from '../rental-chains/rental-chains.module';
 
 @Module({
   imports: [
@@ -62,6 +63,11 @@ import { PermissionModule } from '../permissions/permission.module';
     CustomersModule,
     CreditAuditModule,
     PermissionModule,
+    // OrchestrationService delegates exchange creation to the
+    // canonical RentalChainsService.createExchange. RentalChainsModule
+    // already imports BillingModule (for BillingService) — forwardRef
+    // breaks that cycle so DI bootstrap succeeds.
+    forwardRef(() => RentalChainsModule),
   ],
   controllers: [InvoiceController, BillingIssueController, BillingAuditController, PaymentsController, BookingsController],
   providers: [InvoiceService, BillingIssueDetectorService, BillingAuditService, BookingCreditEnforcementService, BillingService, OrchestrationService, BookingCompletionService],

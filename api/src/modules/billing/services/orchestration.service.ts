@@ -3,11 +3,12 @@ import {
   Logger,
   BadRequestException,
   ConflictException,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource, QueryFailedError } from 'typeorm';
 import { Customer } from '../../customers/entities/customer.entity';
-import { Job } from '../../jobs/entities/job.entity';
 import { RentalChain } from '../../rental-chains/entities/rental-chain.entity';
 import { PricingRule } from '../../pricing/entities/pricing-rule.entity';
 import { Invoice } from '../entities/invoice.entity';
@@ -19,7 +20,7 @@ import { BillingService } from '../billing.service';
 import { BookingCompletionService } from './booking-completion.service';
 import { BookingCreditEnforcementService } from './booking-credit-enforcement.service';
 import { CreateWithBookingDto } from '../dto/create-with-booking.dto';
-import { issueNextJobNumber } from '../../../common/utils/job-number.util';
+import { RentalChainsService } from '../../rental-chains/rental-chains.service';
 
 /**
  * Phase 4B — auth context plumbed into the orchestration entry point
@@ -55,6 +56,13 @@ export class OrchestrationService {
     private billingService: BillingService,
     private mapboxService: MapboxService,
     private bookingCreditEnforcementService: BookingCreditEnforcementService,
+    // forwardRef breaks the BillingModule ↔ RentalChainsModule import
+    // cycle (RentalChainsModule already imports BillingModule for
+    // BillingService; we now need the reverse for canonical exchange
+    // delegation). Standard NestJS escape hatch — RentalChainsService
+    // is a singleton so resolution happens once at bootstrap.
+    @Inject(forwardRef(() => RentalChainsService))
+    private rentalChainsService: RentalChainsService,
   ) {}
 
   async createWithBooking(
@@ -166,41 +174,105 @@ export class OrchestrationService {
     await queryRunner.startTransaction();
 
     let customerId: string;
-    let savedInvoice: Invoice;
+    let savedInvoice: Invoice | null;
     let completionResult: Awaited<ReturnType<BookingCompletionService['completeBooking']>>;
 
     try {
-      const customerRepo = queryRunner.manager.getRepository(Customer);
-
-      // 1. Use existing customer or create new
-      if (dto.customerId) {
-        // Verify customer belongs to this tenant
-        const existing = await customerRepo.findOne({ where: { id: dto.customerId, tenant_id: tenantId } });
-        if (!existing) throw new BadRequestException('Customer not found');
-        customerId = existing.id;
-      } else {
-        const customer = customerRepo.create({
-          tenant_id: tenantId,
-          type: dto.type || 'residential',
-          first_name: dto.firstName,
-          last_name: dto.lastName,
-          email: dto.email,
-          phone: dto.phone,
-          company_name: dto.companyName,
-          billing_address: dto.billingAddress as Record<string, string>,
-          service_addresses: dto.siteAddress ? [dto.siteAddress as Record<string, any>] : [],
-          notes: dto.notes,
-          tags: dto.tags,
-          lead_source: dto.leadSource,
+      // ── EXCHANGE PATH ──
+      // Domain invariant: an exchange is always for the chain's
+      // existing customer. We do NOT independently resolve a customer
+      // here — chain.customer_id is authoritative. This makes
+      // cross-customer exchange impossible by construction. The
+      // delivery branch below handles customer create/find for new
+      // bookings.
+      //
+      // Delegation to canonical RentalChainsService.createExchange
+      // owns the full exchange contract: chain-link insert, prior
+      // pickup cancellation with `cancellation_reason = 'exchange_replacement'`,
+      // real replacement pickup row with `parent_job_id`, pricing
+      // snapshot persisted with `jobType: 'exchange'` semantics +
+      // exchange_context, invoice creation, service_address inheritance
+      // from the chain delivery link. Passing queryRunner.manager
+      // joins the exchange writes to this outer transaction so
+      // rollback unwinds them atomically with anything else this
+      // method later writes.
+      if (dto.jobType === 'exchange' && dto.exchangeRentalChainId) {
+        const chainRepo = queryRunner.manager.getRepository(RentalChain);
+        const chain = await chainRepo.findOne({
+          where: { id: dto.exchangeRentalChainId, tenant_id: tenantId },
         });
-        const savedCustomer = await customerRepo.save(customer);
-        customerId = savedCustomer.id;
-      }
+        if (!chain) throw new BadRequestException('Rental chain not found');
 
-      // 2. Calculate full tenant-scoped pricing (base + distance surcharge)
-      const siteAddr = dto.siteAddress || dto.billingAddress || {};
-      let customerLat = siteAddr.lat != null ? Number(siteAddr.lat) : null;
-      let customerLng = siteAddr.lng != null ? Number(siteAddr.lng) : null;
+        customerId = chain.customer_id;
+
+        const exchangeResult = await this.rentalChainsService.createExchange(
+          tenantId,
+          chain.id,
+          {
+            // Orchestration's `deliveryDate` is the user-chosen service
+            // date for the new booking — for the exchange path that
+            // date IS the exchange date. Field name diverges by
+            // orchestration legacy; semantics align.
+            exchange_date: dto.deliveryDate!,
+            dumpster_size: dto.dumpsterSize,
+          },
+          queryRunner.manager,
+        );
+
+        // Canonical createExchange writes the invoice through the
+        // same manager when exchangeTotal > 0; surface its id in the
+        // result. Zero-price exchanges leave invoice = null.
+        const invoiceRepo = queryRunner.manager.getRepository(Invoice);
+        const inv = await invoiceRepo.findOne({
+          where: {
+            tenant_id: tenantId,
+            job_id: exchangeResult.createdJobs.exchange.id,
+          },
+        });
+
+        completionResult = {
+          deliveryJob: exchangeResult.createdJobs.exchange,
+          // Real pickup row (no longer aliasing the exchange row).
+          pickupJob: exchangeResult.createdJobs.pickup,
+          invoice: inv,
+          rentalChainId: chain.id,
+          autoApproved: false,
+          assignedAsset: null,
+        } as Awaited<ReturnType<BookingCompletionService['completeBooking']>>;
+        savedInvoice = inv;
+      } else {
+        // ── DELIVERY PATH (existing flow, unchanged) ──
+        const customerRepo = queryRunner.manager.getRepository(Customer);
+
+        // 1. Use existing customer or create new
+        if (dto.customerId) {
+          // Verify customer belongs to this tenant
+          const existing = await customerRepo.findOne({ where: { id: dto.customerId, tenant_id: tenantId } });
+          if (!existing) throw new BadRequestException('Customer not found');
+          customerId = existing.id;
+        } else {
+          const customer = customerRepo.create({
+            tenant_id: tenantId,
+            type: dto.type || 'residential',
+            first_name: dto.firstName,
+            last_name: dto.lastName,
+            email: dto.email,
+            phone: dto.phone,
+            company_name: dto.companyName,
+            billing_address: dto.billingAddress as Record<string, string>,
+            service_addresses: dto.siteAddress ? [dto.siteAddress as Record<string, any>] : [],
+            notes: dto.notes,
+            tags: dto.tags,
+            lead_source: dto.leadSource,
+          });
+          const savedCustomer = await customerRepo.save(customer);
+          customerId = savedCustomer.id;
+        }
+
+        // 2. Calculate full tenant-scoped pricing (base + distance surcharge)
+        const siteAddr = dto.siteAddress || dto.billingAddress || {};
+        let customerLat = siteAddr.lat != null ? Number(siteAddr.lat) : null;
+        let customerLng = siteAddr.lng != null ? Number(siteAddr.lng) : null;
 
       // Geocode fallback: if coordinates are missing or invalid (0,0), attempt geocoding
       const needsGeocode = customerLat == null || customerLng == null
@@ -248,55 +320,9 @@ export class OrchestrationService {
       const distanceSurcharge = priceResult.breakdown.distanceSurcharge || 0;
       const totalPrice = priceResult.breakdown.total;
 
-      // 3. Create booking — exchange or new delivery
-      if (dto.jobType === 'exchange' && dto.exchangeRentalChainId) {
-        // Exchange path: create exchange job + invoice from rental chain
-        const chainRepo = queryRunner.manager.getRepository(RentalChain);
-        const jobRepo = queryRunner.manager.getRepository(Job);
-
-        const chain = await chainRepo.findOne({ where: { id: dto.exchangeRentalChainId, tenant_id: tenantId } });
-        if (!chain) throw new BadRequestException('Rental chain not found');
-
-        // Phase 4B — attach the credit override audit note to the
-        // exchange job's placement_notes when an override was applied.
-        // The standard delivery path threads the note via
-        // BookingCompletionService; the exchange path bypasses that
-        // service so we set it directly here.
-        const exchangeJob = jobRepo.create({
-          tenant_id: tenantId, customer_id: customerId,
-          job_number: await issueNextJobNumber(queryRunner.manager, tenantId, 'exchange'), job_type: 'exchange',
-          service_type: 'dumpster_rental', asset_subtype: dto.dumpsterSize,
-          asset_id: chain.asset_id || null, service_address: siteAddr as Record<string, string>,
-          // source 'exchange' — matches RentalChainsService.createExchange
-          // semantic. This path creates an exchange job via the dispatcher
-          // new-customer→exchange flow; the resulting job is semantically
-          // identical in origin to a Schedule Next exchange.
-          status: 'pending', priority: 'normal', source: 'exchange',
-          scheduled_date: dto.deliveryDate!, rental_days: rentalDays,
-          scheduled_window_start: '08:00', scheduled_window_end: '17:00',
-          placement_notes: enforcement.overrideNote && dto.placementNotes
-            ? `${dto.placementNotes}\n${enforcement.overrideNote}`
-            : enforcement.overrideNote ?? dto.placementNotes ?? null,
-        } as Partial<Job> as Job);
-        const savedJob = await jobRepo.save(exchangeJob);
-
-        // Create exchange invoice using canonical billing service (matches existing exchange flow)
-        const savedInv = await this.billingService.createInternalInvoice(tenantId, {
-          customerId,
-          jobId: savedJob.id,
-          source: 'exchange',
-          invoiceType: 'exchange',
-          status: 'open',
-          lineItems: [{ description: 'Dumpster Exchange', quantity: 1, unitPrice: totalPrice, amount: totalPrice }],
-          notes: `Exchange scheduled for rental chain ${chain.id}`,
-        }, queryRunner.manager);
-
-        completionResult = {
-          deliveryJob: savedJob, pickupJob: savedJob, invoice: savedInv,
-          rentalChainId: chain.id, autoApproved: false, assignedAsset: null,
-        } as any;
-        savedInvoice = savedInv;
-      } else {
+        // 3. Standard delivery booking. Exchange is handled at the
+        // top of this try block; this branch is delivery-only.
+        //
         // Phase 4B — splice the server-built credit override audit
         // note into placementNotes when an override was applied.
         // Backend is authoritative for the audit trail.
@@ -305,33 +331,35 @@ export class OrchestrationService {
             ? `${dto.placementNotes}\n${enforcement.overrideNote}`
             : enforcement.overrideNote ?? dto.placementNotes;
 
-        // Standard delivery path
-        completionResult = await this.bookingCompletionService.completeBooking({
-          tenantId,
-          customerId,
-          dumpsterSize: dto.dumpsterSize!,
-          serviceType: 'dumpster_rental',
-          deliveryDate: dto.deliveryDate!,
-          pickupDate,
-          rentalDays,
-          siteAddress: siteAddr as Record<string, any>,
-          basePrice,
-          distanceSurcharge,
-          totalPrice,
-          placementNotes: combinedPlacementNotes,
-          pricingSnapshot: {
-            capturedAt: new Date().toISOString(),
-            pricingRuleId: priceResult.rule.id,
-            pricingRuleName: priceResult.rule.name,
-            basePrice,
-            distanceMiles: priceResult.breakdown.distanceMiles,
-            distanceSurcharge,
+        completionResult = await this.bookingCompletionService.completeBooking(
+          {
+            tenantId,
+            customerId,
+            dumpsterSize: dto.dumpsterSize!,
+            serviceType: 'dumpster_rental',
+            deliveryDate: dto.deliveryDate!,
+            pickupDate,
             rentalDays,
-            total: totalPrice,
+            siteAddress: siteAddr as Record<string, any>,
+            basePrice,
+            distanceSurcharge,
+            totalPrice,
+            placementNotes: combinedPlacementNotes,
+            pricingSnapshot: {
+              capturedAt: new Date().toISOString(),
+              pricingRuleId: priceResult.rule.id,
+              pricingRuleName: priceResult.rule.name,
+              basePrice,
+              distanceMiles: priceResult.breakdown.distanceMiles,
+              distanceSurcharge,
+              rentalDays,
+              total: totalPrice,
+            },
+            pricingTierUsed: 'global',
+            source: dto.source,
           },
-          pricingTierUsed: 'global',
-          source: dto.source,
-        }, queryRunner.manager);
+          queryRunner.manager,
+        );
         savedInvoice = completionResult.invoice;
       }
 
@@ -369,7 +397,10 @@ export class OrchestrationService {
     const result: OrchestrationResult = {
       customerId,
       jobId: completionResult.deliveryJob.id,
-      invoiceId: savedInvoice.id,
+      // Optional: zero-price exchanges (rule base_price = 0) skip
+      // invoice creation, so savedInvoice can be null on the exchange
+      // path. OrchestrationResult.invoiceId is already typed optional.
+      invoiceId: savedInvoice?.id,
       status: paymentStatus,
       nextAction,
     };

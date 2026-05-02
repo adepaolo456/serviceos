@@ -45,7 +45,11 @@ interface Harness {
   linkRepo: { findOne: jest.Mock; find: jest.Mock; save: jest.Mock };
   customerRepo: { findOne: jest.Mock };
   pricingService: { calculate: jest.Mock };
-  trxChainRepo: { save: jest.Mock };
+  dataSource: {
+    transaction: jest.Mock;
+    getRepository: (entity: unknown) => unknown;
+  };
+  trxChainRepo: { findOne: jest.Mock; save: jest.Mock };
   trxLinkRepo: {
     findOne: jest.Mock;
     find: jest.Mock;
@@ -59,6 +63,8 @@ interface Harness {
     create: jest.Mock;
     save: jest.Mock;
   };
+  trxCustomerRepo: { findOne: jest.Mock };
+  trxTenantSettingsRepo: { findOne: jest.Mock };
 }
 
 async function buildHarness(): Promise<Harness> {
@@ -66,7 +72,11 @@ async function buildHarness(): Promise<Harness> {
   const linkRepo = { findOne: jest.fn(), find: jest.fn(), save: jest.fn() };
   const customerRepo = { findOne: jest.fn() };
   const pricingService = { calculate: jest.fn() };
-  const trxChainRepo = { save: jest.fn() };
+  // After Phase 1 (manager-overload refactor), createExchange resolves
+  // ALL repos through the active EntityManager — including chain,
+  // link, customer, tenant-settings — so the trx-side mocks now mirror
+  // the same surface as their default-side counterparts.
+  const trxChainRepo = { findOne: jest.fn(), save: jest.fn() };
   const trxLinkRepo = {
     findOne: jest.fn(),
     find: jest.fn(),
@@ -86,23 +96,28 @@ async function buildHarness(): Promise<Harness> {
       Promise.resolve({ ...x, id: `mock-${x.job_type as string}-id` }),
     ),
   };
+  const trxCustomerRepo = { findOne: jest.fn() };
+  const trxTenantSettingsRepo = { findOne: jest.fn() };
+
+  const trxGetRepository = (entity: unknown) => {
+    if (entity === RentalChain) return trxChainRepo;
+    if (entity === TaskChainLink) return trxLinkRepo;
+    if (entity === Job) return trxJobRepo;
+    if (entity === Customer) return trxCustomerRepo;
+    if (entity === TenantSettings) return trxTenantSettingsRepo;
+    throw new Error(
+      `unmocked trx repo: ${(entity as { name?: string })?.name ?? '?'}`,
+    );
+  };
 
   const dataSource = {
     transaction: jest.fn(async (cb: (trx: unknown) => Promise<unknown>) => {
-      const trx = {
-        getRepository: (entity: unknown) => {
-          if (entity === RentalChain) return trxChainRepo;
-          if (entity === TaskChainLink) return trxLinkRepo;
-          if (entity === Job) return trxJobRepo;
-          throw new Error(
-            `unmocked trx repo: ${(entity as { name?: string })?.name ?? '?'}`,
-          );
-        },
-      };
+      const trx = { getRepository: trxGetRepository };
       return cb(trx);
     }),
     // Non-transactional repos pulled via dataSource.getRepository(...)
-    // (createExchange fetches the customer this way at ~line 666).
+    // (used by other code paths; createExchange now goes via the
+    // manager argument so this is no longer hit on that path).
     getRepository: (entity: unknown) => {
       if (entity === Customer) return customerRepo;
       throw new Error(
@@ -134,9 +149,12 @@ async function buildHarness(): Promise<Harness> {
     linkRepo,
     customerRepo,
     pricingService,
+    dataSource,
     trxChainRepo,
     trxLinkRepo,
     trxJobRepo,
+    trxCustomerRepo,
+    trxTenantSettingsRepo,
   };
 }
 
@@ -353,17 +371,29 @@ describe('RentalChainsService.createExchange — NO_SCHEDULED_PICKUP_FOR_EXCHANG
   beforeEach(async () => {
     h = await buildHarness();
 
-    // Pre-transaction plumbing shared by both tests in this suite.
-    h.chainRepo.findOne.mockResolvedValue({ ...baseChain });
-    // Non-trx delivery-link lookup. Its job.service_address feeds BOTH
-    // the pricing coord extract AND (Phase 8 regression fix) the
-    // service_address inheritance onto new exchange + replacement
-    // pickup jobs, so the mock provides a realistic address object.
-    h.linkRepo.findOne.mockResolvedValue({
-      id: 'link-delivery',
-      job: { service_address: DELIVERY_ADDRESS },
+    // After Phase 1 (manager-overload refactor), createExchange reads
+    // chain/delivery-link/customer through the active EntityManager
+    // (the dataSource.transaction-supplied trx in the no-manager call
+    // path). Mocks live on the trx-side repos.
+    h.trxChainRepo.findOne.mockResolvedValue({ ...baseChain });
+    // trxLinkRepo.findOne is called twice — once for the delivery
+    // link (task_type='drop_off'), once for the currently-scheduled
+    // pickup (task_type='pick_up' status='scheduled'). Route by query
+    // so individual tests can override the pickup branch.
+    h.trxLinkRepo.findOne.mockImplementation(async (opts: any) => {
+      if (opts?.where?.task_type === 'drop_off') {
+        // Phase 8 regression fix — service_address feeds BOTH the
+        // pricing coord extract AND inheritance onto new exchange +
+        // replacement pickup jobs.
+        return {
+          id: 'link-delivery',
+          job: { service_address: DELIVERY_ADDRESS },
+        };
+      }
+      // Default for the pick_up lookup; tests override per scenario.
+      return null;
     });
-    h.customerRepo.findOne.mockResolvedValue({
+    h.trxCustomerRepo.findOne.mockResolvedValue({
       id: 'cust-1',
       tenant_id: tenantId,
       type: 'residential',
@@ -374,15 +404,20 @@ describe('RentalChainsService.createExchange — NO_SCHEDULED_PICKUP_FOR_EXCHANG
   });
 
   it('throws ConflictException with NO_SCHEDULED_PICKUP_FOR_EXCHANGE code AND leaves chain state unchanged when no scheduled pickup link exists', async () => {
-    // In-transaction pickup-link lookup returns null → guard fires.
-    h.trxLinkRepo.findOne.mockResolvedValue(null);
+    // pick_up lookup returns null → guard fires. Default mock in
+    // beforeEach already does this, but kept explicit for clarity.
+    h.trxLinkRepo.findOne.mockImplementation(async (opts: any) => {
+      if (opts?.where?.task_type === 'drop_off') {
+        return { id: 'link-delivery', job: { service_address: DELIVERY_ADDRESS } };
+      }
+      return null;
+    });
 
     await expect(
       h.service.createExchange(tenantId, chainId, dto),
     ).rejects.toBeInstanceOf(ConflictException);
 
     // Re-run to inspect the locked error body.
-    h.trxLinkRepo.findOne.mockResolvedValue(null);
     let captured: ConflictException | null = null;
     try {
       await h.service.createExchange(tenantId, chainId, dto);
@@ -423,7 +458,12 @@ describe('RentalChainsService.createExchange — NO_SCHEDULED_PICKUP_FOR_EXCHANG
       sequence_number: 2,
       previous_link_id: null,
     };
-    h.trxLinkRepo.findOne.mockResolvedValue(currentPickupLink);
+    h.trxLinkRepo.findOne.mockImplementation(async (opts: any) => {
+      if (opts?.where?.task_type === 'drop_off') {
+        return { id: 'link-delivery', job: { service_address: DELIVERY_ADDRESS } };
+      }
+      return currentPickupLink;
+    });
 
     // The downstream writes may or may not complete — extensive
     // mocking of issueNextJobNumber + chain save etc. is out of scope.
@@ -457,6 +497,65 @@ describe('RentalChainsService.createExchange — NO_SCHEDULED_PICKUP_FOR_EXCHANG
     );
     expect(h.trxJobRepo.create).toHaveBeenCalledWith(
       expect.objectContaining({ job_type: 'pickup', service_address: DELIVERY_ADDRESS }),
+    );
+  });
+
+  // ── Manager-overload (Phase 1 — orchestration delegation prereq) ──
+
+  it('manager overload: when an EntityManager is passed, createExchange does NOT open its own transaction (joins the caller transaction instead)', async () => {
+    const currentPickupLink = {
+      id: 'link-pickup',
+      job_id: 'job-pickup',
+      rental_chain_id: chainId,
+      task_type: 'pick_up',
+      status: 'scheduled',
+      scheduled_date: '2026-04-15',
+      sequence_number: 2,
+      previous_link_id: null,
+    };
+    h.trxLinkRepo.findOne.mockImplementation(async (opts: any) => {
+      if (opts?.where?.task_type === 'drop_off') {
+        return { id: 'link-delivery', job: { service_address: DELIVERY_ADDRESS } };
+      }
+      return currentPickupLink;
+    });
+
+    // Synthesize an outer-caller manager that proxies to the same
+    // trx-side mocks the harness already exposes. If createExchange
+    // honors the manager param, every getRepository call reaches the
+    // trx-side mocks via THIS proxy, and the harness's
+    // dataSource.transaction stub is NEVER invoked.
+    const outerManager = {
+      getRepository: (entity: unknown) => {
+        if (entity === RentalChain) return h.trxChainRepo;
+        if (entity === TaskChainLink) return h.trxLinkRepo;
+        if (entity === Job) return h.trxJobRepo;
+        if (entity === Customer) return h.trxCustomerRepo;
+        if (entity === TenantSettings) return h.trxTenantSettingsRepo;
+        throw new Error('unmocked entity');
+      },
+    };
+
+    await h.service
+      .createExchange(tenantId, chainId, dto, outerManager as any)
+      .catch(() => {
+        /* downstream pricing/billing mocks are not this test's concern */
+      });
+
+    // The contract proof: when a manager is supplied, the service
+    // MUST NOT open its own dataSource.transaction. Any regression
+    // that re-introduces an inner transaction would commit
+    // independently regardless of the caller's outer rollback —
+    // exactly the bug class this overload exists to prevent.
+    expect(h.dataSource.transaction).not.toHaveBeenCalled();
+
+    // And the canonical exchange writes still fire (delegation works,
+    // it just uses the supplied manager's repos).
+    expect(h.trxJobRepo.create).toHaveBeenCalledWith(
+      expect.objectContaining({ job_type: 'exchange' }),
+    );
+    expect(h.trxJobRepo.create).toHaveBeenCalledWith(
+      expect.objectContaining({ job_type: 'pickup' }),
     );
   });
 });
