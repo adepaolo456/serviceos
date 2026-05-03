@@ -34,6 +34,8 @@ import { JobCost } from '../entities/job-cost.entity';
 import { Job } from '../../jobs/entities/job.entity';
 import { Customer } from '../../customers/entities/customer.entity';
 import { TaskChainLink } from '../../rental-chains/entities/task-chain-link.entity';
+import { RentalChain } from '../../rental-chains/entities/rental-chain.entity';
+import { TenantSettings } from '../../tenant-settings/entities/tenant-settings.entity';
 import { PriceResolutionService } from '../../pricing/services/price-resolution.service';
 import { NotificationsService } from '../../notifications/notifications.service';
 
@@ -141,6 +143,8 @@ async function buildHarness(
       { provide: getRepositoryToken(Job), useValue: stubRepo() },
       { provide: getRepositoryToken(Customer), useValue: stubRepo() },
       { provide: getRepositoryToken(TaskChainLink), useValue: stubRepo() },
+      { provide: getRepositoryToken(RentalChain), useValue: stubRepo() },
+      { provide: getRepositoryToken(TenantSettings), useValue: stubRepo() },
       { provide: PriceResolutionService, useValue: priceResolution },
       { provide: NotificationsService, useValue: notificationsService },
       { provide: DataSource, useValue: dataSource },
@@ -318,6 +322,8 @@ async function buildFindAllHarness(rows: unknown[] = []): Promise<FindAllHarness
       { provide: getRepositoryToken(Job), useValue: stubRepo() },
       { provide: getRepositoryToken(Customer), useValue: stubRepo() },
       { provide: getRepositoryToken(TaskChainLink), useValue: stubRepo() },
+      { provide: getRepositoryToken(RentalChain), useValue: stubRepo() },
+      { provide: getRepositoryToken(TenantSettings), useValue: stubRepo() },
       { provide: PriceResolutionService, useValue: { resolvePrice: jest.fn() } },
       { provide: NotificationsService, useValue: { send: jest.fn() } },
       { provide: DataSource, useValue: dataSource },
@@ -429,6 +435,8 @@ async function buildReconcileHarness(): Promise<ReconcileHarness> {
       { provide: getRepositoryToken(Job), useValue: reconcileStubRepo() },
       { provide: getRepositoryToken(Customer), useValue: reconcileStubRepo() },
       { provide: getRepositoryToken(TaskChainLink), useValue: reconcileStubRepo() },
+      { provide: getRepositoryToken(RentalChain), useValue: reconcileStubRepo() },
+      { provide: getRepositoryToken(TenantSettings), useValue: reconcileStubRepo() },
       { provide: PriceResolutionService, useValue: { resolvePrice: jest.fn() } },
       { provide: NotificationsService, useValue: { send: jest.fn() } },
       { provide: DataSource, useValue: dataSource },
@@ -721,5 +729,145 @@ describe('InvoiceService.isFullyRefunded — PR-C1c-pre helper', () => {
     h.invoiceRepo.findOneOrFail.mockResolvedValue({ id: 'inv-1', total: '99.99' });
 
     expect(await h.service.isFullyRefunded('inv-1')).toBe(true);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// PR-77.1 — generateSummaryOfWork chain-first rental-days resolution
+// ─────────────────────────────────────────────────────────────────────────
+//
+// Closes #77 source-of-truth gap. Old fallback was
+//   `pricingData?.rental_days || job.rental_days || 14`
+// which silently returned literal-14 for any tenant whose default
+// differed from 14. New resolution is:
+//   1. invoice.rental_chain_id → rental_chains.rental_days
+//   2. tenant_settings.default_rental_period_days (via getTenantRentalDays)
+//   3. literal 14 + console.warn (defensive, unreachable today)
+//
+// This test covers tier 1 (chain hit). Under the OLD literal-14 path,
+// the assertion `summary.toContain('21 day rental period')` would fail
+// because the rendered string would say "14 day rental period" —
+// this is the failure mode the PR closes.
+
+interface SummaryHarness {
+  service: InvoiceService;
+  invoiceRepo: { update: jest.Mock };
+  jobRepo: { findOne: jest.Mock };
+  rentalChainRepo: { findOne: jest.Mock };
+  tenantSettingsRepo: { findOne: jest.Mock };
+}
+
+async function buildSummaryHarness(): Promise<SummaryHarness> {
+  const stubRepo = () => ({
+    find: jest.fn().mockResolvedValue([]),
+    findOne: jest.fn(),
+    save: jest.fn(),
+    create: jest.fn((x: unknown) => x),
+    update: jest.fn(),
+  });
+
+  const invoiceRepo = { ...stubRepo(), update: jest.fn() };
+  const jobRepo = stubRepo();
+  const rentalChainRepo = stubRepo();
+  const tenantSettingsRepo = stubRepo();
+
+  const dataSource: any = {
+    query: jest.fn(),
+    transaction: jest.fn(),
+  };
+
+  const module: TestingModule = await Test.createTestingModule({
+    providers: [
+      InvoiceService,
+      { provide: getRepositoryToken(Invoice), useValue: invoiceRepo },
+      { provide: getRepositoryToken(InvoiceLineItem), useValue: stubRepo() },
+      { provide: getRepositoryToken(InvoiceRevision), useValue: stubRepo() },
+      { provide: getRepositoryToken(Payment), useValue: stubRepo() },
+      { provide: getRepositoryToken(CreditMemo), useValue: stubRepo() },
+      { provide: getRepositoryToken(JobCost), useValue: stubRepo() },
+      { provide: getRepositoryToken(Job), useValue: jobRepo },
+      { provide: getRepositoryToken(Customer), useValue: stubRepo() },
+      { provide: getRepositoryToken(TaskChainLink), useValue: stubRepo() },
+      { provide: getRepositoryToken(RentalChain), useValue: rentalChainRepo },
+      { provide: getRepositoryToken(TenantSettings), useValue: tenantSettingsRepo },
+      { provide: PriceResolutionService, useValue: { resolvePrice: jest.fn() } },
+      { provide: NotificationsService, useValue: { send: jest.fn() } },
+      { provide: DataSource, useValue: dataSource },
+    ],
+  }).compile();
+
+  return {
+    service: module.get(InvoiceService),
+    invoiceRepo,
+    jobRepo,
+    rentalChainRepo,
+    tenantSettingsRepo,
+  };
+}
+
+describe('InvoiceService.generateSummaryOfWork — PR-77.1 chain-first rental-days', () => {
+  it('reads rental_days from rental_chains over job.rental_days and tenant default', async () => {
+    const h = await buildSummaryHarness();
+
+    const invoice = {
+      id: 'inv-1',
+      tenant_id: 'tenant-1',
+      job_id: 'job-1',
+      rental_chain_id: 'chain-1',
+      invoice_date: '2026-04-15',
+      service_date: '2026-04-15',
+    };
+
+    // Job has NULL rental_days (mirrors the 5 active production rows
+    // identified in #77 Phase 1: X-1031, P-1022, P-1024, P-1030, P-1032).
+    h.jobRepo.findOne.mockResolvedValue({
+      id: 'job-1',
+      tenant_id: 'tenant-1',
+      job_type: 'delivery',
+      asset_subtype: '20yd',
+      rental_days: null,
+    });
+
+    // Chain rental_days = 21 (canonical truth, intentionally non-14
+    // so we can prove resolution didn't fall through to the literal).
+    h.rentalChainRepo.findOne.mockResolvedValue({
+      id: 'chain-1',
+      tenant_id: 'tenant-1',
+      rental_days: 21,
+    });
+
+    // Tenant default would be 14 — irrelevant here because chain wins.
+    h.tenantSettingsRepo.findOne.mockResolvedValue({
+      tenant_id: 'tenant-1',
+      default_rental_period_days: 14,
+    });
+
+    // generateSummaryOfWork is private; invoke via bracket access.
+    // pricingData=null mirrors the real call site at line 266
+    // (updateInvoice) and the X-1031 invoice state.
+    await (h.service as any).generateSummaryOfWork(invoice, null);
+
+    // Both assertions would fail under the old fallback:
+    //   - Positive: rendered string would say "14 day rental period"
+    //     because pricingData=null and job.rental_days=null collapse
+    //     to literal 14, not 21.
+    //   - Negative: confirms we are NOT hitting the literal-14 path.
+    expect(h.invoiceRepo.update).toHaveBeenCalledWith(
+      'inv-1',
+      expect.objectContaining({
+        summary_of_work: expect.stringContaining('21 day rental period'),
+      }),
+    );
+    expect(h.invoiceRepo.update).toHaveBeenCalledWith(
+      'inv-1',
+      expect.objectContaining({
+        summary_of_work: expect.not.stringContaining('14 day rental period'),
+      }),
+    );
+
+    // Multi-tenant safety: chain lookup must filter by tenant_id.
+    expect(h.rentalChainRepo.findOne).toHaveBeenCalledWith({
+      where: { id: 'chain-1', tenant_id: 'tenant-1' },
+    });
   });
 });
