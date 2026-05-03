@@ -1,0 +1,16 @@
+{
+  "name": "serviceos-tooling",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Root-level repo tooling only (Repomix, etc.). Not a workspace root. API, web, and driver-app remain independent packages.",
+  "scripts": {
+    "repomix": "repomix",
+    "repomix:api": "repomix --include 'api/**'",
+    "repomix:web": "repomix --include 'web/**'",
+    "repomix:driver": "repomix --include 'driver-app/**'",
+    "repomix:no-mobile": "repomix --ignore 'driver-app/**'"
+  },
+  "devDependencies": {
+    "repomix": "^1.14.0"
+  }
+}
