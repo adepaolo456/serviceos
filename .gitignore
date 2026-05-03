@@ -20,3 +20,9 @@ dist/
 .claude/cache/
 .claude/agent-memory/
 .claude/settings.local.json
+
+# Repomix output
+repomix-output.xml
+repomix-output.md
+repomix-output.txt
+repomix-output.json

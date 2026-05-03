@@ -43,3 +43,4 @@ jobs:
       - name: Run unit tests
         working-directory: api
         run: npm test -- --runInBand
+# ci-trigger: tooling PRs (no api/** changes) reach this workflow via the path filter on this file. See PR #80.

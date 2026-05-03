@@ -1,0 +1,53 @@
+{
+  "output": {
+    "filePath": "repomix-output.xml",
+    "style": "xml",
+    "removeComments": false,
+    "showLineNumbers": true,
+    "topFilesLength": 20,
+    "compress": false
+  },
+  "ignore": {
+    "useGitignore": true,
+    "useDefaultPatterns": true,
+    "customPatterns": [
+      ".env",
+      ".env.*",
+      "*.env",
+      ".vercel/",
+      ".next/",
+      ".expo/",
+      ".turbo/",
+      ".cache/",
+      "node_modules/",
+      "dist/",
+      "build/",
+      "out/",
+      "coverage/",
+      "*.log",
+      "package-lock.json",
+      "yarn.lock",
+      "pnpm-lock.yaml",
+      "*.png",
+      "*.jpg",
+      "*.jpeg",
+      "*.gif",
+      "*.webp",
+      "*.svg",
+      "*.ico",
+      "*.mp4",
+      "*.mov",
+      "*.pdf",
+      "*.zip",
+      "*.tar.gz",
+      ".DS_Store",
+      "repomix-output.*",
+      "supabase/.branches/",
+      "supabase/.temp/",
+      "expo-env.d.ts"
+    ]
+  },
+  "security": {
+    "enableSecurityCheck": true
+  }
+}
