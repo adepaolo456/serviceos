@@ -18,7 +18,10 @@ import { CreditMemo } from '../entities/credit-memo.entity';
 import { JobCost } from '../entities/job-cost.entity';
 import { Job } from '../../jobs/entities/job.entity';
 import { Customer } from '../../customers/entities/customer.entity';
+import { RentalChain } from '../../rental-chains/entities/rental-chain.entity';
 import { TaskChainLink } from '../../rental-chains/entities/task-chain-link.entity';
+import { TenantSettings } from '../../tenant-settings/entities/tenant-settings.entity';
+import { getTenantRentalDays } from '../../../common/utils/tenant-rental-days.util';
 import { PriceResolutionService, ResolvedPrice } from '../../pricing/services/price-resolution.service';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { CreateInvoiceDto } from '../dto/create-invoice.dto';
@@ -51,6 +54,10 @@ export class InvoiceService {
     private customerRepo: Repository<Customer>,
     @InjectRepository(TaskChainLink)
     private taskChainLinkRepo: Repository<TaskChainLink>,
+    @InjectRepository(RentalChain)
+    private rentalChainRepo: Repository<RentalChain>,
+    @InjectRepository(TenantSettings)
+    private tenantSettingsRepo: Repository<TenantSettings>,
     private priceResolution: PriceResolutionService,
     private notificationsService: NotificationsService,
     private dataSource: DataSource,
@@ -1102,6 +1109,49 @@ export class InvoiceService {
   }
 
   // ─────────────────────────────────────────────────────────
+  // PRIVATE: resolveRentalDaysForSummary (PR-77.1 chain-first)
+  // ─────────────────────────────────────────────────────────
+
+  /**
+   * Resolve the rental-days value used in invoice email summary text.
+   *
+   * Resolution order (closes #77 source-of-truth gap):
+   *   1. invoice.rental_chain_id → rental_chains.rental_days (canonical)
+   *   2. tenant_settings.default_rental_period_days (via getTenantRentalDays)
+   *   3. literal 14 + console.warn (defensive — unreachable today: the
+   *      helper's own contract returns 14 when settings absent, so tier
+   *      3 only fires if that contract changes silently in the future)
+   *
+   * Replaces the prior `pricingData?.rental_days || job.rental_days || 14`
+   * literal-only fallback. Multi-tenant correctness was the omitted
+   * framing in the original carve-out exemption.
+   */
+  private async resolveRentalDaysForSummary(invoice: Invoice): Promise<number> {
+    if (invoice.rental_chain_id) {
+      const chain = await this.rentalChainRepo.findOne({
+        where: {
+          id: invoice.rental_chain_id,
+          tenant_id: invoice.tenant_id,
+        },
+      });
+      if (chain && typeof chain.rental_days === 'number' && chain.rental_days > 0) {
+        return chain.rental_days;
+      }
+    }
+    const tenantDays = await getTenantRentalDays(
+      this.tenantSettingsRepo,
+      invoice.tenant_id,
+    );
+    if (typeof tenantDays === 'number' && tenantDays > 0) {
+      return tenantDays;
+    }
+    console.warn(
+      `[generateSummaryOfWork] rental-days resolution exhausted for tenant=${invoice.tenant_id} invoice=${invoice.id}; using literal 14`,
+    );
+    return 14;
+  }
+
+  // ─────────────────────────────────────────────────────────
   // PRIVATE: GENERATE SUMMARY OF WORK
   // ─────────────────────────────────────────────────────────
 
@@ -1123,37 +1173,12 @@ export class InvoiceService {
         summary = `Service scheduled for ${serviceDate}.`;
       } else {
         const size = job.asset_subtype || 'dumpster';
-        /**
-         * Deliberate carve-out from the `|| 14` fallback cleanup arc.
-         *
-         * This `|| 14` fallback is intentionally preserved. The computed
-         * `rentalDays` is used exclusively for display-only email summary text
-         * (rendered at lines ~924-926 as "This rental includes a ${rentalDays}
-         * day rental period"). It does NOT drive billing math, extra-day
-         * calculation, overdue determination, or any persisted state — the
-         * actual billing path reads `pricing_rules.rental_period_days` via the
-         * pricing services upstream.
-         *
-         * Replacing this fallback with the shared `getTenantRentalDays` helper
-         * would add an async DB call to the email-send path with zero
-         * correctness benefit. The helper is canonical for rental duration
-         * resolution in billing/lifecycle/pricing contexts; this site's use is
-         * cosmetic.
-         *
-         * Arc lineage:
-         * - Phase 1 (95c85ca): extracted `getTenantRentalDays` to shared util
-         * - Phase 2 (74991d5): applied helper at 3 HIGH + 1 MEDIUM sites
-         *   using pattern-aware injection (Option β — honoring each file's
-         *   documented TenantSettings access convention)
-         * - Phase 3 (this commit): documents this site's deliberate exemption
-         *
-         * Source-of-truth note: the 14-day default aligned to by the
-         * rest of the arc lives at `tenant_settings.default_rental_period_days`
-         * (not `pricing_rules.rental_period_days`, which defaults to 7 and is
-         * semantically distinct). This site's `|| 14` is unrelated to either
-         * canonical source — it is purely a display safety net.
-         */
-        const rentalDays = pricingData?.rental_days || job.rental_days || 14;
+        // PR-77.1 — Chain-first rental-days for email summary text.
+        // Reopens the prior `|| 14` carve-out (cosmetic-only framing
+        // missed the multi-tenant gap — the helper now carries the
+        // SSoT contract). See resolveRentalDaysForSummary above for
+        // resolution order. Closes #77.
+        const rentalDays = await this.resolveRentalDaysForSummary(invoice);
         const weight = pricingData?.weight_allowance_tons || 0;
         const overagePerTon = pricingData?.overage_per_ton || 0;
         const dailyRate = pricingData?.daily_overage_rate || 0;

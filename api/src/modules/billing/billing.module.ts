@@ -26,6 +26,7 @@ import { PaymentsController } from './billing.controller';
 import { CustomersModule } from '../customers/customers.module';
 import { RentalChain } from '../rental-chains/entities/rental-chain.entity';
 import { TaskChainLink } from '../rental-chains/entities/task-chain-link.entity';
+import { TenantSettings } from '../tenant-settings/entities/tenant-settings.entity';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { PricingModule } from '../pricing/pricing.module';
 import { MapboxModule } from '../mapbox/mapbox.module';
@@ -53,6 +54,7 @@ import { RentalChainsModule } from '../rental-chains/rental-chains.module';
       PricingRule,
       RentalChain,
       TaskChainLink,
+      TenantSettings,
     ]),
     NotificationsModule,
     PricingModule,
