@@ -117,3 +117,35 @@ SSoT concern: `SubscriptionsService` (`/billing/*`) and `StripeService.subscribe
 Required next step: dedicated billing-guardian-led audit (PR-C1b-2 likely). Audit must (a) classify each site P0/P1/P2, (b) decide whether `SubscriptionsService` should be deprecated in favor of `StripeService.subscribe`, (c) propose key shapes per site only after classification, (d) propose webhook handling ownership at `/billing/webhook` (separate from the `/stripe/webhook` dedup that's PR-C2's scope).
 
 Tracked: 2026-04-30 from PR-C1b-1 Phase 0a verdict.
+
+## How to think (every task)
+
+1. **Think before coding.** Read the relevant files. State your plan in 2–3 sentences. If anything is ambiguous, ASK — never assume.
+2. **Simplicity first.** Smallest change that solves the problem. No new abstractions unless required. No "while I'm in here" refactors.
+3. **Surgical edits.** If 3 lines fix it, change 3 lines. Never rewrite a file when an edit will do. Never reformat code you're not touching.
+4. **Goal-driven.** Build only what was asked. If you spot something worth doing, mention it — don't do it.
+
+## Read the relevant skill before non-trivial work
+
+- Backend, frontend, architecture → `serviceos-engineer`
+- Invoices, credits, payments, cancellations → `serviceos-billing-guardian`
+- Jobs, rentals, dispatch, exchanges, lifecycle → `serviceos-lifecycle-auditor`
+- Reviewing diffs before deploy → `serviceos-qa-auditor`
+
+## Multi-vertical scoping
+
+Waste/dumpster features (dump slips, weight tickets, tonnage pricing, dump locations) must check `business_type` on the tenant. Never hardcode as universal logic. Same rule applies to any future vertical-specific feature.
+
+## No Docket copying
+
+Docket and other competitors are inspiration only. All code, design tokens, and copy must be original. Studying competitor flows is fine; reproducing patterns verbatim is not.
+
+## Brand split
+
+- **Internal** (code, repo, DB schemas, Vercel project names): `serviceos`
+- **External** (customer-facing strings, domains, API key prefixes): `rentthisapp`, `rta_live_`
+- Do NOT rename internal references until post-launch.
+
+## Design system
+
+White cards (`#FFF`) on dark frame (`#000`), 20px border-radius, card shadows. Accents: green `#22C55E`, amber `#D97706`, red `#DC2626`. Bold tight-kerned type, uppercase section labels.
