@@ -108,7 +108,7 @@ function ResetPasswordInner() {
             Set a new password
           </h1>
           <p className="mt-2 text-sm" style={{ color: "var(--t-frame-text-muted)" }}>
-            Enter a new password for your ServiceOS account.
+            Enter a new password for your RentThisApp account.
           </p>
         </div>
 

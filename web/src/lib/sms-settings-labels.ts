@@ -17,7 +17,7 @@ export const SMS_LABELS = {
   invalidNumber: "Please enter a valid US phone number",
   // ── Number-removal request flow ──
   requestNumberRemoval: "Request Number Removal",
-  smsRemovalPending: "Removal request submitted — awaiting ServiceOS review",
+  smsRemovalPending: "Removal request submitted — awaiting RentThisApp review",
   smsRemovalRequestSubmitted: "Removal request submitted",
   smsRemovalCancel: "Cancel request",
   smsRemovalCancelled: "Request cancelled",
@@ -26,11 +26,11 @@ export const SMS_LABELS = {
   smsRemovalFailed: "Removal failed — contact support",
   removalModalTitle: "Request SMS number removal",
   removalModalBody:
-    "Submitting this request will ask ServiceOS to release your dedicated SMS number. ServiceOS will review the request before any change is made.",
+    "Submitting this request will ask RentThisApp to release your dedicated SMS number. RentThisApp will review the request before any change is made.",
   removalModalBullet1:
     "Customers will no longer be able to text this number once it is released.",
   removalModalBullet2:
-    "Monthly billing for the number stops only after the release is processed by ServiceOS.",
+    "Monthly billing for the number stops only after the release is processed by RentThisApp.",
   removalModalBullet3:
     "Releasing a number is irreversible — you may not be able to recover the same number.",
   removalModalConfirm: "Submit request",

@@ -256,7 +256,7 @@ export default function HostedQuotePage({ params }: { params: Promise<{ token: s
 
         {/* Footer */}
         <div className="mt-12 pb-8 text-center">
-          <p className="text-xs text-gray-400">Powered by ServiceOS</p>
+          <p className="text-xs text-gray-400">Powered by RentThisApp</p>
         </div>
       </div>
     </div>

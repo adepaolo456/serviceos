@@ -512,7 +512,7 @@ function BookingWizardContent() {
 
       {embed && (
         <p className="mt-8 text-center text-xs text-[var(--t-text-muted)]">
-          Powered by <a href="https://serviceos.com" className="hover:text-[var(--t-text-primary)]">ServiceOS</a>
+          Powered by <a href="https://serviceos.com" className="hover:text-[var(--t-text-primary)]">RentThisApp</a>
         </p>
       )}
     </div>

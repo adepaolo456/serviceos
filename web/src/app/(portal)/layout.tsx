@@ -62,7 +62,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--t-accent)]">
               <span className="text-sm font-bold text-[var(--t-accent-on-accent)]">S</span>
             </div>
-            <span className="font-semibold text-sm hidden sm:block" style={{ color: "var(--t-frame-text)" }}>ServiceOS</span>
+            <span className="font-semibold text-sm hidden sm:block" style={{ color: "var(--t-frame-text)" }}>RentThisApp</span>
           </Link>
 
           {/* Desktop nav — Phase B17: list and detail are now distinct

@@ -139,7 +139,7 @@ function LoginPageInner() {
             <span className="text-xl font-bold text-black">S</span>
           </div>
           <h1 className="text-[28px] font-bold tracking-[-1px]" style={{ color: "var(--t-frame-text)" }}>
-            Sign in to ServiceOS
+            Sign in to RentThisApp
           </h1>
           <p className="mt-2 text-sm" style={{ color: "var(--t-frame-text-muted)" }}>
             {step === "email" && "Enter your email to get started"}

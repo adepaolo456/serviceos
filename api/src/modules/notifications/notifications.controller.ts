@@ -151,8 +151,8 @@ export class NotificationsController {
         channel: 'email',
         type: 'test',
         recipient: body.email,
-        subject: 'ServiceOS Test Notification',
-        body: '<h2>Test Email</h2><p>This is a test notification from ServiceOS. If you received this, email notifications are working correctly.</p>',
+        subject: 'RentThisApp Test Notification',
+        body: '<h2>Test Email</h2><p>This is a test notification from RentThisApp. If you received this, email notifications are working correctly.</p>',
       });
       results.email = { status: notif.status, id: notif.external_id };
     }
@@ -165,7 +165,7 @@ export class NotificationsController {
         channel: 'sms',
         type: 'test',
         recipient: normalized,
-        body: 'ServiceOS Test: SMS notifications are working correctly.',
+        body: 'RentThisApp Test: SMS notifications are working correctly.',
       });
       results.sms = { status: notif.status, id: notif.external_id };
     }

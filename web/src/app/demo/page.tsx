@@ -70,7 +70,7 @@ export default function DemoPage() {
             <span className="text-xl font-bold text-black">S</span>
           </div>
           <h1 className="text-[28px] font-bold text-[var(--t-frame-text)] tracking-[-1px]">Request a Demo</h1>
-          <p className="mt-2 text-sm text-[var(--t-frame-text-muted)]">See how ServiceOS can transform your service business</p>
+          <p className="mt-2 text-sm text-[var(--t-frame-text-muted)]">See how RentThisApp can transform your service business</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
