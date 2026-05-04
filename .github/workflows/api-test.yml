@@ -7,9 +7,6 @@ on:
       - 'api/**'
       - '.github/workflows/api-test.yml'
   pull_request:
-    paths:
-      - 'api/**'
-      - '.github/workflows/api-test.yml'
   workflow_dispatch: {}
 
 permissions:
@@ -43,5 +40,3 @@ jobs:
       - name: Run unit tests
         working-directory: api
         run: npm test -- --runInBand
-# ci-trigger: tooling PRs (no api/** changes) reach this workflow via the path filter on this file. See PR #80.
-# touch: PR-4 webhook coming-soon state (path-filter retrigger)
