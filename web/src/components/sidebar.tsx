@@ -155,7 +155,7 @@ export default function Sidebar() {
     <>
       <div className="flex h-14 items-center gap-2.5 px-5 shrink-0">
         <span className="text-[17px] font-bold tracking-tight" style={{ color: "var(--t-frame-text)" }}>
-          Service<span style={{ color: "var(--t-accent)" }}>OS</span>
+          RentThis<span style={{ color: "var(--t-accent)" }}>App</span>
         </span>
       </div>
 
@@ -253,7 +253,7 @@ export default function Sidebar() {
     <>
       {/* Logo — just green "OS" */}
       <div className="flex h-14 items-center justify-center shrink-0">
-        <span className="text-[15px] font-bold" style={{ color: "var(--t-accent)" }}>OS</span>
+        <span className="text-[15px] font-bold" style={{ color: "var(--t-accent)" }}>App</span>
       </div>
 
       {/* Quick Quote — icon only */}
