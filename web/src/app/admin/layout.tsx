@@ -83,7 +83,7 @@ export default function AdminLayout({
                 <span className="text-sm font-bold text-[var(--t-accent-on-accent)]">S</span>
               </div>
               <span className="text-base font-bold" style={{ color: "var(--t-frame-text)" }}>
-                ServiceOS <span className="text-xs font-medium ml-1" style={{ color: "var(--t-frame-text-muted)" }}>Admin</span>
+                RentThisApp <span className="text-xs font-medium ml-1" style={{ color: "var(--t-frame-text-muted)" }}>Admin</span>
               </span>
             </div>
             <nav className="hidden sm:flex items-center gap-1">

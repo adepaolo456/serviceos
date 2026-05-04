@@ -74,7 +74,7 @@ export default function AdminDashboardPage() {
     <div>
       <div className="mb-8">
         <h1 className="text-[28px] font-bold tracking-[-1px]" style={{ color: "var(--t-frame-text)" }}>Platform Overview</h1>
-        <p className="mt-1 text-sm" style={{ color: "var(--t-frame-text-muted)" }}>ServiceOS SaaS metrics at a glance</p>
+        <p className="mt-1 text-sm" style={{ color: "var(--t-frame-text-muted)" }}>RentThisApp SaaS metrics at a glance</p>
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">

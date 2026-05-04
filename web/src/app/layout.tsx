@@ -3,15 +3,15 @@ import { ThemeProvider } from "@/components/theme-provider";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "ServiceOS",
-  description: "Service business management platform",
+  title: "RentThisApp",
+  description: "Equipment rental and service business management platform.",
   icons: {
     icon: "/favicon.svg",
     apple: "/apple-touch-icon.svg",
   },
   openGraph: {
-    title: "ServiceOS",
-    description: "Service business management platform",
+    title: "RentThisApp",
+    description: "Equipment rental and service business management platform.",
     images: [{ url: "/og-image.svg", width: 1200, height: 630 }],
   },
 };

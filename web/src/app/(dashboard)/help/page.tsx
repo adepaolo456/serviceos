@@ -159,7 +159,7 @@ function HelpCenterPage() {
     <div>
       <div className="mb-8">
         <h1 className="text-[28px] font-bold tracking-[-1px]" style={{ color: "var(--t-frame-text)" }}>Help Center</h1>
-        <p className="mt-1 text-[13px]" style={{ color: "var(--t-frame-text-muted)" }}>Find answers and learn how ServiceOS works.</p>
+        <p className="mt-1 text-[13px]" style={{ color: "var(--t-frame-text-muted)" }}>Find answers and learn how RentThisApp works.</p>
       </div>
 
       {/* Search */}
