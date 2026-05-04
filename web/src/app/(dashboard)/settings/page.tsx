@@ -367,7 +367,7 @@ function IntegrationsTab({ profile }: { profile: Profile | null }) {
   const [showKey, setShowKey] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
   const tenantId = profile?.tenant.id || "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx";
-  const apiKey = `sos_live_${tenantId.replace(/-/g, "").slice(0, 24)}`;
+  const apiKey = `rta_live_${tenantId.replace(/-/g, "").slice(0, 24)}`;
   const webhookPlaceholder = "Coming soon";
 
   const copyToClipboard = (text: string, label: string) => { navigator.clipboard.writeText(text); setCopied(label); setTimeout(() => setCopied(null), 2000); };
@@ -396,7 +396,7 @@ function IntegrationsTab({ profile }: { profile: Profile | null }) {
       <div className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6">
         <div className="flex items-center gap-3 mb-4"><Key className="h-5 w-5 text-[var(--t-text-muted)]" /><div><p className="text-sm font-semibold text-[var(--t-text-primary)]">API Key</p><p className="text-[13px] text-[var(--t-text-muted)]">Use this key for API authentication</p></div></div>
         <div className="flex items-center gap-2">
-          <code className="flex-1 rounded-[20px] bg-[var(--t-bg-card-hover)] px-4 py-2.5 text-sm font-mono text-[var(--t-text-primary)]">{showKey ? apiKey : "sos_live_************************"}</code>
+          <code className="flex-1 rounded-[20px] bg-[var(--t-bg-card-hover)] px-4 py-2.5 text-sm font-mono text-[var(--t-text-primary)]">{showKey ? apiKey : "rta_live_************************"}</code>
           <button onClick={() => setShowKey(!showKey)} className="rounded-full border border-[var(--t-border)] p-2.5 text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)] transition-colors">
             {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
           </button>
@@ -739,7 +739,7 @@ function AccountTab({ profile }: { profile: Profile | null }) {
     setTimeout(() => { setPasswordSaving(false); setCurrentPassword(""); setNewPassword(""); setConfirmPassword(""); }, 1000);
   };
 
-  const apiKey = profile?.tenant.id ? `sk_live_${profile.tenant.id.replace(/-/g, "").slice(0, 24)}` : "sk_live_...";
+  const apiKey = profile?.tenant.id ? `rta_live_${profile.tenant.id.replace(/-/g, "").slice(0, 24)}` : "rta_live_...";
 
   return (
     <div className="max-w-2xl space-y-6">
