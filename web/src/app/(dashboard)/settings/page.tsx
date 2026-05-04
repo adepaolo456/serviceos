@@ -368,7 +368,7 @@ function IntegrationsTab({ profile }: { profile: Profile | null }) {
   const [copied, setCopied] = useState<string | null>(null);
   const tenantId = profile?.tenant.id || "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx";
   const apiKey = `sos_live_${tenantId.replace(/-/g, "").slice(0, 24)}`;
-  const webhookUrl = `https://api.serviceos.io/marketplace/bookings`;
+  const webhookPlaceholder = "Coming soon";
 
   const copyToClipboard = (text: string, label: string) => { navigator.clipboard.writeText(text); setCopied(label); setTimeout(() => setCopied(null), 2000); };
 
@@ -407,11 +407,17 @@ function IntegrationsTab({ profile }: { profile: Profile | null }) {
       </div>
 
       <div className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6">
-        <div className="flex items-center gap-3 mb-4"><Webhook className="h-5 w-5 text-[var(--t-text-muted)]" /><div><p className="text-sm font-semibold text-[var(--t-text-primary)]">Webhook URL</p><p className="text-[13px] text-[var(--t-text-muted)]">Configure in your marketplace dashboard</p></div></div>
+        <div className="flex items-center gap-3 mb-4"><Webhook className="h-5 w-5 text-[var(--t-text-muted)]" /><div><p className="text-sm font-semibold text-[var(--t-text-primary)]">Webhook URL</p><p className="text-[13px] text-[var(--t-text-muted)]">Coming soon — marketplace webhook endpoints are not enabled for self-service yet.</p></div></div>
         <div className="flex items-center gap-2">
-          <code className="flex-1 rounded-[20px] bg-[var(--t-bg-card-hover)] px-4 py-2.5 text-sm font-mono text-[var(--t-text-primary)] truncate">{webhookUrl}</code>
-          <button onClick={() => copyToClipboard(webhookUrl, "webhook")} className="rounded-full border border-[var(--t-border)] p-2.5 text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)] transition-colors">
-            {copied === "webhook" ? <Check className="h-4 w-4 text-[var(--t-accent)]" /> : <Copy className="h-4 w-4" />}
+          <code className="flex-1 rounded-[20px] bg-[var(--t-bg-card-hover)] px-4 py-2.5 text-sm font-mono text-[var(--t-text-muted)] truncate opacity-60">{webhookPlaceholder}</code>
+          <button
+            type="button"
+            disabled
+            aria-disabled="true"
+            title="Contact support if you need early marketplace webhook access."
+            className="rounded-full border border-[var(--t-border)] p-2.5 text-[var(--t-text-muted)] opacity-50 cursor-not-allowed transition-colors"
+          >
+            <Copy className="h-4 w-4" />
           </button>
         </div>
       </div>
