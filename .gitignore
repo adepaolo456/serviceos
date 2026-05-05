@@ -20,6 +20,8 @@ dist/
 .claude/cache/
 .claude/agent-memory/
 .claude/settings.local.json
+# Claude Code session worktrees (never tracked — embedded git repos)
+.claude/worktrees/
 
 # Repomix output
 repomix-output.xml
