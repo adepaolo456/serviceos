@@ -195,7 +195,7 @@
 - 📋 **Username/password authentication for non-email users** (drivers + office staff) — **PRE-LAUNCH BLOCKER, P0**
 - 📋 Second-tenant onboarding playbook
 - 📋 Google OAuth tenant selector UI (deferred until tenant 2 onboarded)
-- 📋 Tenant slug shortening (current `rent-this-dumpster` → custom shorts like `rentthis`)
+- ✅ Tenant slug shortened — `rent-this-dumpster-mnbxs4jm` → `rent-this-dumpster` (arcL, PR #85 `8ca250c`, deploy `dpl_2yeDZe5ocTc6AuJz5VNaeKALAaMK`, 2026-05-04)
 - 💡 RLS threat-model decision doc (defense-in-depth-only vs primary API enforcement) — open follow-up in arc-state.md
 - 💡 Quotes RLS policy outlier review (`current_setting('app.tenant_id')`, public role, ALL policy) vs canonical auth.jwt tenant pattern
 - 💡 Optional FORCE ROW LEVEL SECURITY evaluation on the 6 policied tables
