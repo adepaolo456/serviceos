@@ -7,10 +7,10 @@
   // Find our script tag and read config
   var scripts = document.querySelectorAll('script[data-slug]');
   var scriptTag = scripts[scripts.length - 1];
-  if (!scriptTag) { console.error('[ServiceOS] Missing data-slug attribute'); return; }
+  if (!scriptTag) { console.error('[RentThisApp] Missing data-slug attribute'); return; }
 
   var slug = scriptTag.getAttribute('data-slug');
-  if (!slug) { console.error('[ServiceOS] data-slug is empty'); return; }
+  if (!slug) { console.error('[RentThisApp] data-slug is empty'); return; }
 
   var position = scriptTag.getAttribute('data-position') || 'bottom-right';
   var buttonText = scriptTag.getAttribute('data-button-text') || 'Book Now';
@@ -25,14 +25,14 @@
   fetch(API + '/public/tenant/' + slug + '/widget-config')
     .then(function(r) { return r.ok ? r.json() : Promise.reject('Not found'); })
     .then(function(data) { config = data; init(); })
-    .catch(function(e) { console.error('[ServiceOS] Widget config failed:', e); });
+    .catch(function(e) { console.error('[RentThisApp] Widget config failed:', e); });
 
   function init() {
     var color = (config && config.primaryColor) || '#22C55E';
 
     // Create floating button
     btn = document.createElement('button');
-    btn.id = 'serviceos-widget-btn';
+    btn.id = 'rentthisapp-widget-btn';
     btn.textContent = buttonText;
     btn.setAttribute('aria-label', 'Open booking widget');
     var btnStyle = 'position:fixed;z-index:99999;' +
@@ -60,21 +60,21 @@
     document.body.style.overflow = 'hidden';
 
     overlay = document.createElement('div');
-    overlay.id = 'serviceos-widget-overlay';
+    overlay.id = 'rentthisapp-widget-overlay';
     overlay.style.cssText = 'position:fixed;inset:0;z-index:100000;' +
       'background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;' +
-      'animation:serviceos-fadein 0.2s ease;';
+      'animation:rentthisapp-fadein 0.2s ease;';
     overlay.onclick = function(e) { if (e.target === overlay) closeModal(); };
 
     var modal = document.createElement('div');
-    modal.id = 'serviceos-widget-modal';
+    modal.id = 'rentthisapp-widget-modal';
     modal.style.cssText = 'position:relative;width:90%;max-width:520px;height:85vh;max-height:800px;' +
       'background:#000;border:1px solid #3A3A3A;border-radius:20px;overflow:hidden;' +
       'box-shadow:0 25px 60px rgba(0,0,0,0.5);' +
-      'animation:serviceos-scalein 0.2s ease;';
+      'animation:rentthisapp-scalein 0.2s ease;';
 
     var closeBtn = document.createElement('button');
-    closeBtn.id = 'serviceos-widget-close';
+    closeBtn.id = 'rentthisapp-widget-close';
     closeBtn.innerHTML = '&times;';
     closeBtn.setAttribute('aria-label', 'Close');
     closeBtn.style.cssText = 'position:absolute;top:12px;right:12px;z-index:10;' +
@@ -86,7 +86,7 @@
     closeBtn.onclick = closeModal;
 
     var iframe = document.createElement('iframe');
-    iframe.id = 'serviceos-widget-iframe';
+    iframe.id = 'rentthisapp-widget-iframe';
     iframe.src = APP + '/site/book?slug=' + encodeURIComponent(slug) + '&embed=true';
     iframe.style.cssText = 'width:100%;height:100%;border:none;';
     iframe.setAttribute('allow', 'geolocation');
@@ -97,12 +97,12 @@
     document.body.appendChild(overlay);
 
     // Inject keyframe animation (only once)
-    if (!document.getElementById('serviceos-widget-styles')) {
+    if (!document.getElementById('rentthisapp-widget-styles')) {
       var style = document.createElement('style');
-      style.id = 'serviceos-widget-styles';
+      style.id = 'rentthisapp-widget-styles';
       style.textContent =
-        '@keyframes serviceos-fadein{from{opacity:0}to{opacity:1}}' +
-        '@keyframes serviceos-scalein{from{opacity:0;transform:scale(0.95)}to{opacity:1;transform:scale(1)}}';
+        '@keyframes rentthisapp-fadein{from{opacity:0}to{opacity:1}}' +
+        '@keyframes rentthisapp-scalein{from{opacity:0;transform:scale(0.95)}to{opacity:1;transform:scale(1)}}';
       document.head.appendChild(style);
     }
 
@@ -126,12 +126,12 @@
     var data = e.data;
     if (!data || typeof data !== 'object') return;
 
-    if (data.type === 'serviceos-booking-complete') {
-      if (typeof window.serviceosOnBooking === 'function') {
-        window.serviceosOnBooking(data.booking || data);
+    if (data.type === 'rentthisapp-booking-complete') {
+      if (typeof window.rentThisAppOnBooking === 'function') {
+        window.rentThisAppOnBooking(data.booking || data);
       }
     }
-    if (data.type === 'serviceos-close') {
+    if (data.type === 'rentthisapp-close') {
       closeModal();
     }
   });
@@ -142,5 +142,5 @@
   });
 
   // Expose global API
-  window.ServiceOS = { open: openModal, close: closeModal };
+  window.RentThisApp = { open: openModal, close: closeModal };
 })();
