@@ -55,6 +55,10 @@ This file is loaded at every Claude Code session start. These rules are non-nego
 - Specialized review: invoke `@serviceos-qa-auditor`, `@serviceos-billing-guardian`, `@serviceos-lifecycle-auditor` after implementation.
 - NEVER auto-commit. NEVER auto-push.
 
+## Arc closure checklist
+
+- Update the project board: close the arc-level card on completion, create new cards for any follow-ups surfaced during the arc, and move in-flight cards to the correct status column. Card hygiene is part of arc closure, not optional.
+
 ## Followups (infrastructure — small, when you have a quiet 10 minutes)
 
 - Install gh CLI (`brew install gh && gh auth login`) so Claude Code can open PRs directly via `gh pr create` instead of falling back to the browser. Avoids the manual title/body copy-paste step on PRs #10 and #11.
