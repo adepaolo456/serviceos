@@ -247,6 +247,33 @@ When-to-revisit triggers for tooling additions evaluated tonight.
 
 Date-stamped entries appended at top. Each entry shows what changed in this file since the previous entry.
 
+### 2026-05-04 (Project board reconciliation arc closed)
+
+- **Phase 0 dump** found 51 board items with 0 missing-issue tracking gaps; main drift was stale Backlog status (cards whose blockers had shipped weeks earlier and were never re-categorized).
+- **Phase 1 plan** answered 6 open questions:
+  - Arc-level cards, not 1-card-per-PR (rebrand stack #81–#84 = one card; arcL #85+#86 = one card).
+  - Minimal-touch on already-correct cards (no body footers on #28 / #77).
+  - `Pre-launch polish` milestone created instead of stretching `Multi-tenant readiness` (which means "launch blocker", not "polish").
+  - #62 "Tenant slug shortening" stays in Backlog (vanity slug tooling, not arcL's suffix removal).
+  - `In Progress` is optional for short solo-dev arcs (Backlog → Done is acceptable).
+  - Field-vs-label mismatch resolution policy: project field wins; label gets corrected to match field.
+- **Phase 2 mutations** (executed 2026-05-04):
+  - Created milestone `Pre-launch polish` (#6).
+  - Created retroactive Done card for arcL (issue #87, project item `PVTI_lAHOAZbXz84BWRGTzgrzlq0`, milestone `Pre-launch polish`).
+  - Created retroactive Done card for rebrand stack (issue #88, project item `PVTI_lAHOAZbXz84BWRGTzgrzmt8`, milestone `Pre-launch polish`).
+  - Flipped #29 `[PR-C2]` Status: Backlog → Ready and removed `status:blocked` label (PR-C2-pre shipped via PR #67 on 2026-05-01).
+  - Appended body footer to #29 noting unblock context.
+- **Lessons captured in plan amendments:**
+  - **§1.4 — write-scope precondition gate**: `gh project item-edit` and `gh project item-add` need the `project` write scope, not just `read:project`. Without it, Phase 2 fails mid-execution at the first project mutation, leaving milestone + first issue partially created. Fail-closed gate added before any mutation.
+  - **§5.6 — label-set verification**: sort labels before comparison so `gh issue view --json` non-deterministic ordering doesn't surface as false drift.
+  - **§6.3 / §6.4 / §6.5 — GitHub Projects auto-close-on-Done**: setting Status=Done via `gh project item-edit` triggers the project's built-in workflow that closes the linked issue (`state: closed, state_reason: completed`). Treat as expected behavior, not drift; the closed-at timestamp is a useful durable completed-at marker on each issue.
+- **Audit trail:**
+  - `docs/audits/2026-05-04-project-board-state-dump.md` (Phase 0)
+  - `docs/audits/2026-05-04-project-board-phase1-plan.md` (Phase 1)
+  - `docs/audits/2026-05-04-project-board-phase2-execution-plan.md` (Phase 2 plan with §1.4, §5.6, §6.5 amendments)
+- **Board state delta:** 51 → 53 items; 5 → 6 milestones; status counts: Backlog 46 → 45, Ready 1 → 2, Done 2 → 4, Audit Pending 2 → 2.
+- **Closing rule landed in CLAUDE.md** under new "Arc closure checklist" section: "Update the project board: close the arc-level card on completion, create new cards for any follow-ups surfaced during the arc, and move in-flight cards to the correct status column. Card hygiene is part of arc closure, not optional."
+
 ### 2026-05-04 (arcL closed — tenant slug shortened)
 - Tenant slug shortened on production tenant `822481be` (Rent This Dumpster): `rent-this-dumpster-mnbxs4jm` → `rent-this-dumpster`
 - Phase 1a code merged: PR #85, squash commit `8ca250c`
