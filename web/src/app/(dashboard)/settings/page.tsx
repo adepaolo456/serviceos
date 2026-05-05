@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, type FormEvent } from "react";
 import {
-  Building, Users, CreditCard, Plug, Upload, Copy, Check, Eye, EyeOff,
+  Building, Users, CreditCard, Plug, Upload, Copy, Check,
   ExternalLink, Zap, Globe, Key, Webhook, MapPin, Plus, Trash2, Star,
   Bell, Shield, Lock, Download, AlertTriangle, FileText,
 } from "lucide-react";
@@ -364,10 +364,8 @@ function BillingTab({ profile }: { profile: Profile | null }) {
 /* ── Integrations ── */
 
 function IntegrationsTab({ profile }: { profile: Profile | null }) {
-  const [showKey, setShowKey] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
   const tenantId = profile?.tenant.id || "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx";
-  const apiKey = `rta_live_${tenantId.replace(/-/g, "").slice(0, 24)}`;
   const webhookPlaceholder = "Coming soon";
 
   const copyToClipboard = (text: string, label: string) => { navigator.clipboard.writeText(text); setCopied(label); setTimeout(() => setCopied(null), 2000); };
@@ -394,15 +392,9 @@ function IntegrationsTab({ profile }: { profile: Profile | null }) {
       </div>
 
       <div className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6">
-        <div className="flex items-center gap-3 mb-4"><Key className="h-5 w-5 text-[var(--t-text-muted)]" /><div><p className="text-sm font-semibold text-[var(--t-text-primary)]">API Key</p><p className="text-[13px] text-[var(--t-text-muted)]">Use this key for API authentication</p></div></div>
+        <div className="flex items-center gap-3 mb-4"><Key className="h-5 w-5 text-[var(--t-text-muted)]" /><div><p className="text-sm font-semibold text-[var(--t-text-primary)]">API Key</p><p className="text-[13px] text-[var(--t-text-muted)]">Coming soon — API keys for integrations are not available yet.</p></div></div>
         <div className="flex items-center gap-2">
-          <code className="flex-1 rounded-[20px] bg-[var(--t-bg-card-hover)] px-4 py-2.5 text-sm font-mono text-[var(--t-text-primary)]">{showKey ? apiKey : "rta_live_************************"}</code>
-          <button onClick={() => setShowKey(!showKey)} className="rounded-full border border-[var(--t-border)] p-2.5 text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)] transition-colors">
-            {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-          </button>
-          <button onClick={() => copyToClipboard(apiKey, "api")} className="rounded-full border border-[var(--t-border)] p-2.5 text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)] transition-colors">
-            {copied === "api" ? <Check className="h-4 w-4 text-[var(--t-accent)]" /> : <Copy className="h-4 w-4" />}
-          </button>
+          <code className="flex-1 rounded-[20px] bg-[var(--t-bg-card-hover)] px-4 py-2.5 text-sm font-mono text-[var(--t-text-muted)] truncate opacity-60">API keys coming soon</code>
         </div>
       </div>
 
@@ -728,7 +720,6 @@ function AccountTab({ profile }: { profile: Profile | null }) {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [passwordError, setPasswordError] = useState("");
   const [passwordSaving, setPasswordSaving] = useState(false);
-  const [showApiKey, setShowApiKey] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
 
   const handlePasswordChange = async (e: FormEvent) => {
@@ -738,8 +729,6 @@ function AccountTab({ profile }: { profile: Profile | null }) {
     setPasswordError(""); setPasswordSaving(true);
     setTimeout(() => { setPasswordSaving(false); setCurrentPassword(""); setNewPassword(""); setConfirmPassword(""); }, 1000);
   };
-
-  const apiKey = profile?.tenant.id ? `rta_live_${profile.tenant.id.replace(/-/g, "").slice(0, 24)}` : "rta_live_...";
 
   return (
     <div className="max-w-2xl space-y-6">
@@ -770,20 +759,21 @@ function AccountTab({ profile }: { profile: Profile | null }) {
       </div>
 
       <div className="rounded-[20px] border border-[var(--t-border)] bg-[var(--t-bg-card)] p-6">
-        <h3 className="text-sm font-semibold text-[var(--t-text-primary)] mb-4">API Access</h3>
+        <h3 className="text-sm font-semibold text-[var(--t-text-primary)] mb-2">API Access</h3>
+        <p className="text-[13px] text-[var(--t-text-muted)] mb-3">Coming soon — API keys are not available yet.</p>
         <div className="space-y-3">
           <div>
             <label className={labelCls}>API Key</label>
             <div className="flex gap-2">
-              <input type={showApiKey ? "text" : "password"} value={apiKey} readOnly className={`flex-1 ${inputCls} font-mono text-xs`} />
-              <button onClick={() => setShowApiKey(!showApiKey)} className="rounded-full border border-[var(--t-border)] px-3 py-2 text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)] transition-colors">
-                {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-              </button>
+              <input
+                type="text"
+                value="API keys coming soon"
+                readOnly
+                disabled
+                aria-disabled="true"
+                className={`flex-1 ${inputCls} font-mono text-xs opacity-60 cursor-not-allowed`}
+              />
             </div>
-          </div>
-          <div className="flex gap-2">
-            <button className="rounded-full border border-[var(--t-border)] px-3 py-1.5 text-xs font-medium text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)] transition-colors">Regenerate Key</button>
-            <button className="rounded-full border border-[var(--t-border)] px-3 py-1.5 text-xs font-medium text-[var(--t-text-muted)] hover:text-[var(--t-text-primary)] transition-colors">API Docs</button>
           </div>
         </div>
       </div>
