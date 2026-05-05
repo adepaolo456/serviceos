@@ -17,6 +17,8 @@ import { DumpTicket } from '../dump-locations/entities/dump-ticket.entity';
 import { DeliveryZone } from '../pricing/entities/delivery-zone.entity';
 import * as bcrypt from 'bcrypt';
 
+const SEED_TENANT_SLUG = 'rent-this-dumpster';
+
 @Controller('admin/seed')
 @UseGuards(RolesGuard)
 @Roles('owner')
@@ -80,7 +82,7 @@ export class SeedController {
 
     this.logger.log(`Seed invoked by user=${userId} tenant=${tenantId}`);
 
-    const tenant = await this.tenantRepo.findOne({ where: { slug: 'rent-this-dumpster-mnbxs4jm' } });
+    const tenant = await this.tenantRepo.findOne({ where: { slug: SEED_TENANT_SLUG } });
     if (!tenant) return { error: 'Tenant not found' };
     const tid = tenant.id;
     const log: string[] = [];
@@ -300,7 +302,7 @@ export class SeedController {
     if (secret !== 'SEED_2026') return { error: 'Invalid secret' };
 
     try {
-    const tenant = await this.tenantRepo.findOne({ where: { slug: 'rent-this-dumpster-mnbxs4jm' } });
+    const tenant = await this.tenantRepo.findOne({ where: { slug: SEED_TENANT_SLUG } });
     if (!tenant) return { error: 'Tenant not found' };
     const tid = tenant.id;
     const log: string[] = [];

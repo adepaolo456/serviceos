@@ -183,7 +183,7 @@
 
 - ✅ Multi-tenant data isolation: JWT-derived tenant_id, app-layer filtering primary (no TenantGuard class exists today; CLS/context mechanisms propagate tenant context across async boundaries — see ADR 0002)
 - ✅ Row Level Security on 56/56 public tables (6 with explicit policies, rest default-deny for non-bypassing roles); NestJS API connects through bypassing/superuser-equivalent role so RLS is defense-in-depth for direct Supabase / PostgREST / client paths, not the primary runtime enforcement for the API
-- ✅ Wildcard subdomain routing on Vercel (`rentthisapp.com`); `rent-this-dumpster-mnbxs4jm.rentthisapp.com` verified
+- ✅ Wildcard subdomain routing on Vercel (`rentthisapp.com`); `rent-this-dumpster.rentthisapp.com` verified
 - ✅ Middleware routes tenant subdomains to `/site?slug=X` (`baabde0`); reserves app/www/api/admin
 - ✅ OAuth Option A (`aa5dc8c`) — email-unique-per-platform, no auto-create, verified_email check, normalizeEmail at 9 sites
 - ✅ Password reset (`eb6d8ba`) — hybrid admin+user flow, SHA-256 tokens, 60-min expiry, single-use, atomic redeemAndApply, rate-limited (3/hr email + 10/hr IP + 200ms timing floor + admin trigger 5/hr)
@@ -195,7 +195,7 @@
 - 📋 **Username/password authentication for non-email users** (drivers + office staff) — **PRE-LAUNCH BLOCKER, P0**
 - 📋 Second-tenant onboarding playbook
 - 📋 Google OAuth tenant selector UI (deferred until tenant 2 onboarded)
-- 📋 Tenant slug shortening (current UUID-derived `rent-this-dumpster-mnbxs4jm` → custom shorts like `rentthis`)
+- 📋 Tenant slug shortening (current `rent-this-dumpster` → custom shorts like `rentthis`)
 - 💡 RLS threat-model decision doc (defense-in-depth-only vs primary API enforcement) — open follow-up in arc-state.md
 - 💡 Quotes RLS policy outlier review (`current_setting('app.tenant_id')`, public role, ALL policy) vs canonical auth.jwt tenant pattern
 - 💡 Optional FORCE ROW LEVEL SECURITY evaluation on the 6 policied tables

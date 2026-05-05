@@ -160,7 +160,7 @@ Current PR-C arc deliverables:
 - Second-tenant onboarding playbook
 - Notification settings UI
 - Driver branding
-- Tenant slug shortening (current UUID-derived `rent-this-dumpster-mnbxs4jm` → custom shorts like `rentthis`)
+- Tenant slug shortening (current `rent-this-dumpster` → custom shorts like `rentthis`)
 - Google OAuth tenant selector UI (deferred until tenant 2 onboarded)
 
 ### GTM
