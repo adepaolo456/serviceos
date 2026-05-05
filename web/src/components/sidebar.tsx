@@ -251,7 +251,7 @@ export default function Sidebar() {
   /* ---- Collapsed desktop sidebar content ---- */
   const collapsedSidebarContent = (
     <>
-      {/* Logo — just green "OS" */}
+      {/* Logo — just green "App" */}
       <div className="flex h-14 items-center justify-center shrink-0">
         <span className="text-[15px] font-bold" style={{ color: "var(--t-accent)" }}>App</span>
       </div>

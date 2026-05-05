@@ -848,7 +848,7 @@ function WebsiteTab({ slug }: { slug: string }) {
     } catch {} finally { setSaving(false); }
   };
 
-  const websiteUrl = `${slug}.serviceos.com`;
+  const websiteUrl = `${slug}.rentthisapp.com`;
   const widgetCode = `<script src="https://api.rentthisapp.com/widget.js" data-slug="${slug}"></script>`;
   const copyText = (text: string) => { navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 2000); };
 

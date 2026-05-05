@@ -2,7 +2,7 @@
   'use strict';
 
   var API = 'https://api.rentthisapp.com';
-  var APP = 'https://serviceos-web-zeta.vercel.app';
+  var APP = 'https://app.rentthisapp.com';
 
   // Find our script tag and read config
   var scripts = document.querySelectorAll('script[data-slug]');

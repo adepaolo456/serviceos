@@ -417,7 +417,7 @@ export class AuthController {
   async googleCallback(@Req() req: Request, @Res() res: Response) {
     const frontendUrl = (
       this.configService.get<string>('APP_URL') ||
-      'https://serviceos-web-zeta.vercel.app'
+      'https://app.rentthisapp.com'
     ).trim();
 
     try {
