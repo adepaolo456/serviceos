@@ -8,7 +8,7 @@ export class HealthController {
   check() {
     return {
       status: 'ok',
-      commit: process.env.VERCEL_GIT_COMMIT_SHA ?? null,
+      commit: process.env.VERCEL_GIT_COMMIT_SHA || null,
       timestamp: new Date().toISOString(),
     };
   }
