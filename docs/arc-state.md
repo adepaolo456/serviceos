@@ -1,6 +1,6 @@
 # ServiceOS — Arc State
 
-> Last updated: 2026-05-05 (arcN closed — api.rentthisapp.com cutover)
+> Last updated: 2026-05-05 (arcO closed — small pre-launch cleanup batch)
 > Composes with: CLAUDE.md (operational rules), docs/audits/ (durable decision records), docs/feature-inventory.md (capability inventory), GitHub Issues + Projects (operational status)
 
 ## TOC
@@ -246,6 +246,24 @@ When-to-revisit triggers for tooling additions evaluated tonight.
 ## 11. Update log
 
 Date-stamped entries appended at top. Each entry shows what changed in this file since the previous entry.
+
+### 2026-05-05 (arcO closed — small pre-launch cleanup batch)
+
+- **Goal.** Four isolated pre-launch cleanup items in one arc: ship a `GET /health` endpoint (Path A — hand-rolled, no `@nestjs/terminus`); resolve three stale URL follow-ups surfaced by arcN PR #90 (widget.js APP host, settings websiteUrl, auth.controller frontendUrl fallback); document the live `idx_customers_tenant_email_unique` partial unique index on `customer.entity.ts` via `@Index` decorator (documentation-as-code); fix the stale `/* Logo — just green "OS" */` comment in `sidebar.tsx`. Single PR / single squash commit / single API deploy planned, with a Phase 1c.1 amendment for the `/health` JSON shape fix discovered post-deploy.
+- **Verdict.** SAFE. 4 isolated low-risk changes. Audit doc 164 lines, slightly over the 60–100 target due to the TypeORM `synchronize: isTest` safety analysis on Item 3 + per-item verification tables.
+- **Phase 1a — code (Claude Code).** PR [#95](https://github.com/adepaolo456/serviceos/pull/95) squash `f959e24` (7 files, +40/−5). New `api/src/health.controller.ts`; HealthController registered in `app.module.ts` controllers array; auth.controller.ts:420 fallback swapped to `https://app.rentthisapp.com` (symmetric with line 376); customer.entity.ts class-level `@Index` decorator + JSDoc fidelity-gap note; widget.js:5 APP swapped to `https://app.rentthisapp.com`; settings page websiteUrl swapped to `${slug}.rentthisapp.com`; sidebar.tsx:254 comment updated.
+- **Phase 1b — API deploy (Claude Code).** `dpl_DVTUHKoYV7uAYcPu6Z245bv5FPn2` (build 16s, total 37s) with Sentry release pinned to `f959e24`. Aliased to both `https://api.rentthisapp.com` (canonical post-arcN) and `https://serviceos-api.vercel.app` (retained alias).
+- **Phase 1c — `/health` smoke (Claude Code).** Status `"ok"` and HTTP 200 on both aliases (new `api.rentthisapp.com` and old `serviceos-api.vercel.app`). Surfaced one shape deviation: `commit` returned `""` (empty string) rather than the audit's expected SHA-or-`null`. Diagnosis: Vercel runtime exposes `VERCEL_GIT_COMMIT_SHA` as empty string, and `??` only triggers on `null`/`undefined`.
+- **Phase 1c.1 — `/health` commit null-shape fix (Claude Code).** Single-character operator change in `api/src/health.controller.ts`: `?? null` → `|| null`. PR [#96](https://github.com/adepaolo456/serviceos/pull/96) squash `5995500` (1 file, +1/−1). API redeployed via `dpl_ERzqp3isdBRuTMcqyAchksiEmSC5` (Sentry release pinned to `5995500`). Re-smoke confirmed `{ status: "ok", commit: null, timestamp: <fresh ISO> }`.
+- **Phase 1d — Web auto-deploy verification (Claude Code).** Latest `serviceos-web` Production deploy `dpl_9bzruM9sAsHujFD6Q4WZg3W65bP1` (action: github auto-deploy on PR #96 merge, commit `5995500`, target production, READY at `2026-05-05T14:19:03Z`). Cache-busted `widget.js` confirms both `var API = 'https://api.rentthisapp.com';` and `var APP = 'https://app.rentthisapp.com';` are live. `/login` bundle grep across 12 chunks: 6 `rentthisapp.com` hits, 0 `serviceos.com` hits, 0 `serviceos-web-zeta.vercel.app` hits.
+- **Phase 1e — closure (this commit).** Docs PR landed via squash merge with `--admin` (consistent with arcL/arcM/arcN/arcO hygiene). Card #94 flipped Ready → Done; GitHub Projects auto-close-on-Done workflow closes the linked issue per arcM § 6.5.
+- **Lessons captured.**
+  - **`VERCEL_GIT_COMMIT_SHA` exposure.** `--build-env VERCEL_GIT_COMMIT_SHA=…` injects the variable at **build time** — that's enough for Sentry release pinning (the SHA is baked into the build artifact), but the **runtime lambda env** does not get the same variable populated. The runtime exposes `VERCEL_GIT_COMMIT_SHA` as an empty string by default. For runtime fallbacks, prefer `process.env.X || null` over `process.env.X ?? null` so empty string is treated as missing.
+  - **Workflow refinement: card created at scoping (Phase 0), not closure.** arcL/arcM/arcN cards were created retroactively because their scope was clarified mid-execution. arcO is the first arc with the project-board card created in **Ready** during Phase 0, then flipped to Done at Phase 1e. Backlog→Ready→Done is the right lifecycle when the audit settles scope before execution begins. Documented in audit doc § "Workflow refinement" + reflected in Phase 0's authorized board mutation.
+  - **Edit tool vs Bash inspection (procedural).** Three Edit calls in Phase 1a failed because Bash `sed`/`grep` doesn't satisfy the Edit tool's "must Read first this session" prerequisite. Recovered cleanly by issuing Read calls for the three files, then re-applying. Future arcs: use the Read tool for any file you intend to Edit, not Bash inspection.
+- **Audit trail.** `docs/audits/2026-05-05-arcO-small-cleanup-plan.md` (Phase 0 audit + phase-gated execution plan, with closure footnote appended in this commit recording all PR SHAs, deploy ids, and smoke results).
+- **Manual TODO post-closure (Anthony).** None for arcO. The follow-up "make `commit` return the actual SHA at runtime" is intentionally deferred (out of arcO scope per Phase 1c.1 amendment); pursue separately if needed.
+- **Board card.** Issue #94, project item `PVTI_lAHOAZbXz84BWRGTzgr2pUE`, milestone `Pre-launch polish` (#6). Status flipped Ready → Done at this Phase 1e commit; auto-close fires per arcM § 6.5 expected behavior.
 
 ### 2026-05-05 (arcN closed — `api.rentthisapp.com` cutover)
 
