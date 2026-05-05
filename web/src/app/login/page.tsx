@@ -128,8 +128,8 @@ function LoginPageInner() {
   };
 
   const googleUrl = selectedTenant
-    ? `${process.env.NEXT_PUBLIC_API_URL || "https://serviceos-api.vercel.app"}/auth/google?tenant_id=${selectedTenant.id}`
-    : `${process.env.NEXT_PUBLIC_API_URL || "https://serviceos-api.vercel.app"}/auth/google`;
+    ? `${process.env.NEXT_PUBLIC_API_URL || "https://api.rentthisapp.com"}/auth/google?tenant_id=${selectedTenant.id}`
+    : `${process.env.NEXT_PUBLIC_API_URL || "https://api.rentthisapp.com"}/auth/google`;
 
   return (
     <div className="flex min-h-screen items-center justify-center px-4" style={{ backgroundColor: "var(--t-bg-primary)" }}>

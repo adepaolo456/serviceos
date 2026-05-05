@@ -113,8 +113,8 @@ export class StripeService {
 
     const link = await this.stripe.accountLinks.create({
       account: accountId,
-      refresh_url: `${process.env.FRONTEND_URL || 'https://serviceos-web-zeta.vercel.app'}/settings?tab=billing&stripe=refresh`,
-      return_url: `${process.env.FRONTEND_URL || 'https://serviceos-web-zeta.vercel.app'}/settings?tab=billing&stripe=success`,
+      refresh_url: `${process.env.FRONTEND_URL || 'https://app.rentthisapp.com'}/settings?tab=billing&stripe=refresh`,
+      return_url: `${process.env.FRONTEND_URL || 'https://app.rentthisapp.com'}/settings?tab=billing&stripe=success`,
       type: 'account_onboarding',
     });
 
@@ -711,7 +711,7 @@ export class StripeService {
 
     const session = await this.stripe.billingPortal.sessions.create({
       customer: tenant.stripe_customer_id,
-      return_url: `${process.env.FRONTEND_URL || 'https://serviceos-web-zeta.vercel.app'}/settings?tab=billing`,
+      return_url: `${process.env.FRONTEND_URL || 'https://app.rentthisapp.com'}/settings?tab=billing`,
     });
 
     return { url: session.url };

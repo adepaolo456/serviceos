@@ -386,7 +386,7 @@ export class AuthController {
 
       const callbackUrl =
         this.configService.get<string>('GOOGLE_CALLBACK_URL') ||
-        'https://serviceos-api.vercel.app/auth/google/callback';
+        'https://api.rentthisapp.com/auth/google/callback';
       const params = new URLSearchParams({
         client_id: clientId.trim(),
         redirect_uri: callbackUrl.trim(),
@@ -434,7 +434,7 @@ export class AuthController {
       ).trim();
       const callbackUrl = (
         this.configService.get<string>('GOOGLE_CALLBACK_URL') ||
-        'https://serviceos-api.vercel.app/auth/google/callback'
+        'https://api.rentthisapp.com/auth/google/callback'
       ).trim();
 
       if (!clientSecret) {

@@ -325,7 +325,7 @@ export class TenantSettingsService {
       const numberToBuy = searchData.available_phone_numbers[0].phone_number;
 
       // 2. Purchase the number + configure inbound SMS webhook
-      const apiDomain = process.env.API_DOMAIN || 'serviceos-api.vercel.app';
+      const apiDomain = process.env.API_DOMAIN || 'api.rentthisapp.com';
       const webhookUrl = `https://${apiDomain}/automation/sms/inbound`;
 
       const buyParams = new URLSearchParams({
