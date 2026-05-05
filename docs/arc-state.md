@@ -1,6 +1,6 @@
 # ServiceOS — Arc State
 
-> Last updated: 2026-05-05 (arcR closed — stale legacy host fallback cleanup)
+> Last updated: 2026-05-05 (arcS closed — legacy untracked artifacts cleanup)
 > Composes with: CLAUDE.md (operational rules), docs/audits/ (durable decision records), docs/feature-inventory.md (capability inventory), GitHub Issues + Projects (operational status)
 
 ## TOC
@@ -246,6 +246,33 @@ When-to-revisit triggers for tooling additions evaluated tonight.
 ## 11. Update log
 
 Date-stamped entries appended at top. Each entry shows what changed in this file since the previous entry.
+
+### 2026-05-05 (arcS closed — legacy untracked artifacts cleanup)
+
+- **Goal.** Sub-arc-sized cleanup of legacy untracked artifacts that had been hovering in the working tree since arcO. Each PR over the last 4 arcs (O/P/Q/R) had to actively dodge this clutter; arcR Phase 1a's `git add -A` near-miss made the cost concrete. arcS resolves it before it bites again.
+- **Decision recorded.** 3-bucket categorization (gitignore / commit / remove). Pre-flight diff requirement before any "remove" bucket execution to catch label-reuse / non-subset-draft cases.
+- **Pre-flight diff finding (high-value catch).** Repo-root `arcK-phase0-audit-report.md` (265 lines, dated 2026-05-04) initially classified for removal as a presumed superseded draft of the tracked `docs/audits/arcK-phase0-audit-report.md` (649 lines, dated 2026-04-25). Full `diff` revealed the two files are **unrelated audits sharing the `arcK` label 9 days apart**: the tracked April 25 version is the **Sentry integration** audit; the untracked May 4 version is the **dead-tenant `ef0aa720` cleanup probe** (verdict "DO NOT DELETE — TARGET DOES NOT EXIST"). Reclassified remove → commit-with-rename. Landed at `docs/audits/2026-05-04-dead-tenant-ef0aa720-audit.md` (date-prefix convention to avoid future label collision).
+- **Verdict.** SAFE. Three explicit per-category decisions, mechanical execution.
+- **Phase 1 — work (Claude Code).** PR [#107](https://github.com/adepaolo456/serviceos/pull/107) squash `fa30a1f` (10 files, +3721/0). 1 `.gitignore` line added (`.claude/worktrees/`); 9 audit docs committed (6 relocated from repo root, 1 relocated+renamed via date prefix to resolve arcK label reuse, 2 added in place at `docs/audits/`). 0 files removed (bucket emptied by reclassification). Working tree genuinely clean for the first time since arcO.
+- **Phase 1c — closure (this commit).** Retroactive board card creation + arc-state §11 entry. arcS Phase 0/1 prompts incorrectly applied a sub-arc exception that doesn't actually exist as convention (referenced an "arcO precedent" that wasn't real). Closure docs PR catches up before convention drift compounds. **Sub-arc work still gets a board card** going forward.
+- **Lessons captured.**
+  - **arc-label reuse hazard.** When an arc letter gets reused (intentionally or accidentally), check existing audit docs for the same label before treating any duplicate as a draft. Date-prefix convention (`YYYY-MM-DD-topic.md`) is preferred for non-arc-aligned audits to avoid collision. arcK was reused once (April 25 Sentry → May 4 dead-tenant); future reuse should be explicit with date prefix from the start.
+  - **`git mv` requires tracked sources.** Falls back to `mv` + `git add` for untracked sources. End-state identical, but git records the operation as Add (not Rename) in the diff because the source path was never in any prior tree. No history lost since pre-relocation history of untracked files is empty by definition.
+  - **Pre-flight `diff` (full, not `-q`) before any "remove" bucket execution.** `diff -q` only confirms files differ; full `diff` reveals subset vs divergent. arcS's pre-flight prevented destructive deletion of unique audit content. Codify: every "remove" bucket entry gets a full-diff verdict before the `git rm` lands.
+  - **Sub-arc work still gets a board card.** arcS shipped without one (corrected retroactively here); future sub-arc-sized work follows the same Backlog → Ready → Done flow as full arcs. The cost is ~5 minutes; the benefit is convention consistency, a discoverable §11 entry, and no precedent drift.
+- **Audit doc reference.** None (sub-arc; the Phase 0 inventory + 3-bucket categorization lived in chat).
+- **Companion files committed in `fa30a1f`.**
+  - `docs/audits/arcH-phase0-audit-report.md` (relocated + typo fix from `archH`)
+  - `docs/audits/arcJ1-phase1-deliverables.md`
+  - `docs/audits/arcJ1e-phase0-audit-report.md`
+  - `docs/audits/arcJ1e-phase1-deliverables.md`
+  - `docs/audits/arcJ1f-phase0-audit-report.md`
+  - `docs/audits/arcL-phase0-audit-report.md` (closes a §11 gap — arcL closure was previously docs-less)
+  - `docs/audits/2026-05-04-dead-tenant-ef0aa720-audit.md` (relocated + renamed via date prefix to resolve arcK label reuse)
+  - `docs/audits/2026-04-28-class-a-regression-varchar-tenant.md` (already in canonical location)
+  - `docs/audits/2026-04-28-shared-placeholder-sweep.md` (already in canonical location)
+- **Manual TODO post-closure.** None. Work was already complete; this Phase 1c is documentation catch-up only.
+- **Board card.** Issue #108, project item `PVTI_lAHOAZbXz84BWRGTzgr39aI`, milestone `Pre-launch polish` (#6). Status set directly to Done at card creation since work has shipped; auto-close fires when this closure PR's `Closes #108` triggers.
 
 ### 2026-05-05 (arcR closed — stale legacy host fallback cleanup)
 
