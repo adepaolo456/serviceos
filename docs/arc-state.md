@@ -1,6 +1,6 @@
 # ServiceOS — Arc State
 
-> Last updated: 2026-04-30 (Day 3 wrap, after PR #22)
+> Last updated: 2026-05-04 (arcL closed — tenant slug shortened)
 > Composes with: CLAUDE.md (operational rules), docs/audits/ (durable decision records), docs/feature-inventory.md (capability inventory), GitHub Issues + Projects (operational status)
 
 ## TOC
@@ -65,6 +65,7 @@ Goals revisit cadence: end of each arc (when all P0 closed in current milestone)
 | #20 | `c6df605` | PR-C1c-pre — math fix + isFullyRefunded helper | code | 2026-04-30 |
 | #21 | `9973f23` | PR-C1c — sync bypass replacements (Sites 1+2) | code | 2026-04-30 |
 | #22 | `c899c68` | PR-C2 webhook dedup audit record | docs | 2026-04-30 |
+| #85 | `8ca250c` | arcL — shorten tenant slug (`rent-this-dumpster-mnbxs4jm` → `rent-this-dumpster`) | code | 2026-05-04 |
 
 ---
 
@@ -160,7 +161,6 @@ Current PR-C arc deliverables:
 - Second-tenant onboarding playbook
 - Notification settings UI
 - Driver branding
-- Tenant slug shortening (current `rent-this-dumpster` → custom shorts like `rentthis`)
 - Google OAuth tenant selector UI (deferred until tenant 2 onboarded)
 
 ### GTM
@@ -246,6 +246,15 @@ When-to-revisit triggers for tooling additions evaluated tonight.
 ## 11. Update log
 
 Date-stamped entries appended at top. Each entry shows what changed in this file since the previous entry.
+
+### 2026-05-04 (arcL closed — tenant slug shortened)
+- Tenant slug shortened on production tenant `822481be` (Rent This Dumpster): `rent-this-dumpster-mnbxs4jm` → `rent-this-dumpster`
+- Phase 1a code merged: PR #85, squash commit `8ca250c`
+- Phase 1b SQL run by Anthony in Supabase SQL editor (project `voczrzbdukgdrirmlgfw`) on 2026-05-05 01:29:01 UTC; preflight + UPDATE + postflight all green
+- Phase 1c API redeploy: deploy id `dpl_2yeDZe5ocTc6AuJz5VNaeKALAaMK` (Sentry release pinned to `8ca250c`)
+- Verification: new subdomain `rent-this-dumpster.rentthisapp.com` returns 200 with correct tenant payload; old subdomain returns Next.js 404 page; `/public/tenant/rent-this-dumpster` returns 200, `/public/tenant/rent-this-dumpster-mnbxs4jm` returns 404
+- Audit record: `arcL-phase0-audit-report.md` (verdict C — code-change-first)
+- Item removed from § 8 deferred backlog
 
 ### 2026-04-30 (Day 3 wrap, this entry — initial creation)
 - Initial creation of arc-state.md
