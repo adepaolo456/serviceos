@@ -17,12 +17,12 @@
 </head>
 <body>
   <h1>Rent This Dumpster</h1>
-  <p>This page simulates a tenant's existing website. The floating <strong>"Book Now"</strong> button in the bottom-right corner is the ServiceOS widget.</p>
+  <p>This page simulates a tenant's existing website. The floating <strong>"Book Now"</strong> button in the bottom-right corner is the RentThisApp widget.</p>
 
   <div class="card">
     <h3>Test Controls</h3>
     <p>Open the widget programmatically:</p>
-    <button class="test-btn" onclick="ServiceOS.open()">ServiceOS.open()</button>
+    <button class="test-btn" onclick="RentThisApp.open()">RentThisApp.open()</button>
   </div>
 
   <div class="card">
@@ -43,14 +43,14 @@
   <div class="card">
     <h3>Booking Callback</h3>
     <p>Listen for completed bookings:</p>
-    <pre>window.serviceosOnBooking = function(data) {
+    <pre>window.rentThisAppOnBooking = function(data) {
   console.log('Booking completed:', data);
   // Track conversion, redirect, etc.
 };</pre>
   </div>
 
   <script>
-    window.serviceosOnBooking = function(data) {
+    window.rentThisAppOnBooking = function(data) {
       alert('Booking completed! Job: ' + (data.jobNumber || JSON.stringify(data)));
     };
   </script>
