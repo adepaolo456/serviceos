@@ -1,5 +1,6 @@
 import {
   Entity,
+  Index,
   PrimaryGeneratedColumn,
   Column,
   CreateDateColumn,
@@ -9,6 +10,24 @@ import {
 } from 'typeorm';
 import { Tenant } from '../../tenants/entities/tenant.entity';
 
+/**
+ * Email uniqueness is enforced by the partial unique index
+ * `idx_customers_tenant_email_unique` on `(tenant_id, lower(email))`
+ * WHERE `email IS NOT NULL AND email <> ''`. The decorator below names
+ * that index for documentation-as-code; TypeORM's `@Index` cannot
+ * express the `lower(email)` expression column, so the entity declares
+ * the simpler `(tenant_id, email)` tuple. The live SQL migration is
+ * the source of truth.
+ *
+ * Safe to declare without runtime impact in production: TypeORM
+ * `synchronize` is `isTest` (see `app.module.ts`), so prod does not
+ * auto-sync schema from entity decorators.
+ */
+@Index(
+  'idx_customers_tenant_email_unique',
+  ['tenant_id', 'email'],
+  { unique: true, where: '"email" IS NOT NULL AND "email" <> \'\'' },
+)
 @Entity('customers')
 export class Customer {
   @PrimaryGeneratedColumn('uuid')

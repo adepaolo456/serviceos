@@ -5,6 +5,7 @@ import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ClsModule } from 'nestjs-cls';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+import { HealthController } from './health.controller';
 import { CommonModule } from './common/common.module';
 import { TenantContextInterceptor } from './common/cls/tenant-context.interceptor';
 import { SentryModule } from './common/sentry/sentry.module';
@@ -119,7 +120,7 @@ import { AlertsModule } from './modules/alerts/alerts.module';
     PermissionModule,
     AlertsModule,
   ],
-  controllers: [AppController],
+  controllers: [AppController, HealthController],
   providers: [
     AppService,
     {
