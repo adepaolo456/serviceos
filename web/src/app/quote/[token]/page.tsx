@@ -4,7 +4,7 @@ import { useState, useEffect, use } from "react";
 import { Phone, Mail, MapPin, Box, Clock, CheckCircle2 } from "lucide-react";
 import { formatPhone, formatCurrency, formatDumpsterSize } from "@/lib/utils";
 
-const API = process.env.NEXT_PUBLIC_API_URL || "https://serviceos-api.vercel.app";
+const API = process.env.NEXT_PUBLIC_API_URL || "https://api.rentthisapp.com";
 
 interface QuoteData {
   size: string;

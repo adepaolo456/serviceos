@@ -849,7 +849,7 @@ function WebsiteTab({ slug }: { slug: string }) {
   };
 
   const websiteUrl = `${slug}.serviceos.com`;
-  const widgetCode = `<script src="https://serviceos-web-zeta.vercel.app/widget.js" data-slug="${slug}"></script>`;
+  const widgetCode = `<script src="https://api.rentthisapp.com/widget.js" data-slug="${slug}"></script>`;
   const copyText = (text: string) => { navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 2000); };
 
   return (

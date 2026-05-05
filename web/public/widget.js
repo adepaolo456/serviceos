@@ -1,7 +1,7 @@
 (function() {
   'use strict';
 
-  var API = 'https://serviceos-api.vercel.app';
+  var API = 'https://api.rentthisapp.com';
   var APP = 'https://serviceos-web-zeta.vercel.app';
 
   // Find our script tag and read config

@@ -6,7 +6,7 @@ import { Phone, Truck, Calendar, Grid3X3, Shield, Clock, Zap, MapPin } from "luc
 import { useTenant } from "./tenant-context";
 import { formatPhone, formatCurrency } from "@/lib/utils";
 
-const API = process.env.NEXT_PUBLIC_API_URL || "https://serviceos-api.vercel.app";
+const API = process.env.NEXT_PUBLIC_API_URL || "https://api.rentthisapp.com";
 
 interface ServiceGroup {
   [key: string]: Array<{ name: string; subtype: string; basePrice: number; rentalDays: number; extraDayRate: number; deliveryFee: number; depositAmount: number; depositRequired: boolean }>;

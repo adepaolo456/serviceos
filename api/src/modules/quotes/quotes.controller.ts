@@ -35,7 +35,7 @@ function generateToken(): string {
 }
 
 function buildTenantBookingUrl(slug: string, token: string): string {
-  const baseDomain = process.env.TENANT_DOMAIN || 'serviceos.com';
+  const baseDomain = process.env.TENANT_DOMAIN || 'rentthisapp.com';
   return `https://${slug}.${baseDomain}/site/book?quote=${encodeURIComponent(token)}`;
 }
 
@@ -127,7 +127,7 @@ export class QuotesController {
    * Single source of truth — every send channel must use this.
    */
   private buildViewQuoteUrl(token: string): string {
-    const webDomain = process.env.WEB_DOMAIN || 'serviceos-web-zeta.vercel.app';
+    const webDomain = process.env.WEB_DOMAIN || 'app.rentthisapp.com';
     return `https://${webDomain}/quote/${encodeURIComponent(token)}`;
   }
 
@@ -877,7 +877,7 @@ export class QuotesController {
     });
 
     // Use a stable preview placeholder for the link — the real token is created on send.
-    const previewLink = `https://${process.env.WEB_DOMAIN || 'serviceos-web-zeta.vercel.app'}/quote/preview`;
+    const previewLink = `https://${process.env.WEB_DOMAIN || 'app.rentthisapp.com'}/quote/preview`;
     const expiresAt = new Date(Date.now() + settings.quote_expiration_days * 24 * 60 * 60 * 1000);
     const templateCtx = this.buildTemplateContext({
       tenant,

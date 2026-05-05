@@ -1,6 +1,6 @@
 import { FEATURE_REGISTRY } from "@/lib/feature-registry";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://serviceos-api.vercel.app";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://api.rentthisapp.com";
 
 /**
  * Translates raw backend error keys into portal-friendly, registry-driven

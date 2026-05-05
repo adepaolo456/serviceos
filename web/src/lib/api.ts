@@ -1,4 +1,4 @@
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://serviceos-api.vercel.app";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://api.rentthisapp.com";
 
 class ApiClient {
   private baseUrl: string;
