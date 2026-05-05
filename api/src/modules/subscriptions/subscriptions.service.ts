@@ -90,7 +90,7 @@ export class SubscriptionsService {
 
     const appUrl =
       this.configService.get<string>('APP_URL') ||
-      'https://serviceos-web-zeta.vercel.app';
+      'https://app.rentthisapp.com';
 
     const session = await this.stripe.checkout.sessions.create({
       customer: customerId,
@@ -116,7 +116,7 @@ export class SubscriptionsService {
 
     const appUrl =
       this.configService.get<string>('APP_URL') ||
-      'https://serviceos-web-zeta.vercel.app';
+      'https://app.rentthisapp.com';
 
     const session = await this.stripe.billingPortal.sessions.create({
       customer: tenant.stripe_customer_id,

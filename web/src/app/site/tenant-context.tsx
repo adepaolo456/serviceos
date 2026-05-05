@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useState, useEffect, type ReactNode } from "react";
 
-const API = process.env.NEXT_PUBLIC_API_URL || "https://serviceos-api.vercel.app";
+const API = process.env.NEXT_PUBLIC_API_URL || "https://api.rentthisapp.com";
 
 export interface TenantInfo {
   name: string; slug: string; businessType: string;

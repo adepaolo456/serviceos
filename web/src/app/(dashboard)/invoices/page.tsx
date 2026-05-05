@@ -501,7 +501,7 @@ function InvoicesPageContent() {
             try {
               const params = new URLSearchParams();
               if (tab !== "all") params.set("status", tab);
-              const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "https://serviceos-api.vercel.app"}/reporting/invoices/export?${params}`, {
+              const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "https://api.rentthisapp.com"}/reporting/invoices/export?${params}`, {
                 headers: { Authorization: `Bearer ${localStorage.getItem("accessToken") || ""}` },
               });
               const blob = await res.blob();

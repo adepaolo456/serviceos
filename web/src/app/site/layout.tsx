@@ -81,7 +81,7 @@ function SiteLayoutInner({ children }: { children: React.ReactNode }) {
             </div>
           </div>
           <div className="mt-8 pt-8 border-t border-[var(--t-border)] text-center">
-            <p className="text-xs text-[var(--t-text-muted)]">Powered by <a href="https://serviceos.com" className="hover:text-[var(--t-text-primary)]">RentThisApp</a></p>
+            <p className="text-xs text-[var(--t-text-muted)]">Powered by <a href="https://rentthisapp.com" className="hover:text-[var(--t-text-primary)]">RentThisApp</a></p>
           </div>
         </div>
       </footer>

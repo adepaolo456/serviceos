@@ -1167,7 +1167,7 @@ export class PortalService {
 
     const stripeCustomerId = await this.stripeService.getOrCreateStripeCustomer(tenantId, customerId);
 
-    const portalBase = process.env.FRONTEND_URL || 'https://serviceos-web-zeta.vercel.app';
+    const portalBase = process.env.FRONTEND_URL || 'https://app.rentthisapp.com';
     const successUrl = `${portalBase}/portal/invoices?payment=success&invoice=${invoice.invoice_number}`;
     const cancelUrl = `${portalBase}/portal/invoices?payment=cancelled&invoice=${invoice.invoice_number}`;
 

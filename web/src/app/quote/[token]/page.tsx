@@ -77,7 +77,7 @@ export default function HostedQuotePage({ params }: { params: Promise<{ token: s
   const { quote, branding, status, bookedAt } = data;
   const accent = branding.primaryColor || "#2ECC71";
   const isActive = status === "active" && quote !== null;
-  const bookNowUrl = `https://${branding.slug}.${process.env.NEXT_PUBLIC_TENANT_DOMAIN || "serviceos.com"}/site/book?quote=${encodeURIComponent(token)}`;
+  const bookNowUrl = `https://${branding.slug}.${process.env.NEXT_PUBLIC_TENANT_DOMAIN || "rentthisapp.com"}/site/book?quote=${encodeURIComponent(token)}`;
   const addr = quote?.deliveryAddress ?? null;
   const addrStr = addr ? [addr.street, addr.city, addr.state, addr.zip].filter(Boolean).join(", ") : null;
   const expiresDate = quote
