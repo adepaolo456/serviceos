@@ -1,6 +1,6 @@
 # ServiceOS — Arc State
 
-> Last updated: 2026-05-05 (arcP closed — API Access card honesty cleanup)
+> Last updated: 2026-05-05 (arcQ closed — widget public-API brand rename)
 > Composes with: CLAUDE.md (operational rules), docs/audits/ (durable decision records), docs/feature-inventory.md (capability inventory), GitHub Issues + Projects (operational status)
 
 ## TOC
@@ -246,6 +246,28 @@ When-to-revisit triggers for tooling additions evaluated tonight.
 ## 11. Update log
 
 Date-stamped entries appended at top. Each entry shows what changed in this file since the previous entry.
+
+### 2026-05-05 (arcQ closed — widget public-API brand rename)
+
+- **Goal.** Force-rename the widget's public-facing identifiers from ServiceOS-era to RentThisApp-era per CLAUDE.md "Brand split" rule. Original "PR-5 force-break" framing retired (audit § 6 → § 7 resolution): no surviving widget API compat path to break (single-version `widget.js`, no aliases, no deprecated routes). arcQ proceeds as a public-API brand rename only.
+- **Decision recorded.** Re-scope from "force-break" to "public-API brand rename" because audit found no surviving widget API compat path. **Zero embeds = cheapest moment to rename** (heuristic captured below).
+- **Namespace decision.** `window.RentThisApp` (NOT `window.RentThis` — collides with the separate RentThis.com marketplace product per CLAUDE.md "Brand split" rule).
+- **Casing conventions** (applied per-surface, not normalized): PascalCase namespace (`window.RentThisApp`), camelCase callback (`window.rentThisAppOnBooking`), lowercase-hyphenated DOM events (`rentthisapp-booking-complete`), DOM ids (`rentthisapp-widget-*`), and CSS @keyframes (`rentthisapp-fadein`, `rentthisapp-scalein`); brand-cased console prefix `[RentThisApp]`.
+- **Phase 1a — code (Claude Code).** PR [#102](https://github.com/adepaolo456/serviceos/pull/102) squash `8e8eb75` (2 files, +23/−23). Touched only `web/public/widget.js` (19 line edits) and `web/public/widget-test.html` (4 line edits). Lockstep `@keyframes` def + `animation:` ref pairing landed in the same commit for both `fadein` and `scalein`. Hosts unchanged. Endpoint unchanged. No alias layer. Typecheck clean (widget.js is plain JS in `web/public/` static-asset folder, not directly typechecked by tsc; full project tsc pass confirmed no TS file regression).
+- **Web auto-deploy.** `dpl_2VRboVGeLjCG212k9U1ifgwH6hsH`, READY at `2026-05-05T15:51:19Z` (4 seconds post-PR-#102 merge), commit `8e8eb75`.
+- **Phase 1b — verification (Claude Code).** Cache-busted fetch of deployed `widget.js` returned **5879 bytes** — exact byte match with local `main` (pure literal substitution; no length-shifting code paths). 16/16 token criteria pass:
+  - **NEW tokens** (must be ≥ 1 each): `window.RentThisApp`=1, `[RentThisApp]`=3, `rentthisapp-widget-`=7, `rentthisapp-fadein`=2 (def + ref paired), `rentthisapp-scalein`=2 (def + ref paired), `rentthisapp-booking-complete`=1, `rentthisapp-close`=1, `rentThisAppOnBooking`=2 (typeof + invocation).
+  - **OLD tokens** (must be 0 each): all 8 = 0 (no `ServiceOS`, no `serviceos-widget-`, no `serviceos-{fadein,scalein,booking-complete,close}`, no `serviceosOnBooking`, no `window.ServiceOS`).
+  - **Host literals** preserved: `https://api.rentthisapp.com` = 1, `https://app.rentthisapp.com` = 1.
+  - **widget-test.html** post-deploy: `RentThisApp.open()` = 2 (onclick + button text on line 25), `ServiceOS.open()` = 0, `window.rentThisAppOnBooking` = 2 (doc snippet + live script), `window.serviceosOnBooking` = 0. Deferred line 31 legacy host URL acknowledged but not failing (out of arcQ scope; arcQ′ scope).
+- **Phase 1c — closure (this commit).** Docs PR landed via squash merge with `--admin`. Card #101 flipped Ready → Done at this commit; auto-close fires per arcM § 6.5.
+- **Lessons captured.**
+  - **`Tracks #N` phrasing successfully dodged GitHub's eager auto-close detector.** Issue #101 stayed OPEN through Phase 1a/1b (verified `closed: false, closedAt: null` immediately before this Phase 1c flip), then closed intentionally when the project Status field flipped Ready → Done. This is the **first arc** to use the workaround successfully and validate it. Confirms it's the right pattern for arcs where closure should come from the closure docs PR rather than the work PR. Use `Tracks #N` or `Part of #N` in work-PR bodies; reserve `Closes #N` for the closure-docs PR body.
+  - **Cheapest-moment heuristic for public-API renames.** When blast radius is zero (no live consumers), force-rename without aliases. Once consumers exist, the same rename requires versioning, aliases, migration docs, and backwards-compat — orders of magnitude more work. Apply to future public-surface renames (API key prefixes, embed namespaces, public DOM events, etc.). The heuristic is: *if zero consumers today and a rename is even directionally desirable, do it now*.
+- **Audit doc reference.** `docs/audits/2026-05-05-arcQ-widget-force-break-audit.md`. Note: filename retains `force-break` suffix from Phase 0 even though the arc was re-scoped at § 7. Not worth renaming — the file is referenced by SHA-pinned commit messages and PR bodies.
+- **Deferred follow-up (arcQ′, intent recorded only — not created now).** 7 stale env-var fallback sites in audit § 3a + the legacy host URL on `widget-test.html:31`. Single audit-first PR later; treated as arcN/rebrand hygiene, not widget API rename. **Do not create the audit doc or board card for arcQ′ now.**
+- **Manual TODO post-closure (Anthony, browser-only).** Load `https://app.rentthisapp.com/widget-test.html` in a browser. Confirm "Test Controls" button text shows `RentThisApp.open()`. Click it → confirm widget overlay opens and a new floating "Book Now" button appears with id `rentthisapp-widget-btn` (DevTools → Elements → search). Optional: complete a booking flow → confirm `[RentThisApp]` console prefix on any error logs.
+- **Board card.** Issue #101, project item `PVTI_lAHOAZbXz84BWRGTzgr3bac`, milestone `Pre-launch polish` (#6). Status flipped Ready → Done at this Phase 1c commit; auto-close fires per arcM § 6.5 expected behavior.
 
 ### 2026-05-05 (arcP closed — API Access card honesty cleanup)
 
