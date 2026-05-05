@@ -1,6 +1,6 @@
 # ServiceOS — Arc State
 
-> Last updated: 2026-05-05 (arcO closed — small pre-launch cleanup batch)
+> Last updated: 2026-05-05 (arcP closed — API Access card honesty cleanup)
 > Composes with: CLAUDE.md (operational rules), docs/audits/ (durable decision records), docs/feature-inventory.md (capability inventory), GitHub Issues + Projects (operational status)
 
 ## TOC
@@ -246,6 +246,35 @@ When-to-revisit triggers for tooling additions evaluated tonight.
 ## 11. Update log
 
 Date-stamped entries appended at top. Each entry shows what changed in this file since the previous entry.
+
+### 2026-05-05 (arcP closed — API Access card honesty cleanup)
+
+- **Goal.** Convert two existing Settings "API Access" / "API Key" cards to honest **Coming Soon** states. Remove the fake `rta_live_*` value derived from `tenant.id` (strip hyphens, slice first 24 chars, prefix `rta_live_`). Both cards remain visible — the long-term decision about where real API-key management UI lives is deferred to the future integration-readiness arc.
+- **Decision recorded: Option 1.** Update both cards in place. **Do not** remove either card. **Do not** redesign Settings IA. **Do not** decide the long-term two-surface UX inside arcP.
+- **Verdict.** SAFE. Single web file, no API/DB/env touch.
+- **Phase 1a — code (Claude Code).** PR [#99](https://github.com/adepaolo456/serviceos/pull/99) squash `0896084` (1 file, +13/−23). Touches only `web/src/app/(dashboard)/settings/page.tsx`. `IntegrationsTab` "API Key" card body replaced with the existing webhook Coming Soon pattern (PR #82) — muted code element rendering "API keys coming soon", Eye + Copy buttons removed. `AccountTab` "API Access" card replaced with subtitle copy + disabled `aria-disabled` text input rendering "API keys coming soon", Eye toggle + Regenerate Key + API Docs buttons all removed (the latter two had no `onClick` anyway). `Eye, EyeOff` removed from the lucide-react import (now unused). Typecheck clean.
+- **Web auto-deploy.** `dpl_2AZHLWJ7jJEEHK8TpUZfayS3zkUe`, READY at `2026-05-05T15:06:21Z` (3 seconds post-merge), commit `0896084`.
+- **Phase 1b — verification (Claude Code).** 15-chunk dashboard bundle grep across the deployed web build:
+  - `rta_live_` total = **0** ✓ (was the fake-key prefix; gone from bundle)
+  - `tenant.id.replace` total = **0** ✓
+  - `tenantId.replace` total = **0** ✓
+  - `API keys coming soon` total = **2** ✓ (matches the two converted surfaces, both in chunk `04g2l6_tp_08-`)
+  - `Coming soon — API keys` total = **2** ✓
+  - 32-hex UUID-stripped substrings = **0** ✓
+  - Other Settings tabs intact in deployed bundle: Profile (4), Website (4), Quotes (5), Billing (31), Integrations (1), Account (12), Notifications (9). No regression markers.
+- **Backend orphan check.** Zero `@Controller`/`@Get`/`@Post` routes in `api/src` for `api_key|apiKey|api-key|regenerate`. The only `apiKey` references are inside `notifications/services/resend.service.ts` (internal Resend SDK secret, unrelated). No backend route to remove. The Eye toggles in arcP were local React state; Copy was a browser-clipboard call only; Regenerate Key + API Docs buttons had zero `onClick` handlers. Confirms the framing in PR #83's commit message ("the displayed key remains deterministically derived from tenant.id with no backend auth").
+- **Lessons captured.**
+  - **Bash session PATH-corruption pattern after `vercel inspect`.** During Phase 1b verification, invoking `vercel inspect` from inside a Bash tool call corrupted the inherited PATH for the rest of that shell, causing `command not found` errors for `curl`, `ls`, `head`, `wc`, etc. Recovery: explicitly set `export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"` at the top of subsequent calls, or fall back to absolute paths (`/bin/echo`, `/usr/bin/grep`, etc.). Worth knowing for future Claude Code Bash sessions that mix Vercel CLI with follow-up shell ops.
+  - **Chunk-download loop pitfall.** A multi-line `$VAR` expansion in a bash `for c in $VAR` loop produced 0-byte output files because the entire multi-line string was treated as a single iteration item. Fix: use `while IFS= read -r line; do … done < /tmp/chunks-list.txt` with the chunk URLs in a heredoc list file. The 0-byte-file failure was silent — the per-criterion grep returned all zeros (including for known-good control strings like "Profile"), which was the diagnostic clue. After fix, ran cleanly across all 15 chunks.
+  - **Stale chunk reference (cosmetic).** The `/settings` HTML shell on this deploy still references one chunk URL (`16e24w0s.w~uj.js`, 9 bytes — HTML 404) carried over from a prior deploy's manifest. Non-blocking. File as a small cosmetic followup if it persists across multiple deploys; ignorable for now.
+- **Audit trail.** `docs/audits/2026-05-05-arcP-api-access-card-honesty.md` (Phase 0 audit; closure footnote appended in this commit recording PR #99 SHA, deploy id, Phase 1b verification scorecard, and the debugging detour). Note the file suffix is `-honesty.md` (not `-audit.md` per a typo in an earlier prompt — flagged at Phase 1a).
+- **Manual TODO post-closure (Anthony).** Browser-only DOM verification (Claude Code can't authenticate to `/settings` from CLI):
+  - Load `https://app.rentthisapp.com/settings` as authenticated tenant.
+  - **Integrations** tab → API Key card shows "API keys coming soon" muted, no Eye/Copy buttons.
+  - **Account** tab → API Access card shows new subtitle + disabled `API keys coming soon` input, no Eye/Regenerate/API Docs buttons.
+  - DevTools → Network → confirm zero requests to `*regenerate*`, `*api-keys*`, `*api-docs*`.
+  - DOM Inspector → confirm no `rta_live_…` substring or 32-hex UUID-stripped substring in either card region.
+- **Board card.** Issue #98, project item `PVTI_lAHOAZbXz84BWRGTzgr3Koc`, milestone `Pre-launch polish` (#6). Status flipped Ready → Done at this Phase 1c commit; auto-close fires per arcM § 6.5 expected behavior.
 
 ### 2026-05-05 (arcO closed — small pre-launch cleanup batch)
 
