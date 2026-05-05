@@ -421,7 +421,7 @@ export class AutomationService {
         if (!tenant) { skipped++; continue; }
 
         // Build template context
-        const webDomain = process.env.WEB_DOMAIN || 'serviceos-web-zeta.vercel.app';
+        const webDomain = process.env.WEB_DOMAIN || 'app.rentthisapp.com';
         const viewQuoteUrl = quote.token ? `https://${webDomain}/quote/${encodeURIComponent(quote.token)}` : '';
         const addressStr = quote.delivery_address
           ? [quote.delivery_address.street, quote.delivery_address.city, quote.delivery_address.state, quote.delivery_address.zip].filter(Boolean).join(', ')

@@ -8,7 +8,7 @@ import { useTenant } from "../tenant-context";
 import { formatCurrency } from "@/lib/utils";
 import AddressAutocomplete, { type AddressValue } from "@/components/address-autocomplete";
 
-const API = process.env.NEXT_PUBLIC_API_URL || "https://serviceos-api.vercel.app";
+const API = process.env.NEXT_PUBLIC_API_URL || "https://api.rentthisapp.com";
 
 interface Service {
   id: string;
@@ -207,7 +207,7 @@ function BookingWizardContent() {
       const data = await res.json();
       const jobNumber = data.jobNumber || data.id || "";
       if (embed) {
-        window.parent.postMessage({ type: "serviceos-booking-complete", jobNumber }, "*");
+        window.parent.postMessage({ type: "rentthisapp-booking-complete", jobNumber }, "*");
       }
       router.push(`/site/confirmation?jobNumber=${jobNumber}${embed ? "&embed=true" : ""}`);
     } catch (err: unknown) {
@@ -512,7 +512,7 @@ function BookingWizardContent() {
 
       {embed && (
         <p className="mt-8 text-center text-xs text-[var(--t-text-muted)]">
-          Powered by <a href="https://serviceos.com" className="hover:text-[var(--t-text-primary)]">RentThisApp</a>
+          Powered by <a href="https://rentthisapp.com" className="hover:text-[var(--t-text-primary)]">RentThisApp</a>
         </p>
       )}
     </div>

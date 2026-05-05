@@ -31,9 +31,9 @@ function ConfirmationContent() {
       <div className="flex flex-wrap justify-center gap-3 mt-8">
         <Link href="/site/book" className="rounded-full px-7 py-3 text-sm font-semibold bg-[var(--t-accent)] text-black hover:brightness-110 transition-all">Book Another</Link>
         {tenant?.phone && <a href={`tel:${tenant.phone}`} className="rounded-full border border-[var(--t-border)] px-7 py-3 text-sm font-semibold text-[var(--t-text-primary)] hover:bg-[var(--t-bg-card)] transition-colors"><Phone className="inline h-4 w-4 mr-1" />Call Us</a>}
-        {embed && <button onClick={() => window.parent.postMessage({ type: "serviceos-close" }, "*")} className="rounded-full border border-[var(--t-border)] bg-[var(--t-bg-card)] px-7 py-3 text-sm font-medium text-[var(--t-text-muted)] hover:bg-[var(--t-bg-card-hover)] transition-colors">Close</button>}
+        {embed && <button onClick={() => window.parent.postMessage({ type: "rentthisapp-close" }, "*")} className="rounded-full border border-[var(--t-border)] bg-[var(--t-bg-card)] px-7 py-3 text-sm font-medium text-[var(--t-text-muted)] hover:bg-[var(--t-bg-card-hover)] transition-colors">Close</button>}
       </div>
-      {embed && <p className="mt-8 text-xs text-[var(--t-frame-text-muted)]">Powered by <a href="https://serviceos.com" className="hover:text-[var(--t-frame-text)]">RentThisApp</a></p>}
+      {embed && <p className="mt-8 text-xs text-[var(--t-frame-text-muted)]">Powered by <a href="https://rentthisapp.com" className="hover:text-[var(--t-frame-text)]">RentThisApp</a></p>}
     </div>
   );
 }
