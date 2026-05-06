@@ -5,41 +5,8 @@ import { AiSuggestionLog } from './entities/ai-suggestion-log.entity';
 import {
   AiSection,
   VALID_SECTIONS,
-  Suggestion,
   SuggestionResponse,
 } from './dto/ai.dto';
-
-const STATIC_SUGGESTIONS: Record<AiSection, Suggestion[]> = {
-  pricing: [
-    { field: 'base_price_10yd', value: 450, explanation: 'Industry average for 10yd dumpster in Northeast US' },
-    { field: 'base_price_15yd', value: 550, explanation: 'Industry average for 15yd' },
-    { field: 'base_price_20yd', value: 650, explanation: 'Industry average for 20yd' },
-    { field: 'overage_rate_per_ton', value: 95, explanation: 'Per ton overage charge, typical range $75-125' },
-    { field: 'extra_day_rate', value: 10, explanation: 'Per day beyond rental period' },
-    { field: 'rental_period_days', value: 14, explanation: 'Standard 14-day rental period' },
-  ],
-  vehicles: [
-    { field: 'fuel_cost_per_mile', value: 0.65, explanation: 'Average for roll-off trucks in 2026' },
-    { field: 'maintenance_per_mile', value: 0.15, explanation: 'Estimated maintenance allocation' },
-  ],
-  labor_rates: [
-    { field: 'driver_hourly_rate', value: 28, explanation: 'Average CDL driver rate in Massachusetts' },
-    { field: 'helper_hourly_rate', value: 18, explanation: 'Average helper/laborer rate' },
-  ],
-  notifications: [
-    { field: 'sms_enabled', value: true, explanation: 'SMS improves delivery confirmation rates significantly' },
-    { field: 'email_enabled', value: true, explanation: 'Email recommended for invoices and receipts' },
-  ],
-  yards: [
-    { field: 'name', value: 'Main Yard', explanation: 'Primary operating yard' },
-  ],
-  company_info: [
-    { field: 'brand_color', value: '#22C55E', explanation: 'Default ServiceOS green' },
-  ],
-  portal: [
-    { field: 'portal_enabled', value: true, explanation: 'Customer portal lets customers view invoices and make payments' },
-  ],
-};
 
 @Injectable()
 export class AiService {
@@ -48,6 +15,23 @@ export class AiService {
     private logRepo: Repository<AiSuggestionLog>,
   ) {}
 
+  /**
+   * arcX (2026-05-06): the static suggestion catalog backing this method
+   * was removed. Reasons: (1) materially stale vs. active tenant
+   * pricing_rules (10yd suggested at $450 while actual is $650;
+   * overage_per_ton at $95 vs $185; sizes 30yd / 40yd missing entirely),
+   * (2) implicitly waste/dumpster vertical-locked, violating the
+   * multi-vertical scoping rule. Zero usage verified at audit time
+   * (ai_suggestion_log empty, rate_limit_log empty for AI endpoints,
+   * 7-day Vercel runtime logs empty, zero frontend callers).
+   *
+   * The endpoint, DTO, entity, and ai_suggestion_log table are preserved
+   * as the landing pad for a future tenant-aware AI wiring arc that
+   * would consume PricingService.findActiveRule (and similar
+   * tenant-aware lookups for non-pricing sections) to populate the
+   * suggestions array per tenant. Until then, the response is empty —
+   * but the request is still logged so any new caller surfaces.
+   */
   async getSetupSuggestions(
     section: string,
     tenantId: string,
@@ -60,10 +44,11 @@ export class AiService {
       );
     }
 
-    const suggestions = STATIC_SUGGESTIONS[section as AiSection] || [];
-    const response: SuggestionResponse = { suggestions, source: 'static' };
+    const response: SuggestionResponse = { suggestions: [], source: 'static' };
 
-    // Log the request
+    // Preserve the usage signal: log the request even though the response
+    // carries no suggestions today. If a new caller appears, the row in
+    // ai_suggestion_log surfaces it.
     await this.logRepo.save(
       this.logRepo.create({
         tenant_id: tenantId,
