@@ -867,3 +867,414 @@ describe('StripeService — PR-C2-pre webhook event dedup', () => {
     expect(h.stripeEventRepo.createQueryBuilder).not.toHaveBeenCalled();
   });
 });
+
+// ── arcV Phase 2 — Site 3 (payment_intent.succeeded → reconcileBalance) ──────
+//
+// Three tests covering the Site 3 webhook handler bypass replacement.
+// Sites 3 + 4 ship together per audit safety rule (partial conversion would
+// unmask the duplicate-payment bug rather than fix it); commits are split
+// for review-time clarity but merge atomically.
+
+describe('StripeService — arcV Phase 2 Site 3 (payment_intent.succeeded → reconcileBalance)', () => {
+  beforeEach(() => {
+    delete process.env.STRIPE_WEBHOOK_SECRET;
+  });
+  afterEach(() => {
+    delete process.env.STRIPE_WEBHOOK_SECRET;
+  });
+
+  // Case 1 — happy path: bypass replaced by reconcileBalance
+  it('1. payment_intent.succeeded — invoiceService.reconcileBalance called once with pi.metadata.invoiceId; no direct invoiceRepo.update', async () => {
+    const h = await buildHarness();
+    const event = {
+      id: 'evt_arcv_p2_site3_1',
+      type: 'payment_intent.succeeded',
+      data: {
+        object: {
+          id: 'pi_arcv_p2_1',
+          metadata: { tenantId: 't-1', invoiceId: 'inv-1' },
+        },
+      },
+    };
+
+    await h.service.handleWebhook(Buffer.from(JSON.stringify(event)), 'sig');
+
+    expect(h.invoiceService.reconcileBalance).toHaveBeenCalledTimes(1);
+    expect(h.invoiceService.reconcileBalance).toHaveBeenCalledWith('inv-1');
+    // Bypass shape is gone: no direct invoiceRepo.update for money columns.
+    expect(h.invoiceRepo.update).not.toHaveBeenCalled();
+  });
+
+  // Case 2 — defensive no-op when invoiceId metadata is absent
+  it('2. payment_intent.succeeded — handler no-ops when pi.metadata.invoiceId is missing (reconcileBalance NOT called)', async () => {
+    const h = await buildHarness();
+    // tenantId provided so the entry-point dedup tenant resolution succeeds
+    // and the handler reaches the case block (D-3 + Option A locked path).
+    const event = {
+      id: 'evt_arcv_p2_site3_2',
+      type: 'payment_intent.succeeded',
+      data: {
+        object: {
+          id: 'pi_arcv_p2_2',
+          metadata: { tenantId: 't-1' /* no invoiceId */ },
+        },
+      },
+    };
+
+    await h.service.handleWebhook(Buffer.from(JSON.stringify(event)), 'sig');
+
+    expect(h.invoiceService.reconcileBalance).not.toHaveBeenCalled();
+    expect(h.invoiceRepo.update).not.toHaveBeenCalled();
+  });
+
+  // Case 3 — error propagation: reconcileBalance failure surfaces to Stripe
+  it('3. payment_intent.succeeded — when reconcileBalance throws, error propagates from handleWebhook (Stripe sees 5xx → retries)', async () => {
+    const h = await buildHarness();
+    h.invoiceService.reconcileBalance.mockRejectedValueOnce(new Error('reconcile blew up'));
+
+    const event = {
+      id: 'evt_arcv_p2_site3_3',
+      type: 'payment_intent.succeeded',
+      data: {
+        object: {
+          id: 'pi_arcv_p2_3',
+          metadata: { tenantId: 't-1', invoiceId: 'inv-3' },
+        },
+      },
+    };
+
+    await expect(
+      h.service.handleWebhook(Buffer.from(JSON.stringify(event)), 'sig'),
+    ).rejects.toThrow(/reconcile blew up/);
+    expect(h.invoiceService.reconcileBalance).toHaveBeenCalledTimes(1);
+    expect(h.invoiceService.reconcileBalance).toHaveBeenCalledWith('inv-3');
+  });
+});
+
+// ── arcV Phase 2 — Site 4 V1 (paymentRepo.findOne dedup guard) ──────────────
+//
+// Four tests covering the Site 4 internal dedup guard added per audit § D-4
+// (defense-in-depth for money-movement). The entry-point stripe_events INSERT
+// covers the common path; this guard covers crash-mid-handler / dedup-bug /
+// concurrent-delivery TOCTOU scenarios. Tenant-scoped lookup matches the
+// partial unique index idx_payments_tenant_pi_unique from arcV Phase 1.
+//
+// This commit adds the V1 dedup guard but leaves the V2 bypass write intact;
+// V2 lands in the next commit. Tests here assert only V1-scope behavior so
+// they remain valid through V2.
+
+describe('StripeService — arcV Phase 2 Site 4 V1 (paymentRepo.findOne dedup guard)', () => {
+  beforeEach(() => {
+    delete process.env.STRIPE_WEBHOOK_SECRET;
+  });
+  afterEach(() => {
+    delete process.env.STRIPE_WEBHOOK_SECRET;
+  });
+
+  const buildSession = (overrides: Record<string, any> = {}) => ({
+    id: 'cs_test_arcv_p2',
+    payment_status: 'paid',
+    amount_total: 10000,
+    payment_intent: 'pi_arcv_p2_4',
+    metadata: { tenantId: 't-1', invoiceId: 'inv-4' },
+    ...overrides,
+  });
+
+  // Case 4 — happy path: no existing payment → save runs
+  it('4. checkout.session.completed — paymentRepo.save called once with expected fields when no existing payment matches (tenant, pi_id)', async () => {
+    const h = await buildHarness();
+    h.invoiceRepo.findOne.mockResolvedValueOnce({ id: 'inv-4', tenant_id: 't-1', total: '100.00' });
+    h.paymentRepo.findOne.mockResolvedValueOnce(null); // dedup miss
+
+    const event = {
+      id: 'evt_arcv_p2_site4v1_4',
+      type: 'checkout.session.completed',
+      data: { object: buildSession() },
+    };
+    await h.service.handleWebhook(Buffer.from(JSON.stringify(event)), 'sig');
+
+    expect(h.paymentRepo.findOne).toHaveBeenCalledWith({
+      where: { tenant_id: 't-1', stripe_payment_intent_id: 'pi_arcv_p2_4' },
+    });
+    expect(h.paymentRepo.save).toHaveBeenCalledTimes(1);
+    expect(h.paymentRepo.create).toHaveBeenCalledWith(expect.objectContaining({
+      tenant_id: 't-1',
+      invoice_id: 'inv-4',
+      amount: 100,
+      payment_method: 'stripe_checkout',
+      stripe_payment_intent_id: 'pi_arcv_p2_4',
+      status: 'completed',
+    }));
+  });
+
+  // Case 5 — dedup hit: existing payment found → save SKIPPED + warn logged
+  it('5. checkout.session.completed — paymentRepo.save SKIPPED + warn logged when existing payment matches (tenant, pi_id)', async () => {
+    const h = await buildHarness();
+    h.invoiceRepo.findOne.mockResolvedValueOnce({ id: 'inv-5', tenant_id: 't-1', total: '100.00' });
+    h.paymentRepo.findOne.mockResolvedValueOnce({
+      id: 'existing-payment-uuid',
+      tenant_id: 't-1',
+      invoice_id: 'inv-5',
+      stripe_payment_intent_id: 'pi_arcv_p2_5',
+    });
+    const warnSpy = jest.spyOn((h.service as any).logger, 'warn');
+
+    const event = {
+      id: 'evt_arcv_p2_site4v1_5',
+      type: 'checkout.session.completed',
+      data: {
+        object: buildSession({
+          payment_intent: 'pi_arcv_p2_5',
+          metadata: { tenantId: 't-1', invoiceId: 'inv-5' },
+        }),
+      },
+    };
+    await h.service.handleWebhook(Buffer.from(JSON.stringify(event)), 'sig');
+
+    expect(h.paymentRepo.findOne).toHaveBeenCalledWith({
+      where: { tenant_id: 't-1', stripe_payment_intent_id: 'pi_arcv_p2_5' },
+    });
+    expect(h.paymentRepo.save).not.toHaveBeenCalled();
+    expect(h.paymentRepo.create).not.toHaveBeenCalled();
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Site 4 dedup hit: payment for stripe_payment_intent_id=pi_arcv_p2_5'),
+    );
+  });
+
+  // Case 6 — null payment_intent: dedup lookup skipped, save still runs
+  it('6. checkout.session.completed — paymentRepo.save runs when paymentIntentId is null (no dedup possible; preserves existing nullable handling)', async () => {
+    const h = await buildHarness();
+    h.invoiceRepo.findOne.mockResolvedValueOnce({ id: 'inv-6', tenant_id: 't-1', total: '50.00' });
+
+    const event = {
+      id: 'evt_arcv_p2_site4v1_6',
+      type: 'checkout.session.completed',
+      data: {
+        object: buildSession({
+          payment_intent: null,
+          metadata: { tenantId: 't-1', invoiceId: 'inv-6' },
+          amount_total: 5000,
+        }),
+      },
+    };
+    await h.service.handleWebhook(Buffer.from(JSON.stringify(event)), 'sig');
+
+    // findOne MUST NOT be called when paymentIntentId is null —
+    // the conditional in the source skips the lookup entirely.
+    expect(h.paymentRepo.findOne).not.toHaveBeenCalled();
+    expect(h.paymentRepo.save).toHaveBeenCalledTimes(1);
+    expect(h.paymentRepo.create).toHaveBeenCalledWith(expect.objectContaining({
+      stripe_payment_intent_id: null,
+      tenant_id: 't-1',
+      invoice_id: 'inv-6',
+    }));
+  });
+
+  // Case 7 — multi-tenant safety: dedup findOne is tenant-scoped
+  it('7. checkout.session.completed — paymentRepo.findOne is tenant-scoped (cross-tenant pi_id collision would not skip save)', async () => {
+    const h = await buildHarness();
+    h.invoiceRepo.findOne.mockResolvedValueOnce({ id: 'inv-7', tenant_id: 't-2', total: '100.00' });
+    h.paymentRepo.findOne.mockResolvedValueOnce(null);
+
+    const event = {
+      id: 'evt_arcv_p2_site4v1_7',
+      type: 'checkout.session.completed',
+      data: {
+        object: buildSession({
+          payment_intent: 'pi_shared_xyz',
+          metadata: { tenantId: 't-2', invoiceId: 'inv-7' },
+        }),
+      },
+    };
+    await h.service.handleWebhook(Buffer.from(JSON.stringify(event)), 'sig');
+
+    // The where clause MUST carry tenant_id — this is what makes the lookup
+    // match the partial unique index idx_payments_tenant_pi_unique and
+    // prevents a cross-tenant pi_id collision from blocking a legitimate
+    // save in this tenant's namespace.
+    expect(h.paymentRepo.findOne).toHaveBeenCalledWith({
+      where: { tenant_id: 't-2', stripe_payment_intent_id: 'pi_shared_xyz' },
+    });
+    expect(h.paymentRepo.save).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ── arcV Phase 2 — Site 4 V2 (reconcile + redelivery parity) ────────────────
+//
+// Five tests covering the Site 4 bypass-write replacement with
+// reconcileBalance() and the redelivery parity assertions per audit § 9.2.
+// Cases 8-10 cover V2 reconcile behavior; cases 11-12 cover redelivery
+// idempotency (entry-point dedup vs. internal Site 4 dedup guard).
+
+describe('StripeService — arcV Phase 2 Site 4 V2 (reconcile + redelivery parity)', () => {
+  beforeEach(() => {
+    delete process.env.STRIPE_WEBHOOK_SECRET;
+  });
+  afterEach(() => {
+    delete process.env.STRIPE_WEBHOOK_SECRET;
+  });
+
+  const buildSession = (overrides: Record<string, any> = {}) => ({
+    id: 'cs_test_arcv_p2',
+    payment_status: 'paid',
+    amount_total: 10000,
+    payment_intent: 'pi_arcv_p2_v2',
+    metadata: { tenantId: 't-1', invoiceId: 'inv-v2' },
+    ...overrides,
+  });
+
+  // Case 8 — ordering: save → reconcile
+  it('8. checkout.session.completed — invoiceService.reconcileBalance called with invId AFTER paymentRepo.save', async () => {
+    const h = await buildHarness();
+    h.invoiceRepo.findOne.mockResolvedValueOnce({ id: 'inv-8', tenant_id: 't-1', total: '100.00' });
+    h.paymentRepo.findOne.mockResolvedValueOnce(null); // dedup miss → save runs
+
+    const event = {
+      id: 'evt_arcv_p2_site4v2_8',
+      type: 'checkout.session.completed',
+      data: {
+        object: buildSession({
+          payment_intent: 'pi_8',
+          metadata: { tenantId: 't-1', invoiceId: 'inv-8' },
+        }),
+      },
+    };
+    await h.service.handleWebhook(Buffer.from(JSON.stringify(event)), 'sig');
+
+    expect(h.paymentRepo.save).toHaveBeenCalledTimes(1);
+    expect(h.invoiceService.reconcileBalance).toHaveBeenCalledTimes(1);
+    expect(h.invoiceService.reconcileBalance).toHaveBeenCalledWith('inv-8');
+    // Ordering: save must precede reconcile so reconcile reads the
+    // post-save Payment row.
+    const saveOrder = h.paymentRepo.save.mock.invocationCallOrder[0];
+    const reconcileOrder = h.invoiceService.reconcileBalance.mock.invocationCallOrder[0];
+    expect(saveOrder).toBeLessThan(reconcileOrder);
+  });
+
+  // Case 9 — error propagation: documented half-state on reconcile failure
+  it('9. checkout.session.completed — when reconcileBalance throws after save, error propagates from handleWebhook (Stripe retries; documented half-state)', async () => {
+    const h = await buildHarness();
+    h.invoiceRepo.findOne.mockResolvedValueOnce({ id: 'inv-9', tenant_id: 't-1', total: '100.00' });
+    h.paymentRepo.findOne.mockResolvedValueOnce(null);
+    h.invoiceService.reconcileBalance.mockRejectedValueOnce(new Error('reconcile blew up'));
+
+    const event = {
+      id: 'evt_arcv_p2_site4v2_9',
+      type: 'checkout.session.completed',
+      data: {
+        object: buildSession({
+          payment_intent: 'pi_9',
+          metadata: { tenantId: 't-1', invoiceId: 'inv-9' },
+        }),
+      },
+    };
+    await expect(
+      h.service.handleWebhook(Buffer.from(JSON.stringify(event)), 'sig'),
+    ).rejects.toThrow(/reconcile blew up/);
+
+    // paymentRepo.save was committed before reconcileBalance threw — this
+    // is the documented transient half-state. Recovery: a subsequent
+    // delivery (different evt_id, same pi_id) hits the V1 dedup guard,
+    // skips the duplicate save, and reconcileBalance runs to heal.
+    // See case 12 below for the recovery assertion.
+    expect(h.paymentRepo.save).toHaveBeenCalledTimes(1);
+    expect(h.invoiceService.reconcileBalance).toHaveBeenCalledTimes(1);
+  });
+
+  // Case 10 — bypass shape removed
+  it('10. checkout.session.completed — no direct invoiceRepo.update for amount_paid/balance_due/status (V2 bypass removed)', async () => {
+    const h = await buildHarness();
+    h.invoiceRepo.findOne.mockResolvedValueOnce({ id: 'inv-10', tenant_id: 't-1', total: '100.00' });
+    h.paymentRepo.findOne.mockResolvedValueOnce(null);
+
+    const event = {
+      id: 'evt_arcv_p2_site4v2_10',
+      type: 'checkout.session.completed',
+      data: {
+        object: buildSession({
+          payment_intent: 'pi_10',
+          metadata: { tenantId: 't-1', invoiceId: 'inv-10' },
+        }),
+      },
+    };
+    await h.service.handleWebhook(Buffer.from(JSON.stringify(event)), 'sig');
+
+    // Invoice money columns are now written exclusively by reconcileBalance.
+    expect(h.invoiceRepo.update).not.toHaveBeenCalled();
+    expect(h.invoiceService.reconcileBalance).toHaveBeenCalledTimes(1);
+  });
+
+  // Case 11 — same evt_id redelivery → entry-point dedup blocks
+  it('11. checkout.session.completed — same evt_id redelivery is blocked at entry-point dedup; case block does NOT enter', async () => {
+    const h = await buildHarness();
+    // Simulate dedup CONFLICT: both raw and identifiers empty → inserted=false.
+    h.stripeEventQb.execute.mockResolvedValueOnce({
+      raw: [],
+      identifiers: [],
+      generatedMaps: [],
+    });
+    const warnSpy = jest.spyOn((h.service as any).logger, 'warn');
+
+    const event = {
+      id: 'evt_arcv_p2_site4v2_11',
+      type: 'checkout.session.completed',
+      data: {
+        object: buildSession({
+          payment_intent: 'pi_11',
+          metadata: { tenantId: 't-1', invoiceId: 'inv-11' },
+        }),
+      },
+    };
+    const result = await h.service.handleWebhook(Buffer.from(JSON.stringify(event)), 'sig');
+
+    // Case-block side effects all NOT triggered.
+    expect(h.invoiceRepo.findOne).not.toHaveBeenCalled();
+    expect(h.paymentRepo.findOne).not.toHaveBeenCalled();
+    expect(h.paymentRepo.save).not.toHaveBeenCalled();
+    expect(h.invoiceService.reconcileBalance).not.toHaveBeenCalled();
+    expect(h.invoiceRepo.update).not.toHaveBeenCalled();
+    // Entry-point warn log emitted with event id + type.
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Duplicate webhook event ignored: evt_arcv_p2_site4v2_11'),
+    );
+    // Stripe still receives a 200 receipt so it stops retrying.
+    expect(result).toEqual({ received: true });
+  });
+
+  // Case 12 — different evt_id, same pi_id → V1 guard skips save, V2 reconcile heals
+  it('12. checkout.session.completed — different evt_id but same (tenant, pi_id) hits V1 dedup guard, skips duplicate save, reconcileBalance still runs (heals half-state)', async () => {
+    const h = await buildHarness();
+    h.invoiceRepo.findOne.mockResolvedValueOnce({ id: 'inv-12', tenant_id: 't-1', total: '100.00' });
+    // Simulate the post-half-state recovery scenario: a Payment row already
+    // exists from a prior delivery that saved before reconcileBalance failed.
+    h.paymentRepo.findOne.mockResolvedValueOnce({
+      id: 'existing-payment-uuid',
+      tenant_id: 't-1',
+      invoice_id: 'inv-12',
+      stripe_payment_intent_id: 'pi_12',
+    });
+
+    const event = {
+      // Distinct evt_id from any prior delivery — entry-point dedup says
+      // "new event"; case block enters; V1 guard catches the duplicate
+      // pi_id and skips save; V2 reconcileBalance still runs to heal the
+      // half-state left by the prior delivery's reconcile failure.
+      id: 'evt_arcv_p2_site4v2_12_heal',
+      type: 'checkout.session.completed',
+      data: {
+        object: buildSession({
+          payment_intent: 'pi_12',
+          metadata: { tenantId: 't-1', invoiceId: 'inv-12' },
+        }),
+      },
+    };
+    await h.service.handleWebhook(Buffer.from(JSON.stringify(event)), 'sig');
+
+    // V1 guard fires: no duplicate Payment row.
+    expect(h.paymentRepo.save).not.toHaveBeenCalled();
+    expect(h.paymentRepo.create).not.toHaveBeenCalled();
+    // V2 reconcile fires anyway: heals the half-state.
+    expect(h.invoiceService.reconcileBalance).toHaveBeenCalledTimes(1);
+    expect(h.invoiceService.reconcileBalance).toHaveBeenCalledWith('inv-12');
+  });
+});

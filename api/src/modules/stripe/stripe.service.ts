@@ -453,21 +453,16 @@ export class StripeService {
 
     switch (event.type) {
       case 'payment_intent.succeeded': {
+        // arcV Phase 2 (audit § 9.2 PR-C2 contract): replace bypass write with
+        // reconcileBalance — sole writer of money columns per Invoice Rule #1.
+        // The chargeInvoice path that produced this PI already wrote the
+        // Payment row, so reconcileBalance has the data it needs. No internal
+        // dedup guard at Site 3 because chargeInvoice is single-call
+        // synchronous (audit § D-4: webhook path is the at-least-once threat
+        // surface, not chargeInvoice).
         const pi = event.data.object as Stripe.PaymentIntent;
         if (pi.metadata.invoiceId) {
-          // Derive from payments — the payment record should already exist from chargeInvoice
-          const payments = await this.paymentRepo.find({ where: { invoice_id: pi.metadata.invoiceId, status: 'completed' } });
-          const totalPaid = payments.reduce((sum, p) => sum + Number(p.amount), 0);
-          const inv = await this.invoiceRepo.findOne({ where: { id: pi.metadata.invoiceId } });
-          if (inv) {
-            const balanceDue = Math.max(Math.round((Number(inv.total) - totalPaid) * 100) / 100, 0);
-            await this.invoiceRepo.update(pi.metadata.invoiceId, {
-              status: balanceDue <= 0 ? 'paid' : totalPaid > 0 ? 'partial' : 'open',
-              amount_paid: Math.round(totalPaid * 100) / 100,
-              balance_due: balanceDue,
-              paid_at: balanceDue <= 0 ? new Date() : null,
-            });
-          }
+          await this.invoiceService.reconcileBalance(pi.metadata.invoiceId);
         }
         break;
       }
@@ -493,6 +488,18 @@ export class StripeService {
         break;
       }
       case 'checkout.session.completed': {
+        // arcV Phase 2: Site 4 intentionally preserves the PR-C1c
+        // (Sites 1+2) no-wrapper shape: paymentRepo.save and
+        // reconcileBalance() are NOT wrapped in a single transaction.
+        // If reconcileBalance() throws after save, a transient
+        // half-state can exist where the Payment row is present but
+        // the invoice money columns are not yet reconciled. This is
+        // accepted because Stripe retry plus the payment_intent_id
+        // dedup guard below lets a later delivery (different evt_id,
+        // same pi_id) skip duplicate Payment creation and rerun
+        // reconcileBalance() to heal. Keeps parity with Sites 1/2
+        // (PR-C1c) and avoids introducing TypeORM transaction-scope
+        // risk in arcV Phase 2. Audit § D-4.
         const session = event.data.object as Stripe.Checkout.Session;
         if (session.metadata?.invoiceId && session.payment_status === 'paid') {
           const invId = session.metadata.invoiceId;
@@ -504,25 +511,41 @@ export class StripeService {
               typeof session.payment_intent === 'string'
                 ? session.payment_intent
                 : session.payment_intent?.id ?? null;
-            await this.paymentRepo.save(this.paymentRepo.create({
-              tenant_id: tId,
-              invoice_id: invId,
-              amount: paidAmount,
-              payment_method: 'stripe_checkout',
-              stripe_payment_intent_id: paymentIntentId,
-              status: 'completed',
-              applied_at: new Date(),
-              notes: `Stripe Checkout Session ${session.id}`,
-            }));
-            const allPayments = await this.paymentRepo.find({ where: { invoice_id: invId, status: 'completed' } });
-            const totalPaid = allPayments.reduce((sum, p) => sum + Number(p.amount), 0);
-            const balanceDue = Math.max(Math.round((Number(inv.total) - totalPaid) * 100) / 100, 0);
-            await this.invoiceRepo.update(invId, {
-              status: balanceDue <= 0 ? 'paid' : totalPaid > 0 ? 'partial' : 'open',
-              amount_paid: Math.round(totalPaid * 100) / 100,
-              balance_due: balanceDue,
-              paid_at: balanceDue <= 0 ? new Date() : null,
-            });
+            // arcV Phase 2 (audit § D-4): defense-in-depth dedup guard.
+            // The entry-point stripe_events INSERT (PR-C2-pre, line 436)
+            // covers the common path; this internal guard covers
+            // crash-mid-handler / dedup-bug / concurrent-delivery TOCTOU
+            // scenarios for money-movement. Tenant-scoped to match the
+            // partial unique index idx_payments_tenant_pi_unique
+            // (arcV Phase 1) and CLAUDE.md MULTI-TENANT SAFE.
+            const existingPayment = paymentIntentId
+              ? await this.paymentRepo.findOne({
+                  where: { tenant_id: tId, stripe_payment_intent_id: paymentIntentId },
+                })
+              : null;
+            if (existingPayment) {
+              this.logger.warn(
+                `Site 4 dedup hit: payment for stripe_payment_intent_id=${paymentIntentId} ` +
+                `already exists (tenant=${tId}, invoice=${invId}); skipping save.`,
+              );
+            } else {
+              await this.paymentRepo.save(this.paymentRepo.create({
+                tenant_id: tId,
+                invoice_id: invId,
+                amount: paidAmount,
+                payment_method: 'stripe_checkout',
+                stripe_payment_intent_id: paymentIntentId,
+                status: 'completed',
+                applied_at: new Date(),
+                notes: `Stripe Checkout Session ${session.id}`,
+              }));
+            }
+            // arcV Phase 2: replace bypass write with reconcileBalance —
+            // sole writer of money columns per Invoice Rule #1. Runs
+            // unconditionally post-dedup so that even on a dedup hit,
+            // reconcileBalance heals any half-state from a prior
+            // delivery that saved Payment but failed before reconciling.
+            await this.invoiceService.reconcileBalance(invId);
           }
         }
         break;
