@@ -950,3 +950,151 @@ describe('StripeService — arcV Phase 2 Site 3 (payment_intent.succeeded → re
     expect(h.invoiceService.reconcileBalance).toHaveBeenCalledWith('inv-3');
   });
 });
+
+// ── arcV Phase 2 — Site 4 V1 (paymentRepo.findOne dedup guard) ──────────────
+//
+// Four tests covering the Site 4 internal dedup guard added per audit § D-4
+// (defense-in-depth for money-movement). The entry-point stripe_events INSERT
+// covers the common path; this guard covers crash-mid-handler / dedup-bug /
+// concurrent-delivery TOCTOU scenarios. Tenant-scoped lookup matches the
+// partial unique index idx_payments_tenant_pi_unique from arcV Phase 1.
+//
+// This commit adds the V1 dedup guard but leaves the V2 bypass write intact;
+// V2 lands in the next commit. Tests here assert only V1-scope behavior so
+// they remain valid through V2.
+
+describe('StripeService — arcV Phase 2 Site 4 V1 (paymentRepo.findOne dedup guard)', () => {
+  beforeEach(() => {
+    delete process.env.STRIPE_WEBHOOK_SECRET;
+  });
+  afterEach(() => {
+    delete process.env.STRIPE_WEBHOOK_SECRET;
+  });
+
+  const buildSession = (overrides: Record<string, any> = {}) => ({
+    id: 'cs_test_arcv_p2',
+    payment_status: 'paid',
+    amount_total: 10000,
+    payment_intent: 'pi_arcv_p2_4',
+    metadata: { tenantId: 't-1', invoiceId: 'inv-4' },
+    ...overrides,
+  });
+
+  // Case 4 — happy path: no existing payment → save runs
+  it('4. checkout.session.completed — paymentRepo.save called once with expected fields when no existing payment matches (tenant, pi_id)', async () => {
+    const h = await buildHarness();
+    h.invoiceRepo.findOne.mockResolvedValueOnce({ id: 'inv-4', tenant_id: 't-1', total: '100.00' });
+    h.paymentRepo.findOne.mockResolvedValueOnce(null); // dedup miss
+
+    const event = {
+      id: 'evt_arcv_p2_site4v1_4',
+      type: 'checkout.session.completed',
+      data: { object: buildSession() },
+    };
+    await h.service.handleWebhook(Buffer.from(JSON.stringify(event)), 'sig');
+
+    expect(h.paymentRepo.findOne).toHaveBeenCalledWith({
+      where: { tenant_id: 't-1', stripe_payment_intent_id: 'pi_arcv_p2_4' },
+    });
+    expect(h.paymentRepo.save).toHaveBeenCalledTimes(1);
+    expect(h.paymentRepo.create).toHaveBeenCalledWith(expect.objectContaining({
+      tenant_id: 't-1',
+      invoice_id: 'inv-4',
+      amount: 100,
+      payment_method: 'stripe_checkout',
+      stripe_payment_intent_id: 'pi_arcv_p2_4',
+      status: 'completed',
+    }));
+  });
+
+  // Case 5 — dedup hit: existing payment found → save SKIPPED + warn logged
+  it('5. checkout.session.completed — paymentRepo.save SKIPPED + warn logged when existing payment matches (tenant, pi_id)', async () => {
+    const h = await buildHarness();
+    h.invoiceRepo.findOne.mockResolvedValueOnce({ id: 'inv-5', tenant_id: 't-1', total: '100.00' });
+    h.paymentRepo.findOne.mockResolvedValueOnce({
+      id: 'existing-payment-uuid',
+      tenant_id: 't-1',
+      invoice_id: 'inv-5',
+      stripe_payment_intent_id: 'pi_arcv_p2_5',
+    });
+    const warnSpy = jest.spyOn((h.service as any).logger, 'warn');
+
+    const event = {
+      id: 'evt_arcv_p2_site4v1_5',
+      type: 'checkout.session.completed',
+      data: {
+        object: buildSession({
+          payment_intent: 'pi_arcv_p2_5',
+          metadata: { tenantId: 't-1', invoiceId: 'inv-5' },
+        }),
+      },
+    };
+    await h.service.handleWebhook(Buffer.from(JSON.stringify(event)), 'sig');
+
+    expect(h.paymentRepo.findOne).toHaveBeenCalledWith({
+      where: { tenant_id: 't-1', stripe_payment_intent_id: 'pi_arcv_p2_5' },
+    });
+    expect(h.paymentRepo.save).not.toHaveBeenCalled();
+    expect(h.paymentRepo.create).not.toHaveBeenCalled();
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Site 4 dedup hit: payment for stripe_payment_intent_id=pi_arcv_p2_5'),
+    );
+  });
+
+  // Case 6 — null payment_intent: dedup lookup skipped, save still runs
+  it('6. checkout.session.completed — paymentRepo.save runs when paymentIntentId is null (no dedup possible; preserves existing nullable handling)', async () => {
+    const h = await buildHarness();
+    h.invoiceRepo.findOne.mockResolvedValueOnce({ id: 'inv-6', tenant_id: 't-1', total: '50.00' });
+
+    const event = {
+      id: 'evt_arcv_p2_site4v1_6',
+      type: 'checkout.session.completed',
+      data: {
+        object: buildSession({
+          payment_intent: null,
+          metadata: { tenantId: 't-1', invoiceId: 'inv-6' },
+          amount_total: 5000,
+        }),
+      },
+    };
+    await h.service.handleWebhook(Buffer.from(JSON.stringify(event)), 'sig');
+
+    // findOne MUST NOT be called when paymentIntentId is null —
+    // the conditional in the source skips the lookup entirely.
+    expect(h.paymentRepo.findOne).not.toHaveBeenCalled();
+    expect(h.paymentRepo.save).toHaveBeenCalledTimes(1);
+    expect(h.paymentRepo.create).toHaveBeenCalledWith(expect.objectContaining({
+      stripe_payment_intent_id: null,
+      tenant_id: 't-1',
+      invoice_id: 'inv-6',
+    }));
+  });
+
+  // Case 7 — multi-tenant safety: dedup findOne is tenant-scoped
+  it('7. checkout.session.completed — paymentRepo.findOne is tenant-scoped (cross-tenant pi_id collision would not skip save)', async () => {
+    const h = await buildHarness();
+    h.invoiceRepo.findOne.mockResolvedValueOnce({ id: 'inv-7', tenant_id: 't-2', total: '100.00' });
+    h.paymentRepo.findOne.mockResolvedValueOnce(null);
+
+    const event = {
+      id: 'evt_arcv_p2_site4v1_7',
+      type: 'checkout.session.completed',
+      data: {
+        object: buildSession({
+          payment_intent: 'pi_shared_xyz',
+          metadata: { tenantId: 't-2', invoiceId: 'inv-7' },
+        }),
+      },
+    };
+    await h.service.handleWebhook(Buffer.from(JSON.stringify(event)), 'sig');
+
+    // The where clause MUST carry tenant_id — this is what makes the lookup
+    // match the partial unique index idx_payments_tenant_pi_unique and
+    // prevents a cross-tenant pi_id collision from blocking a legitimate
+    // save in this tenant's namespace.
+    expect(h.paymentRepo.findOne).toHaveBeenCalledWith({
+      where: { tenant_id: 't-2', stripe_payment_intent_id: 'pi_shared_xyz' },
+    });
+    expect(h.paymentRepo.save).toHaveBeenCalledTimes(1);
+  });
+});

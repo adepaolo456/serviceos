@@ -499,16 +499,35 @@ export class StripeService {
               typeof session.payment_intent === 'string'
                 ? session.payment_intent
                 : session.payment_intent?.id ?? null;
-            await this.paymentRepo.save(this.paymentRepo.create({
-              tenant_id: tId,
-              invoice_id: invId,
-              amount: paidAmount,
-              payment_method: 'stripe_checkout',
-              stripe_payment_intent_id: paymentIntentId,
-              status: 'completed',
-              applied_at: new Date(),
-              notes: `Stripe Checkout Session ${session.id}`,
-            }));
+            // arcV Phase 2 (audit § D-4): defense-in-depth dedup guard.
+            // The entry-point stripe_events INSERT (PR-C2-pre, line 436)
+            // covers the common path; this internal guard covers
+            // crash-mid-handler / dedup-bug / concurrent-delivery TOCTOU
+            // scenarios for money-movement. Tenant-scoped to match the
+            // partial unique index idx_payments_tenant_pi_unique
+            // (arcV Phase 1) and CLAUDE.md MULTI-TENANT SAFE.
+            const existingPayment = paymentIntentId
+              ? await this.paymentRepo.findOne({
+                  where: { tenant_id: tId, stripe_payment_intent_id: paymentIntentId },
+                })
+              : null;
+            if (existingPayment) {
+              this.logger.warn(
+                `Site 4 dedup hit: payment for stripe_payment_intent_id=${paymentIntentId} ` +
+                `already exists (tenant=${tId}, invoice=${invId}); skipping save.`,
+              );
+            } else {
+              await this.paymentRepo.save(this.paymentRepo.create({
+                tenant_id: tId,
+                invoice_id: invId,
+                amount: paidAmount,
+                payment_method: 'stripe_checkout',
+                stripe_payment_intent_id: paymentIntentId,
+                status: 'completed',
+                applied_at: new Date(),
+                notes: `Stripe Checkout Session ${session.id}`,
+              }));
+            }
             const allPayments = await this.paymentRepo.find({ where: { invoice_id: invId, status: 'completed' } });
             const totalPaid = allPayments.reduce((sum, p) => sum + Number(p.amount), 0);
             const balanceDue = Math.max(Math.round((Number(inv.total) - totalPaid) * 100) / 100, 0);
