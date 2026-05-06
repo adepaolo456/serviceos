@@ -135,11 +135,8 @@ export class AuthService {
         if (code === '23505') {
           if (
             constraint === 'users_email_lower_unique' ||
-            constraint === 'UQ_97672ac88f789774dd47f7c8be3' ||
             detail.includes('users_email_lower_unique') ||
-            detail.includes('UQ_97672') ||
-            message.includes('users_email_lower_unique') ||
-            message.includes('UQ_97672')
+            message.includes('users_email_lower_unique')
           ) {
             throw new ConflictException(
               'An account with this email already exists.'
@@ -565,11 +562,8 @@ export class AuthService {
         if (code === '23505') {
           if (
             constraint === 'users_email_lower_unique' ||
-            constraint === 'UQ_97672ac88f789774dd47f7c8be3' ||
             detail.includes('users_email_lower_unique') ||
-            detail.includes('UQ_97672') ||
-            message.includes('users_email_lower_unique') ||
-            message.includes('UQ_97672')
+            message.includes('users_email_lower_unique')
           ) {
             throw new ConflictException(
               'An account with this email already exists.'
