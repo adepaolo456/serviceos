@@ -11,6 +11,7 @@
  * Sentry Team plan ($26/mo) with a 40K-event/month quota alert.
  */
 
+import { COMMIT_SHA } from '../../build-info';
 import { beforeSend } from './before-send';
 
 export const SENTRY_DSN = process.env.SENTRY_DSN_API ?? '';
@@ -33,6 +34,12 @@ export function buildSentryInitOptions() {
     dsn: SENTRY_DSN,
     environment: SENTRY_ENVIRONMENT,
     enabled: SENTRY_ENABLED,
+    // arcZ (#121, 2026-05-06): tag runtime events with release matching the
+    // sentry-cli source-map upload release name, so source maps auto-apply
+    // to runtime stack traces. COMMIT_SHA comes from arcY's build-info.ts
+    // (overwritten by vercel-build before nest build). See #122 / arcY for
+    // the upstream primitive.
+    release: COMMIT_SHA,
     // §K.7: errors 100%, traces 10%, profiles 0%.
     tracesSampleRate: 0.1,
     profilesSampleRate: 0,
