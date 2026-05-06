@@ -488,6 +488,18 @@ export class StripeService {
         break;
       }
       case 'checkout.session.completed': {
+        // arcV Phase 2: Site 4 intentionally preserves the PR-C1c
+        // (Sites 1+2) no-wrapper shape: paymentRepo.save and
+        // reconcileBalance() are NOT wrapped in a single transaction.
+        // If reconcileBalance() throws after save, a transient
+        // half-state can exist where the Payment row is present but
+        // the invoice money columns are not yet reconciled. This is
+        // accepted because Stripe retry plus the payment_intent_id
+        // dedup guard below lets a later delivery (different evt_id,
+        // same pi_id) skip duplicate Payment creation and rerun
+        // reconcileBalance() to heal. Keeps parity with Sites 1/2
+        // (PR-C1c) and avoids introducing TypeORM transaction-scope
+        // risk in arcV Phase 2. Audit § D-4.
         const session = event.data.object as Stripe.Checkout.Session;
         if (session.metadata?.invoiceId && session.payment_status === 'paid') {
           const invId = session.metadata.invoiceId;
@@ -528,15 +540,12 @@ export class StripeService {
                 notes: `Stripe Checkout Session ${session.id}`,
               }));
             }
-            const allPayments = await this.paymentRepo.find({ where: { invoice_id: invId, status: 'completed' } });
-            const totalPaid = allPayments.reduce((sum, p) => sum + Number(p.amount), 0);
-            const balanceDue = Math.max(Math.round((Number(inv.total) - totalPaid) * 100) / 100, 0);
-            await this.invoiceRepo.update(invId, {
-              status: balanceDue <= 0 ? 'paid' : totalPaid > 0 ? 'partial' : 'open',
-              amount_paid: Math.round(totalPaid * 100) / 100,
-              balance_due: balanceDue,
-              paid_at: balanceDue <= 0 ? new Date() : null,
-            });
+            // arcV Phase 2: replace bypass write with reconcileBalance —
+            // sole writer of money columns per Invoice Rule #1. Runs
+            // unconditionally post-dedup so that even on a dedup hit,
+            // reconcileBalance heals any half-state from a prior
+            // delivery that saved Payment but failed before reconciling.
+            await this.invoiceService.reconcileBalance(invId);
           }
         }
         break;
