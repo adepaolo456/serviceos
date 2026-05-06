@@ -867,3 +867,86 @@ describe('StripeService — PR-C2-pre webhook event dedup', () => {
     expect(h.stripeEventRepo.createQueryBuilder).not.toHaveBeenCalled();
   });
 });
+
+// ── arcV Phase 2 — Site 3 (payment_intent.succeeded → reconcileBalance) ──────
+//
+// Three tests covering the Site 3 webhook handler bypass replacement.
+// Sites 3 + 4 ship together per audit safety rule (partial conversion would
+// unmask the duplicate-payment bug rather than fix it); commits are split
+// for review-time clarity but merge atomically.
+
+describe('StripeService — arcV Phase 2 Site 3 (payment_intent.succeeded → reconcileBalance)', () => {
+  beforeEach(() => {
+    delete process.env.STRIPE_WEBHOOK_SECRET;
+  });
+  afterEach(() => {
+    delete process.env.STRIPE_WEBHOOK_SECRET;
+  });
+
+  // Case 1 — happy path: bypass replaced by reconcileBalance
+  it('1. payment_intent.succeeded — invoiceService.reconcileBalance called once with pi.metadata.invoiceId; no direct invoiceRepo.update', async () => {
+    const h = await buildHarness();
+    const event = {
+      id: 'evt_arcv_p2_site3_1',
+      type: 'payment_intent.succeeded',
+      data: {
+        object: {
+          id: 'pi_arcv_p2_1',
+          metadata: { tenantId: 't-1', invoiceId: 'inv-1' },
+        },
+      },
+    };
+
+    await h.service.handleWebhook(Buffer.from(JSON.stringify(event)), 'sig');
+
+    expect(h.invoiceService.reconcileBalance).toHaveBeenCalledTimes(1);
+    expect(h.invoiceService.reconcileBalance).toHaveBeenCalledWith('inv-1');
+    // Bypass shape is gone: no direct invoiceRepo.update for money columns.
+    expect(h.invoiceRepo.update).not.toHaveBeenCalled();
+  });
+
+  // Case 2 — defensive no-op when invoiceId metadata is absent
+  it('2. payment_intent.succeeded — handler no-ops when pi.metadata.invoiceId is missing (reconcileBalance NOT called)', async () => {
+    const h = await buildHarness();
+    // tenantId provided so the entry-point dedup tenant resolution succeeds
+    // and the handler reaches the case block (D-3 + Option A locked path).
+    const event = {
+      id: 'evt_arcv_p2_site3_2',
+      type: 'payment_intent.succeeded',
+      data: {
+        object: {
+          id: 'pi_arcv_p2_2',
+          metadata: { tenantId: 't-1' /* no invoiceId */ },
+        },
+      },
+    };
+
+    await h.service.handleWebhook(Buffer.from(JSON.stringify(event)), 'sig');
+
+    expect(h.invoiceService.reconcileBalance).not.toHaveBeenCalled();
+    expect(h.invoiceRepo.update).not.toHaveBeenCalled();
+  });
+
+  // Case 3 — error propagation: reconcileBalance failure surfaces to Stripe
+  it('3. payment_intent.succeeded — when reconcileBalance throws, error propagates from handleWebhook (Stripe sees 5xx → retries)', async () => {
+    const h = await buildHarness();
+    h.invoiceService.reconcileBalance.mockRejectedValueOnce(new Error('reconcile blew up'));
+
+    const event = {
+      id: 'evt_arcv_p2_site3_3',
+      type: 'payment_intent.succeeded',
+      data: {
+        object: {
+          id: 'pi_arcv_p2_3',
+          metadata: { tenantId: 't-1', invoiceId: 'inv-3' },
+        },
+      },
+    };
+
+    await expect(
+      h.service.handleWebhook(Buffer.from(JSON.stringify(event)), 'sig'),
+    ).rejects.toThrow(/reconcile blew up/);
+    expect(h.invoiceService.reconcileBalance).toHaveBeenCalledTimes(1);
+    expect(h.invoiceService.reconcileBalance).toHaveBeenCalledWith('inv-3');
+  });
+});

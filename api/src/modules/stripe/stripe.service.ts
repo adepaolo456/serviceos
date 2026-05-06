@@ -453,21 +453,16 @@ export class StripeService {
 
     switch (event.type) {
       case 'payment_intent.succeeded': {
+        // arcV Phase 2 (audit § 9.2 PR-C2 contract): replace bypass write with
+        // reconcileBalance — sole writer of money columns per Invoice Rule #1.
+        // The chargeInvoice path that produced this PI already wrote the
+        // Payment row, so reconcileBalance has the data it needs. No internal
+        // dedup guard at Site 3 because chargeInvoice is single-call
+        // synchronous (audit § D-4: webhook path is the at-least-once threat
+        // surface, not chargeInvoice).
         const pi = event.data.object as Stripe.PaymentIntent;
         if (pi.metadata.invoiceId) {
-          // Derive from payments — the payment record should already exist from chargeInvoice
-          const payments = await this.paymentRepo.find({ where: { invoice_id: pi.metadata.invoiceId, status: 'completed' } });
-          const totalPaid = payments.reduce((sum, p) => sum + Number(p.amount), 0);
-          const inv = await this.invoiceRepo.findOne({ where: { id: pi.metadata.invoiceId } });
-          if (inv) {
-            const balanceDue = Math.max(Math.round((Number(inv.total) - totalPaid) * 100) / 100, 0);
-            await this.invoiceRepo.update(pi.metadata.invoiceId, {
-              status: balanceDue <= 0 ? 'paid' : totalPaid > 0 ? 'partial' : 'open',
-              amount_paid: Math.round(totalPaid * 100) / 100,
-              balance_due: balanceDue,
-              paid_at: balanceDue <= 0 ? new Date() : null,
-            });
-          }
+          await this.invoiceService.reconcileBalance(pi.metadata.invoiceId);
         }
         break;
       }
