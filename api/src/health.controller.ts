@@ -1,5 +1,6 @@
 import { Controller, Get } from '@nestjs/common';
 import { Public } from './common/decorators';
+import { COMMIT_SHA } from './build-info';
 
 @Controller()
 export class HealthController {
@@ -8,7 +9,7 @@ export class HealthController {
   check() {
     return {
       status: 'ok',
-      commit: process.env.VERCEL_GIT_COMMIT_SHA || null,
+      commit: COMMIT_SHA,
       timestamp: new Date().toISOString(),
     };
   }
